@@ -45,3 +45,10 @@ $(document).ready(function() {
     } 
   }); 
 });
+
+$(document).ready(function() { 
+  $("#pills-about-website").click(function() { 
+    // Change text of button element
+    console.log("clicked");
+  }); 
+});
