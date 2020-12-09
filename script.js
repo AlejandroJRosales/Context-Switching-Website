@@ -25,6 +25,7 @@ $(document).ready(function(){
     $(".code").css({"font-size": "55%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
     $(".information").css({"padding-left": "6%", "padding-right": "6%"});
+    // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
   }
 });
 
