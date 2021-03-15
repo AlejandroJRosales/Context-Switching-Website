@@ -22,7 +22,7 @@ function isMobile() {
 $(document).ready(function(){ 
   if (isMobile()) {
     // $(".topics-dropdown-menu").css({"padding-bottom": "2%"});
-    $(".code").css({"font-size": "55%"});
+    $(".code").css({"font-size": "75%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
     $(".information").css({"padding-left": "6%", "padding-right": "6%"});
     // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
@@ -53,3 +53,11 @@ $(document).ready(function() {
     console.log("clicked");
   }); 
 });
+
+function openSearch() {
+  document.getElementById("myOverlay").style.display = "block";
+}
+
+function closeSearch() {
+  document.getElementById("myOverlay").style.display = "none";
+}
