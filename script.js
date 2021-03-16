@@ -19,12 +19,20 @@ function isMobile() {
     });
 }
 
+$(document).ready(function(){
+	var paddingPxTop = String($(window).height() * .35) + "px";
+	var paddingPxBottom = String($(window).height() * .65) + "px";
+	$(".website-intro").css({"padding-top": paddingPxTop, "padding-bottom": paddingPxBottom});
+});
+
 $(document).ready(function(){ 
   if (isMobile()) {
     // $(".topics-dropdown-menu").css({"padding-bottom": "2%"});
     $(".code").css({"font-size": "75%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
     $(".information").css({"padding-left": "6%", "padding-right": "6%"});
+		$(".website-title").css({"font-size": "1.5em"});
+		$(".website-creator").css({"font-size": ".8em"});
     // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
   }
 });
