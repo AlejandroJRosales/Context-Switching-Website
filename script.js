@@ -33,6 +33,7 @@ $(document).ready(function(){
     $(".information").css({"padding-left": "6%", "padding-right": "6%"});
 		$(".website-title").css({"font-size": "1.5em"});
 		$(".website-creator").css({"font-size": ".8em"});
+		$(".homepage-info").css({"font-size": ".73em"});
     // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
   }
 });
