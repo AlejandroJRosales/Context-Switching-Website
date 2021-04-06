@@ -28,9 +28,10 @@ $(document).ready(function(){
 $(document).ready(function(){ 
   if (isMobile()) {
     // $(".topics-dropdown-menu").css({"padding-bottom": "2%"});
+    $(".nav-bar-brand").css({"font-size": "1em"});
     $(".code").css({"font-size": "75%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
-    $(".information").css({"padding-left": "6%", "padding-right": "6%"});
+    $(".information").css({"padding-left": "6%", "padding-right": "6%", "margin-left": "8%", "margin-right": "8%"});
 		$(".website-title").css({"font-size": "1.5em"});
 		$(".website-creator").css({"font-size": ".8em"});
 		$(".homepage-info").css({"font-size": ".73em"});
@@ -47,11 +48,11 @@ window.MathJax = {
 $(document).ready(function() { 
   $("button").click(function() { 
     // Change text of button element
-    if ($("#algorithmic-analysis-contents-button").html() == "Close") {
+    if ($("#algorithmic-analysis-contents-button").html() == "X") {
       $("#algorithmic-analysis-contents-button").html("Table of Contents");
     } 
     else {
-      $("#algorithmic-analysis-contents-button").html("Close");
+      $("#algorithmic-analysis-contents-button").html("X");
     } 
   }); 
 });
