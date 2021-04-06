@@ -48,11 +48,11 @@ window.MathJax = {
 $(document).ready(function() { 
   $("button").click(function() { 
     // Change text of button element
-    if ($("#algorithmic-analysis-contents-button").html() == "X") {
-      $("#algorithmic-analysis-contents-button").html("Table of Contents");
+    if ($("button").html() == "X") {
+      $("button").html("Table of Contents");
     } 
-    else {
-      $("#algorithmic-analysis-contents-button").html("X");
+    if ($("button").html() == "Table of Contents") {
+      $("button").html("X");
     } 
   }); 
 });
