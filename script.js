@@ -31,7 +31,7 @@ $(document).ready(function(){
     $(".nav-bar-brand").css({"font-size": "1em"});
     $(".code").css({"font-size": "75%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
-    $(".information").css({"padding-left": "6%", "padding-right": "6%", "margin-left": "8%", "margin-right": "8%"});
+    $(".information").css({"padding-left": "6%", "padding-right": "6%", "margin-left": "4%", "margin-right": "4%"});
 		$(".website-title").css({"font-size": "1.5em"});
 		$(".website-creator").css({"font-size": ".8em"});
 		$(".homepage-info").css({"font-size": ".73em"});
