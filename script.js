@@ -32,9 +32,9 @@ $(document).ready(function(){
     $(".code").css({"font-size": "75%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
     $(".information").css({"padding-left": "6%", "padding-right": "6%", "margin-left": "4%", "margin-right": "4%"});
-		$(".website-title").css({"font-size": "1.5em"});
-		$(".website-creator").css({"font-size": ".8em"});
-		$(".homepage-info").css({"font-size": ".73em"});
+    $(".website-title").css({"font-size": "1.5em"});
+    $(".website-creator").css({"font-size": ".8em"});
+    $(".homepage-info").css({"font-size": ".73em"});
     // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
   }
 });
