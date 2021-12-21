@@ -1,6 +1,31 @@
 $(function() {
-    $(".nav-placeholder").load("/navbar.html");
-    $(".footer-placeholder").load("/footer.html");
+	$(".nav-placeholder").load("/navbar.html");
+	$(".footer-placeholder").load("/footer.html");
+});
+
+$(function() {
+	var lastSectionName = "";
+	$('.category-header-div').children().each(function (index) {
+		// console.log('Index: ' + index + ', html: ' + $(this).html());
+		// console.log('Index: ' + index + ', class name: ' + $(this).attr('class'));
+		
+		// if ($(this).hasClass('category-header')) {
+		// 	console.log('Index: ' + index + ', html: ' + $(this).html());
+		// }
+
+		// console.log(typeof $(this).attr('class'));
+		// console.log(typeof lastSectionName);
+		// console.log(lastSectionName);
+		if (lastSectionName != $(this).attr('class')) {
+			console.log('new section name: ' + $(this).attr('class'));
+			lastSectionName = $(this).attr('class');
+		}
+		else {
+			console.log('section name: ' + $(this).attr('class'));
+			// [0]
+		}
+		console.log($(this).html());
+	});
 });
 
 function isMobile() {
