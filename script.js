@@ -4,27 +4,15 @@ $(function() {
 });
 
 $(function() {
-	var lastSectionName = "";
-	$('.category-header-div').children().each(function (index) {
-		// console.log('Index: ' + index + ', html: ' + $(this).html());
-		// console.log('Index: ' + index + ', class name: ' + $(this).attr('class'));
-		
-		// if ($(this).hasClass('category-header')) {
-		// 	console.log('Index: ' + index + ', html: ' + $(this).html());
-		// }
-
-		// console.log(typeof $(this).attr('class'));
-		// console.log(typeof lastSectionName);
-		// console.log(lastSectionName);
-		if (lastSectionName != $(this).attr('class')) {
-			console.log('new section name: ' + $(this).attr('class'));
-			lastSectionName = $(this).attr('class');
+	// loop through the whole DOM tree using find(*)
+	$('.information').find('*').each(function (index) {
+		// get the section header name from the first paragraph tag
+		var currentSectionName = $(this).find("p:first").attr('class');
+		// make sure the node we are looking at is a section and is not categories definer
+		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
+			console.log('section name: ' + currentSectionName);
+			console.log($(this).find("p:first").text());
 		}
-		else {
-			console.log('section name: ' + $(this).attr('class'));
-			// [0]
-		}
-		console.log($(this).html());
 	});
 });
 
