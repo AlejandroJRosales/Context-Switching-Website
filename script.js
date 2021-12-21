@@ -4,6 +4,8 @@ $(function() {
 });
 
 $(function() {
+	var sectionNames = ["category-header", "section-header", "subsection-header"]
+	
 	// loop through the whole DOM tree using find(*)
 	$('.information').find('*').each(function (index) {
 		// get the section header name from the first paragraph tag
@@ -12,6 +14,11 @@ $(function() {
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
 			console.log('section name: ' + currentSectionName);
 			console.log($(this).find("p:first").text());
+			// for (let nameIndex = 0; nameIndex < sectionNames.length; nameIndex++){
+			// 	if (currentSectionName == sectionNames[nameIndex]) {
+			// 		$(".table-of-contents").append($(this).find("p:first").text());
+			// 	}
+			// }
 		}
 	});
 });
