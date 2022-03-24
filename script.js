@@ -4,16 +4,24 @@ $(function() {
 });
 
 $(function() {
-	var sectionNames = ["category-header", "section-header", "subsection-header"]
+	// var sectionNames = ["category-header", "section-header", "subsection-header"]
+
+	$(".table-of-contents").append("<h5>Table of Contents Links</h5>");
+	$(".table-of-contents").append('<ol>');
 	
 	// loop through the whole DOM tree using find(*)
-	$('.information').find('*').each(function (index) {
+	$(".information").find('*').each(function (index) {
 		// get the section header name from the first paragraph tag
 		var currentSectionName = $(this).find("p:first").attr('class');
+		var lastSectionName = currentSectionName;
+		
 		// make sure the node we are looking at is a section and is not categories definer
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
-			console.log('section name: ' + currentSectionName);
-			console.log($(this).find("p:first").text());
+			// console.log('section name: ' + currentSectionName);
+			// console.log($(this).find("p:first").text());
+
+			$(".table-of-contents").append('<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>');
+			
 			// for (let nameIndex = 0; nameIndex < sectionNames.length; nameIndex++){
 			// 	if (currentSectionName == sectionNames[nameIndex]) {
 			// 		$(".table-of-contents").append($(this).find("p:first").text());
@@ -21,7 +29,10 @@ $(function() {
 			// }
 		}
 	});
+	$(".table-of-contents").append('</ol>');
 });
+
+function tableContents() {}
 
 function isMobile() {
     const toMatch = [
@@ -49,12 +60,16 @@ $(document).ready(function(){
   if (isMobile()) {
     // $(".topics-dropdown-menu").css({"padding-bottom": "2%"});
     $(".nav-bar-brand").css({"font-size": "1em"});
-    $(".code").css({"font-size": "75%"});
+    $(".code").css({"font-size": "75%", "margin": "10% 3% 10% 3%"});
     $(".collapsible-contents-button").css({"bottom": "7%", "right": "3%"});
+		$(".contents-button").css({"margin-left": "2%"});
+		$("#collapse").css({"margin-left": "2%"});
     $(".information").css({"padding-left": "6%", "padding-right": "6%", "margin-left": "4%", "margin-right": "4%"});
     $(".website-title").css({"font-size": "1.5em"});
     $(".website-creator").css({"font-size": ".8em"});
     $(".homepage-info").css({"font-size": ".73em"});
+		$("h1").css({"margin": "9% 0% 8% 0%"});
+		$("h4").css({"margin": "9% 0% 20% 0%"});
     // $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
   }
 });
