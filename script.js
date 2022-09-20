@@ -4,32 +4,47 @@ $(function() {
 });
 
 $(function() {
-	// var sectionNames = ["category-header", "section-header", "subsection-header"]
+	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
 
-	$(".table-of-contents").append("<h5>Links for Table of Contents</h5>");
-	$(".table-of-contents").append('<ol>');
+	var tableOfContentsStr = "<h5>Links for Table of Contents</h5>";
+	var lastHeaderIdx = 0;
+	var currHeaderIdx = 0;
 
 	// loop through the whole DOM tree using find(*)
 	$(".information").find('*').each(function(index) {
 		// get the section header name from the first paragraph tag
 		var currentSectionName = $(this).find("p:first").attr('class');
-		var lastSectionName = currentSectionName;
 
 		// make sure the node we are looking at is a section and is not categories definer
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
-			// console.log('section name: ' + currentSectionName);
-			// console.log($(this).find("p:first").text());
-
-			$(".table-of-contents").append('<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>');
-
-			// for (let nameIndex = 0; nameIndex < sectionNames.length; nameIndex++){
-			// 	if (currentSectionName == sectionNames[nameIndex]) {
-			// 		$(".table-of-contents").append($(this).find("p:first").text());
-			// 	}
-			// }
+			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
+			
+			// header order: lGraph theory, c: simple graph
+			if (currHeaderIdx > lastHeaderIdx) {
+				tableOfContentsStr += '<ul><li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+				lastHeaderIdx = currHeaderIdx;
+			}
+			// header order: [last, current]
+			else if (currHeaderIdx < lastHeaderIdx) {
+				console.log(lastHeaderIdx - currHeaderIdx);
+				console.log(lastHeaderIdx + " " + currHeaderIdx);
+				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
+					tableOfContentsStr += "</ul>"
+				}
+				tableOfContentsStr += '<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+				lastHeaderIdx = currHeaderIdx;
+			}
+			else {
+				if (currentSectionName === "category-header") {
+					tableOfContentsStr += '<a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a><br>';
+				}
+				else {
+					tableOfContentsStr += '<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+				}
+			}
 		}
 	});
-	$(".table-of-contents").append('</ol>');
+	$(".table-of-contents").append(tableOfContentsStr);
 });
 
 function tableContents() { }
