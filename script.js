@@ -19,15 +19,13 @@ $(function() {
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
 			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
 			
-			// header order: lGraph theory, c: simple graph
+			// header order: l: Graph theory, c: simple graph
 			if (currHeaderIdx > lastHeaderIdx) {
 				tableOfContentsStr += '<ul><li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
 				lastHeaderIdx = currHeaderIdx;
 			}
 			// header order: [last, current]
 			else if (currHeaderIdx < lastHeaderIdx) {
-				console.log(lastHeaderIdx - currHeaderIdx);
-				console.log(lastHeaderIdx + " " + currHeaderIdx);
 				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
 					tableOfContentsStr += "</ul>"
 				}
