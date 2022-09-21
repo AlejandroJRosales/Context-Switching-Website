@@ -6,7 +6,7 @@ $(function() {
 $(function() {
 	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
 
-	var tableOfContentsStr = "<h5>Links for Table of Contents</h5>";
+	var tableOfContentsStr = "<h5>Page Navigation Table</h5>";
 	var lastHeaderIdx = 0;
 	var currHeaderIdx = 0;
 
