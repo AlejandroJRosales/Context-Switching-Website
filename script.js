@@ -15,7 +15,7 @@ $(function() {
 		// get the section header name from the first paragraph tag
 		var currentSectionName = $(this).find("p:first").attr('class');
 
-		// make sure the node we are looking at is a section and is not categories definer
+		// make sure the node we are looking at is a header and is not categories definer
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
 			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
 			
