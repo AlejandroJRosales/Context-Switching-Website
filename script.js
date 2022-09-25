@@ -125,6 +125,15 @@ function openSearch() {
 	// $(".nav-search-input").css({ "border": "none" });
 }
 
+window.addEventListener('click', function(e) {
+	console.log(!document.getElementById('nav-search-box').contains(e.target));
+	// Clicked outside nav bar search box
+	if (!document.getElementById('nav-search-box').contains(e.target)) {
+		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
+		$(".nav-search-glyph").css({ "color": "white" });
+	}
+});
+
 // function closeSearch() {
 // 	document.getElementById("myOverlay").style.display = "none";
 // }
