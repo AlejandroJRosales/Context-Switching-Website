@@ -18,7 +18,7 @@ $(function() {
 		// make sure the node we are looking at is a header and is not categories definer
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
 			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
-			
+
 			// header order: l: Graph theory, c: simple graph
 			if (currHeaderIdx > lastHeaderIdx) {
 				tableOfContentsStr += '<ul><li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
@@ -113,9 +113,18 @@ $(document).ready(function() {
 });
 
 function openSearch() {
-	document.getElementById("myOverlay").style.display = "block";
+	// document.getElementById("myOverlay").style.display = "block";
+	// $("#find-button").css({ "background": "white" });
+	// $("#find-button").text("");
+	// $("#find-button").html("<input id='search-input'></input>");
+	// $("#search-input").css({ "background": "white" });
+	$(".nav-search-div").css({ "background-color": "white", "min-width": "140px" });
+	// $(".nav-search-glyph").html("<p>X</p>");
+	$(".nav-search-glyph").css({ "color": "black" });
+	// $(".nav-search-input").html("<input placeholder='Search for a term'></input>");
+	// $(".nav-search-input").css({ "border": "none" });
 }
 
-function closeSearch() {
-	document.getElementById("myOverlay").style.display = "none";
-}
+// function closeSearch() {
+// 	document.getElementById("myOverlay").style.display = "none";
+// }
