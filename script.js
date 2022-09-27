@@ -45,6 +45,22 @@ $(function() {
 	$(".table-of-contents").append(tableOfContentsStr);
 });
 
+function toggleDarkMode() {
+	console.log($(".information").css("background-color"));
+	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
+		$("body").css({"background": "black"});
+		$(".information").css({"background-color": "black", "color": "white"});
+		$("#dark-mode-toggle-btn").html('<i class="fas fa-sun"></i>');
+		$("#dark-mode-toggle-btn").css({"color": "white"});
+	}
+	else {
+		$("body").css({"background": "white"});
+		$(".information").css({"background-color": "white", "color": "black"});
+		$("#dark-mode-toggle-btn").html('<i class="fas fa-moon"></i>');
+		$("#dark-mode-toggle-btn").css({"color": "black"});
+	}
+}
+
 function tableContents() { }
 
 function isMobile() {
@@ -108,7 +124,7 @@ $(document).ready(function() {
 $(document).ready(function() {
 	$("#pills-about-website").click(function() {
 		// Change text of button element
-		console.log("clicked");
+		// console.log("clicked");
 	});
 });
 
@@ -126,7 +142,6 @@ function openSearch() {
 }
 
 window.addEventListener('click', function(e) {
-	console.log(!document.getElementById('nav-search-box').contains(e.target));
 	// Clicked outside nav bar search box
 	if (!document.getElementById('nav-search-box').contains(e.target)) {
 		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
