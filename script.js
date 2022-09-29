@@ -1,6 +1,7 @@
 $(function() {
-	$(".nav-placeholder").load("/navbar.html");
-	$(".footer-placeholder").load("/footer.html");
+	$(".nav-placeholder").load("/utils/navbar.html");
+	$(".footer-placeholder").load("/utils/footer.html");
+	$(".dark-mode-toggle-div").load("/utils/dark-mode-toggle.html");
 });
 
 $(function() {
@@ -49,19 +50,21 @@ function toggleDarkMode() {
 	console.log($(".information").css("background-color"));
 	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
 		$("body").css({ "background": "black" });
+		$(".title-page").css({ "color": "white" });
 		$(".information").css({ "background-color": "black", "color": "white" });
-		$("#dark-mode-toggle-btn").html('<i class="fas fa-sun"></i>');
+		$("#dark-mode-toggle-btn").html('<i class="fas fa-sun"></i><p class="dark-mode-toggle-txt">Tap for Light Mode</p>');
+		$(".dark-mode-toggle-txt").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background": "white" });
+		$(".title-page").css({ "color": "black" });
 		$(".information").css({ "background-color": "white", "color": "black" });
-		$("#dark-mode-toggle-btn").html('<i class="fas fa-moon"></i>');
+		$("#dark-mode-toggle-btn").html('<i class="fas fa-moon"></i><p class="dark-mode-toggle-txt">Tap for Dark Mode</p>');
+		$(".dark-mode-toggle-txt").css({ "color": "black" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
 }
-
-function tableContents() { }
 
 function isMobile() {
 	const toMatch = [
@@ -93,13 +96,15 @@ $(document).ready(function() {
 		$(".collapsible-contents-button").css({ "bottom": "7%", "right": "3%" });
 		$(".contents-button").css({ "margin-left": "2%" });
 		$("#collapse").css({ "margin-left": "2%" });
-		$(".information").css({ "padding-left": "6%", "padding-right": "6%", "margin-left": "4%", "margin-right": "4%" });
+		$(".information").css({ "margin-left": "10%", "margin-right": "10%" });
+		$(".page-properties").css({ "margin-left": "5%", "margin-right": "10%" });
+		$(".dot-div").css({ "padding-left": "5%", "margin-bottom": "1%" });
 		$(".website-title").css({ "font-size": "1.5em" });
 		$(".website-creator").css({ "font-size": ".8em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$("h1").css({ "margin": "9% 0% 8% 0%" });
 		$("h4").css({ "margin": "9% 0% 20% 0%" });
-		$("#dark-mode-toggle-btn").css({ "padding-top": "4%" });
+		// $("#dark-mode-toggle-btn").css({ "padding-top": "4%" });
 		// $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
 	}
 });
