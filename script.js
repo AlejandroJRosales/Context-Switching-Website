@@ -6,7 +6,7 @@ $(function() {
 $(function() {
 	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
 
-	var tableOfContentsStr = "<h5><i class='far fa-list-alt' id='simple-nav-table'></i> Navigation Table</h5>";
+	var tableOfContentsStr = "<h5><i class='far fa-list-alt' id='simple-nav-table'></i> Page Section Links</h5>";
 	var lastHeaderIdx = 0;
 	var currHeaderIdx = 0;
 
@@ -48,16 +48,16 @@ $(function() {
 function toggleDarkMode() {
 	console.log($(".information").css("background-color"));
 	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
-		$("body").css({"background": "black"});
-		$(".information").css({"background-color": "black", "color": "white"});
+		$("body").css({ "background": "black" });
+		$(".information").css({ "background-color": "black", "color": "white" });
 		$("#dark-mode-toggle-btn").html('<i class="fas fa-sun"></i>');
-		$("#dark-mode-toggle-btn").css({"color": "white"});
+		$("#dark-mode-toggle-btn").css({ "color": "white" });
 	}
 	else {
-		$("body").css({"background": "white"});
-		$(".information").css({"background-color": "white", "color": "black"});
+		$("body").css({ "background": "white" });
+		$(".information").css({ "background-color": "white", "color": "black" });
 		$("#dark-mode-toggle-btn").html('<i class="fas fa-moon"></i>');
-		$("#dark-mode-toggle-btn").css({"color": "black"});
+		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
 }
 
@@ -99,6 +99,7 @@ $(document).ready(function() {
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$("h1").css({ "margin": "9% 0% 8% 0%" });
 		$("h4").css({ "margin": "9% 0% 20% 0%" });
+		$("#dark-mode-toggle-btn").css({ "padding-top": "4%" });
 		// $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
 	}
 });
