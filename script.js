@@ -47,7 +47,6 @@ $(function() {
 });
 
 function toggleDarkMode() {
-	console.log($(".information").css("background-color"));
 	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
 		$("body").css({ "background": "black" });
 		$(".title-page").css({ "color": "white" });
@@ -90,7 +89,6 @@ $(document).ready(function() {
 
 $(document).ready(function() {
 	if (isMobile()) {
-		// $(".topics-dropdown-menu").css({"padding-bottom": "2%"});
 		$(".nav-bar-brand").css({ "font-size": "1em" });
 		$(".code").css({ "font-size": "75%", "margin": "10% 3% 10% 3%" });
 		$(".collapsible-contents-button").css({ "bottom": "7%", "right": "3%" });
@@ -102,10 +100,8 @@ $(document).ready(function() {
 		$(".website-title").css({ "font-size": "1.5em" });
 		$(".website-creator").css({ "font-size": ".8em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
-		$("h1").css({ "margin": "9% 0% 8% 0%" });
-		$("h4").css({ "margin": "9% 0% 20% 0%" });
-		// $("#dark-mode-toggle-btn").css({ "padding-top": "4%" });
-		// $(".text-box").css({"max-height": "15em", "overflow:": "auto"});
+		$(".title-page h1").css({ "margin": "9% 10% 8% 10%" });
+		$(".title-page h4").css({ "margin": "9% 10% 20% 10%" });
 	}
 });
 
