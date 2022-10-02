@@ -1,5 +1,12 @@
+var isMobile;
+var toggleModeMrgTxtLight;
+var toggleModeMrgTxtDark;
+var toggleModeDirIcon;
+var toggleModeMrgIcon;
+
 $(function() {
 	loadDynamicHTML();
+	isMobile = getIsMobile();
 	applyDynamicStyle();
 	buildTableOfContents();
 });
@@ -12,7 +19,7 @@ function loadDynamicHTML() {
 
 function applyDynamicStyle() {
 	$(".page-title").text($(".category-header").text());
-	if (isMobile()) {
+	if (isMobile) {
 		// $(".nav-bar-brand").css({ "font-size": "1em" });
 		$(".code").css({ "font-size": "75%", "margin": "10% 3% 10% 3%" });
 		$(".collapsible-contents-button").css({ "bottom": "7%", "right": "3%" });
@@ -24,12 +31,17 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		// $(".developed-by-text").css({ "margin-top": "0%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
+		$(".fa-moon").css({ "margin-left": "0px" });
 
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .4), "margin-bottom": topBottomMargin });
+		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .6), "margin-bottom": topBottomMargin + (topBottomMargin * .6) });
 		$(window).scrollTop(0);
+		toggleModeMrgTxtLight = "0px";
+		toggleModeMrgTxtDark = "2px";
+		toggleModeMrgIcon = "2px"
+		toggleModeDirIcon = "margin-right";
 	}
 	else {
 		var windowHeight = $(window).height();
@@ -37,6 +49,10 @@ function applyDynamicStyle() {
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
 		$(window).scrollTop(0);
+		toggleModeMrgTxtLight = "2px";
+		toggleModeMrgTxtDark = "6px";
+		toggleModeMrgIcon = "2px";
+		toggleModeDirIcon = "margin-left";
 	}
 }
 
@@ -108,8 +124,10 @@ function toggleDarkMode() {
 		$(".page-title").css({ "color": "white" });
 		$(".dot-txt").css({ "color": "white" });
 		$(".information").css({ "background-color": "black", "color": "white" });
-		$("#dark-mode-toggle-btn").html('<i class="fas fa-sun"></i><p class="dark-mode-toggle-txt">Tap for Light Mode</p>');
-		$(".dark-mode-toggle-txt").css({ "color": "white" });
+		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
+		$(".fa-sun").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "white" });
+		$(".dark-mode-toggle-txt").text("Tap for Light Mode");
+		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": toggleModeMrgTxtDark });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 	}
 	else {
@@ -117,8 +135,10 @@ function toggleDarkMode() {
 		$(".page-title").css({ "color": "black" });
 		$(".dot-txt").css({ "color": "black" });
 		$(".information").css({ "background-color": "white", "color": "black" });
-		$("#dark-mode-toggle-btn").html('<i class="fas fa-moon"></i><p class="dark-mode-toggle-txt">Tap for Dark Mode</p>');
-		$(".dark-mode-toggle-txt").css({ "color": "black" });
+		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
+		$(".fa-moon").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "black" });
+		$(".dark-mode-toggle-txt").text("Tap for Dark Mode");
+		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": toggleModeMrgTxtLight });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
 }

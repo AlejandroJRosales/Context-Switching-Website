@@ -1,27 +1,27 @@
 var titleSection =
-`
+	`
 <div class="title-and-developer">
 	<h1 class="page-title"></h1>
-	<h4 class="developed-by-text">Written &#38; Coded by:</h4>
+	<h4 class="developed-by-text">Page Written &#38; Coded by:</h4>
 	<p class="page-developer"><a href="#footer-placeholder">Alejandro Rosales</a></p>
 </div>
 
 <div class="page-properties">
-	<div class="dot-div">
-		<span class="dot"></span>
-		<p class="dot-txt">Still Adding To This</p>
-	</div>
-	<div class="dark-mode-toggle-div">
+<div class="dark-mode-toggle-div">
 		<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
 			<i class="fas fa-moon"></i>
 			<p class="dark-mode-toggle-txt">Tap for Dark Mode</p>
 		</button>
 	</div>
+	<div class="dot-div">
+		<span class="dot"></span>
+		<p class="dot-txt">Still Adding To This</p>
+	</div>
 </div>
 `
 
 var navbar =
-`
+	`
 <nav class="navbar navbar-expand-lg navbar-custom">
 	<a class="nav-bar-brand" href="/index.html">> context<br>switching</a>
 	<!-- <a class="nav-bar-creator" href="#"><br>by Alejandro Rosales</a> -->
@@ -131,7 +131,7 @@ var navbar =
 `
 
 var footer =
-`
+	`
 <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.13.0/css/all.css">
 
 <!-- Footer -->

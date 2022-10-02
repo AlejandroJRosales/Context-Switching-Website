@@ -1,4 +1,4 @@
-function isMobile() {
+function getIsMobile() {
 	const toMatch = [
 		/Android/i,
 		/webOS/i,
