@@ -10,7 +10,7 @@ var titleSection =
 <div class="dark-mode-toggle-div">
 		<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
 			<i class="fas fa-moon"></i>
-			<p class="dark-mode-toggle-txt">Tap for Dark Mode</p>
+			<p class="dark-mode-toggle-txt">Click for Dark Mode</p>
 		</button>
 	</div>
 	<div class="dot-div">

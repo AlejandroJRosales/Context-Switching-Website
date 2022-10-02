@@ -41,7 +41,7 @@ function applyDynamicStyle() {
 		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .6), "margin-bottom": topBottomMargin + (topBottomMargin * .6) });
 		$(window).scrollTop(0);
 		toggleModeMrgTxtLight = "0px";
-		toggleModeMrgTxtDark = "2px";
+		toggleModeMrgTxtDark = "3px";
 		toggleModeMrgIcon = "2px"
 		toggleModeDirIcon = "margin-right";
 	}
@@ -131,7 +131,7 @@ function toggleDarkMode() {
 		$(".information").css({ "background-color": "black", "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
 		$(".fa-sun").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "white" });
-		$(".dark-mode-toggle-txt").text("Tap for Light Mode");
+		$(".dark-mode-toggle-txt").text("Click for Light Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": toggleModeMrgTxtDark });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 	}
@@ -142,7 +142,7 @@ function toggleDarkMode() {
 		$(".information").css({ "background-color": "white", "color": "black" });
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
 		$(".fa-moon").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "black" });
-		$(".dark-mode-toggle-txt").text("Tap for Dark Mode");
+		$(".dark-mode-toggle-txt").text("Click for Dark Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": toggleModeMrgTxtLight });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
