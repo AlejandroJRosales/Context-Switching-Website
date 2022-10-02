@@ -20,6 +20,34 @@ var titleSection =
 </div>
 `
 
+var tableOfContentsCollapsible =
+	`
+<div class="collapsible-contents-button">
+		<div class="panel-group">
+			<div class="panel panel-default">
+				<div class="panel-collapse collapse" id="collapse">
+					<div class="collapsible-contents-top">
+		 				<li><a id="top-of-page-li" href="#nav-placeholder">Top of the Page</a></li>
+			 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+					</div>
+
+	 				<br>
+
+					<div class="table-of-contents-collapsible"></div>
+
+					<br>
+
+					<li><a href="#footer-placeholder">Bottom of the Page</a></li>
+				</div>
+				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
+					aria-expanded="false" aria-controls="collapseExample" id="contents-button">
+					<i class="far fa-list-alt" id="table-of-contents-icon"></i>
+				</button>
+			</div>
+		</div>
+	</div>
+`
+
 var navbar =
 	`
 <nav class="navbar navbar-expand-lg navbar-custom">

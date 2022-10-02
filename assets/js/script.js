@@ -5,16 +5,17 @@ var toggleModeDirIcon;
 var toggleModeMrgIcon;
 
 $(function() {
-	loadDynamicHTML();
+	addDynamicHTML();
 	isMobile = getIsMobile();
 	applyDynamicStyle();
-	buildTableOfContents();
+	generateTableOfContents();
 });
 
-function loadDynamicHTML() {
+function addDynamicHTML() {
 	$(".nav-placeholder").html(navbar);
 	$(".title-section").html(titleSection);
 	$(".footer-placeholder").html(footer);
+	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
 }
 
 function applyDynamicStyle() {
@@ -32,6 +33,7 @@ function applyDynamicStyle() {
 		// $(".developed-by-text").css({ "margin-top": "0%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
 		$(".fa-moon").css({ "margin-left": "0px" });
+		$(".collapsible-contents-top #dark-mode-toggle-btn").css({ "top": "4.75%", "right": "2%" });
 
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
@@ -56,10 +58,10 @@ function applyDynamicStyle() {
 	}
 }
 
-function buildTableOfContents() {
+function generateTableOfContents() {
 	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
 
-	var tableOfContentsStr = "<h5><i class='far fa-list-alt' id='simple-nav-table'></i> Page Section Links</h5>";
+	var tableOfContentsStr = "Section Links</h5>";
 	var lastHeaderIdx = 0;
 	var currHeaderIdx = 0;
 
@@ -95,7 +97,10 @@ function buildTableOfContents() {
 			}
 		}
 	});
-	$(".table-of-contents").append(tableOfContentsStr);
+
+	$(".table-of-contents").append("<h5><i class='far fa-list-alt' id='simple-nav-table'></i> " + tableOfContentsStr);
+	// $("<hr>").insertAfter($(".table-of-contents"));
+	$(".table-of-contents-collapsible").append('<h5>' + tableOfContentsStr);
 }
 
 window.MathJax = {
