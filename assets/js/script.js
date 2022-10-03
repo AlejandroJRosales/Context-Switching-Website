@@ -38,12 +38,12 @@ function applyDynamicStyle() {
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .6), "margin-bottom": topBottomMargin + (topBottomMargin * .6) });
+		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .6), "margin-bottom": topBottomMargin + (topBottomMargin * .75) });
 		$(window).scrollTop(0);
-		toggleModeMrgTxtLight = "0px";
-		toggleModeMrgTxtDark = "3px";
-		toggleModeMrgIcon = "2px"
-		toggleModeDirIcon = "margin-right";
+		// toggleModeMrgTxtLight = "0px";
+		// toggleModeMrgTxtDark = "3px";
+		// toggleModeMrgIcon = "2px"
+		// toggleModeDirIcon = "margin-right";
 	}
 	else {
 		var windowHeight = $(window).height();
@@ -51,10 +51,10 @@ function applyDynamicStyle() {
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
 		$(window).scrollTop(0);
-		toggleModeMrgTxtLight = "2px";
-		toggleModeMrgTxtDark = "6px";
-		toggleModeMrgIcon = "2px";
-		toggleModeDirIcon = "margin-left";
+		// toggleModeMrgTxtLight = "2px";
+		// toggleModeMrgTxtDark = "6px";
+		// toggleModeMrgIcon = "2px";
+		// toggleModeDirIcon = "margin-left";
 	}
 }
 
@@ -130,7 +130,7 @@ function toggleDarkMode() {
 		$(".dot-txt").css({ "color": "white" });
 		$(".information").css({ "background-color": "black", "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
-		$(".fa-sun").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "white" });
+		$(".fa-sun").css({ "color": "white" });
 		$(".dark-mode-toggle-txt").text("Click for Light Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": toggleModeMrgTxtDark });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
@@ -141,7 +141,7 @@ function toggleDarkMode() {
 		$(".dot-txt").css({ "color": "black" });
 		$(".information").css({ "background-color": "white", "color": "black" });
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
-		$(".fa-moon").css({ toggleModeDirIcon: toggleModeMrgIcon, "color": "black" });
+		$(".fa-moon").css({ "color": "black" });
 		$(".dark-mode-toggle-txt").text("Click for Dark Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": toggleModeMrgTxtLight });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
