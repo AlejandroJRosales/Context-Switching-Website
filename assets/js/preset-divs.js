@@ -71,9 +71,9 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
 					<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
-					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial Optimization</a>

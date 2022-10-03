@@ -32,7 +32,7 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		// $(".developed-by-text").css({ "margin-top": "0%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
-		$(".fa-moon").css({ "margin-left": "0px" });
+		// $(".fa-moon").css({ "margin-left": "0px" });
 		$(".collapsible-contents-top #dark-mode-toggle-btn").css({ "top": "4.75%", "right": "2%" });
 
 		var windowHeight = $(window).height();
@@ -132,7 +132,7 @@ function toggleDarkMode() {
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
 		$(".fa-sun").css({ "color": "white" });
 		$(".dark-mode-toggle-txt").text("Click for Light Mode");
-		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": toggleModeMrgTxtDark });
+		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": "2%" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 	}
 	else {
@@ -143,7 +143,7 @@ function toggleDarkMode() {
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
 		$(".fa-moon").css({ "color": "black" });
 		$(".dark-mode-toggle-txt").text("Click for Dark Mode");
-		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": toggleModeMrgTxtLight });
+		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": "1%" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
 }
