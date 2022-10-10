@@ -27,7 +27,7 @@ var tableOfContentsCollapsible =
 			<div class="panel panel-default">
 				<div class="panel-collapse collapse" id="collapse">
 					<div class="collapsible-contents-top">
-		 				<li><a id="top-of-page-li" href="#nav-placeholder">Top of the Page</a></li>
+		 				<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
 			 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
 					</div>
 
@@ -37,7 +37,7 @@ var tableOfContentsCollapsible =
 
 					<br>
 
-					<li><a href="#footer-placeholder">Bottom of the Page</a></li>
+					<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
 				</div>
 				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
 					aria-expanded="false" aria-controls="collapseExample" id="contents-button">

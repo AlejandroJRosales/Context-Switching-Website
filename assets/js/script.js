@@ -3,12 +3,22 @@ var toggleModeMrgTxtLight;
 var toggleModeMrgTxtDark;
 var toggleModeDirIcon;
 var toggleModeMrgIcon;
+var collapseContentsIsHidden = false;
 
 $(function() {
 	addDynamicHTML();
 	isMobile = getIsMobile();
 	applyDynamicStyle();
 	generateTableOfContents();
+});
+
+$(function() {
+	$(".sliding-link").click(function(e) {
+		e.preventDefault();
+		// console.log($(this).attr("href"));
+		var aid = $(this).attr("href");
+		$('html,body').animate({scrollTop: $(aid).offset().top},'fast');
+	});
 });
 
 function addDynamicHTML() {
@@ -40,7 +50,6 @@ function applyDynamicStyle() {
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .6), "margin-bottom": topBottomMargin + (topBottomMargin * .75) });
-		$(window).scrollTop(0);
 		// toggleModeMrgTxtLight = "0px";
 		// toggleModeMrgTxtDark = "3px";
 		// toggleModeMrgIcon = "2px"
@@ -74,10 +83,8 @@ function generateTableOfContents() {
 		// make sure the node we are looking at is a header and is not categories definer
 		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
 			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
-
-			// header order: l: Graph theory, c: simple graph
 			if (currHeaderIdx > lastHeaderIdx) {
-				tableOfContentsStr += '<ul><li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+				tableOfContentsStr += '<ul><li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
 				lastHeaderIdx = currHeaderIdx;
 			}
 			// header order: [last, current]
@@ -85,22 +92,21 @@ function generateTableOfContents() {
 				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
 					tableOfContentsStr += "</ul>"
 				}
-				tableOfContentsStr += '<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+				tableOfContentsStr += '<li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
 				lastHeaderIdx = currHeaderIdx;
 			}
 			else {
 				if (currentSectionName === "category-header") {
-					tableOfContentsStr += '<a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a><br>';
+					tableOfContentsStr += '<a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a><br>';
 				}
 				else {
-					tableOfContentsStr += '<li><a href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+					tableOfContentsStr += '<li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
 				}
 			}
 		}
 	});
 
 	$(".table-of-contents").append("<h5><i class='far fa-list-alt' id='simple-nav-table'></i> " + tableOfContentsStr);
-	// $("<hr>").insertAfter($(".table-of-contents"));
 	$(".table-of-contents-collapsible").append('<h5>' + tableOfContentsStr);
 }
 
@@ -110,19 +116,26 @@ window.MathJax = {
 	}
 };
 
-function openSearch() {
-	// document.getElementById("myOverlay").style.display = "block";
-	// $("#find-button").css({ "background": "white" });
-	// $("#find-button").text("");
-	// $("#find-button").html("<input id='search-input'></input>");
-	// $("#search-input").css({ "background": "white" });
-	$(".nav-search-div").css({ "background-color": "white", "min-width": "140px" });
-	// $(".nav-search-glyph").html("<p>X</p>");
-	$(".nav-search-glyph").css({ "color": "black" });
-	// $(".nav-search-input").html("<input placeholder='Search for a term'></input>");
-	// $(".nav-search-input").css({ "border": "none" });
-}
+window.addEventListener('click', function(e) {
+	// Clicked outside nav bar search box
+	if (!document.getElementById('collapse').contains(e.target)) {
+		$(".collapse").collapse('hide');
+	}
+	// Clicked outside nav bar search box
+	if (!document.getElementById('contents-link').contains(e.target)) {
+		$(".collapse").collapse('hide');
+	}
+	// Clicked outside nav bar search box
+	if (!document.getElementById('nav-search-box').contains(e.target)) {
+		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
+		$(".nav-search-glyph").css({ "color": "white" });
+	}
+});
 
+function showIt(elementId) {
+    var el = document.getElementById(elementId);
+    el.scrollIntoView(true);
+}
 
 function toggleDarkMode() {
 	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
@@ -148,11 +161,3 @@ function toggleDarkMode() {
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 	}
 }
-
-window.addEventListener('click', function(e) {
-	// Clicked outside nav bar search box
-	if (!document.getElementById('nav-search-box').contains(e.target)) {
-		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
-		$(".nav-search-glyph").css({ "color": "white" });
-	}
-});
