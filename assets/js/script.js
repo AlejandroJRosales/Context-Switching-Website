@@ -17,7 +17,7 @@ $(function() {
 		e.preventDefault();
 		// console.log($(this).attr("href"));
 		var aid = $(this).attr("href");
-		$('html,body').animate({scrollTop: $(aid).offset().top},'fast');
+		$('html,body').animate({ scrollTop: $(aid).offset().top }, 'fast');
 	});
 });
 
@@ -44,7 +44,7 @@ function applyDynamicStyle() {
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
 		// $(".fa-moon").css({ "margin-left": "0px" });
 		$(".collapsible-contents-top #dark-mode-toggle-btn").css({ "top": "4.75%", "right": "2%" });
-		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%" });
+		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
 
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
@@ -133,8 +133,8 @@ window.addEventListener('click', function(e) {
 });
 
 function showIt(elementId) {
-    var el = document.getElementById(elementId);
-    el.scrollIntoView(true);
+	var el = document.getElementById(elementId);
+	el.scrollIntoView(true);
 }
 
 function toggleDarkMode() {

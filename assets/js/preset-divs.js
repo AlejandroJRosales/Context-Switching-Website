@@ -41,7 +41,7 @@ var tableOfContentsCollapsible =
 				</div>
 				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
 					aria-expanded="false" aria-controls="collapseExample" id="contents-button">
-					<i class="far fa-list-alt" id="table-of-contents-icon"></i>
+		 				<i class="far fa-list-alt" id="table-of-contents-icon"></i>
 				</button>
 			</div>
 		</div>
@@ -101,12 +101,13 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuroscience/neuralnetworks.html">Artificial vs Biological Neural
-						Networks</a>
-					<a class="dropdown-item" href="/neuroscience/howwelearn.html">How We Learn</a>
+					<a class="dropdown-item" href="/neuroscience/memory-formation.html">Neurobiological bases of memory formation</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Neurobiological bases of memory formation</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Artificial vs Biological Neural
+						Networks</a>
+					<a class="dropdown-item todo" href="/todo.html">How We Learn</a>
+					
 				</div>
 			</li>
 			<!-- <li class="nav-item dropdown">
