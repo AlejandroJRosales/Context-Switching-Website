@@ -3,7 +3,7 @@ var titleSection =
 <div class="title-and-developer">
 	<h1 class="page-title"></h1>
 	<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-	<p class="page-developer"><a href="#footer-placeholder">Alejandro Rosales</a></p>
+	<p class="page-developer"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
 </div>
 
 <div class="page-properties">
