@@ -71,7 +71,7 @@ function applyDynamicStyle() {
 function generateTableOfContents() {
 	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
 
-	var tableOfContentsStr = "Section Links</h5>";
+	var tableOfContentsStr = "";
 	var lastHeaderIdx = 0;
 	var currHeaderIdx = 0;
 
@@ -106,8 +106,17 @@ function generateTableOfContents() {
 		}
 	});
 
-	$(".table-of-contents").append("<h5><i class='far fa-list-alt' id='simple-nav-table'></i> " + tableOfContentsStr);
-	$(".table-of-contents-collapsible").append('<h5>' + tableOfContentsStr);
+	var collapsePageTopLink =
+		`
+		<div class="collapsible-contents-top">
+			<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
+			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+		</div>
+	 	<br>
+	 `
+
+	$(".table-of-contents").append("<h5><i class='far fa-list-alt' id='simple-nav-table'></i>&nbsp;Section Links</h5>" + tableOfContentsStr);
+	$(".table-of-contents-collapsible").append('<h5>Section Links</h5><br>' + collapsePageTopLink + tableOfContentsStr);
 }
 
 window.MathJax = {

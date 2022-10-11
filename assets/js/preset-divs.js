@@ -26,15 +26,10 @@ var tableOfContentsCollapsible =
 		<div class="panel-group">
 			<div class="panel panel-default">
 				<div class="panel-collapse collapse" id="collapse">
-					<div class="collapsible-contents-top">
-		 				<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
-			 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
-					</div>
-
-	 				<br>
 
 					<div class="table-of-contents-collapsible"></div>
 
+					<! -- TODO: add bellow br and li to new var collapsePageBottomink -->
 					<br>
 
 					<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
