@@ -29,7 +29,7 @@ var tableOfContentsCollapsible =
 
 					<div class="table-of-contents-collapsible"></div>
 
-					<! -- TODO: add bellow br and li to new var collapsePageBottomink -->
+					<! -- TODO: add below br and li to new var collapsePageBottomink -->
 					<br>
 
 					<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
