@@ -72,10 +72,11 @@ var navbar =
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial Optimization</a>
-					<a class="dropdown-item todo" href="/tcs/pandnp.html">P & NP</a>
+		 			<a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Turing Machines</a>
+					<a class="dropdown-item todo" href="/tcs/pandnp.html">P, NP, NP-Hard, & More</a>
 					<a class="dropdown-item todo" href="/todo.html">SAT & 3-SAT</a>
 					<a class="dropdown-item todo" href="/todo.html">NP Reductions</a>
-					<a class="dropdown-item todo" href="/todo.html">Approximate Algorithms</a>
+					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
 					<a class="dropdown-item todo" href="/tcs/randomizationalgorithms.html">Randomization Algorithms</a>
 					<!-- <div class="dropdown-divider"></div>
           <a class="dropdown-item" href="#">Something else here</a> -->
@@ -84,7 +85,7 @@ var navbar =
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					Mathematics
+					Math
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differential-manifolds.html">Differential Manifolds</a>
@@ -96,11 +97,11 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuroscience/memory-formation.html">Neurobiological bases of memory formation</a>
+					<a class="dropdown-item" href="/neuroscience/memory-formation.html">Neurobiological Bases of Memory Formation</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-		 			<a class="dropdown-item todo" href="/todo.html">Artificial vs Biological Neural
-						Networks</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
+					<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex: Parts & Functions</a>
 					<a class="dropdown-item todo" href="/todo.html">How We Learn</a>
 					
 				</div>
@@ -116,19 +117,37 @@ var navbar =
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
+					Philosophy
+				</a>
+				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/philosophy/anthropocentrism.html">Anthropocentrism</a>
+		 			<hr>
+					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
+					<a class="dropdown-item todo" href="/todo.html">Utilitarianism</a>
+					<a class="dropdown-item todo" href="/todo.html">Stoicism</a>
+			 		<a class="dropdown-item todo" href="/todo.html">Animal Ethics</a>
+					<a class="dropdown-item todo" href="/todo.html">Symbolic Logic</a>
+					<a class="dropdown-item todo" href="/todo.html">Formal Logic</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Cogito, Ergo, Sum</a>
+				</div>
+			</li>
+			<li class="nav-item dropdown">
+				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
+					aria-expanded="false">
 					Statistics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Pearson Correlation</a>
 					<a class="dropdown-item todo" href="/todo.html">LOESS Nonparametric Regression</a>
+		 			<a class="dropdown-item todo" href="/todo.html">k Fold Split Method</a>
+					<a class="dropdown-item todo" href="/todo.html">ANOVA & 2-way ANOVA Tests</a>
+					<a class="dropdown-item todo" href="/todo.html">Tests of Homogeneity </a>
 					<a class="dropdown-item todo" href="/todo.html">Regression and Classification Trees</a>
-					<a class="dropdown-item todo" href="/todo.html">ANOVA</a>
-					<a class="dropdown-item todo" href="/todo.html">T-test</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Pearson vs Spearman Correlation</a>
 				</div>
 			</li>
-			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">My Other Projects&nbsp;<i
+	 		<li class="nav-item">
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="#">My Projects&nbsp;<i
 						class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 			</li>
 			<br>
@@ -167,7 +186,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a target="_blank" rel="noopener noreferrer" href="#">LinkedIn</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -183,7 +202,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">My Other Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="#">My Other Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->
