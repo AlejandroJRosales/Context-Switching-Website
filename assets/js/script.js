@@ -12,6 +12,23 @@ $(function() {
 	generateTableOfContents();
 });
 
+function focusMode() {
+	$(".nav-placeholder").remove();
+	$(".title-section").remove();
+	$(".table-of-contents").remove();
+	$(".table-of-contents-collapsible-div").remove();
+	$(".footer-placeholder").remove();
+
+	var exitFocusModeBtn = '<button class="focus-mode-btn" onclick="exitFocusMode()""><p>[Exit Focus Mode]</p></button>'
+	var darkModeTggleBtn = '<button class="focus-mode-btn" onclick="toggleDarkMode()""><p>[Toggle Dark Mode]</p></button>'
+	$(".information").prepend(exitFocusModeBtn + darkModeTggleBtn);
+	$(window).scrollTop(0);
+}
+
+function exitFocusMode() {
+	location.reload();
+}
+
 function reveal() {
 	var reveals = document.querySelectorAll(".reveal");
 
@@ -162,7 +179,6 @@ function generateTableOfContents() {
 
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5><i class="far fa-list-alt" id="simple-nav-table"></i>&nbsp;Section Links</h5>' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Section Links</h5><br>' + collapsePageTopLink + tableOfContentsStr);
-	contentsGenerated = true;
 }
 
 window.MathJax = {
