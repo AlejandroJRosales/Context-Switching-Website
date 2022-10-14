@@ -1,46 +1,54 @@
 var titleSection =
 	`
-<div class="title-and-developer">
-	<h1 class="page-title"></h1>
-	<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-	<p class="page-developer"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
-</div>
-
-<div class="page-properties">
-<div class="dark-mode-toggle-div">
-		<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-			<i class="fas fa-moon"></i>
-			<p class="dark-mode-toggle-txt">Click for Dark Mode</p>
-		</button>
+	<div class="title-and-developer">
+		<h1 class="page-title"></h1>
+		<div class="other-contents-page-title reveal-title fade-in"> 
+			<div class="page-header ">
+				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
+				<p class="page-developer"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
+		 	</div>
+	
+			<div class="page-properties">
+				<div class="dark-mode-toggle-div">
+						<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
+							<i class="fas fa-moon"></i>
+							<p class="dark-mode-toggle-txt">Click for Dark Mode</p>
+						</button>
+					</div>
+					<div class="dot-div">
+						<span class="dot"></span>
+						<p class="dot-txt">Still Adding To This</p>
+					</div>
+				</div>
+			</div>
+		</div>
 	</div>
-	<div class="dot-div">
-		<span class="dot"></span>
-		<p class="dot-txt">Still Adding To This</p>
-	</div>
-</div>
 `
 
 var tableOfContentsCollapsible =
 	`
-<div class="collapsible-contents-button">
-		<div class="panel-group">
-			<div class="panel panel-default">
-				<div class="panel-collapse collapse" id="collapse">
-
-					<div class="table-of-contents-collapsible"></div>
-
-					<! -- TODO: add below br and li to new var collapsePageBottomink -->
-					<br>
-
-					<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
+<div class="contents-button-container">
+	<div class="collapsible-contents-button reveal-button fade-in">
+ 			<!-- <h4 class=reveal fade-right">Section<br>Links</h4> -->
+			<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-collapse collapse" id="collapse">
+	
+						<div class="table-of-contents-collapsible"></div>
+	
+						<! -- TODO: add below br and li to new var collapsePageBottomink -->
+						<br>
+	
+						<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
+					</div>
+					<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
+						aria-expanded="false" aria-controls="collapseExample" id="contents-button">
+			 				<i class="far fa-list-alt" id="table-of-contents-icon"></i>
+					</button>
 				</div>
-				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
-					aria-expanded="false" aria-controls="collapseExample" id="contents-button">
-		 				<i class="far fa-list-alt" id="table-of-contents-icon"></i>
-				</button>
 			</div>
-		</div>
 	</div>
+</div>
 `
 
 var navbar =
