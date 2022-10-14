@@ -55,11 +55,11 @@ setTimeout(function() {
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 1.1) });
+		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * .9) });
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
-		var contentsTopBottomMargin = (windowHeight - contentsHeight) / 2;
-		$(".table-of-contents").css({ "margin-top": contentsTopBottomMargin, "margin-bottom": contentsTopBottomMargin });
+		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
+		$(".table-of-contents").css({ "margin-top": contentsTopBottomMargin, "margin-bottom": contentsTopBottomMargin * 1.3 });
 		reveals.classList.add("active");
 	}
 	else {
@@ -70,8 +70,8 @@ setTimeout(function() {
 		$(window).scrollTop(0);
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
-		var contentsTopBottomMargin = (windowHeight - contentsHeight) / 2;
-		$(".table-of-contents").css({ "margin-top": contentsTopBottomMargin, "margin-bottom": contentsTopBottomMargin });
+		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
+		$(".table-of-contents").css({ "margin-top": contentsTopBottomMargin, "margin-bottom": contentsTopBottomMargin + (contentsTopBottomMargin * .6) });
 		reveals.classList.add("active");
 	}
 }, delayInMilliseconds);
@@ -99,25 +99,19 @@ function addDynamicHTML() {
 function applyDynamicStyle() {
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
-		// $(".nav-bar-brand").css({ "font-size": "1em" });
 		$(".code").css({ "font-size": "75%", "margin": "10% 3% 10% 3%" });
-		$(".collapsible-contents-button").css({ "bottom": "7%", "right": "3%" });
-		$(".contents-button").css({ "margin-left": "2%" });
-		$("#collapse").css({ "margin-left": "2%" });
 		$(".website-title").css({ "font-size": "1.5em" });
 		$(".website-creator").css({ "font-size": ".8em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
-		// $(".developed-by-text").css({ "margin-top": "0%" });
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
-		// $(".fa-moon").css({ "margin-left": "0px" });
 		$(".collapsible-contents-top #dark-mode-toggle-btn").css({ "top": "4.75%", "right": "2%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
 	}
 	var windowHeight = $(window).height();
 	var titleSectionHeight = $($(".title-section")).height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-	$(".title-section").css({ "margin-top": topBottomMargin * 1.5, "margin-bottom": topBottomMargin });
+	$(".title-section").css({ "margin-top": topBottomMargin * 1.55, "margin-bottom": topBottomMargin });
 	$(window).scrollTop(0);
 }
 
@@ -163,7 +157,7 @@ function generateTableOfContents() {
 		`
 		<div class="collapsible-contents-top">
 			<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
-			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+			<button class="dark-mode-toggle-btn" id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
 		</div>
 	 	<br>
 	 `

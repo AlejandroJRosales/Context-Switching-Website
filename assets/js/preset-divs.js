@@ -41,11 +41,11 @@ var tableOfContentsCollapsible =
 	
 						<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
 					</div>
-					<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
+				</div>
+				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
 						aria-expanded="false" aria-controls="collapseExample" id="contents-button">
 			 				<i class="far fa-list-alt" id="table-of-contents-icon"></i>
-					</button>
-				</div>
+				</button>
 			</div>
 	</div>
 </div>
