@@ -4,7 +4,7 @@ var toggleModeMrgTxtDark;
 var toggleModeDirIcon;
 var toggleModeMrgIcon;
 var collapseContentsIsHidden = false;
-var delayInMilliseconds = 1000; //1 second
+var delayInMilliseconds = 1500; //1 second
 
 $(function() {
 	addDynamicHTML();
