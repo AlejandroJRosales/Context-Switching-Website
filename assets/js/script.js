@@ -1,4 +1,4 @@
-var isMobile = getIsMobile();;
+var isMobile = getIsMobile();
 var toggleModeMrgTxtLight;
 var toggleModeMrgTxtDark;
 var toggleModeDirIcon;
@@ -78,7 +78,6 @@ setTimeout(function() {
 
 window.addEventListener("scroll", reveal);
 window.addEventListener("scroll", revealButton);
-window.addEventListener("scroll", revealTitle);
 
 $(function() {
 	$(".sliding-link").click(function(e) {
@@ -105,7 +104,6 @@ function applyDynamicStyle() {
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
-		$(".collapsible-contents-top #dark-mode-toggle-btn").css({ "top": "4.75%", "right": "2%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
 	}
 	var windowHeight = $(window).height();
@@ -157,7 +155,7 @@ function generateTableOfContents() {
 		`
 		<div class="collapsible-contents-top">
 			<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
-			<button class="dark-mode-toggle-btn" id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i></button>
+			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i>
 		</div>
 	 	<br>
 	 `
@@ -181,6 +179,16 @@ window.addEventListener('click', function(e) {
 	// Clicked outside nav bar search box
 	if (!document.getElementById('contents-link').contains(e.target)) {
 		$(".collapse").collapse('hide');
+	}
+	// Clicked outside nav bar search box
+	if ($('#collapse').is('.collapse:not(.show)')) {
+		$(".contents-button-container").css({
+			"position": "fixed",
+  		"bottom": "2em",
+	  	"right": "2em",
+			"z-index": "100",
+			"background": "black"
+		});
 	}
 	// Clicked outside nav bar search box
 	if (!document.getElementById('nav-search-box').contains(e.target)) {
