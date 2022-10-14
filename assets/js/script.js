@@ -181,16 +181,6 @@ window.addEventListener('click', function(e) {
 		$(".collapse").collapse('hide');
 	}
 	// Clicked outside nav bar search box
-	if ($('#collapse').is('.collapse:not(.show)')) {
-		$(".contents-button-container").css({
-			"position": "fixed",
-  		"bottom": "2em",
-	  	"right": "2em",
-			"z-index": "100",
-			"background": "black"
-		});
-	}
-	// Clicked outside nav bar search box
 	if (!document.getElementById('nav-search-box').contains(e.target)) {
 		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
 		$(".nav-search-glyph").css({ "color": "white" });
