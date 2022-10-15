@@ -4,7 +4,9 @@ var toggleModeMrgTxtDark;
 var toggleModeDirIcon;
 var toggleModeMrgIcon;
 var collapseContentsIsHidden = false;
-var delayInMilliseconds = 1500; //1 second
+var userHasScrolled = false;
+var titleRevealed = false;
+var delayInMilliseconds = 1300; //1 second
 
 $(function() {
 	addDynamicHTML();
@@ -30,6 +32,7 @@ function exitFocusMode() {
 }
 
 function reveal() {
+	userHasScrolled = true;
 	var reveals = document.querySelectorAll(".reveal");
 
 	for (var i = 0; i < reveals.length; i++) {
@@ -60,7 +63,16 @@ function revealButton() {
 	}
 }
 
+// function revealTitle() {
 setTimeout(function() {
+	// var elementBottom = $('.title-section')[0].getBoundingClientRect().bottom;
+	// var reveals = $('.reveal-title')[0];
+	// if (elementBottom < 0) {
+	// 	reveals.classList.remove("active");
+	// 	titleRevealed = false;
+	// }
+	// else if ($(window).scrollTop() >= 10 && userHasScrolled && !titleRevealed) {
+	// titleRevealed = true;
 	var reveals = $('.reveal-title')[0];
 	$(".title-section").css({
 		"-webkit-transition": "margin-top 1s ease-out",
@@ -72,7 +84,8 @@ setTimeout(function() {
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * .9) });
+		// $(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 8) });
+		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 3) });
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
 		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
@@ -84,17 +97,19 @@ setTimeout(function() {
 		var titleSectionHeight = $($(".title-section")).height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
-		$(window).scrollTop(0);
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
 		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
 		$(".table-of-contents").css({ "margin-top": contentsTopBottomMargin, "margin-bottom": contentsTopBottomMargin + (contentsTopBottomMargin * .6) });
 		reveals.classList.add("active");
 	}
+	// }
+	// }
 }, delayInMilliseconds);
 
 window.addEventListener("scroll", reveal);
 window.addEventListener("scroll", revealButton);
+window.addEventListener("scroll", revealTitle);
 
 $(function() {
 	$(".sliding-link").click(function(e) {
@@ -126,7 +141,13 @@ function applyDynamicStyle() {
 	var windowHeight = $(window).height();
 	var titleSectionHeight = $($(".title-section")).height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-	$(".title-section").css({ "margin-top": topBottomMargin * 1.55, "margin-bottom": topBottomMargin });
+	if (isMobile) {
+		topBottomMargin = topBottomMargin * 1.5;
+	}
+	else {
+		topBottomMargin = topBottomMargin * 2;
+	}
+	$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
 	$(window).scrollTop(0);
 }
 
