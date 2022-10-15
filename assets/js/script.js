@@ -6,7 +6,7 @@ var toggleModeMrgIcon;
 var collapseContentsIsHidden = false;
 var userHasScrolled = false;
 var titleRevealed = false;
-var delayInMilliseconds = 1300; //1 second
+var delayInMilliseconds = 1200; //1 second
 
 $(function() {
 	addDynamicHTML();
@@ -85,7 +85,9 @@ setTimeout(function() {
 		var titleSectionHeight = $(".title-and-developer").height() + $(".page-properties").height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		// $(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 8) });
-		$(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 3) });
+		$(".title-section").css({
+			"margin-top": topBottomMargin * .3, "margin-bottom": topBottomMargin + (topBottomMargin * 3)
+		});
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
 		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
@@ -96,7 +98,7 @@ setTimeout(function() {
 		var windowHeight = $(window).height();
 		var titleSectionHeight = $($(".title-section")).height();
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-		$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
+		$(".title-section").css({ "margin-top": topBottomMargin * .7, "margin-bottom": topBottomMargin });
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
 		var contentsTopBottomMargin = (windowHeight - contentsHeight) * .7;
@@ -145,7 +147,7 @@ function applyDynamicStyle() {
 		topBottomMargin = topBottomMargin * 1.5;
 	}
 	else {
-		topBottomMargin = topBottomMargin * 2;
+		topBottomMargin = topBottomMargin * 1.45;
 	}
 	$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
 	$(window).scrollTop(0);

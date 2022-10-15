@@ -3,7 +3,7 @@ var titleSection =
 	<div class="title-and-developer">
 		<h1 class="page-title"></h1>
 		<div class="other-contents-page-title reveal-title fade-in"> 
-			<div class="page-header ">
+			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
 		 	</div>
@@ -19,7 +19,7 @@ var titleSection =
 						<span class="dot"></span>
 						<p class="dot-txt">Still Adding To This</p>
 					</div>
-		 			<button class="focus-mode-btn" onclick="focusMode()""><p>[Focus Mode]</p></button>
+		 			<button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button>
 				</div>
 			</div>
 		</div>
