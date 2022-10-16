@@ -6,7 +6,7 @@ var toggleModeMrgIcon;
 var collapseContentsIsHidden = false;
 var userHasScrolled = false;
 var titleRevealed = false;
-var delayInMilliseconds = 1200; //1 second
+var delayInMilliseconds = 1000; //1 second
 
 $(function() {
 	addDynamicHTML();
