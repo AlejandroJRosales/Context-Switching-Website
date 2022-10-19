@@ -139,6 +139,7 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
+		$(".table-of-contents ul").css({ "padding-left": "20px" });
 	}
 	var windowHeight = $(window).height();
 	var titleSectionHeight = $($(".title-section")).height();
@@ -182,7 +183,7 @@ function generateTableOfContents() {
 			}
 			else {
 				if (currentSectionName === "category-header") {
-					tableOfContentsStr += '<a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a><br>';
+					tableOfContentsStr += '<ul><li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
 				}
 				else {
 					tableOfContentsStr += '<li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
@@ -200,8 +201,8 @@ function generateTableOfContents() {
 	 	<br>
 	 `
 
-	$(".table-of-contents").append('<div class="reveal fade-left"><h5><i class="far fa-list-alt" id="simple-nav-table"></i>&nbsp;Section Links</h5>' + tableOfContentsStr + '</div>');
-	$(".table-of-contents-collapsible").append('<h5>Section Links</h5><br>' + collapsePageTopLink + tableOfContentsStr);
+	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Table of Contents</h5><hr>' + tableOfContentsStr + '</div>');
+	$(".table-of-contents-collapsible").append('<h5>Links for Page Sections</h5><br>' + collapsePageTopLink + tableOfContentsStr);
 }
 
 window.MathJax = {

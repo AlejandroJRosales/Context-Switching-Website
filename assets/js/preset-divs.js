@@ -75,18 +75,20 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/tcs/quantum-comp-theory.html">Quantum Computational Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
+		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
-					<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
-					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial Optimization</a>
-		 			<a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Turing Machines</a>
-					<a class="dropdown-item todo" href="/tcs/pandnp.html">P, NP, NP-Hard, & More</a>
-					<a class="dropdown-item todo" href="/todo.html">SAT & 3-SAT</a>
-					<a class="dropdown-item todo" href="/todo.html">NP Reductions</a>
+					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial and Stochastic Optimization</a>
+		 			<a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Complexity Theory</a>
+					<a class="dropdown-item todo" href="/tcs/pandnp.html">Combinatorics and Graph Theory</a>
+					<a class="dropdown-item todo" href="/tcs/pandnp.html">P vs NP</a>
 					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
 					<a class="dropdown-item todo" href="/tcs/randomizationalgorithms.html">Randomization Algorithms</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Pseudorandomness</a>
+					<a class="dropdown-item todo" href="/todo.html">Algorithmic Game Theory</a>
 					<!-- <div class="dropdown-divider"></div>
           <a class="dropdown-item" href="#">Something else here</a> -->
 				</div>
@@ -136,8 +138,8 @@ var navbar =
 					<a class="dropdown-item todo" href="/todo.html">Stoicism</a>
 			 		<a class="dropdown-item todo" href="/todo.html">Animal Ethics</a>
 					<a class="dropdown-item todo" href="/todo.html">Symbolic Logic</a>
-					<a class="dropdown-item todo" href="/todo.html">Formal Logic</a>
-		 			<a class="dropdown-item todo" href="/todo.html">Cogito, Ergo, Sum</a>
+					<!-- <a class="dropdown-item todo" href="/todo.html">Formal Logic</a> -->
+		 			<!-- <a class="dropdown-item todo" href="/todo.html">Cogito, Ergo, Sum</a> -->
 				</div>
 			</li>
 			<li class="nav-item dropdown">
