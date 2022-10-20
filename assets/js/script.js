@@ -155,7 +155,7 @@ function applyDynamicStyle() {
 }
 
 function generateTableOfContents() {
-	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header"]
+	var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header", "subsubsubsection-header"]
 
 	var tableOfContentsStr = "";
 	var lastHeaderIdx = 0;
