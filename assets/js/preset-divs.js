@@ -100,6 +100,10 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differential-manifolds.html">Differential Manifolds</a>
+		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
+		 			<hr>
+					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
+		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
 			<li class="nav-item dropdown">
@@ -112,9 +116,10 @@ var navbar =
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
+					<a class="dropdown-item todo" href="/todo.html">Computational Neuroscience</a>
 					<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex: Parts & Functions</a>
 					<a class="dropdown-item todo" href="/todo.html">How We Learn</a>
-					
+		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
 			<!-- <li class="nav-item dropdown">
@@ -142,6 +147,7 @@ var navbar =
 		 			<!-- <a class="dropdown-item todo" href="/todo.html">Cogito, Ergo, Sum</a> -->
 				</div>
 			</li>
+	 		<!--
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
@@ -157,6 +163,7 @@ var navbar =
 		 			<a class="dropdown-item todo" href="/todo.html">Pearson vs Spearman Correlation</a>
 				</div>
 			</li>
+	 		-->
 	 		<li class="nav-item">
 				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="#">My Projects&nbsp;<i
 						class="fas fa-external-link-alt" id="external-link-icon"></i></a>

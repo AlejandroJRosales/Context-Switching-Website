@@ -142,7 +142,7 @@ function applyDynamicStyle() {
 		$(".table-of-contents ul").css({ "padding-left": "20px" });
 	}
 	var windowHeight = $(window).height();
-	var titleSectionHeight = $($(".title-section")).height();
+	var titleSectionHeight = $(".title-section").height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 	if (isMobile) {
 		topBottomMargin = topBottomMargin * 1.5;
