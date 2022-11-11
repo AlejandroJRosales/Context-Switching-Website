@@ -139,7 +139,7 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
-		$(".table-of-contents ul").css({ "padding-left": "20px" });
+		// $(".table-of-contents ul").css({ "padding-left": "20px" });
 	}
 	var windowHeight = $(window).height();
 	var titleSectionHeight = $(".title-section").height();

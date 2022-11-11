@@ -55,14 +55,16 @@ var tableOfContentsCollapsible =
 var navbar =
 	`
 <nav class="navbar navbar-expand-lg navbar-custom">
-	<a class="nav-bar-brand" href="/index.html">> context<br>switching</a>
+	<a class="nav-bar-brand" href="/index.html">Context<br>Switching</a>
 	<!-- <a class="nav-bar-creator" href="#"><br>by Alejandro Rosales</a> -->
 	<button class="navbar-toggler custom-toggler" type="button" data-toggle="collapse" data-target="#navbarColor01"
 		aria-controls="navbarColor01" aria-expanded="false" aria-label="Toggle navigation">
 		<!-- <i class="fas fa-atom"></i> -->
 		<!-- <i class="fab fa-cloudsmith"></i> -->
-		<i class="fab fa-connectdevelop"></i>
+		<!-- <i class="fab fa-connectdevelop"></i> -->
 		<!-- <span class="fab fa-connectdevelop"></span> -->
+		<!-- <i class="fas fa-ellipsis-v"></i> -->
+		<i class="fas fa-bars"></i>
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
@@ -103,6 +105,8 @@ var navbar =
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
+		 			<a class="dropdown-item todo" href="/todo.html">Matrices and Linear Algebra</a>
+					<a class="dropdown-item todo" href="/todo.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
