@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
+				<p class="page-developer" id="developer-title"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
 		 	</div>
 	
 			<div class="page-properties">
@@ -16,10 +16,10 @@ var titleSection =
 						</button>
 					</div>
 					<div class="dot-div">
-						<span class="dot"></span>
-						<p class="dot-txt">Still Adding To This</p>
+						<!-- <span class="dot"></span> -->
+						<p class="dot-txt">Still Adding To Page</p>
 					</div>
-		 			<button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button>
+		 			<!-- <button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button> -->
 				</div>
 			</div>
 		</div>
@@ -77,7 +77,7 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantum-comp-theory.html">Quantum Computational Theory</a>
+					<a class="dropdown-item" href="/tcs/quantum-computational-theory.html">Quantum Computational Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
@@ -168,10 +168,12 @@ var navbar =
 				</div>
 			</li>
 	 		-->
-	 		<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="#">My Projects&nbsp;<i
+
+			<li class="nav-item">
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects&nbsp;<i
 						class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 			</li>
+ 
 			<br>
 		</ul>
 
@@ -186,7 +188,7 @@ var navbar =
 					</svg>
 				</div>
 				<div class="nav-search-box-div" onclick="openSearch()">
-					<input id="nav-search-box" placeholder="Find Term Everywhere"></input>
+					<input id="nav-search-box" placeholder="Find Phrase Everywhere"></input>
 				</div>
 			</div>
 		</form>

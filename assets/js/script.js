@@ -111,7 +111,7 @@ setTimeout(function() {
 
 window.addEventListener("scroll", reveal);
 window.addEventListener("scroll", revealButton);
-window.addEventListener("scroll", revealTitle);
+// window.addEventListener("scroll", revealTitle);
 
 $(function() {
 	$(".sliding-link").click(function(e) {
@@ -139,7 +139,8 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "9% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 0% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
-		// $(".table-of-contents ul").css({ "padding-left": "20px" });
+		$(".nav-search-div").css({ "min-width": "225px" });
+		$("#nav-search-box").css({ "min-width": "200px" });
 	}
 	var windowHeight = $(window).height();
 	var titleSectionHeight = $(".title-section").height();
@@ -213,16 +214,16 @@ window.MathJax = {
 
 window.addEventListener('click', function(e) {
 	// Clicked outside nav bar search box
-	if (!document.getElementById('collapse').contains(e.target)) {
-		$(".collapse").collapse('hide');
-	}
-	// Clicked outside nav bar search box
-	if (!document.getElementById('contents-link').contains(e.target)) {
-		$(".collapse").collapse('hide');
-	}
+	// if (!document.getElementById('collapse').contains(e.target)) {
+	// 	$(".collapse").collapse('hide');
+	// }
+	// // Clicked outside nav bar search box
+	// if (!document.getElementById('contents-link').contains(e.target)) {
+	// 	$(".collapse").collapse('hide');
+	// }
 	// Clicked outside nav bar search box
 	if (!document.getElementById('nav-search-box').contains(e.target)) {
-		$(".nav-search-div").css({ "background-color": "transparent", "min-width": "180px" });
+		$(".nav-search-div").css({ "background-color": "transparent" });
 		$(".nav-search-glyph").css({ "color": "white" });
 	}
 });
