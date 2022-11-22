@@ -210,7 +210,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="#">LinkedIn</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -218,7 +218,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-3 mb-3">
 				<p>
-					<a href="/index.html#about-me">About Me</a>
+					<a href="/index.html#about-me">More About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -226,7 +226,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="#">My Other Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->

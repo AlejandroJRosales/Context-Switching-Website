@@ -222,10 +222,10 @@ window.addEventListener('click', function(e) {
 	// 	$(".collapse").collapse('hide');
 	// }
 	// Clicked outside nav bar search box
-	if (!document.getElementById('nav-search-box').contains(e.target)) {
-		$(".nav-search-div").css({ "background-color": "transparent" });
-		$(".nav-search-glyph").css({ "color": "white" });
-	}
+	// if (!document.getElementById('nav-search-box').contains(e.target)) {
+	// 	$(".nav-search-div").css({ "background-color": "transparent" });
+	// 	$(".nav-search-glyph").css({ "color": "white" });
+	// }
 });
 
 function showIt(elementId) {
