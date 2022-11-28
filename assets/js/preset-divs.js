@@ -17,7 +17,7 @@ var titleSection =
 					</div>
 					<div class="dot-div">
 						<!-- <span class="dot"></span> -->
-						<p class="dot-txt">Still Adding To Page</p>
+						<p class="dot-txt">Still Editing Page</p>
 					</div>
 		 			<!-- <button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button> -->
 				</div>
@@ -77,7 +77,7 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantum-computational-theory.html">Quantum Computational Theory</a>
+					<a class="dropdown-item" href="/tcs/quantum-computation-theory.html">Quantum Computation Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
