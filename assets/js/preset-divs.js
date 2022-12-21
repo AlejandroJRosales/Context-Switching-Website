@@ -17,7 +17,7 @@ var titleSection =
 					</div>
 					<div class="dot-div">
 						<!-- <span class="dot"></span> -->
-						<p class="dot-txt">Still Editing Page</p>
+						<p class="dot-txt">*Still Editing Page*</p>
 					</div>
 		 			<!-- <button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button> -->
 				</div>
