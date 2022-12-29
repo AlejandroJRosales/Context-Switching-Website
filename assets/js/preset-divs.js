@@ -68,16 +68,14 @@ var navbar =
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
-			<!-- <li class="nav-item active">
-        <a class="nav-link" href="../index.html">Home<span class="sr-only">(current)</span></a>
-      </li> -->
+			
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantum-computation-theory.html">Quantum Computation Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumcomputationtheory.html">Quantum Computation Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
@@ -95,14 +93,16 @@ var navbar =
           <a class="dropdown-item" href="#">Something else here</a> -->
 				</div>
 			</li>
+	 
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					Math
+					Mathematics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/math/differential-manifolds.html">Differential Manifolds</a>
-		 			<a class="dropdown-item" href="/math/axiomatic-set-theory.html">Axiomatic Set Theory</a>
+					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
+		 			<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
+		 			<a class="dropdown-item" href="/math/axiomaticsettheory.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
@@ -110,13 +110,14 @@ var navbar =
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
+	 
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuroscience/memory-formation.html">Neurobiological Bases of Memory Formation</a>
+					<a class="dropdown-item" href="/neuroscience/memoryformation.html">Neurobiological Bases of Memory Formation</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
@@ -126,48 +127,6 @@ var navbar =
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
-			<!-- <li class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-          Economics
-        </a>
-        <div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/todo.html">Ten Principles of Economics</a>
-        </div>
-      </li> -->
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Philosophy
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/philosophy/anthropocentrism.html">Anthropocentrism</a>
-		 			<hr>
-					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Utilitarianism</a>
-					<a class="dropdown-item todo" href="/todo.html">Stoicism</a>
-			 		<a class="dropdown-item todo" href="/todo.html">Animal Ethics</a>
-					<a class="dropdown-item todo" href="/todo.html">Symbolic Logic</a>
-					<!-- <a class="dropdown-item todo" href="/todo.html">Formal Logic</a> -->
-		 			<!-- <a class="dropdown-item todo" href="/todo.html">Cogito, Ergo, Sum</a> -->
-				</div>
-			</li>
-	 		<!--
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Statistics
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">LOESS Nonparametric Regression</a>
-		 			<a class="dropdown-item todo" href="/todo.html">k Fold Split Method</a>
-					<a class="dropdown-item todo" href="/todo.html">ANOVA & 2-way ANOVA Tests</a>
-					<a class="dropdown-item todo" href="/todo.html">Tests of Homogeneity </a>
-					<a class="dropdown-item todo" href="/todo.html">Regression and Classification Trees</a>
-		 			<a class="dropdown-item todo" href="/todo.html">Pearson vs Spearman Correlation</a>
-				</div>
-			</li>
-	 		-->
 
 			<li class="nav-item">
 				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects&nbsp;<i
@@ -188,7 +147,7 @@ var navbar =
 					</svg>
 				</div>
 				<div class="nav-search-box-div" onclick="openSearch()">
-					<input id="nav-search-box" placeholder="Find Phrase Everywhere"></input>
+					<input id="nav-search-box" placeholder="Search Website"></input>
 				</div>
 			</div>
 		</form>
