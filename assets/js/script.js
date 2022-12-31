@@ -207,8 +207,12 @@ function generateTableOfContents() {
 }
 
 window.MathJax = {
+	loader: {
+		load: ['[tex]/braket']
+	},
 	tex: {
-		inlineMath: [['$', '$'], ['\\(', '\\)']]
+		inlineMath: [['$', '$'], ['\\(', '\\)']],
+		packages: {'[+]': ['braket']}
 	}
 };
 
