@@ -8,6 +8,17 @@ var userHasScrolled = false;
 var titleRevealed = false;
 var delayInMilliseconds = 1000; //1 second
 
+
+window.MathJax = {
+	loader: {
+		load: ['[tex]/braket']
+	},
+	tex: {
+		inlineMath: [['$', '$'], ['\\(', '\\)']],
+		packages: {'[+]': ['braket']}
+	}
+};
+
 $(function() {
 	addDynamicHTML();
 	applyDynamicStyle();
@@ -86,7 +97,10 @@ setTimeout(function() {
 		var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 		// $(".title-section").css({ "margin-top": topBottomMargin - (topBottomMargin * .7), "margin-bottom": topBottomMargin + (topBottomMargin * 8) });
 		$(".title-section").css({
-			"margin-top": topBottomMargin * .3, "margin-bottom": topBottomMargin + (topBottomMargin * 3)
+			"margin-top": topBottomMargin * .7, "margin-bottom": topBottomMargin + (topBottomMargin * 3)
+		});
+		$(".page-properties").css({
+			"margin-top": topBottomMargin * .5, "margin-bottom": topBottomMargin * .5
 		});
 		var windowHeight = $(window).height();
 		var contentsHeight = $(".table-of-contents").height();
@@ -205,16 +219,6 @@ function generateTableOfContents() {
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Table of Contents</h5><hr>' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Links for Page Sections</h5><br>' + collapsePageTopLink + tableOfContentsStr);
 }
-
-window.MathJax = {
-	loader: {
-		load: ['[tex]/braket']
-	},
-	tex: {
-		inlineMath: [['$', '$'], ['\\(', '\\)']],
-		packages: {'[+]': ['braket']}
-	}
-};
 
 window.addEventListener('click', function(e) {
 	// Clicked outside nav bar search box
