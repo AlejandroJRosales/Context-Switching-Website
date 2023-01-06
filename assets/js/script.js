@@ -15,7 +15,10 @@ window.MathJax = {
 	},
 	tex: {
 		inlineMath: [['$', '$'], ['\\(', '\\)']],
-		packages: {'[+]': ['braket']}
+		packages: { '[+]': ['braket'] }
+	},
+	svg: {
+		fontCache: 'global'
 	}
 };
 
