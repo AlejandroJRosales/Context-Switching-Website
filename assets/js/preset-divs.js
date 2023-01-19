@@ -175,17 +175,17 @@ var footer =
 			<!-- Grid column -->
 
 			<!-- Grid column -->
-			<div class="col-md-3 mb-3">
+			<div class="col-md-2 mb-3">
 				<p>
-					<a href="/index.html#about-me">More About Me</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->
 
-			<!-- Grid column -->
-			<div class="col-md-2 mb-3">
+	    <!-- Grid column -->
+			<div class="col-md-3 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects</a>
+					<a href="https://context-switching.com/index.html#about-me-professional">More About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
