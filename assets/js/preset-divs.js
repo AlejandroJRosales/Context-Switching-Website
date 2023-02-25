@@ -75,7 +75,7 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumcomputationtheory.html">Quantum Computation Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumcomputingtheory.html">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
@@ -185,7 +185,7 @@ var footer =
 	    <!-- Grid column -->
 			<div class="col-md-3 mb-3">
 				<p>
-					<a href="https://context-switching.com/index.html#about-me-professional">More About Me</a>
+					<a href="https://context-switching.com/index.html#about-me-professional">About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->

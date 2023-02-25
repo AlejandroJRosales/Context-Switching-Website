@@ -219,8 +219,8 @@ function generateTableOfContents() {
 	 	<br>
 	 `
 
-	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Table of Contents</h5><hr>' + tableOfContentsStr + '</div>');
-	$(".table-of-contents-collapsible").append('<h5>Links for Page Sections</h5><br>' + collapsePageTopLink + tableOfContentsStr);
+	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Section Links</h5><hr>' + tableOfContentsStr + '</div>');
+	$(".table-of-contents-collapsible").append('<h5>Section Links</h5><br>' + collapsePageTopLink + tableOfContentsStr);
 }
 
 window.addEventListener('click', function(e) {
