@@ -6,8 +6,15 @@ var titleSection =
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer" id="developer-title"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
+				<div class="page-properties">
+				</div>
 		 	</div>
-	
+		</div>
+	</div>
+`
+
+var temp =
+	`
 			<div class="page-properties">
 				<div class="dark-mode-toggle-div">
 						<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
@@ -101,6 +108,7 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
+		 			<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
 		 			<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
 		 			<a class="dropdown-item" href="/math/axiomaticsettheory.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
@@ -128,15 +136,20 @@ var navbar =
 				</div>
 			</li>
 
+			<!--
 			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects&nbsp;<i
-						class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+			</li>
+	 		-->
+
+			<li class="nav-item">
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 			</li>
  
 			<br>
 		</ul>
 
-		<form class="form-inline">
+		<form class="form-inline navbar-search">
 			<div class="btn btn-outline-light nav-search-div">
 				<div class="nav-search-glyph">
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search"
@@ -177,7 +190,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">My Other Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -203,6 +216,9 @@ var footer =
 					<p style="line-height: 1.7rem">Welcome to my website! I coded it myself. It's not much but its honest work. My
 						name is Alejandro Rosales and I love teaching in depth about whatever new topic is that I am learning about.
 						This website provides me a space to do that! I hope you enjoy my website and whatever I am teaching!
+					</p>
+
+	 				<p style="line-height: 1.7rem">Email me: alejand.j.rosales@gmail.com
 					</p>
 				</div>
 			</div>
