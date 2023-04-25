@@ -6,7 +6,10 @@ var titleSection =
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer" id="developer-title"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
-				<div class="page-properties">
+				<div class="dark-mode-toggle-div">
+					<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
+						<i class="fas fa-moon"></i>
+					</button>
 				</div>
 		 	</div>
 		</div>
@@ -86,10 +89,11 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
+		 			<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial and Stochastic Optimization</a>
-		 			<a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Complexity Theory</a>
+		 			<!-- <a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Complexity Theory</a> -->
 					<a class="dropdown-item todo" href="/tcs/pandnp.html">Combinatorics and Graph Theory</a>
 					<a class="dropdown-item todo" href="/tcs/pandnp.html">P vs NP</a>
 					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
@@ -114,7 +118,7 @@ var navbar =
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-		 			<a class="dropdown-item todo" href="/todo.html">Matrices and Linear Algebra</a>
+		 			<!--<a class="dropdown-item todo" href="/todo.html">Matrices and Linear Algebra</a>-->
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
@@ -213,12 +217,15 @@ var footer =
 			<div class="col-md-8 col-12 mt-5">
 				<div class="footer-about-me">
 					<h3 id="footer-about-me-title">Welcome!</h3>
-					<p style="line-height: 1.7rem">Welcome to my website! I coded it myself. It's not much but its honest work. My
-						name is Alejandro Rosales and I love teaching in depth about whatever new topic is that I am learning about.
-						This website provides me a space to do that! I hope you enjoy my website and whatever I am teaching!
+					<p style="line-height: 1.7rem">Welcome to my website! My
+						name is Alejandro Rosales, and I coded this website myself. It's not much, but its honest work. 
+						My website provides a space for me to talk in-depth and teach about the newest topic I learning about! 
+						I hope you enjoy!
 					</p>
 
-	 				<p style="line-height: 1.7rem">Email me: alejand.j.rosales@gmail.com
+					<br>
+
+	 				<p style="line-height: 1.7rem">Contact me at:<br>alejand.j.rosales@gmail.com
 					</p>
 				</div>
 			</div>
