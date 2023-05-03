@@ -38,7 +38,7 @@ function focusMode() {
 	var exitFocusModeBtn = '<button class="focus-mode-btn" onclick="exitFocusMode()""><p>[Exit Focus Mode]</p></button>'
 	var darkModeTggleBtn = '<button class="focus-mode-btn" onclick="toggleDarkMode()""><p>[Toggle Dark Mode]</p></button>'
 	$(".information").prepend(exitFocusModeBtn + darkModeTggleBtn);
-	$(window).scrollTop(0);
+	// $(window).scrollTop(0);
 }
 
 function exitFocusMode() {
@@ -94,19 +94,19 @@ setTimeout(function() {
 		"-o-transition": "margin-top 1s ease-out",
 		"transition": "margin-top 1s ease-out"
 	});
-	
+
 	var windowHeight = $(window).height();
-	
+
 	var titleSectionHeight = $($(".title-section")).height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 	$(".title-section").css({ "margin-top": topBottomMargin * .7, "margin-bottom": topBottomMargin });
-	
+
 	var contentsHeight = $(".table-of-contents").height();
 	// var contentsTopBottomMargin = (windowHeight - contentsHeight);
 	// console.log(contentsTopBottomMargin);
-	$(".table-of-contents").css({ "margin-top": "100%", "margin-bottom": "100%" });
+	$(".table-of-contents").css({ "margin-top": "50%", "margin-bottom": "50%" });
 	reveals.classList.add("active");
-	
+
 }, delayInMilliseconds);
 
 window.addEventListener("scroll", reveal);
@@ -143,14 +143,14 @@ function applyDynamicStyle() {
 		$(".nav-search-div").css({ "min-width": "225px" });
 		$("#nav-search-box").css({ "min-width": "200px" });
 	}
-	
+
 	var windowHeight = $(window).height();
-	
+
 	var titleSectionHeight = $(".title-section").height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
 	topBottomMargin = topBottomMargin * 3;
 	$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
-	$(window).scrollTop(0);
+	// $(window).scrollTop(0);
 }
 
 function generateTableOfContents() {
