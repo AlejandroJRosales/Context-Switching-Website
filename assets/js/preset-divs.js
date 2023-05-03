@@ -200,7 +200,7 @@ var footer =
 			<!-- Grid column -->
 
 	    <!-- Grid column -->
-			<div class="col-md-3 mb-3">
+			<div class="col-md-2 mb-3">
 				<p>
 					<a href="https://context-switching.com/index.html#about-me-professional">About Me</a>
 				</p>
