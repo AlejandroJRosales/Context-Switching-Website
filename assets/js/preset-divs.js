@@ -147,7 +147,11 @@ var navbar =
 	 		-->
 
 			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+			</li>
+
+      <li class="nav-item">
+				<a class="nav-link todo" href="#">My A.I. (Coming Soon)</a>
 			</li>
  
 			<br>
@@ -186,7 +190,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -194,7 +198,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 				</p>
 			</div>
 			<!-- Grid column -->
