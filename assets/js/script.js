@@ -138,7 +138,7 @@ function applyDynamicStyle() {
 		$(".website-creator").css({ "font-size": ".8em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
-		$(".information").css({ "margin": "0% 10% 0% 10%" });
+		$(".information").css({ "margin": "0% 10% 10% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
 		$(".nav-search-div").css({ "min-width": "225px" });
 		$("#nav-search-box").css({ "min-width": "200px" });
