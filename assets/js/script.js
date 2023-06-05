@@ -205,19 +205,21 @@ function generateTableOfContents() {
 }
 
 window.addEventListener('click', function(e) {
+	// nav searh bar
+	var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
+	// table of contents
+	var isTOC = document.getElementById('collapse').contains(e.target);
+
+	// Clicked outside table of contents
+	if (!isSearchBar && !isTOC) {
+		$(".collapse").collapse('hide');
+	}
+
 	// Clicked outside nav bar search box
-	// if (!document.getElementById('collapse').contains(e.target)) {
-	// 	$(".collapse").collapse('hide');
-	// }
-	// // Clicked outside nav bar search box
-	// if (!document.getElementById('contents-link').contains(e.target)) {
-	// 	$(".collapse").collapse('hide');
-	// }
-	// Clicked outside nav bar search box
-	// if (!document.getElementById('nav-search-box').contains(e.target)) {
-	// 	$(".nav-search-div").css({ "background-color": "transparent" });
-	// 	$(".nav-search-glyph").css({ "color": "white" });
-	// }
+	else if (isSearchBar) {
+		$(".nav-search-div").css({ "background-color": "white" });
+		$(".nav-search-glyph").css({ "color": "black" });
+	}
 });
 
 function showIt(elementId) {
