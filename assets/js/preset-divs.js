@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a class="sliding-link" href="#footer-placeholder">Alejandro Rosales</a></p>
+				<p class="page-developer" id="developer-title"><a href="/assets/utils/aboutme.html">Alejandro Rosales</a></p>
 				<div class="dark-mode-toggle-div">
 					<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
 						<i class="fas fa-moon"></i>
@@ -87,9 +87,9 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory.html">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
+		 			<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
-		 			<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial and Stochastic Optimization</a>
@@ -140,19 +140,21 @@ var navbar =
 				</div>
 			</li>
 
-			<!--
 			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
 			</li>
-	 		-->
 
+			<!--
 			<li class="nav-item">
 				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
 			</li>
+	 		-->
 
+			<!--
       <li class="nav-item">
 				<a class="nav-link todo" href="#">My A.I. (Coming Soon)</a>
 			</li>
+	 		-->
  
 			<br>
 		</ul>
@@ -206,7 +208,7 @@ var footer =
 	    <!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a href="https://context-switching.com/index.html#about-me-professional">About Me</a>
+					<a href="/assets/utils/aboutme.html">About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -220,7 +222,8 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-8 col-12 mt-5">
 				<div class="footer-about-me">
-					<h3 id="footer-about-me-title">Welcome!</h3>
+					<h3 id="footer-about-me-title">Welcome</h3>
+		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
 						name is Alejandro Rosales, and I coded this website myself. It's not much, but its honest work. 
 						My website provides a space for me to talk in-depth and teach about the newest topic I learning about! 
