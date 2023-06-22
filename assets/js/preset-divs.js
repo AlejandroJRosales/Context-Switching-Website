@@ -6,11 +6,6 @@ var titleSection =
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer" id="developer-title"><a href="/assets/utils/aboutme.html">Alejandro Rosales</a></p>
-				<div class="dark-mode-toggle-div">
-					<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-						<i class="fas fa-moon"></i>
-					</button>
-				</div>
 		 	</div>
 		</div>
 	</div>
@@ -18,6 +13,13 @@ var titleSection =
 
 var temp =
 	`
+
+<div class="dark-mode-toggle-div">
+					<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
+						<i class="fas fa-moon"></i>
+					</button>
+				</div>
+ 
 			<div class="page-properties">
 				<div class="dark-mode-toggle-div">
 						<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
@@ -113,12 +115,13 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
 		 			<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
+					<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
 		 			<a class="dropdown-item" href="/math/axiomaticsettheory.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-		 			<!--<a class="dropdown-item todo" href="/todo.html">Matrices and Linear Algebra</a>-->
+					<a class="dropdown-item todo" href="/todo.html">Approximation Functions</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
@@ -143,12 +146,6 @@ var navbar =
 			<li class="nav-item">
 				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
 			</li>
-
-			<!--
-			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
-			</li>
-	 		-->
 
 			<!--
       <li class="nav-item">
@@ -177,6 +174,12 @@ var navbar =
 		<br>
 	</div>
 </nav>
+
+<div class="navbar-item dark-mode-toggle-div">
+	<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
+		<i class="fas fa-moon"></i>
+	</button>
+</div>
 `
 
 var footer =

@@ -239,8 +239,11 @@ function showIt(elementId) {
 }
 
 function toggleDarkMode() {
-	if ($(".information").css("background-color") == "rgb(255, 255, 255)") {
+	console.log($("body").css("background").indexOf("rgb(255, 255, 255)"));
+	if ($("body").css("background").indexOf("rgb(255, 255, 255)") == 0) {
+		console.log("activate darkmode");
 		$("body").css({ "background": "black" });
+		$(".website-intro").css({ "background": "black" });
 		$(".page-title").css({ "color": "white" });
 		$(".dot-txt").css({ "color": "white" });
 		$(".information").css({ "background-color": "black", "color": "white" });
@@ -249,9 +252,14 @@ function toggleDarkMode() {
 		$(".dark-mode-toggle-txt").text("Click for Light Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": "2%" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
+		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
+		$(".mini-banner").css({ "background": "black", "color": "white" });
+		$(".mini-banner-label").css({ "color": "white" });
+		$(".website-title").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background": "white" });
+		$(".website-intro").css({ "background": "white" });
 		$(".page-title").css({ "color": "black" });
 		$(".dot-txt").css({ "color": "black" });
 		$(".information").css({ "background-color": "white", "color": "black" });
@@ -260,6 +268,10 @@ function toggleDarkMode() {
 		$(".dark-mode-toggle-txt").text("Click for Dark Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "black", "margin-left": "1%" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
+		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
+		$(".mini-banner").css({ "background": "white", "color": "black" });
+		$(".mini-banner-label").css({ "color": "black" });
+		$(".website-title").css({ "color": "black" });
 	}
 }
 
