@@ -177,7 +177,7 @@ var navbar =
 
 <div class="navbar-item dark-mode-toggle-div">
 	<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-		<i class="fas fa-moon"></i>
+		<i class="fas fa-moon fa-2xl"></i>
 	</button>
 </div>
 `
