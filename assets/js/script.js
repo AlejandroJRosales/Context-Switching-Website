@@ -239,9 +239,7 @@ function showIt(elementId) {
 }
 
 function toggleDarkMode() {
-	console.log($("body").css("background").indexOf("rgb(255, 255, 255)"));
 	if ($("body").css("background").indexOf("rgb(255, 255, 255)") == 0) {
-		console.log("activate darkmode");
 		$("body").css({ "background": "black" });
 		$(".website-intro").css({ "background": "black" });
 		$(".page-title").css({ "color": "white" });

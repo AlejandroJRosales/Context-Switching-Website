@@ -114,14 +114,14 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
+		 			<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
-					<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
-		 			<a class="dropdown-item" href="/math/axiomaticsettheory.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo.html">Approximation Functions</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Axiomatic Set Theory</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Topological Neuroscience</a>
 				</div>
 			</li>
