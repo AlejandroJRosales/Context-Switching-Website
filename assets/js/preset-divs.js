@@ -229,7 +229,7 @@ var footer =
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
 						name is Alejandro Rosales, and I coded this website myself. It's not much, but its honest work. 
-						My website provides a space for me to talk in-depth and teach about the newest topic I learning about! 
+						My website provides a space for me to talk in-depth and teach about the newest topic I'm learning about! 
 						I hope you enjoy!
 					</p>
 

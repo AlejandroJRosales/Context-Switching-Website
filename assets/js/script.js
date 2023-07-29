@@ -240,18 +240,18 @@ function showIt(elementId) {
 
 function toggleDarkMode() {
 	if ($("body").css("background").indexOf("rgb(255, 255, 255)") == 0) {
-		$("body").css({ "background": "black" });
-		$(".website-intro").css({ "background": "black" });
+		$("body").css({ "background": "rgb(41,41,41)" });
+		$(".website-intro").css({ "background": "rgb(41,41,41)" });
 		$(".page-title").css({ "color": "white" });
 		$(".dot-txt").css({ "color": "white" });
-		$(".information").css({ "background-color": "black", "color": "white" });
+		$(".information").css({ "background-color": "rgb(41,41,41)", "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
 		$(".fa-sun").css({ "color": "white" });
 		$(".dark-mode-toggle-txt").text("Click for Light Mode");
 		$(".dark-mode-toggle-txt").css({ "color": "white", "margin-left": "2%" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
-		$(".mini-banner").css({ "background": "black", "color": "white" });
+		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });
 	}
