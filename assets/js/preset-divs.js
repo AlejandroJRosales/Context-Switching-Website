@@ -115,8 +115,8 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
 		 			<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
+					<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
 		 			<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
-		 			<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
