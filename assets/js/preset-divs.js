@@ -144,6 +144,15 @@ var navbar =
 			</li>
 
 			<li class="nav-item">
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;
+		    </a>
+			</li>
+
+	<!-- <i
+						class="fa-solid fa-arrow-up-right-from-square fa-sm"></i>&nbsp;
+			-->
+
+			<li class="nav-item">
 				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
 			</li>
 
