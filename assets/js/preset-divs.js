@@ -144,7 +144,7 @@ var navbar =
 			</li>
 
 			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;
+				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Projects
 		    </a>
 			</li>
 
@@ -204,7 +204,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">LinkedIn</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -212,7 +212,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Personal Projects&nbsp;&nbsp;<i class="fas fa-external-link-alt" id="external-link-icon"></i></a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -241,6 +241,8 @@ var footer =
 						My website provides a space for me to talk in-depth and teach about the newest topic I'm learning about! 
 						I hope you enjoy!
 					</p>
+
+	 <hr class="rgba-white-light" style="margin: 0 15%;">
 
 					<br>
 
