@@ -94,17 +94,14 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
-					<a class="dropdown-item todo" href="/tcs/combinatorialoptimization.html">Combinatorial and Stochastic Optimization</a>
-		 			<!-- <a class="dropdown-item todo" href="/tcs/pandnp.html">Quantum Complexity Theory</a> -->
-					<a class="dropdown-item todo" href="/tcs/pandnp.html">Combinatorics and Graph Theory</a>
-					<a class="dropdown-item todo" href="/tcs/pandnp.html">P vs NP</a>
+					<a class="dropdown-item todo" href="/todo.html">Combinatorial and Stochastic Optimization</a>
+					<a class="dropdown-item todo" href="/todo.html">Quantum Networks</a>
+					<a class="dropdown-item todo" href="/todo.html">Combinatorics and Graph Theory</a>
+					<!-- <a class="dropdown-item todo" href="/todo.html">P vs NP</a> -->
 					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
-					<a class="dropdown-item todo" href="/tcs/randomizationalgorithms.html">Randomization Algorithms</a>
+					<a class="dropdown-item todo" href="/todo.html">Randomization Algorithms</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Pseudorandomness</a>
 					<a class="dropdown-item todo" href="/todo.html">Algorithmic Game Theory</a>
-					<!-- <div class="dropdown-divider"></div>
-          <a class="dropdown-item" href="#">Something else here</a> -->
-				</div>
 			</li>
 	 
 			<li class="nav-item dropdown">
@@ -204,7 +201,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">LinkedIn</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 				</p>
 			</div>
 			<!-- Grid column -->
