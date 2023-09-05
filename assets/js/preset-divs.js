@@ -140,18 +140,34 @@ var navbar =
 				</div>
 			</li>
 
+			<li class="nav-item dropdown">
+				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
+					aria-expanded="false">
+					About Me
+				</a>
+				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Personal Projects</a>
+		 			<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a class="dropdown-item" href="/assets/utils/aboutme.html">About Me</a>
+				</div>
+			</li>
+
+			<!--
 			<li class="nav-item">
 				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Projects
 		    </a>
 			</li>
+	 		-->
 
-	<!-- <i
+			<!-- <i
 						class="fa-solid fa-arrow-up-right-from-square fa-sm"></i>&nbsp;
 			-->
 
+			<!--
 			<li class="nav-item">
 				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
 			</li>
+	 		-->
 
 			<!--
       <li class="nav-item">
@@ -209,7 +225,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales?tab=repositories">Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Projects</a>
 				</p>
 			</div>
 			<!-- Grid column -->
