@@ -163,7 +163,7 @@ function generateTableOfContents() {
 	 	<br>
 	 `
 
-	$(".table-of-contents").append('<h5>Contents</h5><hr><br><div class="reveal fade-left">' + tableOfContentsStr + '</div>');
+	$(".table-of-contents").append('<h5>Contents</h5><hr class="section-seperator"><br><div class="reveal fade-left">' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + collapsePageTopLink + tableOfContentsStr);
 }
 
@@ -303,6 +303,7 @@ function toggleDarkMode() {
 		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });
+		// $("hr.section-line-seperator").css({ "border-top": "1px solid white important" });
 	}
 	else {
 		$("body").css({ "background": "white" });
@@ -317,6 +318,7 @@ function toggleDarkMode() {
 		$(".mini-banner").css({ "background": "white", "color": "black" });
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
+		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
 	}
 }
 
