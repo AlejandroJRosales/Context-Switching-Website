@@ -90,6 +90,7 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory.html">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
+					<a class="dropdown-item" href="/tcs/informationtheory.html">Information Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
 					<hr>
