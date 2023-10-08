@@ -114,6 +114,7 @@ var navbar =
 					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
 		 			<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
 					<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
+		 			<a class="dropdown-item" href="/math/chernclass.html">Chern Class</a>
 		 			<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
 		 			<hr>
