@@ -96,7 +96,7 @@ var navbar =
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo.html">Combinatorial and Stochastic Optimization</a>
-					<a class="dropdown-item todo" href="/todo.html">Quantum Networks</a>
+					<!-- <a class="dropdown-item todo" href="/todo.html">Quantum Networks</a> -->
 					<a class="dropdown-item todo" href="/todo.html">Combinatorics and Graph Theory</a>
 					<!-- <a class="dropdown-item todo" href="/todo.html">P vs NP</a> -->
 					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
