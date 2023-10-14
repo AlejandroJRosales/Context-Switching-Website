@@ -251,7 +251,7 @@ var footer =
 					<h3 id="footer-about-me-title">Welcome</h3>
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but its honest work. 
+						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. 
 						My website provides a space for me to talk in-depth and teach about the newest topic I'm learning about! 
 						I hope you enjoy!
 					</p>
