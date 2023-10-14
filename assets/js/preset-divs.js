@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a href="/assets/utils/aboutme.html">Alejandro Rosales</a></p>
+				<p class="page-developer" id="developer-title"><a href="/aboutme.html">Alejandro Rosales</a></p>
 		 	</div>
 		</div>
 	</div>
@@ -149,7 +149,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Programming Projects</a>
 		 			<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 			    <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">Artifically Intelligent Assistant</a>
-					<a class="dropdown-item" href="/assets/utils/aboutme.html">About Me</a>
+					<a class="dropdown-item" href="/aboutme.html">About Me</a>
 				</div>
 			</li>
 
@@ -166,7 +166,7 @@ var navbar =
 
 			<!--
 			<li class="nav-item">
-				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
+				<a class="nav-link" href="/aboutme.html">About Me</a>
 			</li>
 	 		-->
 
@@ -234,7 +234,7 @@ var footer =
 	    <!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a href="/assets/utils/aboutme.html">About Me</a>
+					<a href="/aboutme.html">About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
