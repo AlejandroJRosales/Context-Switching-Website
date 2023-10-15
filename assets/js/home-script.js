@@ -43,6 +43,7 @@ function applyDynamicStyle() {
 		$(".website-creator-by").css({ "font-size": ".92em", "margin-bottom": "1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
+		$("#website-creator-name").css({ "padding-top": "4px", "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 10% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
