@@ -129,13 +129,15 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuroscience/memoryformation.html">Neurobiological Bases of Memory Formation</a>
+					<a class="dropdown-item" href="/neuroscience/memoryformation.html">Neurobiological Bases of<br> Memory Formation</a>
 		 			<a class="dropdown-item" href="/neuroscience/topologicalneuroscience.html">Topological Neuroscience</a>
+					<a class="dropdown-item" href="/neuroscience/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
+				Connectome</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo.html">Computational Neuroscience</a>
-					<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex: Parts & Functions</a>
+		 			<a class="dropdown-item todo" href="/todo.html>Cerebral Cortex</a>
 					<a class="dropdown-item todo" href="/todo.html">How We Learn</a>
 				</div>
 			</li>

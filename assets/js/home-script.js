@@ -113,6 +113,7 @@ function toggleDarkMode() {
 		$(".website-title").css({ "color": "white" });
 		$(".home-text-box").css({ "background-color": "rgb(41,41,41)" });
 		$(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
+		("#website-creator-name").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -127,5 +128,6 @@ function toggleDarkMode() {
 		$(".website-title").css({ "color": "black" });
 		$(".home-text-box").css({ "background-color": "white" });
 		$(".homepage-info").css({ "background-color": "white", "color": "black" });
+		$("#website-creator-name").css({ "color": "black" });
 	}
 }
