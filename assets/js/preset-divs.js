@@ -133,12 +133,12 @@ var navbar =
 		 			<a class="dropdown-item" href="/neuroscience/topologicalneuroscience.html">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuroscience/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
 				Connectome</a>
+					<a class="dropdown-item" href="/neuroscience/hippocampusanoverview.html">Hippocampus: An Overview</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo.html">Computational Neuroscience</a>
 		 			<a class="dropdown-item todo" href="/todo.html>Cerebral Cortex</a>
-					<a class="dropdown-item todo" href="/todo.html">How We Learn</a>
 				</div>
 			</li>
 
