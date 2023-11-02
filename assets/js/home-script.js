@@ -69,7 +69,7 @@ $(function() {
 });
 
 window.addEventListener("scroll", reveal);
-window.addEventListener("scroll", revealButton);
+// window.addEventListener("scroll", revealButton);
 // window.addEventListener("scroll", revealTitle);
 
 window.addEventListener('click', function(e) {
@@ -105,7 +105,7 @@ function showIt(elementId) {
 }
 
 function applyModeStyle() {
-		if (localStorage.getItem('isDarkMode') === 'true') {
+	if (localStorage.getItem('isDarkMode') === 'true') {
 		$("body").css({ "background-color": "rgb(41,41,41)" });
 		$(".website-intro").css({ "background-color": "rgb(41,41,41)" });
 		$(".website-creator-by").css({ "color": "white" });
@@ -118,7 +118,7 @@ function applyModeStyle() {
 		$(".website-title").css({ "color": "white" });
 		$(".home-text-box").css({ "background-color": "rgb(41,41,41)" });
 		$(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
-		("#website-creator-name").css({ "color": "white" });
+		// ("#website-creator-name").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -133,7 +133,7 @@ function applyModeStyle() {
 		$(".website-title").css({ "color": "black" });
 		$(".home-text-box").css({ "background-color": "white" });
 		$(".homepage-info").css({ "background-color": "white", "color": "black" });
-		$("#website-creator-name").css({ "color": "black" });
+		// $("#website-creator-name").css({ "color": "black" });
 	}
 }
 
