@@ -138,7 +138,7 @@ var navbar =
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo.html">Computational Neuroscience</a>
-		 			<a class="dropdown-item todo" href="/todo.html>Cerebral Cortex</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex</a>
 				</div>
 			</li>
 
@@ -149,36 +149,11 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Programming Projects</a>
-		 			<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-			    <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">Artifically Intelligent Assistant</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">Artifically Intelligent Assistant</a>
 					<a class="dropdown-item" href="/assets/utils/aboutme.html">About Me</a>
 				</div>
 			</li>
-
-			<!--
-			<li class="nav-item">
-				<a class="nav-link" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Projects
-		    </a>
-			</li>
-	 		-->
-
-			<!-- <i
-						class="fa-solid fa-arrow-up-right-from-square fa-sm"></i>&nbsp;
-			-->
-
-			<!--
-			<li class="nav-item">
-				<a class="nav-link" href="/assets/utils/aboutme.html">About Me</a>
-			</li>
-	 		-->
-
-			<!--
-      <li class="nav-item">
-				<a class="nav-link todo" href="#">My A.I. (Coming Soon)</a>
-			</li>
-	 		-->
- 
-			<br>
 		</ul>
 
 		<form class="form-inline navbar-search">
