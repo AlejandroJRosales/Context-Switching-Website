@@ -8,7 +8,9 @@ var userHasScrolled = false;
 var titleRevealed = false;
 var delayInMilliseconds = 500; //1 second
 var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header", "subsubsubsection-header"];
-
+if (!localStorage.getItem('isDarkMode')) {
+	localStorage.setItem('isDarkMode', false);
+}
 
 window.MathJax = {
 	loader: {
@@ -23,14 +25,11 @@ window.MathJax = {
 	}
 };
 
-if (!localStorage.getItem('isDarkMode')) {
-	localStorage.setItem('isDarkMode', false);
-}
-
 $(function() {
 	addDynamicHTML();
 	applyDynamicStyle();
 	generateTableOfContents();
+	applyModeStyle();
 });
 
 function addDynamicHTML() {
@@ -41,7 +40,6 @@ function addDynamicHTML() {
 }
 
 function applyDynamicStyle() {
-	applyModeStyle();
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
 		$(".fa-moon").css({ "margin-top": ".5em" });
