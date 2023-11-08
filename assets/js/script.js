@@ -307,6 +307,7 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });
 		$(".info-table").css({ "color": "white" });
+		$("#about-me-status").css({ "color": "white" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid white important" });
 	}
 	else {
@@ -323,6 +324,7 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
 		$(".info-table").css({ "color": "black" });
+		$("#about-me-status").css({ "color": "black" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
 	}
 }

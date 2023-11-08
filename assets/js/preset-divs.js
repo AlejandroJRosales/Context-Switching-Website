@@ -155,6 +155,7 @@ var navbar =
 				</div>
 			</li>
 		</ul>
+		<br>
 
 		<form class="form-inline navbar-search">
 			<div class="btn btn-outline-light nav-search-div">
