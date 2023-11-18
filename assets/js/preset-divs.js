@@ -158,6 +158,7 @@ var navbar =
 		</ul>
 		<br>
 
+<!--
 		<form class="form-inline navbar-search">
 			<div class="btn btn-outline-light nav-search-div">
 				<div class="nav-search-glyph">
@@ -169,10 +170,11 @@ var navbar =
 					</svg>
 				</div>
 				<div class="nav-search-box-div" onclick="openSearch()">
-					<input id="nav-search-box" placeholder="Search Website"></input>
+					<input id="nav-search-box" placeholder="Search My Website"></input>
 				</div>
 			</div>
 		</form>
+	-->
 		<br>
 	</div>
 </nav>
