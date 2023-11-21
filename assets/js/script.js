@@ -51,6 +51,7 @@ function applyDynamicStyle() {
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 10% 10%" });
 		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
+		$(".figure-ignore").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "90%" });
 		$(".nav-search-div").css({ "min-width": "225px" });
 		$("#nav-search-box").css({ "min-width": "200px" });
 		$(".img-avatar").css({ "height": "48%", "width": "48%" });
