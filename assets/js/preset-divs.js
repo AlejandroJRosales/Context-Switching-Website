@@ -137,9 +137,27 @@ var navbar =
 					<a class="dropdown-item" href="/neuroscience/hippocampusanoverview.html">Hippocampus: An Overview</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
+		 <a class="dropdown-item todo" href="/todo.html">Veterinary Neuroanatomy</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo.html">Computational Neuroscience</a>
 		 			<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex</a>
+				</div>
+			</li>
+
+	<li class="nav-item dropdown">
+				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
+					aria-expanded="false">
+					Other Topics
+				</a>
+				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/philosophy/anthropocentrism.html">Anthropocentrism</a>
+		 <hr>
+	 <p class="dropdown-item coming-soon-text">Topics To Come!</p>
+	 <a class="dropdown-item todo" href="/todo.html">Event Horizons:<br>Universe and Black<br>Holes</a>
+					
+		 			<a class="dropdown-item todo" href="/todo.html">Deontological vs <br>Consequentialist Ethics</a>
+					<a class="dropdown-item todo" href="/todo.html">Classical Utilitarianism</a>
+		 			<a class="dropdown-item todo" href="/todo.html">Virtue Ehthics</a>
 				</div>
 			</li>
 
@@ -151,7 +169,7 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Programming Projects</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">Artifically Intelligent Assistant</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My Artifically Intelligent Assistant</a>
 					<a class="dropdown-item" href="/assets/utils/aboutme.html">About Me</a>
 				</div>
 			</li>
