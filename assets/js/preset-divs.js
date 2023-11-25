@@ -150,14 +150,14 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/philosophy/anthropocentrism.html">Anthropocentrism</a>
+					<a class="dropdown-item todo" href="/misc/virtueethics.html">Virtue Ehthics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo.html">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
 					<a class="dropdown-item todo" href="/todo.html">Event Horizons:<br>Universe and Black<br>Holes</a>
-					<a class="dropdown-item todo" href="/todo.html">Deontological vs <br>Consequentialist Ethics</a>
+					<a class="dropdown-item todo" href="/todo.html">A comparison: Deontological, Consequentialist, Virtue Ethics</a>
 					<a class="dropdown-item todo" href="/todo.html">Classical Utilitarianism</a>
-					<a class="dropdown-item todo" href="/todo.html">Virtue Ehthics</a>
+		 			<a class="dropdown-item" href="/todo.html">Anthropocentrism</a>
 				</div>
 			</li>
 
