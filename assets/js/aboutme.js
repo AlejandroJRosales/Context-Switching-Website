@@ -1,5 +1,11 @@
 windowHeight = $(window).height();
-h = windowHeight * .275;
-w = windowHeight * .275;
+if (isMobile) {
+	h = windowHeight * .275;
+	w = windowHeight * .275;
+}
+else {
+	h = windowHeight * .4;
+	w = windowHeight * .4;
+}
+
 $(".pet-avatar").css({ "height": h, "width": w });
-console.log(h);
