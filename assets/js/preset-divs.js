@@ -130,11 +130,11 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuroscience/memoryformation.html">Neurobiological Bases of<br> Memory Formation</a>
-		 			<a class="dropdown-item" href="/neuroscience/topologicalneuroscience.html">Topological Neuroscience</a>
-					<a class="dropdown-item" href="/neuroscience/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
+					<a class="dropdown-item" href="/neuro/memoryformation.html">Neurobiological Bases of<br> Memory Formation</a>
+		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience.html">Topological Neuroscience</a>
+					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
 				Connectome</a>
-					<a class="dropdown-item" href="/neuroscience/hippocampusanoverview.html">Hippocampus: An Overview</a>
+					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus.html">Anatomy & Physiology of the Hippocampus</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo.html">Veterinary Neuroanatomy</a>

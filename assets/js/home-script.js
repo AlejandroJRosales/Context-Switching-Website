@@ -47,7 +47,7 @@ function applyDynamicStyle() {
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
 		$(".website-creator-by").css({ "font-size": ".92em", "margin-bottom": "1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
-		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%" });
+		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$("#website-creator-name").css({ "padding-top": "4px", "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
