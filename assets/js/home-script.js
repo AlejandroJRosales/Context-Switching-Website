@@ -114,12 +114,12 @@ function applyModeStyle() {
 		$(".fa-sun").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
+		$(".featured-section").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });
 		$(".home-text-box").css({ "background-color": "rgb(41,41,41)" });
 		$(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
-		// ("#website-creator-name").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -129,12 +129,12 @@ function applyModeStyle() {
 		$(".fa-moon").css({ "color": "black" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
+		$(".featured-section").css({ "background": "white", "color": "black" });
 		$(".mini-banner").css({ "background": "white", "color": "black" });
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
 		$(".home-text-box").css({ "background-color": "white" });
 		$(".homepage-info").css({ "background-color": "white", "color": "black" });
-		// $("#website-creator-name").css({ "color": "black" });
 	}
 }
 
