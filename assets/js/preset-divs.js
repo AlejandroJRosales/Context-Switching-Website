@@ -7,33 +7,8 @@ var titleSection =
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer" id="developer-title"><a href="/assets/utils/aboutme.html">Alejandro Rosales</a></p>
 		 	</div>
-		</div>
-	</div>
-`
-
-var temp =
-	`
-
-<div class="dark-mode-toggle-div">
-					<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-						<i class="fas fa-moon"></i>
-					</button>
-				</div>
- 
-			<div class="page-properties">
-				<div class="dark-mode-toggle-div">
-						<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-							<i class="fas fa-moon"></i>
-							<p class="dark-mode-toggle-txt">Click for Dark Mode</p>
-						</button>
-					</div>
-					<div class="dot-div">
-						<!-- <span class="dot"></span> -->
-						<p class="dot-txt"><i>Still Editing Page</i></p>
-					</div>
-		 			<!-- <button class="focus-mode-btn"  id="enter-focus-mode-btn" onclick="focusMode()""><p>[Enter Focus Mode]</p></button> -->
-				</div>
-			</div>
+		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
+			 class="fas fa-moon fa-xl"></i></button></div>
 		</div>
 	</div>
 `

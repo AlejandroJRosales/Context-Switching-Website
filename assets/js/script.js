@@ -33,7 +33,7 @@ $(function() {
 });
 
 function addDynamicHTML() {
-	$(".nav-placeholder").html(navbar + navDarkModeBttn);
+	$(".nav-placeholder").html(navbar);
 	$(".title-section").html(titleSection);
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
