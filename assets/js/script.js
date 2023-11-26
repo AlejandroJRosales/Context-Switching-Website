@@ -33,7 +33,7 @@ $(function() {
 });
 
 function addDynamicHTML() {
-	$(".nav-placeholder").html(navbar);
+	$(".nav-placeholder").html(navbar + navDarkModeBttn);
 	$(".title-section").html(titleSection);
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
@@ -45,8 +45,6 @@ function applyDynamicStyle() {
 		$(".fa-moon").css({ "margin-top": ".5em" });
 		$(".fa-sun").css({ "margin-top": ".5em" });
 		$(".code").css({ "font-size": "75%", "margin": "10% 3% 10% 3%" });
-		$(".website-title").css({ "font-size": "1.5em" });
-		$(".website-creator").css({ "font-size": ".8em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 10% 10%" });

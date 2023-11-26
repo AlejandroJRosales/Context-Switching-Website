@@ -195,13 +195,9 @@ var navbar =
 		<br>
 	</div>
 </nav>
-
-<div class="navbar-item dark-mode-toggle-div">
-	<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()">
-		<i class="fas fa-moon fa-2xl"></i>
-	</button>
-</div>
 `
+
+var navDarkModeBttn = '<div class="navbar-item dark-mode-toggle-div"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon fa-2xl"></i></button></div>'
 
 var footer =
 	`

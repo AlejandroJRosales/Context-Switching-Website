@@ -8,7 +8,7 @@ var userHasScrolled = false;
 var titleRevealed = false;
 var delayInMilliseconds = 500; //1 second
 var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header", "subsubsubsection-header"];
-
+var reveals = document.querySelectorAll(".reveal");
 
 window.MathJax = {
 	loader: {
@@ -33,6 +33,9 @@ $(function() {
 });
 
 function addDynamicHTML() {
+	setTimeout(() => {
+		reveals[0].classList.add("active")
+	}, 1000);
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
 }
@@ -41,11 +44,10 @@ function applyDynamicStyle() {
 	applyModeStyle();
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
-		$(".fa-moon").css({ "margin-top": ".5em" });
-		$(".fa-sun").css({ "margin-top": ".5em" });
-		$(".code").css({ "font-size": "75%", "margin": "10% 3% 10% 3%" });
+		// $(".fa-moon").css({ "margin-top": ".5em" });
+		// $(".fa-sun").css({ "margin-top": ".5em" });
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
-		$(".website-creator-by").css({ "font-size": ".92em", "margin-bottom": "1em" });
+		$(".website-creator-by").css({ "font-size": ".92em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
@@ -70,27 +72,23 @@ $(function() {
 });
 
 window.addEventListener("scroll", reveal);
-// window.addEventListener("scroll", revealButton);
-// window.addEventListener("scroll", revealTitle);
 
-window.addEventListener('click', function(e) {
-	// nav searh bar
-	var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
+// window.addEventListener('click', function(e) {
+// 	// nav searh bar
+// 	var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
 
-	if (isSearchBar) {
-		$(".nav-search-div").css({ "background-color": "white" });
-		$(".nav-search-glyph").css({ "color": "black" });
-	}
-});
+// 	if (isSearchBar) {
+// 		$(".nav-search-div").css({ "background-color": "white" });
+// 		$(".nav-search-glyph").css({ "color": "black" });
+// 	}
+// });
 
 function reveal() {
 	userHasScrolled = true;
-	var reveals = document.querySelectorAll(".reveal");
-
 	for (var i = 0; i < reveals.length; i++) {
 		var windowHeight = window.innerHeight;
 		var elementTop = reveals[i].getBoundingClientRect().top;
-		var elementVisible = 10;
+		var elementVisible = 100;
 
 		if (elementTop < windowHeight - elementVisible) {
 			reveals[i].classList.add("active");
