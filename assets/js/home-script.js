@@ -96,7 +96,7 @@ function reveal() {
 			reveals[i].classList.remove("inactive");
 			reveals[i].classList.add("active");
 		}
-		if (elementTop >= windowHeight - elementNotVisible) {
+		if (elementTop > windowHeight - elementNotVisible) {
 			reveals[i].classList.remove("active");
 			reveals[i].classList.add("inactive");
 		}
