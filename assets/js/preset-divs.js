@@ -65,8 +65,9 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory.html">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/informationtheory.html">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumalgorithms.html">Quantum Algorithms</a>
-					<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
+					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace.html">Quantum Enhanced Feature<br>Space</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
+					<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
 					<hr>
@@ -131,7 +132,7 @@ var navbar =
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo.html">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
 					<a class="dropdown-item todo" href="/todo.html">Event Horizons:<br>Universe and Black Holes</a>
-					<a class="dropdown-item todo" href="/todo.html">A comparison: Deontological, Consequentialist, Virtue Ethics</a>
+					<a class="dropdown-item todo" href="/todo.html">A comparison:<br>Deontological, Consequentialist,<br>Virtue Ethics</a>
 					<a class="dropdown-item todo" href="/todo.html">Classical Utilitarianism</a>
 				</div>
 			</li>
