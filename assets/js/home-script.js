@@ -90,11 +90,15 @@ function reveal() {
 		var windowHeight = window.innerHeight;
 		var elementTop = reveals[i].getBoundingClientRect().top;
 		var elementVisible = 220;
+		var elementNotVisible = 275;
 
 		if (elementTop < windowHeight - elementVisible) {
+			reveals[i].classList.remove("inactive");
 			reveals[i].classList.add("active");
-		} else {
+		}
+		if (elementTop >= windowHeight - elementNotVisible) {
 			reveals[i].classList.remove("active");
+			reveals[i].classList.add("inactive");
 		}
 	}
 }
