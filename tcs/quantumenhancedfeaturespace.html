@@ -26,7 +26,7 @@
 		<div class="table-of-contents"></div>
 
 		<div class="category-header-div">
-			<p class="category-header" id="quantum-enhanced-featured-space">Quantum Enhanced Featured Space</p>
+			<p class="category-header" id="quantum-enhanced-feature-space">Quantum Enhanced Feature Space</p>
 
 			<div class="section-header-div">
 				<p class="section-header" id="quantum-support-vector-machine">Quantum Support Vector Machine</p>
@@ -42,84 +42,158 @@
 						\(^{[1]}\)
 					</a>
 				</p>
+
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="quantum-feature-introduction">Introduction</p>
+					<p>
+						Using quantum computing, the authors suggest obtaining a quantum advantage for
+						Support Vector Machine SVM processing. In order to do this, the authors suggest mapping the SVM feature
+						space provided in the purely classical data to quantum state space.
+					</p>
+
+					<p>
+						For the problem, we have data from a training set \(T\) and a
+						test set \(S\), where \(T, S\) are a subset \(\Omega\subset\mathbb{R}^{d}\).
+						For each training set, we assume the data is labled by a map \(m: T \cup S \rightarrow\left\{+1,
+						-1\right\}\) which is not given to the algorithm. The algorithm is given the training data labels of the
+						training data and is asked to infer an approximate mapping \(\tilde{m}\). The goal of the training
+						algorithm
+						is to infer an approximate map on test set \(\tilde{m}: S\rightarrow\{+1,-1\}\) such that it matches the
+						true
+						map \(m(\vec{s})=\tilde{m}(\vec{s})\) with high probability for some given test data \(\vec{s}\in S\).
+						With the
+						goal defined, our next step is to map data non-linearly to a high dimensional space, which is our feature
+						space, and then seperate the labeled sample by constructing a hyperplane. By using the quantum state space
+						as the feature space, the authors hope to obtain a quantum advantage. This quantum state space as feature
+						space is constructed by mapping the data non-linearly to a quantum state:
+					</p>
+
+					<p>
+						\(\Phi:\vec{x}\in\Omega\rightarrow |\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\).
+					</p>
+
+					<p>
+						Looking at the non-linear mapping, we can see that the domain of the mapping \(\Phi\) is the data
+						\(\vec{x}\in\Omega\subset\mathbb{R}^{d}\) or \(\vec{x}\in
+						T\cup S\).
+						The codomain or image of \(\Phi\) is a quantum state \(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\).
+						\(|\Phi(\vec{x})\rangle\) is a part of infinite complex vector space or Hilbert Space. Note, that since
+						\(|\Phi(\vec{x})\rangle\) is a part of complex vector space there exists a complex conjugate
+						\(\langle\Phi(\vec{x})|\) that is a dual correspondance. We will look more at how this quantum feature
+						mapping is done in the next section.
+					</p>
+				</div>
 				<div class="subsection-header-div">
 					<p class="subsection-header" id="quantum-feature-mapping">Quantum Feature Mapping</p>
 
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="quantum-feature-mapping-goal">Goal</p>
+
+					<p>
+						The authors suggest that in order to test an advantage over classical approaches, a map based on circuts
+						that are clasically hard to simulate needs to be constructed. The authors propose a cicut that works well
+						in
+						their expirements and is not too deep to test.
+					</p>
+
+					<p>
+						First, a feature map for \(n\)-qubits is generated using the following unitary function:
+					</p>
+
+					<p>
+						\(\mathcal{U}_{\Phi(\vec{x})}=U_{\Phi{(\vec{x})}}H^{\otimes n}U_{\Phi{(\vec{x})}}H^{\otimes n}\)
+					</p>
+
+					<p>
+						where \(H\) is a conventional Hadmard gate and \(U_{\Phi(\vec{x})}\) is defined as:
+					</p>
+
+					<p>
+						\(U_{\Phi(\vec{x})}=\exp(i\sum_{S\subseteq[n]}\phi_{S}(\vec{x})\prod_{i\in S}Z_{i})\)
+					</p>
+
+					<p>
+						and is a diagonal gate in the Pauli Z-basis. For a single qubit, the unitary function \(U_{\Phi(x)}\) acts
+						as a phase-gate \(Z_{x}\) of angle \(x\in\Omega\).
+					</p>
+
+					<p>
+						The authors provide a circut diagram that represents this unitary function for feature mapping
+						\(n\)-qubits. This circut diagram is given as:
+					</p>
+
+					<img src="/assets/images/quantum-feature-space-circut.png" alt="Quantum Feature Space Circut" class="figure"
+						style="width:40%;height:auto;padding:3%3%;">
+
+					<p class="figure-source-txt" id="section-reference-2">
+						Image Source:
+						<a class="sliding-link" href="#section-reference-1">
+							\(^{[1]}\)
+						</a>
+					</p>
+				</div>
+			</div>
+
+			<div class="subsection-header-div">
+				<p class="subsection-header" id="quantum-enhanced-feature-space-data-generation">Data Generation</p>
+				<p>
+					First, we will define the map used for our data. Artifical data is generated of dimension \(n=d=2\) for a
+					\(2\)-qubit system with the mapping
+					\(\phi_{\{i\}}(\vec{x})=x_{i}\) and \(\phi_{\{1,2\}}(\vec{x})=(\pi-x_{1})(\pi-x_{2})\).
+				</p>
+				<p>
+					Next, we look at how the data is generated. For the data vector labels:
+				</p>
+
+				<p>
+					\(\vec{x}\in T\cup S \subset (0, 2\pi]^{2}\)
+				</p>
+
+				<p>
+					the authors mention generating it using the parity function \(\mathbf{f}=Z_{1}Z_{2}\) and random unitary
+					\(V\in SU(4)\).
+				</p>
+				<p>
+					Next, to label the data the authors describe the following mapping. Given \(\Delta=0.3\), if:
+				</p>
+
+				<p>
+					\(\langle\Phi(\vec{x})|V^{\dagger}\mathbf{f}V|\Phi(\vec{x})\rangle\geq\Delta\)
+				</p>
+
+				<p>
+					then \(m(\vec{x})=+1\). If:
+				</p>
+
+				<p>
+					\(\langle\Phi(\vec{x})|V^{\dagger}\mathbf{f}V|\Phi(\vec{x})\rangle\leq-\Delta\)
+				</p>
+
+				<p>
+					then \(m(\vec{x})=-1\).
+				</p>
+			</div>
+
+			<div class="subsection-header-div">
+				<p class="subsection-header" id="quantum-enhanced-feature-quantum-variational-classification">Quantum
+					Variational Classification</p>
+
+				<p>
+					The authors describe the process for their first classification protocol in the following four steps:
+				<ol>
+					<li>The data
+						\(\vec{x}\in\Omega\) is mapped to a reference state \(|0\rangle^{n}\) using the feature map circut
+						\(\mathcal{U}_{\Phi(\vec{x})}\).
+					</li>
+
+					<li>
 						<p>
-							Using quantum computing, the authors suggest obtaining a quantum advantage for
-							Support Vector Machine SVM processing. In order to do this, the authors suggest mapping the SVM feature
-							space provided in the purely classical data to quantum state space.
+							A short depth quantum circut \(W(\vec{\theta})\) is applied to the feature state is a variational
+							circut used for the optimization method. A depiction of this short depth quantum circut is given by the
+							authors and shown in the figure below:
 						</p>
 
-						<p>
-							For the problem, we have data from a training set \(T\) and a
-							test set \(S\), where \(T, S\) are a subset \(\Omega\subset\mathbb{R}^{d}\).
-							For each training set, we assume the data is labled by a map \(m: T \cup S \rightarrow\left\{+1,
-							-1\right\}\) which is not given to the algorithm. The algorithm is given the training data labels of the
-							training data and is asked to infer an approximate mapping \(\tilde{m}\). The goal of the training
-							algorithm
-							is to infer an approximate map on test set \(\tilde{m}: S\rightarrow\{+1,-1\}\) that matches with the true
-							map with high probability \(m(\vec{s})=\tilde{m}(\vec{s})\) for some given test data \(\vec{s}\in S\).
-							With the
-							goal defined, our next step is to map data non-linearly to a high dimensional space, which is our feature
-							space, and then seperate the labeled sample by constructing a hyperplane. By using the quantum state space
-							as the feature space, the authors hope to obtain a quantum advantage. This quantum state space as feature
-							space is constructed by mapping the data non-linearly to a quantum state:
-						</p>
 
-						<p>
-							\(\Phi:\vec{x}\in\Omega\rightarrow |\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\).
-						</p>
-
-						<p>
-							Looking at the non-linear mapping, we can see that the domain of the mapping \(\Phi\) is the data
-							\(\vec{x}\in\Omega\subset\mathbb{R}^{d}\) or \(\vec{x}\in
-							T\cup S\).
-							The codomain or image of \(\Phi\) is a quantum state \(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\).
-							\(|\Phi(\vec{x})\rangle\) is a part of infinite complex vector space or Hilbert Space. Note, that since
-							\(|\Phi(\vec{x})\rangle\) is a part of complex vector space there exists a complex conjugate
-							\(\langle\Phi(\vec{x})|\) that is a dual correspondance. We will look more at how this quantum feature
-							mapping is done in the next section.
-						</p>
-					</div>
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="quantum-feature-mapping-methodology">Methodology</p>
-						<p>
-							The authors suggest that in order to test an advantage over classical approaches, a map based on circuts
-							that are clasically hard to simulate needs to be constructed. The authors propose a cicut that works well
-							in
-							their expirements and is not too deep to test.
-						</p>
-
-						<p>
-							First, a feature map for \(n\)-qubits is generated using the following unitary function:
-						</p>
-
-						<p>
-							\(\mathcal{U}_{\Phi(\vec{x})}=U_{\Phi{(\vec{x})}}H^{\otimes n}U_{\Phi{(\vec{x})}}H^{\otimes n}\)
-						</p>
-
-						<p>
-							where \(H\) is a conventional Hadmard gate and \(U_{\Phi(\vec{x})}\) is defined as:
-						</p>
-
-						<p>
-							\(U_{\Phi(\vec{x})}=\exp(i\sum_{S\subseteq[n]}\phi_{S}(\vec{x})\prod_{i\in S}Z_{i})\)
-						</p>
-
-						<p>
-							and is a diagonal gate in the Pauli Z-basis.
-						</p>
-
-						<p>
-							The authors provide a circut diagram that represents this unitary function for feature mapping
-							\(n\)-qubits. This circut diagram is given as:
-						</p>
-
-						<img src="/assets/images/quantum-feature-space-circut.png" alt="Quantum Feature Space Circut" class="figure"
-							style="width:40%;height:auto;padding:3%3%;">
+						<img src="/assets/images/short-depth-quantum-circuit.png" alt="Short Depth Quantum Circut" class="figure"
+							style="width:35%;height:auto;padding:1%1%;">
 
 						<p class="figure-source-txt" id="section-reference-2">
 							Image Source:
@@ -129,10 +203,95 @@
 						</p>
 
 						<p>
-							To continue.
+							We will now define this short depth quantum circut \(W(\vec{\theta})\). The authors use an Ansatz for the
+							variational
+							unitary defined as:
 						</p>
-					</div>
-				</div>
+
+						<p>
+							\(W(\vec{\theta})=U_{loc}^{(l)}(\theta_{l})U_{ent}...U_{loc}^{(1)}(\theta_{1})\)
+						</p>
+
+						<p>
+							Where \(U_{ent}\) is an alternating layers of entangling gates and is defined as:
+						</p>
+
+						<p>
+							\(U_{ent}=\prod_{(i,j)\in E}\mathbf{CZ}(i,j)\)
+						</p>
+
+						<p>
+							Here, \(E\) is the an edge in the circut defined vetice set \(\{v_{i}, v_{j}\}\in V\). \(\mathbf{CZ}\)
+							is
+							a
+							controlled phase gate applied along the
+							edges \((i,j)\in E\) which the authors state is present in the connectivity of the superconducting chip.
+							The \(\mathbf{CZ}\) circut looks like the following:
+						</p>
+
+						<img src="/assets/images/cz-gate.png" alt="CZ Circut" class="figure"
+							style="width:20%;height:auto;padding:1%1%;">
+
+						<p class="figure-source-txt" id="section-reference-2">
+							Image Source:
+							<a class="sliding-link" href="#section-reference-1">
+								\(^{[1]}\)
+							</a>
+						</p>
+
+						<p>
+							\(U_{loc}^{(l)}(\theta_{l})\) is full layers single qubit rotations defined as:
+						</p>
+
+						<p>
+							\(U_{loc}^{(t)}(\theta_{t})=\bigotimes_{i=1}^{n}U(\theta_{i,t})\)
+						</p>
+
+						<p>
+							where \(U(\theta_{i,t})\in SU(2)\). This variational circut is parametrized by
+							\(\vec{\theta
+							}\in\mathbb{R}^{2n(l+1)}\) and it is waht is optimized during training as this is what classifies the
+							data.
+						</p>
+					</li>
+
+					<li>
+						<p>
+							Given that the problem is a two label classification \(y\in\{+1,-1\}\), the authors apply a binary
+							measurment \(\{M_{y}\}\) to the state \(W(\vec{\theta})\mathcal{U}_{\Phi(\vec{x})}|0\rangle^{n}\).
+						<p>
+						<p>
+							The authors describe the binary measurment in the following way. The measurment is in the \(Z\)-basis,
+							outputs
+							the bit-string
+							\(z\in\{0,1\}^{n}\), where the bit-string is then passed to the boolean function
+							\(f:\{0,1\}^{n}\rightarrow\{+1,-1\}\). The binary measurment is defined
+							as \(M_{y}=2^{-1}(\mathbb{1}+y\mathbf{f})\), where \(\mathbf{f}=\sum_{z\in\{0,1\}^n}f(z)|z\rangle\langle
+							z|\).
+						</p>
+
+						<p>
+							From this third step, the probability for the outcome \(y\) is obtained. This probability
+							\(p_{y}(\vec{x})\) is
+							defined as:
+						</p>
+
+						<p>
+							\(\langle\Phi(\vec{x})|W^{\dagger}(\vec{\theta})M_{y}W(\vec{\theta})|\Phi(\vec{x})\rangle\)
+						</p>
+					</li>
+
+					<li>
+						For the final decision ruling of \(y\), \(R\) repeated measurment shots are preformed, yielding the empircal
+						distribution \(\hat{p}(\vec{x})\), where if \(\hat{p}_{-y}(\vec{x}-yb)<\hat{p}_{y}(\vec{x})\) the label
+							assigned is \(\tilde{m}(\vec{x})=y\). The authors introduced a bias parameter \(b\in[-1,1]\) that can also
+							be optimized during training.</li>
+				</ol>
+				</p>
+
+				<p>
+					To continue.
+				</p>
 			</div>
 		</div>
 	</div>
