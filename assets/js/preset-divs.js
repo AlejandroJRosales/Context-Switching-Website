@@ -111,7 +111,7 @@ var navbar =
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience.html">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
 				Connectome</a>
-					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus.html">Anatomy & Physiology of the Hippocampus</a>
+					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus.html">Anatomy & Physiology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai.html">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
