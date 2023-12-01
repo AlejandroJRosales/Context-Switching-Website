@@ -66,7 +66,9 @@
 						The authors map the data non-linearly to a high dimensional space, which is the feature
 						space, and then seperate the labeled sample by constructing a hyperplane. By using the quantum state space
 						as the feature space, the authors hope to obtain a quantum advantage. This quantum state space as feature
-						space is constructed by mapping the data non-linearly to a quantum state \(\Phi:\vec{x}\in\Omega\rightarrow |\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\). Looking at the non-linear mapping, we can see that the domain of the mapping \(\Phi\) is the data
+						space is constructed by mapping the data non-linearly to a quantum state \(\Phi:\vec{x}\in\Omega\rightarrow
+						|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\). Looking at the non-linear mapping, we can see that the domain
+						of the mapping \(\Phi\) is the data
 						\(\vec{x}\in\Omega\subset\mathbb{R}^{d}\) or \(\vec{x}\in
 						T\cup S\).
 						The codomain or image of \(\Phi\) is a quantum state \(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\).
@@ -133,7 +135,9 @@
 					\(\phi_{\{i\}}(\vec{x})=x_{i}\) and \(\phi_{\{1,2\}}(\vec{x})=(\pi-x_{1})(\pi-x_{2})\).
 				</p>
 				<p>
-					Next, we look at how the data is generated. For the data vector labels \(\vec{x}\in T\cup S \subset (0, 2\pi]^{2}\) the authors mention generating it using the parity function \(\mathbf{f}=Z_{1}Z_{2}\) and random unitary
+					Next, we look at how the data is generated. For the data vector labels \(\vec{x}\in T\cup S \subset (0,
+					2\pi]^{2}\) the authors mention generating it using the parity function \(\mathbf{f}=Z_{1}Z_{2}\) and random
+					unitary
 					\(V\in SU(4)\).
 				</p>
 				<p>
@@ -158,18 +162,28 @@
 			</div>
 
 			<div class="subsection-header-div">
-				<p class="subsection-header" id="quantum-enhanced-feature-quantum-variational-classification">Quantum
-					Variational Classification</p>
+				<p class="subsection-header" id="quantum-enhanced-feature-proposed-svm-classifiers">Proposed SVM
+					Classifiers</p>
+				<div class="subsubsection-header-div">
+					<p class="subsubsection-header" id="quantum-enhanced-feature-quantum-variational-classification">Quantum
+						Variational Classification</p>
+					<div class="subsubsubsection-header-div">
+						<p class="subsubsubsection-header" id="svm-classifier-type1-protocol">Protocol</p>
 
-				<p>
-					The authors describe the process for their first classification protocol in the following four steps:
-				<ol>
-					<li>The data
-						\(\vec{x}\in\Omega\) is mapped to a reference state \(|0\rangle^{n}\) using the feature map circut
-						\(\mathcal{U}_{\Phi(\vec{x})}\).
-					</li>
+						<p>
+							The authors describe the process for their first classification protocol in the following four steps: <a
+								class="sliding-link" href="#qvc-step1">feature map circut</a>, <a class="sliding-link"
+								href="#qvc-step2">short depth quantum circut</a>, <a class="sliding-link" href="#qvc-step3">binary
+								measurement</a>, and then <a class="sliding-link" href="#qvc-step4">empirical distribution</a>.
 
-					<li>
+						<p id="qvc-step1"><i>Feature Map Circut</i></p>
+						<p>
+							The data
+							\(\vec{x}\in\Omega\) is mapped to a reference state \(|0\rangle^{n}\) using the feature map circut
+							\(\mathcal{U}_{\Phi(\vec{x})}\).
+						</p>
+
+						<p id="qvc-step2"><i>Short Depth Quantum Circut</i></p>
 						<p>
 							A short depth quantum circut \(W(\vec{\theta})\) is applied to the feature state is a variational
 							circut used for the optimization method. A depiction of this short depth quantum circut is given by the
@@ -238,9 +252,8 @@
 							}\in\mathbb{R}^{2n(l+1)}\) and it is waht is optimized during training as this is what classifies the
 							data.
 						</p>
-					</li>
 
-					<li>
+						<p id="qvc-step3"><i>Binary Measurment</i></p>
 						<p>
 							Given that the problem is a two label classification \(y\in\{+1,-1\}\), the authors apply a binary
 							measurment \(\{M_{y}\}\) to the state \(W(\vec{\theta})\mathcal{U}_{\Phi(\vec{x})}|0\rangle^{n}\).
@@ -262,21 +275,50 @@
 						</p>
 
 						<p>
-							\(\langle\Phi(\vec{x})|W^{\dagger}(\vec{\theta})M_{y}W(\vec{\theta})|\Phi(\vec{x})\rangle\)
+							\(p_{y}(\vec{x})=\langle\Phi(\vec{x})|W^{\dagger}(\vec{\theta})M_{y}W(\vec{\theta})|\Phi(\vec{x})\rangle\)
 						</p>
-					</li>
 
-					<li>
-						For the final decision ruling of \(y\), \(R\) repeated measurment shots are preformed, yielding the empircal
-						distribution \(\hat{p}(\vec{x})\), where if \(\hat{p}_{-y}(\vec{x}-yb)<\hat{p}_{y}(\vec{x})\) the label
-							assigned is \(\tilde{m}(\vec{x})=y\). The authors introduced a bias parameter \(b\in[-1,1]\) that can also
-							be optimized during training.</li>
-				</ol>
-				</p>
+						<p id="qvc-step4"><i>Empirical Distribution</i></p>
 
-				<p>
-					To continue.
-				</p>
+						<p>
+							For the final decision ruling of \(y\), \(R\) repeated measurment shots are preformed, yielding the
+							empircal
+							distribution \(\hat{p}(\vec{x})\), where if \(\hat{p}_{-y}(\vec{x}-yb)<\hat{p}_{y}(\vec{x})\) the label
+								assigned is \(\tilde{m}(\vec{x})=y\). The authors introduced a bias parameter \(b\in[-1,1]\) that can
+								also be optimized during training. </p>
+
+								<p>
+									The authors mention that the feature map circut \(\mathcal{U}_{\Phi(\vec{x})}\) and the boolean
+									function
+									\(f\) are fixed choices. The parameters that are being optimized during training are
+									\((\vec{\theta},b)\)
+									and
+									in order to be optimized, a cost-function is need to be defined. To do so, we need to define an error
+									probability first, which is what we will look at in the next section.
+								</p>
+					</div>
+
+					<div class="subsubsubsection-header-div">
+						<p class="subsubsubsection-header" id="svm-classifier-type1-error-probability">Error Probability</p>
+
+						<p>
+							In order to find the empirical risk \(R_{emp}(\vec{\theta})\) of the empirical distribution
+							\(\hat{p}(\vec{x})\) we define the error probability of assigning the incorrect labels averaged over the
+							samples in the training set \(T\). The authors define this error probability as:
+						</p>
+
+						<p>
+							\(R_{emp}(\vec{\theta})=\frac{1}{|T|}\sum_{\vec{x}\in T}Pr(\tilde{m}(\vec{x})\neq m(\vec{x}))\)
+						</p>
+					</div>
+				</div>
+				<div class="subsubsection-header-div">
+					<p class="subsubsection-header" id="quantum-enhanced-feature-quantum-kernel-estimiation">Quantum Kernel
+						Estimation</p>
+					<p>
+						To continue.
+					</p>
+				</div>
 			</div>
 		</div>
 	</div>
