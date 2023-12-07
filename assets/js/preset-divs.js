@@ -128,6 +128,7 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/misc/virtueethics.html">Virtue Ehthics</a>
+					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries.html">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo.html">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>

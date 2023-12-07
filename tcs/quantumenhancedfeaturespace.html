@@ -54,7 +54,7 @@
 					<p>
 						For the problem, we have data from a training set \(T\) and a
 						test set \(S\), where \(T, S\) are a subset \(\Omega\subset\mathbb{R}^{d}\).
-						For each training set, we assume the data is labled by a map \(m: T \cup S \rightarrow\left\{+1,
+						For each training set, we assume the data is labled by a true map \(m: T \cup S \rightarrow\left\{+1,
 						-1\right\}\) which is not given to the algorithm. The algorithm is given the training data labels of the
 						training data and is asked to infer an approximate mapping \(\tilde{m}\). The goal of the training
 						algorithm
@@ -167,23 +167,75 @@
 				<div class="subsubsection-header-div">
 					<p class="subsubsection-header" id="quantum-enhanced-feature-quantum-variational-classification">Quantum
 						Variational Classification</p>
+
+					<p>
+						In the this section, we will deconstruct and analyze individual components of the circut, unitary, and
+						steps to better
+						understand how this processes works. Then will will define the cost function and analyze the authors
+						exprimental findings.
+					</p>
+
 					<div class="subsubsubsection-header-div">
 						<p class="subsubsubsection-header" id="svm-classifier-type1-protocol">Protocol</p>
 
 						<p>
-							The authors describe the process for their first classification protocol in the following four steps: <a
-								class="sliding-link" href="#qvc-step1">feature map circut</a>, <a class="sliding-link"
-								href="#qvc-step2">short depth quantum circut</a>, <a class="sliding-link" href="#qvc-step3">binary
-								measurement</a>, and then <a class="sliding-link" href="#qvc-step4">empirical distribution</a>.
+							The authors have provided a figure of the quantum variational classification QVC circut and it is shown
+							below:
+						</p>
 
-						<p id="qvc-step1"><i>Feature Map Circut</i></p>
+						<img src="/assets/images/quantum-variational-classification-circut.png"
+							alt="Quantum Variational Classification Circut" class="figure"
+							style="width:40%;height:auto;padding:1%1%;">
+
+						<p class="figure-source-txt" id="section-reference-2">
+							Image Source:
+							<a class="sliding-link" href="#section-reference-1">
+								\(^{[1]}\)
+							</a>
+						</p>
+
+						<p>
+							where \(C=\{+1,-1\}\) and the varitional unitary for QVC as a whole is defined as:
+						</p>
+
+						<p>
+							\(p_{y}(\vec{x})=\langle\Phi(\vec{x})|W^{\dagger}(\vec{\theta})M_{y}W(\vec{\theta})|\Phi(\vec{x})\rangle\)
+						</p>
+
+						<p>
+							The authors describe the process for the QVC protocol in the following four sequential steps: <a
+								class="sliding-link" href="#qvc-step1">feature map encoding</a>, <a class="sliding-link"
+								href="#qvc-step2">variational optimization</a>, and then <a class="sliding-link" href="#qvc-step3">
+								measurement</a>. The training and classification phase consist of these three main parts and is what we
+							will analyze in the following.
+
+						<p id="qvc-step1"><i>Feature Map Encoding</i></p>
 						<p>
 							The data
 							\(\vec{x}\in\Omega\) is mapped to a reference state \(|0\rangle^{n}\) using the feature map circut
-							\(\mathcal{U}_{\Phi(\vec{x})}\).
+							\(\mathcal{U}_{\Phi(\vec{x})}\). Recall that the circut looks like the following:
 						</p>
 
-						<p id="qvc-step2"><i>Short Depth Quantum Circut</i></p>
+						<img src="/assets/images/quantum-feature-space-circut.png" alt="Quantum Feature Space Circut" class="figure"
+							style="width:35%;height:auto;padding:1%1%;">
+
+						<p class="figure-source-txt" id="section-reference-2">
+							Image Source:
+							<a class="sliding-link" href="#section-reference-1">
+								\(^{[1]}\)
+							</a>
+						</p>
+
+						<p>
+							This feature map is an injective encoding of classical information \(\vec{x}\in\mathbb{R}^{d}\) to a
+							quantum
+							state \(|\Phi\rangle\langle\Phi|\) that is on a \(n\)-qubit register such that \(d=n\). A quibit is a
+							two-level system of Hilbert space \(\mathcal{H}\) and can be represented as
+							\(\mathcal{H}_{2}=\mathbb{C}^{2}\). To represent \(n\)-qubits we denote it as
+							\(\mathcal{S}(\mathcal{H}_{2}^{\otimes n})\).
+						</p>
+
+						<p id="qvc-step2"><i>Variational Classification</i></p>
 						<p>
 							A short depth quantum circut \(W(\vec{\theta})\) is applied to the feature state is a variational
 							circut used for the optimization method. A depiction of this short depth quantum circut is given by the
@@ -202,17 +254,28 @@
 						</p>
 
 						<p>
-							We will now define this short depth quantum circut \(W(\vec{\theta})\). The authors use an Ansatz for the
-							variational
-							unitary defined as:
+							For this short depth quantum circut, the authors use an Ansatz for the
+							variational unitary and define \(W(\vec{\theta})\) as:
 						</p>
 
 						<p>
-							\(W(\vec{\theta})=U_{loc}^{(l)}(\theta_{l})U_{ent}...U_{loc}^{(1)}(\theta_{1})\)
+							\(U_{loc}^{(l)}(\theta_{l})U_{ent}...U_{loc}^{(2)}(\theta_{2})U_{ent}U_{loc}^{(1)}(\theta_{1})\)
 						</p>
 
 						<p>
-							Where \(U_{ent}\) is an alternating layers of entangling gates and is defined as:
+							Where, \(U_{loc}^{(l)}(\theta_{l})\) is full layers single qubit rotations defined as:
+						</p>
+
+						<p>
+							\(U_{loc}^{(t)}(\theta_{t})=\bigotimes_{i=1}^{n}U(\theta_{i,t})\)
+						</p>
+
+						<p>
+							and \(U(\theta_{i,t})\in SU(2)\).
+						</p>
+
+						<p>
+							For the variational unitary, \(U_{ent}\) is an alternating layers of entangling gates and is defined as:
 						</p>
 
 						<p>
@@ -225,7 +288,9 @@
 							a
 							controlled phase gate applied along the
 							edges \((i,j)\in E\) which the authors state is present in the connectivity of the superconducting chip.
-							The \(\mathbf{CZ}\) circut looks like the following:
+						</p>
+
+						<!-- The \(\mathbf{CZ}\) circut looks like the following:
 						</p>
 
 						<img src="/assets/images/cz-gate.png" alt="CZ Circut" class="figure"
@@ -236,24 +301,16 @@
 							<a class="sliding-link" href="#section-reference-1">
 								\(^{[1]}\)
 							</a>
-						</p>
+						</p> -->
 
 						<p>
-							\(U_{loc}^{(l)}(\theta_{l})\) is full layers single qubit rotations defined as:
-						</p>
-
-						<p>
-							\(U_{loc}^{(t)}(\theta_{t})=\bigotimes_{i=1}^{n}U(\theta_{i,t})\)
-						</p>
-
-						<p>
-							where \(U(\theta_{i,t})\in SU(2)\). This variational circut is parametrized by
+							This variational circut is parametrized by
 							\(\vec{\theta
-							}\in\mathbb{R}^{2n(l+1)}\) and it is waht is optimized during training as this is what classifies the
+							}\in\mathbb{R}^{2n(l+1)}\) and it is what is optimized during training as this is what classifies the
 							data.
 						</p>
 
-						<p id="qvc-step3"><i>Binary Measurment</i></p>
+						<p id="qvc-step3"><i>Measurment</i></p>
 						<p>
 							Given that the problem is a two label classification \(y\in\{+1,-1\}\), the authors apply a binary
 							measurment \(\{M_{y}\}\) to the state \(W(\vec{\theta})\mathcal{U}_{\Phi(\vec{x})}|0\rangle^{n}\).
@@ -278,14 +335,44 @@
 							\(p_{y}(\vec{x})=\langle\Phi(\vec{x})|W^{\dagger}(\vec{\theta})M_{y}W(\vec{\theta})|\Phi(\vec{x})\rangle\)
 						</p>
 
-						<p id="qvc-step4"><i>Empirical Distribution</i></p>
+						<p>
+							Where the probability for measuring either lable \(y\in\{+1,-1\}\) is defined as:
+						</p>
 
 						<p>
-							For the final decision ruling of \(y\), \(R\) repeated measurment shots are preformed, yielding the
-							empircal
-							distribution \(\hat{p}(\vec{x})\), where if \(\hat{p}_{-y}(\vec{x}-yb)<\hat{p}_{y}(\vec{x})\) the label
-								assigned is \(\tilde{m}(\vec{x})=y\). The authors introduced a bias parameter \(b\in[-1,1]\) that can
-								also be optimized during training. </p>
+							\(p_y=\frac{1}{2}\left(1+y\left\langle\Phi(\vec{x})\left|W^{\dagger}(\theta) \mathbf{f} W(\theta)\right|
+							\Phi(\vec{x})\right\rangle\right)\)
+						</p>
+
+						<p>
+							Since the expected value of the measured observable is
+							\(\operatorname{tr}\left[|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})| W^{\dagger}(\theta, \varphi)
+							\mathbf{f} W(\theta, \varphi)\right]\), it can be expressed in terms of the inner proudct:
+						</p>
+
+						<p>
+							\(\frac{1}{2^n} \sum_\alpha w_\alpha(\theta) \Phi_\alpha(\vec{x})\)
+						</p>
+
+						<p>
+							Next, we need to incorporate assigning the label \(y\in\{+1,-1\}\) over the label \(-y\) with a given
+							fixed
+							basis \(b\in[-1,+1]\). In this case, it must be that \(p_{-y}-yb<\ p_{y}\). Subsituting the probability
+								for measuring either lable \(y\in\{+1,-1\}\)in to the inner product of the measured observable, we
+								get:</p>
+
+								<p>
+									\(\tilde{m}(\vec{x})=\operatorname{sign}\left(\frac{1}{2^n} \sum_\alpha w_\alpha(\theta)
+									\Phi_\alpha(\vec{x})+b\right)\)
+								</p>
+
+								<p>
+									For the final decision ruling of \(y\), \(R\) repeated measurment shots are preformed, yielding the
+									empircal
+									distribution \(\hat{p}(\vec{x})\), where if \(\hat{p}_{-y}(\vec{x}-yb)>\hat{p}_{y}(\vec{x})\) the
+									label
+									assigned is \(\tilde{m}(\vec{x})=y\). The authors introduced a bias parameter \(b\in[-1,1]\) that can
+									also be optimized during training. </p>
 
 								<p>
 									The authors mention that the feature map circut \(\mathcal{U}_{\Phi(\vec{x})}\) and the boolean
@@ -309,6 +396,22 @@
 
 						<p>
 							\(R_{emp}(\vec{\theta})=\frac{1}{|T|}\sum_{\vec{x}\in T}Pr(\tilde{m}(\vec{x})\neq m(\vec{x}))\)
+						</p>
+
+						<p>
+							For our binary classification problem, the error probability of assigning the wrong label to some givemn
+							data can be clacilated using the binomial cimulative density function CDF for the empircal distribution
+							\(\hat{p}(\vec{x})\). For a large number of samples or shots \(R\gg 1\) the CDF is approximated by a
+							sigmoid function \(sig(x)=(1+e^{-x})^{-1}\). The probability for label \(m(\vec{x}=y)\) being assigned
+							incorrectily can be approximated by:
+						</p>
+
+						<p>
+							\(Pr(\tilde{m}(\vec{x})\neq m(\vec{x}))\)
+							<br>
+							<br>
+							\(\approx\operatorname{sig}\left(\frac{\sqrt{R}\left(\frac{1}{2}-\left(\hat{p}_y(\vec{x})-\frac{y
+							b}{2}\right)\right)}{\sqrt{2\left(1-\hat{p}_y(\vec{x})\right) \hat{p}_y(\vec{x})}}\right)\)
 						</p>
 					</div>
 				</div>
