@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a href="/assets/utils/aboutme.html">Alejandro Rosales</a></p>
+				<p class="page-developer" id="developer-title"><a href="/assets/aboutme">Alejandro Rosales</a></p>
 		 	</div>
 		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
 			 class="fas fa-moon fa-xl"></i></button></div>
@@ -42,7 +42,7 @@ var tableOfContentsCollapsible =
 var navbar =
 	`
 <nav class="navbar navbar-expand-lg navbar-custom">
-	<a class="nav-bar-brand" href="/index.html">Context<br>Switching</a>
+	<a class="nav-bar-brand" href="/index">Context<br>Switching</a>
 	<!-- <a class="nav-bar-creator" href="#"><br>by Alejandro Rosales</a> -->
 	<button class="navbar-toggler custom-toggler" type="button" data-toggle="collapse" data-target="#navbarColor01"
 		aria-controls="navbarColor01" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,24 +62,24 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumcomputingtheory.html">Quantum Computing Theory</a>
-					<a class="dropdown-item" href="/tcs/informationtheory.html">Information Theory</a>
-					<a class="dropdown-item" href="/tcs/quantumalgorithms.html">Quantum Algorithms</a>
-					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace.html">Quantum Enhanced Feature<br>Space</a>
-		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
-					<a class="dropdown-item" href="/tcs/quantummachinelearning.html">Quantum Machine Learning</a>
-		 			<a class="dropdown-item" href="/tcs/theoryofcomputation.html">Theory of Computation</a>
-					<a class="dropdown-item" href="/tcs/algorithmicanalysis.html">Algorithmic Analysis</a>
+					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
+					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumalgorithms">Quantum Algorithms</a>
+					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace">Quantum Enhanced Feature<br>Space</a>
+		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
+					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Machine Learning</a>
+		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
+					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Combinatorial and Stochastic Optimization</a>
-					<!-- <a class="dropdown-item todo" href="/todo.html">Quantum Networks</a> -->
-					<a class="dropdown-item todo" href="/todo.html">Combinatorics and Graph Theory</a>
-					<!-- <a class="dropdown-item todo" href="/todo.html">P vs NP</a> -->
-					<a class="dropdown-item todo" href="/todo.html">Approximation Algorithms</a>
-					<a class="dropdown-item todo" href="/todo.html">Randomization Algorithms</a>
-		 			<a class="dropdown-item todo" href="/todo.html">Pseudorandomness</a>
-					<a class="dropdown-item todo" href="/todo.html">Algorithmic Game Theory</a>
+					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
+					<!-- <a class="dropdown-item todo" href="/todo">Quantum Networks</a> -->
+					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
+					<!-- <a class="dropdown-item todo" href="/todo">P vs NP</a> -->
+					<a class="dropdown-item todo" href="/todo">Approximation Algorithms</a>
+					<a class="dropdown-item todo" href="/todo">Randomization Algorithms</a>
+		 			<a class="dropdown-item todo" href="/todo">Pseudorandomness</a>
+					<a class="dropdown-item todo" href="/todo">Algorithmic Game Theory</a>
 			</li>
 	 
 			<li class="nav-item dropdown">
@@ -88,16 +88,16 @@ var navbar =
 					Mathematics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/math/differentialmanifolds.html">Differential Manifolds</a>
-					<a class="dropdown-item" href="/math/chernclass.html">Chern Class</a>
-					<a class="dropdown-item" href="/math/quantummechanics.html">Quantum Mechanics</a>
-					<a class="dropdown-item" href="/math/hiddenmarkovprocesses.html">Hidden Markov Processes</a>
-					<a class="dropdown-item" href="/math/abstractalgebra.html">Abstract Algebra</a>
-		 			<a class="dropdown-item" href="/tcs/graphtheory.html">Graph Theory</a>
-					<a class="dropdown-item" href="/tcs/multilevelcongitionforai.html">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
+					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
+					<a class="dropdown-item" href="/math/chernclass">Chern Class</a>
+					<a class="dropdown-item" href="/math/quantummechanics">Quantum Mechanics</a>
+					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
+					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
+		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
+					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Approximation Functions</a>
+					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
 				</div>
 			</li>
 	 
@@ -107,17 +107,17 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuro/memoryformation.html">Neurobiological Bases of<br> Memory Formation</a>
-		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience.html">Topological Neuroscience</a>
-					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome.html">Connections in the<br>Human Structural
+					<a class="dropdown-item" href="/neuro/memoryformation">Neurobiological Bases of<br> Memory Formation</a>
+		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
+					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
-					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus.html">Anatomy & Physiology of the<br>Hippocampus</a>
-					<a class="dropdown-item" href="/tcs/multilevelcongitionforai.html">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
+					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus">Anatomy & Physiology of the<br>Hippocampus</a>
+					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-		 			<a class="dropdown-item todo" href="/todo.html">Veterinary Neuroanatomy</a>
-		 			<a class="dropdown-item todo" href="/todo.html">Neocortex</a>
-		 			<a class="dropdown-item todo" href="/todo.html">Cerebral Cortex</a>
+		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
+		 			<a class="dropdown-item todo" href="/todo">Neocortex</a>
+		 			<a class="dropdown-item todo" href="/todo">Cerebral Cortex</a>
 				</div>
 			</li>
 
@@ -127,14 +127,14 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc/virtueethics.html">Virtue Ehthics</a>
-					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries.html">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
+					<a class="dropdown-item" href="/misc/virtueethics">Virtue Ehthics</a>
+					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo.html">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
-					<a class="dropdown-item todo" href="/todo.html">Event Horizons:<br>Universe and Black Holes</a>
-					<a class="dropdown-item todo" href="/todo.html">A comparison:<br>Deontological, Consequentialist,<br>Virtue Ethics</a>
-					<a class="dropdown-item todo" href="/todo.html">Classical Utilitarianism</a>
+					<a class="dropdown-item todo" href="/todo">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
+					<a class="dropdown-item todo" href="/todo">Event Horizons:<br>Universe and Black Holes</a>
+					<a class="dropdown-item todo" href="/todo">A comparison:<br>Deontological, Consequentialist,<br>Virtue Ethics</a>
+					<a class="dropdown-item todo" href="/todo">Classical Utilitarianism</a>
 				</div>
 			</li>
 
@@ -147,7 +147,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Programming Projects</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My Artifically Intelligent Assistant</a>
-					<a class="dropdown-item" href="/assets/utils/aboutme.html">About Me</a>
+					<a class="dropdown-item" href="/assets/aboutme">About Me</a>
 				</div>
 			</li>
 		</ul>
@@ -205,7 +205,7 @@ var footer =
 	    <!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a href="/assets/utils/aboutme.html">About Me</a>
+					<a href="/assets/aboutme">About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
