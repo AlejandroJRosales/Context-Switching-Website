@@ -42,7 +42,7 @@ var tableOfContentsCollapsible =
 var navbar =
 	`
 <nav class="navbar navbar-expand-lg navbar-custom">
-	<a class="nav-bar-brand" href="/index">Context<br>Switching</a>
+	<a class="nav-bar-brand" href="/">Context<br>Switching</a>
 	<!-- <a class="nav-bar-creator" href="#"><br>by Alejandro Rosales</a> -->
 	<button class="navbar-toggler custom-toggler" type="button" data-toggle="collapse" data-target="#navbarColor01"
 		aria-controls="navbarColor01" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,10 +62,11 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace">Quantum Enhanced Feature<br>Space</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumalgorithms">Quantum Algorithms</a>
-					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace">Quantum Enhanced Feature<br>Space</a>
+
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
 					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Machine Learning</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
