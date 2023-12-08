@@ -15,6 +15,7 @@ var titleSection =
 
 var oneaiDiv =
 	`
+	<link rel="stylesheet" href="/assets/oneai/style.css">
 <div class="oneai-contents-button-container">
 	<div class="oneai-button">
 			<div class="panel-group">

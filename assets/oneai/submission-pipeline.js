@@ -10,12 +10,12 @@ var speed = 3; /* The speed/duration of the effect in milliseconds */
 
 $(document).ready(function() {
 	var chatboxBottomPadding = screenHeight * .24 + 'px';
-	$("#textbox-area").html('<textarea type="text" id="user-input-box" rows="1" cols="30" name="query" placeholder="Your Message"></textarea>');
+	$("#textbox-area").html('<textarea type="text" id="user-input-box" rows="1" cols="30" name="query" placeholder="Message"></textarea>');
 	$("#textbox-area").css({ "margin-bottom": "12px" });
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("Hi, I'm an Artifically Intelligent Chatbot created by Alejandro Rosales. If you're new ask me, \"What can you do?\" Then press the paper airplane at the bottom right.");
+		handleResponse("Hi, I'm an Artifically Intelligent Assistant created by Alejandro Rosales. You can ask me to define terms that may not be clear on the website, like, \"What is Hilbert Space?\" For more ask, \"What can you do?\" Then press the paper airplane at the bottom and I'll give my best response.");
 	}, 500);
 });
 
