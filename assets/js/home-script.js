@@ -38,6 +38,7 @@ function addDynamicHTML() {
 	}, 1000);
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
+	$(".oneai-div").html(oneaiDiv);
 }
 
 function applyDynamicStyle() {

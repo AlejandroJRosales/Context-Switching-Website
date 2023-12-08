@@ -37,6 +37,7 @@ function addDynamicHTML() {
 	$(".title-section").html(titleSection);
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
+	$(".oneai-div").html(oneaiDiv);
 }
 
 function applyDynamicStyle() {
@@ -185,20 +186,28 @@ window.addEventListener("scroll", revealButton);
 
 window.addEventListener('click', function(e) {
 	// nav searh bar
-	var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
+	// var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
 	// table of contents
-	var isTOC = document.getElementById('collapse').contains(e.target);
+	var isTOC = document.getElementById('collapse-container').contains(e.target);
 
 	// Clicked outside table of contents
-	if (!isSearchBar && !isTOC) {
+	// if (!isSearchBar && !isTOC) {
+	// 	$(".collapse").collapse('hide');
+	// }
+
+	console.log(isTOC);
+	// if (isTOC) {
+	// 	$(".oneai-contents-button-container").css({ "visibility": "visible", "display": "block" });
+	// }
+	if (!isTOC) {
 		$(".collapse").collapse('hide');
 	}
 
 	// Clicked outside nav bar search box
-	else if (isSearchBar) {
-		$(".nav-search-div").css({ "background-color": "white" });
-		$(".nav-search-glyph").css({ "color": "black" });
-	}
+	// else if (isSearchBar) {
+	// 	$(".nav-search-div").css({ "background-color": "white" });
+	// 	$(".nav-search-glyph").css({ "color": "black" });
+	// }
 });
 
 window.addEventListener('scroll', function(e) {
