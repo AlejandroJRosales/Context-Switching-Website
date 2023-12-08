@@ -200,7 +200,7 @@ window.addEventListener('click', function(e) {
 	// 	$(".oneai-contents-button-container").css({ "visibility": "visible", "display": "block" });
 	// }
 	if (!isTOC) {
-		$(".collapse").collapse('hide');
+		// $(".collapse").collapse('hide');
 	}
 
 	// Clicked outside nav bar search box
