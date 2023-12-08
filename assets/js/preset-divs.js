@@ -117,13 +117,13 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumenhancedfeaturespace">Quantum Enhanced Feature<br>Space</a>
-					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumenhancedmachinelearning">Quantum Enhanced Machine<br>Learning</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
+					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
+					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumalgorithms">Quantum Algorithms</a>
 
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
-					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Machine Learning</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
 					<hr>
@@ -146,11 +146,9 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
 					<a class="dropdown-item" href="/math/chernclass">Chern Class</a>
-					<a class="dropdown-item" href="/math/quantummechanics">Quantum Mechanics</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
-					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
@@ -168,7 +166,6 @@ var navbar =
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
 					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus">Anatomy & Physiology of the<br>Hippocampus</a>
-					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
@@ -183,8 +180,9 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc/virtueethics">Virtue Ehthics</a>
+					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtue">Virtue Ehthics</a>
 					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
+					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
