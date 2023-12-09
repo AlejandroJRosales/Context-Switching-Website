@@ -17,7 +17,7 @@ var oneaiDiv =
 	`
 	<link rel="stylesheet" href="/assets/oneai/style.css">
 <div class="oneai-contents-button-container">
-	<div class="oneai-button">
+	<div class="oneai-button reveal reveal-oneai-button fade-right">
 			<div class="panel-group">
 			<div class="panel panel-default">
 				<div class="panel-collapse collapse" id="oneai-collapse">

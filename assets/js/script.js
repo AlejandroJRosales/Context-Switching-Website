@@ -239,7 +239,7 @@ function reveal() {
 }
 
 function revealButton() {
-	var reveals = $('.reveal-button')[0];
+	var revealTOC = $('.reveal-button')[0];
 
 	var windowHeight = window.innerHeight;
 	var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
@@ -247,9 +247,11 @@ function revealButton() {
 	// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
 
 	if (elementTop < windowHeight - elementVisible) {
-		reveals.classList.add("active");
+		revealTOC.classList.add("active");
+		$('.reveal-oneai-button')[0].classList.add("active");
 	} else {
-		reveals.classList.remove("active");
+		revealTOC.classList.remove("active");
+		$('.reveal-oneai-button')[0].classList.remove("active");
 	}
 }
 

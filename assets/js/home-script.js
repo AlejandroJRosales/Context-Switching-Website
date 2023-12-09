@@ -39,6 +39,7 @@ function addDynamicHTML() {
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
 	$(".oneai-div").html(oneaiDiv);
+	$('.reveal-oneai-button')[0].classList.add("active");
 }
 
 function applyDynamicStyle() {

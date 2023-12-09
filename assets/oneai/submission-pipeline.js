@@ -15,7 +15,7 @@ $(document).ready(function() {
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("Hi, I'm an Artifically Intelligent Assistant created by Alejandro Rosales. You can ask me to define terms that may not be clear on the website, like, \"What is Hilbert Space?\" For more ask, \"What can you do?\" Then press the paper airplane at the bottom and I'll give my best response.");
+		handleResponse("Hi, I'm an Artifical Intelligence programmed by Alejandro Rosales. You can ask me to define terms that may need further explanation, like, \"What is Hilbert Space?\" For more, ask me, \"What can you do?\" Then press the paper airplane at the bottom and I'll give my best response.");
 	}, 500);
 });
 
