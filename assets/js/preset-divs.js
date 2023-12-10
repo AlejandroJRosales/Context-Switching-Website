@@ -180,15 +180,15 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtue">Virtue Ehthics</a>
+					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
+				Virtue Ethics</a>
 					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
 					<a class="dropdown-item todo" href="/todo">Event Horizons:<br>Universe and Black Holes</a>
-					<a class="dropdown-item todo" href="/todo">A comparison:<br>Deontological, Consequentialist,<br>Virtue Ethics</a>
-					<a class="dropdown-item todo" href="/todo">Classical Utilitarianism</a>
+					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
 				</div>
 			</li>
 
