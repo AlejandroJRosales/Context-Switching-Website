@@ -33,13 +33,13 @@ $(function() {
 });
 
 function addDynamicHTML() {
+	$(".oneai-div").html(oneaiDiv);
 	setTimeout(() => {
 		reveals[0].classList.add("active")
-	}, 1000);
+		$('.reveal-oneai-button')[0].classList.add("active");
+	}, 700);
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
-	$(".oneai-div").html(oneaiDiv);
-	$('.reveal-oneai-button')[0].classList.add("active");
 }
 
 function applyDynamicStyle() {

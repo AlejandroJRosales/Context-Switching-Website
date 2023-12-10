@@ -8,7 +8,7 @@ var titleSection =
 				<p class="page-developer" id="developer-title"><a href="/assets/aboutme">Alejandro Rosales</a></p>
 		 	</div>
 		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
-			 class="fas fa-moon fa-xl"></i></button></div>
+			 class="fas fa-moon fa-xl reveal-moon fade-up"></i></button></div>
 		</div>
 	</div>
 `

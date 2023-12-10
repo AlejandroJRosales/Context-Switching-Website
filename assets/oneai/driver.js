@@ -17,7 +17,7 @@ function submitQuery() {
 	}
 	var queryLowered = query.toLowerCase();
 
-	var uid = "000";
+	var uid = "Web";
 
 	$('#submit-query-btn').prop("disabled", true);
 	$('#submit-query-btn').html('<i class="fa-regular fa-paper-plane fa-2xl" style="color: #949494;"></i>');
