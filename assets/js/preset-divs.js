@@ -117,7 +117,7 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumenhancedmachinelearning">Quantum Enhanced Machine<br>Learning</a>
+					<a class="dropdown-item" href="/tcs/quantumenhancedml">Quantum Enhanced Machine<br>Learning</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
@@ -166,10 +166,12 @@ var navbar =
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
 					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus">Anatomy & Physiology of the<br>Hippocampus</a>
+					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
 		 			<a class="dropdown-item todo" href="/todo">Neocortex</a>
+					<a class="dropdown-item todo" href="/todo">Working Memory</a>
 		 			<a class="dropdown-item todo" href="/todo">Cerebral Cortex</a>
 				</div>
 			</li>
