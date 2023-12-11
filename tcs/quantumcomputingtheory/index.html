@@ -571,16 +571,238 @@
 
 			<div class="section-header-div">
 				<p class="section-header" id="quantum-algorithms">Quantum Algorithms</p>
-				<p>
-					You can read Quantum Algorithms <a href="/tcs/quantumalgorithms">here</a>.
-				</p>
-			</div>
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="quantum-parallelism">Quantum Parallelism</p>
+					<p>
+						Suppose we want to evaluate a function \(f(x)\), where the function \(f\) expresses some computation or
+						algorithm. A use case for quantum parallelism is to evaluate \(f(x)\) with many different values for the
+						output of the computation or algorithm on the input \(x\) simultaneously. In essence, we can evaluate many
+						different values of \(x\) on \(f\) in parallel by exploiting quantum effects. This quantum effect exploit
+						feature is fundamental in many quantum algorithms. To continue, we will look at how quantum parallelism
+						works.
+					</p>
 
-			<div class="section-header-div">
-				<p class="section-header" id="quantum-machine-learning">Quantum Machine Learning</p>
-				<p>
-					You can read Quantum Machine Learning <a href="/tcs/quantummachinelearning">here</a>.
-				</p>
+					<p>
+						Consider the one-bit domain and range function
+						\(f(x):\{0,1\}\rightarrow\{0,1\}\). To compute this function
+						\(f\) on a quantum computer, we will use a two-qubit quantum computer with the starting state
+						\(|x,y\rangle\). The transformation on the domain or 'data' register to the range or 'target' register of
+						this initial two qubit state is described by the following unitary function:
+					</p>
+
+					<p>
+						\(U_{f}:|x,y\rangle\rightarrow|x,y\oplus f(x)\rangle\)
+					</p>
+
+					<p>
+						where the \(\oplus\) represents addition
+						modulo 2 and \(x=q_{0}, y=q_{1}\). When \(\oplus\) acts on \(y\), and its value is \(0\) then the value
+						of the second qubit in the 'target' register is the
+						value \(f(x)\), given whatever function \(f\) represents. The functions effect on \(x\) is arbritrary for
+						now.
+					</p>
+
+					<p>
+						The final collapsed state \(|\psi\rangle\) is an element of the set of final states or 'target' register
+						\(|x,y\oplus f(x)\rangle\), which again is given by the unitary transformation \(U_{f}\) on the start
+						state \(|x,y\rangle\).
+					</p>
+
+					<p>
+						Given the input \(q_{0}=x=|0\rangle\), we will apply the Hadmard gate \(H\) to \(x\), such that now:
+					</p>
+
+					<p>
+						\(x=\frac{|0\rangle+|1\rangle}{\sqrt{2}},y=|0\rangle\)
+					</p>
+
+					<p>
+						where the resulting state is:
+					</p>
+
+					<p>
+						\(\frac{|0 f(0)\rangle+|1 f(1)\rangle}{\sqrt{2}}\)
+					</p>
+
+					<p>
+						which the resulting new state is not apart of the starting
+						computational basis
+						\(\{0,1\}\). Next, the unitary function or blackbox
+						computation/algorithm \(U_{f}\) can be applied to the current 'data' register. The resulting
+						mapping of the unitary function \(U_{f}\) is:
+					</p>
+
+					<p>
+						\(U_{f}\left(\frac{|0\rangle+|1\rangle}{\sqrt{2}},|0\rangle\right)=\frac{|0, f(0)\rangle+|1,
+						f(1)\rangle}{\sqrt{2}}\)
+					</p>
+
+					<p>
+						\(=\frac{1}{\sqrt{2}}(|0,f(0)\rangle+|1,f(1)\rangle)\)<br><br>\(=.5|0,f(0)\rangle+.5|1,f(1)\rangle\)
+					</p>
+
+					<p>
+						Meaning that the final resulting state for a two-qubit quantum computer has a \(50\)% chance of being
+						\(|0,f(0)\rangle\) and \(50\)% of being
+						\(.5|1,f(1)\rangle\). Given in the same form as the range for \(U_{f}\) given above:
+					</p>
+
+					<p>
+						\(|x,y'\rangle\), where \(y'=y\oplus f(x)\)
+					</p>
+
+					<p>
+						All of this means that the information given by the mapping for \(f(0)\) and \(f(1)\) was
+						simultaneously evaluated by applying
+						superposition and the unitary function on the starting 'data' register. Thus, \(f(x)\) has been
+						computed for two values of \(x\) in parellel. The resulting set of all possible states computed in parallel
+						is given by the resulting 'target' register is given by quantum exploitation and aptly named 'quantum
+						parallelism'. Thus, a single \(f(x)\) circuit can be used to evaluate the result for \(n\) values of \(x\)
+						simultaneously.
+					</p>
+
+					<!-- <div class="subsection-header-div">
+						<p class="subsection-header" id="n-qubit-quantum-parallelism">N-Qubit Quantum Parallelism</p>
+						<p>
+							To contine.
+						</p>
+					</div> -->
+				</div>
+
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="deutschs-algorithm">Deutsch's Algorithm</p>
+					<p>
+						Consider a two-qubit system such that \(q_{0}=x=|0\rangle,q_{1}=y=|0\rangle\). Now, let's apply the NOT gate
+						to \(y\), giving
+						the what will be the start state \(|\psi_{0}\rangle=|01\rangle\). Next, we will apply a Hadmard gates to
+						\(x\) and
+						\(y\) individually, yielding the state:
+					</p>
+
+					<p>
+						\(|\psi_{1}\rangle=\left[\frac{|0\rangle+|1\rangle}{\sqrt{2}}\right]\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+					<p>
+						where for state \(|\psi_{1}\rangle\):
+					</p>
+
+					<p>
+						\(x=\frac{|0\rangle+|1\rangle}{\sqrt{2}}\)
+						<br>
+						\(y=\frac{|0\rangle-|1\rangle}{\sqrt{2}}\)
+					</p>
+
+					<p>
+						Applying some arbritrary unitary function \(U_{f}\) on \(|xy\rangle\) or \(|\psi_{1}\rangle\) gives:
+					</p>
+
+					<p>
+						\(|\psi_{2}\rangle=\left(-1\right)^{f(x)}\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+					<p>
+						From this, we can then say that if \(f(0)=f(1)\):
+					</p>
+
+					<p>
+						\(|\psi_{2}\rangle=\left[\frac{|0\rangle+|1\rangle}{\sqrt{2}}\right]\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+					<p>
+						or if \(f(0)\neq f(1)\):
+					</p>
+
+					<p>
+						\(|\psi_{2}\rangle=\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+					<p>
+						Next step in Deutsch's algorithm is to apply a Hamdmard gate \(H\) to \(x\). If \(f(0)=f(1)\), the
+						resulting state is:
+					</p>
+
+					<p>
+						\(|\psi_{3}\rangle=\pm|0\rangle\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)</p>
+					<p>
+						or if \(f(0)\neq f(1)\)
+					</p>
+
+					<p>
+						\(|\psi_{3}\rangle=\pm|1\rangle\left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+
+					<p>
+						This can then be written more succenctly as:
+					</p>
+
+					<p>
+						\(|\psi_{3}\rangle=\pm f(0) \oplus f(1) \left[\frac{|0\rangle-|1\rangle}{\sqrt{2}}\right]\)
+					</p>
+
+					<p>
+						Thus, \(f(0)\) interfers with \(f(1)\) when we simultaneously evalute \(f(x)\) with quantum parallelism.
+					</p>
+				</div>
+
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="grovers-shors-algorithm">Grovers Search Algorithm</p>
+					<div class="section-header-div">
+						<p>
+							The authors describe the process for Grovers Search Algorithm in the following sequential two main steps:
+							<a class="sliding-link" href="#gsa-step1">Hadmard transformation</a> and <a class="sliding-link"
+								href="#gsa-step2">Grover iteration or Grover operator \(G\)</a>.
+						</p>
+
+						<p id="gsa-step1"><i>Hadmard Transformation</i></p>
+						<p>
+							The Hadmard transform puts the qubits of the quantum computer into equal superposition states, defined as:
+						</p>
+
+						<p>
+							\(|\psi\rangle=\frac{1}{N^{1 / 2}} \sum_{x=0}^{N-1}|x\rangle\)
+						</p>
+
+						<p id="gsa-step2"><i>Grover Operation</i></p>
+						<p>
+							Grovers search algorithm implements a repeated quantum subroutine called Grover iteration or operator,
+							denoted as \(G\). This quantum iteration can be broken up in four steps:
+						</p>
+
+						<ol>
+							<li>Apply oracle \(O\)</li>
+							<li>Apply Hadmard transform \(H^{\otimes{n}}\)</li>
+							<li>Apply conditional phase shift on quantum register, such that every quantum basis state except
+								\(|0\rangle\) is phased shifted \(-1\), defined as:</li>
+							<p>
+								\(|x\rangle \rightarrow-(-1)^{\delta_{x 0}}|x\rangle\)
+							</p>
+							<li>
+								Lastly, apply the Hadmard transform \(H^{\otimes{n}}\)
+							</li>
+						</ol>
+
+						<p>
+							Where combined steps of 2, 3, 4, or Grovers iteration without the oracle step can be written as:
+						</p>
+
+						<p>
+							\(H^{\otimes n}(2|0\rangle\langle 0|-I) H^{\otimes n}=2|\psi\rangle\langle\psi|-I\)
+						</p>
+
+						<p>
+							where \(|\psi\rangle\) is equaly eighted superposition of states \(\frac{1}{N^{1 / 2}}
+							\sum_{x=0}^{N-1}|x\rangle\). Thus, including the oracle step now, Grovers iteration \(G\) as a whole can
+							be
+							written as \(G=(2|\psi\rangle\langle\psi|-I) O\).
+						</p>
+					</div>
+
+					<p>
+						To continue.
+					</p>
+				</div>
 			</div>
 
 			<div class="section-header-div">
@@ -636,7 +858,7 @@
 						</p>
 					</div>
 
-					<div class="subsubsection-header-div">
+					<!-- <div class="subsubsection-header-div">
 						<p class="subsubsection-header" id="qtm-derivation">Deriving the Quantum Turing Machine</p>
 
 						<p>
@@ -810,145 +1032,7 @@
 						<p>
 							To continue.
 						</p>
-					</div>
-				</div>
-			</div>
-
-			<div class="section-header-div">
-				<p class="section-header" id="quantum-information-theory">Quantum Information Science</p>
-
-				<div class="subsection-header-div">
-					<p class="subsection-header" id="three-quantum-operation-generilzations">Three Quantum Operation
-						Generilzations
-					</p>
-
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="stinespring-dilation-theorem">Stinespring Dilation Theorem</p>
-
-						<p>
-							We will first start with
-							Stinespring's dilation theorem, which states that any quantum operation can be described by some
-							composition of:
-						</p>
-
-						<ol>
-							<li>unitary transformation</li>
-							<li>tensoring with a second system in a specified state</li>
-							<li>reduction to a subsystem</li>
-						</ol>
-
-						<p>
-							<b>1.</b> <a class="sliding-link" href="#unitary-operator">Unitary Operators</a>
-						</p>
-
-						<p>
-							<b>2.</b> Tensoring a system with a second system in a specified state, or adding a system, is defined
-							as:
-						</p>
-
-						<p>
-							\(\rho \mapsto \rho \otimes \sigma\)
-						</p>
-
-						<p>
-							<b>3.</b> The reduction to a subsystem or discard a subsystem is defined as:
-						</p>
-
-						<p>
-							\(\rho_{AB} \mapsto \rho_{A} = tr_{B}(\rho_{AB})\)
-						</p>
-
-						<p>
-							This operation is known as a partial trace.
-						</p>
-
-						<p>
-							To continue.
-						</p>
-
-					</div>
-
-					<!-- <div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="kraus-operator-continued">Kraus Operator</p>
-
-						<p>
-							If you are unfamiliar with density matrix representations or need a refresh, please read <a
-								class="sliding-link" href="#quantum-operator-as-matrices">Quantum Operator as Matrices</a> before
-							continuing.
-						</p>
-					</div>
-
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="axiomatic-approach">Axiomatic Approach</p>
-						<p>
-							To continue.
-						</p>
 					</div> -->
-				</div>
-
-				<div class="subsection-header-div">
-					<p class="subsection-header" id="quantities-of-information">Quantities of Information
-					</p>
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="von-neumann-entropy">Von Neumann Entropy</p>
-						<p>
-							To Continue.
-						</p>
-					</div>
-				</div>
-
-				<!-- <div class="subsection-header-div">
-					<p class="subsection-header" id="measurement-quantum-operation">Measurement as a Quantum Operation</p>
-
-					<p>To continue.</p>
-
-				</div> -->
-
-				<div class="subsection-header-div">
-					<p class="subsection-header" id="quantum-circuts">Quantum Circuts</p>
-
-					<p>
-						A quantum circuit is a model for quantum computation where a computation is a sequence of quantum gates,
-						measurements, initializations of qubits to known values, and possibly other actions. Since our quantum
-						circut is comprised of these the components mentioned it is important to understand what each part does
-						and how they work. First we will look at quantum logic gates.
-					</p>
-
-					<div class="subsubsection-header-div">
-						<p class="subsubsection-header" id="quantum-logic-gates">Quantum Logic Gates</p>
-
-						<img src="/assets/images/quantum-circut.png" alt="Quantum Circut Figure 1" class="figure"
-							style="width:65%;height:auto;padding:3%3%;">
-						<p class="figure-source-txt">
-							Image Source: Quantum Computational Complexity by John Watrous
-						</p>
-
-						<p>
-							In a quantum circut, we have \(\Phi\), or some quantum operation, for our gates.
-							Remember, the general quantum operation \(\Phi\) as:
-						</p>
-
-						<p>
-							\(\Phi\left(\rho\right) = \sum_{j=1}^{k}A_{j}\rho A_j^*\)
-						</p>
-
-						<p>
-							where \(\rho\) is a density matrix describing a mixed state. This quantum operation
-							is defined in Kraus form.
-						</p>
-
-						<p>
-							In our circut model above the incoming density matrix or mixed quantum state is defined on our left as
-							\(X_{n}\). This mixed state is similar to a probability distribution for each pure state
-							in that, each pure state of the mixed state has a respective amplitude that determines its
-							result when observed. By manipulating the amplitudes for each pure state in the mixed state
-							we can affect the outcome of the mixed state once it passes through the circuit. This outcome
-							is seen on the right defined as \(Y_{n}\). It is important to note, that we only
-							can describe what the final mixed state is using a probability distribution. Since we can
-							only truly know what the actual final state is once it is observed. Succinctly, quantum gates
-							are unitary linear transformations of the quantum state vectors.
-						</p>
-					</div>
 				</div>
 			</div>
 
@@ -1067,12 +1151,6 @@
 				</div>
 
 				<div class="subsection-header-div">
-					<p class="subsection-header" id="dirac-notation">Dirac Notation</p>
-					<p>Feel free to read about Dirac Notarion <a
-							href="https://context-switching.com/math/quantummechanics#kets-bras-and-operators">here</a></p>
-				</div>
-
-				<div class="subsection-header-div">
 					<p class="subsection-header" id="probabilistic-systems">Probabilistic Systems</p>
 
 					<div class="categories" style="overflow: hidden;">
@@ -1103,7 +1181,7 @@
 				</div>
 
 				<div class="subsection-header-div">
-					<p class="subsection-header" id="hilbert-space-formalism">Quantum Mechanics</p>
+					<p class="subsection-header" id="hilbert-space-formalism">Quantum Mechanics Fun</p>
 
 					<p>
 						From here on out we used will use a Hilbert space formalism
@@ -1142,11 +1220,6 @@
 						requirements defining our state space \(H_{n}\) as unit-length we say that
 						\(|\alpha_{1}|^{2} + |\alpha_{2}|^{2} + ... + |\alpha_{n}|^{2} = 1\).
 					</p>
-				</div>
-
-				<div class="subsection-header-div">
-					<p class="subsection-header" id="more-quantum-mechanics-fun">More Quantum Mechanics Fun</p>
-
 					<p>
 						This concludes most of the information neccesary for this page. However, if you are having fun with
 						quantum

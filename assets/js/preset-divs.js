@@ -121,8 +121,6 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
-					<a class="dropdown-item" href="/tcs/quantumalgorithms">Quantum Algorithms</a>
-
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
