@@ -188,7 +188,7 @@ var navbar =
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo">Real Time Photon-Counting<br>Receiver for High Photon<br>Efficiency Optical Communications</a>
+					<a class="dropdown-item todo" href="/todo">Geometrical Physics in Minkowski Spacetime</a>
 					<a class="dropdown-item todo" href="/todo">Event Horizons:<br>Universe and Black Holes</a>
 					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
 				</div>
