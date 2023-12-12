@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a href="/assets/aboutme">Alejandro Rosales</a></p>
+				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Alejandro Rosales</a></p>
 		 	</div>
 		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
 			 class="fas fa-moon fa-xl reveal-moon fade-up"></i></button></div>
@@ -198,10 +198,11 @@ var navbar =
 					My Links
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Programming Projects</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My Artifically Intelligent Assistant</a>
-					<a class="dropdown-item" href="/assets/aboutme">About Me</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Code Repositories</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My A.I. Assistant</a>
+          <a class="dropdown-item" href="/my/projects">Project Presentations (Beta)</a>
+					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
 		</ul>
@@ -259,7 +260,7 @@ var footer =
 	    <!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a href="/assets/aboutme">About Me</a>
+					<a href="/my/aboutme">About Me</a>
 				</p>
 			</div>
 			<!-- Grid column -->
