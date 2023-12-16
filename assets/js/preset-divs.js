@@ -180,9 +180,9 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+          <a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolate Dictionaries</a>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
 				Virtue Ethics</a>
-					<a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolated Dictionaries</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
@@ -201,7 +201,7 @@ var navbar =
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Code Repositories</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My A.I. Assistant</a>
-          <a class="dropdown-item" href="/my/projects">Project Presentations (Beta)</a>
+          <a class="dropdown-item" href="/my/projects">Project Presentations (Beta Release)</a>
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
