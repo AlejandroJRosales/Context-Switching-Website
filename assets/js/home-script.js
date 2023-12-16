@@ -63,7 +63,7 @@ function applyDynamicStyle() {
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
 		$(".reveal-website-opener").css({ "padding-bottom": "25%" });
     $(".featured-section").css({ "margin": "6em 0em 1em 0em" });
-    $(".home-text-box").css({ "padding": "2% 10% 2% 10%" });
+    $(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
 	}
 }
 
