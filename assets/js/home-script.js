@@ -49,7 +49,7 @@ function applyDynamicStyle() {
 		// $(".fa-moon").css({ "margin-top": ".5em" });
 		// $(".fa-sun").css({ "margin-top": ".5em" });
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
-		$(".website-creator-by").css({ "font-size": ".92em" });
+		$(".website-creator-by").css({ "font-size": "1.1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
