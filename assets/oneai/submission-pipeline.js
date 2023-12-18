@@ -15,7 +15,7 @@ $(document).ready(function() {
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("I'm an A.I. coded by Alejandro Rosales, creator of this website. On this website, my purpose is to aid understanding. For example, you can ask, \"What is Hilbert Space?\" Or, \"Define eudaimonia.\" For more features ask, \"What can you do?\" Press the airplane to submit input.");
+		handleResponse("I'm a cloud based artificial intelligence coded by Alejandro Rosales, the creator of this website. Here, my purpose is to answer questions you have. For more features ask, \"What can you do?\" Press the airplane to submit input.");
 	}, 500);
 });
 
