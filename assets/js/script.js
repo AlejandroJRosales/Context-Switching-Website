@@ -161,7 +161,7 @@ function generateTableOfContents() {
 	var collapsePageTopLink =
 		`
 		<div class="collapsible-contents-top">
-			<li><a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of the Page</a></li>
+			<li><a id="top-of-page-li contents-link" href="/">Homepage</a></li>
 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i>
 		</div>
 	 	<br>

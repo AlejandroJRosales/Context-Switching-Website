@@ -81,7 +81,6 @@ var tableOfContentsCollapsible =
 						<! -- TODO: add below br and li to new var collapsePageBottomink -->
 						<br>
 
-						<li><a class="sliding-link" id="contents-link" href="#footer-placeholder">Bottom of the Page</a></li>
 					</div>
 				</div>
 				<button class="btn btn-primary contents-button" type="button" data-toggle="collapse" data-target="#collapse"
@@ -180,7 +179,7 @@ var navbar =
 					More Topics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/misc/masslessscatteringequatingextrapolatedictionaries">Massless Scattering by Equating<br>Extrapolate Dictionaries</a>
+          <a class="dropdown-item" href="/misc/adsandeinsteinframes">Anti-de Sitter Space and Einstein Frames</a>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
 				Virtue Ethics</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
