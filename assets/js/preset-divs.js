@@ -295,25 +295,29 @@ var footer =
 				</p>
 			</div>
 			<!-- Grid column -->
+		</div>
+		<!-- Grid row-->
 
-      <!-- Grid column -->
+    <!-- Grid row-->
+      <div class="footer-links row text-center d-flex justify-content-center pt-5 mb-3">
+        <!-- Grid column -->
+          <div class="col-md-2 mb-3">
+            <p>
+              <a href="/my/resume">Resume</a>
+            </p>
+          </div>
+          <!-- Grid column -->
+
+        <!-- Grid column -->
         <div class="col-md-2 mb-3">
           <p>
-            <a href="/my/resume">Resume</a>
+            <a href="/my/aboutme">About Me</a>
           </p>
         </div>
         <!-- Grid column -->
 
-	    <!-- Grid column -->
-			<div class="col-md-2 mb-3">
-				<p>
-					<a href="/my/aboutme">About Me</a>
-				</p>
-			</div>
-			<!-- Grid column -->
-
-		</div>
-		<!-- Grid row-->
+      </div>
+      <!-- Grid row-->
 
     <hr class="rgba-white-light" style="margin: 0 15%;">
 
@@ -322,12 +326,11 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-8 col-12 mt-5">
 				<div class="footer-about-me">
-					<h3 id="footer-about-me-title">Welcome</h3>
+					<h3 id="footer-about-me-title">Context Switching</h3>
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
 						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. 
-						My website provides a space for me to talk in-depth and teach about the newest topic I'm learning about! 
-						I hope you enjoy!
+						My website provides a space for me to talk in-depth and teach about topics I am having fun learning about. I hope you enjoy your stay and Jarcey the A.I. will be here to assist you whenever!
 					</p>
 
 	 <hr class="rgba-white-light" style="margin: 0 15%;">

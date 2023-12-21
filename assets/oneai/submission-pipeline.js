@@ -12,7 +12,7 @@ $(document).ready(function() {
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("I'm an artificial intelligence coded by Alejandro Rosales, the creator of this website. You can say things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on darkmode\". For more features ask, \"What can you do?\" Press the airplane to submit input.");
+		handleResponse("Hi, I'm an A.I. coded by Alejandro Rosales, the creator of this website. You can say things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more features ask, \"What can you do?\" Press the airplane to submit input.");
 	}, 500);
 });
 
@@ -27,31 +27,61 @@ function handleMessage(query, queryLowered, uid) {
 
 function localCommand(query) {
   let queryLowered = query.toLowerCase();
-  if (queryLowered.indexOf("light mode") >= 0) {
-    if (localStorage.getItem('isDarkMode') === 'true') {
-      localStorage.setItem('isDarkMode', false);
-      currentSpeaker = "Jarcey A.I."
-      handleResponse("Okie doke, I have set the website to dark mode.");
+  if (queryLowered.indexOf("off") >= 0 && queryLowered.indexOf("mode") >= 0) {
+    if (queryLowered.indexOf("light") >= 0 && queryLowered.indexOf("mode") >= 0) {
+      if (localStorage.getItem('isDarkMode') === 'false') {
+        localStorage.setItem('isDarkMode', true);
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("Okay, I have set the website to dark mode.");
+      }
+      else {
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("You are already in dark mode.");
+      }
+      applyModeStyle();
+      return true;
     }
-    else {
-      currentSpeaker = "Jarcey A.I."
-      handleResponse("You are already in light mode.");
+    else if (queryLowered.indexOf("dark") >= 0 && queryLowered.indexOf("mode") >= 0) {
+        if (localStorage.getItem('isDarkMode') === 'true') {
+          localStorage.setItem('isDarkMode', false);
+          currentSpeaker = "Jarcey A.I."
+          handleResponse("Alright, I have set the website to light mode.");
+        }
+        else {
+          currentSpeaker = "Jarcey A.I."
+          handleResponse("You are already in light mode.");
+        }
+        applyModeStyle();
+        return true;
+      }
     }
-    applyModeStyle();
-    return true;
-  }
-  else if (queryLowered.indexOf("dark mode") >= 0) {
-    if (localStorage.getItem('isDarkMode') === 'false') {
-      localStorage.setItem('isDarkMode', true);
-      currentSpeaker = "Jarcey A.I."
-      handleResponse("Alright, I have set the website to light mode.");
+  else if (queryLowered.indexOf("on") >= 0 && queryLowered.indexOf("mode") >= 0) {
+    if (queryLowered.indexOf("light") >= 0 && queryLowered.indexOf("mode") >= 0) {
+      if (localStorage.getItem('isDarkMode') === 'true') {
+        localStorage.setItem('isDarkMode', false);
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("Okie doke, I have set the website to light mode.");
+      }
+      else {
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("You are already in light mode.");
+      }
+      applyModeStyle();
+      return true;
     }
-    else {
-      currentSpeaker = "Jarcey A.I."
-      handleResponse("You are already in dark mode.");
+    else if (queryLowered.indexOf("dark") >= 0 && queryLowered.indexOf("mode") >= 0) {
+      if (localStorage.getItem('isDarkMode') === 'false') {
+        localStorage.setItem('isDarkMode', true);
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("Alright, I have set the website to dark mode.");
+      }
+      else {
+        currentSpeaker = "Jarcey A.I."
+        handleResponse("You are already in dark mode.");
+      }
+      applyModeStyle();
+      return true;
     }
-    applyModeStyle();
-    return true;
   }
 
   else if (queryLowered.indexOf("home") >= 0) {
@@ -100,10 +130,7 @@ function localCommand(query) {
     handleResponse("If you insist.");
     partyMode();
     return true;
-  }
-
-  partMode
-  
+  }  
   return false
 }
 
