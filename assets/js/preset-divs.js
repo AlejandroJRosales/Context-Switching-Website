@@ -204,7 +204,7 @@ var navbar =
 	<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					More Topics
+					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
           <a class="dropdown-item" href="/misc/adsandeinsteinframes">Anti-de Sitter Space and Einstein Frames</a>
