@@ -58,6 +58,8 @@ var oneaiDiv =
 			<p id="ai-response"></p>
 		</div>
 
+    <br>
+
 		<div class="input-container">
 
 			<div id="textbox-area"></div>
@@ -273,7 +275,7 @@ var footer =
       <!-- Grid column -->
         <div class="col-md-2 mb-3">
           <p>
-            <a href="/explore"><i class="fa-regular fa-compass fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;Explore</a>
+            <a href="/explore"><i class="fa-regular fa-compass fa-lg" style="color: #ffffff;"></i>&nbsp;Explore</a>
           </p>
         </div>
         <!-- Grid column -->

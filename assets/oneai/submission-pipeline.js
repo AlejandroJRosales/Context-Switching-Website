@@ -1,6 +1,3 @@
-// who is who from comments
-// no server
-
 var isMobile = getDeviceType();
 var screenHeight = getScreenHeight();
 var dispalyNewTab = false;
@@ -15,13 +12,99 @@ $(document).ready(function() {
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("I'm a cloud based artificial intelligence coded by Alejandro Rosales, the creator of this website. Here, my purpose is to answer questions you have. For more features ask, \"What can you do?\" Press the airplane to submit input.");
+		handleResponse("I'm an artificial intelligence coded by Alejandro Rosales, the creator of this website. You can say things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on darkmode\". For more features ask, \"What can you do?\" Press the airplane to submit input.");
 	}, 500);
 });
 
 function handleMessage(query, queryLowered, uid) {
-	// toggleBg("on");
-	sendToServer(query, uid);
+  $('#submit-query-btn').html('<i class="fa-regular fa-paper-plane fa-2xl" style="color: #ffffff;"></i>');
+  clearInputBox();
+  $('#submit-query-btn').prop("disabled", false);
+	if (!localCommand(query)) {
+    sendToServer(query, uid);
+  }
+}
+
+function localCommand(query) {
+  let queryLowered = query.toLowerCase();
+  if (queryLowered.indexOf("light mode") >= 0) {
+    if (localStorage.getItem('isDarkMode') === 'true') {
+      localStorage.setItem('isDarkMode', false);
+      currentSpeaker = "Jarcey A.I."
+      handleResponse("Okie doke, I have set the website to dark mode.");
+    }
+    else {
+      currentSpeaker = "Jarcey A.I."
+      handleResponse("You are already in light mode.");
+    }
+    applyModeStyle();
+    return true;
+  }
+  else if (queryLowered.indexOf("dark mode") >= 0) {
+    if (localStorage.getItem('isDarkMode') === 'false') {
+      localStorage.setItem('isDarkMode', true);
+      currentSpeaker = "Jarcey A.I."
+      handleResponse("Alright, I have set the website to light mode.");
+    }
+    else {
+      currentSpeaker = "Jarcey A.I."
+      handleResponse("You are already in dark mode.");
+    }
+    applyModeStyle();
+    return true;
+  }
+
+  else if (queryLowered.indexOf("home") >= 0) {
+    window.location.href = "/";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("explore") >= 0) {
+    window.location.href = "/explore";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("neuro") >= 0 && queryLowered.indexOf("page") >= 0){
+    window.location.href = "/neuro";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("math") >= 0 && queryLowered.indexOf("page") >= 0) {
+    window.location.href = "/math";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("computer science") >= 0 && queryLowered.indexOf("page") >= 0) {
+    window.location.href = "/tcs";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("misc") >= 0 && queryLowered.indexOf("page") >= 0) {
+    window.location.href = "/misc";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("about") >= 0 && queryLowered.indexOf("me") >= 0) {
+    window.location.href = "/my/aboutme";
+    return true;
+  }
+
+  else if (queryLowered.indexOf("website") >= 0 && queryLowered.indexOf("dedicate") >= 0) {
+    currentSpeaker = "Jarcey A.I."
+    handleResponse("This website is dedicated to PK and Lucy, Alejandro's best boy and best girl.");
+    return true;
+  }
+
+  else if (queryLowered.indexOf("party mode") >= 0) {
+    currentSpeaker = "Jarcey A.I."
+    handleResponse("If you insist.");
+    partyMode();
+    return true;
+  }
+
+  partMode
+  
+  return false
 }
 
 function sendToServer(query, uid) {
@@ -32,15 +115,10 @@ function sendToServer(query, uid) {
 		url: url,
 		type: "GET",
 		success: function(result) {
-			$('#submit-query-btn').html('<i class="fa-regular fa-paper-plane fa-2xl" style="color: #ffffff;"></i>');
-			clearInputBox();
-			$('#submit-query-btn').prop("disabled", false);
 			currentSpeaker = "Jarcey A.I."
 			handleResponse(result);
 		},
 		error: function(xhr, status, error) {
-			$('#submit-query-btn').html('<i class="fa-regular fa-paper-plane fa-2xl" style="color: #ffffff;"></i>');
-			clearInputBox();
 			$('#submit-query-btn').prop("disabled", false);
 			displayUrl(url);
 		}

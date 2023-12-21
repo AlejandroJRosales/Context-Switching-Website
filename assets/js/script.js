@@ -305,6 +305,12 @@ function showIt(elementId) {
 	el.scrollIntoView(true);
 }
 
+function partyMode() {
+  $("body")[0].classList.add("fa-solid");
+  $("body")[0].classList.add("fa-thumbtack");
+  $("body")[0].classList.add("fa-beat-fade");
+}
+
 function applyModeStyle() {
 	if (localStorage.getItem('isDarkMode') === 'true') {
 		$("body").css({ "background": "rgb(41,41,41)" });
