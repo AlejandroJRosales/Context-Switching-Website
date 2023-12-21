@@ -38,6 +38,7 @@ function addDynamicHTML() {
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
 	$(".oneai-div").html(oneaiDiv);
+  $(".explore-placeholder").html(exploreSection);
 }
 
 function applyDynamicStyle() {
@@ -162,6 +163,7 @@ function generateTableOfContents() {
 		`
 		<div class="collapsible-contents-top">
 			<li><a id="top-of-page-li contents-link" href="/">Homepage</a></li>
+      <li><a id="top-of-page-li contents-link" href="/explore">Explore</a></li>
 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i>
 		</div>
 	 	<br>
@@ -319,6 +321,8 @@ function applyModeStyle() {
 		$(".website-title").css({ "color": "white" });
 		$(".info-table").css({ "color": "white" });
 		$("#about-me-status").css({ "color": "white" });
+    $(".explore-text-box").css({ "color": "white" });
+    $(".explore-icon").css({ "color": "#ffffff" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid white important" });
 	}
 	else {
@@ -336,6 +340,8 @@ function applyModeStyle() {
 		$(".website-title").css({ "color": "black" });
 		$(".info-table").css({ "color": "black" });
 		$("#about-me-status").css({ "color": "black" });
+    $(".explore-text-box").css({ "color": "black" });
+    $(".explore-icon").css({ "color": "#000000" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
 	}
 }

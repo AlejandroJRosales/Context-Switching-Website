@@ -40,6 +40,8 @@ function addDynamicHTML() {
 	}, 700);
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
+  $(".explore-placeholder").html(exploreSection);
+  // $(".topic-page-title-section").html(topicPageTitleSection);
 }
 
 function applyDynamicStyle() {
@@ -49,6 +51,7 @@ function applyDynamicStyle() {
 		// $(".fa-moon").css({ "margin-top": ".5em" });
 		// $(".fa-sun").css({ "margin-top": ".5em" });
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
+    $(".topic-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
 		$(".website-creator-by").css({ "font-size": "1.1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
@@ -64,6 +67,7 @@ function applyDynamicStyle() {
 		$(".reveal-website-opener").css({ "padding-bottom": "25%" });
     $(".featured-section").css({ "margin": "6em 0em 1em 0em" });
     $(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
+    $(".footer-placeholder").css({ "margin-top": "20%" });
 	}
 }
 
@@ -125,9 +129,11 @@ function applyModeStyle() {
 		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".subtopic-mini-banner-label").css({ "color": "white" });
-		$(".website-title").css({ "color": "white" });
+		$(".website-title").css({ "color": "white" });$(".topic-title").css({ "color": "black" });
+    $(".topic-title").css({ "color": "white" });
 		$(".home-text-box").css({ "background-color": "rgb(41,41,41)" });
 		$(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
+    $(".homepage-icon").css({ "color": "#ffffff" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -142,8 +148,10 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".subtopic-mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
-		$(".home-text-box").css({ "background-color": "white" });
+    $(".topic-title").css({ "color": "black" });
+		$(".home-text-box").css({ "background-color": "translucen" });
 		$(".homepage-info").css({ "background-color": "white", "color": "black" });
+    $(".homepage-icon").css({ "color": "#000000" });
 	}
 }
 

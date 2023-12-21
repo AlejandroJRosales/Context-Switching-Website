@@ -13,6 +13,34 @@ var titleSection =
 	</div>
 `
 
+var exploreSection =
+`
+<div>
+  <h3 class="explore-section"><i class="fa-regular fa-compass fa-beat-fade fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;<a href="/explore">Explore</a>
+    <div class="explore-text-box">
+      <p class="homepage-info">
+        Explore more topics!
+      </p>
+    </div>
+  </h3>
+</div>
+`
+
+var topicPageTitleSection =
+  `
+  <div class="reveal-website-opener reveal-title fade-in">
+    <div class="website-intro"
+      style="color: #777;background-color:white;text-align:center;padding:50px 80px;text-align: center;">
+      <p class="topic-title">Neuroscience</p>
+      <div class="other-contents-page-title"> 
+        <div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
+           class="fas fa-moon fa-xl reveal-moon fade-up"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+`
+
 var oneaiDiv =
 	`
 	<link rel="stylesheet" href="/assets/oneai/style.css">
@@ -116,7 +144,7 @@ var navbar =
 					Theoretical Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumenhancedml">Quantum Enhanced Machine<br>Learning</a>
+					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Enhanced Machine<br>Learning</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
@@ -197,11 +225,13 @@ var navbar =
 					More On Me
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-        <a class="dropdown-item" href="/my/aboutme">About Me</a>
+          <a class="dropdown-item" href="/my/aboutme">About Me</a>
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Code Repositories</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My A.I. Assistant</a>
-          <a class="dropdown-item" href="/my/projects">Project Presentations (Beta Release)</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/projects/qsvm">Presentations (Beta Release)</a>
+          <a class="dropdown-item" href="/my/projects">Live Code Projects (Beta Release)</a>
 				</div>
 			</li>
 		</ul>
@@ -240,10 +270,18 @@ var footer =
 	<div class="container">
 		<!-- Grid row-->
 		<div class="footer-links row text-center d-flex justify-content-center pt-5 mb-3">
+      <!-- Grid column -->
+        <div class="col-md-2 mb-3">
+          <p>
+            <a href="/explore"><i class="fa-regular fa-compass fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;Explore</a>
+          </p>
+        </div>
+        <!-- Grid column -->
+    
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">Linked <i class="fa-brands fa-linkedin fa-lg" style="color: #ffffff;"></i></a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -251,10 +289,18 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">Projects</a>
+					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales"><i class="fa-brands fa-github fa-lg" style="color: #ffffff;"></i> GitHub</a>
 				</p>
 			</div>
 			<!-- Grid column -->
+
+      <!-- Grid column -->
+        <div class="col-md-2 mb-3">
+          <p>
+            <a href="/my/resume">Resume</a>
+          </p>
+        </div>
+        <!-- Grid column -->
 
 	    <!-- Grid column -->
 			<div class="col-md-2 mb-3">
@@ -263,10 +309,11 @@ var footer =
 				</p>
 			</div>
 			<!-- Grid column -->
+
 		</div>
 		<!-- Grid row-->
 
-		<hr class="rgba-white-light" style="margin: 0 15%;">
+    <hr class="rgba-white-light" style="margin: 0 15%;">
 
 		<!-- Grid row-->
 		<div class="row d-flex text-center justify-content-center mb-md-0 mb-4">
