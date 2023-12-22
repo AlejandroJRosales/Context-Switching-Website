@@ -12,7 +12,7 @@ $(document).ready(function() {
 
 	setTimeout(() => {
 		// toggleBg("on");
-		handleResponse("Hi, I'm an A.I. coded by Alejandro Rosales, the creator of this website. You can say things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more features ask, \"What can you do?\" Press the airplane to submit input.");
+		handleResponse("Hi, my name's Jarcey! I'm an A.I. coded by Alejandro Rosales, the creator of this website. You can say things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more features ask, \"What can you do?\" Press the airplane to submit input.");
 	}, 500);
 });
 
