@@ -227,13 +227,12 @@ var navbar =
 					More On Me
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/my/aboutme">About Me</a>
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
           <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My A.I. Assistant</a>
-          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/projects/qsvm">Presentations (Beta Release)</a>
-          <a class="dropdown-item" href="/my/projects">Live Code Projects (Beta Release)</a>
+          <a class="dropdown-item" href="/my/lab">My Virtual Lab (Beta)</a>
+          <a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">My A.I. Assistant</a>
+          <a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
 		</ul>
