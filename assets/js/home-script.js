@@ -74,6 +74,8 @@ function applyDynamicStyle() {
     $(".featured-section").css({ "margin": "6em 0em 1em 0em" });
     $(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
     $(".footer-placeholder").css({ "margin-top": "20%" });
+    $(".figure-ignore").css({ "width": "100%", "margin-bottom": "5%" });
+    $(".figure").css({ "width": "100%", "margin-bottom": "5%" });
 	}
 }
 
