@@ -432,15 +432,19 @@
 					</div>
 
 					<div class="subsubsubsection-header-div">
-						<p class="subsubsubsection-header" id="svm-classifier-type1-classifier-optimization-and-testing">Classifier Optimization and Testing
+						<p class="subsubsubsection-header" id="svm-classifier-type1-classifier-optimization-and-testing-results">Classifier Optimization and Testing Results
 						</p>
             
 						<p>
-              The first step is to train the classifier and optimize it. The authors found that they found Spall's SPSA stochastic gradient descent algorithm performs the best in the inherent noisy experimental setting of quantum computing. They mentioned after the parameters converged onto \(\left(\vec{\Theta^{*}},b^{*}\right)\). The second step is then to classify data and assign them labels according to the decision rule given by \(\tilde{m}(\vec{s})\), and ensure that for the testing data, \(m(\vec{s})=\tilde{m}(\vec{s})\) with high probability for the given data set \(\vec{s}\in S\).
+              The first step is to train the classifier and optimize it. The authors found that they found Spall's SPSA stochastic gradient descent algorithm performs the best in the inherent noisy experimental setting of quantum computing. They mentioned after the parameters converged onto \(\big(\vec{\Theta^{*}},b^{*}\big)\). The second step is then to classify data and assign them labels according to the decision rule given by \(\tilde{m}(\vec{s})\), where the binary measurement is obtained from the parity function \(\mathbf{f}=Z_1 Z_2\), and ensure that for the testing data, \(m(\vec{s})=\tilde{m}(\vec{s})\) with high probability for the given data set \(\vec{s}\in S\).
 						</p>
 
             <p>
-              To continue.
+              The authors note that what is obeserved for the empirical risk, or cost value used for the optimizer, is that it converges to a lower depth when the number of layers in the short depth quantum circuit for optimization is \(l=4\) than \(l=0\). Interesting enough, error mitigation does not appreciably improve the empirical risk results when depth is at \(0\), however, does substantially help for larger depths. An important note, is that although \(\operatorname{Pr}(\tilde{m}(\vec{x}) \neq m(\vec{x}))\) includes the number of shots \(R\) taken in its calculation, during experimentation the authors fixed \(R=200\). The reason for doing this, even though \(R=2000\) in actual experiment, the authors state was to avoid gradient problems.
+            </p>
+
+            <p>
+              To continue, after training, comes testing. The yielded trained set of parameters \(\big(\vec{\theta}^{*},b^*=0\big)\) where used to classify 20 different test sets randomly drawn each time per data set. After analyzing the results, the authors an increasing classification success with increasing circut depth \(l\). Noting, that the success rate very nearl reaches \(100\)% for circut depths larger than \(1\) and remains up to depth \(4\), despite decoherence associated with \(8\) CNOT gates during training and classification circuts. 
             </p>
           </div>
 
@@ -448,19 +452,19 @@
           <p class="subsubsubsection-header" id="quantum-variational-classification-analysis">Quantum Variational Classification Analysis
           </p>
             <p>
-              An important aspect of the SVM, is the classification of the data, which is classified based off of the decision rule \(p_y(\vec{x})>p_{-y}(\vec{x})-y b\). This decision rule \(\tilde{m}(\vec{x})\) can can be restated as \(\operatorname{sign}\left(\left\langle\Phi(\vec{x})\left|W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta})\right| \Phi(\vec{x})\right\rangle+b\right)\). The step that structures the data in such a way for the decision ruling for classification, is the variational circut \(W\), which can be understood as a seperating hyperplane in quantum state space.
+              An important aspect of SVM's, is the classification of the data, which is done here based off of the decision rule \(p_y(\vec{x})>p_{-y}(\vec{x})-y b\). This decision rule \(\tilde{m}(\vec{x})\) can can be restated as \(\operatorname{sign}\left(\left\langle\Phi(\vec{x})\left|W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta})\right| \Phi(\vec{x})\right\rangle+b\right)\). The step that structures the data in such a way for the decision ruling for classification, is the variational circut \(W\), which can be understood as a seperating hyperplane in quantum state space.
             </p>
 
             <p>
-              To start the in depth analysis portion, first we define start with an orthogonal, hermatian, matrix basis \(\left\{P_\alpha\right\} \subset \mathbb{C}^{2^n \times 2^n}\). Such that \(\alpha=1,...,4^{n}\) with \(\operatorname{tr}\left[P_\alpha^{\dagger} P_\beta\right]=2^n \delta_{\alpha, \beta}\). An group of matrices adhereing to this criteria is the Pauli-group on \(n\)-qubits. Next, we expand the quantum state and the measurment in our choosen matrix basis. 
+              To start with the in decomposition of the quantum variational circut, we first look define the properties for our group of matrices used. For us, we need a group that has an orthogonal, hermatian, matrix basis \(\left\{P_\alpha\right\} \subset \mathbb{C}^{2^n \times 2^n}\). Such that \(\alpha=1,...,4^{n}\) with \(\operatorname{tr}\left[P_\alpha^{\dagger} P_\beta\right]=2^n \delta_{\alpha, \beta}\). A group of matrices adhereing to this criteria is the Pauli-group on \(n\)-qubits. Next, we expand the quantum state and the measurment in our choosen matrix basis. 
             </p>
 
             <p>
-              The expanded quantum state, or expectation value, can be expressed in terms of \(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\) \(\rightarrow\) \(\Phi_\alpha(\vec{x})=\left\langle\Phi(\vec{x})\left|P_\alpha\right| \Phi(\vec{x})\right\rangle\). The decision rule expressed in our choosen matrix basis as \(w_\alpha(\vec{\theta})\) can be defined as \(W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta})\) \(\rightarrow\) \(\operatorname{tr}\left[W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta}) P_\alpha\right]\). Lastly, any classification rule from a variational unitary can be restated in the SVM form:
+              The expanded quantum state, or expectation value, can be expressed in terms of \(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\) \(\rightarrow\) \(\Phi_\alpha(\vec{x})=\left\langle\Phi(\vec{x})\left|P_\alpha\right| \Phi(\vec{x})\right\rangle\). The decision rule expressed in our choosen matrix basis as \(w_\alpha(\vec{\theta})\) can be defined as \(W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta})\) \(\rightarrow\) \(\operatorname{tr}\left[W^{\dagger}(\vec{\theta}) \mathbf{f} W(\vec{\theta}) P_\alpha\right]\). Lastly, any classification rule or mapping \(\tilde{m}(x)\) from a variational unitary can be restated in the SVM form:
             </p>
             
             <p>
-              \(\tilde{m}(x)=\operatorname{sign}\left(2^{-n} \sum_\alpha w_\alpha(\vec{\theta}) \Phi_\alpha(\vec{x})+b\right)\)
+              \(\operatorname{sign}\left(2^{-n} \sum_\alpha w_\alpha(\vec{\theta}) \Phi_\alpha(\vec{x})+b\right)\)
             </p>
 
             <p>
