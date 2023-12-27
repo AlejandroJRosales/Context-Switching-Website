@@ -192,7 +192,7 @@ var navbar =
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
-					<a class="dropdown-item" href="/neuro/anatomyandphysiologyhippocampus">Anatomy & Physiology of the<br>Hippocampus</a>
+					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy & Histology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
