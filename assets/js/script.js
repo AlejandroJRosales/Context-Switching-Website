@@ -125,7 +125,7 @@ function generateTableOfContents() {
 
 			}
 
-			// untabs
+			// untab
 			else if (currHeaderIdx < lastHeaderIdx) {
 
 				tempHeaderCount = lastHeaderIdx;
@@ -146,7 +146,7 @@ function generateTableOfContents() {
 			// same tabs
 			else {
 				if (currentSectionName === "category-header") {
-					tableOfContentsStr += '<ul><li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
+					tableOfContentsStr += '<a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a>';
 				}
 
 				else {
@@ -162,15 +162,14 @@ function generateTableOfContents() {
 	var collapsePageTopLink =
 		`
 		<div class="collapsible-contents-top">
-			<li><a id="top-of-page-li contents-link" href="/">Homepage</a></li>
-      <li><a id="top-of-page-li contents-link" href="/explore">Explore</a></li>
 			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i>
 		</div>
 	 	<br>
 	 `
+  var topLinks = '<a id="top-of-page-li contents-link" href="/">Homepage</a><br><a id="top-of-page-li contents-link" href="/explore">Explore</a><br>'
 
 	$(".table-of-contents").append('<h5>Contents</h5><hr class="section-seperator"><br><div class="reveal fade-left">' + tableOfContentsStr + '</div>');
-	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + collapsePageTopLink + tableOfContentsStr);
+	$(".table-of-contents-collapsible").append(topLinks + collapsePageTopLink + '<h5>Contents</h5><br>' + tableOfContentsStr);
 }
 
 $(function() {
