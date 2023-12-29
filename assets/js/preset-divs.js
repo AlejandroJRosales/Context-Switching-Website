@@ -209,7 +209,7 @@ var navbar =
 					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/misc/adsandeinsteinframes">Anti-de Sitter Space and Einstein Frames</a>
+          <a class="dropdown-item" href="/misc/adsandeinsteinframe">Anti-de Sitter Space and Einstein Frames</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
           <a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
