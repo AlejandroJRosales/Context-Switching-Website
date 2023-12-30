@@ -7,7 +7,7 @@ var speed = 3; /* The speed/duration of the effect in milliseconds */
 
 $(document).ready(function() {
 	var chatboxBottomPadding = screenHeight * .1 + 'px';
-  var oneaiCollapseW = 17 + 'em';
+  var oneaiCollapseW = 18 + 'em';
   var oneaiCollapseH = 2.5 + 'em';
   // var oneaiCollapsePadding = 16 * (20 * .9) + 'px'; 
 	$("#textbox-area").html('<textarea type="text" id="user-input-box" style="min-width:' + oneaiCollapseW + ';max-width:' + oneaiCollapseW + ';min-height:' + oneaiCollapseH + ';max-height:' + oneaiCollapseH + '" name="query" placeholder="Message"></textarea>');
