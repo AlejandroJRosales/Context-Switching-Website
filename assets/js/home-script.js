@@ -78,6 +78,7 @@ function applyDynamicStyle() {
     $(".footer-placeholder").css({ "margin-top": "20%" });
     $(".figure-ignore").css({ "width": "90%", "margin-bottom": "5%" });
     $(".figure").css({ "width": "90%", "margin-bottom": "5%" });
+    $(".homepage-sliding-section").css({ "padding-top": "4%" });
 	}
 }
 
