@@ -9,6 +9,8 @@ var titleRevealed = false;
 var delayInMilliseconds = 500; //1 second
 var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header", "subsubsubsection-header"];
 var reveals = document.querySelectorAll(".reveal");
+var windowHeight = window.innerHeight;
+var displayHeight = $(window).height();
 
 window.MathJax = {
 	loader: {
@@ -82,13 +84,20 @@ function applyDynamicStyle() {
 $(function() {
 	$(".sliding-link").click(function(e) {
 		e.preventDefault();
-		// console.log($(this).attr("href"));
 		var aid = $(this).attr("href");
 		$('html,body').animate({ scrollTop: $(aid).offset().top }, 'fast');
 	});
 });
 
-window.addEventListener("scroll", reveal);
+$(function() {
+  $(".sliding-link-offset").click(function(e) {
+    e.preventDefault();
+    var aid = $(this).attr("href");
+    $('html,body').animate({ scrollTop: $(aid).offset().top - (displayHeight * .12) }, 'fast');
+  });
+});
+
+window.addEventListener("scroll", handleScroll);
 
 // window.addEventListener('click', function(e) {
 // 	// nav searh bar
@@ -100,13 +109,26 @@ window.addEventListener("scroll", reveal);
 // 	}
 // });
 
+function handleScroll() {
+  elementTop = $(".homepage-static-section")[0].getBoundingClientRect().top;
+  elementVisible = displayHeight - 20;
+  if (elementTop + elementVisible < windowHeight) {
+    $(".homepage-static-section").css({'display': 'block', 'visibility': 'hidden'});
+    $(".homepage-sliding-section").css({'display': 'block', 'visibility': 'visible'});
+  }
+  if (elementTop + elementVisible > windowHeight) {
+    $(".homepage-static-section").css({'display': 'block', 'visibility': 'visible'});
+    $(".homepage-sliding-section").css({'display': 'none', 'visibility': 'hidden'});
+  }
+  reveal();
+}
+
 function reveal() {
 	userHasScrolled = true;
+  var elementVisible = 220;
+  var elementNotVisible = 275;
 	for (var i = 0; i < reveals.length; i++) {
-		var windowHeight = window.innerHeight;
-		var elementTop = reveals[i].getBoundingClientRect().top;
-		var elementVisible = 220;
-		var elementNotVisible = 275;
+    var elementTop = reveals[i].getBoundingClientRect().top;
 
 		if (elementTop < windowHeight - elementVisible) {
 			reveals[i].classList.remove("inactive");
@@ -142,6 +164,7 @@ function applyModeStyle() {
     $(".home-text-box").css({ "color": "white" });
 		// $(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
     $(".homepage-icon").css({ "color": "#ffffff" });
+    $(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -160,6 +183,7 @@ function applyModeStyle() {
 		$(".home-text-box").css({ "color": "black" });
 		// $(".homepage-info").css({ "background-color": "white", "color": "black" });
     $(".homepage-icon").css({ "color": "#000000" });
+    $(".homepage-static-section").css({ "background": "white" });
 	}
 }
 
