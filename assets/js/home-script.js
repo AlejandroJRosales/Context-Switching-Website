@@ -166,6 +166,7 @@ function applyModeStyle() {
 		// $(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
     $(".homepage-icon").css({ "color": "#ffffff" });
     $(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
+    $(".homepage-static-section-buttons-label").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -185,6 +186,7 @@ function applyModeStyle() {
 		// $(".homepage-info").css({ "background-color": "white", "color": "black" });
     $(".homepage-icon").css({ "color": "#000000" });
     $(".homepage-static-section").css({ "background": "white" });
+    $(".homepage-static-section-buttons-label").css({ "color": "black" });
 	}
 }
 
