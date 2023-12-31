@@ -7,10 +7,13 @@ var speed = 3; /* The speed/duration of the effect in milliseconds */
 
 $(document).ready(function() {
 	var chatboxBottomPadding = screenHeight * .1 + 'px';
-  var oneaiCollapseW = 18 + 'em';
+  // var oneaiCollapseW = (18 * 1) + 'em';
   var oneaiCollapseH = 2.5 + 'em';
-  // var oneaiCollapsePadding = 16 * (20 * .9) + 'px'; 
-	$("#textbox-area").html('<textarea type="text" id="user-input-box" style="min-width:' + oneaiCollapseW + ';max-width:' + oneaiCollapseW + ';min-height:' + oneaiCollapseH + ';max-height:' + oneaiCollapseH + '" name="query" placeholder="Message"></textarea>');
+  var oneaiCollapseW = 270 + 'px'; 
+  if (!isMobile) {
+    oneaiCollapseW = 250 + 'px';
+  }
+	$("#textbox-area").html('<textarea type="text" id="user-input-box" style="left:2;min-width:' + oneaiCollapseW + ';max-width:' + oneaiCollapseW + ';min-height:' + oneaiCollapseH + ';max-height:' + oneaiCollapseH + '" name="query" placeholder="Message"></textarea>');
 	$("#textbox-area").css({ "margin-bottom": "12px" });
 
 	setTimeout(() => {

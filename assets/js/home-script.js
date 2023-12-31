@@ -111,7 +111,7 @@ window.addEventListener("scroll", handleScroll);
 // });
 
 function handleScroll() {
-  elementTop = $(".homepage-static-section")[0].getBoundingClientRect().top;
+  elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
   elementVisible = displayHeight - 20;
   if (elementTop + elementVisible < windowHeight) {
     $(".homepage-static-section").css({'display': 'block', 'visibility': 'hidden'});
