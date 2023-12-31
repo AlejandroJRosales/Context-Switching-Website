@@ -325,6 +325,7 @@ function applyModeStyle() {
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
 		$(".fa-sun").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
+    $("#dark-mode-toggle-btn-ignore").css({ "color": "white" });
 		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
 		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
@@ -344,6 +345,7 @@ function applyModeStyle() {
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
 		$(".fa-moon").css({ "color": "black" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
+    $("#dark-mode-toggle-btn-ignore").css({ "color": "black" });
 		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
 		$(".mini-banner").css({ "background": "white", "color": "black" });
 		$(".mini-banner-label").css({ "color": "black" });
