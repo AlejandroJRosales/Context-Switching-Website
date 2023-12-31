@@ -11,10 +11,10 @@ var currViewStatic = true;
 // must be in order they appear in the DOM
 // var slidingIconsNames = [".sliding-pinned", ".sliding-new", ".sliding-explore"];
 var slidingIcons = document.querySelectorAll(".sliding-icon");
+var sectionIconsLen = slidingIcons.length;
 var sectionIcons = document.querySelectorAll(".section-icon");
-var sectionIconsLen = secIcons.length;
 var reveals = document.querySelectorAll(".reveal");
-var revealsLen = reveals.length
+var revealsLen = reveals.length;
 var windowHeight = window.innerHeight;
 var displayHeight = $(window).height();
 
@@ -127,7 +127,7 @@ function handleScroll() {
   if (elementTop + elementVisible > windowHeight && !currViewStatic) {
     $(".homepage-static-section").css({'display': 'block', 'visibility': 'visible'});
     $(".homepage-sliding-section").css({'display': 'none', 'visibility': 'hidden'});
-    
+    currViewStatic = true;
   }
   slidingIconSizeUpdate();
   reveal();
@@ -136,14 +136,13 @@ function handleScroll() {
 function slidingIconSizeUpdate() {
   elementVisible = 220;
   elementNotVisible = 275;
-  // todo: check for change in icon indicator selected
+  // todo: init sectionIconsLength, only check for change in view
   for (var i = 0; i < sectionIconsLen; i++) {
     elementTop = sectionIcons[i].getBoundingClientRect().top;
     currIcon = sectionIcons[i];
     if (elementTop < windowHeight - elementVisible) {
       slidingIcons[i].classList.add("fa-xl");
-      currViewStatic = false;
-      for (var j = 0; j < sectionIconsLen.length; j++) {
+      for (var j = 0; j < sectionIconsLen; j++) {
         if (i != j) {
           slidingIcons[j].classList.remove("fa-xl");
         }
@@ -159,7 +158,6 @@ function reveal() {
 	for (var i = 0; i < revealsLen; i++) {
     elementTop = reveals[i].getBoundingClientRect().top;
 
-    // todo: check for change in active visible element
 		if (elementTop < windowHeight - elementVisible) {
 			reveals[i].classList.remove("inactive");
 			reveals[i].classList.add("active");
