@@ -12,7 +12,9 @@ var currViewStatic = true;
 // var slidingIconsNames = [".sliding-pinned", ".sliding-new", ".sliding-explore"];
 var slidingIcons = document.querySelectorAll(".sliding-icon");
 var sectionIcons = document.querySelectorAll(".section-icon");
+var sectionIconsLen = secIcons.length;
 var reveals = document.querySelectorAll(".reveal");
+var revealsLen = reveals.length
 var windowHeight = window.innerHeight;
 var displayHeight = $(window).height();
 
@@ -125,25 +127,8 @@ function handleScroll() {
   if (elementTop + elementVisible > windowHeight && !currViewStatic) {
     $(".homepage-static-section").css({'display': 'block', 'visibility': 'visible'});
     $(".homepage-sliding-section").css({'display': 'none', 'visibility': 'hidden'});
-    currViewStatic = true;
+    
   }
-
-  // for (i = 0; i < numSlidingIcons; i++) {
-  //   slidingIconElement = $(slidingIcons[i])[0];
-  //   console.log(slidingIcons[i]);
-  //   console.log(slidingIconElement.getBoundingClientRect().top);
-  //   if (slidingIconElement.getBoundingClientRect().top + elementVisible < windowHeight) {
-  //     slidingIconElement.classList.remove("fa-lg");
-  //     slidingIconElement.classList.add("fa-xl");
-  //     for (tempIdx = 0; tempIdx < numSlidingIcons; tempIdx++) {
-  //       if (tempIdx != i) {
-  //         tempIcon = $(slidingIcons[tempIdx])[0];
-  //         tempIcon.classList.remove("fa-xl");
-  //         tempIcon.classList.add("fa-lg");
-  //       }
-  //     }
-  //   }
-  // }
   slidingIconSizeUpdate();
   reveal();
 }
@@ -151,13 +136,14 @@ function handleScroll() {
 function slidingIconSizeUpdate() {
   elementVisible = 220;
   elementNotVisible = 275;
-  // todo: init sectionIconsLength, only check for change in view
-  for (var i = 0; i < sectionIcons.length; i++) {
+  // todo: check for change in icon indicator selected
+  for (var i = 0; i < sectionIconsLen; i++) {
     elementTop = sectionIcons[i].getBoundingClientRect().top;
     currIcon = sectionIcons[i];
     if (elementTop < windowHeight - elementVisible) {
       slidingIcons[i].classList.add("fa-xl");
-      for (var j = 0; j < sectionIcons.length; j++) {
+      currViewStatic = false;
+      for (var j = 0; j < sectionIconsLen.length; j++) {
         if (i != j) {
           slidingIcons[j].classList.remove("fa-xl");
         }
@@ -170,9 +156,10 @@ function reveal() {
 	userHasScrolled = true;
   var elementVisible = 220;
   var elementNotVisible = 275;
-	for (var i = 0; i < reveals.length; i++) {
+	for (var i = 0; i < revealsLen; i++) {
     elementTop = reveals[i].getBoundingClientRect().top;
 
+    // todo: check for change in active visible element
 		if (elementTop < windowHeight - elementVisible) {
 			reveals[i].classList.remove("inactive");
 			reveals[i].classList.add("active");
