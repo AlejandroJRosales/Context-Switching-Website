@@ -141,10 +141,10 @@ function slidingIconSizeUpdate() {
     elementTop = sectionIcons[i].getBoundingClientRect().top;
     currIcon = sectionIcons[i];
     if (elementTop < windowHeight - elementVisible) {
-      slidingIcons[i].classList.add("fa-xl");
+      slidingIcons[i].classList.add("underline");
       for (var j = 0; j < sectionIconsLen; j++) {
         if (i != j) {
-          slidingIcons[j].classList.remove("fa-xl");
+          slidingIcons[j].classList.remove("underline");
         }
       }
     }
