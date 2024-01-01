@@ -44,6 +44,7 @@ function partyMode() {
 $(function() {
 	addDynamicHTML();
 	applyDynamicStyle();
+  handleScroll();
 });
 
 function addDynamicHTML() {
@@ -134,8 +135,8 @@ function handleScroll() {
 }
 
 function slidingIconSizeUpdate() {
-  elementVisible = 220;
-  elementNotVisible = 275;
+  elementVisible = 250;
+  elementNotVisible = 250;
   // todo: init sectionIconsLength, only check for change in view
   for (var i = 0; i < sectionIconsLen; i++) {
     elementTop = sectionIcons[i].getBoundingClientRect().top;
@@ -153,8 +154,8 @@ function slidingIconSizeUpdate() {
 
 function reveal() {
 	userHasScrolled = true;
-  var elementVisible = 220;
-  var elementNotVisible = 275;
+  var elementVisible = 250;
+  var elementNotVisible = 250;
 	for (var i = 0; i < revealsLen; i++) {
     elementTop = reveals[i].getBoundingClientRect().top;
 

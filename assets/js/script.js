@@ -30,6 +30,7 @@ $(function() {
 	applyDynamicStyle();
 	generateTableOfContents();
 	applyModeStyle();
+  reveal();
 });
 
 function addDynamicHTML() {
