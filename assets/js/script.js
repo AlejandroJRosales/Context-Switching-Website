@@ -26,8 +26,8 @@ window.MathJax = {
 };
 
 $(function() {
+  applyDynamicStyle();
 	addDynamicHTML();
-	applyDynamicStyle();
 	generateTableOfContents();
 	applyModeStyle();
   reveal();
@@ -35,7 +35,6 @@ $(function() {
 
 function addDynamicHTML() {
 	$(".nav-placeholder").html(navbar);
-	$(".title-section").html(titleSection);
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
 	$(".oneai-div").html(oneaiDiv);
@@ -43,7 +42,7 @@ function addDynamicHTML() {
 }
 
 function applyDynamicStyle() {
-  
+  $(".title-section").html(titleSection);
   $(".homepage-buttons").css({ "text-align": "right", "margin-right": "1em" });
   
 	$(".page-title").text($(".category-header").text());
