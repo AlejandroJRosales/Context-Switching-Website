@@ -172,7 +172,7 @@ function generateTableOfContents() {
 		</div>
 	 	<br>
 	 `
-  var topLinks = '<a id="top-of-page-li contents-link" href="/">Homepage</a><br><a id="top-of-page-li contents-link" href="/explore">Explore</a><br>'
+  var topLinks = '<a id="top-of-page-li contents-link" href="/">Home</a><br><a id="top-of-page-li contents-link" href="/explore">Explore</a><br>'
 
 	$(".table-of-contents").append('<h5>Contents</h5><hr class="section-seperator"><br><div class="reveal fade-left">' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append(topLinks + collapsePageTopLink + '<h5>Contents</h5><br>' + tableOfContentsStr);
