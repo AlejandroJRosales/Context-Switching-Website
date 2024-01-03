@@ -121,12 +121,12 @@ function handleScroll() {
   elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
   elementVisible = displayHeight - 20;
   if (elementTop + elementVisible < windowHeight && currViewStatic) {
-    $(".homepage-static-section").css({'display': 'block', 'visibility': 'hidden'});
+    $(".home-nav-bttn").css({'display': 'block', 'visibility': 'hidden'});
     $(".homepage-sliding-section").css({'display': 'block', 'visibility': 'visible'});
     currViewStatic = false;
   }
   if (elementTop + elementVisible > windowHeight && !currViewStatic) {
-    $(".homepage-static-section").css({'display': 'block', 'visibility': 'visible'});
+    $(".home-nav-bttn").css({'display': 'block', 'visibility': 'visible'});
     $(".homepage-sliding-section").css({'display': 'none', 'visibility': 'hidden'});
     currViewStatic = true;
   }
