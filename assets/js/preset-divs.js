@@ -210,7 +210,7 @@ var navbar =
 					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/misc//misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
+          <a class="dropdown-item" href="/misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
           <a class="dropdown-item" href="/misc/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
           <a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
