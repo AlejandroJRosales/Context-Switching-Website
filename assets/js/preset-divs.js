@@ -156,6 +156,7 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
+					<a class="dropdown-item todo" href="/todo">Quantum Principal Component<br>Analysis</a>
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
 					<!-- <a class="dropdown-item todo" href="/todo">Quantum Networks</a> -->
 					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
@@ -210,12 +211,12 @@ var navbar =
 					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          <a class="dropdown-item" href="/misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
+          			<a class="dropdown-item" href="/misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
+					<a class="dropdown-item" href="/misc/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
-          <a class="dropdown-item" href="/misc/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
-          <a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
+          			<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
-          <a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
+          			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
