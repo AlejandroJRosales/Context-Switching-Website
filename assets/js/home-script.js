@@ -189,13 +189,13 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".subtopic-mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });$(".topic-title").css({ "color": "black" });
-    $(".topic-title").css({ "color": "white" });
-    $(".home-text-box").css({ "color": "white" });
+    	$(".topic-title").css({ "color": "white" });
+    	$(".home-text-box").css({ "color": "white" });
 		// $(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
-    $(".homepage-icon").css({ "color": "#ffffff" });
-    $(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
-    $(".homepage-static-section-buttons-label").css({ "color": "white" });
-    $(".sliding-icon-label").css({ "color": "white" });
+    	$(".homepage-icon").css({ "color": "#ffffff" });
+    	$(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
+    	$(".homepage-static-section-buttons-label").css({ "color": "white" });
+    	$(".sliding-icon-label").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -203,6 +203,7 @@ function applyModeStyle() {
 		$(".website-creator-by").css({ "color": "black" });
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
 		$(".fa-moon").css({ "color": "black" });
+		$(".fa-moon-ignore").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
 		$(".featured-section").css({ "background": "white", "color": "black" });
@@ -210,13 +211,13 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".subtopic-mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
-    $(".topic-title").css({ "color": "black" });
+    	$(".topic-title").css({ "color": "black" });
 		$(".home-text-box").css({ "color": "black" });
 		// $(".homepage-info").css({ "background-color": "white", "color": "black" });
-    $(".homepage-icon").css({ "color": "#000000" });
-    $(".homepage-static-section").css({ "background": "white" });
-    $(".homepage-static-section-buttons-label").css({ "color": "black" });
-    $(".sliding-icon-label").css({ "color": "black" });
+    	$(".homepage-icon").css({ "color": "#000000" });
+    	$(".homepage-static-section").css({ "background": "white" });
+    	$(".homepage-static-section-buttons-label").css({ "color": "black" });
+    	$(".sliding-icon-label").css({ "color": "black" });
 	}
 }
 

@@ -65,7 +65,7 @@ var oneaiDiv =
 			<div id="textbox-area"></div>
 
 			<div class="homepage-buttons">
-          <button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon reveal-moon fade-up fa-2xl dark-mode-toggle-btn-ignore"></i></button>
+          		<button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button>
 				<span>
 					<!-- <button type="button" onclick="login()"><i class="fa-solid fa-user fa-xl" style="color: #ffffff;"></i></button> -->
 					<!-- <button type="button" class="btn btn-sm" id="display-input-btn" onclick="displayLoginBox()"><i
