@@ -36,15 +36,15 @@ if (!localStorage.getItem('isDarkMode')) {
 }
 
 function partyMode() {
-  $("body")[0].classList.add("fa-solid");
-  $("body")[0].classList.add("fa-thumbtack");
-  $("body")[0].classList.add("fa-beat-fade");
+	$("body")[0].classList.add("fa-solid");
+	$("body")[0].classList.add("fa-thumbtack");
+	$("body")[0].classList.add("fa-beat-fade");
 }
 
-$(function() {
+$(function () {
 	addDynamicHTML();
 	applyDynamicStyle();
-  handleScroll();
+	handleScroll();
 });
 
 function addDynamicHTML() {
@@ -55,8 +55,8 @@ function addDynamicHTML() {
 	}, 700);
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
-  $(".explore-placeholder").html(exploreSection);
-  // $(".topic-page-title-section").html(topicPageTitleSection);
+	$(".explore-placeholder").html(exploreSection);
+	// $(".topic-page-title-section").html(topicPageTitleSection);
 }
 
 function applyDynamicStyle() {
@@ -66,7 +66,7 @@ function applyDynamicStyle() {
 		// $(".fa-moon").css({ "margin-top": ".5em" });
 		// $(".fa-sun").css({ "margin-top": ".5em" });
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
-    $(".topic-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
+		$(".topic-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
 		$(".website-creator-by").css({ "font-size": "1.1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
@@ -80,29 +80,29 @@ function applyDynamicStyle() {
 		$(".img-avatar").css({ "height": "48%", "width": "48%" });
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
 		$(".reveal-website-opener").css({ "padding-bottom": "25%" });
-    $(".featured-section").css({ "margin": "6em 0em 1em 0em" });
-    $(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
-    $(".footer-placeholder").css({ "margin-top": "20%" });
-    $(".figure-ignore").css({ "width": "90%", "margin-bottom": "5%" });
-    $(".figure").css({ "width": "90%", "margin-bottom": "5%" });
-    $(".homepage-sliding-section").css({ "padding-top": "4%" });
+		$(".featured-section").css({ "margin": "6em 0em 1em 0em" });
+		$(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
+		$(".footer-placeholder").css({ "margin-top": "20%" });
+		$(".figure-ignore").css({ "width": "90%", "margin-bottom": "5%" });
+		$(".figure").css({ "width": "90%", "margin-bottom": "5%" });
+		$(".homepage-sliding-section").css({ "padding-top": "4%" });
 	}
 }
 
-$(function() {
-	$(".sliding-link").click(function(e) {
+$(function () {
+	$(".sliding-link").click(function (e) {
 		e.preventDefault();
 		var aid = $(this).attr("href");
 		$('html,body').animate({ scrollTop: $(aid).offset().top }, 'fast');
 	});
 });
 
-$(function() {
-  $(".sliding-link-offset").click(function(e) {
-    e.preventDefault();
-    var aid = $(this).attr("href");
-    $('html,body').animate({ scrollTop: $(aid).offset().top - (displayHeight * .12) }, 'fast');
-  });
+$(function () {
+	$(".sliding-link-offset").click(function (e) {
+		e.preventDefault();
+		var aid = $(this).attr("href");
+		$('html,body').animate({ scrollTop: $(aid).offset().top - (displayHeight * .12) }, 'fast');
+	});
 });
 
 window.addEventListener("scroll", handleScroll);
@@ -118,46 +118,46 @@ window.addEventListener("scroll", handleScroll);
 // });
 
 function handleScroll() {
-  elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
-  elementVisible = displayHeight - 20;
-  if (elementTop + elementVisible < windowHeight && currViewStatic) {
-    $(".home-nav-bttn").css({'display': 'block', 'visibility': 'hidden'});
-    $(".homepage-sliding-section").css({'display': 'block', 'visibility': 'visible'});
-    currViewStatic = false;
-  }
-  if (elementTop + elementVisible > windowHeight && !currViewStatic) {
-    $(".home-nav-bttn").css({'display': 'block', 'visibility': 'visible'});
-    $(".homepage-sliding-section").css({'display': 'none', 'visibility': 'hidden'});
-    currViewStatic = true;
-  }
-  slidingIconSizeUpdate();
-  reveal();
+	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
+	elementVisible = displayHeight - 20;
+	if (elementTop + elementVisible < windowHeight && currViewStatic) {
+		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
+		$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
+		currViewStatic = false;
+	}
+	if (elementTop + elementVisible > windowHeight && !currViewStatic) {
+		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
+		$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
+		currViewStatic = true;
+	}
+	slidingIconSizeUpdate();
+	reveal();
 }
 
 function slidingIconSizeUpdate() {
-  elementVisible = 250;
-  elementNotVisible = 250;
-  // todo: init sectionIconsLength, only check for change in view
-  for (var i = 0; i < sectionIconsLen; i++) {
-    elementTop = sectionIcons[i].getBoundingClientRect().top;
-    currIcon = sectionIcons[i];
-    if (elementTop < windowHeight - elementVisible) {
-      slidingIcons[i].classList.add("underline");
-      for (var j = 0; j < sectionIconsLen; j++) {
-        if (i != j) {
-          slidingIcons[j].classList.remove("underline");
-        }
-      }
-    }
-  }
+	elementVisible = 250;
+	elementNotVisible = 250;
+	// todo: init sectionIconsLength, only check for change in view
+	for (var i = 0; i < sectionIconsLen; i++) {
+		elementTop = sectionIcons[i].getBoundingClientRect().top;
+		currIcon = sectionIcons[i];
+		if (elementTop < windowHeight - elementVisible) {
+			slidingIcons[i].classList.add("underline");
+			for (var j = 0; j < sectionIconsLen; j++) {
+				if (i != j) {
+					slidingIcons[j].classList.remove("underline");
+				}
+			}
+		}
+	}
 }
 
 function reveal() {
 	userHasScrolled = true;
-  var elementVisible = 250;
-  var elementNotVisible = 250;
+	var elementVisible = 250;
+	var elementNotVisible = 250;
 	for (var i = 0; i < revealsLen; i++) {
-    elementTop = reveals[i].getBoundingClientRect().top;
+		elementTop = reveals[i].getBoundingClientRect().top;
 
 		if (elementTop < windowHeight - elementVisible) {
 			reveals[i].classList.remove("inactive");
@@ -188,14 +188,14 @@ function applyModeStyle() {
 		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".subtopic-mini-banner-label").css({ "color": "white" });
-		$(".website-title").css({ "color": "white" });$(".topic-title").css({ "color": "black" });
-    	$(".topic-title").css({ "color": "white" });
-    	$(".home-text-box").css({ "color": "white" });
+		$(".website-title").css({ "color": "white" }); $(".topic-title").css({ "color": "black" });
+		$(".topic-title").css({ "color": "white" });
+		$(".home-text-box").css({ "color": "white" });
 		// $(".homepage-info").css({ "background-color": "rgb(41,41,41)", "color": "white" });
-    	$(".homepage-icon").css({ "color": "#ffffff" });
-    	$(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
-    	$(".homepage-static-section-buttons-label").css({ "color": "white" });
-    	$(".sliding-icon-label").css({ "color": "white" });
+		$(".homepage-icon").css({ "color": "#ffffff" });
+		$(".homepage-static-section").css({ "background": "rgb(41,41,41)" });
+		$(".homepage-static-section-buttons-label").css({ "color": "white" });
+		$(".sliding-icon-label").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -211,13 +211,13 @@ function applyModeStyle() {
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".subtopic-mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
-    	$(".topic-title").css({ "color": "black" });
+		$(".topic-title").css({ "color": "black" });
 		$(".home-text-box").css({ "color": "black" });
 		// $(".homepage-info").css({ "background-color": "white", "color": "black" });
-    	$(".homepage-icon").css({ "color": "#000000" });
-    	$(".homepage-static-section").css({ "background": "white" });
-    	$(".homepage-static-section-buttons-label").css({ "color": "black" });
-    	$(".sliding-icon-label").css({ "color": "black" });
+		$(".homepage-icon").css({ "color": "#000000" });
+		$(".homepage-static-section").css({ "background": "white" });
+		$(".homepage-static-section-buttons-label").css({ "color": "black" });
+		$(".sliding-icon-label").css({ "color": "black" });
 	}
 }
 
