@@ -194,20 +194,12 @@ window.addEventListener('click', function (e) {
 	// nav searh bar
 	// var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
 	// table of contents
-	// var isTOC = document.getElementById('collapse-container').contains(e.target);
+	var isContainer = document.getElementById('collapse-container').contains(e.target);
 
 	// Clicked outside table of contents
-	// if (!isSearchBar && !isTOC) {
-	// 	$(".collapse").collapse('hide');
-	// }
-
-	// console.log(isTOC);
-	// if (isTOC) {
-	// 	$(".oneai-contents-button-container").css({ "visibility": "visible", "display": "block" });
-	// }
-	// if (!isTOC) {
-	// $(".collapse").collapse('hide');
-	// }
+	if (!isContainer) {
+		$(".collapse").collapse('hide');
+	}
 
 	// Clicked outside nav bar search box
 	// else if (isSearchBar) {
