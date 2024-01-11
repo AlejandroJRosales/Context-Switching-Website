@@ -14,7 +14,7 @@ var titleSection =
 `
 
 var exploreSection =
-`
+	`
 <div>
   <h3 class="explore-section"><i class="fa-regular fa-compass fa-beat-fade fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;<a href="/explore">Explore</a>
     <div class="explore-text-box">
@@ -27,7 +27,7 @@ var exploreSection =
 `
 
 var topicPageTitleSection =
-  `
+	`
   <div class="reveal-website-opener reveal-title fade-in">
     <div class="website-intro"
       style="color: #777;background-color:white;text-align:center;padding:50px 80px;text-align: center;">
