@@ -1,7 +1,7 @@
 var titleSection =
 	`
 	<div class="title-and-developer">
-		<h1 class="page-title"></h1>
+		<h2 class="page-title"></h2>
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>

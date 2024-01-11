@@ -59,7 +59,7 @@ function applyDynamicStyle() {
 		$("#nav-search-box").css({ "min-width": "200px" });
 		$(".img-avatar").css({ "height": "48%", "width": "48%" });
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
-		$(".title-section").css({ "padding-left": "5%", "padding-right": "5%" });
+		$(".title-section").css({ "padding-left": "5%", "padding-right": "5%"});
 		// $(".oneai-collapse").css({ "max-width": "80%" });
 
 	}
