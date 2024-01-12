@@ -86,6 +86,8 @@ function applyDynamicStyle() {
 		$(".figure-ignore").css({ "width": "90%", "margin-bottom": "5%" });
 		$(".figure").css({ "width": "90%", "margin-bottom": "5%" });
 		$(".homepage-sliding-section").css({ "padding-top": "4%" });
+		$(".mini-banner-label").css({ "margin": "0% 10% 0% 10%" });
+		$(".subtopic-mini-banner-label").css({ "margin": "0% 10% 0% 10%" });
 	}
 }
 
