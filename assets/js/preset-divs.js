@@ -333,8 +333,7 @@ var footer =
 					<h3 id="footer-about-me-title">Context Switching</h3>
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. 
-						My website provides a space for me to talk in-depth and teach about topics I am having fun learning about. I hope you enjoy and Jarcey the A.I. will be here to assist you wherever and whenever during your stay!
+						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I dedicate this website to my best boy and best girl. Whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. Lastly, my site provides a space for me to talk in-depth about topics I am having fun learning. I hope you enjoy you have fun too!
 					</p>
 
 	 <hr class="rgba-white-light" style="margin: 0 15%;">
