@@ -6,8 +6,7 @@ var toggleModeMrgIcon;
 var collapseContentsIsHidden = false;
 var userHasScrolled = false;
 var titleRevealed = false;
-// var delayInMilliseconds = 500;
-var delayInMilliseconds = 0;
+var delayInMilliseconds = 500; //1 second
 var sectionHeaders = ["category-header", "section-header", "subsection-header", "subsubsection-header", "subsubsubsection-header"];
 if (!localStorage.getItem('isDarkMode')) {
 	localStorage.setItem('isDarkMode', false);
@@ -29,9 +28,9 @@ window.MathJax = {
 $(function () {
 	applyDynamicStyle();
 	addDynamicHTML();
+	generateTableOfContents();
 	applyModeStyle();
 	reveal();
-	generateTableOfContents();
 });
 
 function addDynamicHTML() {
@@ -69,8 +68,7 @@ function applyDynamicStyle() {
 
 	var titleSectionHeight = $(".title-section").height();
 	var topBottomMargin = (windowHeight - titleSectionHeight) / 2;
-	// topBottomMargin = topBottomMargin * 3;
-	topBottomMargin = topBottomMargin * .75;
+	topBottomMargin = topBottomMargin * 3;
 	$(".title-section").css({ "margin-top": topBottomMargin, "margin-bottom": topBottomMargin });
 
 	var titleSectionHeight = $(".avatar-title-section").height();
@@ -265,13 +263,13 @@ setTimeout(function () {
 	// }
 	// else if ($(window).scrollTop() >= 10 && userHasScrolled && !titleRevealed) {
 	// titleRevealed = true;
-	// var reveals = $('.reveal-title')[0];
-	// $(".title-section").css({
-	// 	"-webkit-transition": "margin-top 1s ease-out",
-	// 	"-moz-transition": "margin-top 1s ease-out",
-	// 	"-o-transition": "margin-top 1s ease-out",
-	// 	"transition": "margin-top 1s ease-out"
-	// });
+	var reveals = $('.reveal-title')[0];
+	$(".title-section").css({
+		"-webkit-transition": "margin-top 1s ease-out",
+		"-moz-transition": "margin-top 1s ease-out",
+		"-o-transition": "margin-top 1s ease-out",
+		"transition": "margin-top 1s ease-out"
+	});
 
 	$(".avatar-title-section").css({
 		"-webkit-transition": "margin-top 1s ease-out",

@@ -2,7 +2,7 @@ var titleSection =
 	`
 	<div class="title-and-developer">
 		<h2 class="page-title"></h2>
-		<div class="other-contents-page-title"> 
+		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
 				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Alejandro Rosales</a></p>
@@ -28,7 +28,7 @@ var exploreSection =
 
 var topicPageTitleSection =
 	`
-  <div class="reveal-website-opener">
+  <div class="reveal-website-opener reveal-title fade-in">
     <div class="website-intro"
       style="color: #777;background-color:white;text-align:center;padding:50px 80px;text-align: center;">
       <p class="topic-title">Neuroscience</p>
