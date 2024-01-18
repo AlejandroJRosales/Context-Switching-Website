@@ -17,6 +17,7 @@ var reveals = document.querySelectorAll(".reveal");
 var revealsLen = reveals.length;
 var windowHeight = window.innerHeight;
 var displayHeight = $(window).height();
+var elVisibleOffset = 0;
 
 window.MathJax = {
 	loader: {
@@ -63,6 +64,7 @@ function applyDynamicStyle() {
 	applyModeStyle();
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
+		elVisibleOffset = 20;
 		// $(".fa-moon").css({ "margin-top": ".5em" });
 		// $(".fa-sun").css({ "margin-top": ".5em" });
 		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
@@ -123,7 +125,7 @@ function handleScroll() {
 	displayHeight = $(window).height();
 
 	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
-	elementVisible = displayHeight;
+	elementVisible = displayHeight + elVisibleOffset;
 	if (elementTop + elementVisible < windowHeight && currViewStatic) {
 		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
 		$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
