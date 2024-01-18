@@ -122,7 +122,7 @@ function handleScroll() {
 	var displayHeight = $(window).height();
 
 	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
-	elementVisible = displayHeight - 20;
+	elementVisible = displayHeight;
 	if (elementTop + elementVisible < windowHeight && currViewStatic) {
 		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
 		$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
