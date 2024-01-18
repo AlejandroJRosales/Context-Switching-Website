@@ -187,8 +187,8 @@ function applyModeStyle() {
 		$(".fa-sun").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
-		$(".featured-section").css({ "background": "rgb(41,41,41)", "color": "white" });
-		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
+		$(".featured-section").css({ "color": "white" });
+		$(".mini-banner").css({ "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".subtopic-mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" }); $(".topic-title").css({ "color": "black" });
@@ -210,8 +210,8 @@ function applyModeStyle() {
 		$(".fa-moon-ignore").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
-		$(".featured-section").css({ "background": "white", "color": "black" });
-		$(".mini-banner").css({ "background": "white", "color": "black" });
+		$(".featured-section").css({ "color": "black" });
+		$(".mini-banner").css({ "color": "black" });
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".subtopic-mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });

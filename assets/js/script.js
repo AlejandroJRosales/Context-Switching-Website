@@ -313,12 +313,11 @@ function applyModeStyle() {
 		$(".website-intro").css({ "background": "rgb(41,41,41)" });
 		$(".page-title").css({ "color": "white" });
 		$(".dot-txt").css({ "color": "white" });
-		$(".information").css({ "background-color": "rgb(41,41,41)", "color": "white" });
+		$(".information").css({ "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
 		$(".fa-sun").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "white" });
 		$(".figure").css({ "-webkit-filter": "invert(1)", "filter": "invert(1)" });
-		$(".mini-banner").css({ "background": "rgb(41,41,41)", "color": "white" });
 		$(".mini-banner-label").css({ "color": "white" });
 		$(".website-title").css({ "color": "white" });
 		$(".info-table").css({ "color": "white" });
@@ -333,13 +332,12 @@ function applyModeStyle() {
 		$(".website-intro").css({ "background": "white" });
 		$(".page-title").css({ "color": "black" });
 		$(".dot-txt").css({ "color": "black" });
-		$(".information").css({ "background-color": "white", "color": "black" });
+		$(".information").css({ "color": "black" });
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
 		$(".fa-moon").css({ "color": "black" });
 		$(".fa-moon-ignore").css({ "color": "white" });
 		$("#dark-mode-toggle-btn").css({ "color": "black" });
 		$(".figure").css({ "-webkit-filter": "invert(0)", "filter": "invert(0)" });
-		$(".mini-banner").css({ "background": "white", "color": "black" });
 		$(".mini-banner-label").css({ "color": "black" });
 		$(".website-title").css({ "color": "black" });
 		$(".info-table").css({ "color": "black" });
