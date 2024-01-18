@@ -16,6 +16,7 @@ var sectionIcons = document.querySelectorAll(".section-icon");
 var reveals = document.querySelectorAll(".reveal");
 var revealsLen = reveals.length;
 var windowHeight = window.innerHeight;
+var displayHeight = $(window).height();
 
 window.MathJax = {
 	loader: {
@@ -119,7 +120,7 @@ window.addEventListener("scroll", handleScroll);
 // });
 
 function handleScroll() {
-	var displayHeight = $(window).height();
+	displayHeight = $(window).height();
 
 	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
 	elementVisible = displayHeight;
