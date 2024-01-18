@@ -28,9 +28,9 @@ window.MathJax = {
 $(function () {
 	applyDynamicStyle();
 	addDynamicHTML();
-	generateTableOfContents();
 	applyModeStyle();
 	reveal();
+	generateTableOfContents();
 });
 
 function addDynamicHTML() {
