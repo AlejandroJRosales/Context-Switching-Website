@@ -149,12 +149,12 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Machine Learning</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
-          <a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
+					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
-					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
