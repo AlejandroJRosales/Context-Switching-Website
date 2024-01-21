@@ -205,6 +205,7 @@ function applyModeStyle() {
 		$(".homepage-static-section-buttons-label").css({ "color": "white" });
 		$(".sliding-icon-label").css({ "color": "white" });
 		$(".sliding-icon-update-label").css({ "color": "white" });
+		$(".dedication-container").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -227,6 +228,7 @@ function applyModeStyle() {
 		$(".homepage-static-section-buttons-label").css({ "color": "black" });
 		$(".sliding-icon-label").css({ "color": "black" });
 		$(".sliding-icon-update-label").css({ "color": "white" });
+		$(".dedication-container").css({ "color": "black" });
 	}
 }
 
