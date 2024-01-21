@@ -75,7 +75,7 @@ function applyDynamicStyle() {
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
-		$(".dedication-container").css({ "font-size": "1.1em", "margin": "0% 10% 50% 10% !important" });
+		$(".article-sections-container").css({ "margin": "90% 0% 10% 0%" });
 		$("#website-creator-name").css({ "padding-top": "4px", "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 10% 10% 10%" });
@@ -85,7 +85,7 @@ function applyDynamicStyle() {
 		$(".img-avatar").css({ "height": "48%", "width": "48%" });
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
 		$(".reveal-website-opener").css({ "padding-bottom": "25%" });
-		$(".featured-section").css({ "margin": "7em 0em 1em 0em" });
+		$(".featured-section").css({ "margin": "4em 0em 1em 0em" });
 		$(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
 		$(".footer-placeholder").css({ "margin-top": "20%" });
 		$(".figure-ignore").css({ "width": "90%", "margin-bottom": "5%" });
