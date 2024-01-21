@@ -236,7 +236,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
 					<a class="dropdown-item" href="/my/lab">Virtual Lab</a>
 					<a class="dropdown-item" href="/my/musicexhibition">Music Exhibit</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://oneai.cloud/">A.I. Assistant</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">A.I. Assistant</a>
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
