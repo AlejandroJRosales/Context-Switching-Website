@@ -174,7 +174,7 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
-					<a class="dropdown-item" href="/math/chernclass">Chern Class</a>
+					<a class="dropdown-item" href="/math/chernclasses>Chern Class</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
