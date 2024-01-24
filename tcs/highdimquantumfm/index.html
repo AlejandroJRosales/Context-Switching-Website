@@ -77,7 +77,25 @@
 					</p>
 
 					<p>
-						Now that we have defined the paramters and goal for our qPCA algorithm, let's now walk through the algorithm itself. Overall, implemnting quantum parallelism, the algorithm transforms the quantum state \(|\psi_{s}\rangle\), that holds the original
+						It is important to note what data is PCA-representable and what datasets are qPCA-representable. First, we begin by defining PCA-representable data. Let a set of \(n\) data points be defined \(m\) coordinates and represented by the matrix \(A\) \(=\) \(\sum_i^r \sigma_i u_i v_i^T\in \mathbb{R}^{n \times m}\). Matrix or data \(A\) is PCA-representable if there exists \(p \in\left[\frac{1}{2}, 1\right]\), \(\varepsilon \in[0,1 / 2]\), \(\beta \in[p-\varepsilon, p+\varepsilon]\), \(\alpha \in[0,1]\) such that:
+					</p>
+					<p> 
+						<ul>
+						<li>\(\exists k \in O(1)\) such that \(\frac{\sum_i^k \sigma_i^2}{\sum_i^m \sigma_i^2}=p\) where \(\sigma^{2}\) denotes standard deviation.</li>
+						<li>For at least \(\alpha n\) points \(a_{i}\), it holds that \(\frac{\left\|y_i\right\|}{\left\|a_i\right\|} \geq \beta\), where \(\left\|y_i\right\|\) \(=\) \(\sqrt{\sum_i^k\left|\left\langle a_i \mid v_j\right\rangle\right|^2}\left\|a_i\right\|\).</li>
+						</ul>
+					</p>
+
+					<p>
+						Note, this allows for the PCA lower probability to be bounded.
+					</p>
+
+					<p>
+						Let's consider qPCA-representable case. Given \(a_{i}\) is a row of \(A\in\mathbb{R}^{n\times d}\), the time complexity is \(\frac{\left\|a_i\right\|}{\left\|\bar{y}_i\right\|}\) \(=\) \(\frac{1}{\beta}\) \(=\) \(O(1)\) with the a probability greater than \(\alpha\).
+					</p>
+
+					<p>
+						Now that we have defined the parameters, data assumptions, and goal for our qPCA algorithm, let's walk through the algorithm itself. The abstract concept is that by implementing quantum parallelism, the algorithm transforms the quantum state \(|\psi_{s}\rangle\), that holds the original
 						data. to another quantum state \(|\psi_{e}\rangle\), that stores the new low-dimensional data points:
 					</p>
 
@@ -100,7 +118,7 @@
 					</p>
 
 					<p>
-						Consider the data set \(\{\mathbf{x}_i\}_{i=1}^N\), or matrix \(X\),
+						For the implementation of the quantum algorithm, first consider the data set \(\{\mathbf{x}_i\}_{i=1}^N\), or matrix \(X\),
 						is stored in a quantum random access memory qRAM, such that qRAM takes
 						\(|i\rangle|0\rangle|0\rangle \rightarrow|i\rangle\left|a_i\right\rangle|| \vec{a}_i|\rangle\).
 						Next, using the quantum access we now have to vectors and norms, we constuct the state
