@@ -190,7 +190,7 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuro/memoryformation">Neurobiological Bases of<br> Memory Formation</a>
+					<a class="dropdown-item" href="/neuro/memoryformation">Neuromolecular Bases of<br> Memory Formation</a>
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
@@ -211,8 +211,8 @@ var navbar =
 					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-          			<a class="dropdown-item" href="/misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/misc/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
+          			<a class="dropdown-item" href="/misc/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
