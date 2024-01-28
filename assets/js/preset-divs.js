@@ -217,6 +217,7 @@ var navbar =
             Virtue Ethics</a>
 					<a class="dropdown-item" href="/misc/quantummechanics">Quantum Mechanics</a>
           			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
+					<a class="dropdown-item" href="/misc/epigeneticsandinheritance">Epigenetics and Inheritance</a>
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
