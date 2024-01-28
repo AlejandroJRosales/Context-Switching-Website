@@ -190,7 +190,7 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuro/memoryformation">Neuromolecular Bases of<br> Memory Formation</a>
+					<a class="dropdown-item" href="/neuro/memoryformation">Molecular Bases of<br> Memory Formation</a>
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
 				Connectome</a>
