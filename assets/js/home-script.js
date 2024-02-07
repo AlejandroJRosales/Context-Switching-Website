@@ -17,7 +17,7 @@ var reveals = document.querySelectorAll(".reveal");
 var revealsLen = reveals.length;
 var windowHeight = window.innerHeight;
 var displayHeight = $(window).height();
-var elVisibleOffset = -10;
+var elVisibleOffset = -14;
 
 window.MathJax = {
 	loader: {
