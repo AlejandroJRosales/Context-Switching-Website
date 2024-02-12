@@ -291,7 +291,7 @@ setTimeout(function () {
 	var contentsHeight = $(".table-of-contents").height();
 	// var contentsTopBottomMargin = (windowHeight - contentsHeight);
 	// console.log(contentsTopBottomMargin);
-	$(".table-of-contents").css({ "margin-top": "50%", "margin-bottom": "50%" });
+	$(".table-of-contents").css({ "margin-top": "25%", "margin-bottom": "25%" });
 	reveals.classList.add("active");
 
 }, delayInMilliseconds);
