@@ -45,7 +45,7 @@ var oneaiDiv =
 	`
 	<link rel="stylesheet" href="/assets/oneai/style.css">
 <div class="oneai-contents-button-container">
-	<!-- <div class="oneai-button reveal reveal-oneai-button fade-right"> -->
+	<!-- <div class="oneai-button"> -->
 	<div class="oneai-button">
 			<div class="panel-group">
 			<div class="panel panel-default">
@@ -58,8 +58,6 @@ var oneaiDiv =
 			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
-
-    <br>
 
 		<div class="input-container">
 
@@ -103,7 +101,6 @@ var tableOfContentsCollapsible =
 	`
 <div class="contents-button-container" id="collapse-container">
 	<div class="collapsible-contents-button reveal-button fade-in fade-out-right">
-			<!-- <h4 class=reveal fade-right">Section<br>Links</h4> -->
 			<div class="panel-group">
 				<div class="panel panel-default">
 					<div class="panel-collapse collapse" id="collapse">

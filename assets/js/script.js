@@ -163,18 +163,10 @@ function generateTableOfContents() {
 			}
 		}
 	});
-
-	var collapsePageTopLink =
-		`
-		<div class="collapsible-contents-top">
-			<button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i class="fas fa-moon"></i>
-		</div>
-	 	<br>
-	 `
-	var topLinks = '<a id="top-of-page-li contents-link" href="/">Home</a><br><a id="top-of-page-li contents-link" href="/explore">Explore</a><br>'
+	// var topLinks = '<br><button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button><br><br></div><a id="top-of-page-li contents-link" href="/">Home</a><br><br>'
 
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Contents</h5><hr class="section-seperator"><br>' + tableOfContentsStr + '</div>');
-	$(".table-of-contents-collapsible").append(topLinks + collapsePageTopLink + '<h5>Contents</h5><br>' + tableOfContentsStr);
+	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + tableOfContentsStr);
 }
 
 $(function () {
