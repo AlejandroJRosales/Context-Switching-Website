@@ -53,12 +53,12 @@ var oneaiDiv =
 				<div class="content">
 
 		<div class="chatbox">
-			<p id="current-speaker">Jarcey A.I.</p>
+			<p id="current-speaker">A.I. Website Assistant</p>
 			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
 
-		<hr>
+		<br>
 
 		<div class="input-container"">
 
@@ -66,6 +66,7 @@ var oneaiDiv =
 
 			<div class="homepage-buttons">
           		<button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button>
+				<a class="sliding-link" href="#top-of-page"><i class="fa-solid fa-angles-up fa-2xl top-of-page" style="color: #ffffff;"></i></a>
 				<span>
 					<!-- <button type="button" onclick="login()"><i class="fa-solid fa-user fa-xl" style="color: #ffffff;"></i></button> -->
 					<!-- <button type="button" class="btn btn-sm" id="display-input-btn" onclick="displayLoginBox()"><i
@@ -124,9 +125,8 @@ var tableOfContentsCollapsible =
 
 var navbar =
 	`
-<nav class="navbar navbar-expand-lg navbar-custom">
+<nav class="navbar navbar-expand-lg navbar-custom" id="top-of-page">
 	<a class="nav-bar-brand" href="/">Context<br>Switching</a>
-	<!-- <a class="nav-bar-creator" href="#"><br>by Alejandro Rosales</a> -->
 	<button class="navbar-toggler custom-toggler" type="button" data-toggle="collapse" data-target="#navbarColor01"
 		aria-controls="navbarColor01" aria-expanded="false" aria-label="Toggle navigation">
 		<!-- <i class="fas fa-atom"></i> -->
