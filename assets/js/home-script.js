@@ -52,7 +52,7 @@ $(function () {
 function addDynamicHTML() {
 	$(".oneai-div").html(oneaiDiv);
 	// setTimeout(() => {
-	// 	reveals[0].classList.add("active")
+	reveals[0].classList.add("active")
 	// 	$('.reveal-oneai-button')[0].classList.add("active");
 	// }, 700);
 	$(".nav-placeholder").html(navbar);
