@@ -59,6 +59,8 @@ var oneaiDiv =
 			<p id="ai-response"></p>
 		</div>
 
+		<hr>
+
 		<div class="input-container">
 
 			<div id="textbox-area"></div>
