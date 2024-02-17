@@ -88,7 +88,6 @@ var oneaiDiv =
 	</div>
 
 					</div>
-			</div>
 			<button class="btn btn-primary oneai-contents-button" type="button" data-toggle="collapse" data-target="#oneai-collapse"
 						aria-expanded="false" aria-controls="collapseExample" id="oneai-contents-button">
 							<i class="fa-solid fa-robot" id="oneai-icon"></i>
