@@ -242,7 +242,7 @@ function revealButton() {
 
 	var windowHeight = window.innerHeight;
 	var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
-	var elementVisible = 10;
+	var elementVisible = 0;
 	// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
 
 	if (elementTop < windowHeight - elementVisible) {
