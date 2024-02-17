@@ -232,6 +232,7 @@ function reveal() {
 			reveals[i].classList.add("active");
 		} else {
 			reveals[i].classList.remove("active");
+			
 		}
 	}
 }
@@ -245,10 +246,12 @@ function revealButton() {
 	// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
 
 	if (elementTop < windowHeight - elementVisible) {
+		revealTOC.classList.remove("inactive");
 		revealTOC.classList.add("active");
 		// $('.reveal-oneai-button')[0].classList.add("active");
 	} else {
 		revealTOC.classList.remove("active");
+		revealTOC.classList.add("inactive");
 		// $('.reveal-oneai-button')[0].classList.remove("active");
 	}
 }

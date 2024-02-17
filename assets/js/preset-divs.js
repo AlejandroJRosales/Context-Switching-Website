@@ -102,7 +102,7 @@ var oneaiDiv =
 var tableOfContentsCollapsible =
 	`
 <div class="contents-button-container" id="collapse-container">
-	<div class="collapsible-contents-button reveal-button fade-in">
+	<div class="collapsible-contents-button reveal-button fade-in fade-out-right">
 			<!-- <h4 class=reveal fade-right">Section<br>Links</h4> -->
 			<div class="panel-group">
 				<div class="panel panel-default">
