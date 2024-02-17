@@ -50,8 +50,7 @@ var oneaiDiv =
 			<div class="panel-group">
 			<div class="panel panel-default">
 				<div class="panel-collapse collapse" id="oneai-collapse">
-
-					<div class="content">
+				<div class="content">
 
 		<div class="chatbox">
 			<p id="current-speaker">Jarcey A.I.</p>

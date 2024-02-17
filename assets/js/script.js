@@ -187,10 +187,10 @@ window.addEventListener('click', function (e) {
 	// var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
 	// table of contents
 	// var isContainer = document.getElementById('collapse-container').contains(e.target);
-	var infoClick = $('.information')[0].contains(e.target);
+	var outsideContainerClick = !$('.table-of-contents-collapsible-div')[0].contains(e.target);
 
 	// Clicked outside table of contents
-	if (infoClick) {
+	if (outsideContainerClick) {
 		$(".collapse").collapse('hide');
 	}
 

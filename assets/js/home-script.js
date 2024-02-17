@@ -43,8 +43,8 @@ function partyMode() {
 }
 
 $(function () {
-	addDynamicHTML();
 	applyDynamicStyle();
+	addDynamicHTML();
 	handleScroll();
 });
 
@@ -115,15 +115,14 @@ $(function () {
 
 window.addEventListener("scroll", handleScroll);
 
-// window.addEventListener('click', function(e) {
-// 	// nav searh bar
-// 	var isSearchBar = document.getElementById('nav-search-box').contains(e.target);
+window.addEventListener('click', function(e) {
+	var outsideContainerClick = !$('.oneai-div')[0].contains(e.target);
 
-// 	if (isSearchBar) {
-// 		$(".nav-search-div").css({ "background-color": "white" });
-// 		$(".nav-search-glyph").css({ "color": "black" });
-// 	}
-// });
+	// Clicked outside table of contents
+	if (outsideContainerClick) {
+		// $(".collapse").collapse('hide');
+	}
+});
 
 function handleScroll() {
 	displayHeight = $(window).height();
