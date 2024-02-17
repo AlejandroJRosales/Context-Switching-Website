@@ -60,7 +60,7 @@ var oneaiDiv =
 
 		<hr>
 
-		<div class="input-container">
+		<div class="input-container"">
 
 			<div id="textbox-area"></div>
 
