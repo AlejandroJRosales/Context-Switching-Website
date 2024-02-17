@@ -246,10 +246,10 @@ function revealButton() {
 
 	if (elementTop < windowHeight - elementVisible) {
 		revealTOC.classList.add("active");
-		$('.reveal-oneai-button')[0].classList.add("active");
+		// $('.reveal-oneai-button')[0].classList.add("active");
 	} else {
 		revealTOC.classList.remove("active");
-		$('.reveal-oneai-button')[0].classList.remove("active");
+		// $('.reveal-oneai-button')[0].classList.remove("active");
 	}
 }
 
