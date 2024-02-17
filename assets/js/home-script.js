@@ -45,6 +45,7 @@ function partyMode() {
 $(function () {
 	applyDynamicStyle();
 	addDynamicHTML();
+	applyModeStyle();
 	handleScroll();
 });
 
@@ -61,16 +62,10 @@ function addDynamicHTML() {
 }
 
 function applyDynamicStyle() {
-	applyModeStyle();
-	displayHeight = $(window).height();
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
-		// elVisibleOffset = displayHeight * .1;
-		// $(".fa-moon").css({ "margin-top": ".5em" });
-		// $(".fa-sun").css({ "margin-top": ".5em" });
-		console.log("is mobile");
-		$(".website-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
-		$(".topic-title").css({ "font-size": "1.5em", "margin-bottom": ".75em" });
+		$(".website-title").css({ "font-size": "1.5em",});
+		$(".topic-title").css({ "font-size": "1.5em"});
 		$(".website-creator-by").css({ "font-size": "1.1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
