@@ -345,6 +345,13 @@ function applyModeStyle() {
 	}
 }
 
+function topOfPage() {
+	var revealTOC = $('.reveal-button')[0];
+	revealTOC.classList.remove("active");
+	revealTOC.classList.add("inactive");
+	$('html,body').animate({ scrollTop: $("#top-of-page").offset().top }, 'fast');
+}
+
 function toggleDarkMode() {
 	if (localStorage.getItem('isDarkMode') === 'true') {
 		localStorage.setItem('isDarkMode', false);

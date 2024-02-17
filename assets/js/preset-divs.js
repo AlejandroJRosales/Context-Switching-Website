@@ -66,7 +66,7 @@ var oneaiDiv =
 
 			<div class="homepage-buttons">
           		<button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button>
-				<a class="sliding-link" href="#top-of-page"><i class="fa-solid fa-angles-up fa-2xl top-of-page" style="color: #ffffff;"></i></a>
+				  <button onclick="topOfPage()" class="top-of-page"><i class="fa-solid fa-angles-up fa-2xl" style="color: #ffffff;"></i></button>
 				<span>
 					<!-- <button type="button" onclick="login()"><i class="fa-solid fa-user fa-xl" style="color: #ffffff;"></i></button> -->
 					<!-- <button type="button" class="btn btn-sm" id="display-input-btn" onclick="displayLoginBox()"><i
