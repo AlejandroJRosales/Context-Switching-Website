@@ -227,6 +227,10 @@ function applyModeStyle() {
 	}
 }
 
+function topOfPage() {
+	$('html,body').animate({ scrollTop: $("#top-of-page").offset().top }, 'fast');
+}
+
 function toggleDarkMode() {
 	if (localStorage.getItem('isDarkMode') === 'true') {
 		localStorage.setItem('isDarkMode', false);
