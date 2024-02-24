@@ -194,6 +194,7 @@ var navbar =
 				Connectome</a>
 					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy & Histology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
+					<a class="dropdown-item" href="/neuro/thalamicnuclei">Thalamic Nuclei</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
