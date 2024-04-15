@@ -147,6 +147,7 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantummachinelearning">Quantum Machine Learning</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
+					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
