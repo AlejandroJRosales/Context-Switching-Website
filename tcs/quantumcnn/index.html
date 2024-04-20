@@ -53,8 +53,10 @@
 						\(\Delta>0\), there exists a quantum algorithm that computes a quantum state that is \(\Delta\)
 						close to \(|f(\bar{X}^{\ell+1})\rangle\) where \(X^{\ell+1}=X^{\ell} * K^{\ell}\), and \(f:
 						\mathbb{R} \mapsto[0, C]\) is a non-linear activation function. Note, this function could be a
-						sigmoidal, hyperbolic tangent, ReLU, softmax, or any other activation function and is rather dependent mainly
-						on the task the activation function needs to complete. To continue, a classical appoximation for the computer quantum state exists where:
+						sigmoidal, hyperbolic tangent, ReLU, softmax, or any other activation function and is rather
+						dependent mainly
+						on the task the activation function needs to complete. To continue, a classical appoximation for
+						the computer quantum state exists where:
 					</p>
 
 					<p>
@@ -65,11 +67,44 @@
 					<p>
 						The time complexity of the quantum algorithm that computes the output quantum state
 						\(|f(\bar{X}^{\ell+1})\rangle\)
-						is \(\widetilde{O}(M / \epsilon)\). For the time complexity, \(M\) denotes the maximum norm of
-						the product state between one of the \(\) kernels and one of the tensor input regions of
+						is \(\widetilde{O}(M / \epsilon)\). In this equation, \(M\) denotes the maximum norm of
+						the product state between one of the kernels and one of the tensor input regions in
 						\(X^{\ell}\), where the size is \(HW D^{\ell}\). It is important to note, that
 						\(\widetilde{O}\) is made to hide factors poly-logarithmic in \(\Delta\) with respect to the
 						size of \(X^{\ell}\) and \(K^{\ell}\).
+					</p>
+
+					<p>
+						Given that a convolution product is equivalant to a matrix-matrix multiplication and the
+						convolutional product between \(X^{\ell}\) and \(K^{\ell}\) is:
+					</p>
+
+					<p>
+						\(X_{i^{\ell+1}, j^{\ell+1}, d^{\ell+1}}^{\ell+1}=\) \(\sum_{i=0}^H \sum_{j=0}^W
+						\sum_{d=0}^{D^{\ell}} K_{i, j, d, d^{\ell+1}}^{\ell} X_{i^{\ell+1}+i, j^{\ell+1}+j, d}^{\ell}\)
+					</p>
+
+					<p>
+						it is possible to reformulate this convolution product equation as a matrix product. In order to
+						do so, the original \(3\)D tensor input input for the quantum convolution layer \(X^{\ell} \in
+						\mathbb{R}^{H^{\ell} \times W^{\ell} \times D^{\ell}}\) and the\(4\)D tensor kernel layer
+						\(K^{\ell} \in \mathbb{R}^{H \times W \times D^{\ell}
+						\times D^{\ell+1}}\) needs to be reshaped to matrices. First, \(X^{\ell}\) needs to be expanded
+						into a matrix \(A^{\ell} \in\) \(\mathbb{R}^{\left(H^{\ell+1} W^{\ell+1}\right) \times\left(H W
+						D^{\ell}\right)}\), such that each row of \(A^{\ell}\) is a vectorized version of a subregion of
+						\(X^{\ell}\). Next, the original kernel tensor \(K^{\ell}\) is reshaped into a matrix \(F^{\ell}
+						\in\) \(\mathbb{R}^{\left(H W D^{\ell}\right) \times D^{\ell+1}}\), such that each column of
+						\(F^{\ell}\) is a vectrozied version of one of the \(D^{\ell+1}\) kernels.
+					</p>
+
+					<p>
+						This matrix expression of the initial tensor input and kernel is needed for the intial
+						convolution product \(X^{\ell} * K^{\ell}=X^{\ell+1}\) to be written as a matrix multiplication
+						\(X^{\ell} * K^{\ell}=X^{\ell+1}\), such that each column of the output matrix \(Y^{\ell+1} \in
+						\mathbb{R}^{\left(H^{\ell+1} W^{\ell+1}\right) \times D^{\ell+1}}\) is a first vectorized form
+						of one of the \(D^{\ell+1}\) channels of \(X^{\ell+1}\). Later, we will dicuss how quantum
+						computing, specifically quantum parallelism can not only be applied, but improve the time
+						complexity of this step.
 					</p>
 
 					<p>
