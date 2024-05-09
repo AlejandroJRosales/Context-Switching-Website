@@ -108,7 +108,7 @@
 						of this reshaping of the input and kernel is given by the authors and depicited below:
 					</p>
 
-					<img src="/assets/images/quantum-convolution-matrix-expression.png"
+					<img src="/assets/images/quantum-convolution-matrix-diagram.png"
 						alt="Quantum Convolution Matrix Reshaping" class="figure-ignore"
 						style="width:70%;height:auto;padding:0%0%;">
 
@@ -272,11 +272,11 @@
 						At the end of layer \(\ell\), the pooling operation of size \(P\) is performed on the
 						convolution layer output \(f(X^{\ell+1})\), yielding the tensor after pooling
 						\(\tilde{X}^{\ell+1}\). Below, thee authors provide a figure shows a \(2\times 2\) tensor
-						pooling such that different pooling regions having seperatre colors:
+						pooling such that different pooling regions having seperate colors:
 					</p>
 
 					<img src="/assets/images/qcnn-pooling.png" alt="QCNN Pooling Representation" class="figure-ignore"
-						style="width:35%;height:auto;padding:1%1%;">
+						style="width:45%;height:auto;padding:1%1%;">
 
 					<p class="figure-source-txt" id="section-reference-2">
 						Image Source:
@@ -298,6 +298,46 @@
 						\tilde{j}^{\ell+1}=\left\lfloor\frac{j^{\ell+1}}{P}\right\rfloor \\
 						\tilde{i}^{\ell+1}=\left\lfloor\frac{i^{\ell+1}}{P}\right\rfloor
 						\end{array}\right.\)
+					</p>
+
+					<p>
+						This pooling operation occurs at the end of the layer during the <a class="sliding-link"
+							href="#qram-update-pooling">QRAM update and pooling</a> operation, such that the sampled values are stored according to the pooling layers. Note, the authors state this kind of pooling can be efficiently applied to their QCNN structure, which we will look at to continue.
+					</p>
+
+					<p>
+						Let's start by denoting output of layer \(\ell\) after quantum tomography \(\mathcal{X}^{\ell+1}\). Next, quantum pooling is applied to the yielding \(\tilde{\mathcal{X}}^{\ell+1}\), which has dimensions \(\frac{H^{\ell+1}}{P} \times \frac{W^{\ell+1}}{P} \times D^{\ell+1}\). \(\tilde{\mathcal{X}}^{\ell+1}\) will be used as the input for layer \(\ell + 1\) and the values for \(\tilde{\mathcal{X}}^{\ell+1}\) are stored in QRAM. The valyes are use to create trees \(\tilde{T}_{p^{\prime}}^{\ell+1}\), such that they relate to the matrix expansion \(\tilde{A}^{\ell+1}\) and that we will talk about later. It is important to note that \(\mathcal{X}^{\ell+1}\) cannot be know before quantum tomography is over. Thus, QRAM updating must be changed to pool in an online fashion each time a sample from \(|f(\bar{X}^{\ell+1})\rangle\) is drawn.
+					</p>
+
+					<p>
+						To continue.
+					</p>
+				</div>
+
+				<div class="subection-header-div">
+					<p class="subsection-header" id="forward-pass-time-complexity">Quantum Time Complexity</p>
+					<p>
+						The quantum time complexity of one forward pass through the convolution layer \(\ell\), where \(\widetilde{O}\) hides the polylogarithmic factors, is:
+					</p>
+
+					<p>
+						\(\widetilde{O}\left(\frac{1}{\epsilon \eta^2} \cdot \frac{M \sqrt{C}}{\sqrt{\mathbb{E}\left(f\left(\bar{X}^{\ell+1}\right)\right)}}\right)\)
+					</p>
+
+					<p>
+						which can be written also as:
+					</p>
+
+					<p>
+						\(\widetilde{O}\left(\sigma H^{\ell+1} W^{\ell+1} D^{\ell+1} \cdot \frac{M \sqrt{C}}{\epsilon \sqrt{\mathbb{E}(f(\bar{X}^{\ell+1}))}}\right)\)
+					</p>
+
+					<p>
+						Here, \(\sigma\in[0,1]\) is the fraction of sampled elements, where the number of elements is size \(H^{\ell+1} W^{\ell+1} D^{\ell+1}\). Note, that the the running time of the classical CNN layer is:
+					</p>
+
+					<p>
+						\(\widetilde{O}\left(H^{\ell+1} W^{\ell+1} D^{\ell+1} \cdot H W D^{\ell}\right)\)
 					</p>
 
 					<p>
