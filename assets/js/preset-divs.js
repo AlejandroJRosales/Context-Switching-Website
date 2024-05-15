@@ -138,11 +138,14 @@ var navbar =
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
+				<li class="nav-item dropdown">
+				<a class="nav-link" href="/all">All Articles</a>
+			</li>
 			
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					Theoretical Computer Science
+					Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
@@ -205,7 +208,7 @@ var navbar =
 				</div>
 			</li>
 
-	<li class="nav-item dropdown">
+			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
 					Miscellaneous
@@ -224,10 +227,6 @@ var navbar =
 					<a class="dropdown-item todo" href="/todo">Event Horizons:<br>Universe and Black Holes</a>
 					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
 				</div>
-			</li>
-
-			<li class="nav-item dropdown">
-				<a class="nav-link" href="/all">All Articles</a>
 			</li>
 
 			<li class="nav-item dropdown">
