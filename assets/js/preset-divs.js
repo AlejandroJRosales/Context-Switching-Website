@@ -219,9 +219,9 @@ var navbar =
 					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
+					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
 					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
 					<a class="dropdown-item todo" href="/todo">Topological Quantum Field Theory</a>
-					
 			</li>
 
 			<li class="nav-item dropdown">
