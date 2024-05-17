@@ -164,7 +164,6 @@ var navbar =
 					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
 					<!-- <a class="dropdown-item todo" href="/todo">P vs NP</a> -->
 					<a class="dropdown-item todo" href="/todo">Approximation Algorithms</a>
-					<a class="dropdown-item todo" href="/todo">Randomization Algorithms</a>
 		 			<a class="dropdown-item todo" href="/todo">Pseudorandomness</a>
 					<a class="dropdown-item todo" href="/todo">Algorithmic Game Theory</a>
 			</li>
@@ -183,6 +182,7 @@ var navbar =
 		 			<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
+					<a class="dropdown-item todo" href="/todo">Total Curvature of Knots</a>
 				</div>
 			</li>
 	 
@@ -204,7 +204,6 @@ var navbar =
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
 		 			<a class="dropdown-item todo" href="/todo">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo">Working Memory</a>
-		 			<a class="dropdown-item todo" href="/todo">Cerebral Cortex</a>
 				</div>
 			</li>
 
@@ -217,11 +216,11 @@ var navbar =
 					<a class="dropdown-item" href="/phys/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
 					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
+					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
 					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
-					<a class="dropdown-item todo" href="/todo">Topological Quantum Field Theory</a>
 			</li>
 
 			<li class="nav-item dropdown">
