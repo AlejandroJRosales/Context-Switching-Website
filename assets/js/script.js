@@ -321,6 +321,12 @@ function applyModeStyle() {
 		$(".explore-text-box").css({ "color": "white" });
 		$(".explore-icon").css({ "color": "#ffffff" });
 		$("#aboutme-github-icon").css({ "color": "white" });
+		$(".card-title").css({ "color": "white" });
+		$(".card-text").css({ "color": "white" });
+		$(".card-body").css({ "background": "rgb(41,41,41)" });
+		// clean up
+		$("#related-articles").css({ "color": "white" });
+		
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid white important" });
 	}
 	else {
@@ -341,7 +347,12 @@ function applyModeStyle() {
 		$(".explore-text-box").css({ "color": "black" });
 		$(".explore-icon").css({ "color": "#000000" });
 		$("#aboutme-github-icon").css({ "color": "rgb(30,49,80)" });
+		$(".card-title").css({ "color": "black" });
+		$(".card-text").css({ "color": "black" });
+		$(".card-body").css({ "background": "white" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
+		// clean up
+		$("#related-articles").css({ "color": "black" });
 	}
 }
 
