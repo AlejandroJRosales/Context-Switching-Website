@@ -61,7 +61,6 @@ function applyDynamicStyle() {
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
 		$(".title-section").css({ "padding-left": "5%", "padding-right": "5%"});
 		// $(".oneai-collapse").css({ "max-width": "80%" });
-
 	}
 
 	var windowHeight = $(window).height();
@@ -112,7 +111,7 @@ function generateTableOfContents() {
 		var currentSectionName = $(this).find("p:first").attr('class');
 
 		// make sure not categories header
-		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories')) {
+		if (typeof currentSectionName !== "undefined" && !$(this).hasClass('categories') && !$(this).hasClass('toc-ignore')) {
 			currHeaderIdx = sectionHeaders.indexOf(currentSectionName);
 
 			headerCount[currentSectionName] = headerCount[currentSectionName] + 1;
@@ -137,7 +136,7 @@ function generateTableOfContents() {
 				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
 					headerCount[sectionHeaders[tempHeaderCount]] = 0;
 					tempHeaderCount -= 1;
-					tableOfContentsStr += "</ul>"
+					tableOfContentsStr += '</ul>'
 				}
 
 				tableOfContentsStr += '<li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
@@ -164,7 +163,6 @@ function generateTableOfContents() {
 		}
 	});
 	// var topLinks = '<br><button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button><br><br></div><a id="top-of-page-li contents-link" href="/">Home</a><br><br>'
-
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Contents</h5><hr class="section-seperator"><br>' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + tableOfContentsStr);
 }
