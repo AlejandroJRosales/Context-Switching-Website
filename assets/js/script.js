@@ -322,6 +322,7 @@ function applyModeStyle() {
 		$(".card-title").css({ "color": "white" });
 		$(".card-text").css({ "color": "white" });
 		$(".card-body").css({ "background": "rgb(41,41,41)" });
+		$(".card-footer").css({ "background": "rgb(41,41,41)" });
 		// clean up
 		$("#related-articles").css({ "color": "white" });
 		
@@ -348,6 +349,7 @@ function applyModeStyle() {
 		$(".card-title").css({ "color": "black" });
 		$(".card-text").css({ "color": "black" });
 		$(".card-body").css({ "background": "white" });
+		$(".card-footer").css({ "background": "white" });
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
 		// clean up
 		$("#related-articles").css({ "color": "black" });
