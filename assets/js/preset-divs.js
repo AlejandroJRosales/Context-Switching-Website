@@ -149,8 +149,8 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
-					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
+					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
@@ -162,7 +162,6 @@ var navbar =
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
 					<!-- <a class="dropdown-item todo" href="/todo">Quantum Networks</a> -->
 					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
-					<!-- <a class="dropdown-item todo" href="/todo">P vs NP</a> -->
 					<a class="dropdown-item todo" href="/todo">Approximation Algorithms</a>
 		 			<a class="dropdown-item todo" href="/todo">Pseudorandomness</a>
 					<a class="dropdown-item todo" href="/todo">Algorithmic Game Theory</a>
@@ -215,8 +214,8 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/phys/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
 					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
-					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
 					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
+					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
