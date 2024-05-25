@@ -104,6 +104,7 @@ function generateTableOfContents() {
 	var tableOfContentsStr = "";
 	var lastHeaderIdx = 0;
 	var currHeaderIdx = 0;
+	var ulCount = 0;
 
 	// loop through the whole DOM tree using find(*)
 	$(".information").find('*').each(function (index) {
@@ -121,7 +122,7 @@ function generateTableOfContents() {
 			if (currHeaderIdx > lastHeaderIdx) {
 
 				tableOfContentsStr += '<ul><li><a class="sliding-link" id="contents-link" href="#' + $(this).find("p:first").attr('id') + '">' + $(this).find("p:first").text() + '</a></li>';
-
+				ulCount += 1;
 				sectionNumbering = getSectionNumber(headerCount, currHeaderIdx);
 				$("#" + $(this).find("p:first").attr('id')).prepend(sectionNumbering);
 
@@ -134,8 +135,11 @@ function generateTableOfContents() {
 
 				tempHeaderCount = lastHeaderIdx;
 				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
+					console.log(headerCount[sectionHeaders[tempHeaderCount]]);
 					headerCount[sectionHeaders[tempHeaderCount]] = 0;
+					console.log(headerCount[sectionHeaders[tempHeaderCount]]);
 					tempHeaderCount -= 1;
+					ulCount -= 1;
 					tableOfContentsStr += '</ul>'
 				}
 
@@ -162,9 +166,16 @@ function generateTableOfContents() {
 			}
 		}
 	});
+
+	// Bandaid fix, please improve this logic error fix later
+	for (var closeListCount = 0; closeListCount < ulCount - 1; closeListCount++) {
+		console.log("ulCount, " + ulCount);
+		tableOfContentsStr += '</ul>'
+	}
+	tableOfContentsStr +=  '<li><a class="sliding-link" id="contents-link" href="#related-articles">Related Articles</a></li>';
+	//
+
 	// var topLinks = '<br><button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button><br><br></div><a id="top-of-page-li contents-link" href="/">Home</a><br><br>'
-	var relatedLinks = '<li><a class="sliding-link" id="contents-link" href="#related-articles">Related Articles</a></li>';
-	tableOfContentsStr += relatedLinks;
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Contents</h5><hr class="section-seperator"><br>' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + tableOfContentsStr);
 }
