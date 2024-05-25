@@ -163,6 +163,8 @@ function generateTableOfContents() {
 		}
 	});
 	// var topLinks = '<br><button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button><br><br></div><a id="top-of-page-li contents-link" href="/">Home</a><br><br>'
+	var relatedLinks = '<li><a class="sliding-link" id="contents-link" href="#related-articles">Related Articles</a></li>';
+	tableOfContentsStr += relatedLinks;
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Contents</h5><hr class="section-seperator"><br>' + tableOfContentsStr + '</div>');
 	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + tableOfContentsStr);
 }
