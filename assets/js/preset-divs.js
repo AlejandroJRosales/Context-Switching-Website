@@ -53,7 +53,7 @@ var oneaiDiv =
 				<div class="content">
 
 		<div class="chatbox">
-			<p id="current-speaker">A.I. Website Assistant</p>
+			<p id="current-speaker">A.I. Assistant</p>
 			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
@@ -138,7 +138,7 @@ var navbar =
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
-				<li class="nav-item dropdown">
+			<li class="nav-item dropdown">
 				<a class="nav-link" href="/all">All Articles</a>
 			</li>
 			
@@ -148,6 +148,8 @@ var navbar =
 					Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/tcs">Explore Computer Science</a>
+					<hr>
 					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
 					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
@@ -173,6 +175,8 @@ var navbar =
 					Mathematics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/math">Explore Mathematics</a>
+					<hr>
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
 					<a class="dropdown-item" href="/math/chernclasses">Chern Classes</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
@@ -191,6 +195,8 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
+					<hr>
 					<a class="dropdown-item" href="/neuro/memoryformation">Molecular Bases of<br> Memory Formation</a>
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
@@ -212,6 +218,8 @@ var navbar =
 					Physics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/phys">Explore Physics</a>
+					<hr>
 					<a class="dropdown-item" href="/phys/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
 					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
@@ -228,6 +236,8 @@ var navbar =
 					Miscellaneous
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/misc">Explore Miscellaneous</a>
+					<hr>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
           			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
