@@ -5,7 +5,7 @@ var titleSection =
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
 				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Alejandro Rosales<i style="margin-left:5px;margin-top:35px;" class="fa-solid fa-arrow-up-right-from-square fa-xs"></i></a></p>
+				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Hannah Culver<i style="margin-left:5px;margin-top:35px;" class="fa-solid fa-arrow-up-right-from-square fa-xs"></i></a></p>
 		 	</div>
 		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
 			 class="fas fa-moon fa-xl reveal-moon fade-up"></i></button></div>
@@ -357,7 +357,7 @@ var footer =
 					<h3 id="footer-about-me-title">Context Switching</h3>
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I dedicate this website to my best boy and best girl. Whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. Lastly, my site provides a space for me to talk in-depth about topics I am having fun learning. I hope you enjoy you have fun too!
+						name is Hannah Culver, and I coded this website from scratch. It's not much, but it's honest work. I dedicate this website to my best boy and best girl. Whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. Lastly, my site provides a space for me to talk in-depth about topics I am having fun learning. I hope you enjoy you have fun too!
 					</p>
 
 	 <hr class="rgba-white-light" style="margin: 0 15%;">
