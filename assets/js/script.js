@@ -53,7 +53,7 @@ function applyDynamicStyle() {
 		$(".homepage-info").css({ "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
 		$(".information").css({ "margin": "0% 8% 20% 8%" });
-		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "70%" });
+		$(".figure").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "80%" });
 		$(".figure-ignore").css({ "margin-top": "10%", "margin-bottom": "10%", "width": "70%" });
 		$(".nav-search-div").css({ "min-width": "225px" });
 		$("#nav-search-box").css({ "min-width": "200px" });
