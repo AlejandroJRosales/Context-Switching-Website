@@ -141,6 +141,10 @@ var navbar =
 			<li class="nav-item dropdown">
 				<a class="nav-link" href="/all">All Articles</a>
 			</li>
+
+			<li class="nav-item dropdown">
+				<a class="nav-link" href="/explore">Explore</a>
+			</li>
 			
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
@@ -295,16 +299,25 @@ var footer =
 
 <!-- Footer -->
 <footer class="page-footer font-small" class="footer">
+<br><br>
+	<!-- Grid row-->
+		<div class="row d-flex text-center justify-content-center mb-md-0 mb-4">
+			<!-- Grid column -->
+			<div class="col-md-8 col-12 mt-5">
+				<div class="footer-about-me">
+					<h3 id="footer-about-me-title">About This Website</h3>
+		 			<br>
+					<p style="line-height: 1.7rem">Welcome to my website! My
+						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I dedicate this website to my best boy and best girl. Whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. Lastly, my site provides a space for me to talk in-depth about topics I am having fun learning. I hope you enjoy you have fun too!
+					</p>
+
+	<hr class="rgba-white-light" style="margin: 0 15%;">
+
 	<!-- Footer Links -->
 	<div class="container">
 		<!-- Grid row-->
 		<div class="footer-links row text-center d-flex justify-content-center pt-5 mb-3">
       <!-- Grid column -->
-        <div class="col-md-2 mb-3">
-          <p>
-            <a href="/explore"><i class="fa-regular fa-compass fa-lg" style="color: #ffffff;"></i>&nbsp;Explore</a>
-          </p>
-        </div>
         <!-- Grid column -->
     
 			<!-- Grid column -->
@@ -322,11 +335,6 @@ var footer =
 				</p>
 			</div>
 			<!-- Grid column -->
-		</div>
-		<!-- Grid row-->
-
-    <!-- Grid row-->
-      <div class="footer-links row text-center d-flex justify-content-center pt-5 mb-3">
 
         <!-- Grid column -->
         <div class="col-md-2 mb-3">
@@ -347,20 +355,7 @@ var footer =
       </div>
       <!-- Grid row-->
 
-    <hr class="rgba-white-light" style="margin: 0 15%;">
-
-		<!-- Grid row-->
-		<div class="row d-flex text-center justify-content-center mb-md-0 mb-4">
-			<!-- Grid column -->
-			<div class="col-md-8 col-12 mt-5">
-				<div class="footer-about-me">
-					<h3 id="footer-about-me-title">Context Switching</h3>
-		 			<br>
-					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I dedicate this website to my best boy and best girl. Whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. Lastly, my site provides a space for me to talk in-depth about topics I am having fun learning. I hope you enjoy you have fun too!
-					</p>
-
-	 <hr class="rgba-white-light" style="margin: 0 15%;">
+	<hr class="rgba-white-light" style="margin: 0 15%;">
 
 					<br>
 
