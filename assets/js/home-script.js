@@ -139,13 +139,11 @@ function handleScroll() {
 }
 
 function slidingIconSizeUpdate() {
-	elementVisible = 250;
-	elementNotVisible = 250;
+	var elementVisible = 250;
 	// todo: init sectionIconsLength, only check for change in view
 	for (var i = 0; i < sectionIconsLen; i++) {
 		elementTop = sectionIcons[i].getBoundingClientRect().top;
-		currIcon = sectionIcons[i];
-		if (elementTop < windowHeight - elementVisible) {
+		if (elementTop < (windowHeight / 2) - elementVisible) {
 			slidingIcons[i].classList.add("underline");
 			for (var j = 0; j < sectionIconsLen; j++) {
 				if (i != j) {
