@@ -3,4 +3,4 @@ A website/blog about information on subjects I learn like theoretical computer s
 
 QR Code:
 
-![alt text](/assets/images/portfolio.png)
+![alt text](/assets/images/qr.png)
