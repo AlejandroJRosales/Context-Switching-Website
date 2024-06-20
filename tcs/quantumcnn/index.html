@@ -285,7 +285,8 @@
 							</p>
 
 							<p>
-								To write the output of the conditional rotation in terms of quantum superposition for a quantum
+								To write the output of the conditional rotation in terms of quantum superposition for a
+								quantum
 								state and if we let \(\alpha_{p q}=\sqrt{\frac{f(\bar{Y}_{p q}^{\ell+1})}{\max _{p,
 								q}(f(\bar{Y}_{p q}^{\ell+1}))}}\), then we get:
 							</p>
@@ -302,6 +303,12 @@
 						</div>
 						<div class="subsubsubsection-header-div">
 							<p class="subsubsubsection-header" id="amplitude-amplification">Amplitude Amplification</p>
+							<p>
+								To continue.
+							</p>
+						</div>
+						<div class="subsubsubsection-header-div">
+							<p class="subsubsubsection-header" id="quantum-tomography">Quantum Tomography</p>
 							<p>
 								To continue.
 							</p>
@@ -323,66 +330,75 @@
 							specific update or by using a QRAM data data structure. We will review <a
 								class="sliding-link" href="#quantum-pooling">quantum pooling</a> more in depth later.
 						</p>
+						<div class="subsubsubection-header-div">
+							<p class="subsubsubsection-header" id="quantum-pooling">Quantum Pooling</p>
+
+							<p>
+								At the end of layer \(\ell\), the pooling operation of size \(P\) is performed on the
+								convolution layer output \(f(X^{\ell+1})\), yielding the tensor after pooling
+								\(\tilde{X}^{\ell+1}\). Below, thee authors provide a figure shows a \(2\times 2\)
+								tensor
+								pooling such that different pooling regions having seperate colors:
+							</p>
+
+							<img src="/assets/images/qcnn-pooling.png" alt="QCNN Pooling Representation"
+								class="figure-ignore" style="width:45%;height:auto;padding:1%1%;">
+
+							<p class="figure-source-txt" id="section-reference-2">
+								Image Source:
+								<a class="sliding-link" href="#section-reference-1">
+									\([1]\)
+								</a>
+							</p>
+
+							<p>
+								Here, for some point at position \((i^{\ell+1}, j^{\ell+1}, d^{\ell+1})\) in
+								\(f(X^{\ell+1})\), the pooling region it corresponds to is at postion
+								\((\tilde{i}^{\ell+1}, \tilde{j}^{\ell+1}, \tilde{d}^{\ell+1})\) in
+								\(\tilde{X}^{\ell+1}\), such that:
+							</p>
+
+							<p class="math-def">
+								\(\left\{\begin{array}{l}
+								\tilde{d}^{\ell+1}=d^{\ell+1} \\
+								\tilde{j}^{\ell+1}=\left\lfloor\frac{j^{\ell+1}}{P}\right\rfloor \\
+								\tilde{i}^{\ell+1}=\left\lfloor\frac{i^{\ell+1}}{P}\right\rfloor
+								\end{array}\right.\)
+							</p>
+
+							<p>
+								This pooling operation occurs at the end of the layer during the <a class="sliding-link"
+									href="#qram-update-pooling">QRAM update and pooling</a> operation, such that the
+								sampled
+								values are stored according to the pooling layers. Note, the authors state this kind of
+								pooling
+								can be efficiently applied to their QCNN structure, which we will look at to continue.
+							</p>
+
+							<p>
+								Let's start by denoting output of layer \(\ell\) after quantum tomography
+								\(\mathcal{X}^{\ell+1}\). Next, quantum pooling is applied to the yielding
+								\(\tilde{\mathcal{X}}^{\ell+1}\), which has dimensions \(\frac{H^{\ell+1}}{P} \times
+								\frac{W^{\ell+1}}{P} \times D^{\ell+1}\). \(\tilde{\mathcal{X}}^{\ell+1}\) will be used
+								as the
+								input for layer \(\ell + 1\) and the values for \(\tilde{\mathcal{X}}^{\ell+1}\) are
+								stored in
+								QRAM. The valyes are use to create trees \(\tilde{T}_{p^{\prime}}^{\ell+1}\), such that
+								they
+								relate to the matrix expansion \(\tilde{A}^{\ell+1}\) and that we will talk about later.
+								It is
+								important to note that \(\mathcal{X}^{\ell+1}\) cannot be know before quantum tomography
+								is
+								over. Thus, QRAM updating must be changed to pool in an online fashion each time a
+								sample from
+								\(|f(\bar{X}^{\ell+1})\rangle\) is drawn.
+							</p>
+
+							<p>
+								To continue.
+							</p>
+						</div>
 					</div>
-				</div>
-				<div class="subection-header-div">
-					<p class="subsection-header" id="quantum-pooling">Quantum Pooling</p>
-
-					<p>
-						At the end of layer \(\ell\), the pooling operation of size \(P\) is performed on the
-						convolution layer output \(f(X^{\ell+1})\), yielding the tensor after pooling
-						\(\tilde{X}^{\ell+1}\). Below, thee authors provide a figure shows a \(2\times 2\) tensor
-						pooling such that different pooling regions having seperate colors:
-					</p>
-
-					<img src="/assets/images/qcnn-pooling.png" alt="QCNN Pooling Representation" class="figure-ignore"
-						style="width:45%;height:auto;padding:1%1%;">
-
-					<p class="figure-source-txt" id="section-reference-2">
-						Image Source:
-						<a class="sliding-link" href="#section-reference-1">
-							\([1]\)
-						</a>
-					</p>
-
-					<p>
-						Here, for some point at position \((i^{\ell+1}, j^{\ell+1}, d^{\ell+1})\) in
-						\(f(X^{\ell+1})\), the pooling region it corresponds to is at postion
-						\((\tilde{i}^{\ell+1}, \tilde{j}^{\ell+1}, \tilde{d}^{\ell+1})\) in
-						\(\tilde{X}^{\ell+1}\), such that:
-					</p>
-
-					<p class="math-def">
-						\(\left\{\begin{array}{l}
-						\tilde{d}^{\ell+1}=d^{\ell+1} \\
-						\tilde{j}^{\ell+1}=\left\lfloor\frac{j^{\ell+1}}{P}\right\rfloor \\
-						\tilde{i}^{\ell+1}=\left\lfloor\frac{i^{\ell+1}}{P}\right\rfloor
-						\end{array}\right.\)
-					</p>
-
-					<p>
-						This pooling operation occurs at the end of the layer during the <a class="sliding-link"
-							href="#qram-update-pooling">QRAM update and pooling</a> operation, such that the sampled
-						values are stored according to the pooling layers. Note, the authors state this kind of pooling
-						can be efficiently applied to their QCNN structure, which we will look at to continue.
-					</p>
-
-					<p>
-						Let's start by denoting output of layer \(\ell\) after quantum tomography
-						\(\mathcal{X}^{\ell+1}\). Next, quantum pooling is applied to the yielding
-						\(\tilde{\mathcal{X}}^{\ell+1}\), which has dimensions \(\frac{H^{\ell+1}}{P} \times
-						\frac{W^{\ell+1}}{P} \times D^{\ell+1}\). \(\tilde{\mathcal{X}}^{\ell+1}\) will be used as the
-						input for layer \(\ell + 1\) and the values for \(\tilde{\mathcal{X}}^{\ell+1}\) are stored in
-						QRAM. The valyes are use to create trees \(\tilde{T}_{p^{\prime}}^{\ell+1}\), such that they
-						relate to the matrix expansion \(\tilde{A}^{\ell+1}\) and that we will talk about later. It is
-						important to note that \(\mathcal{X}^{\ell+1}\) cannot be know before quantum tomography is
-						over. Thus, QRAM updating must be changed to pool in an online fashion each time a sample from
-						\(|f(\bar{X}^{\ell+1})\rangle\) is drawn.
-					</p>
-
-					<p>
-						To continue.
-					</p>
 				</div>
 
 				<div class="subection-header-div">
@@ -425,6 +441,28 @@
 
 			<div class="section-header-div">
 				<p class="section-header" id="backward-pass">Quantum Back Propagation</p>
+
+				<p id="section-reference-1">
+					Section Reference:
+					<a class="sliding-link" href="#section-reference-1">
+						\([1]\)
+					</a>
+				</p>
+
+				<p>
+					For quantum back propagation, we should have the <a class="sliding-link"
+						href="#forward-pass">quantum forward propogation</a> step completed, then for each layer
+					\(\ell\) the input matrix \(A^{ell}\) and kernel matrix \(F^{\ell}\) should be stored in QRAM, and a
+					loss function \(\mathcal{L}\) should be calculated. Given these paramters, the quantum back
+					propagation algorithm will estimate the gradient tensor \(\frac{\partial \mathcal{L}}{\partial
+					F^{\ell}}\) with some precision \(\delta > 0\) and update each element to perform gradient descent
+					such that:
+				</p>
+
+				<p class="math-def">
+					\(\displaystyle{ \forall(s, q),\left|\frac{\partial \mathcal{L}}{\partial F_{s, q}^{\ell}}-\overline{\frac{\partial \mathcal{L}}{\partial F_{s, q}^{\ell}}}\right| \leq 2 \delta\left\|\frac{\partial \mathcal{L}}{\partial F^{\ell}}\right\|_2 }\)
+				</p>
+
 				<p>
 					To continue.
 				</p>
