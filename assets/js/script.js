@@ -14,11 +14,11 @@ if (!localStorage.getItem('isDarkMode')) {
 
 window.MathJax = {
 	loader: {
-		load: ['[tex]/braket']
+		load: ['[tex]/braket', '[tex]/boldsymbol'],
 	},
 	tex: {
 		inlineMath: [['$', '$'], ['\\(', '\\)']],
-		packages: { '[+]': ['braket'] }
+		packages: {'[+]': ['braket', 'boldsymbol']}
 	},
 	svg: {
 		fontCache: 'global'
@@ -136,9 +136,9 @@ function generateTableOfContents() {
 
 				tempHeaderCount = lastHeaderIdx;
 				for (var closeListCount = 0; closeListCount < lastHeaderIdx - currHeaderIdx; closeListCount++) {
-					console.log(headerCount[sectionHeaders[tempHeaderCount]]);
+					// console.log(headerCount[sectionHeaders[tempHeaderCount]]);
 					headerCount[sectionHeaders[tempHeaderCount]] = 0;
-					console.log(headerCount[sectionHeaders[tempHeaderCount]]);
+					// console.log(headerCount[sectionHeaders[tempHeaderCount]]);
 					tempHeaderCount -= 1;
 					ulCount -= 1;
 					tableOfContentsStr += '</ul>'
