@@ -2,7 +2,7 @@ var responseTxt = "";
 var speed = 100;
 var currCharIdx = 0;
 var currentSpeaker = "Jarcey A.I."
-var endpoint = "https://api.oneai.cloud/user"
+var endpoint = "https://api.oneai.cloud/q"
 
 function getDeviceType() {
 	const toMatch = [
