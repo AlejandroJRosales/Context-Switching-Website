@@ -155,7 +155,7 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
-					<a class="dropdown-item" href="/tcs/quantumec">Quantum Error Codes</a>
+					<a class="dropdown-item" href="/tcs/quantumec">Quantum Error Correction</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
@@ -235,10 +235,10 @@ var navbar =
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					Miscellaneous
+					Other
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc">Explore Miscellaneous</a>
+					<a class="dropdown-item" href="/misc">Explore Other</a>
 					<hr>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
