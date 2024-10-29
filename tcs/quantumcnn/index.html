@@ -61,7 +61,91 @@
 				</p>
 			</div>
 			<div class="section-header-div">
-				<p class="section-header" id="mera">Multi-scale Entanglement
+				<p class="section-header" id="tensor-network">Tensor Network</p>
+			<div class="subsection-header-div">
+				<p class="subsection-header" id="mps">Matrix Product State</p>
+
+				<p>
+					Let us familiarize ourselves with Matrix Product States
+					MPS before analyzing MERA. This is so we have a more rudimentary tensor network to understand underlying concepts
+					before diving into a more complex tensor network like MERA.
+				</p>
+
+				<p>
+					A MPS can
+					be considered as an one-dimensional lattice \(\mathcal{L}\), such that each site
+					\(s\) hosts a spin
+					for each state of the site
+					\(|\Psi\rangle \in H_{\mathcal{L}}=\otimes_{\mathrm{s} \in \mathcal{L}} H_S\), where \(H\)
+					denotes
+					complex vector space Hilbert Space. The complexity of the state grows exponentially with
+					respect to the number of spins
+					\(N\). The \(H\) space dimension is \(\operatorname{dim} H_L=2^N\).
+				</p>
+
+				<p>
+					We need to then reduce the degrees of freedom by identifying the degrees that contain the most
+					relevant information. To do so, iterative reshaping of coefficient arrays and singular value
+					decomposition SVD is performed.
+				</p>
+
+				<p>
+					SVD can correspond to the Schmidt decomposition for a properly
+					reshpaed array of state coefficients:
+				</p>
+
+				<p class="math-def">
+					\(|\psi\rangle\) \(=\sum_{s_1, \ldots, s_N} c^{s_1, \ldots, s_N}\left|s_1, \ldots,
+					s_N\right\rangle\)
+				</p>
+
+				<p>
+					depending on the chosen bipartition of the lattice. The chose bipartition is uniquely determined
+					in the one dimension case with:
+				</p>
+
+				<p class="math-def">
+					\(c^{s_1, \ldots, s_N}\) \(\rightarrow c^{\left(s_1, \ldots, s_l\right)},\left(s_{l+1}, \ldots,
+					s_N\right)\) \(=\sum_{a_l} U_{a_l}^{\left(s_1, \ldots, s_l\right)} \Lambda^{a_l,
+					a_l}\left(V^{\dagger}\right)_{a_l}^{\left(s_{l+1}, \ldots, s_N\right)}\)
+				</p>
+
+				<p>
+					where \(\Lambda\) is a diagonal matrix containing Schmidt coefficients \(\lambda_{a_{l}}\) and
+					physical indices \(\ldots\) refer to matrix unfolding for tensors.
+				</p>
+
+				<p>
+					To continue analyzing the Schmidt decomposition for a properly reshaped array of state
+					coefficients for some state \(|\Psi\rangle\) we will now look at introduce the conventional MPS
+					notation. First, given the following decomposition for rank-3 tensors \(A_{a_l}^{1,\left(s_1,
+					\ldots, s_l\right)}\) \(=U_{a_l}^{\left(s_1, \ldots, s_l\right)}\) and \(B_{a_l}^{\left(s_{l+1},
+					\ldots, s_N\right), 1}\) \(=\left(V^{+}\right)_{a_l}^{\left(s_{\ell}, 1 \ldots, s_N\right)}\) we
+					get:
+				</p>
+
+				<p class="math-def">
+					\(|\psi\rangle\) \(=\sum_{s_1, \ldots, s_N} \sum_{a_{\ell}} A_{a_{\ell}}^{1,\left(s_1, \ldots,
+					s_{\ell}\right)} \Lambda^{a_l, a_l}\) \(B_{a_{\ell}}^{\left(s_{\ell+1}, \ldots, s_N\right),
+					1}\left|s_1, \ldots, s_N\right\rangle\) \(=\sum_{a_{\ell}}
+					\lambda_{a_{\ell}}|a\rangle_{a_{\ell}}|b\rangle_{a_l}\)
+				</p>
+
+				<p>
+					This conventional MPS notation above for rank-3 tensors can be seen in the figure below:
+				</p>
+
+				<img src="/assets/images/1-dim-mps-schematic.png"
+					alt="Schematic representation of 1-dimmensional matrix product state schematic with rank-3 tensors."
+					class="figure-ignore" style="width:45%;height:auto;padding:0%0%;">
+
+				<p class="figure-source-txt">
+					Image Source: <a target="_blank" rel="noopener noreferrer"
+						href="https://www.mdpi.com/2673-8716/3/3/33">https://www.mdpi.com/2673-8716/3/3/33</a>
+				</p>
+			</div>
+			<div class="subsection-header-div">
+				<p class="subsection-header" id="mera">Multi-scale Entanglement
 					Renormalization Ansatz</p>
 
 				<p id="section-reference-1">
@@ -90,94 +174,12 @@
 
 				<img src="/assets/images/mera-as-quantum-circut-c.png"
 					alt="Schematic representation of quantum circut with 2N-1 gates that transformes initial state to N-site state of 1D lattice."
-					class="figure-ignore" style="width:45%;height:auto;padding:1%1%;">
+					class="figure-ignore" style="width:45%;height:auto;padding:0%0%;">
 
 				<p class="figure-source-txt">
 					Image Source: <a class="sliding-link" href="#section-reference-1">\([1]\)</a>
 				</p>
-
-				<p>
-					Before continuing, let us take a step back and familiarize ourselves with Matrix Product States
-					MPS. This is so we have a more rudimentary tensor network to understand underlying concepts
-					before diving into a more complex tensor network like MERA.
-				</p>
-
-				<div class="subsection-header-div">
-					<p class="subsection-header" id="mps">Matrix Product State</p>
-
-					<p>
-						A MPS can
-						be considered as an one-dimensional lattice \(\mathcal{L}\), such that each site
-						\(s\) hosts a spin
-						for each state of the site
-						\(|\Psi\rangle \in H_{\mathcal{L}}=\otimes_{\mathrm{s} \in \mathcal{L}} H_S\), where \(H\)
-						denotes
-						complex vector space Hilbert Space. The complexity of the state grows exponentially with
-						respect to the number of spins
-						\(N\). The \(H\) space dimension is \(\operatorname{dim} H_L=2^N\).
-					</p>
-
-					<p>
-						We need to then reduce the degrees of freedom by identifying the degrees that contain the most
-						relevant information. To do so, iterative reshaping of coefficient arrays and singular value
-						decomposition SVD is performed.
-					</p>
-
-					<p>
-						SVD can correspond to the Schmidt decomposition for a properly
-						reshpaed array of state coefficients:
-					</p>
-
-					<p class="math-def">
-						\(|\psi\rangle\) \(=\sum_{s_1, \ldots, s_N} c^{s_1, \ldots, s_N}\left|s_1, \ldots,
-						s_N\right\rangle\)
-					</p>
-
-					<p>
-						depending on the chosen bipartition of the lattice. The chose bipartition is uniquely determined
-						in the one dimension case with:
-					</p>
-
-					<p class="math-def">
-						\(c^{s_1, \ldots, s_N}\) \(\rightarrow c^{\left(s_1, \ldots, s_l\right)},\left(s_{l+1}, \ldots,
-						s_N\right)\) \(=\sum_{a_l} U_{a_l}^{\left(s_1, \ldots, s_l\right)} \Lambda^{a_l,
-						a_l}\left(V^{\dagger}\right)_{a_l}^{\left(s_{l+1}, \ldots, s_N\right)}\)
-					</p>
-
-					<p>
-						where \(\Lambda\) is a diagonal matrix containing Schmidt coefficients \(\lambda_{a_{l}}\) and
-						physical indices \(\ldots\) refer to matrix unfolding for tensors.
-					</p>
-
-					<p>
-						To continue analyzing the Schmidt decomposition for a properly reshaped array of state
-						coefficients for some state \(|\Psi\rangle\) we will now look at introduce the conventional MPS
-						notation. First, given the following decomposition for rank-3 tensors \(A_{a_l}^{1,\left(s_1,
-						\ldots, s_l\right)}\) \(=U_{a_l}^{\left(s_1, \ldots, s_l\right)}\) and \(B_{a_l}^{\left(s_{l+1},
-						\ldots, s_N\right), 1}\) \(=\left(V^{+}\right)_{a_l}^{\left(s_{\ell}, 1 \ldots, s_N\right)}\) we
-						get:
-					</p>
-
-					<p class="math-def">
-						\(|\psi\rangle\) \(=\sum_{s_1, \ldots, s_N} \sum_{a_{\ell}} A_{a_{\ell}}^{1,\left(s_1, \ldots,
-						s_{\ell}\right)} \Lambda^{a_l, a_l}\) \(B_{a_{\ell}}^{\left(s_{\ell+1}, \ldots, s_N\right),
-						1}\left|s_1, \ldots, s_N\right\rangle\) \(=\sum_{a_{\ell}}
-						\lambda_{a_{\ell}}|a\rangle_{a_{\ell}}|b\rangle_{a_l}\)
-					</p>
-
-					<p>
-						This conventional MPS notation above for rank-3 tensors can be seen in the figure below:
-					</p>
-
-					<img src="/assets/images/1-dim-mps-schematic.png"
-						alt="Schematic representation of 1-dimmensional matrix product state schematic with rank-3 tensors."
-						class="figure-ignore" style="width:45%;height:auto;padding:1%1%;">
-
-					<p class="figure-source-txt">
-						Image Source: <a target="_blank" rel="noopener noreferrer"
-							href="https://www.mdpi.com/2673-8716/3/3/33">https://www.mdpi.com/2673-8716/3/3/33</a>
-					</p>
-				</div>
+			</div>
 			</div>
 
 			<div class="section-header-div">
@@ -251,7 +253,7 @@
 
 				<img src="/assets/images/quantum-convolution-matrix-diagram.png"
 					alt="Quantum Convolution Matrix Reshaping" class="figure-ignore"
-					style="width:50%;height:auto;padding:0%0%;">
+					style="width:45%;height:auto;padding:0%0%;">
 
 				<p class="figure-source-txt" id="section-reference-2">
 					Image Source:
@@ -474,7 +476,7 @@
 						</p>
 
 						<img src="/assets/images/qcnn-pooling.png" alt="QCNN Pooling Representation"
-							class="figure-ignore" style="width:45%;height:auto;padding:1%1%;">
+							class="figure-ignore" style="width:42.5%;height:auto;padding:0%0%;">
 
 						<p class="figure-source-txt" id="section-reference-2">
 							Image Source:
