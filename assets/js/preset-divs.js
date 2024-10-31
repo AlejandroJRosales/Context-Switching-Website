@@ -53,7 +53,7 @@ var oneaiDiv =
 				<div class="content">
 
 		<div class="chatbox">
-			<p id="current-speaker">A.I. Assistant</p>
+			<p id="current-speaker">Cloud A.I.</p>
 			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
@@ -261,7 +261,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
 					<a class="dropdown-item" href="/my/researchandwork">Research and Work</a>
 					<!-- <a class="dropdown-item" href="/my/musicexhibition">Music Exhibit</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">A.I. Assistant</a> -->
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">Cloud A.I.</a> -->
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
