@@ -305,7 +305,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 			<p>
-				<a href="/my/expolore">Explore</a>
+				<a href="/expolore">Explore</a>
 			</p>
 			</div>
 			<!-- Grid column -->
