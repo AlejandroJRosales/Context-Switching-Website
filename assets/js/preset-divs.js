@@ -149,8 +149,6 @@ var navbar =
 					Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs">Explore Computer Science</a>
-					<hr>
 					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
 					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
 					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
@@ -161,6 +159,8 @@ var navbar =
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
+					<hr>
+					<a class="dropdown-item" href="/tcs">Explore Computer Science</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
@@ -177,14 +177,14 @@ var navbar =
 					Mathematics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/math">Explore Mathematics</a>
-					<hr>
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
 					<a class="dropdown-item" href="/math/chernclasses">Chern Classes</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/tcs/graphtheory">Graph Theory</a>
 		 			<hr>
+					<a class="dropdown-item" href="/math">Explore Mathematics</a>
+					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
 					<a class="dropdown-item todo" href="/todo">Total Curvature of Knots</a>
@@ -197,8 +197,6 @@ var navbar =
 					Neuroscience
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
-					<hr>
 					<a class="dropdown-item" href="/neuro/memoryformation">Molecular Bases of<br> Memory Formation</a>
 		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
 					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
@@ -206,6 +204,8 @@ var navbar =
 					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy and Histology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
 					<a class="dropdown-item" href="/neuro/thalamicnuclei">Thalamic Nuclei</a>
+					<hr>
+					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
@@ -220,12 +220,12 @@ var navbar =
 					Physics
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/phys">Explore Physics</a>
-					<hr>
 					<a class="dropdown-item" href="/phys/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
 					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
 					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
+					<hr>
+					<a class="dropdown-item" href="/phys">Explore Physics</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
@@ -238,13 +238,13 @@ var navbar =
 					Other
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc">Explore Other</a>
-					<hr>
 					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
             Virtue Ethics</a>
           			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
 					<a class="dropdown-item" href="/misc/epigeneticsandinheritance">Epigenetics and Inheritance</a>
 		 			<hr>
+					<a class="dropdown-item" href="/misc">Explore Other</a>
+					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
 				</div>
@@ -256,13 +256,13 @@ var navbar =
 					My
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
+					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" href="/my/researchandwork">Research and Work</a>
 					<!-- <a class="dropdown-item" href="/my/musicexhibition">Music Exhibit</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">Cloud A.I.</a> -->
-					<a class="dropdown-item" href="/my/aboutme">About Me</a>
 				</div>
 			</li>
 		</ul>
