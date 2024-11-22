@@ -301,6 +301,14 @@ var footer =
 	<div class="container">
 		<!-- Grid row-->
 		<div class="footer-links row text-center d-flex justify-content-center pt-5 mb-3">
+
+			<!-- Grid column -->
+			<div class="col-md-2 mb-3">
+			<p>
+				<a href="/my/expolore">Explore</a>
+			</p>
+			</div>
+			<!-- Grid column -->
     
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
@@ -317,23 +325,14 @@ var footer =
 				</p>
 			</div>
 			<!-- Grid column -->
-		
 
-        <!-- Grid column -->
-        <div class="col-md-2 mb-3">
-          <p>
-            <a href="/my/aboutme">About Me</a>
-          </p>
-        </div>
-        <!-- Grid column -->
-      
-        <!-- Grid column -->
-        <div class="col-md-2 mb-3">
-          <p>
-            <a href="/my/resume">Resume</a>
-          </p>
-        </div>
-        <!-- Grid column -->
+			<!-- Grid column -->
+			<div class="col-md-2 mb-3">
+			<p>
+				<a href="/my/aboutme">About Me</a>
+			</p>
+			</div>
+			<!-- Grid column -->
 
       </div>
       <!-- Grid row-->
