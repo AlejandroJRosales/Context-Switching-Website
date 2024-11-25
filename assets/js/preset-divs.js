@@ -155,7 +155,6 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/quantumec">Quantum Error Correction</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
 					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
-		 			<a class="dropdown-item" href="/math/graphtheory">Graph Theory</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
 					<hr>
@@ -179,9 +178,9 @@ var navbar =
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
 					<a class="dropdown-item" href="/math/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/math/chernclasses">Chern Classes</a>
-					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/math/graphtheory">Graph Theory</a>
+					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 		 			<hr>
 					<a class="dropdown-item" href="/math">Explore Mathematics</a>
 					<hr>
