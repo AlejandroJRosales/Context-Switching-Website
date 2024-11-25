@@ -135,13 +135,10 @@ var navbar =
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
-			<!-- <li class="nav-item dropdown">
-				<a class="nav-link" href="/all">All Articles</a> -->
-			</li>
 
-			<li class="nav-item dropdown">
+			<!-- <li class="nav-item dropdown">
 				<a class="nav-link" href="/explore">Explore</a>
-			</li>
+			</li> -->
 			
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
