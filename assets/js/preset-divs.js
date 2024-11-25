@@ -151,7 +151,6 @@ var navbar =
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
 					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
-					<a class="dropdown-item" href="/tcs/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
 					<a class="dropdown-item" href="/tcs/quantumec">Quantum Error Correction</a>
 					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
@@ -178,6 +177,7 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
+					<a class="dropdown-item" href="/math/informationtheory">Information Theory</a>
 					<a class="dropdown-item" href="/math/chernclasses">Chern Classes</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
