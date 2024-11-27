@@ -4,8 +4,8 @@ var titleSection =
 		<h2 class="page-title"></h2>
 		<div class="other-contents-page-title reveal-title fade-in"> 
 			<div class="page-header">
-				<h4 class="developed-by-text">Written &#38; Coded by:</h4>
-				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Alejandro Rosales<i style="margin-left:5px;margin-top:35px;" class="fa-solid fa-arrow-up-right-from-square fa-xs"></i></a></p>
+				<h4 class="developed-by-text">Created and Edited by</h4>
+				<p class="page-developer" id="developer-title"><a href="/my/aboutme">Alejandro Rosales</a></p>
 		 	</div>
 		<div style="padding-top:2%;text-align:center;"><button id="dark-mode-toggle-btn" onclick="toggleDarkMode()"><i
 			 class="fas fa-moon fa-xl reveal-moon fade-up"></i></button></div>
