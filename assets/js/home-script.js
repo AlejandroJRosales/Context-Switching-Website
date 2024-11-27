@@ -132,6 +132,9 @@ function handleScroll() {
 	if (elementTop + elementVisible > windowHeight && !currViewStatic) {
 		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
 		$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
+		for (var j = 0; j < sectionIconsLen; j++) {
+			slidingIcons[j].classList.remove("underline");
+		}
 		currViewStatic = true;
 	}
 	slidingIconSizeUpdate();
