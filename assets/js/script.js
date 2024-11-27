@@ -214,13 +214,16 @@ window.addEventListener('click', function (e) {
 });
 
 window.addEventListener('scroll', function (e) {
-	var windowHeight = window.innerHeight;
-	var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
-	var elementVisible = 10;
-	// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
+	// TODO: create seperate script
+	if (!window.location.href.includes("aboutme")) {
+		var windowHeight = window.innerHeight;
+		var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
+		var elementVisible = 10;
+		// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
 
-	if (elementTop < windowHeight - elementVisible) {
-		$(".collapse").collapse('hide');
+		if (elementTop < windowHeight - elementVisible) {
+			$(".collapse").collapse('hide');
+		}
 	}
 });
 
@@ -243,21 +246,24 @@ function reveal() {
 }
 
 function revealButton() {
-	var revealTOC = $('.reveal-button')[0];
+	// TODO: create seperate script
+	if (!window.location.href.includes("aboutme")) {
+		var revealTOC = $('.reveal-button')[0];
 
-	var windowHeight = window.innerHeight;
-	var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
-	var elementVisible = 0;
-	// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
+		var windowHeight = window.innerHeight;
+		var elementTop = $('.table-of-contents')[0].getBoundingClientRect().top;
+		var elementVisible = 0;
+		// console.log($('.category-header')[0].getBoundingClientRect().top, windowHeight, elementVisible, windowHeight - elementVisible, elementTop < windowHeight - elementVisible);
 
-	if (elementTop < windowHeight - elementVisible) {
-		revealTOC.classList.remove("inactive");
-		revealTOC.classList.add("active");
-		// $('.reveal-oneai-button')[0].classList.add("active");
-	} else {
-		revealTOC.classList.remove("active");
-		revealTOC.classList.add("inactive");
-		// $('.reveal-oneai-button')[0].classList.remove("active");
+		if (elementTop < windowHeight - elementVisible) {
+			revealTOC.classList.remove("inactive");
+			revealTOC.classList.add("active");
+			// $('.reveal-oneai-button')[0].classList.add("active");
+		} else {
+			revealTOC.classList.remove("active");
+			revealTOC.classList.add("inactive");
+			// $('.reveal-oneai-button')[0].classList.remove("active");
+		}
 	}
 }
 
