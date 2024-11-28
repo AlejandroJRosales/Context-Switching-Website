@@ -135,10 +135,6 @@ var navbar =
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
-
-			<li class="nav-item dropdown">
-				<a class="nav-link" href="/explore">Explore</a>
-			</li>
 			
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
@@ -154,16 +150,18 @@ var navbar =
 					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
 		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
 					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
+					<!--
 					<hr>
 					<a class="dropdown-item" href="/tcs">Explore Computer Science</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
-					<!-- <a class="dropdown-item todo" href="/todo">Quantum Networks</a> -->
+					<a class="dropdown-item todo" href="/todo">Quantum Networks</a>
 					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
 					<a class="dropdown-item todo" href="/todo">Approximation Algorithms</a>
 		 			<a class="dropdown-item todo" href="/todo">Pseudorandomness</a>
 					<a class="dropdown-item todo" href="/todo">Algorithmic Game Theory</a>
+					-->
 			</li>
 	 
 			<li class="nav-item dropdown">
@@ -178,12 +176,14 @@ var navbar =
 					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
 		 			<a class="dropdown-item" href="/math/graphtheory">Graph Theory</a>
 					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
+					<!--
 		 			<hr>
 					<a class="dropdown-item" href="/math">Explore Mathematics</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
 					<a class="dropdown-item todo" href="/todo">Total Curvature of Knots</a>
+					-->
 				</div>
 			</li>
 	 
@@ -200,6 +200,7 @@ var navbar =
 					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy and Histology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
 					<a class="dropdown-item" href="/neuro/thalamicnuclei">Thalamic Nuclei</a>
+					<!--
 					<hr>
 					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
 					<hr>
@@ -207,6 +208,7 @@ var navbar =
 		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
 		 			<a class="dropdown-item todo" href="/todo">Neocortex</a>
 					<a class="dropdown-item todo" href="/todo">Working Memory</a>
+					-->
 				</div>
 			</li>
 
@@ -220,12 +222,14 @@ var navbar =
 					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
 					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
 					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
+					<!--
 					<hr>
 					<a class="dropdown-item" href="/phys">Explore Physics</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
 					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
+					-->
 			</li>
 
 			<li class="nav-item dropdown">
@@ -238,18 +242,20 @@ var navbar =
             Virtue Ethics</a>
           			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
 					<a class="dropdown-item" href="/misc/epigeneticsandinheritance">Epigenetics and Inheritance</a>
+					<!--
 		 			<hr>
 					<a class="dropdown-item" href="/misc">Explore Other</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
+					-->
 				</div>
 			</li>
 
 			<li class="nav-item dropdown">
 				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
 					aria-expanded="false">
-					My
+					About Me
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
