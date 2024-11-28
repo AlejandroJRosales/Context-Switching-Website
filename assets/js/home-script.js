@@ -142,7 +142,7 @@ function handleScroll() {
 }
 
 function slidingIconSizeUpdate() {
-	var elementVisible = 200;
+	var elementVisible = 100;
 	// todo: init sectionIconsLength, only check for change in view
 	for (var i = 0; i < sectionIconsLen; i++) {
 		elementTop = sectionIcons[i].getBoundingClientRect().top;
