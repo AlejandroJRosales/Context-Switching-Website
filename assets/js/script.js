@@ -326,6 +326,7 @@ function applyModeStyle() {
 		$("body").css({ "background": "rgb(41,41,41)" });
 		$(".website-intro").css({ "background": "rgb(41,41,41)" });
 		$(".page-title").css({ "color": "white" });
+		$(".developed-by-text").css({ "color": "white" });
 		$(".dot-txt").css({ "color": "white" });
 		$(".information").css({ "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
@@ -352,6 +353,7 @@ function applyModeStyle() {
 		$("body").css({ "background": "white" });
 		$(".website-intro").css({ "background": "white" });
 		$(".page-title").css({ "color": "black" });
+		$(".developed-by-text").css({ "color": "black" });
 		$(".dot-txt").css({ "color": "black" });
 		$(".information").css({ "color": "black" });
 		$(".fa-sun").addClass("fa-moon").removeClass("fa-sun");
