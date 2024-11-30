@@ -76,6 +76,7 @@ function applyDynamicStyle() {
 	topBottomMargin = topBottomMargin * 3;
 	$(".avatar-title-section").css({ "margin-top": topBottomMargin, "margin-bottom": "0px" });
 	// $(window).scrollTop(0);
+	$(".table-of-contents").css({ "margin-bottom": "20%" });
 }
 
 function getSectionNumber(headerCount, currHeaderIdx) {
@@ -269,6 +270,12 @@ function revealButton() {
 
 // function revealTitle() {
 setTimeout(function () {
+	if (isMobile) {
+		$(".table-of-contents").css({ "margin-bottom": "20%" });
+	}
+	else {
+		$(".table-of-contents").css({ "margin-bottom": "10%" });
+	}
 	// var elementBottom = $('.title-section')[0].getBoundingClientRect().bottom;
 	// var reveals = $('.reveal-title')[0];
 	// if (elementBottom < 0) {
@@ -305,7 +312,6 @@ setTimeout(function () {
 	var contentsHeight = $(".table-of-contents").height();
 	// var contentsTopBottomMargin = (windowHeight - contentsHeight);
 	// console.log(contentsTopBottomMargin);
-	$(".table-of-contents").css({ "margin-bottom": "22%" });
 	reveals.classList.add("active");
 
 }, delayInMilliseconds);
