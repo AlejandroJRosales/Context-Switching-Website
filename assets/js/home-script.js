@@ -80,7 +80,7 @@ function applyDynamicStyle() {
 		$("#nav-search-box").css({ "min-width": "200px" });
 		$(".img-avatar").css({ "height": "48%", "width": "48%" });
 		$(".avatar-page-developer").css({ "font-size": "1.3em", "padding-top": "7%" });
-		$(".reveal-website-opener").css({ "padding-bottom": "25%" });
+		// $(".reveal-website-opener").css({ "padding-bottom": "25%" });
 		$(".featured-section").css({ "margin": "3em 0em 1em 0em" });
 		$(".home-text-box").css({ "padding": "3% 10% 2% 10%" });
 		$(".footer-placeholder").css({ "margin-top": "20%" });
