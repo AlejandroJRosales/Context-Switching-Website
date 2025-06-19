@@ -323,7 +323,7 @@ function showIt(elementId) {
 
 function partyMode() {
 	$("body")[0].classList.add("fa-solid");
-	$("body")[0].classList.add("fa-star");
+	$("body")[0].classList.add("fa-thumbtack");
 	$("body")[0].classList.add("fa-beat-fade");
 }
 
