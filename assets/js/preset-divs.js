@@ -244,7 +244,7 @@ var navbar =
 					<a class="dropdown-item" href="/misc/epigeneticsandinheritance">Epigenetics and Inheritance</a>
 					<!--
 		 			<hr>
-					<a class="dropdown-item" href="/misc">Explore Other</a>
+					<a class="dropdown-item" href="/misc">Explore More</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
 					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
