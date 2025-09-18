@@ -356,7 +356,7 @@ var footer =
 
 					<br>
 
-	 				<p style="line-height: 1.7rem">Contact me at:<br>alejand.j.rosales@gmail.com
+	 				<p style="line-height: 1.7rem">Contact me at:<br>alejand.j.rosales@gmail.com<br>+16149064179
 					</p>
 				</div>
 			</div>
