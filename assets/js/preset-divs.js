@@ -259,10 +259,10 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
+					<a class="dropdown-item" href="/my/researchandwork">Research and Projects</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
-					<a class="dropdown-item" href="/my/researchandwork">Research and Work</a>
 					<!-- <a class="dropdown-item" href="/my/musicexhibition">Music Exhibit</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">Cloud A.I.</a> -->
 				</div>
