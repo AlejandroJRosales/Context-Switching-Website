@@ -53,7 +53,7 @@ var oneaiDiv =
 				<div class="content">
 
 		<div class="chatbox">
-			<p id="current-speaker">Cloud A.I.</p>
+			<!-- <p id="current-speaker">Cloud A.I.</p> -->
 			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
