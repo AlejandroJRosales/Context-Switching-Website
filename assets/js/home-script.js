@@ -70,7 +70,7 @@ function applyDynamicStyle() {
 		$(".website-creator").css({ "font-size": ".92em" });
 		$(".mini-banner-label").css({ "padding-left": "10%", "padding-right": "10%", "margin-top:": "2em", "margin-bottom": "1em" });
 		$(".homepage-info").css({ "font-size": ".73em" });
-		$(".dedication-container").css({ "font-size": "1em" });
+		$(".dedication-container").css({ "font-size": "1em", "padding": "0em 1em 0em 1em" });
 		$(".article-sections-container").css({ "margin": "90% 0% 10% 0%" });
 		$("#website-creator-name").css({ "padding-top": "4px", "font-size": ".73em" });
 		$(".page-title").css({ "padding": "0% 10% 5% 10%" });
