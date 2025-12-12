@@ -142,17 +142,17 @@ var navbar =
 					Computer Science
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/tcs/quantumsvm">Quantum Support Vector Machine</a>
-					<a class="dropdown-item" href="/tcs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
-					<a class="dropdown-item" href="/tcs/quantumcomputingtheory">Quantum Computing Theory</a>
-					<a class="dropdown-item" href="/tcs/quantumec">Quantum Error Correction</a>
-					<a class="dropdown-item" href="/tcs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
-					<a class="dropdown-item" href="/tcs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
-		 			<a class="dropdown-item" href="/tcs/theoryofcomputation">Theory of Computation</a>
-					<a class="dropdown-item" href="/tcs/algorithmicanalysis">Algorithmic Analysis</a>
+					<a class="dropdown-item" href="/cs/quantumsvm">Quantum Support Vector Machine</a>
+					<a class="dropdown-item" href="/cs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
+					<a class="dropdown-item" href="/cs/quantumcomputingtheory">Quantum Computing Theory</a>
+					<a class="dropdown-item" href="/cs/quantumec">Quantum Error Correction</a>
+					<a class="dropdown-item" href="/cs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
+					<a class="dropdown-item" href="/cs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
+		 			<a class="dropdown-item" href="/cs/theoryofcomputation">Theory of Computation</a>
+					<a class="dropdown-item" href="/cs/algorithmicanalysis">Algorithmic Analysis</a>
 					<!--
 					<hr>
-					<a class="dropdown-item" href="/tcs">Explore Computer Science</a>
+					<a class="dropdown-item" href="/cs">Explore Computer Science</a>
 					<hr>
 					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
 					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>

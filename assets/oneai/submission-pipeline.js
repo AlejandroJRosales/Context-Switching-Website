@@ -111,7 +111,7 @@ function localCommand(query) {
   }
 
   else if (queryLowered.indexOf("computer science") >= 0 && queryLowered.indexOf("page") >= 0) {
-    window.location.href = "/tcs";
+    window.location.href = "/cs";
     return true;
   }
 

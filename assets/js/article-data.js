@@ -12,7 +12,7 @@ $(function() {
         'id': 1,
         'name': 'High-Dimensional Quantum Feature Mapping',
         'preview': `Quantum Principal Component Analysis identifies large eigenvalues of unknown density matrices utilizing corresponding eigenvectors in \(O(\log d)\). Where principal component analysis analyzes positive semi-definite Hermitian matrices by decomposing eigenvectors in relation to the largest eigenvalues in the matrix for dimensionality reduction. Improved computational complexity will hopefully allow new methods for`,
-        'url': '/tcs/highdimquantumfm'
+        'url': '/cs/highdimquantumfm'
       },
       {
         'id': 2,
