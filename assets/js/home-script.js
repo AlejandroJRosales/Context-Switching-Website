@@ -182,7 +182,7 @@ function showIt(elementId) {
 
 function applyModeStyle() {
 	if (localStorage.getItem('isDarkMode') === 'true') {
-		$("body").css({ "background-color": "rgb(41,41,41)" });
+		$("body").css({ "background-color": "rgba(41, 41, 41, 1)" });
 		$(".website-intro").css({ "background-color": "rgb(41,41,41)" });
 		$(".website-creator-by").css({ "color": "white" });
 		$(".fa-moon").addClass("fa-sun").removeClass("fa-moon");
