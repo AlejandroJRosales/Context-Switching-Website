@@ -64,7 +64,7 @@ function addDynamicHTML() {
 function applyDynamicStyle() {
 	$(".page-title").text($(".category-header").text());
 	if (isMobile) {
-		$(".website-title").css({ "font-size": "1.5em",});
+		$(".website-title").css({ "font-size": "1.2em",});
 		$(".topic-title").css({ "font-size": "1.5em"});
 		$(".website-creator-by").css({ "font-size": "1.1em" });
 		$(".website-creator").css({ "font-size": ".92em" });
