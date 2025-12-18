@@ -13,12 +13,12 @@ $(document).ready(function () {
   if (!isMobile) {
     oneaiCollapseW = 250 + 'px';
   }
-  $("#textbox-area").html('<textarea type="text" id="user-input-box" style="left:2;min-width:' + oneaiCollapseW + ';max-width:' + oneaiCollapseW + ';min-height:' + oneaiCollapseH + ';max-height:' + oneaiCollapseH + '" name="query" placeholder="Message"></textarea>');
+  $("#textbox-area").html('<textarea type="text" id="user-input-box" style="left:2;min-width:' + oneaiCollapseW + ';max-width:' + oneaiCollapseW + ';min-height:' + oneaiCollapseH + ';max-height:' + oneaiCollapseH + '" name="query" placeholder=" Ask me anything..."></textarea>');
   $("#textbox-area").css({ "margin-bottom": "12px" });
 
   setTimeout(() => {
     // toggleBg("on");
-    document.getElementById("ai-response").innerHTML = "Hi, I'm a Cloud A.I. coded by Alejandro, the creator of this website. Ask me things like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more ask me, \"What can you do?\".";
+    document.getElementById("ai-response").innerHTML = "Hi, I'm a Cloud A.I. coded by Alejandro, the creator of this website. Ask me anything! Like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more ask me, \"What can you do?\".";
   }, 500);
 });
 
