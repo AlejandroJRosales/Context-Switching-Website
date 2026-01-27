@@ -357,7 +357,7 @@ var footer =
 					<br>
 
 	 				<p style="line-height: 1.7rem">Contact me
-			by:<br><br><i class="fa-solid fa-envelope"></i> <b>Email:</b> alejand.j.rosales@gmail.com
+			<br><br><i class="fa-solid fa-envelope"></i> <b>Email:</b> alejand.j.rosales@gmail.com
 			<br><i class="fa-solid fa-phone"></i> <b>Phone:</b> +16149064179
 					</p>
 				</div>
