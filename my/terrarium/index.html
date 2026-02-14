@@ -2,151 +2,444 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Artificial Terrarium</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Terrarium</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --primary: #2d5016;
+            --accent: #9dc183;
+            --water: #4a90e2;
+            --bg-dark: #0f1419;
+            --bg-card: #1a1f2e;
+            --text-light: #e8eef5;
+            --text-muted: #8b92a9;
+            --success: #6ec96e;
+            --danger: #e74c3c;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #1a2332 100%);
+            color: var(--text-light);
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            overflow: hidden;
         }
 
         body {
-            padding: 20px;
-            font-family: Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: #fff;
-            min-height: 100vh;
-        }
-
-        h1 {
-            margin-bottom: 10px;
-        }
-
-        .controls {
-            margin-bottom: 15px;
             display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-            align-items: center;
+            flex-direction: column;
+            height: 100dvh;
         }
 
-        button {
-            padding: 8px 16px;
-            background-color: #f44336;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.3s;
-        }
-
-        button:hover {
-            background-color: #da190b;
-        }
-
-        button.paused {
-            background-color: #4CAF50;
-        }
-
-        button.paused:hover {
-            background-color: #45a049;
-        }
-
-        .speed-control {
+        /* Header */
+        .header {
+            padding: 12px 16px;
+            background: rgba(15, 20, 25, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(157, 193, 131, 0.2);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
         }
 
-        input[type="range"] {
-            width: 150px;
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'Source Serif 4', serif;
+            color: var(--accent);
+            margin: 0;
+            letter-spacing: -0.5px;
         }
 
-        .stats {
+        /* Canvas Container */
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            min-height: 0;
             display: flex;
-            gap: 20px;
-            font-size: 14px;
-        }
-
-        .stat-item strong {
-            color: #4CAF50;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0a;
         }
 
         canvas {
-            border: 2px solid #444;
-            background-color: #0a0a0a;
+            border: none;
+            /* background-color: #0a0a0a; */
             cursor: crosshair;
             display: block;
-            margin-bottom: 15px;
+            image-rendering: pixelated;
+            touch-action: manipulation;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
         }
 
-        .canvas-row {
-            display: flex;
-            flex-direction: row;
-            gap: 12px;           /* space between them */
-            align-items: flex-start;
+        #canvas {
+            position: relative;
+            z-index: 1;
         }
 
-        /* optional — prevents shrinking distortion */
-        .canvas-row canvas {
-            flex: 0 0 auto;
-            border: 1px solid #444;
+        #nn-canvas {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            pointer-events: none;
+            opacity: 1;
         }
 
-        .info-panel {
-            padding: 12px;
-            background-color: #2a2a2a;
-            border-radius: 4px;
+        #nn-canvas.visible {
+            display: block;
+        }
+
+        /* Controls Section */
+        .controls-section {
+            padding: 12px 16px;
+            background: rgba(26, 31, 46, 0.9);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(157, 193, 131, 0.2);
+            overflow-y: auto;
+            max-height: 35vh;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        button {
+            padding: 10px 14px;
+            background: linear-gradient(135deg, var(--primary) 0%, #3d6b1f 100%);
+            color: var(--text-light);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            cursor: pointer;
             font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            font-family: 'Poppins', sans-serif;
+            active: scale(0.95);
+        }
+
+        button:active {
+            transform: scale(0.95);
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3);
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #3d6b1f 0%, #4a7d24 100%);
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        button.paused {
+            background: linear-gradient(135deg, var(--success) 0%, #5aad5a 100%);
+            border-color: var(--success);
+        }
+
+        button.wide {
+            grid-column: 1 / -1;
+        }
+
+        /* Speed Control */
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(157, 193, 131, 0.2);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(157, 193, 131, 0.3);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(157, 193, 131, 0.3);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .stat-card {
+            padding: 10px;
+            background: rgba(157, 193, 131, 0.08);
+            border: 1px solid rgba(157, 193, 131, 0.2);
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: 'Source Serif 4', serif;
+        }
+
+        .stat-card.day .stat-value {
+            color: #ffa500;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            max-height: 200px;
+            padding: 12px;
+            background: rgba(157, 193, 131, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            font-size: 12px;
             line-height: 1.6;
-            max-width: 850px;
+            color: var(--text-light);
+            overflow-y: auto;
+            display: none;
+            margin-bottom: 12px;
+        }
+
+        .info-panel.visible {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .info-panel strong {
-            font-size: 16px;
+            color: var(--accent);
             display: block;
             margin-bottom: 8px;
+            font-size: 13px;
         }
 
-        .footer {
-            margin-top: 20px;
-            font-size: 12px;
-            color: #888;
+        .info-panel p {
+            margin: 4px 0;
+        }
+
+        /* Tablet and Desktop Adjustments */
+        @media (min-width: 768px) {
+            .header {
+                padding: 16px 24px;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .controls-section {
+                padding: 16px 24px;
+                max-height: none;
+                flex: 0 0 auto;
+                display: flex;
+                gap: 24px;
+                align-items: flex-start;
+            }
+
+            .controls-grid {
+                grid-template-columns: auto auto auto;
+                gap: 12px;
+                margin-bottom: 0;
+                flex: 1;
+            }
+
+            button {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            button.wide {
+                grid-column: auto;
+            }
+
+            .control-group {
+                flex: 1;
+                min-width: 180px;
+                margin-bottom: 0;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(4, 1fr);
+                gap: 12px;
+                flex: 1;
+            }
+
+            .stat-card {
+                padding: 12px;
+            }
+
+            .stat-value {
+                font-size: 24px;
+            }
+
+            .info-panel {
+                font-size: 13px;
+                padding: 16px;
+                max-height: none;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .canvas-container {
+                flex: 1;
+            }
+
+            .controls-section {
+                border-top: 1px solid rgba(157, 193, 131, 0.2);
+                border-left: none;
+                padding: 16px 24px;
+                background: rgba(26, 31, 46, 0.95);
+            }
+        }
+
+        /* Mobile optimizations */
+        @media (max-height: 600px) {
+            .controls-section {
+                max-height: 25vh;
+            }
+
+            .stat-value {
+                font-size: 18px;
+            }
+
+            button {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(157, 193, 131, 0.3);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(157, 193, 131, 0.5);
         }
     </style>
 </head>
 <body>
-    <h1>🌿 Artificial Terrarium</h1>
-    
-    <div class="controls">
-        <button id="pauseBtn">⏸ Pause</button>
-        
-        <div class="speed-control">
-            <label>Speed:</label>
-            <input type="range" id="speedSlider" min="1" max="120" value="30">
-            <span id="speedDisplay">30</span>x
-        </div>
-
-        <div class="stats">
-            <div class="stat-item">Deer: <strong id="deerCount">0</strong></div>
-            <div class="stat-item">Wolves: <strong id="wolfCount">0</strong></div>
-            <div class="stat-item">Plants: <strong id="plantCount">0</strong></div>
-            <div class="stat-item">Day: <strong id="tickCount">0</strong></div>
-        </div>
+    <div class="header">
+        <h1>🌿 Terrarium</h1>
     </div>
 
-    <div class="canvas-row">
+    <div class="canvas-container">
         <canvas id="canvas" width="850" height="600"></canvas>
         <canvas id="nn-canvas" width="850" height="600"></canvas>
     </div>
 
+    <div class="controls-section">
+        <div class="controls-grid">
+            <button id="pauseBtn">⏸ Pause</button>
+            <button id="resetBtn">↻ Reset</button>
+            <button id="fullscreenBtn">⛶ Toggle NN</button>
+        </div>
 
-    <div id="infoPanel" class="info-panel" style="display: none;"></div>
+        <div class="control-group">
+            <div class="control-label">
+                <span>Speed</span>
+                <span id="speedDisplay">30</span>x
+            </div>
+            <input type="range" id="speedSlider" min="1" max="120" value="30">
+        </div>
 
-    <div class="footer">
-        <p>Click animals to inspect their properties. The simulation uses neural networks for animal decision-making.</p>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Deer</div>
+                <div class="stat-value" id="deerCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Wolves</div>
+                <div class="stat-value" id="wolfCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Plants</div>
+                <div class="stat-value" id="plantCount">0</div>
+            </div>
+            <div class="stat-card day">
+                <div class="stat-label">Day</div>
+                <div class="stat-value" id="tickCount">0</div>
+            </div>
+        </div>
+
+        <div id="infoPanel" class="info-panel"></div>
     </div>
 
     <script>
@@ -192,7 +485,7 @@
         };
 
         // ============================================================================
-        // SPATIAL HASHING GRID (NEW)
+        // SPATIAL HASHING GRID
         // ============================================================================
 
         class SpatialGrid {
@@ -528,7 +821,6 @@
             }
 
             locate(spatialGrid) {
-                // USE SPATIAL GRID for neighbor lookup
                 const candidates = spatialGrid.getNeighbors(this.x, this.y, this.visionDist);
                 const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
 
@@ -636,7 +928,6 @@
 
             update(environment, worldObjs, spatialGrid) {
                 this.updateBody(environment, worldObjs);
-                // THROTTLE brain updates: only every 5 ticks
                 this.brainUpdateCounter++;
                 if (this.brainUpdateCounter >= 1) {
                     this.brain.adjustWeights();
@@ -861,7 +1152,6 @@
             }
 
             update(worldObjs) {
-                // REBUILD SPATIAL GRID each tick
                 this.spatialGrid.clear();
                 for (let obj of worldObjs) {
                     if (obj instanceof Animal) {
@@ -911,14 +1201,11 @@
                 const nn = animal.brain;
                 const markedNodeIdx = animal.outputIdx;
 
-                // Clear canvas
-                this.ctx.fillStyle = '#0a0a0a';
-                this.ctx.fillRect(0, 0, this.w_width, this.w_height);
+                // Clear with transparency instead of filling background
+                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
 
-                // Draw network type label
                 this.drawLabel(nn);
 
-                // Draw nodes and edges
                 const allNodesPos = this.drawNodes(nn, markedNodeIdx);
                 const weights = this.extractWeights(nn);
                 
@@ -932,7 +1219,7 @@
                 const networkLabel = this.getNetworkLabel(nn);
                 const label = `${networkLabel}`;
                 
-                this.ctx.fillStyle = 'rgb(255, 255, 255)';
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 this.ctx.font = `${Math.floor(this.fontSizeBase * this.scale)}px Arial`;
                 this.ctx.textAlign = 'center';
                 
@@ -943,7 +1230,6 @@
             }
 
             getNetworkLabel(nn) {
-                // Check for LSTM indicators
                 if (nn.weights && nn.weights.length > 0 && typeof nn.weights[0] === 'object') {
                     if (nn.weights[0].W_i !== undefined) {
                         return 'LSTMNetwork';
@@ -969,12 +1255,11 @@
                         const x = this.w_width * 0.25 + l_idx * w_stride;
                         const y = this.w_height * 0.25 - adjust + n_idx * h_stride + 70;
 
-                        let nodeColor = 'rgb(255, 255, 255)';
+                        let nodeColor = 'rgba(255, 255, 255, 0.7)';
                         if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
-                            nodeColor = 'rgb(255, 0, 0)';
+                            nodeColor = 'rgba(255, 0, 0, 1)';
                         }
 
-                        // Draw node circle
                         this.ctx.strokeStyle = nodeColor;
                         this.ctx.lineWidth = 3;
                         this.ctx.beginPath();
@@ -995,7 +1280,6 @@
                         for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
                             const weight = weights[l_idx][n1_idx][n2_idx];
 
-                            // Skip weak weights
                             const threshold = minWeight + (maxWeight - minWeight) * 0.1;
                             if (weight < threshold) {
                                 continue;
@@ -1034,16 +1318,13 @@
                     return [];
                 }
 
-                // DenseNetwork: weights are already in [layer][node][nextNode] format
                 if (Array.isArray(nn.weights) && nn.weights.length > 0) {
                     const firstLayer = nn.weights[0];
 
-                    // Check if this is LSTM format
                     if (firstLayer && typeof firstLayer === 'object' && firstLayer.W_i !== undefined) {
                         return this.extractLSTMWeights(nn);
                     }
 
-                    // DenseNetwork format
                     return nn.weights;
                 }
 
@@ -1053,7 +1334,6 @@
             extractLSTMWeights(nn) {
                 const combined = [];
 
-                // Average weights from all LSTM gates
                 if (nn.weights && Array.isArray(nn.weights)) {
                     for (let lstm_layer of nn.weights) {
                         const W_i = lstm_layer.W_i || [];
@@ -1061,13 +1341,11 @@
                         const W_c = lstm_layer.W_c || [];
                         const W_o = lstm_layer.W_o || [];
 
-                        // Average the 4 weight matrices
                         const avgWeight = this.averageMatrices([W_i, W_f, W_c, W_o]);
                         combined.push(avgWeight);
                     }
                 }
 
-                // Output layer weights
                 if (nn.V) {
                     combined.push(nn.V);
                 }
@@ -1106,7 +1384,6 @@
                     return nn.layer_dims;
                 }
 
-                // Infer from weights if possible
                 const dims = [];
                 if (nn.weights && Array.isArray(nn.weights)) {
                     dims.push(nn.weights[0].length);
@@ -1117,7 +1394,7 @@
                     }
                 }
 
-                return dims.length > 0 ? dims : [6, 6, 9, 8, 8]; // Default fallback
+                return dims.length > 0 ? dims : [6, 6, 9, 8, 8];
             }
 
             getWeightRange(weights) {
@@ -1142,28 +1419,25 @@
                 }
 
                 let normalized = weight / maxAbsWeight;
-                normalized = Math.max(-1.0, Math.min(1.0, normalized)); // Clamp
+                normalized = Math.max(-1.0, Math.min(1.0, normalized));
 
                 let r, g, b;
 
                 if (normalized < 0) {
-                    // Red for negative weights
                     r = 255;
                     g = Math.floor(255 * (1 + normalized));
                     b = Math.floor(255 * (1 + normalized));
                 } else {
-                    // Blue for positive weights
                     r = Math.floor(255 * (1 - normalized));
                     g = Math.floor(255 * (1 - normalized));
                     b = 255;
                 }
 
-                // Check if grayish
                 const isGrayish =
                     Math.abs(r - g) < 20 &&
                     Math.abs(g - b) < 20 &&
                     Math.abs(r - b) < 20;
-                const alpha = isGrayish ? 0.78 : 1.0; // ~200/255 ≈ 0.78
+                const alpha = isGrayish ? 0.3 : 0.7;
 
                 return `rgba(${r}, ${g}, ${b}, ${alpha})`;
             }
@@ -1190,10 +1464,14 @@
         let selectedObj = null;
         let ticks = 0;
         let animationId = null;
+        let showNN = false;
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const nnCanvas = document.getElementById('nn-canvas');
         const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
         const speedSlider = document.getElementById('speedSlider');
         const speedDisplay = document.getElementById('speedDisplay');
         const infoPanel = document.getElementById('infoPanel');
@@ -1201,6 +1479,8 @@
         const wolfCount = document.getElementById('wolfCount');
         const plantCount = document.getElementById('plantCount');
         const tickCount = document.getElementById('tickCount');
+
+        const visualizer = new NNVisualizer(nnCanvas, [850, 600]);
 
         // Initialize
         function init() {
@@ -1290,10 +1570,6 @@
             }
         }
 
-        // Initialize
-        const nnCanvas = document.getElementById('nn-canvas');
-        const visualizer = new NNVisualizer(nnCanvas, [850, 600]);
-
         // Update simulation
         function update() {
             if (!paused) {
@@ -1302,6 +1578,10 @@
                 updateStats();
             }
             draw();
+            
+            if (selectedObj && selectedObj.alive && selectedObj instanceof Animal && selectedObj.brain && selectedObj.brain.weights) {
+                visualizer.draw(selectedObj);
+            }
         }
 
         // Event listeners
@@ -1311,6 +1591,20 @@
             pauseBtn.classList.toggle('paused');
         });
 
+        resetBtn.addEventListener('click', () => {
+            init();
+            paused = false;
+            pauseBtn.textContent = '⏸ Pause';
+            pauseBtn.classList.remove('paused');
+            selectedObj = null;
+            infoPanel.classList.remove('visible');
+        });
+
+        fullscreenBtn.addEventListener('click', () => {
+            showNN = !showNN;
+            nnCanvas.classList.toggle('visible');
+        });
+
         speedSlider.addEventListener('change', (e) => {
             speed = Number(e.target.value);
             speedDisplay.textContent = speed;
@@ -1318,17 +1612,35 @@
 
         canvas.addEventListener('click', (e) => {
             const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
 
             let closest = null;
             let closestDist = Infinity;
 
             for (let obj of world) {
-                const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
-                if (dist < closestDist && dist < 50) {
-                    closest = obj;
-                    closestDist = dist;
+                // Calculate exact bounding box collision
+                const objLeft = obj.x - obj.width / 2;
+                const objRight = obj.x + obj.width / 2;
+                const objTop = obj.y - obj.height / 2;
+                const objBottom = obj.y + obj.height / 2;
+
+                // Check if click is within object bounds
+                if (x >= objLeft && x <= objRight && y >= objTop && y <= objBottom) {
+                    const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
+                    if (dist < closestDist) {
+                        closest = obj;
+                        closestDist = dist;
+                    }
+                } else {
+                    // For objects outside bounds, use distance with increased threshold
+                    const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
+                    if (dist < closestDist && dist < 30) {
+                        closest = obj;
+                        closestDist = dist;
+                    }
                 }
             }
 
@@ -1338,34 +1650,29 @@
 
         // Display selected object info
         function displayInfo() {
+            return;
             if (!selectedObj) {
-                infoPanel.style.display = 'none';
+                infoPanel.classList.remove('visible');
                 return;
             }
 
-            let html = `<strong>📊 Selected Object</strong><br/>
-                Type: ${selectedObj.species || 'Unknown'}<br/>`;
+            let html = `<strong>📊 ${selectedObj.species}</strong>`;
 
             if (selectedObj instanceof Animal) {
-                html += `Health: ${selectedObj.health.toFixed(1)}/${selectedObj.startHealth}<br/>
-                    Generation: ${selectedObj.generation}<br/>
-                    Speed: ${selectedObj.speed.toFixed(2)}<br/>
-                    Vision: ${selectedObj.visionDist.toFixed(1)}<br/>
-                    Hunger: ${selectedObj.foodNeed.toFixed(2)}<br/>
-                    Thirst: ${selectedObj.waterNeed.toFixed(2)}<br/>
-                    Position: (${selectedObj.x.toFixed(0)}, ${selectedObj.y.toFixed(0)})`;
+                html += `<p>Health: ${selectedObj.health.toFixed(1)}/${selectedObj.startHealth}</p>
+                    <p>Gen: ${selectedObj.generation} | Speed: ${selectedObj.speed.toFixed(1)}</p>
+                    <p>Vision: ${selectedObj.visionDist.toFixed(0)} | Pos: (${selectedObj.x.toFixed(0)}, ${selectedObj.y.toFixed(0)})</p>
+                    <p>Hunger: ${selectedObj.foodNeed.toFixed(2)} | Thirst: ${selectedObj.waterNeed.toFixed(2)}</p>`;
+                
+                if (selectedObj.brain && selectedObj.brain.weights) {
+                    visualizer.draw(selectedObj);
+                }
             } else if (selectedObj instanceof Plant) {
-                html += `Health: ${selectedObj.health}<br/>
-                    Generation: ${selectedObj.generation}`;
+                html += `<p>Health: ${selectedObj.health}</p>`;
             }
 
-            let isVisualizingEnabled = true;
-
-            // Draw initial state
-            visualizer.draw(selectedObj);
-
             infoPanel.innerHTML = html;
-            infoPanel.style.display = 'block';
+            infoPanel.classList.add('visible');
         }
 
         // Main loop
@@ -1378,6 +1685,11 @@
         // Start simulation
         init();
         mainLoop();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            // Responsive canvas sizing can be added here if needed
+        });
     </script>
 </body>
 </html>
