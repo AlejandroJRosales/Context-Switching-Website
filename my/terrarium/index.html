@@ -82,13 +82,26 @@
             margin-bottom: 15px;
         }
 
+        .canvas-row {
+            display: flex;
+            flex-direction: row;
+            gap: 12px;           /* space between them */
+            align-items: flex-start;
+        }
+
+        /* optional — prevents shrinking distortion */
+        .canvas-row canvas {
+            flex: 0 0 auto;
+            border: 1px solid #444;
+        }
+
         .info-panel {
             padding: 12px;
             background-color: #2a2a2a;
             border-radius: 4px;
             font-size: 13px;
             line-height: 1.6;
-            max-width: 400px;
+            max-width: 850px;
         }
 
         .info-panel strong {
@@ -124,7 +137,11 @@
         </div>
     </div>
 
-    <canvas id="canvas" width="850" height="600"></canvas>
+    <div class="canvas-row">
+        <canvas id="canvas" width="850" height="600"></canvas>
+        <canvas id="nn-canvas" width="850" height="600"></canvas>
+    </div>
+
 
     <div id="infoPanel" class="info-panel" style="display: none;"></div>
 
@@ -173,6 +190,54 @@
                 return Math.random() * (max - min) + min;
             }
         };
+
+        // ============================================================================
+        // SPATIAL HASHING GRID (NEW)
+        // ============================================================================
+
+        class SpatialGrid {
+            constructor(worldWidth, worldHeight, cellSize = 100) {
+                this.worldWidth = worldWidth;
+                this.worldHeight = worldHeight;
+                this.cellSize = cellSize;
+                this.cols = Math.ceil(worldWidth / cellSize);
+                this.rows = Math.ceil(worldHeight / cellSize);
+                this.grid = Array(this.rows * this.cols).fill(null).map(() => []);
+            }
+
+            clear() {
+                for (let i = 0; i < this.grid.length; i++) {
+                    this.grid[i].length = 0;
+                }
+            }
+
+            insert(obj) {
+                const cellX = Math.floor(obj.x / this.cellSize);
+                const cellY = Math.floor(obj.y / this.cellSize);
+                const idx = cellY * this.cols + cellX;
+                if (idx >= 0 && idx < this.grid.length) {
+                    this.grid[idx].push(obj);
+                }
+            }
+
+            getNeighbors(x, y, radius) {
+                const cellX = Math.floor(x / this.cellSize);
+                const cellY = Math.floor(y / this.cellSize);
+                const radiusCells = Math.ceil(radius / this.cellSize);
+                const neighbors = [];
+
+                for (let dy = -radiusCells; dy <= radiusCells; dy++) {
+                    for (let dx = -radiusCells; dx <= radiusCells; dx++) {
+                        const nx = cellX + dx;
+                        const ny = cellY + dy;
+                        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
+                            neighbors.push(...this.grid[ny * this.cols + nx]);
+                        }
+                    }
+                }
+                return neighbors;
+            }
+        }
 
         // ============================================================================
         // NEURAL NETWORK CLASSES
@@ -434,6 +499,7 @@
                 this.coordsFocused = new Coords(this.x, this.y);
                 this.isPlayer = false;
                 this.outputIdx = 0;
+                this.brainUpdateCounter = 0;
 
                 this.coordChanges = [
                     [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
@@ -461,11 +527,13 @@
                 this.memory[type] = [target.x, target.y];
             }
 
-            locate() {
-                const neighbors = this.find(this.world.world);
+            locate(spatialGrid) {
+                // USE SPATIAL GRID for neighbor lookup
+                const candidates = spatialGrid.getNeighbors(this.x, this.y, this.visionDist);
                 const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
 
-                for (let obj of neighbors) {
+                for (let obj of candidates) {
+                    if (!(obj instanceof Animal) || obj === this) continue;
                     const objDist = tools.distance(this.x, this.y, obj.x, obj.y);
                     const inSight = objDist <= this.visionDist ** 2;
 
@@ -497,9 +565,9 @@
                 }
             }
 
-            think() {
+            think(spatialGrid) {
                 if (!this.isPlayer) {
-                    this.locate();
+                    this.locate(spatialGrid);
                     const needs = {
                         predator: this.avoidNeed,
                         food: this.foodNeed,
@@ -566,17 +634,22 @@
                 this.check();
             }
 
-            update(environment, worldObjs) {
+            update(environment, worldObjs, spatialGrid) {
                 this.updateBody(environment, worldObjs);
-                this.brain.adjustWeights();
-                this.think();
+                // THROTTLE brain updates: only every 5 ticks
+                this.brainUpdateCounter++;
+                if (this.brainUpdateCounter >= 1) {
+                    this.brain.adjustWeights();
+                    this.brainUpdateCounter = 0;
+                }
+                this.think(spatialGrid);
             }
 
             detectCollision(environment, worldObjs) {
                 for (let obj of worldObjs) {
                     if (!(obj instanceof Animal)) continue;
                     const dist = tools.distance(this.x, this.y, obj.x, obj.y);
-                    if (dist > 400) continue;
+                    if (dist > 850) continue;
 
                     if (this.lookForMate && this.sex === "female" && obj.speciesType === this.matePreference && 
                         obj.sex === "male" && obj !== this) {
@@ -593,7 +666,7 @@
                 for (let obj of worldObjs) {
                     if (obj instanceof Water) {
                         const dist = tools.distance(this.x, this.y, obj.x, obj.y);
-                        if (dist <= 400) {
+                        if (dist <= 850) {
                             this.waterNeed -= this.waterIncrement;
                         }
                     }
@@ -687,6 +760,7 @@
                 this.soil = [];
                 this.terrainColor = [];
                 this.world = [];
+                this.spatialGrid = new SpatialGrid(worldSize[0], worldSize[1], 100);
             }
 
             generateWorld(speciesTypes, bodiesOfWater = 5, waterBodySize = "Large") {
@@ -730,7 +804,7 @@
                 for (let w = 0; w < bodiesOfWater; w++) {
                     const bodySize = waterBodySize !== "Large" ? 
                         Math.floor(Math.random() * 100 + 100) : 
-                        Math.floor(Math.random() * 100 + 400);
+                        Math.floor(Math.random() * 100 + 850);
                     this.generateVein(bodySize);
                 }
             }
@@ -787,12 +861,20 @@
             }
 
             update(worldObjs) {
+                // REBUILD SPATIAL GRID each tick
+                this.spatialGrid.clear();
+                for (let obj of worldObjs) {
+                    if (obj instanceof Animal) {
+                        this.spatialGrid.insert(obj);
+                    }
+                }
+
                 for (let obj of worldObjs) {
                     if (obj instanceof Animal) {
                         if (obj.isPlayer) {
                             obj.updateBody(this, worldObjs);
                         } else {
-                            obj.update(this, worldObjs);
+                            obj.update(this, worldObjs, this.spatialGrid);
                         }
                     } else if (obj instanceof Plant) {
                         obj.update();
@@ -807,6 +889,290 @@
                 worldObjs.push(...this.children);
                 this.children = [];
                 return worldObjs;
+            }
+        }
+
+        // ============================================================================
+        // NNVisualizer CLASS
+        // ============================================================================
+
+        class NNVisualizer {
+            constructor(canvasElement, screenSize) {
+                this.canvas = canvasElement;
+                this.ctx = this.canvas.getContext('2d');
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.node_size = 15;
+                this.scale = 0.75;
+                this.fontSizeBase = 30;
+            }
+
+            draw(animal) {
+                const nn = animal.brain;
+                const markedNodeIdx = animal.outputIdx;
+
+                // Clear canvas
+                this.ctx.fillStyle = '#0a0a0a';
+                this.ctx.fillRect(0, 0, this.w_width, this.w_height);
+
+                // Draw network type label
+                this.drawLabel(nn);
+
+                // Draw nodes and edges
+                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
+                const weights = this.extractWeights(nn);
+                
+                if (weights.length > 0) {
+                    const [minWeight, maxWeight] = this.getWeightRange(weights);
+                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
+                }
+            }
+
+            drawLabel(nn) {
+                const networkLabel = this.getNetworkLabel(nn);
+                const label = `${networkLabel}`;
+                
+                this.ctx.fillStyle = 'rgb(255, 255, 255)';
+                this.ctx.font = `${Math.floor(this.fontSizeBase * this.scale)}px Arial`;
+                this.ctx.textAlign = 'center';
+                
+                const lines = label.split('\n');
+                lines.forEach((line, idx) => {
+                    this.ctx.fillText(line, this.w_width / 2, 30 + idx * 25);
+                });
+            }
+
+            getNetworkLabel(nn) {
+                // Check for LSTM indicators
+                if (nn.weights && nn.weights.length > 0 && typeof nn.weights[0] === 'object') {
+                    if (nn.weights[0].W_i !== undefined) {
+                        return 'LSTMNetwork';
+                    }
+                }
+                return 'DenseNetwork';
+            }
+
+            drawNodes(nn, markedNodeIdx) {
+                const layerDims = this.getLayerDims(nn);
+                const w_stride = this.w_width * 0.1;
+                const h_stride = this.w_height * 0.055;
+                this.node_size = this.w_height * 0.0175 * 0.5;
+                const nn_len = layerDims.length;
+                const allNodesPos = [];
+
+                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
+                    const l_nodes_pos = [];
+                    const num_nodes = layerDims[l_idx];
+
+                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
+                        const adjust = (num_nodes * h_stride) / 2;
+                        const x = this.w_width * 0.25 + l_idx * w_stride;
+                        const y = this.w_height * 0.25 - adjust + n_idx * h_stride + 70;
+
+                        let nodeColor = 'rgb(255, 255, 255)';
+                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
+                            nodeColor = 'rgb(255, 0, 0)';
+                        }
+
+                        // Draw node circle
+                        this.ctx.strokeStyle = nodeColor;
+                        this.ctx.lineWidth = 3;
+                        this.ctx.beginPath();
+                        this.ctx.arc(x, y, this.node_size * this.scale, 0, 2 * Math.PI);
+                        this.ctx.stroke();
+
+                        l_nodes_pos.push([x, y]);
+                    }
+                    allNodesPos.push(l_nodes_pos);
+                }
+
+                return allNodesPos;
+            }
+
+            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
+                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
+                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
+                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
+                            const weight = weights[l_idx][n1_idx][n2_idx];
+
+                            // Skip weak weights
+                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
+                            if (weight < threshold) {
+                                continue;
+                            }
+
+                            const currentNodePos = allNodesPos[l_idx][n1_idx];
+                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
+
+                            const scaledWeight =
+                                maxWeight !== minWeight
+                                    ? (weight - minWeight) / (maxWeight - minWeight)
+                                    : 0.5;
+
+                            const lineColor = this.getWeightColor(weight, scaledWeight);
+                            const width = 1;
+
+                            this.ctx.strokeStyle = lineColor;
+                            this.ctx.lineWidth = width;
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(
+                                currentNodePos[0] + this.node_size,
+                                currentNodePos[1]
+                            );
+                            this.ctx.lineTo(
+                                nextNodePos[0] - this.node_size,
+                                nextNodePos[1]
+                            );
+                            this.ctx.stroke();
+                        }
+                    }
+                }
+            }
+
+            extractWeights(nn) {
+                if (!nn.weights) {
+                    return [];
+                }
+
+                // DenseNetwork: weights are already in [layer][node][nextNode] format
+                if (Array.isArray(nn.weights) && nn.weights.length > 0) {
+                    const firstLayer = nn.weights[0];
+
+                    // Check if this is LSTM format
+                    if (firstLayer && typeof firstLayer === 'object' && firstLayer.W_i !== undefined) {
+                        return this.extractLSTMWeights(nn);
+                    }
+
+                    // DenseNetwork format
+                    return nn.weights;
+                }
+
+                return [];
+            }
+
+            extractLSTMWeights(nn) {
+                const combined = [];
+
+                // Average weights from all LSTM gates
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    for (let lstm_layer of nn.weights) {
+                        const W_i = lstm_layer.W_i || [];
+                        const W_f = lstm_layer.W_f || [];
+                        const W_c = lstm_layer.W_c || [];
+                        const W_o = lstm_layer.W_o || [];
+
+                        // Average the 4 weight matrices
+                        const avgWeight = this.averageMatrices([W_i, W_f, W_c, W_o]);
+                        combined.push(avgWeight);
+                    }
+                }
+
+                // Output layer weights
+                if (nn.V) {
+                    combined.push(nn.V);
+                }
+
+                return combined;
+            }
+
+            averageMatrices(matrices) {
+                if (matrices.length === 0) return [];
+                if (matrices[0].length === 0) return [];
+
+                const rows = matrices[0].length;
+                const cols = matrices[0][0].length;
+                const result = Array(rows).fill(null).map(() => Array(cols).fill(0));
+
+                for (let i = 0; i < rows; i++) {
+                    for (let j = 0; j < cols; j++) {
+                        let sum = 0;
+                        for (let mat of matrices) {
+                            if (mat[i] && mat[i][j] !== undefined) {
+                                sum += mat[i][j];
+                            }
+                        }
+                        result[i][j] = sum / matrices.length;
+                    }
+                }
+
+                return result;
+            }
+
+            getLayerDims(nn) {
+                if (nn.layerDims) {
+                    return nn.layerDims;
+                }
+                if (nn.layer_dims) {
+                    return nn.layer_dims;
+                }
+
+                // Infer from weights if possible
+                const dims = [];
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    dims.push(nn.weights[0].length);
+                    for (let layer of nn.weights) {
+                        if (layer[0]) {
+                            dims.push(layer[0].length);
+                        }
+                    }
+                }
+
+                return dims.length > 0 ? dims : [6, 6, 9, 8, 8]; // Default fallback
+            }
+
+            getWeightRange(weights) {
+                let min = Infinity;
+                let max = -Infinity;
+
+                for (let layer of weights) {
+                    for (let row of layer) {
+                        for (let w of row) {
+                            if (w < min) min = w;
+                            if (w > max) max = w;
+                        }
+                    }
+                }
+
+                return [min === Infinity ? -1 : min, max === -Infinity ? 1 : max];
+            }
+
+            getWeightColor(weight, maxAbsWeight = 1.0) {
+                if (maxAbsWeight === 0) {
+                    maxAbsWeight = 1.0;
+                }
+
+                let normalized = weight / maxAbsWeight;
+                normalized = Math.max(-1.0, Math.min(1.0, normalized)); // Clamp
+
+                let r, g, b;
+
+                if (normalized < 0) {
+                    // Red for negative weights
+                    r = 255;
+                    g = Math.floor(255 * (1 + normalized));
+                    b = Math.floor(255 * (1 + normalized));
+                } else {
+                    // Blue for positive weights
+                    r = Math.floor(255 * (1 - normalized));
+                    g = Math.floor(255 * (1 - normalized));
+                    b = 255;
+                }
+
+                // Check if grayish
+                const isGrayish =
+                    Math.abs(r - g) < 20 &&
+                    Math.abs(g - b) < 20 &&
+                    Math.abs(r - b) < 20;
+                const alpha = isGrayish ? 0.78 : 1.0; // ~200/255 ≈ 0.78
+
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            resize(screenSize) {
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.canvas.width = this.w_width;
+                this.canvas.height = this.w_height;
             }
         }
 
@@ -840,7 +1206,7 @@
         function init() {
             environment = new Environment([WORLD_WIDTH, WORLD_HEIGHT], 0.15);
             world = environment.generateWorld(
-                { plants: 50, deer: 100, wolves: 30 },
+                { plants: 50, deer: 100, wolves: 15 },
                 5,
                 "Large"
             );
@@ -924,6 +1290,10 @@
             }
         }
 
+        // Initialize
+        const nnCanvas = document.getElementById('nn-canvas');
+        const visualizer = new NNVisualizer(nnCanvas, [850, 600]);
+
         // Update simulation
         function update() {
             if (!paused) {
@@ -988,6 +1358,11 @@
                 html += `Health: ${selectedObj.health}<br/>
                     Generation: ${selectedObj.generation}`;
             }
+
+            let isVisualizingEnabled = true;
+
+            // Draw initial state
+            visualizer.draw(selectedObj);
 
             infoPanel.innerHTML = html;
             infoPanel.style.display = 'block';
