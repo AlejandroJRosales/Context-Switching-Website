@@ -94,12 +94,15 @@
 
         #nn-canvas {
             display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
+            width: 100%;
+            max-width: 850px;
+            height: auto;
             z-index: 10;
             pointer-events: none;
             opacity: 1;
+            margin: 8px 0;
+            border: 1px solid rgba(157, 193, 131, 0.2);
+            border-radius: 6px;
         }
 
         #nn-canvas.visible {
@@ -400,7 +403,6 @@
 
     <div class="canvas-container">
         <canvas id="canvas" width="850" height="600"></canvas>
-        <canvas id="nn-canvas" width="850" height="600"></canvas>
     </div>
 
     <div class="controls-section">
@@ -413,10 +415,12 @@
         <div class="control-group">
             <div class="control-label">
                 <span>Speed</span>
-                <span id="speedDisplay">30</span>x
+                <span id="speedDisplay">30</span>Max
             </div>
             <input type="range" id="speedSlider" min="1" max="120" value="30">
         </div>
+
+        <canvas id="nn-canvas" width="400" height="200"></canvas>
 
         <div class="stats-grid">
             <div class="stat-card">
@@ -1225,7 +1229,7 @@
                 
                 const lines = label.split('\n');
                 lines.forEach((line, idx) => {
-                    this.ctx.fillText(line, this.w_width / 2, 30 + idx * 25);
+                    this.ctx.fillText(line, this.w_width / 2 - 200, 30 + idx * 25);
                 });
             }
 
@@ -1240,9 +1244,9 @@
 
             drawNodes(nn, markedNodeIdx) {
                 const layerDims = this.getLayerDims(nn);
-                const w_stride = this.w_width * 0.1;
+                const w_stride = this.w_width * 0.04;
                 const h_stride = this.w_height * 0.055;
-                this.node_size = this.w_height * 0.0175 * 0.5;
+                this.node_size = this.w_height * 0.00875;
                 const nn_len = layerDims.length;
                 const allNodesPos = [];
 
@@ -1252,7 +1256,7 @@
 
                     for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
                         const adjust = (num_nodes * h_stride) / 2;
-                        const x = this.w_width * 0.25 + l_idx * w_stride;
+                        const x = this.w_width * 0.25 + l_idx * w_stride - 70;
                         const y = this.w_height * 0.25 - adjust + n_idx * h_stride + 70;
 
                         let nodeColor = 'rgba(255, 255, 255, 0.7)';
@@ -1480,7 +1484,7 @@
         const plantCount = document.getElementById('plantCount');
         const tickCount = document.getElementById('tickCount');
 
-        const visualizer = new NNVisualizer(nnCanvas, [850, 600]);
+        const visualizer = new NNVisualizer(nnCanvas, [850, 200]);
 
         // Initialize
         function init() {
