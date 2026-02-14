@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artificial Terrarium</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #da190b;
+        }
+
+        button.paused {
+            background-color: #4CAF50;
+        }
+
+        button.paused:hover {
+            background-color: #45a049;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="range"] {
+            width: 150px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        .stat-item strong {
+            color: #4CAF50;
+        }
+
+        canvas {
+            border: 2px solid #444;
+            background-color: #0a0a0a;
+            cursor: crosshair;
+            display: block;
+            margin-bottom: 15px;
+        }
+
+        .info-panel {
+            padding: 12px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.6;
+            max-width: 400px;
+        }
+
+        .info-panel strong {
+            font-size: 16px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌿 Artificial Terrarium</h1>
+    
+    <div class="controls">
+        <button id="pauseBtn">⏸ Pause</button>
+        
+        <div class="speed-control">
+            <label>Speed:</label>
+            <input type="range" id="speedSlider" min="1" max="120" value="30">
+            <span id="speedDisplay">30</span>x
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">Deer: <strong id="deerCount">0</strong></div>
+            <div class="stat-item">Wolves: <strong id="wolfCount">0</strong></div>
+            <div class="stat-item">Plants: <strong id="plantCount">0</strong></div>
+            <div class="stat-item">Day: <strong id="tickCount">0</strong></div>
+        </div>
+    </div>
+
+    <canvas id="canvas" width="850" height="600"></canvas>
+
+    <div id="infoPanel" class="info-panel" style="display: none;"></div>
+
+    <div class="footer">
+        <p>Click animals to inspect their properties. The simulation uses neural networks for animal decision-making.</p>
+    </div>
+
+    <script>
+        // ============================================================================
+        // UTILITY FUNCTIONS
+        // ============================================================================
+
+        const tools = {
+            distance(x1, y1, x2, y2, mw = null, mh = null) {
+                if (mw !== null && mh !== null) {
+                    x1 = x1 % mw;
+                    y1 = y1 % mh;
+                    x2 = x2 % mw;
+                    y2 = y2 % mh;
+                    return ((x2 - x1) % mw) ** 2 + ((y2 - y1) % mh) ** 2;
+                }
+                return (x2 - x1) ** 2 + (y2 - y1) ** 2;
+            },
+
+            clamp(value, minimum, maximum) {
+                return Math.max(Math.min(value, maximum), minimum);
+            },
+
+            sigmoid(x) {
+                x = Math.max(-500, Math.min(500, x));
+                return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
+            },
+
+            softmax(vector) {
+                const max = Math.max(...vector);
+                const exps = vector.map(v => Math.exp(v - max));
+                const sum = exps.reduce((a, b) => a + b, 0);
+                return exps.map(exp => exp / sum);
+            },
+
+            tanh(x) {
+                return Math.tanh(x);
+            },
+
+            random(min = 0, max = 1) {
+                return Math.random() * (max - min) + min;
+            }
+        };
+
+        // ============================================================================
+        // NEURAL NETWORK CLASSES
+        // ============================================================================
+
+        class Network {
+            constructor(layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
+                this.layerDims = layerDims;
+                this.learningRate = learningRate;
+                this.momentum = momentum;
+                this.weightDecay = weightDecay;
+                this.cost = 0.0;
+                this.costHistory = [];
+                this.output = null;
+            }
+
+            xavierInit(inDim, outDim) {
+                const limit = Math.sqrt(6.0 / (inDim + outDim));
+                const layer = [];
+                for (let i = 0; i < inDim; i++) {
+                    layer[i] = [];
+                    for (let j = 0; j < outDim; j++) {
+                        layer[i][j] = tools.random(-limit, limit);
+                    }
+                }
+                return layer;
+            }
+
+            matvec(mat, vec) {
+                return mat.map(row => row.reduce((sum, val, i) => sum + val * vec[i], 0));
+            }
+
+            mapInput(agent) {
+                const healthDiff = agent.health - agent.startHealth;
+                const xRelative = Math.abs(agent.x - agent.coordsFocused.x) % agent.world.worldWidth / agent.world.worldWidth;
+                const yRelative = Math.abs(agent.y - agent.coordsFocused.y) % agent.world.worldHeight / agent.world.worldHeight;
+                const sign = agent.priority === "predator" ? -1 : 1;
+
+                this.cost = healthDiff;
+                return [xRelative, yRelative, sign, agent.foodNeed, agent.waterNeed, agent.reproductionNeed];
+            }
+
+            think(agent) {
+                const mappedInput = this.mapInput(agent);
+                const values = this.propagate(mappedInput);
+                this.output = values.indexOf(Math.max(...values));
+                return this.output;
+            }
+
+            getAdaptiveLr() {
+                if (this.costHistory.length > 0 && this.cost < this.costHistory[this.costHistory.length - 1]) {
+                    this.learningRate *= 1.05;
+                } else {
+                    this.learningRate *= 0.95;
+                }
+
+                this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate));
+                this.costHistory.push(this.cost);
+                if (this.costHistory.length > 100) {
+                    this.costHistory.shift();
+                }
+                return this.learningRate;
+            }
+
+            propagate(inputs) {
+                throw new Error("propagate() must be implemented by subclass");
+            }
+
+            adjustWeights() {
+                throw new Error("adjustWeights() must be implemented by subclass");
+            }
+        }
+
+        class DenseNetwork extends Network {
+            constructor(animal, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
+                const layerDims = animal.nnLayerDims;
+                super(layerDims, learningRate, momentum, weightDecay);
+
+                this.weights = [];
+                this.biases = [];
+                this.weightVelocity = [];
+                this.biasVelocity = [];
+
+                for (let i = 0; i < layerDims.length - 1; i++) {
+                    this.weights.push(this.xavierInit(layerDims[i], layerDims[i + 1]));
+                    this.biases.push(new Array(layerDims[i + 1]).fill(0));
+                    this.weightVelocity.push(this.weights[i].map(row => row.map(() => 0)));
+                    this.biasVelocity.push(new Array(layerDims[i + 1]).fill(0));
+                }
+            }
+
+            propagate(inputs) {
+                if (inputs.length !== this.layerDims[0]) {
+                    throw new Error("Input size does not match network input layer size");
+                }
+
+                let slidingLayer = inputs;
+
+                for (let lIdx = 0; lIdx < this.layerDims.length - 1; lIdx++) {
+                    let outLayer = [...this.biases[lIdx]];
+
+                    for (let n1Idx = 0; n1Idx < slidingLayer.length; n1Idx++) {
+                        for (let n2Idx = 0; n2Idx < this.layerDims[lIdx + 1]; n2Idx++) {
+                            outLayer[n2Idx] += slidingLayer[n1Idx] * this.weights[lIdx][n1Idx][n2Idx];
+                        }
+                    }
+
+                    if (lIdx < this.layerDims.length - 2) {
+                        slidingLayer = outLayer.map(v => tools.sigmoid(v));
+                    } else {
+                        slidingLayer = outLayer;
+                    }
+                }
+
+                return tools.softmax(slidingLayer);
+            }
+
+            adjustWeights() {
+                const normalizedCost = Math.max(-1.0, Math.min(1.0, this.cost));
+                const adaptiveLr = this.getAdaptiveLr();
+
+                for (let lIdx = 0; lIdx < this.weights.length; lIdx++) {
+                    for (let n1Idx = 0; n1Idx < this.weights[lIdx].length; n1Idx++) {
+                        for (let n2Idx = 0; n2Idx < this.weights[lIdx][n1Idx].length; n2Idx++) {
+                            const velocity = this.momentum * this.weightVelocity[lIdx][n1Idx][n2Idx] - adaptiveLr * normalizedCost;
+                            this.weightVelocity[lIdx][n1Idx][n2Idx] = velocity;
+                            this.weights[lIdx][n1Idx][n2Idx] = this.weights[lIdx][n1Idx][n2Idx] * (1 - this.weightDecay) + velocity;
+                        }
+                    }
+                }
+
+                for (let lIdx = 0; lIdx < this.biases.length; lIdx++) {
+                    for (let bIdx = 0; bIdx < this.biases[lIdx].length; bIdx++) {
+                        const velocity = this.momentum * this.biasVelocity[lIdx][bIdx] - adaptiveLr * 0.1 * normalizedCost;
+                        this.biasVelocity[lIdx][bIdx] = velocity;
+                        this.biases[lIdx][bIdx] = this.biases[lIdx][bIdx] * (1 - this.weightDecay * 0.1) + velocity;
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // SPECIES CLASSES
+        // ============================================================================
+
+        const SPECIES_CONFIG = {
+            deer: {
+                sexes: { male: { size: [20, 20] }, female: { size: [20, 20] } },
+                mate: 'Deer',
+                predators: ['wolf'],
+                diet: ['plant'],
+                speed: 2.5,
+                start_health: 100,
+            },
+            wolf: {
+                sexes: { male: { size: [22, 22] }, female: { size: [22, 22] } },
+                mate: 'Wolf',
+                predators: [],
+                diet: ['deer'],
+                speed: 3.5,
+                start_health: 120,
+            },
+            plant: {
+                sexes: { asexual: { size: [12, 12] } },
+                mate: null,
+                predators: [],
+                diet: [],
+                speed: 0,
+                start_health: 5,
+            }
+        };
+
+        class Coords {
+            constructor(x = -1, y = -1) {
+                this.x = x;
+                this.y = y;
+            }
+        }
+
+        class Living {
+            constructor(world, coord) {
+                this.world = world;
+                this.birthCoord = coord;
+                this.tob = Date.now();
+                this.generation = 0;
+                this.alive = true;
+                this.x = coord[0];
+                this.y = coord[1];
+            }
+
+            generateEntity(speciesType, sexesInfo) {
+                const sexKeys = Object.keys(sexesInfo);
+                this.sex = sexKeys[Math.floor(Math.random() * sexKeys.length)];
+                const sizeData = sexesInfo[this.sex].size;
+                this.width = sizeData[0] * this.world.proportion;
+                this.height = sizeData[1] * this.world.proportion;
+                this.species = speciesType;
+            }
+
+            attacked(predator) {
+                const healthDepl = this.startHealth * 0.1;
+                this.health -= healthDepl;
+                this.check();
+                
+                if (this instanceof Animal && predator instanceof Animal && !this.alive) {
+                    predator.health += this.startHealth;
+                    predator.foodNeed -= this.startHealth;
+                } else if (this instanceof Plant && predator instanceof Animal) {
+                    predator.health += healthDepl;
+                    predator.foodNeed -= healthDepl;
+                }
+            }
+
+            check() {
+                if (this.health <= 1) {
+                    this.die();
+                }
+            }
+
+            die() {
+                this.alive = false;
+            }
+        }
+
+        class Animal extends Living {
+            constructor(world, coord, speciesType) {
+                super(world, coord);
+                this.speciesType = speciesType;
+                const speciesInfo = SPECIES_CONFIG[speciesType];
+                this.sexesInfo = speciesInfo.sexes;
+                this.diet = speciesInfo.diet;
+                this.predators = speciesInfo.predators;
+                this.matePreference = speciesInfo.mate;
+                this.speed = speciesInfo.speed;
+                this.startHealth = speciesInfo.start_health;
+                
+                this.generateEntity(speciesType, this.sexesInfo);
+                
+                this.memory = { predator: null, food: null, water: null, mate: null };
+                this.priorityDict = {};
+                this.priority = null;
+                this.health = this.startHealth;
+                this.ageDepl = this.startHealth * 0.00002;
+                this.waterDepl = this.startHealth * 0.001;
+                this.foodDepl = this.startHealth * 0.001;
+                this.waterNeed = Math.random() * 0.02 + 0.01;
+                this.foodNeed = Math.random() * 0.02 + 0.01;
+                this.reproductionNeed = Math.random() * 0.02 + 0.01;
+                this.avoidNeed = 0;
+                this.foodIncrement = this.health * 0.0003;
+                this.waterIncrement = this.health * 0.0001;
+                this.reproductionIncrement = this.health * 0.0005;
+                this.lastChildTob = Date.now();
+                this.childGracePeriod = Math.floor(Math.random() * 15 + 15) * 1000;
+                this.lookForMate = false;
+                this.visionDist = Math.random() * 85 + 15;
+                this.mutationMulti = 0.5;
+                this.probMutation = 0.1;
+                this.coordsFocused = new Coords(this.x, this.y);
+                this.isPlayer = false;
+                this.outputIdx = 0;
+
+                this.coordChanges = [
+                    [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
+                    [this.speed, this.speed], [this.speed, -this.speed],
+                    [-this.speed, this.speed], [-this.speed, -this.speed]
+                ];
+                this.numInputs = 6;
+                this.nnLayerDims = [
+                    this.numInputs, this.numInputs, 9, this.coordChanges.length, this.coordChanges.length
+                ];
+
+                this.brain = new DenseNetwork(this);
+                this.output = null;
+            }
+
+            find(objects) {
+                return objects.filter(obj => {
+                    if (!(obj instanceof Animal)) return false;
+                    const dist = tools.distance(this.x, this.y, obj.x, obj.y);
+                    return dist <= this.visionDist ** 2 && obj !== this;
+                });
+            }
+
+            focus(target, type) {
+                this.memory[type] = [target.x, target.y];
+            }
+
+            locate() {
+                const neighbors = this.find(this.world.world);
+                const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
+
+                for (let obj of neighbors) {
+                    const objDist = tools.distance(this.x, this.y, obj.x, obj.y);
+                    const inSight = objDist <= this.visionDist ** 2;
+
+                    if (!inSight) continue;
+
+                    if (this.predators.length > 0 && this.predators.includes(obj.speciesType)) {
+                        if (objDist < objDistances.predator) {
+                            objDistances.predator = objDist;
+                            this.focus(obj, "predator");
+                            this.avoidNeed = 0.5;
+                        }
+                    } else if (this.diet.includes(obj.speciesType) && objDist < objDistances.food) {
+                        objDistances.food = objDist;
+                        this.focus(obj, "food");
+                    } else if (obj.speciesType === this.matePreference && obj.sex !== this.sex && objDist < objDistances.mate) {
+                        objDistances.mate = objDist;
+                        this.focus(obj, "mate");
+                    }
+                }
+
+                for (let obj of this.world.world) {
+                    if (obj instanceof Water) {
+                        const objDist = tools.distance(this.x, this.y, obj.x, obj.y);
+                        if (objDist < objDistances.water) {
+                            objDistances.water = objDist;
+                            this.focus(obj, "water");
+                        }
+                    }
+                }
+            }
+
+            think() {
+                if (!this.isPlayer) {
+                    this.locate();
+                    const needs = {
+                        predator: this.avoidNeed,
+                        food: this.foodNeed,
+                        water: this.waterNeed,
+                        mate: this.reproductionNeed
+                    };
+
+                    const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
+                    this.priorityDict = Object.fromEntries(priorityList);
+
+                    for (let [need, _] of priorityList) {
+                        const needLocation = this.memory[need];
+                        if (needLocation !== null) {
+                            this.priority = need;
+                            this.coordsFocused.x = needLocation[0];
+                            this.coordsFocused.y = needLocation[1];
+                            break;
+                        }
+                    }
+
+                    const agentsChoice = this.brain.think(this);
+                    this.outputIdx = agentsChoice;
+                    this.move();
+                }
+            }
+
+            move() {
+                const coordChange = this.coordChanges[this.outputIdx];
+                this.x = (coordChange[0] + this.x) % this.world.worldWidth;
+                this.y = (coordChange[1] + this.y) % this.world.worldHeight;
+            }
+
+            updateResourcesNeed() {
+                this.waterNeed += this.waterIncrement;
+                this.foodNeed += this.foodIncrement;
+                if (this.lookForMate) {
+                    this.reproductionNeed += this.reproductionIncrement;
+                }
+            }
+
+            updateInternalClocks() {
+                this.lookForMate = (Date.now() - this.lastChildTob) >= this.childGracePeriod;
+            }
+
+            updateMemory() {
+                for (let key of Object.keys(this.memory)) {
+                    const loc = this.memory[key];
+                    if (loc !== null && tools.distance(this.x, this.y, loc[0], loc[1]) > this.visionDist ** 2) {
+                        this.memory[key] = null;
+                    }
+                }
+            }
+
+            updateBody(environment, worldObjs) {
+                this.updateResourcesNeed();
+                this.updateInternalClocks();
+                this.updateMemory();
+                const elapsedTime = (Date.now() - this.tob) / 1000;
+                this.health -= elapsedTime * this.ageDepl;
+                this.health -= this.waterNeed * 0.0001;
+                this.health -= this.foodNeed * 0.0001;
+                this.avoidNeed = 0;
+                this.detectCollision(environment, worldObjs);
+                this.check();
+            }
+
+            update(environment, worldObjs) {
+                this.updateBody(environment, worldObjs);
+                this.brain.adjustWeights();
+                this.think();
+            }
+
+            detectCollision(environment, worldObjs) {
+                for (let obj of worldObjs) {
+                    if (!(obj instanceof Animal)) continue;
+                    const dist = tools.distance(this.x, this.y, obj.x, obj.y);
+                    if (dist > 400) continue;
+
+                    if (this.lookForMate && this.sex === "female" && obj.speciesType === this.matePreference && 
+                        obj.sex === "male" && obj !== this) {
+                        const child = this.mate(obj);
+                        environment.children.push(child);
+                        return;
+                    }
+
+                    if (this.diet.includes(obj.speciesType)) {
+                        obj.attacked(this);
+                    }
+                }
+
+                for (let obj of worldObjs) {
+                    if (obj instanceof Water) {
+                        const dist = tools.distance(this.x, this.y, obj.x, obj.y);
+                        if (dist <= 400) {
+                            this.waterNeed -= this.waterIncrement;
+                        }
+                    }
+                }
+            }
+
+            mate(parent2) {
+                const childClass = this.speciesType === "deer" ? Deer : Wolf;
+                const child = new childClass(this.world, [this.x, this.y - (this.width + 5)]);
+                
+                const lowerBound = Math.max(1 - this.mutationMulti, 0.1);
+                const upperBound = Math.min(1 + this.mutationMulti, 4.0);
+                
+                child.speed = ((this.speed + parent2.speed) / 2) * tools.random(lowerBound, upperBound);
+                child.coordChanges = [
+                    [child.speed, 0], [-child.speed, 0], [0, child.speed], [0, -child.speed],
+                    [child.speed, child.speed], [child.speed, -child.speed],
+                    [-child.speed, child.speed], [-child.speed, -child.speed]
+                ];
+                child.visionDist = ((this.visionDist + parent2.visionDist) / 2) * tools.random(lowerBound, upperBound);
+                child.mutationMulti = ((this.mutationMulti + parent2.mutationMulti) / 2) * tools.random(0.9, 1.1);
+                child.brain = new DenseNetwork(child);
+                child.brain.learningRate = ((this.brain.learningRate + parent2.brain.learningRate) / 2) * tools.random(0.5, 1.5);
+
+                this.lastChildTob = Date.now();
+                this.updateInternalClocks();
+                this.reproductionNeed = 0;
+                this.generation = Math.max(this.generation, parent2.generation) + 1;
+
+                parent2.lastChildTob = Date.now();
+                parent2.updateInternalClocks();
+                parent2.reproductionNeed = 0;
+
+                return child;
+            }
+        }
+
+        class Deer extends Animal {
+            constructor(world, coord) {
+                super(world, coord, "deer");
+            }
+        }
+
+        class Wolf extends Animal {
+            constructor(world, coord) {
+                super(world, coord, "wolf");
+            }
+        }
+
+        class Plant extends Living {
+            constructor(world, coord) {
+                super(world, coord);
+                const speciesInfo = SPECIES_CONFIG.plant;
+                this.sexesInfo = speciesInfo.sexes;
+                this.generateEntity("plant", this.sexesInfo);
+                this.health = 5;
+                this.startHealth = this.health;
+            }
+
+            update() {
+                this.check();
+            }
+        }
+
+        class Water {
+            constructor(coord, proportion) {
+                this.x = coord[0];
+                this.y = coord[1];
+                this.size = 20;
+                this.alive = true;
+                this.width = this.size;
+                this.height = this.size;
+            }
+        }
+
+        // ============================================================================
+        // ENVIRONMENT CLASS
+        // ============================================================================
+
+        class Environment {
+            constructor(worldSize, proportion = 0.1) {
+                this.worldWidth = worldSize[0];
+                this.worldHeight = worldSize[1];
+                this.proportion = proportion;
+                this.wNumChunks = 50;
+                this.hNumChunks = 50;
+                this.wChunkSize = Math.ceil(this.worldWidth / this.wNumChunks);
+                this.hChunkSize = Math.ceil(this.worldHeight / this.hNumChunks);
+                this.children = [];
+                this.unwalkable = [];
+                this.soil = [];
+                this.terrainColor = [];
+                this.world = [];
+            }
+
+            generateWorld(speciesTypes, bodiesOfWater = 5, waterBodySize = "Large") {
+                const water = this.generateTerrain(bodiesOfWater, waterBodySize);
+                const living = this.generateLiving(speciesTypes);
+                this.world = water.concat(living);
+                return this.world;
+            }
+
+            generateTerrain(bodiesOfWater, waterBodySize) {
+                this.generateWater(bodiesOfWater, waterBodySize);
+                const water = this.unwalkable;
+                this.generateLand();
+                return water;
+            }
+
+            generateLiving(speciesTypes) {
+                const plants = [];
+                const animals = [];
+
+                for (let i = 0; i < speciesTypes.plants; i++) {
+                    plants.push(this.generatePlant());
+                }
+                for (let i = 0; i < speciesTypes.deer; i++) {
+                    animals.push(new Deer(this, [
+                        Math.random() * this.worldWidth,
+                        Math.random() * this.worldHeight
+                    ]));
+                }
+                for (let i = 0; i < speciesTypes.wolves; i++) {
+                    animals.push(new Wolf(this, [
+                        Math.random() * this.worldWidth,
+                        Math.random() * this.worldHeight
+                    ]));
+                }
+
+                return plants.concat(animals);
+            }
+
+            generateWater(bodiesOfWater, waterBodySize) {
+                for (let w = 0; w < bodiesOfWater; w++) {
+                    const bodySize = waterBodySize !== "Large" ? 
+                        Math.floor(Math.random() * 100 + 100) : 
+                        Math.floor(Math.random() * 100 + 400);
+                    this.generateVein(bodySize);
+                }
+            }
+
+            generateVein(counter) {
+                let x = Math.random() * this.worldWidth * 0.75;
+                let y = Math.random() * this.worldHeight * 0.75;
+
+                for (let step = 0; step < counter; step++) {
+                    const water = new Water([x, y], this.proportion);
+                    this.unwalkable.push(water);
+
+                    const options = [1, 2, 3];
+                    const choice = options[Math.floor(Math.random() * options.length)];
+                    const walkSize = water.size;
+                    const walkOptions = {
+                        0: [0, walkSize], 1: [0, -walkSize],
+                        2: [walkSize, 0], 3: [-walkSize, 0]
+                    };
+                    const [dx, dy] = walkOptions[choice];
+                    x = (x + dx) % this.worldWidth;
+                    y = (y + dy) % this.worldHeight;
+                }
+            }
+
+            generateLand() {
+                for (let row = 0; row < this.wNumChunks; row++) {
+                    for (let col = 0; col < this.hNumChunks; col++) {
+                        const hasWater = this.unwalkable.some(w =>
+                            Math.abs(this.wChunkSize * row - w.x) < 100 &&
+                            Math.abs(this.hChunkSize * col - w.y) < 100
+                        );
+
+                        if (hasWater) {
+                            this.terrainColor.push([
+                                Math.floor(Math.random() * 40 + 200),
+                                Math.floor(Math.random() * 20 + 170),
+                                Math.floor(Math.random() * 20 + 150)
+                            ]);
+                        } else {
+                            this.terrainColor.push([
+                                Math.floor(Math.random() * 15 + 75),
+                                Math.floor(Math.random() * 10 + 110),
+                                Math.floor(Math.random() * 10 + 40)
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            generatePlant() {
+                const coord = [Math.random() * this.worldWidth, Math.random() * this.worldHeight];
+                return new Plant(this, coord);
+            }
+
+            update(worldObjs) {
+                for (let obj of worldObjs) {
+                    if (obj instanceof Animal) {
+                        if (obj.isPlayer) {
+                            obj.updateBody(this, worldObjs);
+                        } else {
+                            obj.update(this, worldObjs);
+                        }
+                    } else if (obj instanceof Plant) {
+                        obj.update();
+                    }
+                }
+
+                if (Math.random() <= 0.15) {
+                    worldObjs.push(this.generatePlant());
+                }
+
+                worldObjs = worldObjs.filter(obj => obj.alive);
+                worldObjs.push(...this.children);
+                this.children = [];
+                return worldObjs;
+            }
+        }
+
+        // ============================================================================
+        // SIMULATION STATE & LOGIC
+        // ============================================================================
+
+        const WORLD_WIDTH = 850;
+        const WORLD_HEIGHT = 600;
+
+        let environment = null;
+        let world = null;
+        let paused = false;
+        let speed = 30;
+        let selectedObj = null;
+        let ticks = 0;
+        let animationId = null;
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedDisplay = document.getElementById('speedDisplay');
+        const infoPanel = document.getElementById('infoPanel');
+        const deerCount = document.getElementById('deerCount');
+        const wolfCount = document.getElementById('wolfCount');
+        const plantCount = document.getElementById('plantCount');
+        const tickCount = document.getElementById('tickCount');
+
+        // Initialize
+        function init() {
+            environment = new Environment([WORLD_WIDTH, WORLD_HEIGHT], 0.15);
+            world = environment.generateWorld(
+                { plants: 50, deer: 100, wolves: 30 },
+                5,
+                "Large"
+            );
+            updateStats();
+            draw();
+        }
+
+        // Update stats display
+        function updateStats() {
+            const deer = world.filter(o => o instanceof Deer).length;
+            const wolves = world.filter(o => o instanceof Wolf).length;
+            const plants = world.filter(o => o instanceof Plant).length;
+            
+            deerCount.textContent = deer;
+            wolfCount.textContent = wolves;
+            plantCount.textContent = plants;
+            tickCount.textContent = Math.round(ticks / (24 * 60) * 100, 3) / 100;
+        }
+
+        // Draw the simulation
+        function draw() {
+            ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+            // Draw terrain
+            let index = 0;
+            for (let row = 0; row < environment.wNumChunks; row++) {
+                for (let col = 0; col < environment.hNumChunks; col++) {
+                    const color = environment.terrainColor[index] || [100, 100, 100];
+                    ctx.fillStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                    ctx.fillRect(
+                        environment.wChunkSize * row,
+                        environment.hChunkSize * col,
+                        environment.wChunkSize,
+                        environment.hChunkSize
+                    );
+                    index++;
+                }
+            }
+
+            // Draw objects
+            for (let obj of world) {
+                if (obj instanceof Water) {
+                    ctx.fillStyle = '#2865c9';
+                    ctx.fillRect(obj.x - obj.size / 2, obj.y - obj.size / 2, obj.size, obj.size);
+                } else if (obj instanceof Plant) {
+                    ctx.fillStyle = '#228b22';
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, obj.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (obj instanceof Deer) {
+                    ctx.fillStyle = `rgb(135, 206, 250)`;
+                    ctx.fillRect(obj.x - obj.width / 2, obj.y - obj.height / 2, obj.width, obj.height);
+                    if (obj.isPlayer) {
+                        ctx.strokeStyle = '#ffff00';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(obj.x - obj.width / 2 - 2, obj.y - obj.height / 2 - 2, obj.width + 4, obj.height + 4);
+                    }
+                } else if (obj instanceof Wolf) {
+                    ctx.fillStyle = `rgb(255, 215, 0)`;
+                    ctx.beginPath();
+                    const points = [
+                        [obj.x, obj.y - obj.width / 2],
+                        [obj.x + obj.width / 2, obj.y],
+                        [obj.x, obj.y + obj.width / 2],
+                        [obj.x - obj.width / 2, obj.y]
+                    ];
+                    ctx.moveTo(points[0][0], points[0][1]);
+                    for (let p of points.slice(1)) ctx.lineTo(p[0], p[1]);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            // Draw vision circle if selected
+            if (selectedObj && selectedObj instanceof Animal) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(selectedObj.x, selectedObj.y, selectedObj.visionDist, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // Update simulation
+        function update() {
+            if (!paused) {
+                world = environment.update(world);
+                ticks++;
+                updateStats();
+            }
+            draw();
+        }
+
+        // Event listeners
+        pauseBtn.addEventListener('click', () => {
+            paused = !paused;
+            pauseBtn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+            pauseBtn.classList.toggle('paused');
+        });
+
+        speedSlider.addEventListener('change', (e) => {
+            speed = Number(e.target.value);
+            speedDisplay.textContent = speed;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            let closest = null;
+            let closestDist = Infinity;
+
+            for (let obj of world) {
+                const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
+                if (dist < closestDist && dist < 50) {
+                    closest = obj;
+                    closestDist = dist;
+                }
+            }
+
+            selectedObj = closest;
+            displayInfo();
+        });
+
+        // Display selected object info
+        function displayInfo() {
+            if (!selectedObj) {
+                infoPanel.style.display = 'none';
+                return;
+            }
+
+            let html = `<strong>📊 Selected Object</strong><br/>
+                Type: ${selectedObj.species || 'Unknown'}<br/>`;
+
+            if (selectedObj instanceof Animal) {
+                html += `Health: ${selectedObj.health.toFixed(1)}/${selectedObj.startHealth}<br/>
+                    Generation: ${selectedObj.generation}<br/>
+                    Speed: ${selectedObj.speed.toFixed(2)}<br/>
+                    Vision: ${selectedObj.visionDist.toFixed(1)}<br/>
+                    Hunger: ${selectedObj.foodNeed.toFixed(2)}<br/>
+                    Thirst: ${selectedObj.waterNeed.toFixed(2)}<br/>
+                    Position: (${selectedObj.x.toFixed(0)}, ${selectedObj.y.toFixed(0)})`;
+            } else if (selectedObj instanceof Plant) {
+                html += `Health: ${selectedObj.health}<br/>
+                    Generation: ${selectedObj.generation}`;
+            }
+
+            infoPanel.innerHTML = html;
+            infoPanel.style.display = 'block';
+        }
+
+        // Main loop
+        function mainLoop() {
+            update();
+            const interval = 1000 / speed;
+            setTimeout(mainLoop, interval);
+        }
+
+        // Start simulation
+        init();
+        mainLoop();
+    </script>
+</body>
+</html>
