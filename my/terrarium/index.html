@@ -499,41 +499,67 @@
                 this.cellSize = cellSize;
                 this.cols = Math.ceil(worldWidth / cellSize);
                 this.rows = Math.ceil(worldHeight / cellSize);
-                this.grid = Array(this.rows * this.cols).fill(null).map(() => []);
+
+                const size = this.rows * this.cols;
+
+                this.grid = new Array(size);
+                for (let i = 0; i < size; i++) this.grid[i] = [];
+
+                this.stamp = new Uint32Array(size);
+                this.currentStamp = 1;
+
+                this.queryBuffer = [];
             }
 
             clear() {
-                for (let i = 0; i < this.grid.length; i++) {
-                    this.grid[i].length = 0;
-                }
+                this.currentStamp++;
             }
 
             insert(obj) {
-                const cellX = Math.floor(obj.x / this.cellSize);
-                const cellY = Math.floor(obj.y / this.cellSize);
+                const cellX = (obj.x / this.cellSize) | 0;
+                const cellY = (obj.y / this.cellSize) | 0;
                 const idx = cellY * this.cols + cellX;
-                if (idx >= 0 && idx < this.grid.length) {
-                    this.grid[idx].push(obj);
+
+                if (idx < 0 || idx >= this.grid.length) return;
+
+                if (this.stamp[idx] !== this.currentStamp) {
+                    this.stamp[idx] = this.currentStamp;
+                    this.grid[idx].length = 0;
                 }
+
+                this.grid[idx].push(obj);
             }
 
             getNeighbors(x, y, radius) {
-                const cellX = Math.floor(x / this.cellSize);
-                const cellY = Math.floor(y / this.cellSize);
+                const cellX = (x / this.cellSize) | 0;
+                const cellY = (y / this.cellSize) | 0;
                 const radiusCells = Math.ceil(radius / this.cellSize);
-                const neighbors = [];
+
+                const result = this.queryBuffer;
+                result.length = 0;
 
                 for (let dy = -radiusCells; dy <= radiusCells; dy++) {
+                    const ny = cellY + dy;
+                    if (ny < 0 || ny >= this.rows) continue;
+
                     for (let dx = -radiusCells; dx <= radiusCells; dx++) {
                         const nx = cellX + dx;
-                        const ny = cellY + dy;
-                        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
-                            neighbors.push(...this.grid[ny * this.cols + nx]);
+                        if (nx < 0 || nx >= this.cols) continue;
+
+                        const idx = ny * this.cols + nx;
+
+                        if (this.stamp[idx] !== this.currentStamp) continue;
+
+                        const cell = this.grid[idx];
+                        for (let i = 0; i < cell.length; i++) {
+                            result.push(cell[i]);
                         }
                     }
                 }
-                return neighbors;
+
+                return result;
             }
+
         }
 
         // ============================================================================
@@ -597,14 +623,6 @@
                     this.costHistory.shift();
                 }
                 return this.learningRate;
-            }
-
-            propagate(inputs) {
-                throw new Error("propagate() must be implemented by subclass");
-            }
-
-            adjustWeights() {
-                throw new Error("adjustWeights() must be implemented by subclass");
             }
         }
 
