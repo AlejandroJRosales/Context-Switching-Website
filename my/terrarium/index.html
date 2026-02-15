@@ -1,465 +1,651 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- This code is intended to be easily copy and pastable. Feel free to make it your own! :) -->
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Artificial Terrarium</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>3D Artificial Terrarium</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        :root {
-            --primary: #2d5016;
-            --accent: #9dc183;
-            --water: #4a90e2;
-            --bg-dark: #0f1419;
-            --bg-card: #1a1f2e;
-            --text-light: #e8eef5;
-            --text-muted: #8b92a9;
-            --success: #6ec96e;
-            --danger: #e74c3c;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
 
         html, body {
             width: 100%;
             height: 100%;
-            margin: 0;
-            padding: 0;
-            background: linear-gradient(135deg, var(--bg-dark) 0%, #1a2332 100%);
-            color: var(--text-light);
-            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            overflow: hidden;
-        }
-
-        body {
-            display: flex;
-            flex-direction: column;
             height: 100dvh;
-        }
-
-        /* Header */
-        .header {
-            padding: 12px 16px;
-            background: rgba(15, 20, 25, 0.8);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(157, 193, 131, 0.2);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            font-family: 'Source Serif 4', serif;
-            color: var(--accent);
-            margin: 0;
-            letter-spacing: -0.5px;
-        }
-
-        /* Canvas Container */
-        .canvas-container {
-            flex: 1;
-            position: relative;
             overflow: hidden;
-            min-height: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #0a0a0a;
-        }
-
-        canvas {
-            border: none;
-            /* background-color: #0a0a0a; */
-            cursor: crosshair;
-            display: block;
-            image-rendering: pixelated;
-            touch-action: manipulation;
-            max-width: 100%;
-            max-height: 100%;
-            width: auto;
-            height: auto;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
         }
 
         #canvas {
-            position: relative;
-            z-index: 1;
-        }
-
-        #nn-canvas {
-            display: none;
+            display: block;
             width: 100%;
-            max-width: 850px;
-            height: auto;
-            z-index: 10;
-            pointer-events: none;
-            opacity: 1;
-            margin: 8px 0;
-            border: 1px solid rgba(157, 193, 131, 0.2);
-            border-radius: 6px;
+            height: 100%;
         }
 
-        #nn-canvas.visible {
+        /* HUD Elements */
+        .hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+            font-size: clamp(10px, 2.5vw, 16px);
+        }
+
+        .hud-header {
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(14px, 3vw, 18px);
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        .hud-stats {
+            position: absolute;
+            top: max(50px, calc(env(safe-area-inset-top) + 40px));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(10px, 2vw, 14px);
+            line-height: 1.6;
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            max-width: 90vw;
+            animation: pulse 2s infinite;
+        }
+
+        .hud-controls {
+            position: absolute;
+            bottom: max(80px, calc(env(safe-area-inset-bottom) + 70px));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(9px, 1.8vw, 12px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            max-width: 90vw;
+            line-height: 1.5;
+            display: none;
+        }
+
+        .hud-controls.show {
             display: block;
         }
 
-        /* Controls Section */
-        .controls-section {
-            padding: 12px 16px;
-            background: rgba(26, 31, 46, 0.9);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid rgba(157, 193, 131, 0.2);
-            overflow-y: auto;
-            max-height: 35vh;
+        .hud-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30px;
+            height: 30px;
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            opacity: 0.4;
+            pointer-events: none;
         }
 
-        .controls-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+        .hud-crosshair::before,
+        .hud-crosshair::after {
+            content: '';
+            position: absolute;
+            background: #00ff00;
+        }
+
+        .hud-crosshair::before {
+            width: 10px;
+            height: 2px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hud-crosshair::after {
+            width: 2px;
+            height: 10px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hud-target-info {
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            right: max(10px, env(safe-area-inset-right));
+            font-size: clamp(10px, 2vw, 14px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            min-width: 150px;
+            text-align: right;
+            display: none;
+            z-index: 10;
+        }
+
+        .hud-target-info.visible {
+            display: block;
+        }
+
+        .fps-counter {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            right: max(10px, env(safe-area-inset-right));
+            font-size: clamp(9px, 2vw, 12px);
+            color: #00ff00;
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 1.5vw, 10px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            z-index: 10;
+        }
+
+        .speed-indicator {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(9px, 2vw, 12px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 1.5vw, 12px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            min-width: 120px;
+            display: none;
+        }
+
+        .speed-indicator.show {
+            display: block;
+        }
+
+        /* Control Buttons */
+        .control-panel {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            right: max(10px, env(safe-area-inset-right));
+            display: flex;
             gap: 10px;
-            margin-bottom: 12px;
+            pointer-events: auto;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            max-width: 90vw;
         }
 
         button {
-            padding: 10px 14px;
-            background: linear-gradient(135deg, var(--primary) 0%, #3d6b1f 100%);
-            color: var(--text-light);
-            border: 1px solid var(--accent);
-            border-radius: 6px;
+            padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 20px);
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-            font-family: 'Poppins', sans-serif;
-            active: scale(0.95);
+            font-family: 'Courier New', monospace;
+            font-size: clamp(9px, 2vw, 12px);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            pointer-events: auto;
+            touch-action: manipulation;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        button:hover, button:active {
+            background: rgba(0, 255, 0, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
         }
 
         button:active {
             transform: scale(0.95);
-            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3);
         }
 
-        button:hover {
-            background: linear-gradient(135deg, #3d6b1f 0%, #4a7d24 100%);
-            border-color: var(--accent);
-            transform: translateY(-1px);
-        }
-
-        button.paused {
-            background: linear-gradient(135deg, var(--success) 0%, #5aad5a 100%);
-            border-color: var(--success);
-        }
-
-        button.wide {
-            grid-column: 1 / -1;
-        }
-
-        /* Speed Control */
-        .control-group {
-            margin-bottom: 12px;
-        }
-
-        .control-label {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        input[type="range"] {
-            width: 100%;
-            height: 4px;
-            border-radius: 2px;
-            background: rgba(157, 193, 131, 0.2);
-            outline: none;
-            -webkit-appearance: none;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 18px;
-            height: 18px;
+        /* Touch Joystick */
+        .joystick-container {
+            position: absolute;
+            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
+            left: max(20px, env(safe-area-inset-left));
+            width: clamp(80px, 20vw, 120px);
+            height: clamp(80px, 20vw, 120px);
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid rgba(0, 255, 0, 0.3);
             border-radius: 50%;
-            background: var(--accent);
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(157, 193, 131, 0.3);
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--accent);
-            cursor: pointer;
-            border: none;
-            box-shadow: 0 2px 8px rgba(157, 193, 131, 0.3);
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .stat-card {
-            padding: 10px;
-            background: rgba(157, 193, 131, 0.08);
-            border: 1px solid rgba(157, 193, 131, 0.2);
-            border-radius: 6px;
-            text-align: center;
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-
-        .stat-value {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--accent);
-            font-family: 'Source Serif 4', serif;
-        }
-
-        .stat-card.day .stat-value {
-            color: #ffa500;
-        }
-
-        /* Info Panel */
-        .info-panel {
-            max-height: 200px;
-            padding: 12px;
-            background: rgba(157, 193, 131, 0.1);
-            border: 1px solid var(--accent);
-            border-radius: 8px;
-            font-size: 12px;
-            line-height: 1.6;
-            color: var(--text-light);
-            overflow-y: auto;
+            pointer-events: auto;
+            touch-action: none;
             display: none;
-            margin-bottom: 12px;
+            align-items: center;
+            justify-content: center;
         }
 
-        .info-panel.visible {
-            display: block;
-            animation: slideIn 0.3s ease;
+        .joystick-container.show {
+            display: flex;
         }
 
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .joystick-knob {
+            width: clamp(30px, 8vw, 50px);
+            height: clamp(30px, 8vw, 50px);
+            background: rgba(0, 255, 0, 0.6);
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            position: absolute;
+            touch-action: none;
         }
 
-        .info-panel strong {
-            color: var(--accent);
-            display: block;
-            margin-bottom: 8px;
-            font-size: 13px;
+        /* Scanline effect */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.03),
+                rgba(0, 0, 0, 0.03) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 100;
         }
 
-        .info-panel p {
-            margin: 4px 0;
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
         }
 
-        /* Tablet and Desktop Adjustments */
-        @media (min-width: 768px) {
-            .header {
-                padding: 16px 24px;
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .hud-header {
+                font-size: clamp(12px, 4vw, 16px);
             }
 
-            .header h1 {
-                font-size: 28px;
+            .hud-stats {
+                font-size: clamp(9px, 2.5vw, 12px);
             }
 
-            .controls-section {
-                padding: 16px 24px;
-                max-height: none;
-                flex: 0 0 auto;
-                display: flex;
-                gap: 24px;
-                align-items: flex-start;
-            }
-
-            .controls-grid {
-                grid-template-columns: auto auto auto;
-                gap: 12px;
-                margin-bottom: 0;
-                flex: 1;
-            }
-
-            button {
-                padding: 10px 16px;
-                font-size: 14px;
-            }
-
-            button.wide {
-                grid-column: auto;
-            }
-
-            .control-group {
-                flex: 1;
-                min-width: 180px;
-                margin-bottom: 0;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(4, 1fr);
-                gap: 12px;
-                flex: 1;
-            }
-
-            .stat-card {
-                padding: 12px;
-            }
-
-            .stat-value {
-                font-size: 24px;
-            }
-
-            .info-panel {
-                font-size: 13px;
-                padding: 16px;
-                max-height: none;
+            .control-panel {
+                bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
             }
         }
 
-        @media (min-width: 1024px) {
-            .canvas-container {
-                flex: 1;
+        @media (orientation: landscape) {
+            .hud-controls {
+                display: none !important;
             }
 
-            .controls-section {
-                border-top: 1px solid rgba(157, 193, 131, 0.2);
-                border-left: none;
-                padding: 16px 24px;
-                background: rgba(26, 31, 46, 0.95);
+            .joystick-container {
+                width: clamp(60px, 15vw, 100px);
+                height: clamp(60px, 15vw, 100px);
             }
-        }
-
-        /* Mobile optimizations */
-        @media (max-height: 600px) {
-            .controls-section {
-                max-height: 25vh;
-            }
-
-            .stat-value {
-                font-size: 18px;
-            }
-
-            button {
-                padding: 8px 12px;
-                font-size: 12px;
-            }
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(157, 193, 131, 0.3);
-            border-radius: 3px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(157, 193, 131, 0.5);
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🌿 Artificial Terrarium</h1>
-    </div>
+    <canvas id="canvas"></canvas>
 
-    <div class="canvas-container">
-        <canvas id="canvas" width="850" height="600"></canvas>
-    </div>
+    <div class="hud">
+        <div class="hud-header">🌿 TERRARIUM</div>
 
-    <div class="controls-section">
-        <div class="controls-grid">
-            <button id="pauseBtn">⏸ Pause</button>
-            <button id="resetBtn">↻ Reset</button>
-            <button id="fullscreenBtn">⛶ Toggle NN</button>
+        <div class="hud-stats">
+            <div>ECOSYSTEM</div>
+            <div>━━━━━━━━━━━━</div>
+            <div>🦌 <span id="deerCount">0</span> | 🐺 <span id="wolfCount">0</span></div>
+            <div>🌱 <span id="plantCount">0</span> | Day <span id="dayCount">0</span></div>
         </div>
 
-        <div class="control-group">
-            <div class="control-label">
-                <span>Speed</span>
-                <span id="speedDisplay">30</span>Max
-            </div>
-            <input type="range" id="speedSlider" min="1" max="120" value="30">
+        <div class="hud-controls">
+            <div>CONTROLS</div>
+            <div>━━━━━━━━━━━━</div>
+            <div>Drag joystick to move</div>
+            <div>Tilt device to look</div>
+            <div>Tap entity to track</div>
         </div>
 
-        <canvas id="nn-canvas" width="400" height="200"></canvas>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">Deer</div>
-                <div class="stat-value" id="deerCount">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Wolves</div>
-                <div class="stat-value" id="wolfCount">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Plants</div>
-                <div class="stat-value" id="plantCount">0</div>
-            </div>
-            <div class="stat-card day">
-                <div class="stat-label">Day</div>
-                <div class="stat-value" id="tickCount">0</div>
-            </div>
+        <div class="hud-target-info" id="targetInfo">
+            <div id="targetName">—</div>
+            <div id="targetStats">—</div>
         </div>
 
-        <div id="infoPanel" class="info-panel"></div>
+        <div class="fps-counter" id="fpsCounter">FPS: 60</div>
 
-        <div id="footer">version 1.0.1</div>
+        <div class="speed-indicator show" id="speedIndicator">
+            <div>SPEED</div>
+            <div id="speedValue">0.0</div>
+        </div>
+
+        <div class="hud-crosshair"></div>
+        <div class="scanlines"></div>
     </div>
 
+    <div class="joystick-container show" id="joystick"></div>
+
+    <div class="control-panel">
+        <button id="controlBtn">Touch Mode</button>
+        <button id="resetBtn">Reset</button>
+        <button id="helpBtn">Help</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         // ============================================================================
-        // UTILITY FUNCTIONS
+        // CONFIGURATION
+        // ============================================================================
+
+        const CONFIG = {
+            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+            isDeviceTilt: window.DeviceOrientationEvent !== undefined,
+            initialDeer: 15,
+            initialWolves: 4,
+            initialPlants: 30,
+            worldWidth: 850,
+            worldHeight: 600,
+            maxDrawDistance: 2000
+        };
+
+        // ============================================================================
+        // THREE.JS SETUP
+        // ============================================================================
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 1500, CONFIG.maxDrawDistance);
+
+        const canvas = document.getElementById('canvas');
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            CONFIG.maxDrawDistance
+        );
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+
+        camera.position.set(400, 100, 300);
+
+        // ============================================================================
+        // LIGHTING
+        // ============================================================================
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.set(800, 400, 600);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.left = -1000;
+        directionalLight.shadow.camera.right = 1000;
+        directionalLight.shadow.camera.top = 1000;
+        directionalLight.shadow.camera.bottom = -1000;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 2000;
+        scene.add(directionalLight);
+
+        // ============================================================================
+        // TOUCH & DEVICE CONTROLS
+        // ============================================================================
+
+        const controls = {
+            touchX: 0,
+            touchY: 0,
+            joystickActive: false,
+            joystickX: 0,
+            joystickY: 0,
+            deviceAlpha: 0,
+            deviceBeta: 0,
+            deviceGamma: 0,
+            hasPermission: false,
+            controlMode: 'touch' // 'touch' or 'keyboard'
+        };
+
+        const keys = {};
+
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (!player.isJumping) {
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mouse movement for camera look
+        document.addEventListener('mousemove', (e) => {
+            if (controls.controlMode === 'keyboard') {
+                const deltaX = e.movementX || 0;
+                const deltaY = e.movementY || 0;
+
+                player.yaw -= deltaX * 0.005;
+                player.pitch -= deltaY * 0.005;
+                player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+            }
+        });
+
+        // Request pointer lock for mouse
+        document.addEventListener('click', () => {
+            if (controls.controlMode === 'keyboard') {
+                canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+                canvas.requestPointerLock();
+            }
+        });
+
+        // Control mode toggle
+        document.getElementById('controlBtn').addEventListener('click', () => {
+            controls.controlMode = controls.controlMode === 'touch' ? 'keyboard' : 'touch';
+            const btn = document.getElementById('controlBtn');
+            btn.textContent = controls.controlMode === 'touch' ? 'Touch Mode' : 'Keyboard Mode';
+            
+            // Reset movement on switch
+            controls.joystickX = 0;
+            controls.joystickY = 0;
+            Object.keys(keys).forEach(k => keys[k] = false);
+            
+            // Update UI visibility
+            const joystick = document.getElementById('joystick');
+            if (controls.controlMode === 'touch') {
+                joystick.classList.add('show');
+            } else {
+                joystick.classList.remove('show');
+            }
+        });
+
+        // Setup joystick
+        const joystickEl = document.getElementById('joystick');
+        const joystickKnob = document.createElement('div');
+        joystickKnob.className = 'joystick-knob';
+        joystickEl.appendChild(joystickKnob);
+
+        let joystickStartX = 0;
+        let joystickStartY = 0;
+        let joystickRadius = 0;
+
+        joystickEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = joystickEl.getBoundingClientRect();
+            joystickStartX = rect.left + rect.width / 2;
+            joystickStartY = rect.top + rect.height / 2;
+            joystickRadius = rect.width / 2 - 25;
+            controls.joystickActive = true;
+            handleJoystickMove(touch.clientX, touch.clientY);
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (controls.joystickActive && e.touches.length > 0) {
+                handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', () => {
+            controls.joystickActive = false;
+            controls.joystickX = 0;
+            controls.joystickY = 0;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+        });
+
+        function handleJoystickMove(x, y) {
+            let deltaX = x - joystickStartX;
+            let deltaY = y - joystickStartY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (distance > joystickRadius) {
+                const angle = Math.atan2(deltaY, deltaX);
+                deltaX = Math.cos(angle) * joystickRadius;
+                deltaY = Math.sin(angle) * joystickRadius;
+            }
+
+            controls.joystickX = deltaX / joystickRadius;
+            controls.joystickY = deltaY / joystickRadius;
+
+            joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+        }
+
+        // Touch screen camera control and double tap jump
+        let cameraControlActive = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            const target = touch.target;
+
+            // Don't intercept if touching buttons or interactive elements
+            if (target.tagName === 'BUTTON' || target.closest('button') || target.closest('.control-panel')) {
+                return;
+            }
+
+            // Check if touch is outside the joystick area
+            const joystickRect = joystickEl.getBoundingClientRect();
+            
+            const isOutsideJoystick = (
+                touch.clientX < joystickRect.left || 
+                touch.clientX > joystickRect.right ||
+                touch.clientY < joystickRect.top || 
+                touch.clientY > joystickRect.bottom
+            );
+
+            // Double tap detection for jump
+            const currentTime = Date.now();
+            const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+            
+            if (isOutsideJoystick && controls.controlMode === 'touch' && e.touches.length === 1) {
+                if (currentTime - lastTapTime < 300 && tapDistance < 50) {
+                    // Double tap detected - jump
+                    if (!player.isJumping) {
+                        player.velocity.y = player.jumpForce;
+                        player.isJumping = true;
+                    }
+                } else {
+                    // Single tap - start camera control
+                    cameraControlActive = true;
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                }
+                
+                lastTapTime = currentTime;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (cameraControlActive && e.touches.length === 1) {
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchStartX;
+                const deltaY = touch.clientY - touchStartY;
+
+                player.yaw -= deltaX * 0.005;
+                player.pitch -= deltaY * 0.005;
+                player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                cameraControlActive = false;
+            }
+        });
+
+        // ============================================================================
+        // PLAYER
+        // ============================================================================
+
+        const player = {
+            position: new THREE.Vector3(400, 100, 300),
+            velocity: new THREE.Vector3(0, 0, 0),
+            speed: 40,
+            sprintSpeed: 80,
+            jumpForce: 300,
+            isJumping: false,
+            yaw: 0,
+            pitch: 0,
+            targetObject: null
+        };
+
+        // ============================================================================
+        // TERRAIN GENERATION
+        // ============================================================================
+
+        function createTerrain() {
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
+            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
+
+            const positionAttribute = geometry.getAttribute('position');
+            const positions = positionAttribute.array;
+
+            for (let i = 2; i < positions.length; i += 3) {
+            positions[i] = 5; // constant elevation
+        }
+            positionAttribute.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            const terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
+            return terrain;
+        }
+
+        // ============================================================================
+        // NEURAL NETWORK UTILITIES
         // ============================================================================
 
         const tools = {
-            distance(x1, y1, x2, y2, mw = null, mh = null) {
-                if (mw !== null && mh !== null) {
-                    x1 = x1 % mw;
-                    y1 = y1 % mh;
-                    x2 = x2 % mw;
-                    y2 = y2 % mh;
-                    return ((x2 - x1) % mw) ** 2 + ((y2 - y1) % mh) ** 2;
-                }
+            distance(x1, y1, x2, y2) {
                 return (x2 - x1) ** 2 + (y2 - y1) ** 2;
             },
 
@@ -479,102 +665,32 @@
                 return exps.map(exp => exp / sum);
             },
 
-            tanh(x) {
-                return Math.tanh(x);
-            },
-
             random(min = 0, max = 1) {
                 return Math.random() * (max - min) + min;
             }
         };
 
-        // ============================================================================
-        // SPATIAL HASHING GRID
-        // ============================================================================
-
-        class SpatialGrid {
-            constructor(worldWidth, worldHeight, cellSize = 100) {
-                this.worldWidth = worldWidth;
-                this.worldHeight = worldHeight;
-                this.cellSize = cellSize;
-                this.cols = Math.ceil(worldWidth / cellSize);
-                this.rows = Math.ceil(worldHeight / cellSize);
-
-                const size = this.rows * this.cols;
-
-                this.grid = new Array(size);
-                for (let i = 0; i < size; i++) this.grid[i] = [];
-
-                this.stamp = new Uint32Array(size);
-                this.currentStamp = 1;
-
-                this.queryBuffer = [];
-            }
-
-            clear() {
-                this.currentStamp++;
-            }
-
-            insert(obj) {
-                const cellX = (obj.x / this.cellSize) | 0;
-                const cellY = (obj.y / this.cellSize) | 0;
-                const idx = cellY * this.cols + cellX;
-
-                if (idx < 0 || idx >= this.grid.length) return;
-
-                if (this.stamp[idx] !== this.currentStamp) {
-                    this.stamp[idx] = this.currentStamp;
-                    this.grid[idx].length = 0;
-                }
-
-                this.grid[idx].push(obj);
-            }
-
-            getNeighbors(x, y, radius) {
-                const cellX = (x / this.cellSize) | 0;
-                const cellY = (y / this.cellSize) | 0;
-                const radiusCells = Math.ceil(radius / this.cellSize);
-
-                const result = this.queryBuffer;
-                result.length = 0;
-
-                for (let dy = -radiusCells; dy <= radiusCells; dy++) {
-                    const ny = cellY + dy;
-                    if (ny < 0 || ny >= this.rows) continue;
-
-                    for (let dx = -radiusCells; dx <= radiusCells; dx++) {
-                        const nx = cellX + dx;
-                        if (nx < 0 || nx >= this.cols) continue;
-
-                        const idx = ny * this.cols + nx;
-
-                        if (this.stamp[idx] !== this.currentStamp) continue;
-
-                        const cell = this.grid[idx];
-                        for (let i = 0; i < cell.length; i++) {
-                            result.push(cell[i]);
-                        }
-                    }
-                }
-
-                return result;
-            }
-
-        }
-
-        // ============================================================================
-        // NEURAL NETWORK CLASSES
-        // ============================================================================
-
-        class Network {
-            constructor(layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
-                this.layerDims = layerDims;
+        class DenseNetwork {
+            constructor(inputDims, layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
+                this.layerDims = [inputDims, ...layerDims];
                 this.learningRate = learningRate;
                 this.momentum = momentum;
                 this.weightDecay = weightDecay;
                 this.cost = 0.0;
                 this.costHistory = [];
                 this.output = null;
+
+                this.weights = [];
+                this.biases = [];
+                this.weightVelocity = [];
+                this.biasVelocity = [];
+
+                for (let i = 0; i < this.layerDims.length - 1; i++) {
+                    this.weights.push(this.xavierInit(this.layerDims[i], this.layerDims[i + 1]));
+                    this.biases.push(new Array(this.layerDims[i + 1]).fill(0));
+                    this.weightVelocity.push(this.weights[i].map(row => row.map(() => 0)));
+                    this.biasVelocity.push(new Array(this.layerDims[i + 1]).fill(0));
+                }
             }
 
             xavierInit(inDim, outDim) {
@@ -587,61 +703,6 @@
                     }
                 }
                 return layer;
-            }
-
-            matvec(mat, vec) {
-                return mat.map(row => row.reduce((sum, val, i) => sum + val * vec[i], 0));
-            }
-
-            mapInput(agent) {
-                const healthDiff = agent.health - agent.startHealth;
-                const xRelative = Math.abs(agent.x - agent.coordsFocused.x) % agent.world.worldWidth / agent.world.worldWidth;
-                const yRelative = Math.abs(agent.y - agent.coordsFocused.y) % agent.world.worldHeight / agent.world.worldHeight;
-                const sign = agent.priority === "predator" ? -1 : 1;
-
-                this.cost = healthDiff;
-                return [xRelative, yRelative, sign, agent.foodNeed, agent.waterNeed, agent.reproductionNeed];
-            }
-
-            think(agent) {
-                const mappedInput = this.mapInput(agent);
-                const values = this.propagate(mappedInput);
-                this.output = values.indexOf(Math.max(...values));
-                return this.output;
-            }
-
-            getAdaptiveLr() {
-                if (this.costHistory.length > 0 && this.cost < this.costHistory[this.costHistory.length - 1]) {
-                    this.learningRate *= 1.05 * 0.001;
-                } else {
-                    this.learningRate *= 0.95 * 0.001;
-                }
-
-                this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate));
-                this.costHistory.push(this.cost);
-                if (this.costHistory.length > 100) {
-                    this.costHistory.shift();
-                }
-                return this.learningRate;
-            }
-        }
-
-        class DenseNetwork extends Network {
-            constructor(animal, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
-                const layerDims = animal.nnLayerDims;
-                super(layerDims, learningRate, momentum, weightDecay);
-
-                this.weights = [];
-                this.biases = [];
-                this.weightVelocity = [];
-                this.biasVelocity = [];
-
-                for (let i = 0; i < layerDims.length - 1; i++) {
-                    this.weights.push(this.xavierInit(layerDims[i], layerDims[i + 1]));
-                    this.biases.push(new Array(layerDims[i + 1]).fill(0));
-                    this.weightVelocity.push(this.weights[i].map(row => row.map(() => 0)));
-                    this.biasVelocity.push(new Array(layerDims[i + 1]).fill(0));
-                }
             }
 
             propagate(inputs) {
@@ -670,7 +731,29 @@
                 return tools.softmax(slidingLayer);
             }
 
-            adjustWeights() {
+            think(inputs) {
+                const values = this.propagate(inputs);
+                this.output = values.indexOf(Math.max(...values));
+                return this.output;
+            }
+
+            getAdaptiveLr() {
+                if (this.costHistory.length > 0 && this.cost < this.costHistory[this.costHistory.length - 1]) {
+                    this.learningRate *= 1.05 * 0.001;
+                } else {
+                    this.learningRate *= 0.95 * 0.001;
+                }
+
+                this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate));
+                this.costHistory.push(this.cost);
+                if (this.costHistory.length > 100) {
+                    this.costHistory.shift();
+                }
+                return this.learningRate;
+            }
+
+            adjustWeights(cost) {
+                this.cost = cost;
                 const normalizedCost = Math.max(-1.0, Math.min(1.0, this.cost));
                 const adaptiveLr = this.getAdaptiveLr();
 
@@ -695,1021 +778,616 @@
         }
 
         // ============================================================================
-        // SPECIES CLASSES
+        // ENTITY SYSTEM
         // ============================================================================
 
-        const SPECIES_CONFIG = {
-            deer: {
-                sexes: { male: { size: [20, 20] }, female: { size: [20, 20] } },
-                mate: 'Deer',
-                predators: ['wolf'],
-                diet: ['plant'],
-                speed: 2.5,
-                start_health: 100,
-            },
-            wolf: {
-                sexes: { male: { size: [22, 22] }, female: { size: [22, 22] } },
-                mate: 'Wolf',
-                predators: [],
-                diet: ['deer'],
-                speed: 3.5,
-                start_health: 120,
-            },
-            plant: {
-                sexes: { asexual: { size: [12, 12] } },
-                mate: null,
-                predators: [],
-                diet: [],
-                speed: 0,
-                start_health: 5,
-            }
-        };
-
-        class Coords {
-            constructor(x = -1, y = -1) {
-                this.x = x;
-                this.y = y;
-            }
-        }
-
-        class Living {
-            constructor(world, coord) {
-                this.world = world;
-                this.birthCoord = coord;
-                this.tob = Date.now();
-                this.generation = 0;
+        class Entity {
+            constructor(position, type) {
+                this.position = new THREE.Vector3(...position);
+                this.type = type;
+                this.mesh = null;
+                this.health = 100;
                 this.alive = true;
-                this.x = coord[0];
-                this.y = coord[1];
             }
 
-            generateEntity(speciesType, sexesInfo) {
-                const sexKeys = Object.keys(sexesInfo);
-                this.sex = sexKeys[Math.floor(Math.random() * sexKeys.length)];
-                const sizeData = sexesInfo[this.sex].size;
-                this.width = sizeData[0] * this.world.proportion;
-                this.height = sizeData[1] * this.world.proportion;
-                this.species = speciesType;
-            }
-
-            attacked(predator) {
-                const healthDepl = this.startHealth * 0.1;
-                this.health -= healthDepl;
-                this.check();
-                
-                if (this instanceof Animal && predator instanceof Animal && !this.alive) {
-                    predator.health += this.startHealth;
-                    predator.foodNeed -= this.startHealth;
-                } else if (this instanceof Plant && predator instanceof Animal) {
-                    predator.health += healthDepl;
-                    predator.foodNeed -= healthDepl;
-                }
-            }
-
-            check() {
-                if (this.health <= 1) {
-                    this.die();
-                }
-            }
-
-            die() {
-                this.alive = false;
+            update(deltaTime) {}
+            remove() {
+                if (this.mesh) scene.remove(this.mesh);
             }
         }
 
-        class Animal extends Living {
-            constructor(world, coord, speciesType) {
-                super(world, coord);
-                this.speciesType = speciesType;
-                const speciesInfo = SPECIES_CONFIG[speciesType];
-                this.sexesInfo = speciesInfo.sexes;
-                this.diet = speciesInfo.diet;
-                this.predators = speciesInfo.predators;
-                this.matePreference = speciesInfo.mate;
-                this.speed = speciesInfo.speed;
-                this.startHealth = speciesInfo.start_health;
-                
-                this.generateEntity(speciesType, this.sexesInfo);
-                
-                this.memory = { predator: null, food: null, water: null, mate: null };
-                this.priorityDict = {};
-                this.priority = null;
+        class Animal extends Entity {
+            constructor(position, type) {
+                super(position, type);
+                this.speciesType = type;
+                this.speed = type === 'wolf' ? 35 : 25;
+                this.startHealth = type === 'wolf' ? 120 : 100;
                 this.health = this.startHealth;
-                this.ageDepl = this.startHealth * 0.00002;
-                this.waterDepl = this.startHealth * 0.001;
-                this.foodDepl = this.startHealth * 0.001;
+                this.maxHealth = this.health;
+                this.visionDistance = tools.random(80, 150);
+                this.generation = 0;
+                
+                // Resource tracking
                 this.waterNeed = Math.random() * 0.02 + 0.01;
                 this.foodNeed = Math.random() * 0.02 + 0.01;
                 this.reproductionNeed = Math.random() * 0.02 + 0.01;
                 this.avoidNeed = 0;
-                this.foodIncrement = this.health * 0.0003;
+
+                // Degradation rates
                 this.waterIncrement = this.health * 0.0001;
-                this.reproductionIncrement = this.health * 0.0005;
-                this.lastChildTob = Date.now();
-                this.childGracePeriod = Math.floor(Math.random() * 15 + 15) * 1000;
-                this.lookForMate = false;
-                this.visionDist = Math.random() * 85 + 15;
-                this.mutationMulti = 0.5;
-                this.probMutation = 0.1;
-                this.coordsFocused = new Coords(this.x, this.y);
-                this.isPlayer = false;
+                this.foodIncrement = this.health * 0.0001;
+                this.ageDepl = this.health * 0.00002;
+
+                // Memory and priorities
+                this.memory = { predator: null, food: null, water: null, mate: null };
+                this.priority = null;
+
+                // Movement system
+                this.coordChanges = [
+                    [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
+                    [this.speed * 0.7, this.speed * 0.7], [this.speed * 0.7, -this.speed * 0.7],
+                    [-this.speed * 0.7, this.speed * 0.7], [-this.speed * 0.7, -this.speed * 0.7]
+                ];
+
+                // Neural network
+                this.numInputs = 6;
+                this.nnLayerDims = [this.numInputs, this.numInputs, 9, this.coordChanges.length];
+                this.brain = new DenseNetwork(this.numInputs, this.nnLayerDims.slice(1), 0.01);
                 this.outputIdx = 0;
                 this.brainUpdateCounter = 0;
 
-                this.coordChanges = [
-                    [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
-                    [this.speed, this.speed], [this.speed, -this.speed],
-                    [-this.speed, this.speed], [-this.speed, -this.speed]
-                ];
-                this.numInputs = 6;
-                this.nnLayerDims = [
-                    this.numInputs, this.numInputs, 9, this.coordChanges.length, this.coordChanges.length
-                ];
+                // Tracking
+                this.coordsFocused = new THREE.Vector2(this.position.x, this.position.z);
+                this.tob = Date.now();
 
-                this.brain = new DenseNetwork(this);
-                this.output = null;
+                this.createMesh();
             }
 
-            find(objects) {
-                return objects.filter(obj => {
-                    if (!(obj instanceof Animal)) return false;
-                    const dist = tools.distance(this.x, this.y, obj.x, obj.y);
-                    return dist <= this.visionDist ** 2 && obj !== this;
-                });
+            createMesh() {
+                if (this.type === 'deer') {
+                    const group = new THREE.Group();
+                    const body = new THREE.Mesh(
+                        new THREE.BoxGeometry(15, 15, 25),
+                        new THREE.MeshStandardMaterial({ color: 0x87CEFA })
+                    );
+                    body.castShadow = true;
+                    body.receiveShadow = true;
+                    group.add(body);
+
+                    const head = new THREE.Mesh(
+                        new THREE.SphereGeometry(8, 16, 16),
+                        new THREE.MeshStandardMaterial({ color: 0x6AB2E8 })
+                    );
+                    head.position.z = 15;
+                    head.castShadow = true;
+                    head.receiveShadow = true;
+                    group.add(head);
+
+                    this.mesh = group;
+                } else if (this.type === 'wolf') {
+                    const group = new THREE.Group();
+                    const body = new THREE.Mesh(
+                        new THREE.BoxGeometry(18, 12, 30),
+                        new THREE.MeshStandardMaterial({ color: 0xFFD700 })
+                    );
+                    body.castShadow = true;
+                    body.receiveShadow = true;
+                    group.add(body);
+
+                    const head = new THREE.Mesh(
+                        new THREE.SphereGeometry(10, 16, 16),
+                        new THREE.MeshStandardMaterial({ color: 0xFFA500 })
+                    );
+                    head.position.z = 18;
+                    head.castShadow = true;
+                    head.receiveShadow = true;
+                    group.add(head);
+
+                    this.mesh = group;
+                }
+
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
             }
 
-            focus(target, type) {
-                this.memory[type] = [target.x, target.y];
-            }
-
-            locate(spatialGrid) {
-                const candidates = spatialGrid.getNeighbors(this.x, this.y, this.visionDist);
+            locate(entities, waterLocations) {
                 const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
 
-                for (let obj of candidates) {
-                    if (!(obj instanceof Animal) || obj === this) continue;
-                    const objDist = tools.distance(this.x, this.y, obj.x, obj.y);
-                    const inSight = objDist <= this.visionDist ** 2;
+                for (let obj of entities) {
+                    if (obj === this || !(obj instanceof Animal)) continue;
+                    const objDist = tools.distance(this.position.x, this.position.z, obj.position.x, obj.position.z);
+                    const inSight = objDist <= this.visionDistance ** 2;
 
                     if (!inSight) continue;
 
-                    if (this.predators.length > 0 && this.predators.includes(obj.speciesType)) {
+                    if (this.type === 'deer' && obj.type === 'wolf') {
                         if (objDist < objDistances.predator) {
                             objDistances.predator = objDist;
-                            this.focus(obj, "predator");
+                            this.memory.predator = [obj.position.x, obj.position.z];
                             this.avoidNeed = 0.5;
                         }
-                    } else if (this.diet.includes(obj.speciesType) && objDist < objDistances.food) {
+                    } else if (this.type === 'wolf' && obj.type === 'deer' && objDist < objDistances.food) {
                         objDistances.food = objDist;
-                        this.focus(obj, "food");
-                    } else if (obj.speciesType === this.matePreference && obj.sex !== this.sex && objDist < objDistances.mate) {
+                        this.memory.food = [obj.position.x, obj.position.z];
+                    } else if (this.type === 'deer' && obj.type === 'deer' && objDist < objDistances.mate) {
                         objDistances.mate = objDist;
-                        this.focus(obj, "mate");
+                        this.memory.mate = [obj.position.x, obj.position.z];
                     }
                 }
 
-                for (let obj of this.world.world) {
-                    if (obj instanceof Water) {
-                        const objDist = tools.distance(this.x, this.y, obj.x, obj.y);
-                        if (objDist < objDistances.water) {
-                            objDistances.water = objDist;
-                            this.focus(obj, "water");
-                        }
+                for (let water of waterLocations) {
+                    const objDist = tools.distance(this.position.x, this.position.z, water[0], water[1]);
+                    if (objDist < objDistances.water) {
+                        objDistances.water = objDist;
+                        this.memory.water = [water[0], water[1]];
                     }
                 }
             }
 
-            think(spatialGrid) {
-                if (!this.isPlayer) {
-                    this.locate(spatialGrid);
-                    const needs = {
-                        predator: this.avoidNeed,
-                        food: this.foodNeed,
-                        water: this.waterNeed,
-                        mate: this.reproductionNeed
-                    };
+            think(entities, waterLocations) {
+                this.locate(entities, waterLocations);
 
-                    const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
-                    this.priorityDict = Object.fromEntries(priorityList);
+                const needs = {
+                    predator: this.avoidNeed,
+                    food: this.foodNeed,
+                    water: this.waterNeed,
+                    mate: this.reproductionNeed
+                };
 
-                    for (let [need, _] of priorityList) {
-                        const needLocation = this.memory[need];
-                        if (needLocation !== null) {
-                            this.priority = need;
-                            this.coordsFocused.x = needLocation[0];
-                            this.coordsFocused.y = needLocation[1];
-                            break;
-                        }
+                const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
+
+                for (let [need, _] of priorityList) {
+                    const needLocation = this.memory[need];
+                    if (needLocation !== null) {
+                        this.priority = need;
+                        this.coordsFocused.x = needLocation[0];
+                        this.coordsFocused.y = needLocation[1];
+                        break;
                     }
-
-                    const agentsChoice = this.brain.think(this);
-                    this.outputIdx = agentsChoice;
-                    this.move();
                 }
+
+                // Map inputs for neural network
+                const healthDiff = this.health - this.startHealth;
+                const xRelative = Math.abs(this.position.x - this.coordsFocused.x) / CONFIG.worldWidth;
+                const yRelative = Math.abs(this.position.z - this.coordsFocused.y) / CONFIG.worldHeight;
+                const sign = this.type === 'wolf' ? -1 : 1;
+
+                const inputs = [xRelative, yRelative, sign, this.foodNeed, this.waterNeed, this.reproductionNeed];
+                this.brain.cost = healthDiff;
+
+                const agentsChoice = this.brain.think(inputs);
+                this.outputIdx = agentsChoice;
             }
 
             move() {
                 const coordChange = this.coordChanges[this.outputIdx];
-                this.x = (coordChange[0] + this.x) % this.world.worldWidth;
-                this.y = (coordChange[1] + this.y) % this.world.worldHeight;
+                this.position.x += coordChange[0] * 0.016; // deltaTime compensation
+                this.position.z += coordChange[1] * 0.016;
+
+                // Wrap around world
+                this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
             }
 
             updateResourcesNeed() {
                 this.waterNeed += this.waterIncrement;
                 this.foodNeed += this.foodIncrement;
-                if (this.lookForMate) {
-                    this.reproductionNeed += this.reproductionIncrement;
-                }
-            }
-
-            updateInternalClocks() {
-                this.lookForMate = (Date.now() - this.lastChildTob) >= this.childGracePeriod;
             }
 
             updateMemory() {
                 for (let key of Object.keys(this.memory)) {
                     const loc = this.memory[key];
-                    if (loc !== null && tools.distance(this.x, this.y, loc[0], loc[1]) > this.visionDist ** 2) {
+                    if (loc !== null && tools.distance(this.position.x, this.position.z, loc[0], loc[1]) > this.visionDistance ** 2) {
                         this.memory[key] = null;
                     }
                 }
             }
 
-            updateBody(environment, worldObjs) {
+            update(deltaTime, entities, waterLocations) {
+                // Update body state
                 this.updateResourcesNeed();
-                this.updateInternalClocks();
                 this.updateMemory();
+
                 const elapsedTime = (Date.now() - this.tob) / 1000;
                 this.health -= elapsedTime * this.ageDepl;
                 this.health -= this.waterNeed * 0.0001;
                 this.health -= this.foodNeed * 0.0001;
-                this.avoidNeed = 0;
-                this.detectCollision(environment, worldObjs);
-                this.check();
-            }
 
-            update(environment, worldObjs, spatialGrid) {
-                this.updateBody(environment, worldObjs);
+                this.avoidNeed = 0;
+
+                // Check for death
+                if (this.health <= 1) {
+                    this.alive = false;
+                }
+
+                // Think and move
+                this.think(entities, waterLocations);
                 this.brainUpdateCounter++;
-                if (this.brainUpdateCounter >= 1) {
-                    this.brain.adjustWeights();
+                if (this.brainUpdateCounter >= 5) {
+                    this.brain.adjustWeights(this.health - this.startHealth);
                     this.brainUpdateCounter = 0;
                 }
-                this.think(spatialGrid);
-            }
+                this.move();
 
-            detectCollision(environment, worldObjs) {
-                for (let obj of worldObjs) {
-                    if (!(obj instanceof Animal)) continue;
-                    const dist = tools.distance(this.x, this.y, obj.x, obj.y);
-                    if (dist > 850) continue;
-
-                    if (this.lookForMate && this.sex === "female" && obj.speciesType === this.matePreference && 
-                        obj.sex === "male" && obj !== this) {
-                        const child = this.mate(obj);
-                        environment.children.push(child);
-                        return;
-                    }
-
-                    if (this.diet.includes(obj.speciesType)) {
-                        obj.attacked(this);
-                    }
-                }
-
-                for (let obj of worldObjs) {
-                    if (obj instanceof Water) {
-                        const dist = tools.distance(this.x, this.y, obj.x, obj.y);
-                        if (dist <= 850) {
-                            this.waterNeed -= this.waterIncrement;
-                        }
-                    }
+                // Update mesh
+                if (this.mesh) {
+                    this.mesh.position.copy(this.position);
                 }
             }
 
-            mate(parent2) {
-                const childClass = this.speciesType === "deer" ? Deer : Wolf;
-                const child = new childClass(this.world, [this.x, this.y - (this.width + 5)]);
-                
-                const lowerBound = Math.max(1 - this.mutationMulti, 0.1);
-                const upperBound = Math.min(1 + this.mutationMulti, 4.0);
-                
-                child.speed = ((this.speed + parent2.speed) / 2) * tools.random(lowerBound, upperBound);
-                child.coordChanges = [
-                    [child.speed, 0], [-child.speed, 0], [0, child.speed], [0, -child.speed],
-                    [child.speed, child.speed], [child.speed, -child.speed],
-                    [-child.speed, child.speed], [-child.speed, -child.speed]
-                ];
-                child.visionDist = ((this.visionDist + parent2.visionDist) / 2) * tools.random(lowerBound, upperBound);
-                child.mutationMulti = ((this.mutationMulti + parent2.mutationMulti) / 2) * tools.random(0.9, 1.1);
-                child.brain = new DenseNetwork(child);
-                child.brain.learningRate = ((this.brain.learningRate + parent2.brain.learningRate) / 2) * tools.random(0.5, 1.5);
+            attacked(predator) {
+                const healthDepl = this.startHealth * 0.1;
+                this.health -= healthDepl;
+                if (this.health <= 1) {
+                    this.alive = false;
+                    predator.health += this.startHealth;
+                    predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+                }
+            }
 
-                this.lastChildTob = Date.now();
-                this.updateInternalClocks();
-                this.reproductionNeed = 0;
-                this.generation = Math.max(this.generation, parent2.generation) + 1;
-
-                parent2.lastChildTob = Date.now();
-                parent2.updateInternalClocks();
-                parent2.reproductionNeed = 0;
-
-                return child;
+            drinkWater() {
+                this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
             }
         }
 
-        class Deer extends Animal {
-            constructor(world, coord) {
-                super(world, coord, "deer");
-            }
-        }
-
-        class Wolf extends Animal {
-            constructor(world, coord) {
-                super(world, coord, "wolf");
-            }
-        }
-
-        class Plant extends Living {
-            constructor(world, coord) {
-                super(world, coord);
-                const speciesInfo = SPECIES_CONFIG.plant;
-                this.sexesInfo = speciesInfo.sexes;
-                this.generateEntity("plant", this.sexesInfo);
+        class Plant extends Entity {
+            constructor(position) {
+                super(position, 'plant');
                 this.health = 5;
-                this.startHealth = this.health;
+                this.maxHealth = 5;
+                this.createMesh();
             }
 
-            update() {
-                this.check();
-            }
-        }
-
-        class Water {
-            constructor(coord, proportion) {
-                this.x = coord[0];
-                this.y = coord[1];
-                this.size = 20;
-                this.alive = true;
-                this.width = this.size;
-                this.height = this.size;
-            }
-        }
-
-        // ============================================================================
-        // ENVIRONMENT CLASS
-        // ============================================================================
-
-        class Environment {
-            constructor(worldSize, proportion = 0.1) {
-                this.worldWidth = worldSize[0];
-                this.worldHeight = worldSize[1];
-                this.proportion = proportion;
-                this.wNumChunks = 50;
-                this.hNumChunks = 50;
-                this.wChunkSize = Math.ceil(this.worldWidth / this.wNumChunks);
-                this.hChunkSize = Math.ceil(this.worldHeight / this.hNumChunks);
-                this.children = [];
-                this.unwalkable = [];
-                this.soil = [];
-                this.terrainColor = [];
-                this.world = [];
-                this.spatialGrid = new SpatialGrid(worldSize[0], worldSize[1], 100);
-            }
-
-            generateWorld(speciesTypes, bodiesOfWater = 5, waterBodySize = "Large") {
-                const water = this.generateTerrain(bodiesOfWater, waterBodySize);
-                const living = this.generateLiving(speciesTypes);
-                this.world = water.concat(living);
-                return this.world;
-            }
-
-            generateTerrain(bodiesOfWater, waterBodySize) {
-                this.generateWater(bodiesOfWater, waterBodySize);
-                const water = this.unwalkable;
-                this.generateLand();
-                return water;
-            }
-
-            generateLiving(speciesTypes) {
-                const plants = [];
-                const animals = [];
-
-                for (let i = 0; i < speciesTypes.plants; i++) {
-                    plants.push(this.generatePlant());
-                }
-                for (let i = 0; i < speciesTypes.deer; i++) {
-                    animals.push(new Deer(this, [
-                        Math.random() * this.worldWidth,
-                        Math.random() * this.worldHeight
-                    ]));
-                }
-                for (let i = 0; i < speciesTypes.wolves; i++) {
-                    animals.push(new Wolf(this, [
-                        Math.random() * this.worldWidth,
-                        Math.random() * this.worldHeight
-                    ]));
-                }
-
-                return plants.concat(animals);
-            }
-
-            generateWater(bodiesOfWater, waterBodySize) {
-                for (let w = 0; w < bodiesOfWater; w++) {
-                    const bodySize = waterBodySize !== "Large" ? 
-                        Math.floor(Math.random() * 100 + 100) : 
-                        Math.floor(Math.random() * 100 + 850);
-                    this.generateVein(bodySize);
-                }
-            }
-
-            generateVein(counter) {
-                let x = Math.random() * this.worldWidth * 0.75;
-                let y = Math.random() * this.worldHeight * 0.75;
-
-                for (let step = 0; step < counter; step++) {
-                    const water = new Water([x, y], this.proportion);
-                    this.unwalkable.push(water);
-
-                    const options = [1, 2, 3];
-                    const choice = options[Math.floor(Math.random() * options.length)];
-                    const walkSize = water.size;
-                    const walkOptions = {
-                        0: [0, walkSize], 1: [0, -walkSize],
-                        2: [walkSize, 0], 3: [-walkSize, 0]
-                    };
-                    const [dx, dy] = walkOptions[choice];
-                    x = (x + dx) % this.worldWidth;
-                    y = (y + dy) % this.worldHeight;
-                }
-            }
-
-            generateLand() {
-                for (let row = 0; row < this.wNumChunks; row++) {
-                    for (let col = 0; col < this.hNumChunks; col++) {
-                        const hasWater = this.unwalkable.some(w =>
-                            Math.abs(this.wChunkSize * row - w.x) < 100 &&
-                            Math.abs(this.hChunkSize * col - w.y) < 100
-                        );
-
-                        if (hasWater) {
-                            this.terrainColor.push([
-                                Math.floor(Math.random() * 40 + 200),
-                                Math.floor(Math.random() * 20 + 170),
-                                Math.floor(Math.random() * 20 + 150)
-                            ]);
-                        } else {
-                            this.terrainColor.push([
-                                Math.floor(Math.random() * 15 + 75),
-                                Math.floor(Math.random() * 10 + 110),
-                                Math.floor(Math.random() * 10 + 40)
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            generatePlant() {
-                const coord = [Math.random() * this.worldWidth, Math.random() * this.worldHeight];
-                return new Plant(this, coord);
-            }
-
-            update(worldObjs) {
-                this.spatialGrid.clear();
-                for (let obj of worldObjs) {
-                    if (obj instanceof Animal) {
-                        this.spatialGrid.insert(obj);
-                    }
-                }
-
-                for (let obj of worldObjs) {
-                    if (obj instanceof Animal) {
-                        if (obj.isPlayer) {
-                            obj.updateBody(this, worldObjs);
-                        } else {
-                            obj.update(this, worldObjs, this.spatialGrid);
-                        }
-                    } else if (obj instanceof Plant) {
-                        obj.update();
-                    }
-                }
-
-                if (Math.random() <= 0.15) {
-                    worldObjs.push(this.generatePlant());
-                }
-
-                worldObjs = worldObjs.filter(obj => obj.alive);
-                worldObjs.push(...this.children);
-                this.children = [];
-                return worldObjs;
-            }
-        }
-
-        // ============================================================================
-        // NNVISUALIZER CLASS
-        // ============================================================================
-
-        class NNVisualizer {
-            constructor(canvasElement, screenSize) {
-                this.canvas = canvasElement;
-                this.ctx = this.canvas.getContext('2d');
-                this.w_width = screenSize[0];
-                this.w_height = screenSize[1];
-                this.node_size = 15;
-                this.scale = 0.75;
-                this.fontSizeBase = 30;
-            }
-
-            draw(animal) {
-                const nn = animal.brain;
-                const markedNodeIdx = animal.outputIdx;
-
-                // Clear with transparency instead of filling background
-                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
-
-                this.drawLabel(nn);
-
-                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
-                const weights = this.extractWeights(nn);
+            createMesh() {
+                const group = new THREE.Group();
                 
-                if (weights.length > 0) {
-                    const [minWeight, maxWeight] = this.getWeightRange(weights);
-                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
-                }
-            }
-
-            drawLabel(nn) {
-                const networkLabel = this.getNetworkLabel(nn);
-                const label = `${networkLabel}`;
-                
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                this.ctx.font = `${Math.floor(this.fontSizeBase * this.scale)}px Arial`;
-                this.ctx.textAlign = 'center';
-                
-                const lines = label.split('\n');
-                lines.forEach((line, idx) => {
-                    this.ctx.fillText(line, this.w_width / 2 - 200, 30 + idx * 25);
-                });
-            }
-
-            getNetworkLabel(nn) {
-                if (nn.weights && nn.weights.length > 0 && typeof nn.weights[0] === 'object') {
-                    if (nn.weights[0].W_i !== undefined) {
-                        return 'LSTMNetwork';
-                    }
-                }
-                return 'DenseNetwork';
-            }
-
-            drawNodes(nn, markedNodeIdx) {
-                const layerDims = this.getLayerDims(nn);
-                const w_stride = this.w_width * 0.04;
-                const h_stride = this.w_height * 0.055;
-                this.node_size = this.w_height * 0.00875;
-                const nn_len = layerDims.length;
-                const allNodesPos = [];
-
-                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
-                    const l_nodes_pos = [];
-                    const num_nodes = layerDims[l_idx];
-
-                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
-                        const adjust = (num_nodes * h_stride) / 2;
-                        const x = this.w_width * 0.25 + l_idx * w_stride - 70;
-                        const y = this.w_height * 0.25 - adjust + n_idx * h_stride + 70;
-
-                        let nodeColor = 'rgba(255, 255, 255, 0.7)';
-                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
-                            nodeColor = 'rgba(255, 0, 0, 1)';
-                        }
-
-                        this.ctx.strokeStyle = nodeColor;
-                        this.ctx.lineWidth = 3;
-                        this.ctx.beginPath();
-                        this.ctx.arc(x, y, this.node_size * this.scale, 0, 2 * Math.PI);
-                        this.ctx.stroke();
-
-                        l_nodes_pos.push([x, y]);
-                    }
-                    allNodesPos.push(l_nodes_pos);
-                }
-
-                return allNodesPos;
-            }
-
-            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
-                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
-                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
-                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
-                            const weight = weights[l_idx][n1_idx][n2_idx];
-
-                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
-                            if (weight < threshold) {
-                                continue;
-                            }
-
-                            const currentNodePos = allNodesPos[l_idx][n1_idx];
-                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
-
-                            const scaledWeight =
-                                maxWeight !== minWeight
-                                    ? (weight - minWeight) / (maxWeight - minWeight)
-                                    : 0.5;
-
-                            const lineColor = this.getWeightColor(weight, scaledWeight);
-                            const width = 1;
-
-                            this.ctx.strokeStyle = lineColor;
-                            this.ctx.lineWidth = width;
-                            this.ctx.beginPath();
-                            this.ctx.moveTo(
-                                currentNodePos[0] + this.node_size,
-                                currentNodePos[1]
-                            );
-                            this.ctx.lineTo(
-                                nextNodePos[0] - this.node_size,
-                                nextNodePos[1]
-                            );
-                            this.ctx.stroke();
-                        }
-                    }
-                }
-            }
-
-            extractWeights(nn) {
-                if (!nn.weights) {
-                    return [];
-                }
-
-                if (Array.isArray(nn.weights) && nn.weights.length > 0) {
-                    const firstLayer = nn.weights[0];
-
-                    if (firstLayer && typeof firstLayer === 'object' && firstLayer.W_i !== undefined) {
-                        return this.extractLSTMWeights(nn);
-                    }
-
-                    return nn.weights;
-                }
-
-                return [];
-            }
-
-            extractLSTMWeights(nn) {
-                const combined = [];
-
-                if (nn.weights && Array.isArray(nn.weights)) {
-                    for (let lstm_layer of nn.weights) {
-                        const W_i = lstm_layer.W_i || [];
-                        const W_f = lstm_layer.W_f || [];
-                        const W_c = lstm_layer.W_c || [];
-                        const W_o = lstm_layer.W_o || [];
-
-                        const avgWeight = this.averageMatrices([W_i, W_f, W_c, W_o]);
-                        combined.push(avgWeight);
-                    }
-                }
-
-                if (nn.V) {
-                    combined.push(nn.V);
-                }
-
-                return combined;
-            }
-
-            averageMatrices(matrices) {
-                if (matrices.length === 0) return [];
-                if (matrices[0].length === 0) return [];
-
-                const rows = matrices[0].length;
-                const cols = matrices[0][0].length;
-                const result = Array(rows).fill(null).map(() => Array(cols).fill(0));
-
-                for (let i = 0; i < rows; i++) {
-                    for (let j = 0; j < cols; j++) {
-                        let sum = 0;
-                        for (let mat of matrices) {
-                            if (mat[i] && mat[i][j] !== undefined) {
-                                sum += mat[i][j];
-                            }
-                        }
-                        result[i][j] = sum / matrices.length;
-                    }
-                }
-
-                return result;
-            }
-
-            getLayerDims(nn) {
-                if (nn.layerDims) {
-                    return nn.layerDims;
-                }
-                if (nn.layer_dims) {
-                    return nn.layer_dims;
-                }
-
-                const dims = [];
-                if (nn.weights && Array.isArray(nn.weights)) {
-                    dims.push(nn.weights[0].length);
-                    for (let layer of nn.weights) {
-                        if (layer[0]) {
-                            dims.push(layer[0].length);
-                        }
-                    }
-                }
-
-                return dims.length > 0 ? dims : [6, 6, 9, 8, 8];
-            }
-
-            getWeightRange(weights) {
-                let min = Infinity;
-                let max = -Infinity;
-
-                for (let layer of weights) {
-                    for (let row of layer) {
-                        for (let w of row) {
-                            if (w < min) min = w;
-                            if (w > max) max = w;
-                        }
-                    }
-                }
-
-                return [min === Infinity ? -1 : min, max === -Infinity ? 1 : max];
-            }
-
-            getWeightColor(weight, maxAbsWeight = 1.0) {
-                if (maxAbsWeight === 0) {
-                    maxAbsWeight = 1.0;
-                }
-
-                let normalized = weight / maxAbsWeight;
-                normalized = Math.max(-1.0, Math.min(1.0, normalized));
-
-                let r, g, b;
-
-                if (normalized < 0) {
-                    r = 255;
-                    g = Math.floor(255 * (1 + normalized));
-                    b = Math.floor(255 * (1 + normalized));
-                } else {
-                    r = Math.floor(255 * (1 - normalized));
-                    g = Math.floor(255 * (1 - normalized));
-                    b = 255;
-                }
-
-                const isGrayish =
-                    Math.abs(r - g) < 20 &&
-                    Math.abs(g - b) < 20 &&
-                    Math.abs(r - b) < 20;
-                const alpha = isGrayish ? 0.3 : 0.7;
-
-                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-            }
-
-            resize(screenSize) {
-                this.w_width = screenSize[0];
-                this.w_height = screenSize[1];
-                this.canvas.width = this.w_width;
-                this.canvas.height = this.w_height;
-            }
-        }
-
-        // ============================================================================
-        // SIMULATION STATE & LOGIC
-        // ============================================================================
-
-        const WORLD_WIDTH = 850;
-        const WORLD_HEIGHT = 600;
-
-        let environment = null;
-        let world = null;
-        let paused = false;
-        let speed = 30;
-        let selectedObj = null;
-        let ticks = 0;
-        let animationId = null;
-        let showNN = false;
-
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const nnCanvas = document.getElementById('nn-canvas');
-        const pauseBtn = document.getElementById('pauseBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const fullscreenBtn = document.getElementById('fullscreenBtn');
-        const speedSlider = document.getElementById('speedSlider');
-        const speedDisplay = document.getElementById('speedDisplay');
-        const infoPanel = document.getElementById('infoPanel');
-        const deerCount = document.getElementById('deerCount');
-        const wolfCount = document.getElementById('wolfCount');
-        const plantCount = document.getElementById('plantCount');
-        const tickCount = document.getElementById('tickCount');
-
-        const visualizer = new NNVisualizer(nnCanvas, [850, 200]);
-
-        // Initialize
-        function init() {
-            environment = new Environment([WORLD_WIDTH, WORLD_HEIGHT], 0.15);
-            world = environment.generateWorld(
-                { plants: 50, deer: 100, wolves: 15 },
-                5,
-                "Large"
-            );
-            updateStats();
-            draw();
-        }
-
-        // Update stats display
-        function updateStats() {
-            const deer = world.filter(o => o instanceof Deer).length;
-            const wolves = world.filter(o => o instanceof Wolf).length;
-            const plants = world.filter(o => o instanceof Plant).length;
-            
-            deerCount.textContent = deer;
-            wolfCount.textContent = wolves;
-            plantCount.textContent = plants;
-            tickCount.textContent = Math.round(ticks / (24 * 60) * 100, 3) / 100;
-        }
-
-        // Draw the simulation
-        function draw() {
-            ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-
-            // Draw terrain
-            let index = 0;
-            for (let row = 0; row < environment.wNumChunks; row++) {
-                for (let col = 0; col < environment.hNumChunks; col++) {
-                    const color = environment.terrainColor[index] || [100, 100, 100];
-                    ctx.fillStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-                    ctx.fillRect(
-                        environment.wChunkSize * row,
-                        environment.hChunkSize * col,
-                        environment.wChunkSize,
-                        environment.hChunkSize
+                for (let i = 0; i < 4; i++) {
+                    const leaf = new THREE.Mesh(
+                        new THREE.SphereGeometry(4, 8, 8),
+                        new THREE.MeshStandardMaterial({ color: 0x228b22 })
                     );
-                    index++;
+                    const angle = (i / 4) * Math.PI * 2;
+                    leaf.position.x = Math.cos(angle) * 8;
+                    leaf.position.z = Math.sin(angle) * 8;
+                    leaf.position.y = 5;
+                    leaf.castShadow = true;
+                    leaf.receiveShadow = true;
+                    group.add(leaf);
+                }
+
+                const stem = new THREE.Mesh(
+                    new THREE.CylinderGeometry(2, 2, 10, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x228b22 })
+                );
+                stem.castShadow = true;
+                stem.receiveShadow = true;
+                group.add(stem);
+
+                this.mesh = group;
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
+            }
+
+            update() {}
+        }
+
+        class Water extends Entity {
+            constructor(position) {
+                super(position, 'water');
+                this.createMesh();
+            }
+
+            createMesh() {
+                const geometry = new THREE.PlaneGeometry(20, 20);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x4a90e2,
+                    metalness: 0.3,
+                    roughness: 0.4
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(this.position);
+                mesh.receiveShadow = true;
+                this.mesh = mesh;
+                scene.add(this.mesh);
+            }
+        }
+
+        // ============================================================================
+        // WORLD STATE
+        // ============================================================================
+
+        let entities = [];
+        let waterLocations = [];
+        let ticks = 0;
+        let lastFpsUpdate = 0;
+        let frameCount = 0;
+
+        function initializeWorld() {
+            // Clear scene
+            entities.forEach(e => e.remove());
+            entities = [];
+            waterLocations = [];
+
+            // Add terrain
+            const terrain = createTerrain();
+            scene.add(terrain);
+
+            // Add water bodies and track locations
+            for (let i = 0; i < 3; i++) {
+                const x = Math.random() * CONFIG.worldWidth;
+                const z = Math.random() * CONFIG.worldHeight;
+                for (let j = 0; j < 15; j++) {
+                    const wx = x + (Math.random() - 0.5) * 100;
+                    const wz = z + (Math.random() - 0.5) * 100;
+                    entities.push(new Water([wx, 6, wz]));
+                    waterLocations.push([wx, wz]);
                 }
             }
 
-            // Draw objects
-            for (let obj of world) {
-                if (obj instanceof Water) {
-                    ctx.fillStyle = '#2865c9';
-                    ctx.fillRect(obj.x - obj.size / 2, obj.y - obj.size / 2, obj.size, obj.size);
-                } else if (obj instanceof Plant) {
-                    ctx.fillStyle = '#228b22';
-                    ctx.beginPath();
-                    ctx.arc(obj.x, obj.y, obj.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                } else if (obj instanceof Deer) {
-                    ctx.fillStyle = `rgb(135, 206, 250)`;
-                    ctx.fillRect(obj.x - obj.width / 2, obj.y - obj.height / 2, obj.width, obj.height);
-                    if (obj.isPlayer) {
-                        ctx.strokeStyle = '#ffff00';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(obj.x - obj.width / 2 - 2, obj.y - obj.height / 2 - 2, obj.width + 4, obj.height + 4);
+            // Add plants
+            for (let i = 0; i < CONFIG.initialPlants; i++) {
+                entities.push(new Plant([
+                    Math.random() * CONFIG.worldWidth,
+                    3,
+                    Math.random() * CONFIG.worldHeight
+                ]));
+            }
+
+            // Add deer
+            for (let i = 0; i < CONFIG.initialDeer; i++) {
+                entities.push(new Animal([
+                    Math.random() * CONFIG.worldWidth,
+                    15,
+                    Math.random() * CONFIG.worldHeight
+                ], 'deer'));
+            }
+
+            // Add wolves
+            for (let i = 0; i < CONFIG.initialWolves; i++) {
+                entities.push(new Animal([
+                    Math.random() * CONFIG.worldWidth,
+                    15,
+                    Math.random() * CONFIG.worldHeight
+                ], 'wolf'));
+            }
+
+            camera.position.copy(player.position);
+            player.targetObject = null;
+        }
+
+        function updateStats() {
+            const deer = entities.filter(e => e.type === 'deer' && e.alive).length;
+            const wolves = entities.filter(e => e.type === 'wolf' && e.alive).length;
+            const plants = entities.filter(e => e.type === 'plant' && e.alive).length;
+
+            document.getElementById('deerCount').textContent = deer;
+            document.getElementById('wolfCount').textContent = wolves;
+            document.getElementById('plantCount').textContent = plants;
+            document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
+        }
+
+        function handleCollisions() {
+            const animals = entities.filter(e => e instanceof Animal && e.alive);
+
+            // Wolf-Deer interactions
+            for (let wolf of animals.filter(a => a.type === 'wolf')) {
+                for (let deer of animals.filter(a => a.type === 'deer')) {
+                    const dist = tools.distance(wolf.position.x, wolf.position.z, deer.position.x, deer.position.z);
+                    if (dist < 400) { // Close enough to attack
+                        deer.attacked(wolf);
                     }
-                } else if (obj instanceof Wolf) {
-                    ctx.fillStyle = `rgb(255, 215, 0)`;
-                    ctx.beginPath();
-                    const points = [
-                        [obj.x, obj.y - obj.width / 2],
-                        [obj.x + obj.width / 2, obj.y],
-                        [obj.x, obj.y + obj.width / 2],
-                        [obj.x - obj.width / 2, obj.y]
-                    ];
-                    ctx.moveTo(points[0][0], points[0][1]);
-                    for (let p of points.slice(1)) ctx.lineTo(p[0], p[1]);
-                    ctx.closePath();
-                    ctx.fill();
                 }
             }
 
-            // Draw vision circle if selected
-            if (selectedObj && selectedObj instanceof Animal) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.arc(selectedObj.x, selectedObj.y, selectedObj.visionDist, 0, Math.PI * 2);
-                ctx.stroke();
+            // Deer-Water interactions
+            for (let deer of animals.filter(a => a.type === 'deer')) {
+                for (let water of waterLocations) {
+                    const dist = tools.distance(deer.position.x, deer.position.z, water[0], water[1]);
+                    if (dist < 200) { // Close to water
+                        deer.drinkWater();
+                    }
+                }
+            }
+
+            // Wolf-Water interactions
+            for (let wolf of animals.filter(a => a.type === 'wolf')) {
+                for (let water of waterLocations) {
+                    const dist = tools.distance(wolf.position.x, wolf.position.z, water[0], water[1]);
+                    if (dist < 200) { // Close to water
+                        wolf.waterNeed = Math.max(0, wolf.waterNeed - wolf.waterIncrement * 10);
+                    }
+                }
             }
         }
 
-        // Update simulation
-        function update() {
-            if (!paused) {
-                world = environment.update(world);
-                ticks++;
-                updateStats();
+        function updatePlayer(deltaTime) {
+            let moveVector = new THREE.Vector3(0, 0, 0);
+
+            if (controls.controlMode === 'keyboard') {
+                // Keyboard controls
+                const currentSpeed = keys['shift'] ? player.sprintSpeed : player.speed;
+                
+                if (keys['w']) moveVector.z -= currentSpeed * deltaTime;
+                if (keys['s']) moveVector.z += currentSpeed * deltaTime;
+                if (keys['a']) moveVector.x -= currentSpeed * deltaTime;
+                if (keys['d']) moveVector.x += currentSpeed * deltaTime;
+            } else {
+                // Touch joystick controls
+                const currentSpeed = player.speed;
+                moveVector.x = controls.joystickX * currentSpeed * deltaTime;
+                moveVector.z = controls.joystickY * currentSpeed * deltaTime;
             }
-            draw();
-            
-            if (selectedObj && selectedObj.alive && selectedObj instanceof Animal && selectedObj.brain && selectedObj.brain.weights) {
-                visualizer.draw(selectedObj);
+
+            // Apply rotation to movement
+            const rotationMatrix = new THREE.Matrix4();
+            rotationMatrix.makeRotationY(player.yaw);
+            moveVector.applyMatrix4(rotationMatrix);
+
+            player.position.add(moveVector);
+
+            // Wrap world
+            player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+            player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+
+            // Apply gravity
+            player.velocity.y -= 300 * deltaTime; // gravity
+            player.position.y += player.velocity.y * deltaTime;
+
+            // Simple ground collision
+            if (player.position.y < 50) {
+                player.position.y = 50;
+                player.velocity.y = 0;
+                player.isJumping = false;
             }
+
+
+
+            // Update camera
+            camera.position.copy(player.position);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = player.yaw;
+            camera.rotation.x = player.pitch;
+
+            // Update speed indicator
+            let speed = 0;
+            if (controls.controlMode === 'keyboard') {
+                speed = Math.sqrt(
+                    (keys['w'] || keys['s'] ? 1 : 0) ** 2 + 
+                    (keys['a'] || keys['d'] ? 1 : 0) ** 2
+                ) * (keys['shift'] ? player.sprintSpeed : player.speed);
+            } else {
+                speed = Math.sqrt(controls.joystickX ** 2 + controls.joystickY ** 2) * player.speed;
+            }
+            document.getElementById('speedValue').textContent = speed.toFixed(1);
         }
 
-        // Event listeners
-        pauseBtn.addEventListener('click', () => {
-            paused = !paused;
-            pauseBtn.textContent = paused ? '▶ Resume' : '⏸ Pause';
-            pauseBtn.classList.toggle('paused');
-        });
-
-        resetBtn.addEventListener('click', () => {
-            init();
-            paused = false;
-            pauseBtn.textContent = '⏸ Pause';
-            pauseBtn.classList.remove('paused');
-            selectedObj = null;
-            infoPanel.classList.remove('visible');
-        });
-
-        fullscreenBtn.addEventListener('click', () => {
-            showNN = !showNN;
-            nnCanvas.classList.toggle('visible');
-        });
-
-        speedSlider.addEventListener('change', (e) => {
-            speed = Number(e.target.value);
-            speedDisplay.textContent = speed;
-        });
-
-        canvas.addEventListener('click', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
+        function raycaster() {
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+            direction.applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch);
 
             let closest = null;
             let closestDist = Infinity;
 
-            for (let obj of world) {
-                const objLeft = obj.x - obj.width / 2;
-                const objRight = obj.x + obj.width / 2;
-                const objTop = obj.y - obj.height / 2;
-                const objBottom = obj.y + obj.height / 2;
-
-                if (x >= objLeft && x <= objRight && y >= objTop && y <= objBottom) {
-                    const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
-                    if (dist < closestDist) {
-                        closest = obj;
-                        closestDist = dist;
-                    }
-                } else {
-                    const dist = Math.sqrt((obj.x - x) ** 2 + (obj.y - y) ** 2);
-                    if (dist < closestDist && dist < 30) {
-                        closest = obj;
-                        closestDist = dist;
-                    }
+            for (let entity of entities) {
+                if (!entity.mesh || !entity.alive) continue;
+                const dist = entity.position.distanceTo(player.position);
+                if (dist < 500 && dist < closestDist) {
+                    closest = entity;
+                    closestDist = dist;
                 }
             }
 
-            selectedObj = closest;
-            displayInfo();
+            return closest;
+        }
+
+        function updateTargetInfo() {
+            const target = raycaster();
+            const targetInfoEl = document.getElementById('targetInfo');
+
+            if (target && target.alive) {
+                const healthPercent = Math.round((target.health / target.maxHealth) * 100);
+                const distance = player.position.distanceTo(target.position).toFixed(1);
+
+                document.getElementById('targetName').textContent = 
+                    `[${target.type.toUpperCase()}]`;
+                document.getElementById('targetStats').textContent = 
+                    `Health: ${healthPercent}%\nDistance: ${distance}m`;
+                targetInfoEl.classList.add('visible');
+            } else {
+                targetInfoEl.classList.remove('visible');
+            }
+        }
+
+        document.getElementById('resetBtn').addEventListener('click', initializeWorld);
+        document.getElementById('helpBtn').addEventListener('click', () => {
+            document.querySelector('.hud-controls').classList.toggle('show');
         });
 
-        // Display selected object info
-        function displayInfo() {
-            return;
-            if (!selectedObj) {
-                infoPanel.classList.remove('visible');
-                return;
-            }
+        // ============================================================================
+        // MAIN LOOP
+        // ============================================================================
 
-            let html = `<strong>📊 ${selectedObj.species}</strong>`;
+        let lastTime = Date.now();
 
-            if (selectedObj instanceof Animal) {
-                html += `<p>Health: ${selectedObj.health.toFixed(1)}/${selectedObj.startHealth}</p>
-                    <p>Gen: ${selectedObj.generation} | Speed: ${selectedObj.speed.toFixed(1)}</p>
-                    <p>Vision: ${selectedObj.visionDist.toFixed(0)} | Pos: (${selectedObj.x.toFixed(0)}, ${selectedObj.y.toFixed(0)})</p>
-                    <p>Hunger: ${selectedObj.foodNeed.toFixed(2)} | Thirst: ${selectedObj.waterNeed.toFixed(2)}</p>`;
-                
-                if (selectedObj.brain && selectedObj.brain.weights) {
-                    visualizer.draw(selectedObj);
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const now = Date.now();
+            const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            // Update player
+            updatePlayer(deltaTime);
+
+            // Update entities with neural networks
+            for (let entity of entities) {
+                if (entity instanceof Animal && entity.alive) {
+                    entity.update(deltaTime, entities, waterLocations);
+                } else if (entity instanceof Plant && entity.alive) {
+                    entity.update(deltaTime);
                 }
-            } else if (selectedObj instanceof Plant) {
-                html += `<p>Health: ${selectedObj.health}</p>`;
             }
 
-            infoPanel.innerHTML = html;
-            infoPanel.classList.add('visible');
+            // Handle collisions
+            handleCollisions();
+
+            // Remove dead entities
+            for (let i = entities.length - 1; i >= 0; i--) {
+                if (!entities[i].alive) {
+                    entities[i].remove();
+                    entities.splice(i, 1);
+                }
+            }
+
+            // Occasionally spawn new plants
+            if (Math.random() < 0.01) {
+                entities.push(new Plant([
+                    Math.random() * CONFIG.worldWidth,
+                    3,
+                    Math.random() * CONFIG.worldHeight
+                ]));
+            }
+
+            // Update target info
+            updateTargetInfo();
+
+            // Update stats every second
+            ticks++;
+            if (ticks % 60 === 0) {
+                updateStats();
+            }
+
+            // FPS counter
+            frameCount++;
+            if (now - lastFpsUpdate > 1000) {
+                document.getElementById('fpsCounter').textContent = 'FPS: ' + frameCount;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+
+            renderer.render(scene, camera);
         }
 
-        // Main loop
-        function mainLoop() {
-            update();
-            const interval = 1000 / speed;
-            setTimeout(mainLoop, interval);
-        }
-
-        // Start simulation
-        init();
-        mainLoop();
-
-        // Handle responsive canvas resize
+        // Handle window resize
         window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // hi. ok. bye.
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }, 100);
+        });
+
+        // Initialize
+        initializeWorld();
+        animate();
     </script>
 </body>
 </html>
