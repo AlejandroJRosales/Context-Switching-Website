@@ -31,6 +31,52 @@
             height: 100%;
         }
 
+        /* Neural Network Visualizer */
+        #nnVisualizerContainer {
+            position: absolute;
+            top: max(50px, calc(env(safe-area-inset-top) + 40px));
+            right: max(10px, env(safe-area-inset-right));
+            width: clamp(200px, 25vw, 400px);
+            height: clamp(200px, 25vw, 400px);
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #00ff00;
+            border-radius: 4px;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            z-index: 15;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+
+        #nnVisualizerContainer.show {
+            display: flex;
+        }
+
+        #nnCanvasWrapper {
+            flex: 1;
+            position: relative;
+            background: #000;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        #nnCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #nnLabel {
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            margin-top: 5px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
         /* HUD Elements */
         .hud {
             position: absolute;
@@ -281,6 +327,11 @@
             .control-panel {
                 bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
             }
+
+            #nnVisualizerContainer {
+                width: clamp(150px, 35vw, 300px);
+                height: clamp(150px, 35vw, 300px);
+            }
         }
 
         @media (orientation: landscape) {
@@ -321,6 +372,13 @@
             <div id="targetStats">—</div>
         </div>
 
+        <div id="nnVisualizerContainer">
+            <div id="nnCanvasWrapper">
+                <canvas id="nnCanvas"></canvas>
+            </div>
+            <div id="nnLabel">— No Target —</div>
+        </div>
+
         <div class="fps-counter" id="fpsCounter">FPS: 60</div>
 
         <div class="speed-indicator show" id="speedIndicator">
@@ -336,6 +394,7 @@
 
     <div class="control-panel">
         <button id="controlBtn">Touch Mode</button>
+        <button id="nnVisBtn">Show NN</button>
         <button id="resetBtn">Reset</button>
         <button id="helpBtn">Help</button>
     </div>
@@ -343,14 +402,277 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         // ============================================================================
+        // NEURAL NETWORK VISUALIZER CLASS
+        // ============================================================================
+
+        class NNVisualizer {
+            constructor(canvasElement, screenSize) {
+                this.canvas = canvasElement;
+                this.ctx = this.canvas.getContext('2d');
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.node_size = 15;
+                this.scale = 0.75;
+                this.fontSizeBase = 30;
+            }
+
+            draw(animal) {
+                const nn = animal.brain;
+                const markedNodeIdx = animal.outputIdx;
+
+                // Clear with transparency instead of filling background
+                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
+
+                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
+                const weights = this.extractWeights(nn);
+                
+                if (weights.length > 0) {
+                    const [minWeight, maxWeight] = this.getWeightRange(weights);
+                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
+                }
+                
+                // Draw label after nodes
+                this.drawLabel(nn);
+            }
+
+            drawLabel(nn) {
+                const networkLabel = this.getNetworkLabel(nn);
+                
+                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+                this.ctx.font = `10px Arial`;
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(networkLabel, this.w_width / 2, this.w_height - 5);
+            }
+
+            getNetworkLabel(nn) {
+                if (nn.weights && nn.weights.length > 0 && typeof nn.weights[0] === 'object') {
+                    if (nn.weights[0].W_i !== undefined) {
+                        return 'LSTMNetwork';
+                    }
+                }
+                return 'DenseNetwork';
+            }
+
+            drawNodes(nn, markedNodeIdx) {
+                const layerDims = this.getLayerDims(nn);
+                const padding = this.w_width * 0.1;
+                const availableWidth = this.w_width - (padding * 2);
+                const availableHeight = this.w_height - (padding * 2);
+                
+                const w_stride = availableWidth / Math.max(layerDims.length - 1, 1);
+                const nn_len = layerDims.length;
+                const allNodesPos = [];
+
+                this.node_size = Math.min(this.w_height * 0.04, 5);
+
+                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
+                    const l_nodes_pos = [];
+                    const num_nodes = layerDims[l_idx];
+                    const h_stride = availableHeight / Math.max(num_nodes - 1, 1);
+
+                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
+                        const x = padding + (l_idx * w_stride);
+                        const y = padding + (n_idx * h_stride);
+
+                        let nodeColor = 'rgba(0, 255, 0, 0.8)';
+                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
+                            nodeColor = 'rgba(255, 0, 0, 1)';
+                        }
+
+                        this.ctx.strokeStyle = nodeColor;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.beginPath();
+                        this.ctx.arc(x, y, this.node_size, 0, 2 * Math.PI);
+                        this.ctx.stroke();
+
+                        l_nodes_pos.push([x, y]);
+                    }
+                    allNodesPos.push(l_nodes_pos);
+                }
+
+                return allNodesPos;
+            }
+
+            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
+                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
+                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
+                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
+                            const weight = weights[l_idx][n1_idx][n2_idx];
+
+                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
+                            if (Math.abs(weight) < Math.abs(threshold)) {
+                                continue;
+                            }
+
+                            const currentNodePos = allNodesPos[l_idx][n1_idx];
+                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
+
+                            const scaledWeight =
+                                maxWeight !== minWeight
+                                    ? (weight - minWeight) / (maxWeight - minWeight)
+                                    : 0.5;
+
+                            const lineColor = this.getWeightColor(weight, scaledWeight);
+
+                            this.ctx.strokeStyle = lineColor;
+                            this.ctx.lineWidth = 1;
+                            this.ctx.globalAlpha = 0.6;
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(currentNodePos[0], currentNodePos[1]);
+                            this.ctx.lineTo(nextNodePos[0], nextNodePos[1]);
+                            this.ctx.stroke();
+                            this.ctx.globalAlpha = 1.0;
+                        }
+                    }
+                }
+            }
+
+            extractWeights(nn) {
+                if (!nn.weights) {
+                    return [];
+                }
+
+                if (Array.isArray(nn.weights) && nn.weights.length > 0) {
+                    const firstLayer = nn.weights[0];
+
+                    if (firstLayer && typeof firstLayer === 'object' && firstLayer.W_i !== undefined) {
+                        return this.extractLSTMWeights(nn);
+                    }
+
+                    return nn.weights;
+                }
+
+                return [];
+            }
+
+            extractLSTMWeights(nn) {
+                const combined = [];
+
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    for (let lstm_layer of nn.weights) {
+                        const W_i = lstm_layer.W_i || [];
+                        const W_f = lstm_layer.W_f || [];
+                        const W_c = lstm_layer.W_c || [];
+                        const W_o = lstm_layer.W_o || [];
+
+                        const avgWeight = this.averageMatrices([W_i, W_f, W_c, W_o]);
+                        combined.push(avgWeight);
+                    }
+                }
+
+                if (nn.V) {
+                    combined.push(nn.V);
+                }
+
+                return combined;
+            }
+
+            averageMatrices(matrices) {
+                if (matrices.length === 0) return [];
+                if (matrices[0].length === 0) return [];
+
+                const rows = matrices[0].length;
+                const cols = matrices[0][0].length;
+                const result = Array(rows).fill(null).map(() => Array(cols).fill(0));
+
+                for (let i = 0; i < rows; i++) {
+                    for (let j = 0; j < cols; j++) {
+                        let sum = 0;
+                        for (let mat of matrices) {
+                            if (mat[i] && mat[i][j] !== undefined) {
+                                sum += mat[i][j];
+                            }
+                        }
+                        result[i][j] = sum / matrices.length;
+                    }
+                }
+
+                return result;
+            }
+
+            getLayerDims(nn) {
+                if (nn.layerDims) {
+                    return nn.layerDims;
+                }
+                if (nn.layer_dims) {
+                    return nn.layer_dims;
+                }
+
+                const dims = [];
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    dims.push(nn.weights[0].length);
+                    for (let layer of nn.weights) {
+                        if (layer[0]) {
+                            dims.push(layer[0].length);
+                        }
+                    }
+                }
+
+                return dims.length > 0 ? dims : [6, 6, 9, 8, 8];
+            }
+
+            getWeightRange(weights) {
+                let min = Infinity;
+                let max = -Infinity;
+
+                for (let layer of weights) {
+                    for (let row of layer) {
+                        for (let w of row) {
+                            if (w < min) min = w;
+                            if (w > max) max = w;
+                        }
+                    }
+                }
+
+                return [min === Infinity ? -1 : min, max === -Infinity ? 1 : max];
+            }
+
+            getWeightColor(weight, maxAbsWeight = 1.0) {
+                if (maxAbsWeight === 0) {
+                    maxAbsWeight = 1.0;
+                }
+
+                let normalized = weight / maxAbsWeight;
+                normalized = Math.max(-1.0, Math.min(1.0, normalized));
+
+                let r, g, b;
+
+                if (normalized < 0) {
+                    r = 255;
+                    g = Math.floor(255 * (1 + normalized));
+                    b = Math.floor(255 * (1 + normalized));
+                } else {
+                    r = Math.floor(255 * (1 - normalized));
+                    g = Math.floor(255 * (1 - normalized));
+                    b = 255;
+                }
+
+                const isGrayish =
+                    Math.abs(r - g) < 20 &&
+                    Math.abs(g - b) < 20 &&
+                    Math.abs(r - b) < 20;
+                const alpha = isGrayish ? 0.3 : 0.7;
+
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            resize(screenSize) {
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.canvas.width = this.w_width;
+                this.canvas.height = this.w_height;
+            }
+        }
+
+        // ============================================================================
         // CONFIGURATION
         // ============================================================================
 
         const CONFIG = {
             isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
             isDeviceTilt: window.DeviceOrientationEvent !== undefined,
-            initialDeer: 15,
-            initialWolves: 4,
+            initialDeer: 20,
+            initialWolves: 5,
             initialPlants: 30,
             worldWidth: 850,
             worldHeight: 600,
@@ -379,6 +701,46 @@
         renderer.shadowMap.type = THREE.PCFShadowShadowMap;
 
         camera.position.set(400, 100, 300);
+
+        // ============================================================================
+        // NEURAL NETWORK VISUALIZER SETUP
+        // ============================================================================
+
+        const nnCanvas = document.getElementById('nnCanvas');
+        const nnContainer = document.getElementById('nnVisualizerContainer');
+        const nnLabel = document.getElementById('nnLabel');
+        let nnVisualizer = null;
+        let nnVisEnabled = false;
+
+        function initNNVisualizer() {
+            const wrapper = document.getElementById('nnCanvasWrapper');
+            // Force layout recalculation
+            wrapper.offsetHeight;
+            const rect = wrapper.getBoundingClientRect();
+            const width = Math.max(rect.width, 200);
+            const height = Math.max(rect.height, 200);
+            nnCanvas.width = width;
+            nnCanvas.height = height;
+            nnVisualizer = new NNVisualizer(nnCanvas, [width, height]);
+        }
+
+        document.getElementById('nnVisBtn').addEventListener('click', () => {
+            nnVisEnabled = !nnVisEnabled;
+            const btn = document.getElementById('nnVisBtn');
+            if (nnVisEnabled) {
+                nnContainer.classList.add('show');
+                btn.textContent = 'Hide NN';
+                // Initialize on next frame to ensure DOM is ready
+                requestAnimationFrame(() => {
+                    if (!nnVisualizer) {
+                        initNNVisualizer();
+                    }
+                });
+            } else {
+                nnContainer.classList.remove('show');
+                btn.textContent = 'Show NN';
+            }
+        });
 
         // ============================================================================
         // LIGHTING
@@ -1241,8 +1603,6 @@
                 player.isJumping = false;
             }
 
-
-
             // Update camera
             camera.position.copy(player.position);
             camera.rotation.order = 'YXZ';
@@ -1295,8 +1655,30 @@
                 document.getElementById('targetStats').textContent = 
                     `Health: ${healthPercent}%\nDistance: ${distance}m`;
                 targetInfoEl.classList.add('visible');
+
+                // Update NN visualizer if enabled
+                if (nnVisEnabled && target instanceof Animal) {
+                    if (!nnVisualizer) {
+                        initNNVisualizer();
+                    }
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        try {
+                            nnVisualizer.draw(target);
+                            nnLabel.textContent = `${target.type.toUpperCase()} - Brain Activity`;
+                        } catch (e) {
+                            console.error('NN Draw error:', e);
+                            nnLabel.textContent = 'Error rendering';
+                        }
+                    }
+                }
             } else {
                 targetInfoEl.classList.remove('visible');
+                if (nnVisEnabled) {
+                    nnLabel.textContent = '— No Target —';
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
+                    }
+                }
             }
         }
 
@@ -1375,6 +1757,12 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            if (nnVisualizer) {
+                const wrapper = document.getElementById('nnCanvasWrapper');
+                const rect = wrapper.getBoundingClientRect();
+                nnVisualizer.resize([rect.width, rect.height]);
+            }
         });
 
         window.addEventListener('orientationchange', () => {
@@ -1382,6 +1770,12 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
+                
+                if (nnVisualizer) {
+                    const wrapper = document.getElementById('nnCanvasWrapper');
+                    const rect = wrapper.getBoundingClientRect();
+                    nnVisualizer.resize([rect.width, rect.height]);
+                }
             }, 100);
         });
 
