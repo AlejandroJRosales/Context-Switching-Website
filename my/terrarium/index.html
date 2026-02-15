@@ -1210,7 +1210,7 @@
                     const group = new THREE.Group();
                     const body = new THREE.Mesh(
                         new THREE.BoxGeometry(15, 15, 25),
-                        new THREE.MeshStandardMaterial({ color: 0x87CEFA })
+                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
                     );
                     body.castShadow = true;
                     body.receiveShadow = true;
@@ -1218,7 +1218,7 @@
 
                     const head = new THREE.Mesh(
                         new THREE.SphereGeometry(8, 16, 16),
-                        new THREE.MeshStandardMaterial({ color: 0x6AB2E8 })
+                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
                     );
                     head.position.z = 15;
                     head.castShadow = true;
@@ -1230,7 +1230,7 @@
                     const group = new THREE.Group();
                     const body = new THREE.Mesh(
                         new THREE.BoxGeometry(18, 12, 30),
-                        new THREE.MeshStandardMaterial({ color: 0xFFD700 })
+                        new THREE.MeshStandardMaterial({ color: 0x81613e })
                     );
                     body.castShadow = true;
                     body.receiveShadow = true;
@@ -1238,7 +1238,7 @@
 
                     const head = new THREE.Mesh(
                         new THREE.SphereGeometry(10, 16, 16),
-                        new THREE.MeshStandardMaterial({ color: 0xFFA500 })
+                        new THREE.MeshStandardMaterial({ color: 0x81613e })
                     );
                     head.position.z = 18;
                     head.castShadow = true;
@@ -1250,6 +1250,27 @@
 
                 this.mesh.position.copy(this.position);
                 scene.add(this.mesh);
+            }
+
+            getDirectionFromOutput() {
+                // Map output index to rotation angle
+                // outputIdx 0-7 map to 8 cardinal directions
+                // 0: +X (right)
+                // 1: -X (left)
+                // 2: +Z (forward)
+                // 3: -Z (backward)
+                // 4-7: diagonals
+                const angles = [
+                    0,                    // 0: +X
+                    -Math.PI,              // 1: -X
+                    -Math.PI / 2,          // 2: +Z
+                    -Math.PI / 2,         // 3: -Z
+                    Math.PI / 4,          // 4: +X +Z diagonal
+                    -Math.PI / 4,         // 5: +X -Z diagonal
+                    3 * Math.PI / 4,      // 6: -X +Z diagonal
+                    -3 * Math.PI / 4      // 7: -X -Z diagonal
+                ];
+                return angles[this.outputIdx % 8];
             }
 
             locate(entities, waterLocations) {
@@ -1329,6 +1350,14 @@
                 // Wrap around world
                 this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
                 this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+
+                // Update mesh position and rotation
+                if (this.mesh) {
+                    this.mesh.position.copy(this.position);
+                    // Rotate to face direction of movement
+                    // The rotation is around Y axis (vertical)
+                    this.mesh.rotation.y = this.getDirectionFromOutput();
+                }
             }
 
             updateResourcesNeed() {
