@@ -362,8 +362,8 @@
         // ============================================================================
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
-        scene.fog = new THREE.Fog(0x1a1a2e, 1500, CONFIG.maxDrawDistance);
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 1500, CONFIG.maxDrawDistance);
 
         const canvas = document.getElementById('canvas');
         const camera = new THREE.PerspectiveCamera(
@@ -526,28 +526,79 @@
             joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
 
-        // Device orientation
-        if (CONFIG.isDeviceTilt) {
-            window.addEventListener('deviceorientation', (e) => {
-                controls.deviceAlpha = e.alpha || 0;
-                controls.deviceBeta = e.beta || 0;
-                controls.deviceGamma = e.gamma || 0;
-            });
+        // Touch screen camera control and double tap jump
+        let cameraControlActive = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
 
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                window.addEventListener('orientationchange', () => {
-                    if (!controls.hasPermission) {
-                        DeviceOrientationEvent.requestPermission()
-                            .then(permissionState => {
-                                if (permissionState === 'granted') {
-                                    controls.hasPermission = true;
-                                }
-                            })
-                            .catch(console.error);
-                    }
-                });
+        document.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            const target = touch.target;
+
+            // Don't intercept if touching buttons or interactive elements
+            if (target.tagName === 'BUTTON' || target.closest('button') || target.closest('.control-panel')) {
+                return;
             }
-        }
+
+            // Check if touch is outside the joystick area
+            const joystickRect = joystickEl.getBoundingClientRect();
+            
+            const isOutsideJoystick = (
+                touch.clientX < joystickRect.left || 
+                touch.clientX > joystickRect.right ||
+                touch.clientY < joystickRect.top || 
+                touch.clientY > joystickRect.bottom
+            );
+
+            // Double tap detection for jump
+            const currentTime = Date.now();
+            const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+            
+            if (isOutsideJoystick && controls.controlMode === 'touch' && e.touches.length === 1) {
+                if (currentTime - lastTapTime < 300 && tapDistance < 50) {
+                    // Double tap detected - jump
+                    if (!player.isJumping) {
+                        player.velocity.y = player.jumpForce;
+                        player.isJumping = true;
+                    }
+                } else {
+                    // Single tap - start camera control
+                    cameraControlActive = true;
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                }
+                
+                lastTapTime = currentTime;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (cameraControlActive && e.touches.length === 1) {
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchStartX;
+                const deltaY = touch.clientY - touchStartY;
+
+                player.yaw -= deltaX * 0.005;
+                player.pitch -= deltaY * 0.005;
+                player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                cameraControlActive = false;
+            }
+        });
 
         // ============================================================================
         // PLAYER
@@ -570,23 +621,22 @@
         // ============================================================================
 
         function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 30, 30);
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
 
             const positionAttribute = geometry.getAttribute('position');
             const positions = positionAttribute.array;
 
-            // Set all vertices to a constant height, e.g., 5
             for (let i = 2; i < positions.length; i += 3) {
-                positions[i] = 5; // constant elevation
-            }
-
+            positions[i] = 5; // constant elevation
+        }
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
 
             const terrain = new THREE.Mesh(geometry, material);
             terrain.receiveShadow = true;
             terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
             return terrain;
         }
 
@@ -1191,11 +1241,7 @@
                 player.isJumping = false;
             }
 
-            // Device tilt camera control (only in touch mode)
-            if (CONFIG.isDeviceTilt && controls.hasPermission && controls.controlMode === 'touch') {
-                player.pitch = (controls.deviceBeta - 45) * (Math.PI / 180) * 0.5;
-                player.yaw = -controls.deviceGamma * (Math.PI / 180) * 0.5;
-            }
+
 
             // Update camera
             camera.position.copy(player.position);
