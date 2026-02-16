@@ -350,11 +350,11 @@
     <canvas id="canvas"></canvas>
 
     <div class="hud">
-        <div class="hud-header">🌿 TERRARIUM</div>
+        <div class="hud-header">🌿TERRARIUM</div>
 
         <div class="hud-stats">
             <div>ECOSYSTEM</div>
-            <div>━━━━━━━━━━━━</div>
+            <div>━━━━━━━━━━━━━━</div>
             <div>🦌 <span id="deerCount">0</span> | 🐺 <span id="wolfCount">0</span></div>
             <div>🌱 <span id="plantCount">0</span> | Day <span id="dayCount">0</span></div>
         </div>
@@ -368,15 +368,15 @@
         </div>
 
         <div class="hud-target-info" id="targetInfo">
-            <div id="targetName">—</div>
-            <div id="targetStats">—</div>
+            <div id="targetName">-</div>
+            <div id="targetStats">-</div>
         </div>
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
                 <canvas id="nnCanvas"></canvas>
             </div>
-            <div id="nnLabel">— No Target —</div>
+            <div id="nnLabel">No Target</div>
         </div>
 
         <div class="fps-counter" id="fpsCounter">FPS: 60</div>
@@ -393,7 +393,7 @@
     <div class="joystick-container show" id="joystick"></div>
 
     <div class="control-panel">
-        <button id="controlBtn">Touch Mode</button>
+        <button id="controlBtn">Keyboard</button>
         <button id="nnVisBtn">Show NN</button>
         <button id="resetBtn">Reset</button>
         <button id="helpBtn">Help</button>
@@ -821,7 +821,7 @@
         document.getElementById('controlBtn').addEventListener('click', () => {
             controls.controlMode = controls.controlMode === 'touch' ? 'keyboard' : 'touch';
             const btn = document.getElementById('controlBtn');
-            btn.textContent = controls.controlMode === 'touch' ? 'Touch Mode' : 'Keyboard Mode';
+            btn.textContent = controls.controlMode === 'touch' ? 'Keyboard' : 'Touch';
             
             // Reset movement on switch
             controls.joystickX = 0;
@@ -921,13 +921,13 @@
             
             if (isOutsideJoystick && controls.controlMode === 'touch' && e.touches.length === 1) {
                 if (currentTime - lastTapTime < 300 && tapDistance < 50) {
-                    // Double tap detected - jump
+                    // Jump
                     if (!player.isJumping) {
                         player.velocity.y = player.jumpForce;
                         player.isJumping = true;
                     }
                 } else {
-                    // Single tap - start camera control
+                    // Camera control
                     cameraControlActive = true;
                     touchStartX = touch.clientX;
                     touchStartY = touch.clientY;
@@ -990,8 +990,8 @@
             const positions = positionAttribute.array;
 
             for (let i = 2; i < positions.length; i += 3) {
-            positions[i] = 5; // constant elevation
-        }
+                positions[i] = 5;
+            }
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
 
@@ -1068,10 +1068,6 @@
             }
 
             propagate(inputs) {
-                if (inputs.length !== this.layerDims[0]) {
-                    throw new Error("Input size does not match network input layer size");
-                }
-
                 let slidingLayer = inputs;
 
                 for (let lIdx = 0; lIdx < this.layerDims.length - 1; lIdx++) {
@@ -1366,7 +1362,6 @@
             }
 
             update(deltaTime, entities, waterLocations) {
-                // Update body state
                 this.updateResourcesNeed();
                 this.updateMemory();
 
@@ -1515,11 +1510,57 @@
 
             // Add water bodies and track locations
             for (let i = 0; i < 3; i++) {
-                const x = Math.random() * CONFIG.worldWidth;
-                const z = Math.random() * CONFIG.worldHeight;
+                let clusterX, clusterZ, isValidCluster = false;
+                const clusterRadius = 60; // Radius around cluster center
+                
+                // Find a valid cluster location that doesn't overlap with existing ones
+                while (!isValidCluster) {
+                    clusterX = Math.random() * CONFIG.worldWidth;
+                    clusterZ = Math.random() * CONFIG.worldHeight;
+                    
+                    // Check if this cluster overlaps with existing water clusters
+                    isValidCluster = true;
+                    for (let existing of waterLocations) {
+                        const dist = Math.sqrt(
+                            Math.pow(clusterX - existing[0], 2) + 
+                            Math.pow(clusterZ - existing[1], 2)
+                        );
+                        if (dist < clusterRadius * 2) {
+                            isValidCluster = false;
+                            break;
+                        }
+                    }
+                }
+                
+                // Place individual water tiles in this cluster
                 for (let j = 0; j < 15; j++) {
-                    const wx = x + (Math.random() - 0.5) * 100;
-                    const wz = z + (Math.random() - 0.5) * 100;
+                    let wx, wz, isValidPosition = false;
+                    const tileRadius = 10; // Minimum distance between individual water tiles
+                    
+                    // Find valid position within cluster
+                    while (!isValidPosition) {
+                        wx = clusterX + (Math.random() - 0.5) * clusterRadius * 2;
+                        wz = clusterZ + (Math.random() - 0.5) * clusterRadius * 2;
+                        
+                        // Keep within world bounds
+                        if (wx < 0 || wx > CONFIG.worldWidth || wz < 0 || wz > CONFIG.worldHeight) {
+                            continue;
+                        }
+                        
+                        // Check distance from other water tiles in this cluster
+                        isValidPosition = true;
+                        for (let existing of waterLocations) {
+                            const dist = Math.sqrt(
+                                Math.pow(wx - existing[0], 2) + 
+                                Math.pow(wz - existing[1], 2)
+                            );
+                            if (dist < tileRadius) {
+                                isValidPosition = false;
+                                break;
+                            }
+                        }
+                    }
+                    
                     entities.push(new Water([wx, 6, wz]));
                     waterLocations.push([wx, wz]);
                 }
@@ -1575,7 +1616,7 @@
             for (let wolf of animals.filter(a => a.type === 'wolf')) {
                 for (let deer of animals.filter(a => a.type === 'deer')) {
                     const dist = tools.distance(wolf.position.x, wolf.position.z, deer.position.x, deer.position.z);
-                    if (dist < 400) { // Close enough to attack
+                    if (dist < 200) {
                         deer.attacked(wolf);
                     }
                 }
@@ -1585,7 +1626,7 @@
             for (let deer of animals.filter(a => a.type === 'deer')) {
                 for (let plant of plants) {
                     const dist = tools.distance(deer.position.x, deer.position.z, plant.position.x, plant.position.z);
-                    if (dist < 400) { // Close enough to eat
+                    if (dist < 200) {
                         deer.eatPlant(plant);
                     }
                 }
@@ -1595,7 +1636,7 @@
             for (let deer of animals.filter(a => a.type === 'deer')) {
                 for (let water of waterLocations) {
                     const dist = tools.distance(deer.position.x, deer.position.z, water[0], water[1]);
-                    if (dist < 200) { // Close to water
+                    if (dist < 200) {
                         deer.drinkWater();
                         deer.waterNeed = Math.max(0, deer.waterNeed - deer.waterIncrement * 10);
                     }
@@ -1606,7 +1647,7 @@
             for (let wolf of animals.filter(a => a.type === 'wolf')) {
                 for (let water of waterLocations) {
                     const dist = tools.distance(wolf.position.x, wolf.position.z, water[0], water[1]);
-                    if (dist < 200) { // Close to water
+                    if (dist < 200) {
                         wolf.drinkWater();
                         wolf.waterNeed = Math.max(0, wolf.waterNeed - wolf.waterIncrement * 10);
                     }
@@ -1727,7 +1768,7 @@
             } else {
                 targetInfoEl.classList.remove('visible');
                 if (nnVisEnabled) {
-                    nnLabel.textContent = '— No Target —';
+                    nnLabel.textContent = 'No Target';
                     if (nnVisualizer && nnVisualizer.ctx) {
                         nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
                     }
