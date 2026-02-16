@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Artificial Terrarium - Quest VR</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* VR Mode Indicator */
+        #vrStatus {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 10px 15px;
+            border: 2px solid #00ff00;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            z-index: 20;
+            display: none;
+        }
+
+        #vrStatus.active {
+            display: block;
+        }
+
+        /* Enter VR Button */
+        #enterVRBtn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            border: 2px solid #00ff00;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            z-index: 15;
+        }
+
+        #enterVRBtn:hover {
+            background: rgba(0, 255, 0, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        #enterVRBtn:active {
+            transform: scale(0.95);
+        }
+
+        #enterVRBtn.hidden {
+            display: none;
+        }
+
+        /* HUD for flat/2D mode */
+        .hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+            font-size: clamp(10px, 2.5vw, 16px);
+        }
+
+        .hud-header {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: clamp(14px, 3vw, 18px);
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        .hud-stats {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            font-size: clamp(10px, 2vw, 14px);
+            line-height: 1.6;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            animation: pulse 2s infinite;
+        }
+
+        .fps-counter {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: clamp(9px, 2vw, 12px);
+            color: #00ff00;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 10px;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            z-index: 10;
+        }
+
+        /* Scanline effect */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.03),
+                rgba(0, 0, 0, 0.03) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        .info-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 40px;
+            border: 2px solid #00ff00;
+            border-radius: 4px;
+            z-index: 5;
+            display: none;
+            pointer-events: none;
+        }
+
+        .info-text.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud" id="hud2d">
+        <div class="hud-header">🌿TERRARIUM VR</div>
+        <div class="hud-stats">
+            <div>🦌 <span id="deerCount">0</span> | 🐺 <span id="wolfCount">0</span></div>
+            <div>🌱 <span id="plantCount">0</span> | Day <span id="dayCount">0</span></div>
+        </div>
+        <div class="fps-counter" id="fpsCounter">FPS: 60</div>
+    </div>
+
+    <div class="info-text" id="infoText"></div>
+
+    <button id="enterVRBtn">Enter VR</button>
+    <div id="vrStatus">
+        <div>🥽 VR Active</div>
+        <div id="vrController">No Controllers</div>
+        <div id="vrHands">No Hands Detected</div>
+    </div>
+
+    <div class="scanlines"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/webxr/XRControllerModelFactory.js"></script>
+    <script>
+        // ============================================================================
+        // CONFIGURATION
+        // ============================================================================
+
+        const CONFIG = {
+            initialDeer: 20,
+            initialWolves: 5,
+            initialPlants: 30,
+            worldWidth: 850,
+            worldHeight: 600,
+            maxDrawDistance: 2000,
+            vrEnabled: false,
+            handTrackingEnabled: false,
+            controllerSensitivity: 0.01
+        };
+
+        // ============================================================================
+        // THREE.JS SETUP
+        // ============================================================================
+
+        const canvas = document.getElementById('canvas');
+        const renderer = new THREE.WebGLRenderer({ 
+            canvas, 
+            antialias: true, 
+            powerPreference: 'high-performance',
+            xrCompatible: true 
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+        renderer.xr.enabled = true;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 1500, CONFIG.maxDrawDistance);
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            CONFIG.maxDrawDistance
+        );
+        camera.position.set(400, 100, 300);
+
+        // ============================================================================
+        // NEURAL NETWORK VISUALIZER CLASS
+        // ============================================================================
+
+        class NNVisualizer {
+            constructor(canvasElement, screenSize) {
+                this.canvas = canvasElement;
+                this.ctx = this.canvas.getContext('2d');
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.node_size = 15;
+            }
+
+            draw(animal) {
+                const nn = animal.brain;
+                const markedNodeIdx = animal.outputIdx;
+
+                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
+
+                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
+                const weights = this.extractWeights(nn);
+                
+                if (weights.length > 0) {
+                    const [minWeight, maxWeight] = this.getWeightRange(weights);
+                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
+                }
+                
+                this.drawLabel(nn);
+            }
+
+            drawLabel(nn) {
+                const networkLabel = this.getNetworkLabel(nn);
+                
+                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+                this.ctx.font = `10px Arial`;
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(networkLabel, this.w_width / 2, this.w_height - 5);
+            }
+
+            getNetworkLabel(nn) {
+                if (nn.weights && nn.weights.length > 0 && typeof nn.weights[0] === 'object') {
+                    if (nn.weights[0].W_i !== undefined) {
+                        return 'LSTMNetwork';
+                    }
+                }
+                return 'DenseNetwork';
+            }
+
+            drawNodes(nn, markedNodeIdx) {
+                const layerDims = this.getLayerDims(nn);
+                const padding = this.w_width * 0.1;
+                const availableWidth = this.w_width - (padding * 2);
+                const availableHeight = this.w_height - (padding * 2);
+                
+                const w_stride = availableWidth / Math.max(layerDims.length - 1, 1);
+                const nn_len = layerDims.length;
+                const allNodesPos = [];
+
+                this.node_size = Math.min(this.w_height * 0.04, 5);
+
+                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
+                    const l_nodes_pos = [];
+                    const num_nodes = layerDims[l_idx];
+                    const h_stride = availableHeight / Math.max(num_nodes - 1, 1);
+
+                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
+                        const x = padding + (l_idx * w_stride);
+                        const y = padding + (n_idx * h_stride);
+
+                        let nodeColor = 'rgba(0, 255, 0, 0.8)';
+                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
+                            nodeColor = 'rgba(255, 0, 0, 1)';
+                        }
+
+                        this.ctx.strokeStyle = nodeColor;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.beginPath();
+                        this.ctx.arc(x, y, this.node_size, 0, 2 * Math.PI);
+                        this.ctx.stroke();
+
+                        l_nodes_pos.push([x, y]);
+                    }
+                    allNodesPos.push(l_nodes_pos);
+                }
+
+                return allNodesPos;
+            }
+
+            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
+                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
+                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
+                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
+                            const weight = weights[l_idx][n1_idx][n2_idx];
+                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
+                            if (Math.abs(weight) < Math.abs(threshold)) continue;
+
+                            const currentNodePos = allNodesPos[l_idx][n1_idx];
+                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
+
+                            const scaledWeight = maxWeight !== minWeight
+                                ? (weight - minWeight) / (maxWeight - minWeight)
+                                : 0.5;
+
+                            const lineColor = this.getWeightColor(weight, scaledWeight);
+
+                            this.ctx.strokeStyle = lineColor;
+                            this.ctx.lineWidth = 1;
+                            this.ctx.globalAlpha = 0.6;
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(currentNodePos[0], currentNodePos[1]);
+                            this.ctx.lineTo(nextNodePos[0], nextNodePos[1]);
+                            this.ctx.stroke();
+                            this.ctx.globalAlpha = 1.0;
+                        }
+                    }
+                }
+            }
+
+            extractWeights(nn) {
+                if (!nn.weights) return [];
+
+                if (Array.isArray(nn.weights) && nn.weights.length > 0) {
+                    const firstLayer = nn.weights[0];
+                    if (firstLayer && typeof firstLayer === 'object' && firstLayer.W_i !== undefined) {
+                        return this.extractLSTMWeights(nn);
+                    }
+                    return nn.weights;
+                }
+                return [];
+            }
+
+            extractLSTMWeights(nn) {
+                const combined = [];
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    for (let lstm_layer of nn.weights) {
+                        const W_i = lstm_layer.W_i || [];
+                        const W_f = lstm_layer.W_f || [];
+                        const W_c = lstm_layer.W_c || [];
+                        const W_o = lstm_layer.W_o || [];
+                        const avgWeight = this.averageMatrices([W_i, W_f, W_c, W_o]);
+                        combined.push(avgWeight);
+                    }
+                }
+                if (nn.V) combined.push(nn.V);
+                return combined;
+            }
+
+            averageMatrices(matrices) {
+                if (matrices.length === 0) return [];
+                if (matrices[0].length === 0) return [];
+
+                const rows = matrices[0].length;
+                const cols = matrices[0][0].length;
+                const result = Array(rows).fill(null).map(() => Array(cols).fill(0));
+
+                for (let i = 0; i < rows; i++) {
+                    for (let j = 0; j < cols; j++) {
+                        let sum = 0;
+                        for (let mat of matrices) {
+                            if (mat[i] && mat[i][j] !== undefined) sum += mat[i][j];
+                        }
+                        result[i][j] = sum / matrices.length;
+                    }
+                }
+                return result;
+            }
+
+            getLayerDims(nn) {
+                if (nn.layerDims) return nn.layerDims;
+                if (nn.layer_dims) return nn.layer_dims;
+
+                const dims = [];
+                if (nn.weights && Array.isArray(nn.weights)) {
+                    dims.push(nn.weights[0].length);
+                    for (let layer of nn.weights) {
+                        if (layer[0]) dims.push(layer[0].length);
+                    }
+                }
+                return dims.length > 0 ? dims : [6, 6, 9, 8, 8];
+            }
+
+            getWeightRange(weights) {
+                let min = Infinity;
+                let max = -Infinity;
+
+                for (let layer of weights) {
+                    for (let row of layer) {
+                        for (let w of row) {
+                            if (w < min) min = w;
+                            if (w > max) max = w;
+                        }
+                    }
+                }
+
+                return [min === Infinity ? -1 : min, max === -Infinity ? 1 : max];
+            }
+
+            getWeightColor(weight, maxAbsWeight = 1.0) {
+                if (maxAbsWeight === 0) maxAbsWeight = 1.0;
+
+                let normalized = weight / maxAbsWeight;
+                normalized = Math.max(-1.0, Math.min(1.0, normalized));
+
+                let r, g, b;
+                if (normalized < 0) {
+                    r = 255;
+                    g = Math.floor(255 * (1 + normalized));
+                    b = Math.floor(255 * (1 + normalized));
+                } else {
+                    r = Math.floor(255 * (1 - normalized));
+                    g = Math.floor(255 * (1 - normalized));
+                    b = 255;
+                }
+
+                const isGrayish = Math.abs(r - g) < 20 && Math.abs(g - b) < 20 && Math.abs(r - b) < 20;
+                const alpha = isGrayish ? 0.3 : 0.7;
+
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            resize(screenSize) {
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+            }
+        }
+
+        // ============================================================================
+        // UTILITIES
+        // ============================================================================
+
+        const tools = {
+            distance(x1, y1, x2, y2) {
+                return (x2 - x1) ** 2 + (y2 - y1) ** 2;
+            },
+            clamp(value, minimum, maximum) {
+                return Math.max(Math.min(value, maximum), minimum);
+            },
+            sigmoid(x) {
+                x = Math.max(-500, Math.min(500, x));
+                return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
+            },
+            softmax(vector) {
+                const max = Math.max(...vector);
+                const exps = vector.map(v => Math.exp(v - max));
+                const sum = exps.reduce((a, b) => a + b, 0);
+                return exps.map(exp => exp / sum);
+            },
+            random(min = 0, max = 1) {
+                return Math.random() * (max - min) + min;
+            }
+        };
+
+        // ============================================================================
+        // NEURAL NETWORK CLASS
+        // ============================================================================
+
+        class DenseNetwork {
+            constructor(inputDims, layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
+                this.layerDims = [inputDims, ...layerDims];
+                this.learningRate = learningRate;
+                this.momentum = momentum;
+                this.weightDecay = weightDecay;
+                this.cost = 0.0;
+                this.costHistory = [];
+                this.output = null;
+
+                this.weights = [];
+                this.biases = [];
+                this.weightVelocity = [];
+                this.biasVelocity = [];
+
+                for (let i = 0; i < this.layerDims.length - 1; i++) {
+                    this.weights.push(this.xavierInit(this.layerDims[i], this.layerDims[i + 1]));
+                    this.biases.push(new Array(this.layerDims[i + 1]).fill(0));
+                    this.weightVelocity.push(this.weights[i].map(row => row.map(() => 0)));
+                    this.biasVelocity.push(new Array(this.layerDims[i + 1]).fill(0));
+                }
+            }
+
+            xavierInit(inDim, outDim) {
+                const limit = Math.sqrt(6.0 / (inDim + outDim));
+                const layer = [];
+                for (let i = 0; i < inDim; i++) {
+                    layer[i] = [];
+                    for (let j = 0; j < outDim; j++) {
+                        layer[i][j] = tools.random(-limit, limit);
+                    }
+                }
+                return layer;
+            }
+
+            propagate(inputs) {
+                let slidingLayer = inputs;
+
+                for (let lIdx = 0; lIdx < this.layerDims.length - 1; lIdx++) {
+                    let outLayer = [...this.biases[lIdx]];
+
+                    for (let n1Idx = 0; n1Idx < slidingLayer.length; n1Idx++) {
+                        for (let n2Idx = 0; n2Idx < this.layerDims[lIdx + 1]; n2Idx++) {
+                            outLayer[n2Idx] += slidingLayer[n1Idx] * this.weights[lIdx][n1Idx][n2Idx];
+                        }
+                    }
+
+                    if (lIdx < this.layerDims.length - 2) {
+                        slidingLayer = outLayer.map(v => tools.sigmoid(v));
+                    } else {
+                        slidingLayer = outLayer;
+                    }
+                }
+
+                return tools.softmax(slidingLayer);
+            }
+
+            think(inputs) {
+                const values = this.propagate(inputs);
+                this.output = values.indexOf(Math.max(...values));
+                return this.output;
+            }
+
+            getAdaptiveLr() {
+                if (this.costHistory.length > 0 && this.cost < this.costHistory[this.costHistory.length - 1]) {
+                    this.learningRate *= 1.05 * 0.001;
+                } else {
+                    this.learningRate *= 0.95 * 0.001;
+                }
+
+                this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate));
+                this.costHistory.push(this.cost);
+                if (this.costHistory.length > 100) this.costHistory.shift();
+                return this.learningRate;
+            }
+
+            adjustWeights(cost) {
+                this.cost = cost;
+                const normalizedCost = Math.max(-1.0, Math.min(1.0, this.cost));
+                const adaptiveLr = this.getAdaptiveLr();
+
+                for (let lIdx = 0; lIdx < this.weights.length; lIdx++) {
+                    for (let n1Idx = 0; n1Idx < this.weights[lIdx].length; n1Idx++) {
+                        for (let n2Idx = 0; n2Idx < this.weights[lIdx][n1Idx].length; n2Idx++) {
+                            const velocity = this.momentum * this.weightVelocity[lIdx][n1Idx][n2Idx] - adaptiveLr * normalizedCost;
+                            this.weightVelocity[lIdx][n1Idx][n2Idx] = velocity;
+                            this.weights[lIdx][n1Idx][n2Idx] = this.weights[lIdx][n1Idx][n2Idx] * (1 - this.weightDecay) + velocity;
+                        }
+                    }
+                }
+
+                for (let lIdx = 0; lIdx < this.biases.length; lIdx++) {
+                    for (let bIdx = 0; bIdx < this.biases[lIdx].length; bIdx++) {
+                        const velocity = this.momentum * this.biasVelocity[lIdx][bIdx] - adaptiveLr * 0.1 * normalizedCost;
+                        this.biasVelocity[lIdx][bIdx] = velocity;
+                        this.biases[lIdx][bIdx] = this.biases[lIdx][bIdx] * (1 - this.weightDecay * 0.1) + velocity;
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // ENTITY SYSTEM
+        // ============================================================================
+
+        class Entity {
+            constructor(position, type) {
+                this.position = new THREE.Vector3(...position);
+                this.type = type;
+                this.mesh = null;
+                this.health = 100;
+                this.alive = true;
+            }
+
+            update(deltaTime) {}
+
+            remove() {
+                if (this.mesh) scene.remove(this.mesh);
+            }
+        }
+
+        class Animal extends Entity {
+            constructor(position, type) {
+                super(position, type);
+                this.speciesType = type;
+                this.speed = type === 'wolf' ? 35 : 25;
+                this.startHealth = type === 'wolf' ? 120 : 100;
+                this.health = this.startHealth;
+                this.maxHealth = this.health;
+                this.visionDistance = tools.random(80, 150);
+                this.generation = 0;
+                
+                this.waterNeed = Math.random() * 0.02 + 0.01;
+                this.foodNeed = Math.random() * 0.02 + 0.01;
+                this.reproductionNeed = Math.random() * 0.02 + 0.01;
+                this.avoidNeed = 0;
+
+                this.waterIncrement = this.health * 0.0001;
+                this.foodIncrement = this.health * 0.0001;
+                this.ageDepl = this.health * 0.00002;
+
+                this.memory = { predator: null, food: null, water: null, mate: null };
+                this.priority = null;
+
+                this.coordChanges = [
+                    [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
+                    [this.speed * 0.7, this.speed * 0.7], [this.speed * 0.7, -this.speed * 0.7],
+                    [-this.speed * 0.7, this.speed * 0.7], [-this.speed * 0.7, -this.speed * 0.7]
+                ];
+
+                this.numInputs = 6;
+                this.nnLayerDims = [this.numInputs, this.numInputs, 9, this.coordChanges.length];
+                this.brain = new DenseNetwork(this.numInputs, this.nnLayerDims.slice(1), 0.01);
+                this.outputIdx = 0;
+                this.brainUpdateCounter = 0;
+
+                this.coordsFocused = new THREE.Vector2(this.position.x, this.position.z);
+                this.tob = Date.now();
+
+                this.createMesh();
+            }
+
+            createMesh() {
+                if (this.type === 'deer') {
+                    const group = new THREE.Group();
+                    const body = new THREE.Mesh(
+                        new THREE.BoxGeometry(15, 15, 25),
+                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
+                    );
+                    body.castShadow = true;
+                    body.receiveShadow = true;
+                    group.add(body);
+
+                    const head = new THREE.Mesh(
+                        new THREE.SphereGeometry(10, 16, 16),
+                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
+                    );
+                    head.position.z = 15;
+                    head.castShadow = true;
+                    head.receiveShadow = true;
+                    group.add(head);
+
+                    this.mesh = group;
+                } else if (this.type === 'wolf') {
+                    const group = new THREE.Group();
+                    const body = new THREE.Mesh(
+                        new THREE.BoxGeometry(15, 15, 25),
+                        new THREE.MeshStandardMaterial({ color: 0x81613e })
+                    );
+                    body.castShadow = true;
+                    body.receiveShadow = true;
+                    group.add(body);
+
+                    const head = new THREE.Mesh(
+                        new THREE.SphereGeometry(10, 16, 16),
+                        new THREE.MeshStandardMaterial({ color: 0x81613e })
+                    );
+                    head.position.z = 15;
+                    head.castShadow = true;
+                    head.receiveShadow = true;
+                    group.add(head);
+
+                    this.mesh = group;
+                }
+
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
+            }
+
+            getDirectionFromOutput() {
+                const angles = [
+                    Math.PI / 2, -Math.PI / 2, 0, Math.PI,
+                    Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4
+                ];
+                return angles[this.outputIdx % 8];
+            }
+
+            locate(entities, waterLocations) {
+                const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
+
+                for (let obj of entities) {
+                    if (obj === this || !(obj instanceof Animal)) continue;
+                    const objDist = tools.distance(this.position.x, this.position.z, obj.position.x, obj.position.z);
+                    const inSight = objDist <= this.visionDistance ** 2;
+
+                    if (!inSight) continue;
+
+                    if (this.type === 'deer' && obj.type === 'wolf') {
+                        if (objDist < objDistances.predator) {
+                            objDistances.predator = objDist;
+                            this.memory.predator = [obj.position.x, obj.position.z];
+                            this.avoidNeed = 0.5;
+                        }
+                    } else if (this.type === 'wolf' && obj.type === 'deer' && objDist < objDistances.food) {
+                        objDistances.food = objDist;
+                        this.memory.food = [obj.position.x, obj.position.z];
+                    } else if (this.type === 'deer' && obj.type === 'deer' && objDist < objDistances.mate) {
+                        objDistances.mate = objDist;
+                        this.memory.mate = [obj.position.x, obj.position.z];
+                    }
+                }
+
+                for (let water of waterLocations) {
+                    const objDist = tools.distance(this.position.x, this.position.z, water[0], water[1]);
+                    if (objDist < objDistances.water) {
+                        objDistances.water = objDist;
+                        this.memory.water = [water[0], water[1]];
+                    }
+                }
+            }
+
+            think(entities, waterLocations) {
+                this.locate(entities, waterLocations);
+
+                const needs = {
+                    predator: this.avoidNeed,
+                    food: this.foodNeed,
+                    water: this.waterNeed,
+                    mate: this.reproductionNeed
+                };
+
+                const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
+
+                for (let [need, _] of priorityList) {
+                    const needLocation = this.memory[need];
+                    if (needLocation !== null) {
+                        this.priority = need;
+                        this.coordsFocused.x = needLocation[0];
+                        this.coordsFocused.y = needLocation[1];
+                        break;
+                    }
+                }
+
+                const healthDiff = this.health - this.startHealth;
+                const xRelative = Math.abs(this.position.x - this.coordsFocused.x) / CONFIG.worldWidth;
+                const yRelative = Math.abs(this.position.z - this.coordsFocused.y) / CONFIG.worldHeight;
+                const sign = this.type === 'wolf' ? -1 : 1;
+
+                const inputs = [xRelative, yRelative, sign, this.foodNeed, this.waterNeed, this.reproductionNeed];
+                this.brain.cost = healthDiff;
+
+                const agentsChoice = this.brain.think(inputs);
+                this.outputIdx = agentsChoice;
+            }
+
+            move() {
+                const coordChange = this.coordChanges[this.outputIdx];
+                this.position.x += coordChange[0] * 0.016;
+                this.position.z += coordChange[1] * 0.016;
+
+                this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+
+                if (this.mesh) {
+                    this.mesh.position.copy(this.position);
+                    this.mesh.rotation.y = this.getDirectionFromOutput();
+                }
+            }
+
+            updateResourcesNeed() {
+                this.waterNeed += this.waterIncrement;
+                this.foodNeed += this.foodIncrement;
+            }
+
+            updateMemory() {
+                for (let key of Object.keys(this.memory)) {
+                    const loc = this.memory[key];
+                    if (loc !== null && tools.distance(this.position.x, this.position.z, loc[0], loc[1]) > this.visionDistance ** 2) {
+                        this.memory[key] = null;
+                    }
+                }
+            }
+
+            update(deltaTime, entities, waterLocations) {
+                this.updateResourcesNeed();
+                this.updateMemory();
+
+                const elapsedTime = (Date.now() - this.tob) / 1000;
+                this.health -= elapsedTime * this.ageDepl;
+                this.health -= this.waterNeed * 0.0001;
+                this.health -= this.foodNeed * 0.0001;
+
+                this.avoidNeed = 0;
+
+                if (this.health <= 1) this.alive = false;
+
+                this.think(entities, waterLocations);
+                this.brainUpdateCounter++;
+                if (this.brainUpdateCounter >= 5) {
+                    this.brain.adjustWeights(this.health - this.startHealth);
+                    this.brainUpdateCounter = 0;
+                }
+                this.move();
+
+                if (this.mesh) this.mesh.position.copy(this.position);
+            }
+
+            attacked(predator) {
+                const healthDepl = this.startHealth * 0.1;
+                this.health -= healthDepl;
+                if (this.health <= 1) {
+                    this.alive = false;
+                    predator.health += this.startHealth;
+                    predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+                }
+            }
+
+            eatPlant(plant) {
+                const plantNutrition = plant.maxHealth * 5;
+                this.health = Math.min(this.health + plantNutrition, this.maxHealth);
+                this.foodNeed = Math.max(0, this.foodNeed - plantNutrition * 0.01);
+                plant.health -= 1;
+                if (plant.health <= 0) plant.alive = false;
+            }
+
+            drinkWater() {
+                this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
+            }
+        }
+
+        class Plant extends Entity {
+            constructor(position) {
+                super(position, 'plant');
+                this.health = 5;
+                this.maxHealth = 5;
+                this.createMesh();
+            }
+
+            createMesh() {
+                const group = new THREE.Group();
+                
+                for (let i = 0; i < 4; i++) {
+                    const leaf = new THREE.Mesh(
+                        new THREE.SphereGeometry(2, 4, 4),
+                        new THREE.MeshStandardMaterial({ color: 0x228b22 })
+                    );
+                    const angle = (i / 4) * Math.PI * 2;
+                    leaf.position.x = Math.cos(angle) * 4;
+                    leaf.position.z = Math.sin(angle) * 4;
+                    leaf.position.y = 5;
+                    leaf.castShadow = true;
+                    leaf.receiveShadow = true;
+                    group.add(leaf);
+                }
+
+                const stem = new THREE.Mesh(
+                    new THREE.CylinderGeometry(2, 2, 10, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x228b22 })
+                );
+                stem.castShadow = true;
+                stem.receiveShadow = true;
+                group.add(stem);
+
+                this.mesh = group;
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
+                this.updateScale();
+            }
+
+            updateScale() {
+                const healthRatio = this.health / this.maxHealth;
+                this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
+            }
+
+            update() {
+                this.updateScale();
+            }
+        }
+
+        class Water extends Entity {
+            constructor(position) {
+                super(position, 'water');
+                this.createMesh();
+            }
+
+            createMesh() {
+                const geometry = new THREE.PlaneGeometry(20, 20);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x4a90e2,
+                    metalness: 0.3,
+                    roughness: 0.4
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(this.position);
+                mesh.receiveShadow = true;
+                this.mesh = mesh;
+                scene.add(this.mesh);
+            }
+        }
+
+        // ============================================================================
+        // LIGHTING
+        // ============================================================================
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.set(800, 400, 600);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.left = -1000;
+        directionalLight.shadow.camera.right = 1000;
+        directionalLight.shadow.camera.top = 1000;
+        directionalLight.shadow.camera.bottom = -1000;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 2000;
+        scene.add(directionalLight);
+
+        // ============================================================================
+        // TERRAIN
+        // ============================================================================
+
+        function createTerrain() {
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
+            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
+
+            const positionAttribute = geometry.getAttribute('position');
+            const positions = positionAttribute.array;
+
+            for (let i = 2; i < positions.length; i += 3) {
+                positions[i] = 5;
+            }
+            positionAttribute.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            const terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
+            return terrain;
+        }
+
+        // ============================================================================
+        // VR CONTROLLER SETUP
+        // ============================================================================
+
+        const vrController = {
+            controllers: [],
+            hands: [],
+            controllerGrips: [],
+            targetRaySpaces: [],
+            isGrabbing: [false, false],
+            triggerPressed: [false, false]
+        };
+
+        async function setupVRControllers() {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+
+            // Setup controllers
+            for (let i = 0; i < 2; i++) {
+                const controller = renderer.xr.getController(i);
+                const grip = renderer.xr.getControllerGrip(i);
+                const targetRaySpace = renderer.xr.getControllerRaySpace(i);
+
+                controller.addEventListener('selectstart', (e) => handleControllerSelect(i, true));
+                controller.addEventListener('selectend', (e) => handleControllerSelect(i, false));
+                controller.addEventListener('squeezestart', (e) => vrController.isGrabbing[i] = true);
+                controller.addEventListener('squeezeend', (e) => vrController.isGrabbing[i] = false);
+
+                scene.add(controller);
+                scene.add(grip);
+
+                vrController.controllers.push(controller);
+                vrController.controllerGrips.push(grip);
+                vrController.targetRaySpaces.push(targetRaySpace);
+            }
+
+            // Check for hand tracking
+            try {
+                const session = renderer.xr.getSession();
+                if (session && session.supportedFrameRates) {
+                    CONFIG.handTrackingEnabled = true;
+                    updateVRStatus();
+                }
+            } catch (e) {
+                console.log('Hand tracking not available');
+            }
+        }
+
+        function handleControllerSelect(index, pressed) {
+            vrController.triggerPressed[index] = pressed;
+            if (pressed) {
+                const controller = vrController.controllers[index];
+                // Raycast from controller
+                raycasterFromController(controller);
+            }
+        }
+
+        function raycasterFromController(controller) {
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(controller.quaternion);
+
+            const raycaster = new THREE.Raycaster(controller.position, direction);
+            const animals = entities.filter(e => e instanceof Animal && e.alive);
+            
+            for (let animal of animals) {
+                const sphere = new THREE.Sphere(animal.mesh.position, 30);
+                const target = new THREE.Vector3();
+                const intersection = raycaster.ray.intersectSphere(sphere, target);
+                
+                if (intersection) {
+                    // Focus on this animal
+                    player.targetObject = animal;
+                    break;
+                }
+            }
+        }
+
+        function updateVRStatus() {
+            const vrStatusDiv = document.getElementById('vrStatus');
+            const vrControllerDiv = document.getElementById('vrController');
+            
+            if (CONFIG.vrEnabled) {
+                vrStatusDiv.classList.add('active');
+                vrControllerDiv.textContent = `Controllers: ${vrController.controllers.length > 0 ? 'Active' : 'Inactive'}`;
+                
+                if (CONFIG.handTrackingEnabled) {
+                    document.getElementById('vrHands').textContent = 'Hand Tracking: Active';
+                }
+            }
+        }
+
+        // ============================================================================
+        // WORLD STATE
+        // ============================================================================
+
+        let entities = [];
+        let terrain = null;
+        let waterLocations = [];
+        let ticks = 0;
+        let lastFpsUpdate = 0;
+        let frameCount = 0;
+
+        const player = {
+            position: new THREE.Vector3(400, 100, 300),
+            velocity: new THREE.Vector3(0, 0, 0),
+            speed: 40,
+            yaw: 0,
+            pitch: 0,
+            targetObject: null
+        };
+
+        function initializeWorld() {
+            entities.forEach(e => e.remove());
+            entities = [];
+            waterLocations = [];
+            if (terrain) scene.remove(terrain);
+
+            terrain = createTerrain();
+            scene.add(terrain);
+
+            // Water clusters
+            for (let i = 0; i < 3; i++) {
+                let clusterX, clusterZ, isValidCluster = false;
+                const clusterRadius = 60;
+                
+                while (!isValidCluster) {
+                    clusterX = Math.random() * CONFIG.worldWidth;
+                    clusterZ = Math.random() * CONFIG.worldHeight;
+                    
+                    isValidCluster = true;
+                    for (let existing of waterLocations) {
+                        const dist = Math.sqrt(
+                            Math.pow(clusterX - existing[0], 2) + 
+                            Math.pow(clusterZ - existing[1], 2)
+                        );
+                        if (dist < clusterRadius * 2) {
+                            isValidCluster = false;
+                            break;
+                        }
+                    }
+                }
+                
+                for (let j = 0; j < 15; j++) {
+                    let wx, wz, isValidPosition = false;
+                    const tileRadius = 10;
+                    
+                    while (!isValidPosition) {
+                        wx = clusterX + (Math.random() - 0.5) * clusterRadius * 2;
+                        wz = clusterZ + (Math.random() - 0.5) * clusterRadius * 2;
+                        
+                        if (wx < 0 || wx > CONFIG.worldWidth || wz < 0 || wz > CONFIG.worldHeight) continue;
+                        
+                        isValidPosition = true;
+                        for (let existing of waterLocations) {
+                            const dist = Math.sqrt(
+                                Math.pow(wx - existing[0], 2) + 
+                                Math.pow(wz - existing[1], 2)
+                            );
+                            if (dist < tileRadius) {
+                                isValidPosition = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    entities.push(new Water([wx, 6, wz]));
+                    waterLocations.push([wx, wz]);
+                }
+            }
+
+            // Plants
+            for (let i = 0; i < CONFIG.initialPlants; i++) {
+                entities.push(new Plant([
+                    Math.random() * CONFIG.worldWidth,
+                    3,
+                    Math.random() * CONFIG.worldHeight
+                ]));
+            }
+
+            // Deer
+            for (let i = 0; i < CONFIG.initialDeer; i++) {
+                entities.push(new Animal([
+                    Math.random() * CONFIG.worldWidth,
+                    15,
+                    Math.random() * CONFIG.worldHeight
+                ], 'deer'));
+            }
+
+            // Wolves
+            for (let i = 0; i < CONFIG.initialWolves; i++) {
+                entities.push(new Animal([
+                    Math.random() * CONFIG.worldWidth,
+                    15,
+                    Math.random() * CONFIG.worldHeight
+                ], 'wolf'));
+            }
+
+            camera.position.copy(player.position);
+        }
+
+        function updateStats() {
+            const deer = entities.filter(e => e.type === 'deer' && e.alive).length;
+            const wolves = entities.filter(e => e.type === 'wolf' && e.alive).length;
+            const plants = entities.filter(e => e.type === 'plant' && e.alive).length;
+
+            document.getElementById('deerCount').textContent = deer;
+            document.getElementById('wolfCount').textContent = wolves;
+            document.getElementById('plantCount').textContent = plants;
+            document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
+        }
+
+        function handleCollisions() {
+            const animals = entities.filter(e => e instanceof Animal && e.alive);
+            const plants = entities.filter(e => e instanceof Plant && e.alive);
+
+            for (let wolf of animals.filter(a => a.type === 'wolf')) {
+                for (let deer of animals.filter(a => a.type === 'deer')) {
+                    const dist = tools.distance(wolf.position.x, wolf.position.z, deer.position.x, deer.position.z);
+                    if (dist < 200) deer.attacked(wolf);
+                }
+            }
+
+            for (let deer of animals.filter(a => a.type === 'deer')) {
+                for (let plant of plants) {
+                    const dist = tools.distance(deer.position.x, deer.position.z, plant.position.x, plant.position.z);
+                    if (dist < 200) deer.eatPlant(plant);
+                }
+            }
+
+            for (let deer of animals.filter(a => a.type === 'deer')) {
+                for (let water of waterLocations) {
+                    const dist = tools.distance(deer.position.x, deer.position.z, water[0], water[1]);
+                    if (dist < 200) {
+                        deer.drinkWater();
+                        deer.waterNeed = Math.max(0, deer.waterNeed - deer.waterIncrement * 10);
+                    }
+                }
+            }
+
+            for (let wolf of animals.filter(a => a.type === 'wolf')) {
+                for (let water of waterLocations) {
+                    const dist = tools.distance(wolf.position.x, wolf.position.z, water[0], water[1]);
+                    if (dist < 200) {
+                        wolf.drinkWater();
+                        wolf.waterNeed = Math.max(0, wolf.waterNeed - wolf.waterIncrement * 10);
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // MAIN LOOP
+        // ============================================================================
+
+        let lastTime = Date.now();
+
+        renderer.xr.addEventListener('sessionstart', async () => {
+            CONFIG.vrEnabled = true;
+            document.getElementById('hud2d').style.display = 'none';
+            document.getElementById('enterVRBtn').classList.add('hidden');
+            updateVRStatus();
+            await setupVRControllers();
+        });
+
+        renderer.xr.addEventListener('sessionend', () => {
+            CONFIG.vrEnabled = false;
+            document.getElementById('hud2d').style.display = 'block';
+            document.getElementById('enterVRBtn').classList.remove('hidden');
+            document.getElementById('vrStatus').classList.remove('active');
+        });
+
+        renderer.setAnimationLoop((time, frame) => {
+            const now = Date.now();
+            const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            // Update entities
+            for (let entity of entities) {
+                if (entity instanceof Animal && entity.alive) {
+                    entity.update(deltaTime, entities, waterLocations);
+                } else if (entity instanceof Plant && entity.alive) {
+                    entity.update(deltaTime);
+                }
+            }
+
+            handleCollisions();
+
+            // Remove dead entities
+            for (let i = entities.length - 1; i >= 0; i--) {
+                if (!entities[i].alive) {
+                    entities[i].remove();
+                    entities.splice(i, 1);
+                }
+            }
+
+            // Spawn plants
+            if (Math.random() < 0.01) {
+                entities.push(new Plant([
+                    Math.random() * CONFIG.worldWidth,
+                    3,
+                    Math.random() * CONFIG.worldHeight
+                ]));
+            }
+
+            // Update stats
+            ticks++;
+            if (ticks % 60 === 0) {
+                updateStats();
+            }
+
+            // FPS counter
+            frameCount++;
+            if (now - lastFpsUpdate > 1000) {
+                document.getElementById('fpsCounter').textContent = 'FPS: ' + frameCount;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+
+            // VR Controller updates
+            if (CONFIG.vrEnabled) {
+                for (let i = 0; i < vrController.controllers.length; i++) {
+                    const controller = vrController.controllers[i];
+                    const grip = vrController.controllerGrips[i];
+                    
+                    // Update movement based on thumbstick
+                    if (frame && frame.inputSources) {
+                        const inputSource = frame.inputSources[i];
+                        if (inputSource && inputSource.gamepad) {
+                            const axes = inputSource.gamepad.axes;
+                            if (axes.length >= 2) {
+                                const forward = axes[1] * player.speed * deltaTime;
+                                const strafe = axes[0] * player.speed * deltaTime;
+                                
+                                const direction = new THREE.Vector3(strafe, 0, forward);
+                                direction.applyQuaternion(controller.quaternion);
+                                
+                                player.position.add(direction);
+                            }
+                        }
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        });
+
+        // ============================================================================
+        // UI CONTROLS
+        // ============================================================================
+
+        document.getElementById('enterVRBtn').addEventListener('click', async () => {
+            try {
+                const sessionInit = { 
+                    requiredFeatures: ['viewer'],
+                    optionalFeatures: ['local-floor', 'hand-tracking', 'dom-overlay'],
+                    domOverlay: { root: document.body }
+                };
+                
+                const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                renderer.xr.setSession(session);
+            } catch (e) {
+                const infoText = document.getElementById('infoText');
+                infoText.classList.add('show');
+                infoText.textContent = 'WebXR not available or VR not supported on this device. Use a Meta Quest 2 or compatible headset.';
+                console.error('VR Error:', e);
+            }
+        });
+
+        // Check WebXR support
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                if (supported) {
+                    document.getElementById('enterVRBtn').style.display = 'block';
+                } else {
+                    document.getElementById('enterVRBtn').textContent = 'VR Not Supported';
+                    document.getElementById('enterVRBtn').disabled = true;
+                }
+            });
+        } else {
+            document.getElementById('enterVRBtn').textContent = 'No WebXR API';
+            document.getElementById('enterVRBtn').disabled = true;
+        }
+
+        // Initialize world
+        initializeWorld();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
