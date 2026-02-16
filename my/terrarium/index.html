@@ -1253,13 +1253,6 @@
             }
 
             getDirectionFromOutput() {
-                // Map output index to rotation angle
-                // outputIdx 0-7 map to 8 cardinal directions
-                // 0: +X (right)
-                // 1: -X (left)
-                // 2: +Z (forward)
-                // 3: -Z (backward)
-                // 4-7: diagonals
                 const angles = [
                     Math.PI / 2,         // 0: +X direction right
                     -Math.PI / 2,          // 1: -X direction left
@@ -1354,8 +1347,6 @@
                 // Update mesh position and rotation
                 if (this.mesh) {
                     this.mesh.position.copy(this.position);
-                    // Rotate to face direction of movement
-                    // The rotation is around Y axis (vertical)
                     this.mesh.rotation.y = this.getDirectionFromOutput();
                 }
             }
@@ -1590,11 +1581,11 @@
                 }
             }
 
-            // Deer-Plant interactions (NEW)
+            // Deer-Plant interactions
             for (let deer of animals.filter(a => a.type === 'deer')) {
                 for (let plant of plants) {
                     const dist = tools.distance(deer.position.x, deer.position.z, plant.position.x, plant.position.z);
-                    if (dist < 300) { // Close enough to eat
+                    if (dist < 400) { // Close enough to eat
                         deer.eatPlant(plant);
                     }
                 }
@@ -1606,6 +1597,7 @@
                     const dist = tools.distance(deer.position.x, deer.position.z, water[0], water[1]);
                     if (dist < 200) { // Close to water
                         deer.drinkWater();
+                        deer.waterNeed = Math.max(0, deer.waterNeed - deer.waterIncrement * 10);
                     }
                 }
             }
@@ -1615,6 +1607,7 @@
                 for (let water of waterLocations) {
                     const dist = tools.distance(wolf.position.x, wolf.position.z, water[0], water[1]);
                     if (dist < 200) { // Close to water
+                        wolf.drinkWater();
                         wolf.waterNeed = Math.max(0, wolf.waterNeed - wolf.waterIncrement * 10);
                     }
                 }
@@ -1706,12 +1699,14 @@
 
             if (target && target.alive) {
                 const healthPercent = Math.round((target.health / target.maxHealth) * 100);
+                const hungerPercent = Math.round(target.foodNeed);
+                const thirstPercent = Math.round(target.waterNeed);
                 const distance = player.position.distanceTo(target.position).toFixed(1);
 
                 document.getElementById('targetName').textContent = 
                     `[${target.type.toUpperCase()}]`;
                 document.getElementById('targetStats').textContent = 
-                    `Health: ${healthPercent}%\nDistance: ${distance}m`;
+                    `Health: ${healthPercent}%\nHunger: ${hungerPercent}%\nThirst: ${thirstPercent}\n%Distance to: ${distance}m`;
                 targetInfoEl.classList.add('visible');
 
                 // Update NN visualizer if enabled
