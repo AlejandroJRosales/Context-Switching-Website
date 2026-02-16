@@ -350,22 +350,9 @@
     <canvas id="canvas"></canvas>
 
     <div class="hud">
-        <div class="hud-header">🌿TERRARIUM</div>
+        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span></div>
 
         <div class="hud-stats">
-            <div>🦌 <span id="deerCount">0</span> | 🐺 <span id="wolfCount">0</span></div>
-            <div>🌱 <span id="plantCount">0</span> | Day <span id="dayCount">0</span></div>
-        </div>
-
-        <div class="hud-controls">
-            <div>CONTROLS</div>
-            <div>━━━━━━━━━━━━</div>
-            <div>Drag joystick to move</div>
-            <div>Tilt device to look</div>
-            <div>Tap entity to track</div>
-        </div>
-
-        <div class="hud-target-info" id="targetInfo">
             <div id="targetName">-</div>
             <div id="targetStats">-</div>
         </div>
@@ -394,7 +381,6 @@
         <button id="controlBtn">Keyboard</button>
         <button id="nnVisBtn">Show NN</button>
         <button id="resetBtn">Reset</button>
-        <button id="helpBtn">Help</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -1841,51 +1827,48 @@
         }
 
         function updateTargetInfo() {
-            const target = raycaster();
-            const targetInfoEl = document.getElementById('targetInfo');
+    const target = raycaster();
+    const targetInfoEl = document.querySelector('.hud-stats');
 
-            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
-                const healthPercent = Math.round((target.health / target.maxHealth) * 100);
-                const hungerPercent = Math.round(target.foodNeed);
-                const thirstPercent = Math.round(target.waterNeed);
-                const distance = player.position.distanceTo(target.position).toFixed(1);
+    if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+        const healthPercent = Math.round((target.health / target.maxHealth) * 100);
+        const hungerPercent = Math.round(target.foodNeed);
+        const thirstPercent = Math.round(target.waterNeed);
+        const distance = player.position.distanceTo(target.position).toFixed(1);
 
-                document.getElementById('targetName').textContent = 
-                    `${target.type.toUpperCase()}`;
-                document.getElementById('targetStats').textContent = 
-                    `Health: ${healthPercent}%\nHunger: ${hungerPercent}%\nThirst: ${thirstPercent}%\nDistance: ${distance}m`;
-                targetInfoEl.classList.add('visible');
+        document.getElementById('targetName').textContent = 
+            `${target.type.toUpperCase()}`;
+        document.getElementById('targetStats').textContent = 
+            `❤️${healthPercent}%  🍗${hungerPercent}% 💧${thirstPercent}%  📍${distance}m`;
+        targetInfoEl.classList.add('visible');
 
-                // Update NN visualizer if enabled
-                if (nnVisEnabled && target instanceof Animal) {
-                    if (!nnVisualizer) {
-                        initNNVisualizer();
-                    }
-                    if (nnVisualizer && nnVisualizer.ctx) {
-                        try {
-                            nnVisualizer.draw(target);
-                            nnLabel.textContent = 'Brain Activity';
-                        } catch (e) {
-                            console.error('NN Draw error:', e);
-                            nnLabel.textContent = 'Error rendering';
-                        }
-                    }
-                }
-            } else {
-                targetInfoEl.classList.remove('visible');
-                if (nnVisEnabled) {
-                    nnLabel.textContent = 'No Target';
-                    if (nnVisualizer && nnVisualizer.ctx) {
-                        nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
-                    }
+        // Update NN visualizer if enabled
+        if (nnVisEnabled && target instanceof Animal) {
+            if (!nnVisualizer) {
+                initNNVisualizer();
+            }
+            if (nnVisualizer && nnVisualizer.ctx) {
+                try {
+                    nnVisualizer.draw(target);
+                    nnLabel.textContent = 'Brain Activity';
+                } catch (e) {
+                    console.error('NN Draw error:', e);
+                    nnLabel.textContent = 'Error rendering';
                 }
             }
         }
+    } else {
+        targetInfoEl.classList.remove('visible');
+        if (nnVisEnabled) {
+            nnLabel.textContent = 'No Target';
+            if (nnVisualizer && nnVisualizer.ctx) {
+                nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
+            }
+        }
+    }
+}
 
         document.getElementById('resetBtn').addEventListener('click', initializeWorld);
-        document.getElementById('helpBtn').addEventListener('click', () => {
-            document.querySelector('.hud-controls').classList.toggle('show');
-        });
 
         // ============================================================================
         // MAIN LOOP
