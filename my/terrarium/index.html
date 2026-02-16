@@ -217,7 +217,7 @@
         }
 
         .speed-indicator.show {
-            display: block;
+            /* display: block; */
         }
 
         /* Control Buttons */
@@ -709,6 +709,7 @@
         const nnLabel = document.getElementById('nnLabel');
         let nnVisualizer = null;
         let nnVisEnabled = false;
+        toggleNNVis();
 
         function initNNVisualizer() {
             const wrapper = document.getElementById('nnCanvasWrapper');
@@ -723,6 +724,10 @@
         }
 
         document.getElementById('nnVisBtn').addEventListener('click', () => {
+            toggleNNVis();
+        });
+
+        function toggleNNVis() {
             nnVisEnabled = !nnVisEnabled;
             const btn = document.getElementById('nnVisBtn');
             if (nnVisEnabled) {
@@ -738,7 +743,7 @@
                 nnContainer.classList.remove('show');
                 btn.textContent = 'Show NN';
             }
-        });
+        }
 
         // ============================================================================
         // LIGHTING
@@ -1137,6 +1142,25 @@
         // ENTITY SYSTEM
         // ============================================================================
 
+        // Pre-create shared geometries and materials (once, at startup)
+        const SHARED_GEOMETRIES = {
+            sheep: {
+                body: new THREE.BoxGeometry(15, 15, 25),
+                head: new THREE.SphereGeometry(7, 15, 15),
+                leg: new THREE.BoxGeometry(3, 18, 3)
+            },
+            wolf: {
+                body: new THREE.BoxGeometry(7, 11, 20),
+                head: new THREE.SphereGeometry(6, 15, 15),
+                leg: new THREE.BoxGeometry(2.5, 18, 2.5)
+            }
+        };
+
+        const SHARED_MATERIALS = {
+            sheep: new THREE.MeshStandardMaterial({ color: 0xE6E6E6 }),
+            wolf: new THREE.MeshStandardMaterial({ color: 0x81613e })
+        };
+
         class Entity {
             constructor(position, type) {
                 this.position = new THREE.Vector3(...position);
@@ -1201,62 +1225,94 @@
             }
 
             createMesh() {
-                if (this.type === 'deer') {
-                    const group = new THREE.Group();
-                    const body = new THREE.Mesh(
-                        new THREE.BoxGeometry(15, 15, 25),
-                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
-                    );
-                    body.castShadow = true;
-                    body.receiveShadow = true;
-                    group.add(body);
+                // Reuse shared materials instead of creating new ones
+                const material = SHARED_MATERIALS[this.type];
+                const group = new THREE.Group();
 
-                    const head = new THREE.Mesh(
-                        new THREE.SphereGeometry(10, 16, 16),
-                        new THREE.MeshStandardMaterial({ color: 0xE6E6E6 })
-                    );
-                    head.position.z = 15;
-                    head.castShadow = true;
-                    head.receiveShadow = true;
-                    group.add(head);
-
-                    this.mesh = group;
+                if (this.type === 'sheep') {
+                    this.addDeerMesh(group, material);
                 } else if (this.type === 'wolf') {
-                    const group = new THREE.Group();
-                    const body = new THREE.Mesh(
-                        new THREE.BoxGeometry(15, 15, 25),
-                        new THREE.MeshStandardMaterial({ color: 0x81613e })
-                    );
-                    body.castShadow = true;
-                    body.receiveShadow = true;
-                    group.add(body);
-
-                    const head = new THREE.Mesh(
-                        new THREE.SphereGeometry(10, 16, 16),
-                        new THREE.MeshStandardMaterial({ color: 0x81613e })
-                    );
-                    head.position.z = 15;
-                    head.castShadow = true;
-                    head.receiveShadow = true;
-                    group.add(head);
-
-                    this.mesh = group;
+                    this.addWolfMesh(group, material);
                 }
 
+                this.mesh = group;
                 this.mesh.position.copy(this.position);
                 scene.add(this.mesh);
             }
 
+            addDeerMesh(group, material) {
+                const geom = SHARED_GEOMETRIES.sheep;
+
+                const body = new THREE.Mesh(geom.body, material);
+                body.castShadow = true;
+                body.receiveShadow = true;
+                group.add(body);
+
+                const head = new THREE.Mesh(geom.head, material);
+                head.position.z = 15;
+                head.position.y = 5;
+                head.castShadow = true;
+                head.receiveShadow = true;
+                group.add(head);
+
+                // All 4 legs with shared geometry
+                const legPositions = [
+                    [-5, -9, 8],
+                    [5, -9, 8],
+                    [-5, -9, -8],
+                    [5, -9, -8]
+                ];
+
+                legPositions.forEach(pos => {
+                    const leg = new THREE.Mesh(geom.leg, material);
+                    leg.position.set(...pos);
+                    leg.castShadow = true;
+                    leg.receiveShadow = true;
+                    group.add(leg);
+                });
+            }
+
+            addWolfMesh(group, material) {
+                const geom = SHARED_GEOMETRIES.wolf;
+
+                const body = new THREE.Mesh(geom.body, material);
+                body.castShadow = true;
+                body.receiveShadow = true;
+                group.add(body);
+
+                const head = new THREE.Mesh(geom.head, material);
+                head.position.z = 15;
+                head.position.y = 5;
+                head.castShadow = true;
+                head.receiveShadow = true;
+                group.add(head);
+
+                const legPositions = [
+                    [-5, -9, 8],
+                    [4, -9, 8],
+                    [-5, -9, -8],
+                    [4, -9, -8]
+                ];
+
+                legPositions.forEach(pos => {
+                    const leg = new THREE.Mesh(geom.leg, material);
+                    leg.position.set(...pos);
+                    leg.castShadow = true;
+                    leg.receiveShadow = true;
+                    group.add(leg);
+                });
+            }
+
             getDirectionFromOutput() {
                 const angles = [
-                    Math.PI / 2,         // 0: +X direction right
-                    -Math.PI / 2,          // 1: -X direction left
-                    0,                    // 2: +Z direction forward
-                    Math.PI,              // 3: -Z direction backward
-                    Math.PI / 4,         // 4: +X+Z diagonal (between -π/2 and 0)
-                    3 * Math.PI / 4,     // 5: +X-Z diagonal (between -π/2 and π)
-                    -Math.PI / 4,          // 6: -X+Z diagonal (between π/2 and 0) forward left
-                    -3 * Math.PI / 4       // 7: -X-Z diagonal (between π/2 and π)
+                    Math.PI / 2,
+                    -Math.PI / 2,
+                    0,
+                    Math.PI,
+                    Math.PI / 4,
+                    3 * Math.PI / 4,
+                    -Math.PI / 4,
+                    -3 * Math.PI / 4
                 ];
                 return angles[this.outputIdx % 8];
             }
@@ -1271,16 +1327,16 @@
 
                     if (!inSight) continue;
 
-                    if (this.type === 'deer' && obj.type === 'wolf') {
+                    if (this.type === 'sheep' && obj.type === 'wolf') {
                         if (objDist < objDistances.predator) {
                             objDistances.predator = objDist;
                             this.memory.predator = [obj.position.x, obj.position.z];
                             this.avoidNeed = 0.5;
                         }
-                    } else if (this.type === 'wolf' && obj.type === 'deer' && objDist < objDistances.food) {
+                    } else if (this.type === 'wolf' && obj.type === 'sheep' && objDist < objDistances.food) {
                         objDistances.food = objDist;
                         this.memory.food = [obj.position.x, obj.position.z];
-                    } else if (this.type === 'deer' && obj.type === 'deer' && objDist < objDistances.mate) {
+                    } else if (this.type === 'sheep' && obj.type === 'sheep' && objDist < objDistances.mate) {
                         objDistances.mate = objDist;
                         this.memory.mate = [obj.position.x, obj.position.z];
                     }
@@ -1317,7 +1373,6 @@
                     }
                 }
 
-                // Map inputs for neural network
                 const healthDiff = this.health - this.startHealth;
                 const xRelative = Math.abs(this.position.x - this.coordsFocused.x) / CONFIG.worldWidth;
                 const yRelative = Math.abs(this.position.z - this.coordsFocused.y) / CONFIG.worldHeight;
@@ -1332,14 +1387,12 @@
 
             move() {
                 const coordChange = this.coordChanges[this.outputIdx];
-                this.position.x += coordChange[0] * 0.016; // deltaTime compensation
+                this.position.x += coordChange[0] * 0.016;
                 this.position.z += coordChange[1] * 0.016;
 
-                // Wrap around world
                 this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
                 this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
 
-                // Update mesh position and rotation
                 if (this.mesh) {
                     this.mesh.position.copy(this.position);
                     this.mesh.rotation.y = this.getDirectionFromOutput();
@@ -1371,12 +1424,10 @@
 
                 this.avoidNeed = 0;
 
-                // Check for death
                 if (this.health <= 1) {
                     this.alive = false;
                 }
 
-                // Think and move
                 this.think(entities, waterLocations);
                 this.brainUpdateCounter++;
                 if (this.brainUpdateCounter >= 5) {
@@ -1385,7 +1436,6 @@
                 }
                 this.move();
 
-                // Update mesh
                 if (this.mesh) {
                     this.mesh.position.copy(this.position);
                 }
@@ -1426,12 +1476,14 @@
 
             createMesh() {
                 const group = new THREE.Group();
+                const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+                const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+                
+                // Shared leaf geometry
+                const leafGeometry = new THREE.SphereGeometry(2, 4, 4);
                 
                 for (let i = 0; i < 4; i++) {
-                    const leaf = new THREE.Mesh(
-                        new THREE.SphereGeometry(2, 4, 4),
-                        new THREE.MeshStandardMaterial({ color: 0x228b22 })
-                    );
+                    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
                     const angle = (i / 4) * Math.PI * 2;
                     leaf.position.x = Math.cos(angle) * 4;
                     leaf.position.z = Math.sin(angle) * 4;
@@ -1443,7 +1495,7 @@
 
                 const stem = new THREE.Mesh(
                     new THREE.CylinderGeometry(2, 2, 10, 8),
-                    new THREE.MeshStandardMaterial({ color: 0x228b22 })
+                    stemMaterial
                 );
                 stem.castShadow = true;
                 stem.receiveShadow = true;
@@ -1484,6 +1536,45 @@
                 mesh.receiveShadow = true;
                 this.mesh = mesh;
                 scene.add(this.mesh);
+            }
+        }
+
+        class SpatialGrid {
+            constructor(worldWidth, worldHeight, cellSize) {
+                this.cellSize = cellSize;
+                this.cols = Math.ceil(worldWidth / cellSize);
+                this.rows = Math.ceil(worldHeight / cellSize);
+                this.grid = Array(this.cols * this.rows).fill(null).map(() => []);
+            }
+
+            add(entity) {
+                const cellX = Math.floor(entity.position.x / this.cellSize);
+                const cellZ = Math.floor(entity.position.z / this.cellSize);
+                const index = cellZ * this.cols + cellX;
+                if (index >= 0 && index < this.grid.length) {
+                    this.grid[index].push(entity);
+                }
+            }
+
+            getNearby(entity, range = 1) {
+                const cellX = Math.floor(entity.position.x / this.cellSize);
+                const cellZ = Math.floor(entity.position.z / this.cellSize);
+                const nearby = [];
+
+                for (let dx = -range; dx <= range; dx++) {
+                    for (let dz = -range; dz <= range; dz++) {
+                        const x = cellX + dx;
+                        const z = cellZ + dz;
+                        if (x >= 0 && x < this.cols && z >= 0 && z < this.rows) {
+                            nearby.push(...this.grid[z * this.cols + x]);
+                        }
+                    }
+                }
+                return nearby;
+            }
+
+            clear() {
+                this.grid.forEach(cell => cell.length = 0);
             }
         }
 
@@ -1578,13 +1669,13 @@
                 ]));
             }
 
-            // Add deer
+            // Add sheep
             for (let i = 0; i < CONFIG.initialDeer; i++) {
                 entities.push(new Animal([
                     Math.random() * CONFIG.worldWidth,
                     15,
                     Math.random() * CONFIG.worldHeight
-                ], 'deer'));
+                ], 'sheep'));
             }
 
             // Add wolves
@@ -1601,11 +1692,11 @@
         }
 
         function updateStats() {
-            const deer = entities.filter(e => e.type === 'deer' && e.alive).length;
+            const sheep = entities.filter(e => e.type === 'sheep' && e.alive).length;
             const wolves = entities.filter(e => e.type === 'wolf' && e.alive).length;
             const plants = entities.filter(e => e.type === 'plant' && e.alive).length;
 
-            document.getElementById('deerCount').textContent = deer;
+            document.getElementById('deerCount').textContent = sheep;
             document.getElementById('wolfCount').textContent = wolves;
             document.getElementById('plantCount').textContent = plants;
             document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
@@ -1617,31 +1708,31 @@
 
             // Wolf-Deer interactions
             for (let wolf of animals.filter(a => a.type === 'wolf')) {
-                for (let deer of animals.filter(a => a.type === 'deer')) {
-                    const dist = tools.distance(wolf.position.x, wolf.position.z, deer.position.x, deer.position.z);
+                for (let sheep of animals.filter(a => a.type === 'sheep')) {
+                    const dist = tools.distance(wolf.position.x, wolf.position.z, sheep.position.x, sheep.position.z);
                     if (dist < 200) {
-                        deer.attacked(wolf);
+                        sheep.attacked(wolf);
                     }
                 }
             }
 
             // Deer-Plant interactions
-            for (let deer of animals.filter(a => a.type === 'deer')) {
+            for (let sheep of animals.filter(a => a.type === 'sheep')) {
                 for (let plant of plants) {
-                    const dist = tools.distance(deer.position.x, deer.position.z, plant.position.x, plant.position.z);
+                    const dist = tools.distance(sheep.position.x, sheep.position.z, plant.position.x, plant.position.z);
                     if (dist < 200) {
-                        deer.eatPlant(plant);
+                        sheep.eatPlant(plant);
                     }
                 }
             }
 
             // Deer-Water interactions
-            for (let deer of animals.filter(a => a.type === 'deer')) {
+            for (let sheep of animals.filter(a => a.type === 'sheep')) {
                 for (let water of waterLocations) {
-                    const dist = tools.distance(deer.position.x, deer.position.z, water[0], water[1]);
+                    const dist = tools.distance(sheep.position.x, sheep.position.z, water[0], water[1]);
                     if (dist < 200) {
-                        deer.drinkWater();
-                        deer.waterNeed = Math.max(0, deer.waterNeed - deer.waterIncrement * 10);
+                        sheep.drinkWater();
+                        sheep.waterNeed = Math.max(0, sheep.waterNeed - sheep.waterIncrement * 10);
                     }
                 }
             }
@@ -1753,7 +1844,7 @@
             const target = raycaster();
             const targetInfoEl = document.getElementById('targetInfo');
 
-            if (target && target.alive && (target.type === 'deer' || target.type === 'wolf')) {
+            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
                 const healthPercent = Math.round((target.health / target.maxHealth) * 100);
                 const hungerPercent = Math.round(target.foodNeed);
                 const thirstPercent = Math.round(target.waterNeed);
@@ -1773,7 +1864,7 @@
                     if (nnVisualizer && nnVisualizer.ctx) {
                         try {
                             nnVisualizer.draw(target);
-                            nnLabel.textContent = `${target.type.toUpperCase()} - Brain Activity`;
+                            nnLabel.textContent = 'Brain Activity';
                         } catch (e) {
                             console.error('NN Draw error:', e);
                             nnLabel.textContent = 'Error rendering';
