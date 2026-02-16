@@ -1125,444 +1125,504 @@
         }
 
         // ============================================================================
-        // ENTITY SYSTEM
-        // ============================================================================
+// OPTIMIZED ENTITY SYSTEM - For 1000+ Animals
+// ============================================================================
 
-        // Pre-create shared geometries and materials (once, at startup)
-        const SHARED_GEOMETRIES = {
-            sheep: {
-                body: new THREE.BoxGeometry(15, 15, 25),
-                head: new THREE.SphereGeometry(7, 15, 15),
-                leg: new THREE.BoxGeometry(3, 18, 3)
-            },
-            wolf: {
-                body: new THREE.BoxGeometry(7, 11, 20),
-                head: new THREE.SphereGeometry(6, 15, 15),
-                leg: new THREE.BoxGeometry(2.5, 18, 2.5)
+// Pre-create shared geometries and materials (once, at startup)
+// Helper function to create rounded box geometry
+function createRoundedBoxGeometry(width, height, depth, radius = 2) {
+    const shape = new THREE.Shape();
+    const w = width / 2;
+    const h = height / 2;
+    
+    // Create rounded rectangle
+    shape.moveTo(-w + radius, -h);
+    shape.lineTo(w - radius, -h);
+    shape.quadraticCurveTo(w, -h, w, -h + radius);
+    shape.lineTo(w, h - radius);
+    shape.quadraticCurveTo(w, h, w - radius, h);
+    shape.lineTo(-w + radius, h);
+    shape.quadraticCurveTo(-w, h, -w, h - radius);
+    shape.lineTo(-w, -h + radius);
+    shape.quadraticCurveTo(-w, -h, -w + radius, -h);
+    
+    const extrudeSettings = {
+        depth: depth,
+        bevelEnabled: true,
+        bevelThickness: radius * 0.5,
+        bevelSize: radius * 0.7,
+        bevelSegments: 3
+    };
+    
+    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geometry.center();
+    return geometry;
+}
+
+const SHARED_GEOMETRIES = {
+    sheep: {
+        body: createRoundedBoxGeometry(12, 12, 25, 2.5),
+        head: new THREE.SphereGeometry(7, 15, 15),
+        leg: createRoundedBoxGeometry(3, 18, 3, 1)
+    },
+    wolf: {
+        body: createRoundedBoxGeometry(7, 11, 20, 2),
+        head: new THREE.SphereGeometry(6, 15, 15),
+        leg: createRoundedBoxGeometry(2.5, 18, 2.5, 0.8)
+    }
+};
+
+const SHARED_MATERIALS = {
+    sheep: new THREE.MeshStandardMaterial({ color: 0xE6E6E6 }),
+    wolf: new THREE.MeshStandardMaterial({ color: 0x81613e })
+};
+
+class Entity {
+    constructor(position, type) {
+        this.position = new THREE.Vector3(...position);
+        this.type = type;
+        this.mesh = null;
+        this.health = 100;
+        this.alive = true;
+    }
+
+    update(deltaTime) {}
+
+    remove() {
+        if (this.mesh) scene.remove(this.mesh);
+    }
+}
+
+class Animal extends Entity {
+    constructor(position, type) {
+        super(position, type);
+        this.speciesType = type;
+        this.speed = type === 'wolf' ? 35 : 25;
+        this.startHealth = type === 'wolf' ? 120 : 100;
+        this.health = this.startHealth;
+        this.maxHealth = this.health;
+        this.visionDistance = tools.random(80, 150);
+        this.generation = 0;
+        
+        // Resource tracking
+        this.waterNeed = Math.random() * 0.02 + 0.01;
+        this.foodNeed = Math.random() * 0.02 + 0.01;
+        this.reproductionNeed = Math.random() * 0.02 + 0.01;
+        this.avoidNeed = 0;
+
+        // Degradation rates
+        this.waterIncrement = this.health * 0.0001;
+        this.foodIncrement = this.health * 0.0001;
+        this.ageDepl = this.health * 0.00002;
+
+        // Memory and priorities
+        this.memory = { predator: null, food: null, water: null, mate: null };
+        this.priority = null;
+
+        // Movement system
+        this.coordChanges = [
+            [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
+            [this.speed * 0.7, this.speed * 0.7], [this.speed * 0.7, -this.speed * 0.7],
+            [-this.speed * 0.7, this.speed * 0.7], [-this.speed * 0.7, -this.speed * 0.7]
+        ];
+
+        // Neural network
+        this.numInputs = 6;
+        this.nnLayerDims = [this.numInputs, this.numInputs, 9, this.coordChanges.length];
+        this.brain = new DenseNetwork(this.numInputs, this.nnLayerDims.slice(1), 0.01);
+        this.outputIdx = 0;
+        this.brainUpdateCounter = 0;
+
+        // Tracking
+        this.coordsFocused = new THREE.Vector2(this.position.x, this.position.z);
+        this.tob = Date.now();
+
+        this.createMesh();
+    }
+
+    createMesh() {
+        // Reuse shared materials instead of creating new ones
+        const material = SHARED_MATERIALS[this.type];
+        const group = new THREE.Group();
+
+        if (this.type === 'sheep') {
+            this.addDeerMesh(group, material);
+        } else if (this.type === 'wolf') {
+            this.addWolfMesh(group, material);
+        }
+
+        this.mesh = group;
+        this.mesh.position.copy(this.position);
+        scene.add(this.mesh);
+    }
+
+    addDeerMesh(group, material) {
+        const geom = SHARED_GEOMETRIES.sheep;
+
+        const body = new THREE.Mesh(geom.body, material);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        group.add(body);
+
+        const head = new THREE.Mesh(geom.head, material);
+        head.position.z = 15;
+        head.position.y = 5;
+        head.castShadow = true;
+        head.receiveShadow = true;
+        group.add(head);
+
+        // All 4 legs with shared geometry
+        const legPositions = [
+            [-5, -9, 8],
+            [5, -9, 8],
+            [-5, -9, -8],
+            [5, -9, -8]
+        ];
+
+        legPositions.forEach(pos => {
+            const leg = new THREE.Mesh(geom.leg, material);
+            leg.position.set(...pos);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            group.add(leg);
+        });
+    }
+
+    addWolfMesh(group, material) {
+        const geom = SHARED_GEOMETRIES.wolf;
+
+        const body = new THREE.Mesh(geom.body, material);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        group.add(body);
+
+        const head = new THREE.Mesh(geom.head, material);
+        head.position.z = 15;
+        head.position.y = 5;
+        head.castShadow = true;
+        head.receiveShadow = true;
+        group.add(head);
+
+        const legPositions = [
+            [-5, -9, 8],
+            [4, -9, 8],
+            [-5, -9, -8],
+            [4, -9, -8]
+        ];
+
+        legPositions.forEach(pos => {
+            const leg = new THREE.Mesh(geom.leg, material);
+            leg.position.set(...pos);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            group.add(leg);
+        });
+    }
+
+    getDirectionFromOutput() {
+        const angles = [
+            Math.PI / 2,
+            -Math.PI / 2,
+            0,
+            Math.PI,
+            Math.PI / 4,
+            3 * Math.PI / 4,
+            -Math.PI / 4,
+            -3 * Math.PI / 4
+        ];
+        return angles[this.outputIdx % 8];
+    }
+
+    locate(entities, waterLocations) {
+        const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
+
+        for (let obj of entities) {
+            if (obj === this || !(obj instanceof Animal)) continue;
+            const objDist = tools.distance(this.position.x, this.position.z, obj.position.x, obj.position.z);
+            const inSight = objDist <= this.visionDistance ** 2;
+
+            if (!inSight) continue;
+
+            if (this.type === 'sheep' && obj.type === 'wolf') {
+                if (objDist < objDistances.predator) {
+                    objDistances.predator = objDist;
+                    this.memory.predator = [obj.position.x, obj.position.z];
+                    this.avoidNeed = 0.5;
+                }
+            } else if (this.type === 'wolf' && obj.type === 'sheep' && objDist < objDistances.food) {
+                objDistances.food = objDist;
+                this.memory.food = [obj.position.x, obj.position.z];
+            } else if (this.type === 'sheep' && obj.type === 'sheep' && objDist < objDistances.mate) {
+                objDistances.mate = objDist;
+                this.memory.mate = [obj.position.x, obj.position.z];
             }
+        }
+
+        for (let water of waterLocations) {
+            const objDist = tools.distance(this.position.x, this.position.z, water[0], water[1]);
+            if (objDist < objDistances.water) {
+                objDistances.water = objDist;
+                this.memory.water = [water[0], water[1]];
+            }
+        }
+    }
+
+    think(entities, waterLocations) {
+        this.locate(entities, waterLocations);
+
+        const needs = {
+            predator: this.avoidNeed,
+            food: this.foodNeed,
+            water: this.waterNeed,
+            mate: this.reproductionNeed
         };
 
-        const SHARED_MATERIALS = {
-            sheep: new THREE.MeshStandardMaterial({ color: 0xE6E6E6 }),
-            wolf: new THREE.MeshStandardMaterial({ color: 0x81613e })
-        };
+        const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
 
-        class Entity {
-            constructor(position, type) {
-                this.position = new THREE.Vector3(...position);
-                this.type = type;
-                this.mesh = null;
-                this.health = 100;
-                this.alive = true;
-            }
-
-            update(deltaTime) {}
-
-            remove() {
-                if (this.mesh) scene.remove(this.mesh);
+        for (let [need, _] of priorityList) {
+            const needLocation = this.memory[need];
+            if (needLocation !== null) {
+                this.priority = need;
+                this.coordsFocused.x = needLocation[0];
+                this.coordsFocused.y = needLocation[1];
+                break;
             }
         }
 
-        class Animal extends Entity {
-            constructor(position, type) {
-                super(position, type);
-                this.speciesType = type;
-                this.speed = type === 'wolf' ? 35 : 25;
-                this.startHealth = type === 'wolf' ? 120 : 100;
-                this.health = this.startHealth;
-                this.maxHealth = this.health;
-                this.visionDistance = tools.random(80, 150);
-                this.generation = 0;
-                
-                // Resource tracking
-                this.waterNeed = Math.random() * 0.02 + 0.01;
-                this.foodNeed = Math.random() * 0.02 + 0.01;
-                this.reproductionNeed = Math.random() * 0.02 + 0.01;
-                this.avoidNeed = 0;
+        const healthDiff = this.health - this.startHealth;
+        const xRelative = Math.abs(this.position.x - this.coordsFocused.x) / CONFIG.worldWidth;
+        const yRelative = Math.abs(this.position.z - this.coordsFocused.y) / CONFIG.worldHeight;
+        const sign = this.type === 'wolf' ? -1 : 1;
 
-                // Degradation rates
-                this.waterIncrement = this.health * 0.0001;
-                this.foodIncrement = this.health * 0.0001;
-                this.ageDepl = this.health * 0.00002;
+        const inputs = [xRelative, yRelative, sign, this.foodNeed, this.waterNeed, this.reproductionNeed];
+        this.brain.cost = healthDiff;
 
-                // Memory and priorities
-                this.memory = { predator: null, food: null, water: null, mate: null };
-                this.priority = null;
+        const agentsChoice = this.brain.think(inputs);
+        this.outputIdx = agentsChoice;
+    }
 
-                // Movement system
-                this.coordChanges = [
-                    [this.speed, 0], [-this.speed, 0], [0, this.speed], [0, -this.speed],
-                    [this.speed * 0.7, this.speed * 0.7], [this.speed * 0.7, -this.speed * 0.7],
-                    [-this.speed * 0.7, this.speed * 0.7], [-this.speed * 0.7, -this.speed * 0.7]
-                ];
+    move() {
+        const coordChange = this.coordChanges[this.outputIdx];
+        this.position.x += coordChange[0] * 0.016;
+        this.position.z += coordChange[1] * 0.016;
 
-                // Neural network
-                this.numInputs = 6;
-                this.nnLayerDims = [this.numInputs, this.numInputs, 9, this.coordChanges.length];
-                this.brain = new DenseNetwork(this.numInputs, this.nnLayerDims.slice(1), 0.01);
-                this.outputIdx = 0;
-                this.brainUpdateCounter = 0;
+        this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+        this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
 
-                // Tracking
-                this.coordsFocused = new THREE.Vector2(this.position.x, this.position.z);
-                this.tob = Date.now();
+        if (this.mesh) {
+            this.mesh.position.copy(this.position);
+            this.mesh.rotation.y = this.getDirectionFromOutput();
+        }
+    }
 
-                this.createMesh();
-            }
+    updateResourcesNeed() {
+        this.waterNeed += this.waterIncrement;
+        this.foodNeed += this.foodIncrement;
+    }
 
-            createMesh() {
-                // Reuse shared materials instead of creating new ones
-                const material = SHARED_MATERIALS[this.type];
-                const group = new THREE.Group();
-
-                if (this.type === 'sheep') {
-                    this.addDeerMesh(group, material);
-                } else if (this.type === 'wolf') {
-                    this.addWolfMesh(group, material);
-                }
-
-                this.mesh = group;
-                this.mesh.position.copy(this.position);
-                scene.add(this.mesh);
-            }
-
-            addDeerMesh(group, material) {
-                const geom = SHARED_GEOMETRIES.sheep;
-
-                const body = new THREE.Mesh(geom.body, material);
-                body.castShadow = true;
-                body.receiveShadow = true;
-                group.add(body);
-
-                const head = new THREE.Mesh(geom.head, material);
-                head.position.z = 15;
-                head.position.y = 5;
-                head.castShadow = true;
-                head.receiveShadow = true;
-                group.add(head);
-
-                // All 4 legs with shared geometry
-                const legPositions = [
-                    [-5, -9, 8],
-                    [5, -9, 8],
-                    [-5, -9, -8],
-                    [5, -9, -8]
-                ];
-
-                legPositions.forEach(pos => {
-                    const leg = new THREE.Mesh(geom.leg, material);
-                    leg.position.set(...pos);
-                    leg.castShadow = true;
-                    leg.receiveShadow = true;
-                    group.add(leg);
-                });
-            }
-
-            addWolfMesh(group, material) {
-                const geom = SHARED_GEOMETRIES.wolf;
-
-                const body = new THREE.Mesh(geom.body, material);
-                body.castShadow = true;
-                body.receiveShadow = true;
-                group.add(body);
-
-                const head = new THREE.Mesh(geom.head, material);
-                head.position.z = 15;
-                head.position.y = 5;
-                head.castShadow = true;
-                head.receiveShadow = true;
-                group.add(head);
-
-                const legPositions = [
-                    [-5, -9, 8],
-                    [4, -9, 8],
-                    [-5, -9, -8],
-                    [4, -9, -8]
-                ];
-
-                legPositions.forEach(pos => {
-                    const leg = new THREE.Mesh(geom.leg, material);
-                    leg.position.set(...pos);
-                    leg.castShadow = true;
-                    leg.receiveShadow = true;
-                    group.add(leg);
-                });
-            }
-
-            getDirectionFromOutput() {
-                const angles = [
-                    Math.PI / 2,
-                    -Math.PI / 2,
-                    0,
-                    Math.PI,
-                    Math.PI / 4,
-                    3 * Math.PI / 4,
-                    -Math.PI / 4,
-                    -3 * Math.PI / 4
-                ];
-                return angles[this.outputIdx % 8];
-            }
-
-            locate(entities, waterLocations) {
-                const objDistances = { predator: Infinity, food: Infinity, water: Infinity, mate: Infinity };
-
-                for (let obj of entities) {
-                    if (obj === this || !(obj instanceof Animal)) continue;
-                    const objDist = tools.distance(this.position.x, this.position.z, obj.position.x, obj.position.z);
-                    const inSight = objDist <= this.visionDistance ** 2;
-
-                    if (!inSight) continue;
-
-                    if (this.type === 'sheep' && obj.type === 'wolf') {
-                        if (objDist < objDistances.predator) {
-                            objDistances.predator = objDist;
-                            this.memory.predator = [obj.position.x, obj.position.z];
-                            this.avoidNeed = 0.5;
-                        }
-                    } else if (this.type === 'wolf' && obj.type === 'sheep' && objDist < objDistances.food) {
-                        objDistances.food = objDist;
-                        this.memory.food = [obj.position.x, obj.position.z];
-                    } else if (this.type === 'sheep' && obj.type === 'sheep' && objDist < objDistances.mate) {
-                        objDistances.mate = objDist;
-                        this.memory.mate = [obj.position.x, obj.position.z];
-                    }
-                }
-
-                for (let water of waterLocations) {
-                    const objDist = tools.distance(this.position.x, this.position.z, water[0], water[1]);
-                    if (objDist < objDistances.water) {
-                        objDistances.water = objDist;
-                        this.memory.water = [water[0], water[1]];
-                    }
-                }
-            }
-
-            think(entities, waterLocations) {
-                this.locate(entities, waterLocations);
-
-                const needs = {
-                    predator: this.avoidNeed,
-                    food: this.foodNeed,
-                    water: this.waterNeed,
-                    mate: this.reproductionNeed
-                };
-
-                const priorityList = Object.entries(needs).sort((a, b) => b[1] - a[1]);
-
-                for (let [need, _] of priorityList) {
-                    const needLocation = this.memory[need];
-                    if (needLocation !== null) {
-                        this.priority = need;
-                        this.coordsFocused.x = needLocation[0];
-                        this.coordsFocused.y = needLocation[1];
-                        break;
-                    }
-                }
-
-                const healthDiff = this.health - this.startHealth;
-                const xRelative = Math.abs(this.position.x - this.coordsFocused.x) / CONFIG.worldWidth;
-                const yRelative = Math.abs(this.position.z - this.coordsFocused.y) / CONFIG.worldHeight;
-                const sign = this.type === 'wolf' ? -1 : 1;
-
-                const inputs = [xRelative, yRelative, sign, this.foodNeed, this.waterNeed, this.reproductionNeed];
-                this.brain.cost = healthDiff;
-
-                const agentsChoice = this.brain.think(inputs);
-                this.outputIdx = agentsChoice;
-            }
-
-            move() {
-                const coordChange = this.coordChanges[this.outputIdx];
-                this.position.x += coordChange[0] * 0.016;
-                this.position.z += coordChange[1] * 0.016;
-
-                this.position.x = ((this.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
-                this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
-
-                if (this.mesh) {
-                    this.mesh.position.copy(this.position);
-                    this.mesh.rotation.y = this.getDirectionFromOutput();
-                }
-            }
-
-            updateResourcesNeed() {
-                this.waterNeed += this.waterIncrement;
-                this.foodNeed += this.foodIncrement;
-            }
-
-            updateMemory() {
-                for (let key of Object.keys(this.memory)) {
-                    const loc = this.memory[key];
-                    if (loc !== null && tools.distance(this.position.x, this.position.z, loc[0], loc[1]) > this.visionDistance ** 2) {
-                        this.memory[key] = null;
-                    }
-                }
-            }
-
-            update(deltaTime, entities, waterLocations) {
-                this.updateResourcesNeed();
-                this.updateMemory();
-
-                const elapsedTime = (Date.now() - this.tob) / 1000;
-                this.health -= elapsedTime * this.ageDepl;
-                this.health -= this.waterNeed * 0.0001;
-                this.health -= this.foodNeed * 0.0001;
-
-                this.avoidNeed = 0;
-
-                if (this.health <= 1) {
-                    this.alive = false;
-                }
-
-                this.think(entities, waterLocations);
-                this.brainUpdateCounter++;
-                if (this.brainUpdateCounter >= 5) {
-                    this.brain.adjustWeights(this.health - this.startHealth);
-                    this.brainUpdateCounter = 0;
-                }
-                this.move();
-
-                if (this.mesh) {
-                    this.mesh.position.copy(this.position);
-                }
-            }
-
-            attacked(predator) {
-                const healthDepl = this.startHealth * 0.1;
-                this.health -= healthDepl;
-                if (this.health <= 1) {
-                    this.alive = false;
-                    predator.health += this.startHealth;
-                    predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
-                }
-            }
-
-            eatPlant(plant) {
-                const plantNutrition = plant.maxHealth * 5;
-                this.health = Math.min(this.health + plantNutrition, this.maxHealth);
-                this.foodNeed = Math.max(0, this.foodNeed - plantNutrition * 0.01);
-                plant.health -= 1;
-                if (plant.health <= 0) {
-                    plant.alive = false;
-                }
-            }
-
-            drinkWater() {
-                this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
+    updateMemory() {
+        for (let key of Object.keys(this.memory)) {
+            const loc = this.memory[key];
+            if (loc !== null && tools.distance(this.position.x, this.position.z, loc[0], loc[1]) > this.visionDistance ** 2) {
+                this.memory[key] = null;
             }
         }
+    }
 
-        class Plant extends Entity {
-            constructor(position) {
-                super(position, 'plant');
-                this.health = 5;
-                this.maxHealth = 5;
-                this.createMesh();
-            }
+    update(deltaTime, entities, waterLocations) {
+        this.updateResourcesNeed();
+        this.updateMemory();
 
-            createMesh() {
-                const group = new THREE.Group();
-                const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
-                const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
-                
-                // Shared leaf geometry
-                const leafGeometry = new THREE.SphereGeometry(2, 4, 4);
-                
-                for (let i = 0; i < 4; i++) {
-                    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
-                    const angle = (i / 4) * Math.PI * 2;
-                    leaf.position.x = Math.cos(angle) * 4;
-                    leaf.position.z = Math.sin(angle) * 4;
-                    leaf.position.y = 5;
-                    leaf.castShadow = true;
-                    leaf.receiveShadow = true;
-                    group.add(leaf);
-                }
+        const elapsedTime = (Date.now() - this.tob) / 1000;
+        this.health -= elapsedTime * this.ageDepl;
+        this.health -= this.waterNeed * 0.0001;
+        this.health -= this.foodNeed * 0.0001;
 
-                const stem = new THREE.Mesh(
-                    new THREE.CylinderGeometry(2, 2, 10, 8),
-                    stemMaterial
-                );
-                stem.castShadow = true;
-                stem.receiveShadow = true;
-                group.add(stem);
+        this.avoidNeed = 0;
 
-                this.mesh = group;
-                this.mesh.position.copy(this.position);
-                scene.add(this.mesh);
-                this.updateScale();
-            }
-
-            updateScale() {
-                const healthRatio = this.health / this.maxHealth;
-                this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
-            }
-
-            update() {
-                this.updateScale();
-            }
+        if (this.health <= 1) {
+            this.alive = false;
         }
 
-        class Water extends Entity {
-            constructor(position) {
-                super(position, 'water');
-                this.createMesh();
-            }
+        this.think(entities, waterLocations);
+        this.brainUpdateCounter++;
+        if (this.brainUpdateCounter >= 5) {
+            this.brain.adjustWeights(this.health - this.startHealth);
+            this.brainUpdateCounter = 0;
+        }
+        this.move();
 
-            createMesh() {
-                const geometry = new THREE.PlaneGeometry(20, 20);
-                const material = new THREE.MeshStandardMaterial({
-                    color: 0x4a90e2,
-                    metalness: 0.3,
-                    roughness: 0.4
-                });
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.rotation.x = -Math.PI / 2;
-                mesh.position.copy(this.position);
-                mesh.receiveShadow = true;
-                this.mesh = mesh;
-                scene.add(this.mesh);
-            }
+        if (this.mesh) {
+            this.mesh.position.copy(this.position);
+        }
+    }
+
+    attacked(predator) {
+        const healthDepl = this.startHealth * 0.1;
+        this.health -= healthDepl;
+        if (this.health <= 1) {
+            this.alive = false;
+            predator.health += this.startHealth;
+            predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+        }
+    }
+
+    eatPlant(plant) {
+        const plantNutrition = plant.maxHealth * 5;
+        this.health = Math.min(this.health + plantNutrition, this.maxHealth);
+        this.foodNeed = Math.max(0, this.foodNeed - plantNutrition * 0.01);
+        plant.health -= 1;
+        if (plant.health <= 0) {
+            plant.alive = false;
+        }
+    }
+
+    drinkWater() {
+        this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
+    }
+}
+
+class Plant extends Entity {
+    constructor(position) {
+        super(position, 'plant');
+        this.health = 5;
+        this.maxHealth = 5;
+        this.createMesh();
+    }
+
+    createMesh() {
+        const group = new THREE.Group();
+        const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+        const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+        
+        // Shared leaf geometry
+        const leafGeometry = new THREE.SphereGeometry(2, 4, 4);
+        
+        for (let i = 0; i < 4; i++) {
+            const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+            const angle = (i / 4) * Math.PI * 2;
+            leaf.position.x = Math.cos(angle) * 4;
+            leaf.position.z = Math.sin(angle) * 4;
+            leaf.position.y = 5;
+            leaf.castShadow = true;
+            leaf.receiveShadow = true;
+            group.add(leaf);
         }
 
-        class SpatialGrid {
-            constructor(worldWidth, worldHeight, cellSize) {
-                this.cellSize = cellSize;
-                this.cols = Math.ceil(worldWidth / cellSize);
-                this.rows = Math.ceil(worldHeight / cellSize);
-                this.grid = Array(this.cols * this.rows).fill(null).map(() => []);
-            }
+        const stem = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2, 10, 8),
+            stemMaterial
+        );
+        stem.castShadow = true;
+        stem.receiveShadow = true;
+        group.add(stem);
 
-            add(entity) {
-                const cellX = Math.floor(entity.position.x / this.cellSize);
-                const cellZ = Math.floor(entity.position.z / this.cellSize);
-                const index = cellZ * this.cols + cellX;
-                if (index >= 0 && index < this.grid.length) {
-                    this.grid[index].push(entity);
+        this.mesh = group;
+        this.mesh.position.copy(this.position);
+        scene.add(this.mesh);
+        this.updateScale();
+    }
+
+    updateScale() {
+        const healthRatio = this.health / this.maxHealth;
+        this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
+    }
+
+    update() {
+        this.updateScale();
+    }
+}
+
+class Water extends Entity {
+    constructor(position) {
+        super(position, 'water');
+        this.createMesh();
+    }
+
+    createMesh() {
+        const geometry = new THREE.PlaneGeometry(20, 20);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x4a90e2,
+            metalness: 0.3,
+            roughness: 0.4
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.copy(this.position);
+        mesh.receiveShadow = true;
+        this.mesh = mesh;
+        scene.add(this.mesh);
+    }
+}
+
+// ============================================================================
+// OPTIMIZATION TIPS FOR 1000+ ANIMALS
+// ============================================================================
+/*
+1. SPATIAL PARTITIONING - Use quadtree/grid to only check nearby animals:
+   - Instead of checking all 1000 animals in locate(), only check nearby ones
+   - Reduces O(n²) collision checks to O(n log n)
+
+2. AI THROTTLING - Not all animals think every frame:
+   - Stagger brain updates: only ~200 animals think per frame
+   - Use brainUpdateCounter but randomize when each animal updates
+   - Example: if (frameCount % 5 === this.id % 5) { this.think(...) }
+
+3. CULLING - Don't render offscreen animals:
+   - Use frustum culling or distance culling
+   - Disable mesh updates for animals far from camera
+
+4. INSTANCED RENDERING (Advanced):
+   - Create InstancedMesh for stationary animals
+   - Only use individual meshes for actively moving ones
+   - Example: inactive animals rendered as instanced, active ones as groups
+
+5. OBJECT POOLING:
+   - Pre-allocate all animal objects at startup
+   - Reuse them instead of creating/destroying
+   - Prevents garbage collection pauses
+
+Example spatial grid implementation:
+*/
+
+class SpatialGrid {
+    constructor(worldWidth, worldHeight, cellSize) {
+        this.cellSize = cellSize;
+        this.cols = Math.ceil(worldWidth / cellSize);
+        this.rows = Math.ceil(worldHeight / cellSize);
+        this.grid = Array(this.cols * this.rows).fill(null).map(() => []);
+    }
+
+    add(entity) {
+        const cellX = Math.floor(entity.position.x / this.cellSize);
+        const cellZ = Math.floor(entity.position.z / this.cellSize);
+        const index = cellZ * this.cols + cellX;
+        if (index >= 0 && index < this.grid.length) {
+            this.grid[index].push(entity);
+        }
+    }
+
+    getNearby(entity, range = 1) {
+        const cellX = Math.floor(entity.position.x / this.cellSize);
+        const cellZ = Math.floor(entity.position.z / this.cellSize);
+        const nearby = [];
+
+        for (let dx = -range; dx <= range; dx++) {
+            for (let dz = -range; dz <= range; dz++) {
+                const x = cellX + dx;
+                const z = cellZ + dz;
+                if (x >= 0 && x < this.cols && z >= 0 && z < this.rows) {
+                    nearby.push(...this.grid[z * this.cols + x]);
                 }
-            }
-
-            getNearby(entity, range = 1) {
-                const cellX = Math.floor(entity.position.x / this.cellSize);
-                const cellZ = Math.floor(entity.position.z / this.cellSize);
-                const nearby = [];
-
-                for (let dx = -range; dx <= range; dx++) {
-                    for (let dz = -range; dz <= range; dz++) {
-                        const x = cellX + dx;
-                        const z = cellZ + dz;
-                        if (x >= 0 && x < this.cols && z >= 0 && z < this.rows) {
-                            nearby.push(...this.grid[z * this.cols + x]);
-                        }
-                    }
-                }
-                return nearby;
-            }
-
-            clear() {
-                this.grid.forEach(cell => cell.length = 0);
             }
         }
+        return nearby;
+    }
+
+    clear() {
+        this.grid.forEach(cell => cell.length = 0);
+    }
+}
 
         // ============================================================================
         // WORLD STATE
@@ -1827,46 +1887,46 @@
         }
 
         function updateTargetInfo() {
-    const target = raycaster();
-    const targetInfoEl = document.querySelector('.hud-stats');
+            const target = raycaster();
+            const targetInfoEl = document.querySelector('.hud-stats');
 
-    if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
-        const healthPercent = Math.round((target.health / target.maxHealth) * 100);
-        const hungerPercent = Math.round(target.foodNeed);
-        const thirstPercent = Math.round(target.waterNeed);
-        const distance = player.position.distanceTo(target.position).toFixed(1);
+            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+                const healthPercent = Math.round((target.health / target.maxHealth) * 100);
+                const hungerPercent = Math.round(target.foodNeed);
+                const thirstPercent = Math.round(target.waterNeed);
+                const distance = player.position.distanceTo(target.position).toFixed(1);
 
-        document.getElementById('targetName').textContent = 
-            `${target.type.toUpperCase()}`;
-        document.getElementById('targetStats').textContent = 
-            `❤️${healthPercent}%  🍗${hungerPercent}% 💧${thirstPercent}%  📍${distance}m`;
-        targetInfoEl.classList.add('visible');
+                document.getElementById('targetName').textContent = 
+                    `${target.type.toUpperCase()}`;
+                document.getElementById('targetStats').textContent = 
+                    `❤️${healthPercent}%  🍗${hungerPercent}% 💧${thirstPercent}%  📍${distance}m`;
+                targetInfoEl.classList.add('visible');
 
-        // Update NN visualizer if enabled
-        if (nnVisEnabled && target instanceof Animal) {
-            if (!nnVisualizer) {
-                initNNVisualizer();
-            }
-            if (nnVisualizer && nnVisualizer.ctx) {
-                try {
-                    nnVisualizer.draw(target);
-                    nnLabel.textContent = 'Brain Activity';
-                } catch (e) {
-                    console.error('NN Draw error:', e);
-                    nnLabel.textContent = 'Error rendering';
+                // Update NN visualizer if enabled
+                if (nnVisEnabled && target instanceof Animal) {
+                    if (!nnVisualizer) {
+                        initNNVisualizer();
+                    }
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        try {
+                            nnVisualizer.draw(target);
+                            nnLabel.textContent = 'Brain Activity';
+                        } catch (e) {
+                            console.error('NN Draw error:', e);
+                            nnLabel.textContent = 'Error rendering';
+                        }
+                    }
+                }
+            } else {
+                targetInfoEl.classList.remove('visible');
+                if (nnVisEnabled) {
+                    nnLabel.textContent = 'No Target';
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
+                    }
                 }
             }
         }
-    } else {
-        targetInfoEl.classList.remove('visible');
-        if (nnVisEnabled) {
-            nnLabel.textContent = 'No Target';
-            if (nnVisualizer && nnVisualizer.ctx) {
-                nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
-            }
-        }
-    }
-}
 
         document.getElementById('resetBtn').addEventListener('click', initializeWorld);
 
