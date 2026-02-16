@@ -1495,6 +1495,8 @@
         let ticks = 0;
         let lastFpsUpdate = 0;
         let frameCount = 0;
+        // Add raycaster helper
+        let raycastHelper = new THREE.Raycaster();
 
         function initializeWorld() {
             // Clear scene
@@ -1717,15 +1719,27 @@
             direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
             direction.applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch);
 
+            raycastHelper.set(player.position, direction);
+
             let closest = null;
             let closestDist = Infinity;
 
             for (let entity of entities) {
-                if (!entity.mesh || !entity.alive) continue;
-                const dist = entity.position.distanceTo(player.position);
-                if (dist < 500 && dist < closestDist) {
-                    closest = entity;
-                    closestDist = dist;
+                if (!entity.mesh || !entity.alive || entity.type === 'plant') continue; // Exclude plants
+                
+                // Create a bounding sphere for the entity
+                const sphere = new THREE.Sphere(entity.position, 20);
+                
+                // Check if ray intersects the sphere
+                const target = new THREE.Vector3();
+                const intersection = raycastHelper.ray.intersectSphere(sphere, target);
+                
+                if (intersection) {
+                    const dist = player.position.distanceTo(intersection);
+                    if (dist < closestDist) {
+                        closest = entity;
+                        closestDist = dist;
+                    }
                 }
             }
 
@@ -1736,14 +1750,14 @@
             const target = raycaster();
             const targetInfoEl = document.getElementById('targetInfo');
 
-            if (target && target.alive) {
+            if (target && target.alive && (target.type === 'deer' || target.type === 'wolf')) {
                 const healthPercent = Math.round((target.health / target.maxHealth) * 100);
                 const hungerPercent = Math.round(target.foodNeed);
                 const thirstPercent = Math.round(target.waterNeed);
                 const distance = player.position.distanceTo(target.position).toFixed(1);
 
                 document.getElementById('targetName').textContent = 
-                    `[${target.type.toUpperCase()}]`;
+                    `${target.type.toUpperCase()}`;
                 document.getElementById('targetStats').textContent = 
                     `Health: ${healthPercent}%\nHunger: ${hungerPercent}%\nThirst: ${thirstPercent}%\nDistance: ${distance}m`;
                 targetInfoEl.classList.add('visible');
@@ -1766,7 +1780,7 @@
             } else {
                 targetInfoEl.classList.remove('visible');
                 if (nnVisEnabled) {
-                    nnLabel.textContent = 'No Target';
+                    nnLabel.textContent = '— No Target —';
                     if (nnVisualizer && nnVisualizer.ctx) {
                         nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
                     }
