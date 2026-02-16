@@ -1416,6 +1416,16 @@
                 }
             }
 
+            eatPlant(plant) {
+                const plantNutrition = plant.maxHealth * 5;
+                this.health = Math.min(this.health + plantNutrition, this.maxHealth);
+                this.foodNeed = Math.max(0, this.foodNeed - plantNutrition * 0.01);
+                plant.health -= 1;
+                if (plant.health <= 0) {
+                    plant.alive = false;
+                }
+            }
+
             drinkWater() {
                 this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
             }
@@ -1457,9 +1467,17 @@
                 this.mesh = group;
                 this.mesh.position.copy(this.position);
                 scene.add(this.mesh);
+                this.updateScale();
             }
 
-            update() {}
+            updateScale() {
+                const healthRatio = this.health / this.maxHealth;
+                this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
+            }
+
+            update() {
+                this.updateScale();
+            }
         }
 
         class Water extends Entity {
@@ -1560,6 +1578,7 @@
 
         function handleCollisions() {
             const animals = entities.filter(e => e instanceof Animal && e.alive);
+            const plants = entities.filter(e => e instanceof Plant && e.alive);
 
             // Wolf-Deer interactions
             for (let wolf of animals.filter(a => a.type === 'wolf')) {
@@ -1567,6 +1586,16 @@
                     const dist = tools.distance(wolf.position.x, wolf.position.z, deer.position.x, deer.position.z);
                     if (dist < 400) { // Close enough to attack
                         deer.attacked(wolf);
+                    }
+                }
+            }
+
+            // Deer-Plant interactions (NEW)
+            for (let deer of animals.filter(a => a.type === 'deer')) {
+                for (let plant of plants) {
+                    const dist = tools.distance(deer.position.x, deer.position.z, plant.position.x, plant.position.z);
+                    if (dist < 300) { // Close enough to eat
+                        deer.eatPlant(plant);
                     }
                 }
             }
