@@ -388,7 +388,29 @@
         // CONFIGURATION
         // ============================================================================
 
+        // Initial settings
         const scale = 2;
+        const CONFIG = {
+            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+            isDeviceTilt: window.DeviceOrientationEvent !== undefined,
+            initialDeer: Math.trunc(Number(20 * scale)),
+            initialWolves: Math.trunc(Number(5 * scale)),
+            initialPlants: Math.trunc(Number(30 * scale)),
+            worldWidth: Math.trunc(Number(850 * scale)),
+            worldHeight: Math.trunc(Number(600 * scale)),
+            maxDrawDistance: Math.trunc(Number(2000 * scale))
+        };
+        const player = {
+            position: new THREE.Vector3(400, 100, 300),
+            velocity: new THREE.Vector3(0, 0, 0),
+            speed: 40 * Math.log1p(scale),
+            sprintSpeed: 80 * Math.log1p(scale),
+            jumpForce: 300 * Math.log1p(scale),
+            isJumping: false,
+            yaw: 0,
+            pitch: 0,
+            targetObject: null
+        };
 
         // Settings panel
         let pendingScale = scale;
@@ -420,28 +442,6 @@
             player.sprintSpeed = 80 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
         }, true);
-
-        const CONFIG = {
-            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-            isDeviceTilt: window.DeviceOrientationEvent !== undefined,
-            initialDeer: Math.trunc(Number(20 * scale)),
-            initialWolves: Math.trunc(Number(5 * scale)),
-            initialPlants: Math.trunc(Number(30 * scale)),
-            worldWidth: Math.trunc(Number(850 * scale)),
-            worldHeight: Math.trunc(Number(600 * scale)),
-            maxDrawDistance: Math.trunc(Number(2000 * scale))
-        };
-        const player = {
-            position: new THREE.Vector3(400, 100, 300),
-            velocity: new THREE.Vector3(0, 0, 0),
-            speed: 40 * Math.log1p(scale),
-            sprintSpeed: 80 * Math.log1p(scale),
-            jumpForce: 300 * Math.log1p(scale),
-            isJumping: false,
-            yaw: 0,
-            pitch: 0,
-            targetObject: null
-        };
 
         // ============================================================================
         // THREE.JS SETUP
