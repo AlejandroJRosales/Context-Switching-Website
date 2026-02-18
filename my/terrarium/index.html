@@ -697,8 +697,8 @@
                 normY = (normY / mag) * scale;
             }
 
-            controls.joystickX = normX;
-            controls.joystickY = normY;
+            controls.joystickX = normX * Math.log1p(distance);
+            controls.joystickY = normY * Math.log1p(distance);
 
             joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
@@ -1713,9 +1713,9 @@
         // ============================================================================
 
         // Separate typed arrays avoid instanceof checks in hot loops
-        let animals = [];   // Animal instances only
-        let plants = [];    // Plant instances only
-        let entities = [];  // all (for compatibility with NN visualizer target search)
+        let animals = []; // Animal instances only
+        let plants = []; // Plant instances only
+        let entities = []; // all
         let terrain;
         let waterLocations = [];
         let ticks = 0;
@@ -1723,7 +1723,7 @@
         let frameCount = 0;
         let raycastHelper = new THREE.Raycaster();
 
-        // Spatial grid rebuilt each frame — cell size ≥ max vision range
+        // Spatial grid rebuilt each frame
         const spatialGrid = new SpatialGrid(
             CONFIG.worldWidth, CONFIG.worldHeight, 160
         );
@@ -1746,7 +1746,7 @@
             waterLocations = [];
             if (terrain) scene.remove(terrain);
 
-            // (Re)initialize instanced meshes — clears old instances
+            // Initialize instanced meshes - clears old instances
             initInstancedMeshes();
 
             // Add terrain
