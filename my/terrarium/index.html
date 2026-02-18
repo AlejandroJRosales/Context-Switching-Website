@@ -251,32 +251,76 @@
         /* Touch Joystick */
         .joystick-container {
             position: absolute;
-            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
-            left: max(20px, env(safe-area-inset-left));
-            width: clamp(80px, 20vw, 120px);
-            height: clamp(80px, 20vw, 120px);
-            background: rgba(0, 255, 0, 0.1);
-            border: 2px solid rgba(0, 255, 0, 0.3);
-            border-radius: 50%;
+            width: clamp(120px, 28vw, 180px);
+            height: clamp(120px, 28vw, 180px);
             pointer-events: auto;
             touch-action: none;
             display: none;
             align-items: center;
             justify-content: center;
+            /* Positioned dynamically via JS */
+            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
+            left: max(20px, env(safe-area-inset-left));
         }
 
         .joystick-container.show {
             display: flex;
         }
 
+        /* Outer base ring */
+        .joystick-base {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, rgba(0,255,0,0.08), rgba(0,0,0,0.45));
+            border: 2px solid rgba(0, 255, 0, 0.35);
+            box-shadow: 0 0 18px rgba(0,255,0,0.15), inset 0 0 18px rgba(0,0,0,0.5);
+        }
+
+        /* Tick marks for direction hints */
+        .joystick-base::before {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            border: 1px dashed rgba(0,255,0,0.18);
+        }
+
+        /* Inner dead-zone ring */
+        .joystick-deadzone {
+            position: absolute;
+            width: 30%;
+            height: 30%;
+            border-radius: 50%;
+            border: 1px solid rgba(0,255,0,0.2);
+            pointer-events: none;
+        }
+
         .joystick-knob {
-            width: clamp(30px, 8vw, 50px);
-            height: clamp(30px, 8vw, 50px);
-            background: rgba(0, 255, 0, 0.6);
+            width: clamp(38px, 9vw, 58px);
+            height: clamp(38px, 9vw, 58px);
+            background: radial-gradient(circle at 38% 35%, rgba(100,255,130,0.9), rgba(0,180,60,0.7));
             border: 2px solid #00ff00;
             border-radius: 50%;
             position: absolute;
             touch-action: none;
+            box-shadow: 0 0 12px rgba(0,255,0,0.6), inset 0 1px 3px rgba(255,255,255,0.3);
+            transition: box-shadow 0.1s ease;
+            will-change: transform;
+        }
+
+        .joystick-knob.active {
+            box-shadow: 0 0 22px rgba(0,255,0,0.9), inset 0 1px 3px rgba(255,255,255,0.3);
+        }
+
+        /* Floating joystick mode: hide until first touch */
+        .joystick-container.floating {
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .joystick-container.floating.visible {
+            opacity: 1;
         }
 
         /* Scanline effect */
@@ -328,8 +372,8 @@
             }
 
             .joystick-container {
-                width: clamp(60px, 15vw, 100px);
-                height: clamp(60px, 15vw, 100px);
+                width: clamp(100px, 18vw, 150px);
+                height: clamp(100px, 18vw, 150px);
             }
         }
     </style>
@@ -361,7 +405,10 @@
         <div class="scanlines"></div>
     </div>
 
-    <div class="joystick-container show" id="joystick"></div>
+    <div class="joystick-container show floating" id="joystick">
+        <div class="joystick-base"></div>
+        <div class="joystick-deadzone"></div>
+    </div>
 
     <div class="control-panel">
         <button id="controlBtn">Keyboard</button>
@@ -558,46 +605,52 @@
                 joystick.classList.add('show');
             } else {
                 joystick.classList.remove('show');
+                joystick.classList.remove('visible');
             }
         });
 
-        // Setup joystick
+        // ============================================================
+        // JOYSTICK SETUP — floating, multi-touch, dead zone
+        // ============================================================
         const joystickEl = document.getElementById('joystick');
         const joystickKnob = document.createElement('div');
         joystickKnob.className = 'joystick-knob';
         joystickEl.appendChild(joystickKnob);
 
-        let joystickStartX = 0;
-        let joystickStartY = 0;
+        const DEAD_ZONE = 0.08; // Fraction of radius below which input is zeroed
+
+        let joystickCenterX = 0;
+        let joystickCenterY = 0;
         let joystickRadius = 0;
+        let joystickTouchId = null; // Track the specific touch finger
 
-        joystickEl.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            const rect = joystickEl.getBoundingClientRect();
-            joystickStartX = rect.left + rect.width / 2;
-            joystickStartY = rect.top + rect.height / 2;
-            joystickRadius = rect.width / 2 - 25;
-            controls.joystickActive = true;
-            handleJoystickMove(touch.clientX, touch.clientY);
-        });
+        function getJoystickRadius() {
+            return joystickEl.getBoundingClientRect().width / 2 - 4;
+        }
 
-        document.addEventListener('touchmove', (e) => {
-            if (controls.joystickActive && e.touches.length > 0) {
-                handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
-            }
-        }, { passive: false });
+        function positionJoystick(x, y) {
+            // Center the joystick around the touch point, clamped to screen edges
+            const halfW = joystickEl.offsetWidth / 2;
+            const halfH = joystickEl.offsetHeight / 2;
+            const clampedX = Math.max(halfW, Math.min(window.innerWidth - halfW, x));
+            const clampedY = Math.max(halfH, Math.min(window.innerHeight - halfH, y));
+            joystickEl.style.left = (clampedX - halfW) + 'px';
+            joystickEl.style.top  = (clampedY - halfH) + 'px';
+            joystickEl.style.bottom = 'unset';
+            joystickCenterX = clampedX;
+            joystickCenterY = clampedY;
+        }
 
-        document.addEventListener('touchend', () => {
-            controls.joystickActive = false;
-            controls.joystickX = 0;
-            controls.joystickY = 0;
-            joystickKnob.style.transform = 'translate(-50%, -50%)';
-        });
+        function resetJoystickPosition() {
+            // Restore to CSS default bottom-left
+            joystickEl.style.left   = '';
+            joystickEl.style.top    = '';
+            joystickEl.style.bottom = '';
+        }
 
         function handleJoystickMove(x, y) {
-            let deltaX = x - joystickStartX;
-            let deltaY = y - joystickStartY;
+            let deltaX = x - joystickCenterX;
+            let deltaY = y - joystickCenterY;
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
             if (distance > joystickRadius) {
@@ -606,14 +659,93 @@
                 deltaY = Math.sin(angle) * joystickRadius;
             }
 
-            controls.joystickX = deltaX / joystickRadius;
-            controls.joystickY = deltaY / joystickRadius;
+            let normX = deltaX / joystickRadius;
+            let normY = deltaY / joystickRadius;
+
+            // Apply dead zone
+            const mag = Math.sqrt(normX * normX + normY * normY);
+            if (mag < DEAD_ZONE) {
+                normX = 0;
+                normY = 0;
+            } else {
+                // Re-scale so dead zone edge = 0, outer edge = 1
+                const scale = (mag - DEAD_ZONE) / (1 - DEAD_ZONE);
+                normX = (normX / mag) * scale;
+                normY = (normY / mag) * scale;
+            }
+
+            controls.joystickX = normX;
+            controls.joystickY = normY;
 
             joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
 
+        // Joystick touch start — left third of screen spawns joystick
+        document.addEventListener('touchstart', (e) => {
+            for (const touch of e.changedTouches) {
+                // Only spawn joystick from the left half of the screen when in touch mode
+                if (controls.controlMode !== 'touch') break;
+                if (joystickTouchId !== null) break; // already tracking a joystick touch
+
+                const target = touch.target;
+                if (target.tagName === 'BUTTON' || target.closest('button') ||
+                    target.closest('.control-panel') || target.closest('#settings-panel')) continue;
+
+                // Left ~45% of screen is joystick zone
+                if (touch.clientX < window.innerWidth * 0.5) {
+                    joystickTouchId = touch.identifier;
+                    positionJoystick(touch.clientX, touch.clientY);
+                    joystickRadius = getJoystickRadius();
+                    controls.joystickActive = true;
+                    joystickEl.classList.add('visible');
+                    joystickKnob.classList.add('active');
+                    handleJoystickMove(touch.clientX, touch.clientY);
+                    e.preventDefault();
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!controls.joystickActive || joystickTouchId === null) return;
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) {
+                    handleJoystickMove(touch.clientX, touch.clientY);
+                    e.preventDefault();
+                    break;
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) {
+                    joystickTouchId = null;
+                    controls.joystickActive = false;
+                    controls.joystickX = 0;
+                    controls.joystickY = 0;
+                    joystickKnob.style.transform = 'translate(-50%, -50%)';
+                    joystickKnob.classList.remove('active');
+                    joystickEl.classList.remove('visible');
+                    resetJoystickPosition();
+                    break;
+                }
+            }
+        });
+
+        document.addEventListener('touchcancel', (e) => {
+            joystickTouchId = null;
+            controls.joystickActive = false;
+            controls.joystickX = 0;
+            controls.joystickY = 0;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+            joystickKnob.classList.remove('active');
+            joystickEl.classList.remove('visible');
+            resetJoystickPosition();
+        });
+
         // Touch screen camera control and double tap jump
-        let cameraControlActive = false;
+        // Tracks right-side touches (non-joystick) separately per finger
+        let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
         let lastTapTime = 0;
@@ -621,69 +753,67 @@
         let lastTapY = 0;
 
         document.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
-            const target = touch.target;
+            for (const touch of e.changedTouches) {
+                const target = touch.target;
+                if (target.tagName === 'BUTTON' || target.closest('button') ||
+                    target.closest('.control-panel') || target.closest('#settings-panel')) continue;
 
-            // Don't intercept if touching buttons or interactive elements
-            if (target.tagName === 'BUTTON' || target.closest('button') || target.closest('.control-panel') || target.closest('#settings-panel')) {
-                return;
-            }
+                // Right half: camera look + double-tap jump
+                if (touch.clientX >= window.innerWidth * 0.5 && controls.controlMode === 'touch') {
+                    if (cameraTouchId !== null) continue; // already tracking camera
 
-            // Check if touch is outside the joystick area
-            const joystickRect = joystickEl.getBoundingClientRect();
-            
-            const isOutsideJoystick = (
-                touch.clientX < joystickRect.left || 
-                touch.clientX > joystickRect.right ||
-                touch.clientY < joystickRect.top || 
-                touch.clientY > joystickRect.bottom
-            );
+                    const currentTime = Date.now();
+                    const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
 
-            // Double tap detection for jump
-            const currentTime = Date.now();
-            const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
-            
-            if (isOutsideJoystick && controls.controlMode === 'touch' && e.touches.length === 1) {
-                if (currentTime - lastTapTime < 300 && tapDistance < 50) {
-                    // Jump
-                    if (!player.isJumping) {
-                        player.velocity.y = player.jumpForce;
-                        player.isJumping = true;
+                    if (currentTime - lastTapTime < 300 && tapDistance < 60) {
+                        if (!player.isJumping) {
+                            player.velocity.y = player.jumpForce;
+                            player.isJumping = true;
+                        }
+                    } else {
+                        cameraTouchId = touch.identifier;
+                        touchStartX = touch.clientX;
+                        touchStartY = touch.clientY;
                     }
-                } else {
-                    // Camera control
-                    cameraControlActive = true;
-                    touchStartX = touch.clientX;
-                    touchStartY = touch.clientY;
+
+                    lastTapTime = currentTime;
+                    lastTapX = touch.clientX;
+                    lastTapY = touch.clientY;
+                    e.preventDefault();
                 }
-                
-                lastTapTime = currentTime;
-                lastTapX = touch.clientX;
-                lastTapY = touch.clientY;
-                e.preventDefault();
             }
         }, { passive: false });
 
         document.addEventListener('touchmove', (e) => {
-            if (cameraControlActive && e.touches.length === 1) {
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - touchStartX;
-                const deltaY = touch.clientY - touchStartY;
+            if (cameraTouchId === null) return;
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === cameraTouchId) {
+                    const deltaX = touch.clientX - touchStartX;
+                    const deltaY = touch.clientY - touchStartY;
 
-                player.yaw -= deltaX * 0.005;
-                player.pitch -= deltaY * 0.005;
-                player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+                    player.yaw -= deltaX * 0.005;
+                    player.pitch -= deltaY * 0.005;
+                    player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
 
-                touchStartX = touch.clientX;
-                touchStartY = touch.clientY;
-                e.preventDefault();
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    e.preventDefault();
+                    break;
+                }
             }
         }, { passive: false });
 
         document.addEventListener('touchend', (e) => {
-            if (e.touches.length === 0) {
-                cameraControlActive = false;
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === cameraTouchId) {
+                    cameraTouchId = null;
+                    break;
+                }
             }
+        });
+
+        document.addEventListener('touchcancel', () => {
+            cameraTouchId = null;
         });
 
         // ============================================================================
