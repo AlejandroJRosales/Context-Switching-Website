@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Artificial Terrarium</title>
+    <!-- This code is made to be copy and pastable. Make it your own! :) -->
+    <!-- TODO: Add babies, adjust vision distance, fine tune input, weights, starting stats -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Neural Network Visualizer */
+        #nnVisualizerContainer {
+            position: absolute;
+            top: max(50px, calc(env(safe-area-inset-top) + 40px));
+            right: max(10px, env(safe-area-inset-right));
+            width: clamp(200px, 25vw, 400px);
+            height: clamp(200px, 25vw, 400px);
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #00ff00;
+            border-radius: 4px;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            z-index: 15;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+
+        #nnVisualizerContainer.show {
+            display: flex;
+        }
+
+        #nnCanvasWrapper {
+            flex: 1;
+            position: relative;
+            background: #000;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        #nnCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #nnLabel {
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            margin-top: 5px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* HUD Elements */
+        .hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+            font-size: clamp(10px, 2.5vw, 16px);
+        }
+
+        .hud-header {
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(14px, 3vw, 18px);
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        .hud-stats {
+            position: absolute;
+            top: max(50px, calc(env(safe-area-inset-top) + 40px));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(10px, 2vw, 14px);
+            line-height: 1.6;
+            background: rgba(0, 0, 0, 0.5);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            max-width: 90vw;
+            /* animation: pulse 2s infinite; */
+        }
+
+        .hud-controls {
+            position: absolute;
+            bottom: max(80px, calc(env(safe-area-inset-bottom) + 70px));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(9px, 1.8vw, 12px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            max-width: 90vw;
+            line-height: 1.5;
+            display: none;
+        }
+
+        .hud-controls.show {
+            display: block;
+        }
+
+        .hud-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30px;
+            height: 30px;
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .hud-crosshair::before,
+        .hud-crosshair::after {
+            content: '';
+            position: absolute;
+            background: #00ff00;
+        }
+
+        .hud-crosshair::before {
+            width: 10px;
+            height: 2px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hud-crosshair::after {
+            width: 2px;
+            height: 10px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .hud-target-info {
+            position: absolute;
+            top: max(10px, env(safe-area-inset-top));
+            right: max(10px, env(safe-area-inset-right));
+            font-size: clamp(10px, 2vw, 14px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 2vw, 15px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            min-width: 150px;
+            text-align: right;
+            display: none;
+            z-index: 10;
+        }
+
+        .hud-target-info.visible {
+            display: block;
+        }
+
+        .speed-indicator {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            left: max(10px, env(safe-area-inset-left));
+            font-size: clamp(9px, 2vw, 12px);
+            background: rgba(0, 0, 0, 0.7);
+            padding: clamp(8px, 1.5vw, 12px);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            min-width: 120px;
+            display: none;
+        }
+
+        .speed-indicator.show {
+            /* display: block; */
+        }
+
+        /* Control Buttons */
+        .control-panel {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-bottom));
+            right: max(10px, env(safe-area-inset-right));
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            max-width: 90vw;
+        }
+
+        button {
+            padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 20px);
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: clamp(9px, 2vw, 12px);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            pointer-events: auto;
+            touch-action: manipulation;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        button:hover, button:active {
+            background: rgba(0, 255, 0, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        /* Touch Joystick */
+        .joystick-container {
+            position: absolute;
+            width: clamp(120px, 28vw, 180px);
+            height: clamp(120px, 28vw, 180px);
+            pointer-events: auto;
+            touch-action: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            /* Positioned dynamically via JS */
+            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
+            left: max(20px, env(safe-area-inset-left));
+        }
+
+        .joystick-container.show {
+            display: flex;
+        }
+
+        /* Outer base ring */
+        .joystick-base {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, rgba(0,255,0,0.08), rgba(0,0,0,0.45));
+            border: 2px solid rgba(0, 255, 0, 0.35);
+            box-shadow: 0 0 18px rgba(0,255,0,0.15), inset 0 0 18px rgba(0,0,0,0.5);
+        }
+
+        /* Tick marks for direction hints */
+        .joystick-base::before {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            border: 1px dashed rgba(0,255,0,0.18);
+        }
+
+        /* Inner dead-zone ring */
+        .joystick-deadzone {
+            position: absolute;
+            width: 30%;
+            height: 30%;
+            border-radius: 50%;
+            border: 1px solid rgba(0,255,0,0.2);
+            pointer-events: none;
+        }
+
+        .joystick-knob {
+            width: clamp(38px, 9vw, 58px);
+            height: clamp(38px, 9vw, 58px);
+            background: radial-gradient(circle at 38% 35%, rgba(100,255,130,0.9), rgba(0,180,60,0.7));
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            position: absolute;
+            touch-action: none;
+            box-shadow: 0 0 12px rgba(0,255,0,0.6), inset 0 1px 3px rgba(255,255,255,0.3);
+            transition: box-shadow 0.1s ease;
+            will-change: transform;
+        }
+
+        .joystick-knob.active {
+            box-shadow: 0 0 22px rgba(0,255,0,0.9), inset 0 1px 3px rgba(255,255,255,0.3);
+        }
+
+        /* Floating joystick mode: hide until first touch */
+        .joystick-container.floating {
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .joystick-container.floating.visible {
+            opacity: 1;
+        }
+
+        /* Scanline effect */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.03),
+                rgba(0, 0, 0, 0.03) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .hud-header {
+                font-size: clamp(12px, 4vw, 16px);
+            }
+
+            .hud-stats {
+                font-size: clamp(9px, 2.5vw, 12px);
+            }
+
+            .control-panel {
+                bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
+            }
+
+            #nnVisualizerContainer {
+                width: clamp(150px, 35vw, 300px);
+                height: clamp(150px, 35vw, 300px);
+            }
+        }
+
+        @media (orientation: landscape) {
+            .hud-controls {
+                display: none !important;
+            }
+
+            .joystick-container {
+                width: clamp(100px, 18vw, 150px);
+                height: clamp(100px, 18vw, 150px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <!-- VR DOM Overlay (visible inside Quest browser during VR session) -->
+    <div id="vr-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;">
+        <div id="vr-hud" style="position:absolute; top:10px; left:10px; font-family:'Courier New',monospace; color:#00ff00; font-size:14px; text-shadow:0 0 8px rgba(0,255,0,0.6); background:rgba(0,0,0,0.5); padding:8px 12px; border:1px solid #00ff00; border-radius:4px;">
+            <div id="vr-stats">🌿 Loading...</div>
+        </div>
+        <div id="vr-controls-hint" style="position:absolute; bottom:15px; left:50%; transform:translateX(-50%); font-family:'Courier New',monospace; color:rgba(0,255,0,0.7); font-size:11px; text-align:center; background:rgba(0,0,0,0.5); padding:6px 12px; border-radius:4px;">
+            Left stick: Move · Right stick: Turn · A: Jump · B: Reset
+        </div>
+    </div>
+
+    <div class="hud">
+        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span></div>
+
+        <div class="hud-stats">
+            <div id="targetName">Find an Animal!</div>
+            <div id="targetStats"></div>
+        </div>
+
+        <div id="nnVisualizerContainer">
+            <div id="nnCanvasWrapper">
+                <canvas id="nnCanvas"></canvas>
+            </div>
+            <div id="nnLabel">No Target</div>
+        </div>
+
+        <div class="speed-indicator show" id="speedIndicator">
+            <div>SPEED</div>
+            <div id="speedValue">0.0</div>
+        </div>
+
+        <div class="hud-crosshair"></div>
+        <div class="scanlines"></div>
+    </div>
+
+    <div class="joystick-container show floating" id="joystick">
+        <div class="joystick-base"></div>
+        <div class="joystick-deadzone"></div>
+    </div>
+
+    <div class="control-panel">
+    </div>
+
+    <div style="position:absolute; bottom:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:20; display:flex; gap:8px;">
+        <button id="controlBtn">Keyboard</button>
+        <button id="settings-btn">⚙</button>
+    </div>
+
+    <div id="settings-panel" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.92); border:2px solid #00ff00; border-radius:4px; padding:24px 32px; z-index:200; font-family:'Courier New',monospace; color:#00ff00; min-width:260px; box-shadow:0 0 30px rgba(0,255,0,0.3);">
+        <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
+        <div style="margin-bottom:12px; font-size:12px;">
+            <label for="scale-slider">SCALE: <span id="scaleDisplay">2</span></label><br>
+            <div id="fps-counter">FPS: 60</div>
+            <div id="version-number">VERSION: 1.1.3</div>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="2"
+                style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
+        </div>
+        <div style="font-size:10px; color:rgba(0,255,0,0.6); margin-bottom:16px;">Changes take effect on Reset</div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <button id="nnVisBtn" style="flex:1;">Show NN</button>
+            <button id="resetBtn" style="flex:1;">Reset</button>
+        </div>
+        <div style="margin-bottom:12px;">
+            <button id="clearHudBtn" style="width:100%;">Clear HUD</button>
+        </div>
+        <button id="settings-close-btn" style="width:100%;">Close</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <!-- WebXR VRButton from Three.js examples -->
+    <script>
+    // Inlined VRButton from Three.js r134 examples
+    class VRButton {
+        static createButton(renderer, options) {
+            const button = document.createElement('button');
+            function showEnterVR() {
+                let currentSession = null;
+                async function onSessionStarted(session) {
+                    session.addEventListener('end', onSessionEnded);
+                    await renderer.xr.setSession(session);
+                    button.textContent = 'EXIT VR';
+                    currentSession = session;
+                }
+                function onSessionEnded() {
+                    currentSession.removeEventListener('end', onSessionEnded);
+                    button.textContent = 'ENTER VR';
+                    currentSession = null;
+                }
+                button.style.display = '';
+                button.style.cursor = 'pointer';
+                button.style.left = 'calc(50% - 60px)';
+                button.style.width = '120px';
+                button.textContent = 'ENTER VR';
+                const sessionInit = { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'dom-overlay'], domOverlay: { root: document.getElementById('vr-overlay') } };
+                button.onmouseenter = () => button.style.opacity = '1.0';
+                button.onmouseleave = () => button.style.opacity = '0.5';
+                button.onclick = () => {
+                    if (currentSession === null) {
+                        navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
+                    } else {
+                        currentSession.end();
+                    }
+                };
+            }
+            function disableButton() {
+                button.style.display = '';
+                button.style.cursor = 'auto';
+                button.style.left = 'calc(50% - 75px)';
+                button.style.width = '150px';
+                button.onmouseenter = null;
+                button.onmouseleave = null;
+                button.onclick = null;
+            }
+            function showWebXRNotFound() {
+                disableButton();
+                button.textContent = 'VR NOT SUPPORTED';
+            }
+            if ('xr' in navigator) {
+                button.id = 'VRButton';
+                button.style.display = 'none';
+                button.style.position = 'absolute';
+                button.style.bottom = 'max(20px, env(safe-area-inset-bottom))';
+                button.style.padding = '12px 6px';
+                button.style.border = '1px solid #00ff00';
+                button.style.borderRadius = '4px';
+                button.style.background = 'rgba(0,0,0,0.8)';
+                button.style.color = '#00ff00';
+                button.style.font = "12px 'Courier New', monospace";
+                button.style.textTransform = 'uppercase';
+                button.style.letterSpacing = '1px';
+                button.style.outline = 'none';
+                button.style.zIndex = '999';
+                button.style.opacity = '0.5';
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    supported ? showEnterVR() : showWebXRNotFound();
+                }).catch(showWebXRNotFound);
+                return button;
+            } else {
+                const message = document.createElement('a');
+                message.href = 'https://immersiveweb.dev/';
+                message.innerHTML = 'WEBXR NOT AVAILABLE';
+                return message;
+            }
+        }
+    }
+    </script>
+    <script>
+        // ============================================================================
+        // CONFIGURATION
+        // ============================================================================
+
+        // Initial settings
+        const scale = 2;
+        let pendingScale = scale;
+        const CONFIG = {
+            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+            isDeviceTilt: window.DeviceOrientationEvent !== undefined,
+            initialDeer: Math.trunc(Number(20 * scale)),
+            initialWolves: Math.trunc(Number(5 * scale)),
+            initialPlants: Math.trunc(Number(30 * scale)),
+            worldWidth: Math.trunc(Number(850 * scale)),
+            worldHeight: Math.trunc(Number(600 * scale)),
+            maxDrawDistance: Math.trunc(Number(2000 * scale))
+        };
+        const player = {
+            position: new THREE.Vector3(400, 100, 300),
+            velocity: new THREE.Vector3(0, 0, 0),
+            speed: 40 * Math.log1p(scale),
+            sprintSpeed: 100 * Math.log1p(scale),
+            jumpForce: 300 * Math.log1p(scale),
+            isJumping: false,
+            yaw: 180,
+            pitch: 0,
+            targetObject: null
+        };
+
+        // Settings tuner
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            document.getElementById('settings-panel').style.display = 'block';
+            document.getElementById('scale-slider').value = pendingScale;
+            document.getElementById('scaleDisplay').textContent = pendingScale;
+        });
+
+        document.getElementById('settings-close-btn').addEventListener('click', () => {
+            document.getElementById('settings-panel').style.display = 'none';
+        });
+
+        let hudCleared = false;
+        document.getElementById('clearHudBtn').addEventListener('click', () => {
+            hudCleared = !hudCleared;
+            const hudElements = [
+                document.querySelector('.hud'),
+                document.querySelector('.joystick-container'),
+                document.querySelector('.control-panel'),
+                document.getElementById('controlBtn'),
+            ];
+            hudElements.forEach(el => {
+                if (el) el.style.display = hudCleared ? 'none' : '';
+            });
+            document.getElementById('clearHudBtn').textContent = hudCleared ? 'Restore HUD' : 'Clear HUD';
+            document.getElementById('settings-panel').style.display = 'none';
+        });
+
+        document.getElementById('scale-slider').addEventListener('input', function() {
+            pendingScale = parseFloat(this.value);
+            document.getElementById('scaleDisplay').textContent = pendingScale;
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            // Patch CONFIG values using pendingScale before the existing reset logic runs
+            CONFIG.initialDeer = Math.trunc(20 * pendingScale);
+            CONFIG.initialWolves = Math.trunc(5 * pendingScale);
+            CONFIG.initialPlants = Math.trunc(30 * pendingScale);
+            CONFIG.worldWidth = Math.trunc(850 * pendingScale);
+            CONFIG.worldHeight = Math.trunc(600 * pendingScale);
+            CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
+            player.speed = 40 * Math.log1p(pendingScale);
+            player.sprintSpeed = 100 * Math.log1p(pendingScale);
+            player.jumpForce = 300 * Math.log1p(pendingScale);
+        }, true);
+
+        // ============================================================================
+        // THREE.JS SETUP
+        // ============================================================================
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 1500, CONFIG.maxDrawDistance);
+
+        const canvas = document.getElementById('canvas');
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            CONFIG.maxDrawDistance
+        );
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+
+        // ── WebXR ──────────────────────────────────────────────────────────────
+        renderer.xr.enabled = true;
+
+        // Add the Enter VR button
+        const vrBtn = VRButton.createButton(renderer);
+        document.body.appendChild(vrBtn);
+
+        // Show the dom-overlay div when a VR session is active
+        renderer.xr.addEventListener('sessionstart', () => {
+            document.getElementById('vr-overlay').style.display = 'block';
+        });
+        renderer.xr.addEventListener('sessionend', () => {
+            document.getElementById('vr-overlay').style.display = 'none';
+        });
+
+        // VR Controller state (Quest 2 has two controllers)
+        const vrState = {
+            moveX: 0,   // left thumbstick X
+            moveY: 0,   // left thumbstick Y
+            turnX: 0,   // right thumbstick X
+            jumpPressed: false,
+            resetPressed: false,
+            aWasDown: false,
+            bWasDown: false,
+        };
+
+        // XR reference space (populated when session starts)
+        let xrReferenceSpace = null;
+        renderer.xr.addEventListener('sessionstart', async () => {
+            xrReferenceSpace = await renderer.xr.getSession().requestReferenceSpace('local-floor')
+                .catch(() => renderer.xr.getReferenceSpace());
+        });
+        // ──────────────────────────────────────────────────────────────────────
+
+        camera.position.set(400, 300, 300);
+
+        // ============================================================================
+        // LIGHTING
+        // ============================================================================
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.set(800, 400, 600);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.left = -1000;
+        directionalLight.shadow.camera.right = 1000;
+        directionalLight.shadow.camera.top = 1000;
+        directionalLight.shadow.camera.bottom = -1000;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 2000;
+        scene.add(directionalLight);
+
+        // ============================================================================
+        // TOUCH & DEVICE CONTROLS
+        // ============================================================================
+
+        const controls = {
+            touchX: 0,
+            touchY: 0,
+            joystickActive: false,
+            joystickX: 0,
+            joystickY: 0,
+            deviceAlpha: 0,
+            deviceBeta: 0,
+            deviceGamma: 0,
+            hasPermission: false,
+            controlMode: 'touch' // 'touch' or 'keyboard'
+        };
+
+        const keys = {};
+
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (!player.isJumping) {
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mouse movement for camera look
+        document.addEventListener('mousemove', (e) => {
+            if (controls.controlMode === 'keyboard') {
+                const deltaX = e.movementX || 0;
+                const deltaY = e.movementY || 0;
+
+                player.yaw -= deltaX * 0.005;
+                player.pitch -= deltaY * 0.005;
+                player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+            }
+        });
+
+        // Request pointer lock for mouse
+        document.addEventListener('click', () => {
+            if (controls.controlMode === 'keyboard') {
+                canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+                canvas.requestPointerLock();
+            }
+        });
+
+        // Control mode toggle
+        document.getElementById('controlBtn').addEventListener('click', () => {
+            controls.controlMode = controls.controlMode === 'touch' ? 'keyboard' : 'touch';
+            const btn = document.getElementById('controlBtn');
+            btn.textContent = controls.controlMode === 'touch' ? 'Keyboard' : 'Touch';
+            
+            // Reset movement on switch
+            controls.joystickX = 0;
+            controls.joystickY = 0;
+            Object.keys(keys).forEach(k => keys[k] = false);
+            
+            // Update UI visibility
+            const joystick = document.getElementById('joystick');
+            if (controls.controlMode === 'touch') {
+                joystick.classList.add('show');
+            } else {
+                joystick.classList.remove('show');
+                joystick.classList.remove('visible');
+            }
+        });
+
+        // ============================================================
+        // JOYSTICK SETUP
+        // ============================================================
+        const joystickEl = document.getElementById('joystick');
+        const joystickKnob = document.createElement('div');
+        joystickKnob.className = 'joystick-knob';
+        joystickEl.appendChild(joystickKnob);
+
+        const DEAD_ZONE = 0.08; // Fraction of radius below which input is zeroed
+
+        let joystickCenterX = 0;
+        let joystickCenterY = 0;
+        let joystickRadius = 0;
+        let joystickTouchId = null; // Track the specific touch finger
+
+        function getJoystickRadius() {
+            return joystickEl.getBoundingClientRect().width / 2 - 4;
+        }
+
+        function positionJoystick(x, y) {
+            // Center the joystick around the touch point, clamped to screen edges
+            const halfW = joystickEl.offsetWidth / 2;
+            const halfH = joystickEl.offsetHeight / 2;
+            const clampedX = Math.max(halfW, Math.min(window.innerWidth - halfW, x));
+            const clampedY = Math.max(halfH, Math.min(window.innerHeight - halfH, y));
+            joystickEl.style.left = (clampedX - halfW) + 'px';
+            joystickEl.style.top  = (clampedY - halfH) + 'px';
+            joystickEl.style.bottom = 'unset';
+            joystickCenterX = clampedX;
+            joystickCenterY = clampedY;
+        }
+
+        function resetJoystickPosition() {
+            joystickEl.style.left = '';
+            joystickEl.style.top = '';
+            joystickEl.style.bottom = '';
+        }
+
+        function handleJoystickMove(x, y) {
+            let deltaX = x - joystickCenterX;
+            let deltaY = y - joystickCenterY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (distance > joystickRadius) {
+                const angle = Math.atan2(deltaY, deltaX);
+                deltaX = Math.cos(angle) * joystickRadius;
+                deltaY = Math.sin(angle) * joystickRadius;
+            }
+
+            let normX = deltaX / joystickRadius;
+            let normY = deltaY / joystickRadius;
+
+            // Apply dead zone
+            const mag = Math.sqrt(normX * normX + normY * normY);
+            if (mag < DEAD_ZONE) {
+                normX = 0;
+                normY = 0;
+            } else {
+                // Re-scale so dead zone edge = 0, outer edge = 1
+                const scale = (mag - DEAD_ZONE) / (1 - DEAD_ZONE);
+                normX = (normX / mag) * scale;
+                normY = (normY / mag) * scale;
+            }
+
+            controls.joystickX = normX * Math.log1p(distance);
+            controls.joystickY = normY * Math.log1p(distance);
+
+            joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+        }
+
+        // Joystick touch start
+        document.addEventListener('touchstart', (e) => {
+            for (const touch of e.changedTouches) {
+                // Only spawn joystick from the left half of the screen when in touch mode
+                if (controls.controlMode !== 'touch') break;
+                if (joystickTouchId !== null) break; // already tracking a joystick touch
+
+                const target = touch.target;
+                if (target.tagName === 'BUTTON' || target.closest('button') ||
+                    target.closest('.control-panel') || target.closest('#settings-panel')) continue;
+
+                // Left 45% of screen is joystick zone
+                if (touch.clientX < window.innerWidth * 0.5) {
+                    joystickTouchId = touch.identifier;
+                    positionJoystick(touch.clientX, touch.clientY);
+                    joystickRadius = getJoystickRadius();
+                    controls.joystickActive = true;
+                    joystickEl.classList.add('visible');
+                    joystickKnob.classList.add('active');
+                    handleJoystickMove(touch.clientX, touch.clientY);
+                    e.preventDefault();
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!controls.joystickActive || joystickTouchId === null) return;
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) {
+                    handleJoystickMove(touch.clientX, touch.clientY);
+                    e.preventDefault();
+                    break;
+                }
+            }
+        }, { passive: false });
+
+        function resetJoystick() {
+            joystickTouchId = null;
+            controls.joystickActive = false;
+            controls.joystickX = 0;
+            controls.joystickY = 0;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+            joystickKnob.classList.remove('active');
+            joystickEl.classList.remove('visible');
+            resetJoystickPosition();
+        }
+
+        document.addEventListener('touchend', (e) => {
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === joystickTouchId) { resetJoystick(); break; }
+            }
+        });
+
+        document.addEventListener('touchcancel', resetJoystick);
+
+        // Touch screen camera control and double tap jump
+        // Tracks right-side touches (non-joystick) separately per finger
+        let cameraTouchId = null;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        let lastTapY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            for (const touch of e.changedTouches) {
+                const target = touch.target;
+                if (target.tagName === 'BUTTON' || target.closest('button') ||
+                    target.closest('.control-panel') || target.closest('#settings-panel')) continue;
+
+                // Right half: camera look + double-tap jump
+                if (touch.clientX >= window.innerWidth * 0.5 && controls.controlMode === 'touch') {
+                    if (cameraTouchId !== null) continue; // already tracking camera
+
+                    const currentTime = Date.now();
+                    const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+
+                    if (currentTime - lastTapTime < 300 && tapDistance < 60) {
+                        if (!player.isJumping) {
+                            player.velocity.y = player.jumpForce;
+                            player.isJumping = true;
+                        }
+                    } else {
+                        cameraTouchId = touch.identifier;
+                        touchStartX = touch.clientX;
+                        touchStartY = touch.clientY;
+                    }
+
+                    lastTapTime = currentTime;
+                    lastTapX = touch.clientX;
+                    lastTapY = touch.clientY;
+                    e.preventDefault();
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (cameraTouchId === null) return;
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === cameraTouchId) {
+                    const deltaX = touch.clientX - touchStartX;
+                    const deltaY = touch.clientY - touchStartY;
+
+                    player.yaw -= deltaX * 0.005;
+                    player.pitch -= deltaY * 0.005;
+                    player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    e.preventDefault();
+                    break;
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchend', (e) => {
+            for (const touch of e.changedTouches) {
+                if (touch.identifier === cameraTouchId) {
+                    cameraTouchId = null;
+                    break;
+                }
+            }
+        });
+
+        document.addEventListener('touchcancel', () => {
+            cameraTouchId = null;
+        });
+
+        // ============================================================================
+        // TERRAIN GENERATION
+        // ============================================================================
+
+        function createTerrain() {
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
+            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
+
+            const positionAttribute = geometry.getAttribute('position');
+            const positions = positionAttribute.array;
+
+            for (let i = 2; i < positions.length; i += 3) {
+                positions[i] = 5;
+            }
+            positionAttribute.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            const terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
+            return terrain;
+        }
+
+        // ============================================================================
+        // NEURAL NETWORK UTILITIES
+        // ============================================================================
+
+        const tools = {
+            distSq(x1, y1, x2, y2) {
+                return (x2 - x1) ** 2 + (y2 - y1) ** 2;
+            },
+
+            clamp(value, minimum, maximum) {
+                return Math.max(Math.min(value, maximum), minimum);
+            },
+
+            sigmoid(x) {
+                x = Math.max(-500, Math.min(500, x));
+                return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
+            },
+
+            softmax(vector) {
+                const max = Math.max(...vector);
+                const exps = vector.map(v => Math.exp(v - max));
+                const sum = exps.reduce((a, b) => a + b, 0);
+                return exps.map(exp => exp / sum);
+            },
+
+            random(min = 0, max = 1) {
+                return Math.random() * (max - min) + min;
+            }
+        };
+
+        class DenseNetwork {
+            // Uses flat Float32Arrays for weights/biases/velocities.
+            // Pre-allocates layer activation buffers so propagate() is zero-allocation.
+            constructor(inputDims, layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
+                this.layerDims = [inputDims, ...layerDims];
+                this.learningRate = learningRate;
+                this.momentum = momentum;
+                this.weightDecay = weightDecay;
+                this.cost = 0.0;
+                this.lastCost = 0.0;
+                this.costHistoryLen = 0;
+                this.output = null;
+
+                const L = this.layerDims.length - 1; // number of weight layers
+                this.weights = [];         // Float32Array per layer, row-major [in * out]
+                this.biases = [];          // Float32Array per layer
+                this.weightVelocity = [];
+                this.biasVelocity = [];
+                this.activations = [];     // pre-allocated output buffers per layer
+
+                for (let i = 0; i < L; i++) {
+                    const inD = this.layerDims[i], outD = this.layerDims[i + 1];
+                    const limit = Math.sqrt(6.0 / (inD + outD));
+                    const w = new Float32Array(inD * outD);
+                    for (let k = 0; k < w.length; k++) w[k] = tools.random(-limit, limit);
+                    this.weights.push(w);
+                    this.biases.push(new Float32Array(outD));
+                    this.weightVelocity.push(new Float32Array(inD * outD));
+                    this.biasVelocity.push(new Float32Array(outD));
+                    this.activations.push(new Float32Array(outD));
+                }
+            }
+
+            propagate(inputs) {
+                // Zero-allocation forward pass
+                let prev = inputs;
+                const L = this.layerDims.length - 1;
+
+                for (let l = 0; l < L; l++) {
+                    const outD = this.layerDims[l + 1];
+                    const inD = this.layerDims[l];
+                    const out = this.activations[l];
+                    const w = this.weights[l];
+                    const b = this.biases[l];
+                    const isLast = l === L - 1;
+
+                    // out = bias + W^T * prev
+                    out.set(b);
+                    for (let i = 0; i < inD; i++) {
+                        const pi = prev[i];
+                        const base = i * outD;
+                        for (let j = 0; j < outD; j++) {
+                            out[j] += pi * w[base + j];
+                        }
+                    }
+
+                    if (!isLast) {
+                        // sigmoid activation (numerically stable)
+                        for (let j = 0; j < outD; j++) {
+                            const v = Math.max(-500, Math.min(500, out[j]));
+                            out[j] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
+                        }
+                    }
+
+                    prev = out;
+                }
+
+                // softmax on last layer output (in-place, manual loop — no spread)
+                const last = this.activations[L - 1];
+                let maxV = last[0];
+                for (let j = 1; j < last.length; j++) if (last[j] > maxV) maxV = last[j];
+                let sum = 0;
+                for (let j = 0; j < last.length; j++) { last[j] = Math.exp(last[j] - maxV); sum += last[j]; }
+                for (let j = 0; j < last.length; j++) last[j] /= sum;
+
+                return last; // returns the pre-allocated buffer (do not store reference)
+            }
+
+            think(inputs) {
+                const values = this.propagate(inputs);
+                let bestIdx = 0, bestVal = values[0];
+                for (let j = 1; j < values.length; j++) {
+                    if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
+                }
+                this.output = bestIdx;
+                return bestIdx;
+            }
+
+            getAdaptiveLr() {
+                if (this.costHistoryLen > 0 && this.cost < this.lastCost) {
+                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 1.05 * 0.001));
+                } else {
+                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 0.95 * 0.001));
+                }
+                this.lastCost = this.cost;
+                this.costHistoryLen = Math.min(this.costHistoryLen + 1, 100);
+                return this.learningRate;
+            }
+
+            adjustWeights(cost) {
+                this.cost = cost;
+                const nc  = Math.max(-1, Math.min(1, cost));
+                const lr  = this.getAdaptiveLr();
+                const mom = this.momentum;
+                const wd  = this.weightDecay;
+                const wd1 = 1 - wd;
+                const wdB = 1 - wd * 0.1;
+
+                for (let l = 0; l < this.weights.length; l++) {
+                    const w  = this.weights[l];
+                    const wv = this.weightVelocity[l];
+                    const grad = lr * nc;
+                    for (let k = 0; k < w.length; k++) {
+                        const vel = mom * wv[k] - grad;
+                        wv[k] = vel;
+                        w[k] = w[k] * wd1 + vel;
+                    }
+
+                    const b  = this.biases[l];
+                    const bv = this.biasVelocity[l];
+                    const gradB = lr * 0.1 * nc;
+                    for (let k = 0; k < b.length; k++) {
+                        const vel = mom * bv[k] - gradB;
+                        bv[k] = vel;
+                        b[k] = b[k] * wdB + vel;
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // SPATIAL GRID (amortized neighbor queries()
+        // ============================================================================
+
+        class SpatialGrid {
+            constructor(worldW, worldH, cellSize) {
+                this.cellSize = cellSize;
+                this.cols = Math.ceil(worldW / cellSize);
+                this.rows = Math.ceil(worldH / cellSize);
+                this.cells = new Map();
+            }
+
+            _key(cx, cy) { return cy * this.cols + cx; }
+
+            _cell(x, z) {
+                const cx = Math.floor(x / this.cellSize) % this.cols;
+                const cy = Math.floor(z / this.cellSize) % this.rows;
+                return this._key((cx + this.cols) % this.cols, (cy + this.rows) % this.rows);
+            }
+
+            clear() { this.cells.clear(); }
+
+            insert(entity) {
+                const k = this._cell(entity.position.x, entity.position.z);
+                let bucket = this.cells.get(k);
+                if (!bucket) { bucket = []; this.cells.set(k, bucket); }
+                bucket.push(entity);
+            }
+
+            // Yields all entities in cells within radius r of (x, z)
+            // Uses squared-distance threshold for the caller to refine
+            *query(x, z, r) {
+                const cs = this.cellSize;
+                const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
+                const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
+                for (let cy = cy0; cy <= cy1; cy++) {
+                    for (let cx = cx0; cx <= cx1; cx++) {
+                        const k = this._key(
+                            ((cx % this.cols) + this.cols) % this.cols,
+                            ((cy % this.rows) + this.rows) % this.rows
+                        );
+                        const bucket = this.cells.get(k);
+                        if (bucket) yield* bucket;
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // INSTANCED MESH RENDERER
+        // Supports up to MAX_INSTANCES animals per type.
+        // ============================================================================
+
+        const MAX_INSTANCES = 12000;
+
+        function createRoundedBoxGeometry(width, height, depth, radius = 2) {
+            const shape = new THREE.Shape();
+            const w = width / 2, h = height / 2;
+            shape.moveTo(-w + radius, -h);
+            shape.lineTo(w - radius, -h);
+            shape.quadraticCurveTo(w, -h, w, -h + radius);
+            shape.lineTo(w, h - radius);
+            shape.quadraticCurveTo(w, h, w - radius, h);
+            shape.lineTo(-w + radius, h);
+            shape.quadraticCurveTo(-w, h, -w, h - radius);
+            shape.lineTo(-w, -h + radius);
+            shape.quadraticCurveTo(-w, -h, -w + radius, -h);
+            const geometry = new THREE.ExtrudeGeometry(shape, {
+                depth, bevelEnabled: true,
+                bevelThickness: radius * 0.5, bevelSize: radius * 0.7, bevelSegments: 3
+            });
+            geometry.center();
+            return geometry;
+        }
+
+        const SHARED_GEOMETRIES = {
+            sheep: {
+                body: createRoundedBoxGeometry(12, 12, 25, 2.5),
+                head: new THREE.SphereGeometry(7, 15, 15),
+                leg:  createRoundedBoxGeometry(3, 18, 3, 1)
+            },
+            wolf: {
+                body: createRoundedBoxGeometry(7, 11, 20, 2),
+                head: new THREE.SphereGeometry(6, 15, 15),
+                leg:  createRoundedBoxGeometry(2.5, 18, 2.5, 0.8)
+            }
+        };
+
+        const SHARED_MATERIALS = {
+            sheep: new THREE.MeshStandardMaterial({ color: 0xE6E6E6 }),
+            wolf:  new THREE.MeshStandardMaterial({ color: 0x81613e })
+        };
+
+        const PART_OFFSETS = {
+            sheep: {
+                head:  new THREE.Vector3(0, 5, 15),
+                legFL: new THREE.Vector3(-5, -9,  8),
+                legFR: new THREE.Vector3( 5, -9,  8),
+                legBL: new THREE.Vector3(-5, -9, -8),
+                legBR: new THREE.Vector3( 5, -9, -8),
+            },
+            wolf: {
+                head:  new THREE.Vector3(0, 5, 15),
+                legFL: new THREE.Vector3(-5, -9,  8),
+                legFR: new THREE.Vector3( 4, -9,  8),
+                legBL: new THREE.Vector3(-5, -9, -8),
+                legBR: new THREE.Vector3( 4, -9, -8),
+            },
+        };
+
+        const instancedMeshes = {};
+
+        function initInstancedMeshes() {
+            for (const type of ['sheep', 'wolf']) {
+                if (instancedMeshes[type]) {
+                    for (const part of Object.values(instancedMeshes[type])) scene.remove(part);
+                }
+                const geom = SHARED_GEOMETRIES[type];
+                const mat  = SHARED_MATERIALS[type];
+                instancedMeshes[type] = {
+                    body:  new THREE.InstancedMesh(geom.body, mat, MAX_INSTANCES),
+                    head:  new THREE.InstancedMesh(geom.head, mat, MAX_INSTANCES),
+                    legFL: new THREE.InstancedMesh(geom.leg,  mat, MAX_INSTANCES),
+                    legFR: new THREE.InstancedMesh(geom.leg,  mat, MAX_INSTANCES),
+                    legBL: new THREE.InstancedMesh(geom.leg,  mat, MAX_INSTANCES),
+                    legBR: new THREE.InstancedMesh(geom.leg,  mat, MAX_INSTANCES),
+                };
+                for (const mesh of Object.values(instancedMeshes[type])) {
+                    mesh.castShadow = true;
+                    mesh.frustumCulled = false;
+                    scene.add(mesh);
+                }
+            }
+        }
+
+        // Reusable objects t0 avoid per-frame allocation
+        const _mat4  = new THREE.Matrix4();
+        const _local = new THREE.Vector3();
+        const _world = new THREE.Vector3();
+        const _quat  = new THREE.Quaternion();
+        const _yAxis = new THREE.Vector3(0, 1, 0);
+        const _scale = new THREE.Vector3(1, 1, 1);
+
+        function updateInstancedMeshes(animals) {
+            for (const type of ['sheep', 'wolf']) {
+                const im      = instancedMeshes[type];
+                const offsets = PART_OFFSETS[type];
+                if (!im) continue;
+                let idx = 0;
+
+                for (const a of animals) {
+                    if (!a.alive || a.type !== type) continue;
+                    if (idx >= MAX_INSTANCES) break;
+
+                    const angle = DIRECTION_ANGLES[a.outputIdx % 8];
+                    _quat.setFromAxisAngle(_yAxis, angle);
+
+                    // Body at animal world position
+                    _world.set(a.position.x, a.position.y, a.position.z);
+                    _mat4.compose(_world, _quat, _scale);
+                    im.body.setMatrixAt(idx, _mat4);
+
+                    // Each other part: rotate local offset by animal yaw, then add world pos
+                    for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
+                        _local.copy(offsets[part]).applyQuaternion(_quat).add(_world);
+                        _mat4.compose(_local, _quat, _scale);
+                        im[part].setMatrixAt(idx, _mat4);
+                    }
+
+                    idx++;
+                }
+
+                for (const mesh of Object.values(im)) {
+                    mesh.count = idx;
+                    mesh.instanceMatrix.needsUpdate = true;
+                }
+            }
+        }
+
+        // Direction angles matching coordChanges order
+        const DIRECTION_ANGLES = [
+            Math.PI / 2, -Math.PI / 2, 0, Math.PI,
+            Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4
+        ];
+
+        // ============================================================================
+        // ENTITY SYSTEM
+        // ============================================================================
+
+        class Entity {
+            constructor(position, type) {
+                this.position = new THREE.Vector3(...position);
+                this.type = type;
+                this.mesh = null;
+                this.health = 100;
+                this.alive = true;
+            }
+
+            update(deltaTime) {}
+
+            remove() {
+                if (this.mesh) scene.remove(this.mesh);
+            }
+        }
+
+        // Static movement tables per type
+        const COORD_CHANGES = {
+            sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
+            wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
+        };
+
+        class Animal extends Entity {
+            constructor(position, type) {
+                super(position, type);
+                this.speed = type === 'wolf' ? 35 : 25;
+                this.startHealth = type === 'wolf' ? 120 : 100;
+                this.health = this.startHealth;
+                this.maxHealth = this.health;
+                this.visionDistance = tools.random(80, 150);
+                this.visionDistSq = this.visionDistance * this.visionDistance;
+                this.generation = 0;
+
+                this.waterNeed = Math.random() * 0.02 + 0.01;
+                this.foodNeed = Math.random() * 0.02 + 0.01;
+                this.reproductionNeed = Math.random() * 0.02 + 0.01;
+                this.avoidNeed = 0;
+
+                this.waterIncrement = this.health * 0.0001;
+                this.foodIncrement = this.health * 0.0001;
+                this.ageDepl = this.health * 0.00002;
+
+                // Flat memory (no heap allocation per look-up)
+                this.memPredatorX = 0; this.memPredatorZ = 0; this.hasPredator = false;
+                this.memFoodX = 0;     this.memFoodZ = 0;     this.hasFood = false;
+                this.memWaterX = 0;    this.memWaterZ = 0;    this.hasWater = false;
+                this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
+                this.priority = null;
+
+                this.brain = new DenseNetwork(6, [6, 9, 8], 0.01);
+                this.outputIdx = 0;
+                this.brainUpdateCounter = 0;
+
+                this.focusX = this.position.x;
+                this.focusZ = this.position.z;
+                this.tob = Date.now();
+
+                this.mesh = null; // rendered via InstancedMesh
+            }
+
+            remove() { /* no individual mesh */ }
+
+            locate(grid, waterLocations) {
+                const px = this.position.x, pz = this.position.z;
+                const vd = this.visionDistSq;
+                const isSheep = this.type === 'sheep';
+                let bestPredDist = Infinity, bestFoodDist = Infinity,
+                    bestMateDist = Infinity, bestWaterDist = Infinity;
+
+                for (const obj of grid.query(px, pz, this.visionDistance)) {
+                    if (obj === this) continue;
+                    const dx = obj.position.x - px, dz = obj.position.z - pz;
+                    const d = dx*dx + dz*dz;
+                    if (d > vd) continue;
+
+                    if (isSheep) {
+                        if (obj.type === 'wolf' && d < bestPredDist) {
+                            bestPredDist = d;
+                            this.memPredatorX = obj.position.x; this.memPredatorZ = obj.position.z;
+                            this.hasPredator = true; this.avoidNeed = 0.5;
+                        } else if (obj.type === 'sheep' && d < bestMateDist) {
+                            bestMateDist = d;
+                            this.memMateX = obj.position.x; this.memMateZ = obj.position.z;
+                            this.hasMate = true;
+                        }
+                    } else {
+                        if (obj.type === 'sheep' && d < bestFoodDist) {
+                            bestFoodDist = d;
+                            this.memFoodX = obj.position.x; this.memFoodZ = obj.position.z;
+                            this.hasFood = true;
+                        }
+                    }
+                }
+
+                for (const water of waterLocations) {
+                    const dx = water[0]-px, dz = water[1]-pz;
+                    const d = dx*dx + dz*dz;
+                    if (d < vd && d < bestWaterDist) {
+                        bestWaterDist = d;
+                        this.memWaterX = water[0]; this.memWaterZ = water[1];
+                        this.hasWater = true;
+                    }
+                }
+
+                // Expire stale memories
+                if (this.hasPredator && tools.distSq(px,pz,this.memPredatorX,this.memPredatorZ) > vd) this.hasPredator = false;
+                if (this.hasFood && tools.distSq(px,pz,this.memFoodX, this.memFoodZ) > vd) this.hasFood = false;
+                if (this.hasWater && tools.distSq(px,pz,this.memWaterX, this.memWaterZ) > vd) this.hasWater = false;
+                if (this.hasMate && tools.distSq(px,pz,this.memMateX, this.memMateZ) > vd) this.hasMate = false;
+            }
+
+            think(grid, waterLocations) {
+                this.locate(grid, waterLocations);
+
+                // Inline priority selection
+                let bestNeed = -1;
+                if (this.hasPredator && this.avoidNeed > bestNeed) {
+                    bestNeed = this.avoidNeed; this.focusX = this.memPredatorX; this.focusZ = this.memPredatorZ;
+                    this.priority = 'predator';
+                }
+                if (this.hasFood && this.foodNeed > bestNeed) {
+                    bestNeed = this.foodNeed; this.focusX = this.memFoodX; this.focusZ = this.memFoodZ;
+                    this.priority = 'food';
+                }
+                if (this.hasWater && this.waterNeed > bestNeed) {
+                    bestNeed = this.waterNeed; this.focusX = this.memWaterX; this.focusZ = this.memWaterZ;
+                    this.priority = 'water';
+                }
+                if (this.hasMate && this.reproductionNeed > bestNeed) {
+                    this.focusX = this.memMateX; this.focusZ = this.memMateZ;
+                    this.priority = 'mate';
+                }
+
+                const inputs = [
+                    Math.abs(this.position.x - this.focusX) / CONFIG.worldWidth,
+                    Math.abs(this.position.z - this.focusZ) / CONFIG.worldHeight,
+                    this.type === 'wolf' ? -1 : 1,
+                    this.foodNeed, this.waterNeed, this.reproductionNeed
+                ];
+                this.outputIdx = this.brain.think(inputs);
+            }
+
+            move() {
+                const cc = COORD_CHANGES[this.type][this.outputIdx];
+                this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
+                this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
+            }
+
+            update(now, grid, waterLocations) {
+                this.waterNeed += this.waterIncrement;
+                this.foodNeed  += this.foodIncrement;
+                this.health -= ((now - this.tob) / 1000) * this.ageDepl
+                             + this.waterNeed * 0.0001
+                             + this.foodNeed  * 0.0001;
+                this.avoidNeed = 0;
+                if (this.health <= 1) { this.alive = false; return; }
+
+                this.think(grid, waterLocations);
+                if (++this.brainUpdateCounter >= 5) {
+                    this.brain.adjustWeights(this.health - this.startHealth);
+                    this.brainUpdateCounter = 0;
+                }
+                this.move();
+            }
+
+            attacked(predator) {
+                this.health -= this.startHealth * 0.1;
+                if (this.health <= 1) {
+                    this.alive = false;
+                    predator.health += this.startHealth;
+                    predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+                }
+            }
+
+            eatPlant(plant) {
+                const nutrition = plant.maxHealth * 5;
+                this.health = Math.min(this.health + nutrition, this.maxHealth);
+                this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
+                plant.health -= 1;
+                if (plant.health <= 0) plant.alive = false;
+            }
+
+            drinkWater() {
+                this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 10);
+            }
+        }
+
+        class Plant extends Entity {
+            constructor(position) {
+                super(position, 'plant');
+                this.health = 5;
+                this.maxHealth = 5;
+                this.createMesh();
+            }
+
+            createMesh() {
+                const group = new THREE.Group();
+                const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+                const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+                
+                // Shared leaf geometry
+                const leafGeometry = new THREE.SphereGeometry(2, 4, 4);
+                
+                for (let i = 0; i < 4; i++) {
+                    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+                    const angle = (i / 4) * Math.PI * 2;
+                    leaf.position.x = Math.cos(angle) * 4;
+                    leaf.position.z = Math.sin(angle) * 4;
+                    leaf.position.y = 5;
+                    leaf.castShadow = true;
+                    leaf.receiveShadow = true;
+                    group.add(leaf);
+                }
+
+                const stem = new THREE.Mesh(
+                    new THREE.CylinderGeometry(2, 2, 10, 8),
+                    stemMaterial
+                );
+                stem.castShadow = true;
+                stem.receiveShadow = true;
+                group.add(stem);
+
+                this.mesh = group;
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
+                this.updateScale();
+            }
+
+            updateScale() {
+                const healthRatio = this.health / this.maxHealth;
+                this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
+            }
+
+            update() {
+                this.updateScale();
+            }
+        }
+
+        class Water extends Entity {
+            constructor(position) {
+                super(position, 'water');
+                this.createMesh();
+            }
+
+            createMesh() {
+                const geometry = new THREE.PlaneGeometry(20, 20);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x4a90e2,
+                    metalness: 0.3,
+                    roughness: 0.4
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.copy(this.position);
+                mesh.receiveShadow = true;
+                this.mesh = mesh;
+                scene.add(this.mesh);
+            }
+        }
+
+        // ============================================================================
+        // NEURAL NETWORK VISUALIZER CLASS
+        // ============================================================================
+
+        class NNVisualizer {
+            constructor(canvasElement, screenSize) {
+                this.canvas = canvasElement;
+                this.ctx = this.canvas.getContext('2d');
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.node_size = 15;
+                this.scale = 0.75;
+                this.fontSizeBase = 30;
+            }
+
+            draw(animal) {
+                const nn = animal.brain;
+                const markedNodeIdx = animal.outputIdx;
+
+                // Clear with transparency instead of filling background
+                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
+
+                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
+                const weights = this.extractWeights(nn);
+                
+                if (weights.length > 0) {
+                    const [minWeight, maxWeight] = this.getWeightRange(weights);
+                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
+                }
+                
+                // Draw label after nodes
+                this.drawLabel(nn);
+            }
+
+            drawLabel(nn) {
+                const networkLabel = this.getNetworkLabel(nn);
+                
+                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+                this.ctx.font = `10px Arial`;
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(networkLabel, this.w_width / 2, this.w_height - 5);
+            }
+
+            getNetworkLabel(nn) {
+                return nn.weights?.[0]?.W_i !== undefined ? 'LSTMNetwork' : 'DenseNetwork';
+            }
+
+            drawNodes(nn, markedNodeIdx) {
+                const layerDims = this.getLayerDims(nn);
+                const padding = this.w_width * 0.1;
+                const availableWidth = this.w_width - (padding * 2);
+                const availableHeight = this.w_height - (padding * 2);
+                
+                const w_stride = availableWidth / Math.max(layerDims.length - 1, 1);
+                const nn_len = layerDims.length;
+                const allNodesPos = [];
+
+                this.node_size = Math.min(this.w_height * 0.04, 5);
+
+                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
+                    const l_nodes_pos = [];
+                    const num_nodes = layerDims[l_idx];
+                    const h_stride = availableHeight / Math.max(num_nodes - 1, 1);
+
+                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
+                        const x = padding + (l_idx * w_stride);
+                        const y = padding + (n_idx * h_stride);
+
+                        let nodeColor = 'rgba(0, 255, 0, 0.8)';
+                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
+                            nodeColor = 'rgba(255, 0, 0, 1)';
+                        }
+
+                        this.ctx.strokeStyle = nodeColor;
+                        this.ctx.lineWidth = 2;
+                        this.ctx.beginPath();
+                        this.ctx.arc(x, y, this.node_size, 0, 2 * Math.PI);
+                        this.ctx.stroke();
+
+                        l_nodes_pos.push([x, y]);
+                    }
+                    allNodesPos.push(l_nodes_pos);
+                }
+
+                return allNodesPos;
+            }
+
+            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
+                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
+                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
+                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
+                            const weight = weights[l_idx][n1_idx][n2_idx];
+
+                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
+                            if (Math.abs(weight) < Math.abs(threshold)) {
+                                continue;
+                            }
+
+                            const currentNodePos = allNodesPos[l_idx][n1_idx];
+                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
+
+                            const scaledWeight =
+                                maxWeight !== minWeight
+                                    ? (weight - minWeight) / (maxWeight - minWeight)
+                                    : 0.5;
+
+                            const lineColor = this.getWeightColor(weight, scaledWeight);
+
+                            this.ctx.strokeStyle = lineColor;
+                            this.ctx.lineWidth = 1;
+                            this.ctx.globalAlpha = 0.6;
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(currentNodePos[0], currentNodePos[1]);
+                            this.ctx.lineTo(nextNodePos[0], nextNodePos[1]);
+                            this.ctx.stroke();
+                            this.ctx.globalAlpha = 1.0;
+                        }
+                    }
+                }
+            }
+
+            extractWeights(nn) {
+                if (!nn.weights?.length) return [];
+                const firstLayer = nn.weights[0];
+                // Float32Array (new flat format) — reconstruct 3D array for visualizer
+                if (firstLayer instanceof Float32Array) {
+                    const result = [];
+                    for (let l = 0; l < nn.weights.length; l++) {
+                        const inD  = nn.layerDims[l];
+                        const outD = nn.layerDims[l + 1];
+                        const flat = nn.weights[l];
+                        const layer = [];
+                        for (let i = 0; i < inD; i++) {
+                            const row = [];
+                            for (let j = 0; j < outD; j++) row.push(flat[i * outD + j]);
+                            layer.push(row);
+                        }
+                        result.push(layer);
+                    }
+                    return result;
+                }
+                if (firstLayer?.W_i !== undefined) return this.extractLSTMWeights(nn);
+                return nn.weights;
+            }
+
+            extractLSTMWeights(nn) {
+                const combined = nn.weights.map(layer => {
+                    const { W_i=[], W_f=[], W_c=[], W_o=[] } = layer;
+                    return this.averageMatrices([W_i, W_f, W_c, W_o]);
+                });
+                if (nn.V) combined.push(nn.V);
+                return combined;
+            }
+
+            averageMatrices(matrices) {
+                if (!matrices.length || !matrices[0].length) return [];
+                const rows = matrices[0].length;
+                const cols = matrices[0][0].length;
+                return Array.from({ length: rows }, (_, i) =>
+                    Array.from({ length: cols }, (_, j) =>
+                        matrices.reduce((sum, mat) => sum + (mat[i]?.[j] ?? 0), 0) / matrices.length
+                    )
+                );
+            }
+
+            getLayerDims(nn) {
+                if (nn.layerDims) return nn.layerDims;
+                if (nn.layer_dims) return nn.layer_dims;
+                if (nn.weights?.length) {
+                    return [nn.weights[0].length, ...nn.weights.map(l => l[0]?.length ?? 0)];
+                }
+                return [6, 6, 9, 8, 8];
+            }
+
+            getWeightRange(weights) {
+                const flat = weights.flatMap(layer => layer.flatMap(row => row));
+                const min = Math.min(...flat);
+                const max = Math.max(...flat);
+                return [isFinite(min) ? min : -1, isFinite(max) ? max : 1];
+            }
+
+            getWeightColor(weight, maxAbsWeight = 1.0) {
+                const normalized = Math.max(-1, Math.min(1, weight / (maxAbsWeight || 1)));
+                const t = 1 - Math.abs(normalized);
+                const r = normalized < 0 ? 255 : Math.floor(255 * t);
+                const g = Math.floor(255 * t);
+                const b = normalized >= 0 ? 255 : Math.floor(255 * t);
+                const isGray = Math.abs(r - g) < 20 && Math.abs(g - b) < 20;
+                return `rgba(${r},${g},${b},${isGray ? 0.3 : 0.7})`;
+            }
+
+            resize(screenSize) {
+                this.w_width = screenSize[0];
+                this.w_height = screenSize[1];
+                this.canvas.width = this.w_width;
+                this.canvas.height = this.w_height;
+            }
+        }
+
+        // ============================================================================
+        // NEURAL NETWORK VISUALIZER SETUP
+        // ============================================================================
+
+        const nnCanvas = document.getElementById('nnCanvas');
+        const nnContainer = document.getElementById('nnVisualizerContainer');
+        const nnLabel = document.getElementById('nnLabel');
+        let nnVisualizer = null;
+        let nnVisEnabled = false;
+        toggleNNVis();
+
+        function initNNVisualizer() {
+            const wrapper = document.getElementById('nnCanvasWrapper');
+            // Force layout recalculation
+            wrapper.offsetHeight;
+            const rect = wrapper.getBoundingClientRect();
+            const width = Math.max(rect.width, 200);
+            const height = Math.max(rect.height, 200);
+            nnCanvas.width = width;
+            nnCanvas.height = height;
+            nnVisualizer = new NNVisualizer(nnCanvas, [width, height]);
+        }
+
+        document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
+
+        function toggleNNVis() {
+            nnVisEnabled = !nnVisEnabled;
+            const btn = document.getElementById('nnVisBtn');
+            if (nnVisEnabled) {
+                nnContainer.classList.add('show');
+                btn.textContent = 'Hide NN';
+                // Initialize on next frame to ensure DOM is ready
+                requestAnimationFrame(() => {
+                    if (!nnVisualizer) {
+                        initNNVisualizer();
+                    }
+                });
+            } else {
+                nnContainer.classList.remove('show');
+                btn.textContent = 'Show NN';
+            }
+        }
+
+        // ============================================================================
+        // WORLD STATE
+        // ============================================================================
+
+        // Separate typed arrays avoid instanceof checks in hot loops
+        let animals = []; // Animal instances only
+        let plants = []; // Plant instances only
+        let waters = []; // Water instances only
+        let entities = []; // all
+        let terrain;
+        let waterLocations = [];
+        let ticks = 0;
+        let lastFpsUpdate = 0;
+        let frameCount = 0;
+        let raycastHelper = new THREE.Raycaster();
+
+        // Spatial grid rebuilt each frame
+        const spatialGrid = new SpatialGrid(
+            CONFIG.worldWidth, CONFIG.worldHeight, 160
+        );
+
+        function spawnAnimals(count, type, y) {
+            for (let i = 0; i < count; i++) {
+                const a = new Animal([
+                    Math.random() * CONFIG.worldWidth, y,
+                    Math.random() * CONFIG.worldHeight
+                ], type);
+                animals.push(a);
+                entities.push(a);
+            }
+        }
+
+        function initializeWorld() {
+            // Clear entities and separate typed arrays
+            entities.forEach(e => e.remove());
+            waters.forEach(w => w.remove());
+            entities = []; animals = []; plants = []; waters = [];
+            waterLocations = [];
+            if (terrain) scene.remove(terrain);
+
+            // Initialize instanced meshes and clears old instances
+            initInstancedMeshes();
+
+            // Add terrain
+            terrain = createTerrain();
+            scene.add(terrain);
+
+            // Add water bodies and track locations
+            for (let i = 0; i < 3; i++) {
+                let clusterX, clusterZ, isValidCluster = false;
+                const clusterRadius = 60; // Radius around cluster center
+                
+                // Find a valid cluster location that doesn't overlap with existing ones
+                while (!isValidCluster) {
+                    clusterX = Math.random() * CONFIG.worldWidth;
+                    clusterZ = Math.random() * CONFIG.worldHeight;
+                    
+                    // Check if this cluster overlaps with existing water clusters
+                    isValidCluster = true;
+                    for (let existing of waterLocations) {
+                        const dist = Math.sqrt(
+                            Math.pow(clusterX - existing[0], 2) + 
+                            Math.pow(clusterZ - existing[1], 2)
+                        );
+                        if (dist < clusterRadius * 2) {
+                            isValidCluster = false;
+                            break;
+                        }
+                    }
+                }
+                
+                // Place individual water tiles in this cluster
+                for (let j = 0; j < 15; j++) {
+                    let wx, wz, isValidPosition = false;
+                    const tileRadius = 10; // Minimum distance between individual water tiles
+                    
+                    // Find valid position within cluster
+                    while (!isValidPosition) {
+                        wx = clusterX + (Math.random() - 0.5) * clusterRadius * 2;
+                        wz = clusterZ + (Math.random() - 0.5) * clusterRadius * 2;
+                        
+                        // Keep within world bounds
+                        if (wx < 0 || wx > CONFIG.worldWidth || wz < 0 || wz > CONFIG.worldHeight) {
+                            continue;
+                        }
+                        
+                        // Check distance from other water tiles in this cluster
+                        isValidPosition = true;
+                        for (let existing of waterLocations) {
+                            const dist = Math.sqrt(
+                                Math.pow(wx - existing[0], 2) + 
+                                Math.pow(wz - existing[1], 2)
+                            );
+                            if (dist < tileRadius) {
+                                isValidPosition = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    const w = new Water([wx, 6, wz]);
+                    waters.push(w);
+                    entities.push(w);
+                    waterLocations.push([wx, wz]);
+                }
+            }
+
+            // Add plants
+            for (let i = 0; i < CONFIG.initialPlants; i++) {
+                const p = new Plant([
+                    Math.random() * CONFIG.worldWidth, 3,
+                    Math.random() * CONFIG.worldHeight
+                ]);
+                plants.push(p);
+                entities.push(p);
+            }
+
+            spawnAnimals(CONFIG.initialDeer, 'sheep', 15);
+            spawnAnimals(CONFIG.initialWolves, 'wolf', 15);
+
+            camera.position.copy(player.position);
+            player.targetObject = null;
+        }
+
+        function updateStats() {
+            let sheep = 0, wolves = 0;
+            for (const a of animals) {
+                if (!a.alive) continue;
+                if (a.type === 'sheep') sheep++; else wolves++;
+            }
+            document.getElementById('deerCount').textContent = sheep;
+            document.getElementById('wolfCount').textContent = wolves;
+            document.getElementById('plantCount').textContent = plants.filter(p => p.alive).length;
+            document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
+        }
+
+        // Spatial grid for plants only
+        const plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
+        function handleCollisions() {
+            // Rebuild plant grid (plants are sparse, cheap to rebuild)
+            plantGrid.clear();
+            for (const p of plants) if (p.alive) plantGrid.insert(p);
+
+            for (const a of animals) {
+                if (!a.alive) continue;
+                const px = a.position.x, pz = a.position.z;
+
+                if (a.type === 'wolf') {
+                    // Wolves hunt sheep — use main spatial grid
+                    for (const other of spatialGrid.query(px, pz, 20)) {
+                        if (other.alive && other.type === 'sheep' &&
+                            tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
+                            other.attacked(a);
+                        }
+                    }
+                } else {
+                    // Sheep eat nearby plants
+                    for (const plant of plantGrid.query(px, pz, 20)) {
+                        if (plant.alive &&
+                            tools.distSq(px, pz, plant.position.x, plant.position.z) < 200) {
+                            a.eatPlant(plant);
+                        }
+                    }
+                }
+
+                // All animals drink one water source per frame
+                for (const water of waterLocations) {
+                    if (tools.distSq(px, pz, water[0], water[1]) < 200) {
+                        a.drinkWater();
+                        break;
+                    }
+                }
+            }
+        }
+
+        function updatePlayer(deltaTime) {
+            let moveVector = new THREE.Vector3(0, 0, 0);
+
+            if (controls.controlMode === 'keyboard') {
+                // Keyboard controls
+                const currentSpeed = keys['shift'] ? player.sprintSpeed : player.speed;
+                
+                if (keys['w']) moveVector.z -= currentSpeed * deltaTime;
+                if (keys['s']) moveVector.z += currentSpeed * deltaTime;
+                if (keys['a']) moveVector.x -= currentSpeed * deltaTime;
+                if (keys['d']) moveVector.x += currentSpeed * deltaTime;
+            } else {
+                // Touch joystick controls
+                const currentSpeed = player.speed;
+                moveVector.x = controls.joystickX * currentSpeed * deltaTime;
+                moveVector.z = controls.joystickY * currentSpeed * deltaTime;
+            }
+
+            // Apply rotation to movement
+            const rotationMatrix = new THREE.Matrix4();
+            rotationMatrix.makeRotationY(player.yaw);
+            moveVector.applyMatrix4(rotationMatrix);
+
+            player.position.add(moveVector);
+
+            // Wrap world
+            player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+            player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+
+            // Apply gravity
+            player.velocity.y -= 300 * deltaTime; // gravity
+            player.position.y += player.velocity.y * deltaTime;
+
+            // Ground collision
+            if (player.position.y < 35) {
+                player.position.y = 35;
+                player.velocity.y = 0;
+                player.isJumping = false;
+            }
+
+            // Update camera
+            camera.position.copy(player.position);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = player.yaw;
+            camera.rotation.x = player.pitch;
+
+            // Update speed indicator
+            let speed = 0;
+            if (controls.controlMode === 'keyboard') {
+                speed = Math.sqrt(
+                    (keys['w'] || keys['s'] ? 1 : 0) ** 2 + 
+                    (keys['a'] || keys['d'] ? 1 : 0) ** 2
+                ) * (keys['shift'] ? player.sprintSpeed : player.speed);
+            } else {
+                speed = Math.sqrt(controls.joystickX ** 2 + controls.joystickY ** 2) * player.speed;
+            }
+            document.getElementById('speedValue').textContent = speed.toFixed(1);
+        }
+
+        // Reusable sphere + vector for raycasting
+        const _raySphere = new THREE.Sphere();
+        const _rayTarget = new THREE.Vector3();
+
+        function raycaster() {
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+            direction.applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch);
+            raycastHelper.set(player.position, direction);
+
+            let closest = null;
+            let closestDist = Infinity;
+
+            // Only search animals (skip plants, avoid instanceof)
+            for (const a of animals) {
+                if (!a.alive) continue;
+                _raySphere.set(a.position, 30);
+                const intersection = raycastHelper.ray.intersectSphere(_raySphere, _rayTarget);
+                if (intersection) {
+                    const dist = player.position.distanceTo(intersection);
+                    if (dist < closestDist) { closest = a; closestDist = dist; }
+                }
+            }
+            return closest;
+        }
+
+        function updateTargetInfo() {
+            const target = raycaster();
+            const targetInfoEl = document.querySelector('.hud-stats');
+
+            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+                const healthPercent = Math.round((target.health / target.maxHealth) * 100);
+                const hungerPercent = Math.round(target.foodNeed);
+                const thirstPercent = Math.round(target.waterNeed);
+                const distance = player.position.distanceTo(target.position).toFixed(1);
+
+                document.getElementById('targetName').textContent = 
+                    `${target.type.toUpperCase()}`;
+                document.getElementById('targetStats').textContent = 
+                    `❤️${healthPercent}%  🍽️${hungerPercent}% 💧${thirstPercent}%  📍${distance}m`;
+                targetInfoEl.classList.add('visible');
+
+                // Update NN visualizer if enabled
+                if (nnVisEnabled && target instanceof Animal) {
+                    if (!nnVisualizer) {
+                        initNNVisualizer();
+                    }
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        try {
+                            nnVisualizer.draw(target);
+                            nnLabel.textContent = 'Brain Activity';
+                        } catch (e) {
+                            console.error('NN Draw error:', e);
+                            nnLabel.textContent = 'Error rendering';
+                        }
+                    }
+                }
+            } else {
+                document.getElementById('targetName').textContent = 
+                    `Find An Animal!`;
+                document.getElementById('targetStats').textContent = 
+                    ``;
+                targetInfoEl.classList.add('visible');
+                if (nnVisEnabled) {
+                    nnLabel.textContent = 'No Target';
+                    if (nnVisualizer && nnVisualizer.ctx) {
+                        nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
+                    }
+                }
+            }
+        }
+
+        document.getElementById('resetBtn').addEventListener('click', initializeWorld);
+
+        // ============================================================================
+        // MAIN LOOP  (uses renderer.setAnimationLoop for WebXR compatibility)
+        // ============================================================================
+
+        let lastTime = Date.now();
+
+        // Helper: read Quest 2 gamepad axes / buttons each frame
+        function pollVRControllers() {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+
+            for (const source of session.inputSources) {
+                const gp = source.gamepad;
+                if (!gp) continue;
+
+                if (source.handedness === 'left') {
+                    // axes[2] = thumbstick X,  axes[3] = thumbstick Y
+                    vrState.moveX = Math.abs(gp.axes[2] ?? 0) > 0.12 ? (gp.axes[2] ?? 0) : 0;
+                    vrState.moveY = Math.abs(gp.axes[3] ?? 0) > 0.12 ? (gp.axes[3] ?? 0) : 0;
+                    // Button index 5 = B on left controller
+                    const bDown = gp.buttons[5]?.pressed;
+                    if (bDown && !vrState.bWasDown) vrState.resetPressed = true;
+                    vrState.bWasDown = bDown;
+                }
+
+                if (source.handedness === 'right') {
+                    // axes[2] = right thumbstick X (snap-turn)
+                    vrState.turnX = Math.abs(gp.axes[2] ?? 0) > 0.5 ? Math.sign(gp.axes[2]) : 0;
+                    // Button index 4 = A on right controller
+                    const aDown = gp.buttons[4]?.pressed;
+                    if (aDown && !vrState.aWasDown) vrState.jumpPressed = true;
+                    vrState.aWasDown = aDown;
+                }
+            }
+        }
+
+        // Smooth snap-turn state
+        let vrSnapCooldown = 0;
+
+        function animate(timestamp, frame) {
+            const now = Date.now();
+            const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            // ── VR input ───────────────────────────────────────────────────────
+            const inVR = renderer.xr.isPresenting;
+            if (inVR) {
+                pollVRControllers();
+
+                // VR movement: left thumbstick, relative to HMD yaw
+                if (vrState.moveX !== 0 || vrState.moveY !== 0) {
+                    const speed = player.speed;
+                    const move = new THREE.Vector3(
+                        vrState.moveX * speed * deltaTime,
+                        0,
+                        vrState.moveY * speed * deltaTime
+                    );
+                    const rot = new THREE.Matrix4().makeRotationY(player.yaw);
+                    move.applyMatrix4(rot);
+                    player.position.add(move);
+                    player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                    player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+                }
+
+                // Snap-turn: right thumbstick X
+                vrSnapCooldown -= deltaTime;
+                if (vrState.turnX !== 0 && vrSnapCooldown <= 0) {
+                    player.yaw += vrState.turnX * (Math.PI / 6); // 30° snap
+                    vrSnapCooldown = 0.3;
+                }
+
+                // A = jump
+                if (vrState.jumpPressed && !player.isJumping) {
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
+                }
+                vrState.jumpPressed = false;
+
+                // B = reset world
+                if (vrState.resetPressed) { initializeWorld(); }
+                vrState.resetPressed = false;
+
+                // Gravity & ground
+                player.velocity.y -= 300 * deltaTime;
+                player.position.y += player.velocity.y * deltaTime;
+                if (player.position.y < 35) {
+                    player.position.y = 35;
+                    player.velocity.y = 0;
+                    player.isJumping = false;
+                }
+
+                // Position the XR camera rig at player position
+                // In WebXR the camera pose comes from the HMD, so we move the
+                // xr reference space offset instead via a dummy parent group.
+                vrCameraRig.position.copy(player.position);
+                vrCameraRig.rotation.y = player.yaw;
+
+                // Update VR overlay HUD
+                if (now % 1000 < 50) updateVRHud();
+
+            } else {
+                // Non-VR: original player update
+                updatePlayer(deltaTime);
+            }
+            // ──────────────────────────────────────────────────────────────────
+
+            // Rebuild spatial grid once per frame for all animals
+            spatialGrid.clear();
+            for (const a of animals) if (a.alive) spatialGrid.insert(a);
+
+            // Update animals
+            for (const a of animals) {
+                if (a.alive) a.update(now, spatialGrid, waterLocations);
+            }
+
+            // Update plants
+            for (const p of plants) {
+                if (p.alive) p.update(deltaTime);
+            }
+
+            handleCollisions();
+
+            // Remove dead entities from typed arrays + shared array
+            for (let i = animals.length - 1; i >= 0; i--) {
+                if (!animals[i].alive) { animals[i].remove(); animals.splice(i, 1); }
+            }
+            for (let i = plants.length - 1; i >= 0; i--) {
+                if (!plants[i].alive) { plants[i].remove(); plants.splice(i, 1); }
+            }
+            // Keep entities in sync (only needed for NN visualizer target lookup)
+            entities = [...animals, ...plants, ...waters];
+
+            // Occasionally spawn new plants
+            if (Math.random() < 0.01) {
+                const p = new Plant([
+                    Math.random() * CONFIG.worldWidth, 3,
+                    Math.random() * CONFIG.worldHeight
+                ]);
+                plants.push(p);
+                entities.push(p);
+            }
+
+            // Update instanced mesh transforms every frame
+            updateInstancedMeshes(animals);
+
+            if (!inVR) updateTargetInfo();
+
+            ticks++;
+            if (ticks % 60 === 0) updateStats();
+
+            frameCount++;
+            if (now - lastFpsUpdate > 1000) {
+                document.getElementById('fps-counter').textContent = 'FPS: ' + frameCount;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // VR HUD text update
+        function updateVRHud() {
+            let sheep = 0, wolves = 0;
+            for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
+            document.getElementById('vr-stats').textContent =
+                `🌿 TERRARIUM  🐑${sheep}  🐺${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+        }
+
+        function resizeRenderer() {
+            if (renderer.xr.isPresenting) return; // let WebXR handle sizing in VR
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (nnVisualizer) {
+                const rect = document.getElementById('nnCanvasWrapper').getBoundingClientRect();
+                nnVisualizer.resize([rect.width, rect.height]);
+            }
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', resizeRenderer);
+        window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 100));
+
+        // ── VR Camera Rig ──────────────────────────────────────────────────────
+        // In WebXR the HMD provides the view matrix internally.
+        // We wrap the camera in a Group so we can translate/rotate the
+        // entire player body without fighting the XR pose.
+        const vrCameraRig = new THREE.Group();
+        vrCameraRig.add(camera);
+        scene.add(vrCameraRig);
+
+        // Initialize
+        initializeWorld();
+
+        // Use setAnimationLoop (required for WebXR; also works for desktop)
+        renderer.setAnimationLoop(animate);
+    </script>
+</body>
+</html>
