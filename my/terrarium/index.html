@@ -1713,6 +1713,7 @@
         // Separate typed arrays avoid instanceof checks in hot loops
         let animals = []; // Animal instances only
         let plants = []; // Plant instances only
+        let waters = []; // Water instances only
         let entities = []; // all
         let terrain;
         let waterLocations = [];
@@ -1740,7 +1741,8 @@
         function initializeWorld() {
             // Clear entities and separate typed arrays
             entities.forEach(e => e.remove());
-            entities = []; animals = []; plants = [];
+            waters.forEach(w => w.remove());
+            entities = []; animals = []; plants = []; waters = [];
             waterLocations = [];
             if (terrain) scene.remove(terrain);
 
@@ -1804,7 +1806,9 @@
                         }
                     }
                     
-                    entities.push(new Water([wx, 6, wz]));
+                    const w = new Water([wx, 6, wz]);
+                    waters.push(w);
+                    entities.push(w);
                     waterLocations.push([wx, wz]);
                 }
             }
@@ -2048,7 +2052,7 @@
                 if (!plants[i].alive) { plants[i].remove(); plants.splice(i, 1); }
             }
             // Keep entities in sync (only needed for NN visualizer target lookup)
-            entities = [...animals, ...plants];
+            entities = [...animals, ...plants, ...waters];
 
             // Occasionally spawn new plants
             if (Math.random() < 0.01) {
