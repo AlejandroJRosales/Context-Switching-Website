@@ -925,10 +925,10 @@
 
                 for (let l = 0; l < L; l++) {
                     const outD = this.layerDims[l + 1];
-                    const inD  = this.layerDims[l];
-                    const out  = this.activations[l];
-                    const w    = this.weights[l];
-                    const b    = this.biases[l];
+                    const inD = this.layerDims[l];
+                    const out = this.activations[l];
+                    const w = this.weights[l];
+                    const b = this.biases[l];
                     const isLast = l === L - 1;
 
                     // out = bias + W^T * prev
@@ -1016,7 +1016,7 @@
         }
 
         // ============================================================================
-        // SPATIAL GRID — O(1) amortized neighbor queries
+        // SPATIAL GRID (amortized neighbor queries()
         // ============================================================================
 
         class SpatialGrid {
@@ -1064,13 +1064,12 @@
         }
 
         // ============================================================================
-        // INSTANCED MESH RENDERER - one draw call per species
+        // INSTANCED MESH RENDERER
         // Supports up to MAX_INSTANCES animals per type.
         // ============================================================================
 
         const MAX_INSTANCES = 12000;
 
-        // Original rounded-box geometries (same as before)
         function createRoundedBoxGeometry(width, height, depth, radius = 2) {
             const shape = new THREE.Shape();
             const w = width / 2, h = height / 2;
@@ -1109,7 +1108,6 @@
             wolf:  new THREE.MeshStandardMaterial({ color: 0x81613e })
         };
 
-        // Local-space part offsets, matching the original addAnimalMesh positions exactly
         const PART_OFFSETS = {
             sheep: {
                 head:  new THREE.Vector3(0, 5, 15),
@@ -1152,7 +1150,7 @@
             }
         }
 
-        // Reusable objects — avoids per-frame allocation
+        // Reusable objects t0 avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
         const _world = new THREE.Vector3();
@@ -1222,7 +1220,7 @@
             }
         }
 
-        // Static movement tables per type (not per instance)
+        // Static movement tables per type
         const COORD_CHANGES = {
             sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
             wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
@@ -1312,15 +1310,15 @@
 
                 // Expire stale memories
                 if (this.hasPredator && tools.distSq(px,pz,this.memPredatorX,this.memPredatorZ) > vd) this.hasPredator = false;
-                if (this.hasFood    && tools.distSq(px,pz,this.memFoodX,   this.memFoodZ)    > vd) this.hasFood    = false;
-                if (this.hasWater   && tools.distSq(px,pz,this.memWaterX,  this.memWaterZ)   > vd) this.hasWater   = false;
-                if (this.hasMate    && tools.distSq(px,pz,this.memMateX,   this.memMateZ)    > vd) this.hasMate    = false;
+                if (this.hasFood && tools.distSq(px,pz,this.memFoodX, this.memFoodZ) > vd) this.hasFood = false;
+                if (this.hasWater && tools.distSq(px,pz,this.memWaterX, this.memWaterZ) > vd) this.hasWater = false;
+                if (this.hasMate && tools.distSq(px,pz,this.memMateX, this.memMateZ) > vd) this.hasMate = false;
             }
 
             think(grid, waterLocations) {
                 this.locate(grid, waterLocations);
 
-                // Inline priority selection — no Object.entries / sort / allocation
+                // Inline priority selection
                 let bestNeed = -1;
                 if (this.hasPredator && this.avoidNeed > bestNeed) {
                     bestNeed = this.avoidNeed; this.focusX = this.memPredatorX; this.focusZ = this.memPredatorZ;
@@ -1746,7 +1744,7 @@
             waterLocations = [];
             if (terrain) scene.remove(terrain);
 
-            // Initialize instanced meshes - clears old instances
+            // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
 
             // Add terrain
@@ -1840,9 +1838,8 @@
             document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
         }
 
-        // Spatial grid for plants only (used in eating collision)
+        // Spatial grid for plants only
         const plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
-
         function handleCollisions() {
             // Rebuild plant grid (plants are sparse, cheap to rebuild)
             plantGrid.clear();
@@ -1870,11 +1867,11 @@
                     }
                 }
 
-                // All animals drink water (water count is tiny, linear is fine)
+                // All animals drink one water source per frame
                 for (const water of waterLocations) {
                     if (tools.distSq(px, pz, water[0], water[1]) < 200) {
                         a.drinkWater();
-                        break; // one water source per frame is enough
+                        break;
                     }
                 }
             }
@@ -1997,7 +1994,11 @@
                     }
                 }
             } else {
-                targetInfoEl.classList.remove('visible');
+                document.getElementById('targetName').textContent = 
+                    `Find An Animal!`;
+                document.getElementById('targetStats').textContent = 
+                    ``;
+                targetInfoEl.classList.add('visible');
                 if (nnVisEnabled) {
                     nnLabel.textContent = 'No Target';
                     if (nnVisualizer && nnVisualizer.ctx) {
@@ -2014,7 +2015,6 @@
         // ============================================================================
 
         let lastTime = Date.now();
-
         function animate() {
             requestAnimationFrame(animate);
 
@@ -2028,7 +2028,7 @@
             spatialGrid.clear();
             for (const a of animals) if (a.alive) spatialGrid.insert(a);
 
-            // Update animals — pass grid + now so each animal doesn't call Date.now()
+            // Update animals
             for (const a of animals) {
                 if (a.alive) a.update(now, spatialGrid, waterLocations);
             }
