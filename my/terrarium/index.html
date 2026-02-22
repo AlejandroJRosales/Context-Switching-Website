@@ -381,6 +381,16 @@
 <body>
     <canvas id="canvas"></canvas>
 
+    <!-- VR DOM Overlay (visible inside Quest browser during VR session) -->
+    <div id="vr-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;">
+        <div id="vr-hud" style="position:absolute; top:10px; left:10px; font-family:'Courier New',monospace; color:#00ff00; font-size:14px; text-shadow:0 0 8px rgba(0,255,0,0.6); background:rgba(0,0,0,0.5); padding:8px 12px; border:1px solid #00ff00; border-radius:4px;">
+            <div id="vr-stats">🌿 Loading...</div>
+        </div>
+        <div id="vr-controls-hint" style="position:absolute; bottom:15px; left:50%; transform:translateX(-50%); font-family:'Courier New',monospace; color:rgba(0,255,0,0.7); font-size:11px; text-align:center; background:rgba(0,0,0,0.5); padding:6px 12px; border-radius:4px;">
+            Left stick: Move · Right stick: Turn · A: Jump · B: Reset
+        </div>
+    </div>
+
     <div class="hud">
         <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span></div>
 
@@ -435,10 +445,17 @@
         <div style="margin-bottom:12px;">
             <button id="clearHudBtn" style="width:100%;">Clear HUD</button>
         </div>
-        <button id="settings-close-btn" style="width:100%;">Close</button>
+
+        <!-- VR Button Row -->
+        <div style="margin-bottom:12px;">
+            <button id="vrBtn" style="width:100%; position:relative; overflow:hidden;">
+                <span id="vrBtnText">VR Not Supported</span>
+            </button>
+        </div>
+
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script>
         // ============================================================================
         // CONFIGURATION
@@ -471,13 +488,15 @@
 
         // Settings tuner
         document.getElementById('settings-btn').addEventListener('click', () => {
-            document.getElementById('settings-panel').style.display = 'block';
-            document.getElementById('scale-slider').value = pendingScale;
-            document.getElementById('scaleDisplay').textContent = pendingScale;
-        });
-
-        document.getElementById('settings-close-btn').addEventListener('click', () => {
-            document.getElementById('settings-panel').style.display = 'none';
+            const panel = document.getElementById('settings-panel');
+            const isOpen = panel.style.display === 'block';
+            if (!isOpen) {
+                panel.style.display = 'block';
+                document.getElementById('scale-slider').value = pendingScale;
+                document.getElementById('scaleDisplay').textContent = pendingScale;
+            } else {
+                panel.style.display = 'none';
+            }
         });
 
         let hudCleared = false;
@@ -514,6 +533,73 @@
             player.jumpForce = 300 * Math.log1p(pendingScale);
         }, true);
 
+        // VR Button Configuration
+        (function () {
+            const btn = document.getElementById('vrBtn');
+            const btnText = document.getElementById('vrBtnText');
+
+            let currentSession = null;
+
+            function onSessionStarted(session) {
+                currentSession = session;
+                session.addEventListener('end', onSessionEnded);
+
+                // Hand off to Three.js renderer if available
+                if (window.renderer && window.renderer.xr) {
+                    window.renderer.xr.setSession(session);
+                }
+
+                // Show VR overlay
+                const overlay = document.getElementById('vr-overlay');
+                if (overlay) overlay.style.display = 'block';
+
+                btnText.textContent = 'Exit VR';
+                btn.disabled = false;
+            }
+
+            function onSessionEnded() {
+                currentSession = null;
+
+                const overlay = document.getElementById('vr-overlay');
+                if (overlay) overlay.style.display = 'none';
+
+                btnText.textContent = 'Enter VR';
+                btn.disabled = false;
+            }
+
+            btn.addEventListener('click', () => {
+                if (!currentSession) {
+                    const sessionInit = {
+                        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'dom-overlay'],
+                        domOverlay: { root: document.getElementById('vr-overlay') }
+                    };
+                    navigator.xr.requestSession('immersive-vr', sessionInit)
+                        .then(onSessionStarted)
+                        .catch(err => {
+                            console.warn('VR session failed:', err);
+                            btnText.textContent = 'VR Not Supported';
+                        });
+                } else {
+                    currentSession.end();
+                }
+            });
+
+            // Check WebXR support on load
+            btn.disabled = true;
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                    if (supported) {
+                        btnText.textContent = 'Enter VR';
+                        btn.disabled = false;
+                    }
+                    // else stays "VR Not Supported" and disabled
+                }).catch(() => {
+                    // stays "VR Not Supported" and disabled
+                });
+            }
+            // else: no WebXR at all — stays "VR Not Supported" and disabled
+        })();
+
         // ============================================================================
         // THREE.JS SETUP
         // ============================================================================
@@ -535,7 +621,39 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFShadowShadowMap;
 
-        camera.position.set(400, 300, 300);
+        // ── WebXR ──────────────────────────────────────────────────────────────
+        renderer.xr.enabled = true;
+
+        // VR button stays inside the settings panel (no appendChild needed)
+
+        // Show the dom-overlay div when a VR session is active
+        renderer.xr.addEventListener('sessionstart', () => {
+            document.getElementById('vr-overlay').style.display = 'block';
+        });
+        renderer.xr.addEventListener('sessionend', () => {
+            document.getElementById('vr-overlay').style.display = 'none';
+        });
+
+        // VR Controller state (Quest 2 has two controllers)
+        const vrState = {
+            moveX: 0,   // left thumbstick X
+            moveY: 0,   // left thumbstick Y
+            turnX: 0,   // right thumbstick X
+            jumpPressed: false,
+            resetPressed: false,
+            aWasDown: false,
+            bWasDown: false,
+        };
+
+        // XR reference space (populated when session starts)
+        let xrReferenceSpace = null;
+        renderer.xr.addEventListener('sessionstart', async () => {
+            xrReferenceSpace = await renderer.xr.getSession().requestReferenceSpace('local-floor')
+                .catch(() => renderer.xr.getReferenceSpace());
+        });
+        // ──────────────────────────────────────────────────────────────────────
+
+        camera.position.set(0, 0, 0);
 
         // ============================================================================
         // LIGHTING
@@ -1826,7 +1944,8 @@
             spawnAnimals(CONFIG.initialDeer, 'sheep', 15);
             spawnAnimals(CONFIG.initialWolves, 'wolf', 15);
 
-            camera.position.copy(player.position);
+            vrCameraRig.position.copy(player.position);
+            camera.position.set(0, 0, 0);
             player.targetObject = null;
         }
 
@@ -1921,8 +2040,10 @@
                 player.isJumping = false;
             }
 
-            // Update camera
-            camera.position.copy(player.position);
+            // Update camera — move the rig to player position, keep camera local at origin
+            vrCameraRig.position.copy(player.position);
+            vrCameraRig.rotation.set(0, 0, 0);
+            camera.position.set(0, 0, 0);
             camera.rotation.order = 'YXZ';
             camera.rotation.y = player.yaw;
             camera.rotation.x = player.pitch;
@@ -2015,18 +2136,109 @@
         document.getElementById('resetBtn').addEventListener('click', initializeWorld);
 
         // ============================================================================
-        // MAIN LOOP
+        // MAIN LOOP  (uses renderer.setAnimationLoop for WebXR compatibility)
         // ============================================================================
 
         let lastTime = Date.now();
-        function animate() {
-            requestAnimationFrame(animate);
 
+        // Helper: read Quest 2 gamepad axes / buttons each frame
+        function pollVRControllers() {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+
+            for (const source of session.inputSources) {
+                const gp = source.gamepad;
+                if (!gp) continue;
+
+                if (source.handedness === 'left') {
+                    // axes[2] = thumbstick X,  axes[3] = thumbstick Y
+                    vrState.moveX = Math.abs(gp.axes[2] ?? 0) > 0.12 ? (gp.axes[2] ?? 0) : 0;
+                    vrState.moveY = Math.abs(gp.axes[3] ?? 0) > 0.12 ? (gp.axes[3] ?? 0) : 0;
+                    // Button index 5 = B on left controller
+                    const bDown = gp.buttons[5]?.pressed;
+                    if (bDown && !vrState.bWasDown) vrState.resetPressed = true;
+                    vrState.bWasDown = bDown;
+                }
+
+                if (source.handedness === 'right') {
+                    // axes[2] = right thumbstick X (snap-turn)
+                    vrState.turnX = Math.abs(gp.axes[2] ?? 0) > 0.5 ? Math.sign(gp.axes[2]) : 0;
+                    // Button index 4 = A on right controller
+                    const aDown = gp.buttons[4]?.pressed;
+                    if (aDown && !vrState.aWasDown) vrState.jumpPressed = true;
+                    vrState.aWasDown = aDown;
+                }
+            }
+        }
+
+        // Smooth snap-turn state
+        let vrSnapCooldown = 0;
+
+        function animate(timestamp, frame) {
             const now = Date.now();
             const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
             lastTime = now;
 
-            updatePlayer(deltaTime);
+            const inVR = renderer.xr.isPresenting;
+            if (inVR) {
+                pollVRControllers();
+
+                // VR movement: left thumbstick, relative to HMD yaw
+                if (vrState.moveX !== 0 || vrState.moveY !== 0) {
+                    const speed = player.speed;
+                    const move = new THREE.Vector3(
+                        vrState.moveX * speed * deltaTime,
+                        0,
+                        vrState.moveY * speed * deltaTime
+                    );
+                    const rot = new THREE.Matrix4().makeRotationY(player.yaw);
+                    move.applyMatrix4(rot);
+                    player.position.add(move);
+                    player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                    player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+                }
+
+                // Snap-turn: right thumbstick X
+                vrSnapCooldown -= deltaTime;
+                if (vrState.turnX !== 0 && vrSnapCooldown <= 0) {
+                    player.yaw += vrState.turnX * (Math.PI / 6); // 30° snap
+                    vrSnapCooldown = 0.3;
+                }
+
+                // A = jump
+                if (vrState.jumpPressed && !player.isJumping) {
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
+                }
+                vrState.jumpPressed = false;
+
+                // B = reset world
+                if (vrState.resetPressed) { initializeWorld(); }
+                vrState.resetPressed = false;
+
+                // Gravity & ground
+                player.velocity.y -= 300 * deltaTime;
+                player.position.y += player.velocity.y * deltaTime;
+                if (player.position.y < 35) {
+                    player.position.y = 35;
+                    player.velocity.y = 0;
+                    player.isJumping = false;
+                }
+
+                // Position the XR camera rig at player position
+                // In WebXR the camera pose comes from the HMD, so we move the
+                // xr reference space offset instead via a dummy parent group.
+                vrCameraRig.position.copy(player.position);
+                vrCameraRig.rotation.y = player.yaw;
+
+                // Update VR overlay HUD
+                if (now % 1000 < 50) updateVRHud();
+
+            } else {
+                // Non-VR: original player update
+                updatePlayer(deltaTime);
+            }
+            // ──────────────────────────────────────────────────────────────────
 
             // Rebuild spatial grid once per frame for all animals
             spatialGrid.clear();
@@ -2067,7 +2279,7 @@
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals);
 
-            updateTargetInfo();
+            if (!inVR) updateTargetInfo();
 
             ticks++;
             if (ticks % 60 === 0) updateStats();
@@ -2082,7 +2294,16 @@
             renderer.render(scene, camera);
         }
 
+        // VR HUD text update
+        function updateVRHud() {
+            let sheep = 0, wolves = 0;
+            for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
+            document.getElementById('vr-stats').textContent =
+                `🌿 TERRARIUM  🐑${sheep}  🐺${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+        }
+
         function resizeRenderer() {
+            if (renderer.xr.isPresenting) return; // let WebXR handle sizing in VR
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2096,9 +2317,19 @@
         window.addEventListener('resize', resizeRenderer);
         window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 100));
 
+        // ── VR Camera Rig ──────────────────────────────────────────────────────
+        // In WebXR the HMD provides the view matrix internally.
+        // Wrap the camera in a Group to allow translate/rotate
+        // entire player body without fighting the XR pose.
+        const vrCameraRig = new THREE.Group();
+        vrCameraRig.add(camera);
+        scene.add(vrCameraRig);
+
         // Initialize
         initializeWorld();
-        animate();
+
+        // Use setAnimationLoop (required for WebXR; also works for desktop)
+        renderer.setAnimationLoop(animate);
     </script>
 </body>
 </html>
