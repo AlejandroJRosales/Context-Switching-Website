@@ -2038,7 +2038,7 @@
                 player.isJumping = false;
             }
 
-            // Update camera — move the rig to player position, keep camera local at origin
+            // Update camera; move the rig to player position, keep camera local at origin
             vrCameraRig.position.copy(player.position);
             vrCameraRig.rotation.set(0, 0, 0);
             camera.position.set(0, 0, 0);
@@ -2059,12 +2059,12 @@
             document.getElementById('speedValue').textContent = speed.toFixed(1);
         }
 
-        // Reusable sphere + vector for raycasting
+        // Reusable sphere and vector for raycasting
         const _raySphere = new THREE.Sphere();
         const _rayTarget = new THREE.Vector3();
 
         function raycaster() {
-            const direction = new THREE.Vector3(0, 0, -1);
+            const direction = new THREE.Vector3(0, -0.175, -1);
             direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
             direction.applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch);
             raycastHelper.set(player.position, direction);
@@ -2075,7 +2075,7 @@
             // Only search animals (skip plants, avoid instanceof)
             for (const a of animals) {
                 if (!a.alive) continue;
-                _raySphere.set(a.position, 30);
+                _raySphere.set(a.position, 25);
                 const intersection = raycastHelper.ray.intersectSphere(_raySphere, _rayTarget);
                 if (intersection) {
                     const dist = player.position.distanceTo(intersection);
@@ -2123,7 +2123,7 @@
                     ``;
                 targetInfoEl.classList.add('visible');
                 if (nnVisEnabled) {
-                    nnLabel.textContent = 'No Target';
+                    nnLabel.textContent = 'No Animal';
                     if (nnVisualizer && nnVisualizer.ctx) {
                         nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
                     }
