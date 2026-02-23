@@ -468,6 +468,7 @@
             initialDeer: Math.trunc(Number(20 * scale)),
             initialWolves: Math.trunc(Number(5 * scale)),
             initialPlants: Math.trunc(Number(30 * scale)),
+            scale: scale,
             worldWidth: Math.trunc(Number(850 * scale)),
             worldHeight: Math.trunc(Number(600 * scale)),
             maxDrawDistance: Math.trunc(Number(2000 * scale))
@@ -526,6 +527,7 @@
             CONFIG.worldWidth = Math.trunc(850 * pendingScale);
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
             CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
+            CONFIG.scale = pendingScale;
             player.speed = 40 * Math.log1p(pendingScale);
             player.sprintSpeed = 100 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
@@ -619,7 +621,7 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFShadowShadowMap;
 
-        // ── WebXR ──────────────────────────────────────────────────────────────
+        // WebXR
         renderer.xr.enabled = true;
 
         // VR button stays inside the settings panel (no appendChild needed)
@@ -752,6 +754,7 @@
         // ============================================================
         // JOYSTICK SETUP
         // ============================================================
+
         const joystickEl = document.getElementById('joystick');
         const joystickKnob = document.createElement('div');
         joystickKnob.className = 'joystick-knob';
@@ -1870,7 +1873,7 @@
             scene.add(terrain);
 
             // Add water bodies and track locations
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 3 * Math.log1p(CONFIG.scale); i++) {
                 let clusterX, clusterZ, isValidCluster = false;
                 const clusterRadius = 60; // Radius around cluster center
                 
@@ -1893,8 +1896,9 @@
                     }
                 }
                 
+                console.log(CONFIG.scale);
                 // Place individual water tiles in this cluster
-                for (let j = 0; j < 15; j++) {
+                for (let j = 0; j < 15 * Math.log1p(CONFIG.scale); j++) {
                     let wx, wz, isValidPosition = false;
                     const tileRadius = 10; // Minimum distance between individual water tiles
                     
