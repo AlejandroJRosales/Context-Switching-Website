@@ -480,7 +480,7 @@
             sprintSpeed: 100 * Math.log1p(scale),
             jumpForce: 300 * Math.log1p(scale),
             isJumping: false,
-            yaw: 180,
+            yaw: Math.PI,
             pitch: 0,
             targetObject: null
         };
@@ -615,11 +615,11 @@
             0.1,
             CONFIG.maxDrawDistance
         );
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        const renderer = window.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         // WebXR
         renderer.xr.enabled = true;
@@ -2155,16 +2155,16 @@
                     // axes[2] = thumbstick X,  axes[3] = thumbstick Y
                     vrState.moveX = Math.abs(gp.axes[2] ?? 0) > 0.12 ? (gp.axes[2] ?? 0) : 0;
                     vrState.moveY = Math.abs(gp.axes[3] ?? 0) > 0.12 ? (gp.axes[3] ?? 0) : 0;
-                    // Button index 5 = B on left controller
-                    const bDown = gp.buttons[5]?.pressed;
-                    if (bDown && !vrState.bWasDown) vrState.resetPressed = true;
-                    vrState.bWasDown = bDown;
+                    // Button index 4 = X on left controller, index 5 = Y on left controller
+                    const yDown = gp.buttons[5]?.pressed;
+                    if (yDown && !vrState.bWasDown) vrState.resetPressed = true;
+                    vrState.bWasDown = yDown;
                 }
 
                 if (source.handedness === 'right') {
                     // axes[2] = right thumbstick X (snap-turn)
                     vrState.turnX = Math.abs(gp.axes[2] ?? 0) > 0.5 ? Math.sign(gp.axes[2]) : 0;
-                    // Button index 4 = A on right controller
+                    // Button index 4 = A on right controller, index 5 = B on right controller
                     const aDown = gp.buttons[4]?.pressed;
                     if (aDown && !vrState.aWasDown) vrState.jumpPressed = true;
                     vrState.aWasDown = aDown;
