@@ -589,13 +589,13 @@
             bWasDown: false,
         };
 
-        // XR reference space (populated when session starts)
+        // XR reference space
         let xrReferenceSpace = null;
         renderer.xr.addEventListener('sessionstart', async () => {
             xrReferenceSpace = await renderer.xr.getSession().requestReferenceSpace('local-floor')
                 .catch(() => renderer.xr.getReferenceSpace());
         });
-        // ──────────────────────────────────────────────────────────────────────
+        //
 
         camera.position.set(0, 0, 0);
 
@@ -1002,7 +1002,7 @@
                     }
 
                     if (!isLast) {
-                        // sigmoid activation (numerically stable)
+                        // sigmoid activation
                         for (let j = 0; j < outD; j++) {
                             const v = Math.max(-500, Math.min(500, out[j]));
                             out[j] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
@@ -1012,7 +1012,7 @@
                     prev = out;
                 }
 
-                // softmax on last layer output (in-place, manual loop — no spread)
+                // softmax on last layer output
                 const last = this.activations[L - 1];
                 let maxV = last[0];
                 for (let j = 1; j < last.length; j++) if (last[j] > maxV) maxV = last[j];
@@ -1020,7 +1020,7 @@
                 for (let j = 0; j < last.length; j++) { last[j] = Math.exp(last[j] - maxV); sum += last[j]; }
                 for (let j = 0; j < last.length; j++) last[j] /= sum;
 
-                return last; // returns the pre-allocated buffer (do not store reference)
+                return last; // returns the pre-allocated buffer
             }
 
             think(inputs) {
@@ -1120,7 +1120,6 @@
             }
 
             // Yields all entities in cells within radius r of (x, z)
-            // Uses squared-distance threshold for the caller to refine
             *query(x, z, r) {
                 const cs = this.cellSize;
                 const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
@@ -1401,6 +1400,174 @@
             }
             animalStatSprites.clear();
         }
+
+        class Cabin extends THREE.Group {
+            constructor({
+                scale = 1,
+                position = new THREE.Vector3(0, 0, 0)
+            } = {}) {
+
+                super();
+
+                this.scaleFactor = scale;
+                this.position.copy(position);
+
+                this._build();
+                this.scale.set(scale, scale, scale);
+            }
+
+            _build() {
+
+                // MATERIALS
+                const M = {
+                    log:     new THREE.MeshStandardMaterial({ color: 0xA0693A, roughness: 0.9 }),
+                    logDark: new THREE.MeshStandardMaterial({ color: 0x6B4226, roughness: 0.95 }),
+                    roof:    new THREE.MeshStandardMaterial({ color: 0x3a2b1b, roughness: 0.92 }),
+                    stone:   new THREE.MeshStandardMaterial({ color: 0x9a9080, roughness: 1 }),
+                    glass:   new THREE.MeshStandardMaterial({ color: 0xaae0ff, roughness: 0.05, transparent: true, opacity: 0.38, side: THREE.DoubleSide }),
+                    frame:   new THREE.MeshStandardMaterial({ color: 0x5c3214, roughness: 0.85 })
+                };
+
+                // DIMENSIONS
+                const CW = 80;
+                const CD = 60;
+                const LR = 2.5;
+                const LD = LR * 2;
+                const WALL_H = 44;
+                const FLOOR_Y = 2;
+                const ROWS = Math.floor(WALL_H / LD);
+                const DOOR_WIDTH  = 18;
+                const DOOR_HEIGHT = 30;
+
+                // HELPERS
+                const add = (mesh, cast = true, receive = true) => {
+                    mesh.castShadow = cast;
+                    mesh.receiveShadow = receive;
+                    this.add(mesh);
+                    return mesh;
+                };
+
+                const box = (w, h, d, mat, x = 0, y = 0, z = 0) => {
+                    const mesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(w, h, d),
+                        mat
+                    );
+
+                    mesh.position.set(x, y, z);
+                    return add(mesh);
+                };
+
+                const hlogX = (len, mat, x, y, z) => {
+                    const mesh = new THREE.Mesh(
+                        new THREE.CylinderGeometry(LR, LR, len, 10),
+                        mat
+                    );
+
+                    mesh.rotation.z = Math.PI / 2;
+                    mesh.position.set(x, y, z);
+                    return add(mesh);
+                };
+
+                const hlogZ = (len, mat, x, y, z) => {
+                    const mesh = new THREE.Mesh(
+                        new THREE.CylinderGeometry(LR, LR, len, 10),
+                        mat
+                    );
+
+                    mesh.rotation.x = Math.PI / 2;
+                    mesh.position.set(x, y, z);
+                    return add(mesh);
+                };
+
+                // FLOOR
+                box(CW + 8, FLOOR_Y, CD + 8, M.logDark, 0, FLOOR_Y / 2, 0);
+
+                // WALLS
+                for (let i = 0; i < ROWS; i++) {
+
+                    const y = FLOOR_Y + i * LD + LR;
+                    const bottomOfLog = y - LR;
+
+                    // FRONT WALL (with door cutout)
+                    if (bottomOfLog < FLOOR_Y + DOOR_HEIGHT) {
+
+                        const sideLength = (CW / 2 + LD) - DOOR_WIDTH / 2;
+
+                        // Left segment
+                        hlogX(
+                            sideLength,
+                            M.log,
+                            -(DOOR_WIDTH / 2) - sideLength / 2,
+                            y,
+                            CD / 2
+                        );
+
+                        // Right segment
+                        hlogX(
+                            sideLength,
+                            M.log,
+                            (DOOR_WIDTH / 2) + sideLength / 2,
+                            y,
+                            CD / 2
+                        );
+
+                    } else {
+
+                        // Full log above doorway
+                        hlogX(CW + LD * 2, M.log, 0, y, CD / 2);
+                    }
+
+                    // BACK WALL
+                    hlogX(CW + LD * 2, M.log, 0, y, -CD / 2);
+
+                    // LEFT WALL
+                    hlogZ(CD, M.log, -CW / 2, y, 0);
+
+                    // RIGHT WALL
+                    hlogZ(CD, M.log, CW / 2, y, 0);
+                }
+
+                // ROOF
+                const ROOF_BASE = FLOOR_Y + WALL_H;
+                const RIDGE_H = 34;
+                const OVH = 8;
+
+                [[-1], [1]].forEach(([sx]) => {
+
+                    const run = CW / 2 + OVH;
+                    const rise = RIDGE_H;
+                    const panelLen = Math.sqrt(run * run + rise * rise);
+                    const angle = Math.atan2(rise, run) * sx * -1;
+
+                    const mesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(panelLen, 3, CD + OVH * 2 + 4),
+                        M.roof
+                    );
+
+                    mesh.rotation.z = angle;
+                    mesh.position.set(sx * run / 2, ROOF_BASE + rise / 2, 0);
+
+                    add(mesh);
+                });
+
+                // CHIMNEY
+                const CHX = -18;
+                const CHZ = -12;
+                const CHW = 11;
+                const CHD = 11;
+                const topOfChimney = ROOF_BASE + RIDGE_H + 20;
+
+                box(CHW, topOfChimney, CHD, M.stone, CHX, topOfChimney / 2, CHZ);
+                box(CHW + 4, 2.5, CHD + 4, M.logDark, CHX, topOfChimney + 1.25, CHZ);
+            }
+        }
+
+        const cabin = new Cabin({
+            scale: 1.75,
+            position: new THREE.Vector3(400, 0, 300)
+        });
+
+        scene.add(cabin);
 
         // ============================================================================
         // ENTITY SYSTEM
@@ -2374,7 +2541,7 @@
                 // Non-VR: original player update
                 updatePlayer(deltaTime);
             }
-            // ──────────────────────────────────────────────────────────────────
+            //
 
             // Rebuild spatial grid once per frame for all animals
             spatialGrid.clear();
