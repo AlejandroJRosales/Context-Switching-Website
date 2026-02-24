@@ -33,25 +33,11 @@
             height: 100%;
         }
 
-        /* Neural Network Visualizer */
-        #nnVisualizerContainer {
-            position: absolute;
-            top: max(50px, calc(env(safe-area-inset-top) + 40px));
-            right: max(10px, env(safe-area-inset-right));
-            width: clamp(200px, 25vw, 400px);
-            height: clamp(200px, 25vw, 400px);
-            background: rgba(0, 0, 0, 0.85);
-            border: 2px solid #00ff00;
-            border-radius: 4px;
-            padding: 10px;
-            display: none;
-            flex-direction: column;
-            z-index: 15;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
-        }
 
-        #nnVisualizerContainer.show {
-            display: flex;
+
+        /* Neural Network Visualizer — DOM panel hidden; rendered as 3D billboard sprite */
+        #nnVisualizerContainer {
+            display: none !important;
         }
 
         #nnCanvasWrapper {
@@ -104,19 +90,7 @@
             z-index: 10;
         }
 
-        .hud-stats {
-            position: absolute;
-            top: max(50px, calc(env(safe-area-inset-top) + 40px));
-            left: max(10px, env(safe-area-inset-left));
-            font-size: clamp(10px, 2vw, 14px);
-            line-height: 1.6;
-            background: rgba(0, 0, 0, 0.5);
-            padding: clamp(8px, 2vw, 15px);
-            border: 1px solid #00ff00;
-            border-radius: 4px;
-            max-width: 90vw;
-            /* animation: pulse 2s infinite; */
-        }
+
 
         .hud-controls {
             position: absolute;
@@ -172,24 +146,7 @@
             transform: translate(-50%, -50%);
         }
 
-        .hud-target-info {
-            position: absolute;
-            top: max(10px, env(safe-area-inset-top));
-            right: max(10px, env(safe-area-inset-right));
-            font-size: clamp(10px, 2vw, 14px);
-            background: rgba(0, 0, 0, 0.7);
-            padding: clamp(8px, 2vw, 15px);
-            border: 1px solid #00ff00;
-            border-radius: 4px;
-            min-width: 150px;
-            text-align: right;
-            display: none;
-            z-index: 10;
-        }
 
-        .hud-target-info.visible {
-            display: block;
-        }
 
         .speed-indicator {
             position: absolute;
@@ -352,11 +309,7 @@
                 font-size: clamp(12px, 4vw, 16px);
             }
 
-            .hud-stats {
-                font-size: clamp(9px, 2.5vw, 12px);
-            }
-
-            .control-panel {
+.control-panel {
                 bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
             }
 
@@ -364,6 +317,7 @@
                 width: clamp(150px, 35vw, 300px);
                 height: clamp(150px, 35vw, 300px);
             }
+
         }
 
         @media (orientation: landscape) {
@@ -393,11 +347,6 @@
 
     <div class="hud">
         <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span></div>
-
-        <div class="hud-stats">
-            <div id="targetName">Find an Animal!</div>
-            <div id="targetStats"></div>
-        </div>
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
@@ -1320,6 +1269,128 @@
         ];
 
         // ============================================================================
+        // STAT LABELS (billboarded sprites above entity heads)
+        // ============================================================================
+
+        const _statLabelCanvas = document.createElement('canvas');
+        _statLabelCanvas.width = 128;
+        _statLabelCanvas.height = 48;
+        const _statLabelCtx = _statLabelCanvas.getContext('2d');
+
+        // Pool of sprites keyed by animal reference
+        const animalStatSprites = new Map(); // animal -> THREE.Sprite
+
+        function createStatSprite() {
+            const texture = new THREE.CanvasTexture(_statLabelCanvas);
+            const mat = new THREE.SpriteMaterial({ map: texture.clone(), depthTest: false, transparent: true });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(30, 11, 1);
+            scene.add(sprite);
+            return sprite;
+        }
+
+        function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed) {
+            const cv = document.createElement('canvas');
+            cv.width = 128; cv.height = 48;
+            const ctx = cv.getContext('2d');
+
+            const BAR_W = 110, BAR_H = 9, X0 = 9;
+
+            // Background
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.beginPath();
+            ctx.roundRect(2, 2, 124, 44, 6);
+            ctx.fill();
+
+            function drawBar(y, label, value, maxValue, color) {
+                const ratio = Math.max(0, Math.min(1, value / maxValue));
+                // Track bg
+                ctx.fillStyle = '#222';
+                ctx.fillRect(X0, y, BAR_W, BAR_H);
+                // Fill
+                ctx.fillStyle = color;
+                ctx.fillRect(X0, y, Math.round(BAR_W * ratio), BAR_H);
+                // Label
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 8px monospace';
+                ctx.fillText(label, X0, y - 1);
+            }
+
+            // Need values grow from ~0.01 upward with no hard cap.
+            const NEED_MAX = 0.5;
+            const hungerFull = Math.min(1, foodNeed  / NEED_MAX);
+            const thirstFull = Math.min(1, waterNeed / NEED_MAX);
+
+            drawBar(10, '❤️', health, maxHealth, '#e74c3c');
+            // full = low need, empty = high need
+            drawBar(24, '🍽️', hungerFull, 1, '#e67e22');
+            // full = low need, empty = high need
+            drawBar(38, '💧', thirstFull, 1, '#3498db');
+
+            // Update sprite texture
+            const tex = new THREE.CanvasTexture(cv);
+            sprite.material.map.dispose();
+            sprite.material.map = tex;
+            sprite.material.needsUpdate = true;
+        }
+
+        // Tracks which animal the player is currently looking at
+        let currentTargetAnimal = null;
+
+        function updateStatLabels(animals) {
+            const seen = new Set();
+
+            for (const a of animals) {
+                if (!a.alive) continue;
+                seen.add(a);
+
+                const isTarget = (a === currentTargetAnimal);
+
+                let sprite = animalStatSprites.get(a);
+                if (!sprite) {
+                    sprite = createStatSprite();
+                    sprite.visible = false;
+                    animalStatSprites.set(a, sprite);
+                }
+
+                if (isTarget) {
+                    // Position above head (~32 units up from body centre)
+                    sprite.position.set(a.position.x, a.position.y + 20, a.position.z);
+
+                    // Throttle texture redraws to every 10 frames
+                    if (!sprite._frameCount) sprite._frameCount = 0;
+                    sprite._frameCount++;
+                    if (sprite._frameCount % 10 === 0 || !sprite.visible) {
+                        drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed);
+                    }
+
+                    sprite.visible = true;
+                } else {
+                    sprite.visible = false;
+                }
+            }
+
+            // Remove sprites for dead/removed animals
+            for (const [animal, sprite] of animalStatSprites) {
+                if (!seen.has(animal)) {
+                    scene.remove(sprite);
+                    sprite.material.map.dispose();
+                    sprite.material.dispose();
+                    animalStatSprites.delete(animal);
+                }
+            }
+        }
+
+        function clearAllStatLabels() {
+            for (const [, sprite] of animalStatSprites) {
+                scene.remove(sprite);
+                sprite.material.map.dispose();
+                sprite.material.dispose();
+            }
+            animalStatSprites.clear();
+        }
+
+        // ============================================================================
         // ENTITY SYSTEM
         // ============================================================================
 
@@ -1790,19 +1861,82 @@
         const nnContainer = document.getElementById('nnVisualizerContainer');
         const nnLabel = document.getElementById('nnLabel');
         let nnVisualizer = null;
+        let nnSprite3DVisualizer = null;  // declared here; initialised lazily below
         let nnVisEnabled = false;
+
+        // ============================================================================
+        // 3D NN VISUALIZER SPRITE (billboarded, above the stat-bar sprite)
+        // ============================================================================
+
+        // Offscreen canvas: 256 wide × 128 tall (height halved by 50%)
+        const _nnSpriteCanvas = document.createElement('canvas');
+        _nnSpriteCanvas.width  = 256;
+        _nnSpriteCanvas.height = 128;
+
+        const _nnSpriteTexture = new THREE.CanvasTexture(_nnSpriteCanvas);
+
+        const _nnSpriteMat = new THREE.SpriteMaterial({
+            map: _nnSpriteTexture,
+            depthTest: false,
+            transparent: true
+        });
+        const nnSprite = new THREE.Sprite(_nnSpriteMat);
+        // Original 70×70 → halve height for new aspect (256×128) → 70×35,
+        // then scale the whole thing down 25% → 52.5 × 26.25
+        nnSprite.scale.set(52.5, 26.25, 1);
+        nnSprite.visible = false;
+        scene.add(nnSprite);
+
+        function initNN3DVisualizer() {
+            nnSprite3DVisualizer = new NNVisualizer(_nnSpriteCanvas, [256, 128]);
+        }
+
+        function updateNN3DSprite(target) {
+            if (!nnVisEnabled || !target || !target.alive) {
+                nnSprite.visible = false;
+                return;
+            }
+
+            if (!nnSprite3DVisualizer) initNN3DVisualizer();
+
+            const ctx = nnSprite3DVisualizer.ctx;
+
+            // draw() internally calls clearRect — let it run first so bg is drawn on clean canvas
+            try { nnSprite3DVisualizer.draw(target); } catch(e) { ctx.clearRect(0, 0, 256, 128); }
+
+            // Re-read pixels so we can composite bg behind the already-drawn network.
+            // Simpler: draw bg to a temp canvas, then draw network pixels on top.
+            // Even simpler: use destination-over compositing — draws BEHIND existing pixels.
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath();
+            ctx.roundRect(2, 2, 252, 124, 8);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+
+            // Green border on top
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.roundRect(2, 2, 252, 124, 8);
+            ctx.stroke();
+
+            _nnSpriteTexture.needsUpdate = true;
+
+            // Stack: stat bars at y+32 (height ~11wu), NN panel centred at y+60
+            nnSprite.position.set(
+                target.position.x,
+                target.position.y + 40,
+                target.position.z
+            );
+            nnSprite.visible = true;
+        }
+
         toggleNNVis();
 
         function initNNVisualizer() {
-            const wrapper = document.getElementById('nnCanvasWrapper');
-            // Force layout recalculation
-            wrapper.offsetHeight;
-            const rect = wrapper.getBoundingClientRect();
-            const width = Math.max(rect.width, 200);
-            const height = Math.max(rect.height, 200);
-            nnCanvas.width = width;
-            nnCanvas.height = height;
-            nnVisualizer = new NNVisualizer(nnCanvas, [width, height]);
+            // Legacy stub — 3D sprite visualizer is initialised via initNN3DVisualizer()
         }
 
         document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
@@ -1811,17 +1945,11 @@
             nnVisEnabled = !nnVisEnabled;
             const btn = document.getElementById('nnVisBtn');
             if (nnVisEnabled) {
-                nnContainer.classList.add('show');
                 btn.textContent = 'Hide NN';
-                // Initialize on next frame to ensure DOM is ready
-                requestAnimationFrame(() => {
-                    if (!nnVisualizer) {
-                        initNNVisualizer();
-                    }
-                });
+                if (!nnSprite3DVisualizer) initNN3DVisualizer();
             } else {
-                nnContainer.classList.remove('show');
                 btn.textContent = 'Show NN';
+                if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
             }
         }
 
@@ -1864,6 +1992,12 @@
             entities = []; animals = []; plants = []; waters = [];
             waterLocations = [];
             if (terrain) scene.remove(terrain);
+
+            // Clear stat label sprites from previous world
+            clearAllStatLabels();
+
+            // Hide NN sprite on reset
+            nnSprite.visible = false;
 
             // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
@@ -2066,10 +2200,14 @@
         const _raySphere = new THREE.Sphere();
         const _rayTarget = new THREE.Vector3();
 
+        const _worldQuat = new THREE.Quaternion();
+
         function raycaster() {
-            const direction = new THREE.Vector3(0, -0.175, -1);
-            direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
-            direction.applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch);
+            // Derive ray direction from the camera's world quaternion so it always matches the crosshair
+            camera.getWorldQuaternion(_worldQuat);
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(_worldQuat);
+            direction.normalize();
             raycastHelper.set(player.position, direction);
 
             let closest = null;
@@ -2078,7 +2216,7 @@
             // Only search animals (skip plants, avoid instanceof)
             for (const a of animals) {
                 if (!a.alive) continue;
-                _raySphere.set(a.position, 5);
+                _raySphere.set(a.position, 15);
                 const intersection = raycastHelper.ray.intersectSphere(_raySphere, _rayTarget);
                 if (intersection) {
                     const dist = player.position.distanceTo(intersection);
@@ -2090,47 +2228,14 @@
 
         function updateTargetInfo() {
             const target = raycaster();
-            const targetInfoEl = document.querySelector('.hud-stats');
+            currentTargetAnimal = (target && target.alive) ? target : null;
 
             if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
-                const healthPercent = Math.round((target.health / target.maxHealth) * 100);
-                const hungerPercent = Math.round(target.foodNeed);
-                const thirstPercent = Math.round(target.waterNeed);
-                const distance = player.position.distanceTo(target.position).toFixed(1);
-
-                document.getElementById('targetName').textContent = 
-                    `${target.type.toUpperCase()}`;
-                document.getElementById('targetStats').textContent = 
-                    `❤️${healthPercent}%  🍽️${hungerPercent}% 💧${thirstPercent}%  📍${distance}m`;
-                targetInfoEl.classList.add('visible');
-
-                // Update NN visualizer if enabled
-                if (nnVisEnabled && target instanceof Animal) {
-                    if (!nnVisualizer) {
-                        initNNVisualizer();
-                    }
-                    if (nnVisualizer && nnVisualizer.ctx) {
-                        try {
-                            nnVisualizer.draw(target);
-                            nnLabel.textContent = 'Brain Activity';
-                        } catch (e) {
-                            console.error('NN Draw error:', e);
-                            nnLabel.textContent = 'Error rendering';
-                        }
-                    }
-                }
+                // Update 3D NN sprite
+                updateNN3DSprite(target);
             } else {
-                document.getElementById('targetName').textContent = 
-                    `Find An Animal!`;
-                document.getElementById('targetStats').textContent = 
-                    ``;
-                targetInfoEl.classList.add('visible');
-                if (nnVisEnabled) {
-                    nnLabel.textContent = 'No Animal';
-                    if (nnVisualizer && nnVisualizer.ctx) {
-                        nnVisualizer.ctx.clearRect(0, 0, nnVisualizer.w_width, nnVisualizer.w_height);
-                    }
-                }
+                // Hide 3D NN sprite when no target
+                updateNN3DSprite(null);
             }
         }
 
@@ -2280,6 +2385,9 @@
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals);
 
+            // Update billboarded stat labels above each entity
+            updateStatLabels(animals);
+
             if (!inVR) updateTargetInfo();
 
             ticks++;
@@ -2308,10 +2416,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            if (nnVisualizer) {
-                const rect = document.getElementById('nnCanvasWrapper').getBoundingClientRect();
-                nnVisualizer.resize([rect.width, rect.height]);
-            }
         }
 
         // Handle window resize
