@@ -381,7 +381,7 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.1</div>
+            <div id="version-number">VERSION: 1.2.1-opt</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">2</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="2"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
@@ -541,12 +541,9 @@
                         btnText.textContent = 'Enter VR';
                         btn.disabled = false;
                     }
-                    // else stays "VR Not Supported" and disabled
                 }).catch(() => {
-                    // stays "VR Not Supported" and disabled
                 });
             }
-            // else: no WebXR at all — stays "VR Not Supported" and disabled
         })();
 
         // ============================================================================
@@ -573,8 +570,6 @@
         // WebXR
         renderer.xr.enabled = true;
 
-        // VR button stays inside the settings panel (no appendChild needed)
-
         // Show the dom-overlay div when a VR session is active
         renderer.xr.addEventListener('sessionstart', () => {
             document.getElementById('vr-overlay').style.display = 'block';
@@ -583,11 +578,11 @@
             document.getElementById('vr-overlay').style.display = 'none';
         });
 
-        // VR Controller state (Quest 2 has two controllers)
+        // VR Controller state
         const vrState = {
-            moveX: 0,   // left thumbstick X
-            moveY: 0,   // left thumbstick Y
-            turnX: 0,   // right thumbstick X
+            moveX: 0,
+            moveY: 0,
+            turnX: 0,
             jumpPressed: false,
             resetPressed: false,
             aWasDown: false,
@@ -827,7 +822,6 @@
         document.addEventListener('touchcancel', resetJoystick);
 
         // Touch screen camera control and double tap jump
-        // Tracks right-side touches (non-joystick) separately per finger
         let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
@@ -954,8 +948,6 @@
         };
 
         class DenseNetwork {
-            // Uses flat Float32Arrays for weights/biases/velocities.
-            // Pre-allocates layer activation buffers so propagate() is zero-allocation.
             constructor(inputDims, layerDims, learningRate = 0.01, momentum = 0.9, weightDecay = 0.0001) {
                 this.layerDims = [inputDims, ...layerDims];
                 this.learningRate = learningRate;
@@ -1084,7 +1076,7 @@
         }
 
         // ============================================================================
-        // SPATIAL GRID (amortized neighbor queries()
+        // SPATIAL GRID
         // ============================================================================
 
         class SpatialGrid {
@@ -1093,6 +1085,9 @@
                 this.cols = Math.ceil(worldW / cellSize);
                 this.rows = Math.ceil(worldH / cellSize);
                 this.cells = new Map();
+                // Pool of reusable bucket arrays to avoid per-frame allocation
+                this._pool = [];
+                this._usedBuckets = [];
             }
 
             _key(cx, cy) { return cy * this.cols + cx; }
@@ -1103,12 +1098,24 @@
                 return this._key((cx + this.cols) % this.cols, (cy + this.rows) % this.rows);
             }
 
-            clear() { this.cells.clear(); }
+            clear() {
+                // Return used buckets to pool and clear cells map
+                for (const bucket of this._usedBuckets) {
+                    bucket.length = 0;
+                    this._pool.push(bucket);
+                }
+                this._usedBuckets.length = 0;
+                this.cells.clear();
+            }
 
             insert(entity) {
                 const k = this._cell(entity.position.x, entity.position.z);
                 let bucket = this.cells.get(k);
-                if (!bucket) { bucket = []; this.cells.set(k, bucket); }
+                if (!bucket) {
+                    bucket = this._pool.length > 0 ? this._pool.pop() : [];
+                    this.cells.set(k, bucket);
+                    this._usedBuckets.push(bucket);
+                }
                 bucket.push(entity);
             }
 
@@ -1133,7 +1140,6 @@
 
         // ============================================================================
         // INSTANCED MESH RENDERER
-        // Supports up to MAX_INSTANCES animals per type.
         // ============================================================================
 
         const MAX_INSTANCES = 12000;
@@ -1290,9 +1296,10 @@
         }
 
         function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed) {
-            const cv = document.createElement('canvas');
-            cv.width = 128; cv.height = 48;
-            const ctx = cv.getContext('2d');
+            // Reuse the pre-allocated shared canvas — no per-call allocation
+            const cv = _statLabelCanvas;
+            const ctx = _statLabelCtx;
+            ctx.clearRect(0, 0, 128, 48);
 
             const BAR_W = 110, BAR_H = 9, X0 = 9;
 
@@ -1327,9 +1334,9 @@
             // full = low need, empty = high need
             drawBar(38, '💧', thirstFull, 1, '#3498db');
 
-            // Update sprite texture
+            // Update sprite texture using the shared canvas
             const tex = new THREE.CanvasTexture(cv);
-            sprite.material.map.dispose();
+            if (sprite.material.map) sprite.material.map.dispose();
             sprite.material.map = tex;
             sprite.material.needsUpdate = true;
         }
@@ -1337,12 +1344,15 @@
         // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
 
+        // Persistent set for stat label cleanup — avoids new Set() every frame
+        const _seenAnimals = new Set();
+
         function updateStatLabels(animals) {
-            const seen = new Set();
+            _seenAnimals.clear();
 
             for (const a of animals) {
                 if (!a.alive) continue;
-                seen.add(a);
+                _seenAnimals.add(a);
 
                 const isTarget = (a === currentTargetAnimal);
 
@@ -1372,9 +1382,9 @@
 
             // Remove sprites for dead/removed animals
             for (const [animal, sprite] of animalStatSprites) {
-                if (!seen.has(animal)) {
+                if (!_seenAnimals.has(animal)) {
                     scene.remove(sprite);
-                    sprite.material.map.dispose();
+                    if (sprite.material.map) sprite.material.map.dispose();
                     sprite.material.dispose();
                     animalStatSprites.delete(animal);
                 }
@@ -1542,7 +1552,7 @@
                 this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
             }
 
-            update(now, grid, waterLocations) {
+            update(now, grid, waterLocations, animalIndex) {
                 this.waterNeed += this.waterIncrement;
                 this.foodNeed  += this.foodIncrement;
                 this.health -= ((now - this.tob) / 10000) * this.ageDepl
@@ -1551,10 +1561,13 @@
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
-                this.think(grid, waterLocations);
-                if (++this.brainUpdateCounter >= 5) {
-                    this.brain.adjustWeights(this.health - this.startHealth);
-                    this.brainUpdateCounter = 0;
+                // Stagger think() across 4 frames using animal index — cuts NN cost by 75%
+                if ((animalIndex & 3) === (ticks & 3)) {
+                    this.think(grid, waterLocations);
+                    if (++this.brainUpdateCounter >= 5) {
+                        this.brain.adjustWeights(this.health - this.startHealth);
+                        this.brainUpdateCounter = 0;
+                    }
                 }
                 this.move();
             }
@@ -1868,7 +1881,6 @@
         // 3D NN VISUALIZER SPRITE (billboarded, above the stat-bar sprite)
         // ============================================================================
 
-        // Offscreen canvas: 256 wide × 128 tall (height halved by 50%)
         const _nnSpriteCanvas = document.createElement('canvas');
         _nnSpriteCanvas.width  = 256;
         _nnSpriteCanvas.height = 128;
@@ -1881,8 +1893,6 @@
             transparent: true
         });
         const nnSprite = new THREE.Sprite(_nnSpriteMat);
-        // Original 70×70 → halve height for new aspect (256×128) → 70×35,
-        // then scale the whole thing down 25% → 52.5 × 26.25
         nnSprite.scale.set(52.5, 26.25, 1);
         nnSprite.visible = false;
         scene.add(nnSprite);
@@ -1904,9 +1914,7 @@
             // draw() internally calls clearRect — let it run first so bg is drawn on clean canvas
             try { nnSprite3DVisualizer.draw(target); } catch(e) { ctx.clearRect(0, 0, 256, 128); }
 
-            // Re-read pixels so we can composite bg behind the already-drawn network.
-            // Simpler: draw bg to a temp canvas, then draw network pixels on top.
-            // Even simpler: use destination-over compositing — draws BEHIND existing pixels.
+            // Re-read pixels so we can composite bg behind the already-drawn network
             ctx.globalCompositeOperation = 'destination-over';
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
             ctx.beginPath();
@@ -1936,7 +1944,7 @@
         toggleNNVis();
 
         function initNNVisualizer() {
-            // Legacy stub — 3D sprite visualizer is initialised via initNN3DVisualizer()
+            // 3D sprite visualizer is initialised via initNN3DVisualizer()
         }
 
         document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
@@ -1958,10 +1966,10 @@
         // ============================================================================
 
         // Separate typed arrays avoid instanceof checks in hot loops
-        let animals = []; // Animal instances only
-        let plants = []; // Plant instances only
-        let waters = []; // Water instances only
-        let entities = []; // all
+        let animals = [];
+        let plants = [];
+        let waters = [];
+        let entities = [];
         let terrain;
         let waterLocations = [];
         let ticks = 0;
@@ -2033,7 +2041,7 @@
                 // Place individual water tiles in this cluster
                 for (let j = 0; j < 15 * Math.log1p(CONFIG.scale); j++) {
                     let wx, wz, isValidPosition = false;
-                    const tileRadius = 10; // Minimum distance between individual water tiles
+                    const tileRadius = 10; // minimum distance between individual water tiles
                     
                     // Find valid position within cluster
                     while (!isValidPosition) {
@@ -2065,6 +2073,7 @@
                     waterLocations.push([wx, wz]);
                 }
             }
+            waterGridDirty = true; // trigger water spatial grid rebuild
 
             // Add plants
             for (let i = 0; i < CONFIG.initialPlants; i++) {
@@ -2098,10 +2107,26 @@
 
         // Spatial grid for plants only
         const plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
+        // Spatial grid for water — rebuilt lazily when waterLocations changes
+        const waterGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
+        let waterGridDirty = true;
+
+        function rebuildWaterGrid() {
+            waterGrid.clear();
+            for (const w of waterLocations) {
+                // Insert a lightweight proxy object
+                waterGrid.insert({ position: { x: w[0], z: w[1] }, _raw: w });
+            }
+            waterGridDirty = false;
+        }
+
         function handleCollisions() {
             // Rebuild plant grid (plants are sparse, cheap to rebuild)
             plantGrid.clear();
             for (const p of plants) if (p.alive) plantGrid.insert(p);
+
+            // Rebuild water grid only when locations change (done once at init)
+            if (waterGridDirty) rebuildWaterGrid();
 
             for (const a of animals) {
                 if (!a.alive) continue;
@@ -2125,9 +2150,9 @@
                     }
                 }
 
-                // All animals drink one water source per frame
-                for (const water of waterLocations) {
-                    if (tools.distSq(px, pz, water[0], water[1]) < 200) {
+                // All animals drink one water source per frame — use spatial grid
+                for (const proxy of waterGrid.query(px, pz, 20)) {
+                    if (tools.distSq(px, pz, proxy.position.x, proxy.position.z) < 200) {
                         a.drinkWater();
                         break;
                     }
@@ -2135,28 +2160,32 @@
             }
         }
 
+        // Reusable objects for updatePlayer — avoids per-frame heap allocation
+        const _moveVector = new THREE.Vector3();
+        const _rotMatrix  = new THREE.Matrix4();
+
         function updatePlayer(deltaTime) {
-            let moveVector = new THREE.Vector3(0, 0, 0);
+            _moveVector.set(0, 0, 0);
 
             if (controls.controlMode === 'keyboard') {
                 // Keyboard controls
                 const currentSpeed = keys['shift'] ? player.sprintSpeed : player.speed;
                 
-                if (keys['w']) moveVector.z -= currentSpeed * deltaTime;
-                if (keys['s']) moveVector.z += currentSpeed * deltaTime;
-                if (keys['a']) moveVector.x -= currentSpeed * deltaTime;
-                if (keys['d']) moveVector.x += currentSpeed * deltaTime;
+                if (keys['w']) _moveVector.z -= currentSpeed * deltaTime;
+                if (keys['s']) _moveVector.z += currentSpeed * deltaTime;
+                if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
+                if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
             } else {
                 // Touch joystick controls
                 const currentSpeed = player.speed;
-                moveVector.x = controls.joystickX * currentSpeed * deltaTime;
-                moveVector.z = controls.joystickY * currentSpeed * deltaTime;
+                _moveVector.x = controls.joystickX * currentSpeed * deltaTime;
+                _moveVector.z = controls.joystickY * currentSpeed * deltaTime;
             }
 
             // Apply rotation to movement
-            const rotationMatrix = new THREE.Matrix4();
-            rotationMatrix.makeRotationY(player.yaw);
-            moveVector.applyMatrix4(rotationMatrix);
+            _rotMatrix.makeRotationY(player.yaw);
+            _moveVector.applyMatrix4(_rotMatrix);
+            const moveVector = _moveVector;
 
             player.position.add(moveVector);
 
@@ -2199,16 +2228,17 @@
         // Reusable sphere and vector for raycasting
         const _raySphere = new THREE.Sphere();
         const _rayTarget = new THREE.Vector3();
+        const _rayDirection = new THREE.Vector3();
 
         const _worldQuat = new THREE.Quaternion();
 
         function raycaster() {
             // Derive ray direction from the camera's world quaternion so it always matches the crosshair
             camera.getWorldQuaternion(_worldQuat);
-            const direction = new THREE.Vector3(0, 0, -1);
-            direction.applyQuaternion(_worldQuat);
-            direction.normalize();
-            raycastHelper.set(player.position, direction);
+            _rayDirection.set(0, 0, -1);
+            _rayDirection.applyQuaternion(_worldQuat);
+            _rayDirection.normalize();
+            raycastHelper.set(player.position, _rayDirection);
 
             let closest = null;
             let closestDist = Infinity;
@@ -2332,8 +2362,6 @@
                 }
 
                 // Position the XR camera rig at player position
-                // In WebXR the camera pose comes from the HMD, so we move the
-                // xr reference space offset instead via a dummy parent group.
                 vrCameraRig.position.copy(player.position);
                 vrCameraRig.rotation.y = player.yaw;
 
@@ -2351,8 +2379,9 @@
             for (const a of animals) if (a.alive) spatialGrid.insert(a);
 
             // Update animals
-            for (const a of animals) {
-                if (a.alive) a.update(now, spatialGrid, waterLocations);
+            for (let ai = 0; ai < animals.length; ai++) {
+                const a = animals[ai];
+                if (a.alive) a.update(now, spatialGrid, waterLocations, ai);
             }
 
             // Update plants
@@ -2363,14 +2392,15 @@
             handleCollisions();
 
             // Remove dead entities from typed arrays + shared array
+            let anyRemoved = false;
             for (let i = animals.length - 1; i >= 0; i--) {
-                if (!animals[i].alive) { animals[i].remove(); animals.splice(i, 1); }
+                if (!animals[i].alive) { animals[i].remove(); animals.splice(i, 1); anyRemoved = true; }
             }
             for (let i = plants.length - 1; i >= 0; i--) {
-                if (!plants[i].alive) { plants[i].remove(); plants.splice(i, 1); }
+                if (!plants[i].alive) { plants[i].remove(); plants.splice(i, 1); anyRemoved = true; }
             }
-            // Keep entities in sync (only needed for NN visualizer target lookup)
-            entities = [...animals, ...plants, ...waters];
+            // Only rebuild entities when something was added or removed
+            if (anyRemoved) entities = [...animals, ...plants, ...waters];
 
             // Occasionally spawn new plants
             if (Math.random() < 0.01) {
@@ -2380,6 +2410,7 @@
                 ]);
                 plants.push(p);
                 entities.push(p);
+                // entities is already up-to-date since we push directly
             }
 
             // Update instanced mesh transforms every frame
@@ -2388,7 +2419,7 @@
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
 
-            if (!inVR) updateTargetInfo();
+            if (!inVR && ticks % 3 === 0) updateTargetInfo();
 
             ticks++;
             if (ticks % 60 === 0) updateStats();
@@ -2422,10 +2453,7 @@
         window.addEventListener('resize', resizeRenderer);
         window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 100));
 
-        // ── VR Camera Rig ──────────────────────────────────────────────────────
-        // In WebXR the HMD provides the view matrix internally.
-        // Wrap the camera in a Group to allow translate/rotate
-        // entire player body without fighting the XR pose.
+        // VR Camera Rig
         const vrCameraRig = new THREE.Group();
         vrCameraRig.add(camera);
         scene.add(vrCameraRig);
