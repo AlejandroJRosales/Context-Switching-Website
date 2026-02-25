@@ -944,6 +944,20 @@
 
             random(min = 0, max = 1) {
                 return Math.random() * (max - min) + min;
+            },
+
+            getMeanVariance(inputs) {
+                let mean = 0;
+                for (let i = 0; i < inputs.length; i++) mean += inputs[i];
+                mean /= inputs.length;
+
+                let variance = 0;
+                for (let i = 0; i < inputs.length; i++) {
+                    const diff = inputs[i] - mean;
+                    variance += diff * diff;
+                }
+                variance /= inputs.length;
+                return { mean, variance };
             }
         };
 
@@ -957,16 +971,21 @@
                 this.lastCost = 0.0;
                 this.costHistoryLen = 0;
                 this.output = null;
+                this.normCount = 0;
+                this.EMA = 0.001;
 
                 const L = this.layerDims.length - 1; // number of weight layers
-                this.weights = [];         // Float32Array per layer, row-major [in * out]
+                this.weights = [];         // Float32Array per layer
                 this.biases = [];          // Float32Array per layer
                 this.weightVelocity = [];
                 this.biasVelocity = [];
-                this.activations = [];     // pre-allocated output buffers per layer
+                this.activations = [];
+                this.runningMean = new Float32Array(inputDims);
+                this.runningVar = new Float32Array(inputDims).fill(1);
 
                 for (let i = 0; i < L; i++) {
-                    const inD = this.layerDims[i], outD = this.layerDims[i + 1];
+                    const inD = this.layerDims[i]
+                    const outD = this.layerDims[i + 1];
                     const limit = Math.sqrt(6.0 / (inD + outD));
                     const w = new Float32Array(inD * outD);
                     for (let k = 0; k < w.length; k++) w[k] = tools.random(-limit, limit);
@@ -1019,12 +1038,26 @@
                 for (let j = 0; j < last.length; j++) { last[j] = Math.exp(last[j] - maxV); sum += last[j]; }
                 for (let j = 0; j < last.length; j++) last[j] /= sum;
 
-                return last; // returns the pre-allocated buffer
+                return last;
             }
 
             think(inputs) {
-                const values = this.propagate(inputs);
-                let bestIdx = 0, bestVal = values[0];
+                this.normCount++;
+                const standardized = new Float32Array(inputs.length);
+
+                for (let i = 0; i < inputs.length; i++) {
+                    const delta = inputs[i] - this.runningMean[i];
+                    this.runningMean[i] += this.EMA * delta;
+                    this.runningVar[i] = (1 - this.EMA) * this.runningVar[i] + this.EMA * delta * delta;
+                    standardized[i] = delta / Math.sqrt(this.runningVar[i] + 1e-8);  // reuse delta here
+                }
+                // clamp to prevent outliers
+                for (let i = 0; i < standardized.length; i++) {
+                    standardized[i] = Math.max(-5, Math.min(5, standardized[i]));
+                }
+                const values = this.propagate(standardized);
+                            let bestIdx = 0;
+                let bestVal = values[0];
                 for (let j = 1; j < values.length; j++) {
                     if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
                 }
@@ -1036,7 +1069,7 @@
                 if (this.costHistoryLen > 0 && this.cost < this.lastCost) {
                     this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 1.0005));
                 } else {
-                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 0.0095));
+                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 0.9995));
                 }
                 this.lastCost = this.cost;
                 this.costHistoryLen = Math.min(this.costHistoryLen + 1, 100);
@@ -1709,7 +1742,9 @@
                     Math.abs(this.position.x - this.focusX) / CONFIG.worldWidth,
                     Math.abs(this.position.z - this.focusZ) / CONFIG.worldHeight,
                     this.type === 'wolf' ? -1 : 1,
-                    this.foodNeed, this.waterNeed, this.reproductionNeed
+                    this.foodNeed,
+                    this.waterNeed,
+                    this.reproductionNeed
                 ];
                 this.outputIdx = this.brain.think(inputs);
             }
