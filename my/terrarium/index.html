@@ -979,7 +979,6 @@
             }
 
             propagate(inputs) {
-                // Zero-allocation forward pass
                 let prev = inputs;
                 const L = this.layerDims.length - 1;
 
@@ -1035,9 +1034,9 @@
 
             getAdaptiveLr() {
                 if (this.costHistoryLen > 0 && this.cost < this.lastCost) {
-                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 1.05 * 0.001));
+                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 1.0005));
                 } else {
-                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 0.95 * 0.001));
+                    this.learningRate = Math.max(0.0001, Math.min(0.1, this.learningRate * 0.0095));
                 }
                 this.lastCost = this.cost;
                 this.costHistoryLen = Math.min(this.costHistoryLen + 1, 100);
@@ -1591,8 +1590,8 @@
 
         // Static movement tables per type
         const COORD_CHANGES = {
-            sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
-            wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s*.7,s*.7],[s*.7,-s*.7],[-s*.7,s*.7],[-s*.7,-s*.7]]; })(),
+            sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
+            wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
         };
 
         class Animal extends Entity {
@@ -1606,14 +1605,14 @@
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
-                this.waterNeed = Math.random() * 0.02 + 0.01;
-                this.foodNeed = Math.random() * 0.02 + 0.01;
-                this.reproductionNeed = Math.random() * 0.02 + 0.01;
+                this.waterNeed = Math.random() * 0.05;
+                this.foodNeed = Math.random() * 0.05;
+                this.reproductionNeed = Math.random() * 0.05;
                 this.avoidNeed = 0;
 
-                this.waterIncrement = this.health * 0.00001;
-                this.foodIncrement = this.health * 0.00001;
-                this.ageDepl = this.health * 0.00001;
+                this.waterIncrement = this.health * 0.0001;
+                this.foodIncrement  = this.health * 0.001;
+                this.ageDepl        = this.health * 0.00001;
 
                 // Flat memory (no heap allocation per look-up)
                 this.memPredatorX = 0; this.memPredatorZ = 0; this.hasPredator = false;
@@ -1622,7 +1621,7 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(6, [6, 9, 8], 0.01);
+                this.brain = new DenseNetwork(6, [4, 4, 8], 0.01);
                 this.outputIdx = 0;
                 this.brainUpdateCounter = 0;
 
@@ -1730,7 +1729,7 @@
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
-                // Stagger think() across 4 frames using animal index, cuts NN cost by 75%
+                // Throttle think() across n frames using animal index
                 if ((animalIndex & 3) === (ticks & 3)) {
                     this.think(grid, waterLocations);
                     if (++this.brainUpdateCounter >= 5) {
@@ -2588,9 +2587,10 @@
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
 
-            if (!inVR && ticks % 3 === 0) updateTargetInfo();
+            // if (!inVR && ticks % 3 === 0) updateTargetInfo();
+            updateTargetInfo();
 
-            // ticks++;
+            ticks++;
             // if (ticks % 60 === 0) updateStats();
             updateStats();
 
