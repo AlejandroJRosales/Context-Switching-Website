@@ -35,7 +35,7 @@
 
 
 
-        /* Neural Network Visualizer — DOM panel hidden; rendered as 3D billboard sprite */
+        /* Neural Network Visualizer, DOM panel hidden; rendered as 3D billboard sprite */
         #nnVisualizerContainer {
             display: none !important;
         }
@@ -382,8 +382,8 @@
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
             <div id="version-number">VERSION: 1.2.3</div>
-            <label for="scale-slider">SCALE: <span id="scaleDisplay">2</span></label><br>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="2"
+            <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
         </div>
         <div style="font-size:10px; color:rgba(0,255,0,0.6); margin-bottom:16px;">Changes take effect on Reset</div>
@@ -1295,7 +1295,7 @@
         }
 
         function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed) {
-            // Reuse the pre-allocated shared canvas — no per-call allocation
+            // Reuse the pre-allocated shared canvas, no per-call allocation
             const cv = _statLabelCanvas;
             const ctx = _statLabelCtx;
             ctx.clearRect(0, 0, 128, 48);
@@ -1343,7 +1343,7 @@
         // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
 
-        // Persistent set for stat label cleanup — avoids new Set() every frame
+        // Persistent set for stat label cleanup, avoids new Set() every frame
         const _seenAnimals = new Set();
 
         function updateStatLabels(animals) {
@@ -1730,7 +1730,7 @@
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
-                // Stagger think() across 4 frames using animal index — cuts NN cost by 75%
+                // Stagger think() across 4 frames using animal index, cuts NN cost by 75%
                 if ((animalIndex & 3) === (ticks & 3)) {
                     this.think(grid, waterLocations);
                     if (++this.brainUpdateCounter >= 5) {
@@ -1960,7 +1960,7 @@
             extractWeights(nn) {
                 if (!nn.weights?.length) return [];
                 const firstLayer = nn.weights[0];
-                // Float32Array (new flat format) — reconstruct 3D array for visualizer
+                // Float32Array (new flat format), reconstruct 3D array for visualizer
                 if (firstLayer instanceof Float32Array) {
                     const result = [];
                     for (let l = 0; l < nn.weights.length; l++) {
@@ -2080,7 +2080,7 @@
 
             const ctx = nnSprite3DVisualizer.ctx;
 
-            // draw() internally calls clearRect — let it run first so bg is drawn on clean canvas
+            // draw() internally calls clearRect, let it run first so bg is drawn on clean canvas
             try { nnSprite3DVisualizer.draw(target); } catch(e) { ctx.clearRect(0, 0, 256, 128); }
 
             // Re-read pixels so we can composite bg behind the already-drawn network
@@ -2276,7 +2276,7 @@
 
         // Spatial grid for plants only
         const plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
-        // Spatial grid for water — rebuilt lazily when waterLocations changes
+        // Spatial grid for water, rebuilt lazily when waterLocations changes
         const waterGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
         let waterGridDirty = true;
 
@@ -2302,7 +2302,7 @@
                 const px = a.position.x, pz = a.position.z;
 
                 if (a.type === 'wolf') {
-                    // Wolves hunt sheep — use main spatial grid
+                    // Wolves hunt sheep, use main spatial grid
                     for (const other of spatialGrid.query(px, pz, 20)) {
                         if (other.alive && other.type === 'sheep' &&
                             tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
@@ -2319,7 +2319,7 @@
                     }
                 }
 
-                // All animals drink one water source per frame — use spatial grid
+                // All animals drink one water source per frame, use spatial grid
                 for (const proxy of waterGrid.query(px, pz, 20)) {
                     if (tools.distSq(px, pz, proxy.position.x, proxy.position.z) < 200) {
                         a.drinkWater();
@@ -2329,7 +2329,7 @@
             }
         }
 
-        // Reusable objects for updatePlayer — avoids per-frame heap allocation
+        // Reusable objects for updatePlayer, avoids per-frame heap allocation
         const _moveVector = new THREE.Vector3();
         const _rotMatrix  = new THREE.Matrix4();
 
