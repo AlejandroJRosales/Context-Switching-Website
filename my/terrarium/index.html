@@ -1981,7 +1981,7 @@
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.rotation.x = -Math.PI / 2;
                 mesh.position.copy(this.position);
-                mesh.receiveShadow = true;
+                mesh.receiveShadow = false;
                 this.mesh = mesh;
                 scene.add(this.mesh);
             }
@@ -2187,7 +2187,7 @@
         }
 
         // ============================================================================
-        // NEURAL NETWORK VISUALIZER SETUP
+        // NEURAL NETWORK VISUALIZER (billboarded, above the stat-bar sprite)
         // ============================================================================
 
         const nnCanvas = document.getElementById('nnCanvas');
@@ -2196,10 +2196,6 @@
         let nnVisualizer = null;
         let nnSprite3DVisualizer = null;  // declared here; initialised lazily below
         let nnVisEnabled = false;
-
-        // ============================================================================
-        // 3D NN VISUALIZER SPRITE (billboarded, above the stat-bar sprite)
-        // ============================================================================
 
         const _nnSpriteCanvas = document.createElement('canvas');
         _nnSpriteCanvas.width  = 256;
@@ -2242,14 +2238,6 @@
             ctx.fill();
             ctx.globalCompositeOperation = 'source-over';
 
-            // Green border on top
-            // ctx.strokeStyle = '#00ff00';
-            // ctx.lineWidth = 3;
-            // ctx.globalAlpha = 1;
-            // ctx.beginPath();
-            // ctx.roundRect(2, 2, 252, 124, 8);
-            // ctx.stroke();
-
             _nnSpriteTexture.needsUpdate = true;
 
             // Stack stat bars and NN panel
@@ -2262,10 +2250,6 @@
         }
 
         toggleNNVis();
-
-        function initNNVisualizer() {
-            // 3D sprite visualizer is initialised via initNN3DVisualizer()
-        }
 
         document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
 
@@ -2285,7 +2269,6 @@
         // WORLD STATE
         // ============================================================================
 
-        // Separate typed arrays avoid instanceof checks in hot loops
         let animals = [];
         let plants = [];
         let waters = [];
