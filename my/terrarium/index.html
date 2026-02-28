@@ -381,7 +381,7 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.4</div>
+            <div id="version-number">VERSION: 1.2.4-opt</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
@@ -2513,12 +2513,10 @@
             player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
             player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
 
-            // Apply gravity
+            // Apply gravity & Ground collision
             player.velocity.y -= 400 * deltaTime; // gravity
             player.position.y += player.velocity.y * deltaTime;
-            console.log('player.velocity.y', player.velocity.y);
 
-            // Ground collision
             if (player.position.y < 35) {
                 player.position.y = 35;
                 player.velocity.y = 0;
@@ -2529,7 +2527,7 @@
                 player.isJumping = false;
             }
 
-            // Cabin collision (player radius ~10, half-height ~20)
+            // Cabin collision
             player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
 
             // Update camera; move the rig to player position, keep camera local at origin
@@ -2680,16 +2678,21 @@
                 if (vrState.resetPressed) { initializeWorld(); }
                 vrState.resetPressed = false;
 
-                // Gravity & ground
-                player.velocity.y -= 300 * deltaTime;
+                // Apply gravity & Ground collision
+                player.velocity.y -= 400 * deltaTime; // gravity
                 player.position.y += player.velocity.y * deltaTime;
+
                 if (player.position.y < 35) {
                     player.position.y = 35;
                     player.velocity.y = 0;
                     player.isJumping = false;
                 }
 
-                // Cabin collision (VR)
+                if (player.velocity.y < 0) {
+                    player.isJumping = false;
+                }
+
+                // Cabin collision
                 player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
 
                 // Position the XR camera rig at player position
