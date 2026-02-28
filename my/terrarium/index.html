@@ -2516,6 +2516,7 @@
             // Apply gravity
             player.velocity.y -= 300 * deltaTime; // gravity
             player.position.y += player.velocity.y * deltaTime;
+            console.log('player.velocity.y', player.velocity.y);
 
             // Ground collision
             if (player.position.y < 35) {
@@ -2525,7 +2526,7 @@
             }
 
             // Cabin collision (player radius ~10, half-height ~20)
-            resolveCabinCollisions(player.position, 10, 20, undefined);
+            player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
 
             // Update camera; move the rig to player position, keep camera local at origin
             vrCameraRig.position.copy(player.position);
@@ -2695,10 +2696,8 @@
                 if (now % 1000 < 50) updateVRHud();
 
             } else {
-                // Non-VR: original player update
                 updatePlayer(deltaTime);
             }
-            //
 
             // Rebuild spatial grid once per frame for all animals
             spatialGrid.clear();
