@@ -1355,15 +1355,12 @@
             }
 
             // Need values grow from ~0.01 upward with no hard cap.
-            const NEED_MAX = 0.5;
-            const hungerFull = Math.min(1, foodNeed  / NEED_MAX);
-            const thirstFull = Math.min(1, waterNeed / NEED_MAX);
+            const cappedHungerNeed = Math.max(0, Math.min(100, foodNeed)) - 100;
+            const cappedThirstNeed = Math.max(0, Math.min(100, waterNeed)) - 100;
 
             drawBar(10, '❤️', health, maxHealth, '#e74c3c');
-            // full = low need, empty = high need
-            drawBar(24, '🍽️', hungerFull, 1, '#e67e22');
-            // full = low need, empty = high need
-            drawBar(38, '💧', thirstFull, 1, '#3498db');
+            drawBar(24, '🍽️', cappedHungerNeed * -1, 100, '#e67e22');
+            drawBar(38, '💧', cappedThirstNeed * -1, 100, '#3498db');
 
             // Update sprite texture using the shared canvas
             const tex = new THREE.CanvasTexture(cv);
@@ -1395,18 +1392,8 @@
                 }
 
                 if (isTarget) {
-                    // Position above head (~32 units up from body centre)
                     sprite.position.set(a.position.x, a.position.y + 20, a.position.z);
-
                     drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed);
-                    
-                    // // Throttle texture redraws to every 10 frames
-                    // if (!sprite._frameCount) sprite._frameCount = 0;
-                    // sprite._frameCount++;
-                    // if (sprite._frameCount % 10 === 0 || !sprite.visible) {
-                    //     drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed);
-                    // }
-
                     sprite.visible = true;
                 } else {
                     sprite.visible = false;
@@ -1618,19 +1605,6 @@
             }
         }
 
-        const cabin = new Cabin({
-            scale: 1.75,
-            position: new THREE.Vector3(400, 0, 300)
-        });
-
-        scene.add(cabin);
-
-        // ============================================================================
-        // CABIN COLLISION BOXES (AABB in world space)
-        // ============================================================================
-        // Cabin local dims: CW=80, CD=60, WALL_H=44, scale=1.75
-        // World center: (400, 0, 300)
-        // All values pre-multiplied by scale=1.75
         const CABIN_COLLIDERS = (() => {
             const s = 1.75;
             const cx = 400, cz = 300;
@@ -1642,7 +1616,7 @@
             const DOOR_WIDTH  = 18 * s;      // door opening width (scaled)
             const DOOR_HEIGHT = 30 * s;      // door opening height (scaled)
 
-            // Roof geometry (matching Cabin._build())
+            // Roof geometry
             const ROOF_BASE = FLOOR_Y + WALL_H - 4 * s;
             const RIDGE_H = 34 * s;
             const OVH = 8 * s;
@@ -1659,12 +1633,12 @@
             const frontZ = cz + CD / 2;
             const halfDoor = DOOR_WIDTH / 2;
 
-            // FRONT WALL — split into left segment, right segment, and lintel above door
+            // FRONT WALL, split into left segment, right segment, and lintel above door
             // Left of door opening
             box(cx - CW/2 - WALL_THICK, cx - halfDoor,     FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
             // Right of door opening
             box(cx + halfDoor,           cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
-            // Lintel — solid log above doorway up to wall top
+            // Lintel, solid log above doorway up to wall top
             box(cx - halfDoor, cx + halfDoor, FLOOR_Y + DOOR_HEIGHT, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
 
             // BACK WALL (no door)
@@ -1676,7 +1650,7 @@
             // RIGHT WALL
             box(cx + CW/2 - WALL_THICK, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2, cz + CD/2);
 
-            // ROOF — two panels as solid slabs (left and right of ridge)
+            // ROOF (two panels as solid slabs)
             box(cx - (CW/2 + OVH) - WALL_THICK, cx, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
             box(cx, cx + (CW/2 + OVH) + WALL_THICK, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
 
@@ -1717,6 +1691,13 @@
             }
             return velocityY;
         }
+
+        const cabin = new Cabin({
+            scale: 1.75,
+            position: new THREE.Vector3(400, 0, 300)
+        });
+
+        scene.add(cabin);
 
         // ============================================================================
         // ENTITY SYSTEM
@@ -1761,7 +1742,7 @@
                 this.avoidNeed = 0;
 
                 this.waterIncrement = this.health * 0.0001;
-                this.foodIncrement  = this.health * 0.001;
+                this.foodIncrement  = this.health * 0.0001;
                 this.ageDepl        = this.health * 0.00001;
 
                 // Flat memory (no heap allocation per look-up)
