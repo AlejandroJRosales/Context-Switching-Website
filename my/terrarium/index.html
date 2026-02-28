@@ -381,7 +381,7 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.3</div>
+            <div id="version-number">VERSION: 1.2.4</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
@@ -1560,7 +1560,7 @@
                 }
 
                 // ROOF
-                const ROOF_BASE = FLOOR_Y + WALL_H;
+                const ROOF_BASE = FLOOR_Y + WALL_H - 4;
                 const RIDGE_H = 34;
                 const OVH = 8;
 
@@ -1582,6 +1582,30 @@
                     add(mesh);
                 });
 
+                [-1, 1].forEach(sz => {
+                    const shape = new THREE.Shape();
+                    shape.moveTo(-(CW / 2 + OVH), 0);
+                    shape.lineTo( (CW / 2 + OVH), 0);
+                    shape.lineTo(0, RIDGE_H);
+                    shape.lineTo(-(CW / 2 + OVH), 0);
+
+                    const geo = new THREE.ExtrudeGeometry(shape, {
+                        depth: LD * 2,         // thickness (matches log diameter)
+                        bevelEnabled: false
+                    });
+
+                    const mat = new THREE.MeshStandardMaterial({
+                        color: 0x3a2b1b,
+                        roughness: 0.92,
+                        side: THREE.DoubleSide  // visible from both sides
+                    });
+
+                    const mesh = new THREE.Mesh(geo, mat);
+                    // offset by half the depth so it's centered on the wall edge
+                    mesh.position.set(0, ROOF_BASE, sz * (CD / 2 + OVH + 2) - (sz * LD * 2));
+                    add(mesh);
+                });
+
                 // CHIMNEY
                 const CHX = -18;
                 const CHZ = -12;
@@ -1600,6 +1624,99 @@
         });
 
         scene.add(cabin);
+
+        // ============================================================================
+        // CABIN COLLISION BOXES (AABB in world space)
+        // ============================================================================
+        // Cabin local dims: CW=80, CD=60, WALL_H=44, scale=1.75
+        // World center: (400, 0, 300)
+        // All values pre-multiplied by scale=1.75
+        const CABIN_COLLIDERS = (() => {
+            const s = 1.75;
+            const cx = 400, cz = 300;
+            const CW = 80 * s, CD = 60 * s;
+            const LR = 2.5 * s;             // log radius scaled
+            const WALL_H = 44 * s;
+            const FLOOR_Y = 2 * s;
+            const WALL_THICK = LR * 2;       // log diameter
+            const DOOR_WIDTH  = 18 * s;      // door opening width (scaled)
+            const DOOR_HEIGHT = 30 * s;      // door opening height (scaled)
+
+            // Roof geometry (matching Cabin._build())
+            const ROOF_BASE = FLOOR_Y + WALL_H - 4 * s;
+            const RIDGE_H = 34 * s;
+            const OVH = 8 * s;
+            const roofTop = ROOF_BASE + RIDGE_H;
+
+            // Chimney
+            const CHW = 11 * s, CHD = 11 * s;
+            const CHX = cx + (-18 * s), CHZ = cz + (-12 * s);
+            const chimneyTop = ROOF_BASE + RIDGE_H + 20 * s;
+
+            const boxes = [];
+            const box = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
+
+            const frontZ = cz + CD / 2;
+            const halfDoor = DOOR_WIDTH / 2;
+
+            // FRONT WALL — split into left segment, right segment, and lintel above door
+            // Left of door opening
+            box(cx - CW/2 - WALL_THICK, cx - halfDoor,     FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
+            // Right of door opening
+            box(cx + halfDoor,           cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
+            // Lintel — solid log above doorway up to wall top
+            box(cx - halfDoor, cx + halfDoor, FLOOR_Y + DOOR_HEIGHT, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
+
+            // BACK WALL (no door)
+            box(cx - CW/2 - WALL_THICK, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2 - WALL_THICK, cz - CD/2 + WALL_THICK);
+
+            // LEFT WALL
+            box(cx - CW/2 - WALL_THICK, cx - CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2, cz + CD/2);
+
+            // RIGHT WALL
+            box(cx + CW/2 - WALL_THICK, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2, cz + CD/2);
+
+            // ROOF — two panels as solid slabs (left and right of ridge)
+            box(cx - (CW/2 + OVH) - WALL_THICK, cx, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
+            box(cx, cx + (CW/2 + OVH) + WALL_THICK, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
+
+            // CHIMNEY
+            box(CHX - CHW/2, CHX + CHW/2, 0, chimneyTop + 5, CHZ - CHD/2, CHZ + CHD/2);
+
+            return boxes;
+        })();
+
+        // Resolve a position (THREE.Vector3) against all cabin AABBs.
+        // radius = horizontal half-extent, halfH = vertical half-extent.
+        function resolveCabinCollisions(pos, radius, halfH, velocityY) {
+            for (const b of CABIN_COLLIDERS) {
+                const pMinX = pos.x - radius, pMaxX = pos.x + radius;
+                const pMinY = pos.y - halfH,  pMaxY = pos.y + halfH;
+                const pMinZ = pos.z - radius, pMaxZ = pos.z + radius;
+
+                // Overlap on each axis
+                const overlapX = Math.min(pMaxX, b.maxX) - Math.max(pMinX, b.minX);
+                if (overlapX <= 0) continue;
+                const overlapY = Math.min(pMaxY, b.maxY) - Math.max(pMinY, b.minY);
+                if (overlapY <= 0) continue;
+                const overlapZ = Math.min(pMaxZ, b.maxZ) - Math.max(pMinZ, b.minZ);
+                if (overlapZ <= 0) continue;
+
+                // Push out along the axis of minimum overlap
+                if (overlapX <= overlapY && overlapX <= overlapZ) {
+                    const sign = pos.x < (b.minX + b.maxX) / 2 ? -1 : 1;
+                    pos.x += sign * overlapX;
+                } else if (overlapZ <= overlapY) {
+                    const sign = pos.z < (b.minZ + b.maxZ) / 2 ? -1 : 1;
+                    pos.z += sign * overlapZ;
+                } else {
+                    const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
+                    pos.y += sign * overlapY;
+                    if (sign > 0 && velocityY !== undefined) velocityY = 0; // landed on top
+                }
+            }
+            return velocityY;
+        }
 
         // ============================================================================
         // ENTITY SYSTEM
@@ -2407,6 +2524,9 @@
                 player.isJumping = false;
             }
 
+            // Cabin collision (player radius ~10, half-height ~20)
+            resolveCabinCollisions(player.position, 10, 20, undefined);
+
             // Update camera; move the rig to player position, keep camera local at origin
             vrCameraRig.position.copy(player.position);
             vrCameraRig.rotation.set(0, 0, 0);
@@ -2564,6 +2684,9 @@
                     player.isJumping = false;
                 }
 
+                // Cabin collision (VR)
+                resolveCabinCollisions(player.position, 10, 20, undefined);
+
                 // Position the XR camera rig at player position
                 vrCameraRig.position.copy(player.position);
                 vrCameraRig.rotation.y = player.yaw;
@@ -2584,7 +2707,11 @@
             // Update animals
             for (let ai = 0; ai < animals.length; ai++) {
                 const a = animals[ai];
-                if (a.alive) a.update(now, spatialGrid, waterLocations, ai);
+                if (a.alive) {
+                    a.update(now, spatialGrid, waterLocations, ai);
+                    // Prevent animals from passing through cabin walls
+                    resolveCabinCollisions(a.position, 12, 12, undefined);
+                }
             }
 
             // Update plants
