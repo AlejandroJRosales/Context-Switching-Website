@@ -346,7 +346,7 @@
     </div>
 
     <div class="hud">
-        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span></div>
+        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span> <span id="flyIndicator" style="display:none; color:#88ffff;">✈ FLY</span></div>
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
@@ -373,6 +373,7 @@
     </div>
 
     <div style="position:absolute; bottom:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:20; display:flex; gap:8px;">
+        <button id="flyBtn">✈ Fly</button>
         <button id="controlBtn">Keyboard</button>
         <button id="settings-btn">⚙</button>
     </div>
@@ -381,7 +382,7 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.4-opt</div>
+            <div id="version-number">VERSION: 1.2.5</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
@@ -429,6 +430,8 @@
             sprintSpeed: 100 * Math.log1p(scale),
             jumpForce: 300 * Math.log1p(scale),
             isJumping: false,
+            isFlying: false,
+            flyLiftTarget: null,  // set to target Y when lifting off, null otherwise
             yaw: Math.PI,
             pitch: 0,
             targetObject: null
@@ -643,14 +646,29 @@
 
         const keys = {};
 
+        // Double-press spacebar = big jump
+        let lastSpaceTime = 0;
+        const DOUBLE_TAP_MS = 300;
+
         // Keyboard input
         document.addEventListener('keydown', (e) => {
+            const wasAlreadyDown = keys[e.key.toLowerCase()];
             keys[e.key.toLowerCase()] = true;
+
             if (e.key === ' ') {
                 e.preventDefault();
-                if (!player.isJumping) {
-                    player.velocity.y = player.jumpForce;
-                    player.isJumping = true;
+                if (!wasAlreadyDown) {
+                    const now = Date.now();
+                    const isDouble = (now - lastSpaceTime) < DOUBLE_TAP_MS;
+                    lastSpaceTime = isDouble ? 0 : now;
+
+                    if (!player.isFlying) {
+                        if (!player.isJumping) {
+                            // Single press: normal jump. Double press: bigger jump.
+                            player.velocity.y = isDouble ? player.jumpForce * 1.8 : player.jumpForce;
+                            player.isJumping = true;
+                        }
+                    }
                 }
             }
         });
@@ -671,8 +689,8 @@
             }
         });
 
-        // Request pointer lock for mouse
-        document.addEventListener('click', () => {
+        // Request pointer lock for mouse — only when clicking the canvas itself
+        canvas.addEventListener('click', () => {
             if (controls.controlMode === 'keyboard') {
                 canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
                 canvas.requestPointerLock();
@@ -684,12 +702,21 @@
             controls.controlMode = controls.controlMode === 'touch' ? 'keyboard' : 'touch';
             const btn = document.getElementById('controlBtn');
             btn.textContent = controls.controlMode === 'touch' ? 'Keyboard' : 'Touch';
-            
+
+            // Exit pointer lock when switching away from keyboard mode
+            if (controls.controlMode === 'touch') {
+                if (document.exitPointerLock) document.exitPointerLock();
+            }
+
             // Reset movement on switch
             controls.joystickX = 0;
             controls.joystickY = 0;
             Object.keys(keys).forEach(k => keys[k] = false);
-            
+
+            // Reset touch state
+            cameraTouchId = null;
+            lastTapTime = 0;
+
             // Update UI visibility
             const joystick = document.getElementById('joystick');
             if (controls.controlMode === 'touch') {
@@ -699,6 +726,27 @@
                 joystick.classList.remove('visible');
             }
         });
+
+        // Fly button — toggles flight with smooth lift-off / drop
+        function toggleFly() {
+            const btn = document.getElementById('flyBtn');
+            if (!player.isFlying) {
+                player.isFlying = true;
+                player.velocity.y = 0;
+                player.flyLiftTarget = player.position.y + 20;
+                btn.textContent = '🚶 Land';
+                btn.style.color = '#88ffff';
+                btn.style.borderColor = '#88ffff';
+            } else {
+                player.isFlying = false;
+                player.flyLiftTarget = null;
+                player.velocity.y = 0;  // let gravity take over immediately
+                btn.textContent = '✈ Fly';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
+        }
+        document.getElementById('flyBtn').addEventListener('click', toggleFly);
 
         // ============================================================
         // JOYSTICK SETUP
@@ -796,17 +844,6 @@
             }
         }, { passive: false });
 
-        document.addEventListener('touchmove', (e) => {
-            if (!controls.joystickActive || joystickTouchId === null) return;
-            for (const touch of e.changedTouches) {
-                if (touch.identifier === joystickTouchId) {
-                    handleJoystickMove(touch.clientX, touch.clientY);
-                    e.preventDefault();
-                    break;
-                }
-            }
-        }, { passive: false });
-
         function resetJoystick() {
             joystickTouchId = null;
             controls.joystickActive = false;
@@ -818,21 +855,46 @@
             resetJoystickPosition();
         }
 
-        document.addEventListener('touchend', (e) => {
-            for (const touch of e.changedTouches) {
-                if (touch.identifier === joystickTouchId) { resetJoystick(); break; }
-            }
-        });
-
-        document.addEventListener('touchcancel', resetJoystick);
-
-        // Touch screen camera control and double tap jump
+        // Touch screen camera control
+        // Tap behaviour (right half, touch mode):
+        //   single tap  → start camera drag
+        //   double tap  → jump (if on ground)
         let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
+
+        // Multi-tap state
         let lastTapTime = 0;
         let lastTapX = 0;
         let lastTapY = 0;
+        const TAP_WINDOW_MS = 300;
+        const TAP_DIST_PX  = 70;
+
+        function handleRightTap(x, y) {
+            const now = Date.now();
+            const dist = Math.hypot(x - lastTapX, y - lastTapY);
+            const isDouble = (now - lastTapTime) < TAP_WINDOW_MS && dist < TAP_DIST_PX;
+
+            if (isDouble) {
+                // Double tap: jump immediately, no delay
+                if (!player.isFlying && !player.isJumping) {
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
+                }
+                lastTapTime = 0; // reset so next tap starts fresh
+            } else {
+                lastTapTime = now;
+            }
+
+            lastTapX = x;
+            lastTapY = y;
+        }
+
+        // Track a pending right-side touch that hasn't moved enough to be a drag yet
+        let pendingCameraTouchId = null;
+        let pendingTouchStartX = 0;
+        let pendingTouchStartY = 0;
+        const DRAG_THRESHOLD_PX = 8;
 
         document.addEventListener('touchstart', (e) => {
             for (const touch of e.changedTouches) {
@@ -840,62 +902,70 @@
                 if (target.tagName === 'BUTTON' || target.closest('button') ||
                     target.closest('.control-panel') || target.closest('#settings-panel')) continue;
 
-                // Right half: camera look + double-tap jump
+                // Right half: camera look + multi-tap gestures
                 if (touch.clientX >= window.innerWidth * 0.5 && controls.controlMode === 'touch') {
-                    if (cameraTouchId !== null) continue; // already tracking camera
+                    // Register tap for gesture detection regardless of existing camera touch
+                    handleRightTap(touch.clientX, touch.clientY);
 
-                    const currentTime = Date.now();
-                    const tapDistance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
-
-                    if (currentTime - lastTapTime < 300 && tapDistance < 60) {
-                        if (!player.isJumping) {
-                            player.velocity.y = player.jumpForce;
-                            player.isJumping = true;
-                        }
-                    } else {
-                        cameraTouchId = touch.identifier;
+                    // Track as pending drag (don't commit cameraTouchId yet)
+                    if (cameraTouchId === null && pendingCameraTouchId === null) {
+                        pendingCameraTouchId = touch.identifier;
+                        pendingTouchStartX = touch.clientX;
+                        pendingTouchStartY = touch.clientY;
                         touchStartX = touch.clientX;
                         touchStartY = touch.clientY;
                     }
-
-                    lastTapTime = currentTime;
-                    lastTapX = touch.clientX;
-                    lastTapY = touch.clientY;
                     e.preventDefault();
                 }
             }
         }, { passive: false });
 
+        // ── Unified touchmove: handles joystick AND camera in one pass ──
         document.addEventListener('touchmove', (e) => {
-            if (cameraTouchId === null) return;
+            if (controls.controlMode !== 'touch') return;
+            e.preventDefault();
             for (const touch of e.changedTouches) {
+                // Joystick
+                if (touch.identifier === joystickTouchId) {
+                    handleJoystickMove(touch.clientX, touch.clientY);
+                }
+                // Camera drag: promote pending touch once drag threshold crossed
+                if (touch.identifier === pendingCameraTouchId && cameraTouchId === null) {
+                    const dx = touch.clientX - pendingTouchStartX;
+                    const dy = touch.clientY - pendingTouchStartY;
+                    if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
+                        cameraTouchId = pendingCameraTouchId;
+                        pendingCameraTouchId = null;
+                        touchStartX = touch.clientX;
+                        touchStartY = touch.clientY;
+                    }
+                }
                 if (touch.identifier === cameraTouchId) {
                     const deltaX = touch.clientX - touchStartX;
                     const deltaY = touch.clientY - touchStartY;
-
-                    player.yaw -= deltaX * 0.005;
+                    player.yaw   -= deltaX * 0.005;
                     player.pitch -= deltaY * 0.005;
                     player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
-
                     touchStartX = touch.clientX;
                     touchStartY = touch.clientY;
-                    e.preventDefault();
-                    break;
                 }
             }
         }, { passive: false });
 
+        // ── Unified touchend ──
         document.addEventListener('touchend', (e) => {
             for (const touch of e.changedTouches) {
-                if (touch.identifier === cameraTouchId) {
-                    cameraTouchId = null;
-                    break;
-                }
+                if (touch.identifier === joystickTouchId) resetJoystick();
+                if (touch.identifier === cameraTouchId)        cameraTouchId = null;
+                if (touch.identifier === pendingCameraTouchId) pendingCameraTouchId = null;
             }
         });
 
+        // ── Unified touchcancel ──
         document.addEventListener('touchcancel', () => {
+            resetJoystick();
             cameraTouchId = null;
+            pendingCameraTouchId = null;
         });
 
         // ============================================================================
@@ -2458,49 +2528,128 @@
             _moveVector.set(0, 0, 0);
 
             if (controls.controlMode === 'keyboard') {
-                // Keyboard controls
-                const currentSpeed = keys['shift'] ? player.sprintSpeed : player.speed;
-                
-                if (keys['w']) _moveVector.z -= currentSpeed * deltaTime;
-                if (keys['s']) _moveVector.z += currentSpeed * deltaTime;
-                if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
-                if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
+                const currentSpeed = player.isFlying
+                    ? player.sprintSpeed
+                    : (keys['shift'] ? player.sprintSpeed : player.speed);
+
+                if (player.isFlying) {
+                    // Pitch-aware: W/S move along the full camera look direction (up/down included)
+                    // Three.js camera looks down -Z, so forward = (-sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+                    const cosPitch = Math.cos(player.pitch);
+                    const sinPitch = Math.sin(player.pitch);
+                    const fwdX = -Math.sin(player.yaw) * cosPitch;
+                    const fwdY =  sinPitch;
+                    const fwdZ = -Math.cos(player.yaw) * cosPitch;
+                    // Right is always horizontal
+                    const rightX =  Math.cos(player.yaw);
+                    const rightZ = -Math.sin(player.yaw);
+
+                    const fwd   = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0);
+                    const right = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
+
+                    _moveVector.x = (fwdX * fwd + rightX * right) * currentSpeed * deltaTime;
+                    _moveVector.y =  fwdY * fwd                    * currentSpeed * deltaTime;
+                    _moveVector.z = (fwdZ * fwd + rightZ * right)  * currentSpeed * deltaTime;
+                } else {
+                    // Walking: flat movement, yaw rotation applied below
+                    if (keys['w']) _moveVector.z -= currentSpeed * deltaTime;
+                    if (keys['s']) _moveVector.z += currentSpeed * deltaTime;
+                    if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
+                    if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
+                }
             } else {
                 // Touch joystick controls
-                const currentSpeed = player.speed;
-                _moveVector.x = controls.joystickX * currentSpeed * deltaTime;
-                _moveVector.z = controls.joystickY * currentSpeed * deltaTime;
+                // joystickX: left = negative, right = positive (screen X)
+                // joystickY: push up = negative (screen Y decreases upward), push down = positive
+                // So pushing stick forward (up) gives joystickY < 0 => jFwd > 0 = move forward
+                const jFwd   = -controls.joystickY;
+                const jRight =  controls.joystickX;
+                const currentSpeed = player.isFlying ? player.sprintSpeed : player.speed;
+
+                if (player.isFlying) {
+                    // Full 3D pitch-aware movement: looking up + moving forward = ascend
+                    // Three.js camera looks down -Z; rotating by yaw around Y gives:
+                    //   forward = (-sin(yaw), 0, -cos(yaw)) at pitch=0
+                    const cosPitch = Math.cos(player.pitch);
+                    const sinPitch = Math.sin(player.pitch);
+                    const fwdX = -Math.sin(player.yaw) * cosPitch;
+                    const fwdY =  sinPitch;
+                    const fwdZ = -Math.cos(player.yaw) * cosPitch;
+                    // Right vector is horizontal, 90° clockwise from forward
+                    const rightX =  Math.cos(player.yaw);
+                    const rightZ = -Math.sin(player.yaw);
+
+                    _moveVector.x = (fwdX * jFwd + rightX * jRight) * currentSpeed * deltaTime;
+                    _moveVector.y =  fwdY * jFwd                     * currentSpeed * deltaTime;
+                    _moveVector.z = (fwdZ * jFwd + rightZ * jRight)  * currentSpeed * deltaTime;
+                } else {
+                    // Walking: horizontal only, yaw-relative
+                    const fwdX = -Math.sin(player.yaw);
+                    const fwdZ = -Math.cos(player.yaw);
+                    const rightX =  Math.cos(player.yaw);
+                    const rightZ = -Math.sin(player.yaw);
+
+                    _moveVector.x = (fwdX * jFwd + rightX * jRight) * currentSpeed * deltaTime;
+                    _moveVector.z = (fwdZ * jFwd + rightZ * jRight) * currentSpeed * deltaTime;
+                }
+                // Vectors are already in world space — no extra rotation needed
             }
 
-            // Apply rotation to movement
-            _rotMatrix.makeRotationY(player.yaw);
-            _moveVector.applyMatrix4(_rotMatrix);
-            const moveVector = _moveVector;
+            // Apply yaw rotation only for keyboard walking (flying + touch already compute world-space)
+            if (controls.controlMode === 'keyboard' && !player.isFlying) {
+                _rotMatrix.makeRotationY(player.yaw);
+                _moveVector.applyMatrix4(_rotMatrix);
+            }
 
-            player.position.add(moveVector);
+            player.position.add(_moveVector);
 
             // Wrap world
             player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
             player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
 
-            // Apply gravity & Ground collision
-            player.velocity.y -= 400 * deltaTime; // gravity
-            player.position.y += player.velocity.y * deltaTime;
+            if (player.isFlying) {
+                // --- FLYING MODE ---
+                // Smooth lift-off: interpolate upward to flyLiftTarget
+                if (player.flyLiftTarget !== null) {
+                    player.position.y += (player.flyLiftTarget - player.position.y) * Math.min(1, deltaTime * 8);
+                    if (Math.abs(player.position.y - player.flyLiftTarget) < 0.5) {
+                        player.position.y = player.flyLiftTarget;
+                        player.flyLiftTarget = null;
+                    }
+                }
 
-            if (player.position.y < 35) {
-                player.position.y = 35;
+                // Damp vertical velocity
                 player.velocity.y = 0;
-                player.isJumping = false;
+
+                // Floor clamp — touching ground cancels flight
+                if (player.position.y < 35) {
+                    player.position.y = 35;
+                    player.isFlying = false;
+                    player.flyLiftTarget = null;
+                    // Sync button back to default
+                    const flyBtn = document.getElementById('flyBtn');
+                    if (flyBtn) { flyBtn.textContent = '✈ Fly'; flyBtn.style.color = ''; flyBtn.style.borderColor = ''; }
+                }
+            } else {
+                // --- WALKING / JUMPING MODE ---
+                player.velocity.y -= 400 * deltaTime; // gravity
+                player.position.y += player.velocity.y * deltaTime;
+
+                if (player.position.y < 35) {
+                    player.position.y = 35;
+                    player.velocity.y = 0;
+                    player.isJumping = false;
+                }
+
+                if (player.velocity.y < 0) {
+                    player.isJumping = false;
+                }
+
+                // Cabin collision
+                player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
             }
 
-            if (player.velocity.y < 0) {
-                player.isJumping = false;
-            }
-
-            // Cabin collision
-            player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
-
-            // Update camera; move the rig to player position, keep camera local at origin
+            // Update camera
             vrCameraRig.position.copy(player.position);
             vrCameraRig.rotation.set(0, 0, 0);
             camera.position.set(0, 0, 0);
@@ -2508,13 +2657,17 @@
             camera.rotation.y = player.yaw;
             camera.rotation.x = player.pitch;
 
+            // Fly mode indicator
+            const flyIndicator = document.getElementById('flyIndicator');
+            if (flyIndicator) flyIndicator.style.display = player.isFlying ? 'inline' : 'none';
+
             // Update speed indicator
             let speed = 0;
             if (controls.controlMode === 'keyboard') {
                 speed = Math.sqrt(
-                    (keys['w'] || keys['s'] ? 1 : 0) ** 2 + 
+                    (keys['w'] || keys['s'] ? 1 : 0) ** 2 +
                     (keys['a'] || keys['d'] ? 1 : 0) ** 2
-                ) * (keys['shift'] ? player.sprintSpeed : player.speed);
+                ) * (player.isFlying ? player.sprintSpeed : (keys['shift'] ? player.sprintSpeed : player.speed));
             } else {
                 speed = Math.sqrt(controls.joystickX ** 2 + controls.joystickY ** 2) * player.speed;
             }
