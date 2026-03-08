@@ -1,4 +1,4 @@
-=<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -389,7 +389,7 @@
         </div>
         <div style="font-size:10px; color:rgba(0,255,0,0.6); margin-bottom:16px;">Changes take effect on Reset</div>
         <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <button id="nnVisBtn" style="flex:1;">Show NN</button>
+            <button id="nnVisBtn" style="flex:1;">Show Vitals</button>
             <button id="clearHudBtn" style="flex:1;">HIDE HUD</button>
         </div>
         <div style="margin-bottom:12px;">
@@ -754,7 +754,7 @@
             if (!player.isFlying) {
                 player.isFlying = true;
                 player.velocity.y = 0;
-                player.flyLiftTarget = player.position.y + 20;
+                player.flyLiftTarget = player.position.y + 50;
                 btn.textContent = '🚶 Land';
                 btn.style.color = '#88ffff';
                 btn.style.borderColor = '#88ffff';
@@ -1487,7 +1487,7 @@
                     animalStatSprites.set(a, sprite);
                 }
 
-                if (isTarget) {
+                if (isTarget && statLabelsEnabled) {
                     // console.log(`Cost: ${currentTargetAnimal.brain.cost.toFixed(4)}, Learning Rate: ${currentTargetAnimal.brain.learningRate.toFixed(5)}`);
                     sprite.position.set(a.position.x, a.position.y + 20, a.position.z);
                     drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed);
@@ -2327,19 +2327,24 @@
             nnSprite.visible = true;
         }
 
+        let statLabelsEnabled = true;
+
         toggleNNVis();
 
         document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
 
         function toggleNNVis() {
             nnVisEnabled = !nnVisEnabled;
+            statLabelsEnabled = nnVisEnabled;
             const btn = document.getElementById('nnVisBtn');
             if (nnVisEnabled) {
-                btn.textContent = 'Hide NN';
+                btn.textContent = 'Hide Vitals';
                 if (!nnSprite3DVisualizer) initNN3DVisualizer();
             } else {
-                btn.textContent = 'Show NN';
+                btn.textContent = 'Show Vitals';
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
+                // Hide any currently visible stat label
+                for (const [, sprite] of animalStatSprites) sprite.visible = false;
             }
         }
 
@@ -2385,7 +2390,7 @@
             // Clear stat label sprites from previous world
             clearAllStatLabels();
 
-            // Hide NN sprite on reset
+            // Hide Vitals sprite on reset
             nnSprite.visible = false;
 
             // Initialize instanced meshes and clears old instances
