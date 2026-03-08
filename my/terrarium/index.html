@@ -382,20 +382,23 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.5-opt</div>
+            <div id="version-number">VERSION: 1.2.5</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
         </div>
         <div style="font-size:10px; color:rgba(0,255,0,0.6); margin-bottom:16px;">Changes take effect on Reset</div>
         <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <button id="nnVisBtn" style="flex:1;">Show Vitals</button>
+            <button id="nnVisBtn" style="flex:1;">Show NN</button>
             <button id="clearHudBtn" style="flex:1;">HIDE HUD</button>
         </div>
         <div style="margin-bottom:12px;">
             <button id="vrBtn" style="width:100%; position:relative; overflow:hidden;">
                 <span id="vrBtnText">VR Not Supported</span>
             </button>
+        </div>
+        <div style="margin-bottom:12px;">
+            <button id="fullscreenBtn" style="width:100%;">⛶ Fullscreen</button>
         </div>
         <div style="margin-bottom:12px;">
             <button id="resetBtn" style="width:100%;">Reset</button>
@@ -516,6 +519,9 @@
 
                 btnText.textContent = 'Exit VR';
                 btn.disabled = false;
+
+                // Disable fullscreen while in VR
+                updateFullscreenBtn(true);
             }
 
             function onSessionEnded() {
@@ -526,6 +532,9 @@
 
                 btnText.textContent = 'Enter VR';
                 btn.disabled = false;
+
+                // Re-enable fullscreen
+                updateFullscreenBtn(false);
             }
 
             btn.addEventListener('click', () => {
@@ -557,6 +566,41 @@
                 });
             }
         })();
+
+        // ============================================================================
+        // FULLSCREEN
+        // ============================================================================
+
+        function updateFullscreenBtn(vrActive) {
+            const fsBtn = document.getElementById('fullscreenBtn');
+            if (!fsBtn) return;
+            if (vrActive) {
+                fsBtn.textContent = '⛶ Fullscreen (VR active)';
+                fsBtn.disabled = true;
+                fsBtn.style.opacity = '0.4';
+                fsBtn.style.cursor = 'not-allowed';
+            } else {
+                const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                fsBtn.textContent = isFS ? '✕ Exit Fullscreen' : '⛶ Fullscreen';
+                fsBtn.disabled = false;
+                fsBtn.style.opacity = '';
+                fsBtn.style.cursor = '';
+            }
+        }
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (isFS) {
+                (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            } else {
+                const el = document.documentElement;
+                const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+                if (req) req.call(el).catch(() => {});
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => updateFullscreenBtn(false));
+        document.addEventListener('webkitfullscreenchange', () => updateFullscreenBtn(false));
 
         // ============================================================================
         // THREE.JS SETUP
@@ -682,8 +726,8 @@
                 toggleFly();
             }
 
-            // Escape — toggle settings panel (single press, no repeat)
-            if (e.key === 'Escape' && !wasAlreadyDown) {
+            // Escape / M — toggle settings panel (single press, no repeat)
+            if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !wasAlreadyDown) {
                 toggleSettings();
             }
 
@@ -754,7 +798,7 @@
             if (!player.isFlying) {
                 player.isFlying = true;
                 player.velocity.y = 0;
-                player.flyLiftTarget = player.position.y + 50;
+                player.flyLiftTarget = player.position.y + 20;
                 btn.textContent = '🚶 Land';
                 btn.style.color = '#88ffff';
                 btn.style.borderColor = '#88ffff';
@@ -2338,10 +2382,10 @@
             statLabelsEnabled = nnVisEnabled;
             const btn = document.getElementById('nnVisBtn');
             if (nnVisEnabled) {
-                btn.textContent = 'Hide Vitals';
+                btn.textContent = 'Hide NN';
                 if (!nnSprite3DVisualizer) initNN3DVisualizer();
             } else {
-                btn.textContent = 'Show Vitals';
+                btn.textContent = 'Show NN';
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
                 // Hide any currently visible stat label
                 for (const [, sprite] of animalStatSprites) sprite.visible = false;
@@ -2390,7 +2434,7 @@
             // Clear stat label sprites from previous world
             clearAllStatLabels();
 
-            // Hide Vitals sprite on reset
+            // Hide NN sprite on reset
             nnSprite.visible = false;
 
             // Initialize instanced meshes and clears old instances
