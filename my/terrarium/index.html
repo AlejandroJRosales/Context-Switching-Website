@@ -382,7 +382,7 @@
         <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
         <div style="margin-bottom:12px; font-size:12px;">
             <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.5</div>
+            <div id="version-number">VERSION: 1.2.5-opt</div>
             <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
                 style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
@@ -427,7 +427,7 @@
             maxDrawDistance: Math.trunc(Number(2000 * scale))
         };
         const player = {
-            position: new THREE.Vector3(400, 100, 300),
+            position: new THREE.Vector3(400, 50, 300),
             velocity: new THREE.Vector3(0, 0, 0),
             speed: 40 * Math.log1p(scale),
             sprintSpeed: 100 * Math.log1p(scale),
@@ -1827,8 +1827,8 @@
                 } else {
                     const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
                     pos.y += sign * overlapY;
-                    if (sign > 0 && velocityY !== undefined) velocityY = 0; // landed on top
                 }
+                velocityY = 0;
             }
             return velocityY;
         }
@@ -2714,6 +2714,8 @@
 
                 // Cabin collision
                 player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
+
+                // console.log(player.velocity);
             }
 
             // Update camera
