@@ -789,23 +789,14 @@
 
         // Keyboard input
         document.addEventListener('keydown', (e) => {
-            const wasAlreadyDown = keys[e.key.toLowerCase()];
             keys[e.key.toLowerCase()] = true;
 
             if (e.key === ' ') {
                 e.preventDefault();
-                if (!wasAlreadyDown) {
-                    const now = Date.now();
-                    const isDouble = (now - lastSpaceTime) < DOUBLE_TAP_MS;
-                    lastSpaceTime = isDouble ? 0 : now;
-
-                    if (!player.isCreative) {
-                        if (!player.isJumping) {
-                            // Single press: normal jump. Double press: bigger jump.
-                            player.velocity.y = isDouble ? player.jumpForce * 1.8 : player.jumpForce;
-                            player.isJumping = true;
-                        }
-                    }
+                if (!player.isJumping) {
+                    // Single press: normal jump. Double press: bigger jump.
+                    player.velocity.y = player.jumpForce;
+                    player.isJumping = true;
                 }
             }
 
