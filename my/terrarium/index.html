@@ -346,7 +346,7 @@
     </div>
 
     <div class="hud">
-        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span> <span id="flyIndicator" style="display:none; color:#88ffff;">✈ FLY</span></div>
+        <div class="hud-header">🌿TERRARIUM <span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span> <span id="creativeIndicator" style="display:none; color:#88ffff;">✦ CREATIVE</span></div>
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
@@ -373,37 +373,105 @@
     </div>
 
     <div style="position:absolute; bottom:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:20; display:flex; gap:8px;">
-        <button id="flyBtn">✈ Fly</button>
         <button id="controlBtn">Keyboard</button>
         <button id="settings-btn">⚙</button>
     </div>
 
-    <div id="settings-panel" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.92); border:2px solid #00ff00; border-radius:4px; padding:24px 32px; z-index:200; font-family:'Courier New',monospace; color:#00ff00; min-width:260px; box-shadow:0 0 30px rgba(0,255,0,0.3);">
-        <div style="font-size:14px; letter-spacing:1px; text-transform:uppercase; margin-bottom:18px; font-weight:bold;">⚙ Settings</div>
-        <div style="margin-bottom:12px; font-size:12px;">
-            <div id="fps-counter">FPS: 60</div>
-            <div id="version-number">VERSION: 1.2.5-opt</div>
-            <label for="scale-slider">SCALE: <span id="scaleDisplay">3</span></label><br>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3"
-                style="width:100%; accent-color:#00ff00; margin-top:6px; cursor:pointer;">
-        </div>
-        <div style="font-size:10px; color:rgba(0,255,0,0.6); margin-bottom:16px;">Changes take effect on Reset</div>
-        <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <button id="nnVisBtn" style="flex:1;">Show NN</button>
-            <button id="clearHudBtn" style="flex:1;">HIDE HUD</button>
-        </div>
-        <div style="margin-bottom:12px;">
-            <button id="vrBtn" style="width:100%; position:relative; overflow:hidden;">
-                <span id="vrBtnText">VR Not Supported</span>
-            </button>
-        </div>
-        <div style="margin-bottom:12px;">
-            <button id="fullscreenBtn" style="width:100%;">⛶ Fullscreen</button>
-        </div>
-        <div style="margin-bottom:12px;">
-            <button id="resetBtn" style="width:100%;">Reset</button>
-        </div>
+    <style>
+        #settings-panel {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92);
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            min-width: 280px;
+        }
+        .sp-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 14px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            cursor: default;
+        }
+        .sp-row:last-child { border-bottom: none; }
+        .sp-label { color: rgba(0,255,0,0.75); }
+        .sp-value { color: #00ff00; }
+        /* clickable rows */
+        button.sp-row {
+            width: 100%;
+            background: none;
+            border: none;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            border-radius: 0;
+            padding: 7px 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: none;
+        }
+        button.sp-row:hover, button.sp-row:active {
+            background: rgba(0,255,0,0.06);
+            box-shadow: none;
+            transform: none;
+        }
+        .sp-row-scale {
+            padding: 7px 14px 10px;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .sp-row-scale label { color: rgba(0,255,0,0.75); }
+        .sp-row-scale input { display:block; width:100%; accent-color:#00ff00; margin-top:5px; cursor:pointer; }
+        .sp-hint { padding: 4px 14px 6px; font-size: 9px; color: rgba(0,255,0,0.4); text-transform: uppercase; letter-spacing: 0.5px; }
+    </style>
 
+    <div id="settings-panel">
+        <!-- info rows -->
+        <div class="sp-row" style="border-bottom:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:8px;">
+            <span class="sp-label">⚙ Settings</span>
+            <span class="sp-value" style="font-size:10px; color:rgba(0,255,0,0.4);" id="fps-counter">FPS: 60</span>
+        </div>
+        <!-- scale -->
+        <div class="sp-row-scale">
+            <label for="scale-slider">Scale: <span id="scaleDisplay">3</span></label>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
+        </div>
+        <div class="sp-hint">Scale changes take effect on Reset</div>
+        <!-- toggles -->
+        <button class="sp-row" id="nnVisBtn">
+            <span class="sp-label">Neural Network</span>
+            <span class="sp-value" id="nnVisState">OFF</span>
+        </button>
+        <button class="sp-row" id="clearHudBtn">
+            <span class="sp-label">HUD</span>
+            <span class="sp-value" id="hudState">ON</span>
+        </button>
+        <button class="sp-row" id="fullscreenBtn">
+            <span class="sp-label">Fullscreen</span>
+            <span class="sp-value" id="fsState">OFF</span>
+        </button>
+        <button class="sp-row" id="flyBtn">
+            <span class="sp-label">Creative Mode</span>
+            <span class="sp-value" id="creativeState">OFF</span>
+        </button>
+        <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
+            <span class="sp-label">VR</span>
+            <span class="sp-value" id="vrBtnText">Not Supported</span>
+        </button>
+        <button class="sp-row" id="resetBtn">
+            <span class="sp-label">Reset World</span>
+            <span class="sp-value">↺</span>
+        </button>
+        <div class="sp-row" style="cursor:default;">
+            <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number">VERSION: 1.2.5-opt</span>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
@@ -433,8 +501,8 @@
             sprintSpeed: 100 * Math.log1p(scale),
             jumpForce: 300 * Math.log1p(scale),
             isJumping: false,
-            isFlying: false,
-            flyLiftTarget: null,  // set to target Y when lifting off, null otherwise
+            isCreative: false,
+            creativeLiftTarget: null,  // set to target Y when lifting off in creative mode, null otherwise
             yaw: Math.PI,
             pitch: 0,
             targetObject: null
@@ -469,8 +537,7 @@
             hudElements.forEach(el => {
                 if (el) el.style.display = hudCleared ? 'none' : '';
             });
-            document.getElementById('clearHudBtn').textContent = hudCleared ? 'SHOW HUD' : 'HIDE HUD';
-            document.getElementById('settings-panel').style.display = 'none';
+            document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
         });
 
         document.getElementById('scale-slider').addEventListener('input', function() {
@@ -573,15 +640,16 @@
 
         function updateFullscreenBtn(vrActive) {
             const fsBtn = document.getElementById('fullscreenBtn');
+            const fsState = document.getElementById('fsState');
             if (!fsBtn) return;
             if (vrActive) {
-                fsBtn.textContent = '⛶ Fullscreen (VR active)';
+                if (fsState) fsState.textContent = 'VR';
                 fsBtn.disabled = true;
                 fsBtn.style.opacity = '0.4';
                 fsBtn.style.cursor = 'not-allowed';
             } else {
                 const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-                fsBtn.textContent = isFS ? '✕ Exit Fullscreen' : '⛶ Fullscreen';
+                if (fsState) fsState.textContent = isFS ? 'ON' : 'OFF';
                 fsBtn.disabled = false;
                 fsBtn.style.opacity = '';
                 fsBtn.style.cursor = '';
@@ -710,7 +778,7 @@
                     const isDouble = (now - lastSpaceTime) < DOUBLE_TAP_MS;
                     lastSpaceTime = isDouble ? 0 : now;
 
-                    if (!player.isFlying) {
+                    if (!player.isCreative) {
                         if (!player.isJumping) {
                             // Single press: normal jump. Double press: bigger jump.
                             player.velocity.y = isDouble ? player.jumpForce * 1.8 : player.jumpForce;
@@ -720,10 +788,10 @@
                 }
             }
 
-            // F — toggle fly mode (single press, no repeat)
+            // F — toggle creative mode (single press, no repeat)
             if ((e.key === 'f' || e.key === 'F') && !wasAlreadyDown) {
                 e.preventDefault();
-                toggleFly();
+                toggleCreative();
             }
 
             // Escape / M — toggle settings panel (single press, no repeat)
@@ -792,26 +860,22 @@
             }
         });
 
-        // Fly button, toggles flight with smooth lift-off / drop
-        function toggleFly() {
+        // Creative mode button, toggles flight with smooth lift-off / drop
+        function toggleCreative() {
             const btn = document.getElementById('flyBtn');
-            if (!player.isFlying) {
-                player.isFlying = true;
+            if (!player.isCreative) {
+                player.isCreative = true;
                 player.velocity.y = 0;
-                player.flyLiftTarget = player.position.y + 20;
-                btn.textContent = '🚶 Land';
-                btn.style.color = '#88ffff';
-                btn.style.borderColor = '#88ffff';
+                player.creativeLiftTarget = player.position.y + 20;
+                document.getElementById('creativeState').textContent = 'ON';
             } else {
-                player.isFlying = false;
-                player.flyLiftTarget = null;
+                player.isCreative = false;
+                player.creativeLiftTarget = null;
                 player.velocity.y = 0;
-                btn.textContent = '✈ Fly';
-                btn.style.color = '';
-                btn.style.borderColor = '';
+                document.getElementById('creativeState').textContent = 'OFF';
             }
         }
-        document.getElementById('flyBtn').addEventListener('click', toggleFly);
+        document.getElementById('flyBtn').addEventListener('click', toggleCreative);
 
         // ============================================================
         // JOYSTICK SETUP
@@ -942,7 +1006,7 @@
 
             if (isDouble) {
                 // Double tap: jump immediately, no delay
-                if (!player.isFlying && !player.isJumping) {
+                if (!player.isCreative && !player.isJumping) {
                     player.velocity.y = player.jumpForce;
                     player.isJumping = true;
                 }
@@ -2381,11 +2445,12 @@
             nnVisEnabled = !nnVisEnabled;
             statLabelsEnabled = nnVisEnabled;
             const btn = document.getElementById('nnVisBtn');
+            const state = document.getElementById('nnVisState');
             if (nnVisEnabled) {
-                btn.textContent = 'Hide NN';
+                if (state) state.textContent = 'ON';
                 if (!nnSprite3DVisualizer) initNN3DVisualizer();
             } else {
-                btn.textContent = 'Show NN';
+                if (state) state.textContent = 'OFF';
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
                 // Hide any currently visible stat label
                 for (const [, sprite] of animalStatSprites) sprite.visible = false;
@@ -2598,11 +2663,11 @@
             _moveVector.set(0, 0, 0);
 
             if (controls.controlMode === 'keyboard') {
-                const currentSpeed = player.isFlying
+                const currentSpeed = player.isCreative
                     ? player.sprintSpeed
                     : (keys['shift'] ? player.sprintSpeed : player.speed);
 
-                if (player.isFlying) {
+                if (player.isCreative) {
                     // Pitch-aware: W/S move along the full camera look direction (up/down included)
                     // Three.js camera looks down -Z, so forward = (-sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
                     const cosPitch = Math.cos(player.pitch);
@@ -2631,15 +2696,14 @@
                 // Touch joystick controls
                 // joystickX: left = negative, right = positive (screen X)
                 // joystickY: push up = negative (screen Y decreases upward), push down = positive
-                // So pushing stick forward (up) gives joystickY < 0 => jFwd > 0 = move forward
                 const jFwd = -controls.joystickY;
                 const jRight = controls.joystickX;
-                const currentSpeed = player.isFlying ? player.sprintSpeed : player.speed;
+                const currentSpeed = player.isCreative ? player.sprintSpeed : player.speed;
 
-                if (player.isFlying) {
+                if (player.isCreative) {
                     // Full 3D pitch-aware movement: looking up + moving forward = ascend
                     // Three.js camera looks down -Z; rotating by yaw around Y gives:
-                    //   forward = (-sin(yaw), 0, -cos(yaw)) at pitch=0
+                    // forward = (-sin(yaw), 0, -cos(yaw)) at pitch=0
                     const cosPitch = Math.cos(player.pitch);
                     const sinPitch = Math.sin(player.pitch);
                     const fwdX = -Math.sin(player.yaw) * cosPitch;
@@ -2665,40 +2729,31 @@
                 // Vectors are already in world space — no extra rotation needed
             }
 
-            // Apply yaw rotation only for keyboard walking (flying + touch already compute world-space)
-            if (controls.controlMode === 'keyboard' && !player.isFlying) {
+            // Apply yaw rotation only for keyboard walking (creative mode + touch already compute world-space)
+            if (controls.controlMode === 'keyboard' && !player.isCreative) {
                 _rotMatrix.makeRotationY(player.yaw);
                 _moveVector.applyMatrix4(_rotMatrix);
             }
 
             player.position.add(_moveVector);
 
-            // Wrap world
-            player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
-            player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
-
-            if (player.isFlying) {
-                // Smooth lift-off: interpolate upward to flyLiftTarget
-                if (player.flyLiftTarget !== null) {
-                    player.position.y += (player.flyLiftTarget - player.position.y) * Math.min(1, deltaTime * 8);
-                    if (Math.abs(player.position.y - player.flyLiftTarget) < 0.5) {
-                        player.position.y = player.flyLiftTarget;
-                        player.flyLiftTarget = null;
+            if (player.isCreative) {
+                // Smooth lift-off
+                if (player.creativeLiftTarget !== null) {
+                    player.position.y += (player.creativeLiftTarget - player.position.y) * Math.min(1, deltaTime * 8);
+                    if (Math.abs(player.position.y - player.creativeLiftTarget) < 0.5) {
+                        player.position.y = player.creativeLiftTarget;
+                        player.creativeLiftTarget = null;
                     }
                 }
 
                 // Damp vertical velocity
                 player.velocity.y = 0;
-
-                // Floor clamp touching ground cancels flight
-                if (player.position.y < 35) {
-                    player.position.y = 35;
-                    player.isFlying = false;
-                    player.flyLiftTarget = null;
-                    const flyBtn = document.getElementById('flyBtn');
-                    if (flyBtn) { flyBtn.textContent = '✈ Fly'; flyBtn.style.color = ''; flyBtn.style.borderColor = ''; }
-                }
             } else {
+                // Wrap world
+                player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+                
                 player.velocity.y -= 400 * deltaTime; // gravity
                 player.position.y += player.velocity.y * deltaTime;
 
@@ -2719,9 +2774,9 @@
             camera.rotation.y = player.yaw;
             camera.rotation.x = player.pitch;
 
-            // Fly mode indicator
-            const flyIndicator = document.getElementById('flyIndicator');
-            if (flyIndicator) flyIndicator.style.display = player.isFlying ? 'inline' : 'none';
+            // Creative mode indicator
+            const creativeIndicator = document.getElementById('creativeIndicator');
+            if (creativeIndicator) creativeIndicator.style.display = player.isCreative ? 'inline' : 'none';
 
             // Update speed indicator
             let speed = 0;
@@ -2729,7 +2784,7 @@
                 speed = Math.sqrt(
                     (keys['w'] || keys['s'] ? 1 : 0) ** 2 +
                     (keys['a'] || keys['d'] ? 1 : 0) ** 2
-                ) * (player.isFlying ? player.sprintSpeed : (keys['shift'] ? player.sprintSpeed : player.speed));
+                ) * (player.isCreative ? player.sprintSpeed : (keys['shift'] ? player.sprintSpeed : player.speed));
             } else {
                 speed = Math.sqrt(controls.joystickX ** 2 + controls.joystickY ** 2) * player.speed;
             }
