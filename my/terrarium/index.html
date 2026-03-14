@@ -518,8 +518,8 @@
         const player = {
             position: new THREE.Vector3(400, 50, 300),
             velocity: new THREE.Vector3(0, 0, 0),
-            speed: 40 * Math.log1p(scale),
-            sprintSpeed: 100 * Math.log1p(scale),
+            speed: 80 * Math.log1p(scale),
+            sprintSpeed: 160 * Math.log1p(scale),
             jumpForce: 300 * Math.log1p(scale),
             isJumping: false,
             isCreative: false,
@@ -575,8 +575,8 @@
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
             CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
             CONFIG.scale = pendingScale;
-            player.speed = 50 * Math.log1p(pendingScale);
-            player.sprintSpeed = 100 * Math.log1p(pendingScale);
+            player.speed = 80 * Math.log1p(pendingScale);
+            player.sprintSpeed = 160 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
         }, true);
 
@@ -2748,7 +2748,8 @@
                     _moveVector.x = (fwdX * jFwd + rightX * jRight) * currentSpeed * deltaTime;
                     _moveVector.z = (fwdZ * jFwd + rightZ * jRight) * currentSpeed * deltaTime;
                 }
-                // Vectors are already in world space — no extra rotation needed
+
+                console.log(currentSpeed);
             }
 
             // Apply yaw rotation only for keyboard walking (creative mode + touch already compute world-space)
@@ -2799,18 +2800,6 @@
             // Creative mode indicator
             const creativeIndicator = document.getElementById('creativeIndicator');
             if (creativeIndicator) creativeIndicator.style.display = player.isCreative ? 'inline' : 'none';
-
-            // Update speed indicator
-            let speed = 0;
-            if (controls.controlMode === 'keyboard') {
-                speed = Math.sqrt(
-                    (keys['w'] || keys['s'] ? 1 : 0) ** 2 +
-                    (keys['a'] || keys['d'] ? 1 : 0) ** 2
-                ) * (player.isCreative ? player.sprintSpeed : (keys['shift'] ? player.sprintSpeed : player.speed));
-            } else {
-                speed = Math.sqrt(controls.joystickX ** 2 + controls.joystickY ** 2) * player.speed;
-            }
-            document.getElementById('speedValue').textContent = speed.toFixed(1);
         }
 
         // Reusable sphere and vector for raycasting
