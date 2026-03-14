@@ -297,6 +297,85 @@
             pointer-events: none;
             z-index: 100;
         }
+        
+        #settings-panel {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92);
+            z-index: 200;
+            font-family: 'Courier New', monospace;
+            color: #00ff00;
+            min-width: 280px;
+        }
+
+        .sp-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 14px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            cursor: default;
+        }
+
+        .sp-row:last-child { 
+            border-bottom: none; 
+        }
+        .sp-label { 
+            color: rgba(0,255,0,0.75); 
+        }
+        .sp-value { 
+            color: #00ff00; 
+        }
+
+        button.sp-row {
+            width: 100%;
+            background: none;
+            border: none;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            border-radius: 0;
+            padding: 7px 14px;
+            text-align: left;
+            cursor: pointer;
+            transition: none;
+        }
+
+        button.sp-row:hover, button.sp-row:active {
+            background: rgba(0,255,0,0.06);
+            box-shadow: none;
+            transform: none;
+        }
+
+        .sp-row-scale {
+            padding: 7px 14px 10px;
+            border-bottom: 1px solid rgba(0,255,0,0.08);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sp-row-scale label { 
+            color: rgba(0,255,0,0.75); 
+        }
+
+        .sp-row-scale input { 
+            display: block; 
+            width: 100%; 
+            accent-color: #00ff00; 
+            margin-top: 5px; 
+            cursor: pointer; 
+        }
+        .sp-hint { 
+            padding: 4px 14px 6px; 
+            font-size: 9px; 
+            color: rgba(0,255,0,0.4); 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+        }
 
         @keyframes pulse {
             0%, 100% { opacity: 0.6; }
@@ -338,7 +417,7 @@
     <!-- VR DOM Overlay (visible inside Quest browser during VR session) -->
     <div id="vr-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;">
         <div id="vr-hud" style="position:absolute; top:10px; left:10px; font-family:'Courier New',monospace; color:#00ff00; font-size:14px; text-shadow:0 0 8px rgba(0,255,0,0.6); background:rgba(0,0,0,0.5); padding:8px 12px; border:1px solid #00ff00; border-radius:4px;">
-            <div id="vr-stats">🌿 Loading...</div>
+            <div id="vr-stats">🌿 Buidling World...</div>
         </div>
         <div id="vr-controls-hint" style="position:absolute; bottom:15px; left:50%; transform:translateX(-50%); font-family:'Courier New',monospace; color:rgba(0,255,0,0.7); font-size:11px; text-align:center; background:rgba(0,0,0,0.5); padding:6px 12px; border-radius:4px;">
             Left stick: Move · Right stick: Turn · A: Jump · B: Reset
@@ -377,76 +456,22 @@
         <button id="settings-btn">⚙</button>
     </div>
 
-    <style>
-        #settings-panel {
-            display: none;
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.92);
-            z-index: 200;
-            font-family: 'Courier New', monospace;
-            color: #00ff00;
-            min-width: 280px;
-        }
-        .sp-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 7px 14px;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
-            cursor: default;
-        }
-        .sp-row:last-child { border-bottom: none; }
-        .sp-label { color: rgba(0,255,0,0.75); }
-        .sp-value { color: #00ff00; }
-        /* clickable rows */
-        button.sp-row {
-            width: 100%;
-            background: none;
-            border: none;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
-            border-radius: 0;
-            padding: 7px 14px;
-            text-align: left;
-            cursor: pointer;
-            transition: none;
-        }
-        button.sp-row:hover, button.sp-row:active {
-            background: rgba(0,255,0,0.06);
-            box-shadow: none;
-            transform: none;
-        }
-        .sp-row-scale {
-            padding: 7px 14px 10px;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .sp-row-scale label { color: rgba(0,255,0,0.75); }
-        .sp-row-scale input { display:block; width:100%; accent-color:#00ff00; margin-top:5px; cursor:pointer; }
-        .sp-hint { padding: 4px 14px 6px; font-size: 9px; color: rgba(0,255,0,0.4); text-transform: uppercase; letter-spacing: 0.5px; }
-    </style>
-
     <div id="settings-panel">
-        <!-- info rows -->
         <div class="sp-row" style="border-bottom:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:8px;">
             <span class="sp-label">⚙ Settings</span>
             <span class="sp-value" style="font-size:10px; color:rgba(0,255,0,0.4);" id="fps-counter">FPS: 60</span>
         </div>
-        <!-- scale -->
         <div class="sp-row-scale">
             <label for="scale-slider">Scale: <span id="scaleDisplay">3</span></label>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
         </div>
         <div class="sp-hint">Scale changes take effect on Reset</div>
-        <!-- toggles -->
+        <button class="sp-row" id="flyBtn">
+            <span class="sp-label">Creative Mode</span>
+            <span class="sp-value" id="creativeState">OFF</span>
+        </button>
         <button class="sp-row" id="nnVisBtn">
-            <span class="sp-label">Neural Network</span>
+            <span class="sp-label">Vitals Board</span>
             <span class="sp-value" id="nnVisState">OFF</span>
         </button>
         <button class="sp-row" id="clearHudBtn">
@@ -456,10 +481,6 @@
         <button class="sp-row" id="fullscreenBtn">
             <span class="sp-label">Fullscreen</span>
             <span class="sp-value" id="fsState">OFF</span>
-        </button>
-        <button class="sp-row" id="flyBtn">
-            <span class="sp-label">Creative Mode</span>
-            <span class="sp-value" id="creativeState">OFF</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -1891,6 +1912,7 @@
                 } else {
                     const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
                     pos.y += sign * overlapY;
+                    player.isJumping = false;
                 }
                 velocityY = 0;
             }
