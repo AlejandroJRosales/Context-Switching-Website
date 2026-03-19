@@ -1479,6 +1479,10 @@
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
 
+        const TICKS_PER_DAY  = 24 * 60;          // matches dayCount formula
+        const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
+        const MIN_SCALE      = 0.25;               // 25% of parent size at birth
+
         function updateInstancedMeshes(animals) {
             for (const type of ['sheep', 'wolf']) {
                 const im      = instancedMeshes[type];
@@ -1490,6 +1494,11 @@
                     if (!a.alive || a.type !== type) continue;
                     if (idx >= MAX_INSTANCES) break;
 
+                    // Age-based scale: 25% at birth → 100% at sim-day 3. Adults always full size.
+                    const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
+                    const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
+                    _scale.set(s, s, s);
+
                     const angle = DIRECTION_ANGLES[a.outputIdx % 8];
                     _quat.setFromAxisAngle(_yAxis, angle);
 
@@ -1498,9 +1507,9 @@
                     _mat4.compose(_world, _quat, _scale);
                     im.body.setMatrixAt(idx, _mat4);
 
-                    // Each other part: rotate local offset by animal yaw, then add world pos
+                    // Each other part: scale offset, rotate by yaw, then add world pos
                     for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
-                        _local.copy(offsets[part]).applyQuaternion(_quat).add(_world);
+                        _local.copy(offsets[part]).multiplyScalar(s).applyQuaternion(_quat).add(_world);
                         _mat4.compose(_local, _quat, _scale);
                         im[part].setMatrixAt(idx, _mat4);
                     }
@@ -1527,7 +1536,7 @@
 
         const _statLabelCanvas = document.createElement('canvas');
         _statLabelCanvas.width = 128;
-        _statLabelCanvas.height = 48;
+        _statLabelCanvas.height = 64;
         const _statLabelCtx = _statLabelCanvas.getContext('2d');
 
         // Pool of sprites keyed by animal reference
@@ -1537,23 +1546,23 @@
             const texture = new THREE.CanvasTexture(_statLabelCanvas);
             const mat = new THREE.SpriteMaterial({ map: texture.clone(), depthTest: false, transparent: true });
             const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(30, 11, 1);
+            sprite.scale.set(30, 15, 1);
             scene.add(sprite);
             return sprite;
         }
 
-        function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed) {
+        function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed, generation, ageRatio) {
             // Reuse the pre-allocated shared canvas, no per-call allocation
             const cv = _statLabelCanvas;
             const ctx = _statLabelCtx;
-            ctx.clearRect(0, 0, 128, 48);
+            ctx.clearRect(0, 0, 128, 64);
 
             const BAR_W = 110, BAR_H = 9, X0 = 9;
 
             // Background
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
             ctx.beginPath();
-            ctx.roundRect(2, 2, 124, 44, 6);
+            ctx.roundRect(2, 2, 124, 60, 6);
             ctx.fill();
 
             function drawBar(y, label, value, maxValue, color) {
@@ -1577,6 +1586,17 @@
             drawBar(10, '❤️', health, maxHealth, '#e74c3c');
             drawBar(24, '🍽️', cappedHungerNeed * -1, 100, '#e67e22');
             drawBar(38, '💧', cappedThirstNeed * -1, 100, '#3498db');
+
+            // Generation label + age bar (only shown for born animals)
+            if (ageRatio < 1) {
+                drawBar(52, '🌱', ageRatio, 1, '#2ecc71');
+            }
+            // Generation tag top-right
+            ctx.fillStyle = generation === 0 ? 'rgba(255,255,255,0.5)' : '#f1c40f';
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`G${generation}`, 122, 10);
+            ctx.textAlign = 'left';
 
             // Update sprite texture using the shared canvas
             const tex = new THREE.CanvasTexture(cv);
@@ -1608,9 +1628,10 @@
                 }
 
                 if (isTarget && statLabelsEnabled) {
-                    // console.log(`Cost: ${currentTargetAnimal.brain.cost.toFixed(4)}, Learning Rate: ${currentTargetAnimal.brain.learningRate.toFixed(5)}`);
-                    sprite.position.set(a.position.x, a.position.y + 20, a.position.z);
-                    drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed);
+                    const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
+                    const ageS = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
+                    sprite.position.set(a.position.x, a.position.y + 20 * ageS, a.position.z);
+                    drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed, a.generation, ageRatio);
                     sprite.visible = true;
                 } else {
                     sprite.visible = false;
@@ -1959,6 +1980,12 @@
                 this.reproductionNeed = Math.random() * 0.05;
                 this.avoidNeed = 0;
 
+                this.sex = Math.random() < 0.5 ? 'male' : 'female';
+                this.mutationMulti = 0.5;
+                this.lastChildTime = Date.now();
+                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15–30 s in ms
+                this.lookForMate = false;
+
                 this.waterIncrement = this.health * 0.0001;
                 this.foodIncrement  = this.health * 0.0001;
                 this.ageDepl        = this.health * 0.00001;
@@ -1973,6 +2000,9 @@
                 this.brain = new DenseNetwork(6, [4, 4, 8], 0.01);
                 this.outputIdx = 0;
                 this.brainUpdateCounter = 0;
+
+                this.isAdult = true; // overridden to false for born children in mate()
+                this.birthTick = 0;  // stamped in mate() with current ticks value
 
                 this.focusX = this.position.x;
                 this.focusZ = this.position.z;
@@ -2066,7 +2096,9 @@
             }
 
             move() {
-                const cc = COORD_CHANGES[this.type][this.outputIdx];
+                const s = this.speed;
+                const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
+                const cc = DIRS[this.outputIdx % 8];
                 this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                 this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
             }
@@ -2074,6 +2106,10 @@
             update(now, grid, waterLocations, animalIndex) {
                 this.waterNeed += this.waterIncrement;
                 this.foodNeed  += this.foodIncrement;
+                this.lookForMate = (now - this.lastChildTime) >= this.childGracePeriod;
+                this.reproductionNeed = this.lookForMate
+                    ? this.reproductionNeed + this.waterIncrement
+                    : 0;
                 this.health -= ((now - this.tob) / 10000) * this.ageDepl
                              + this.waterNeed * 0.0001
                              + this.foodNeed  * 0.0001;
@@ -2098,6 +2134,51 @@
                     predator.health += this.startHealth;
                     predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
                 }
+            }
+
+            mate(partner) {
+                // --- Crossover + Mutate scalar traits ---
+                const mm = this.mutationMulti;
+                const lo = Math.max(0.1, 1 - mm);
+                const hi = Math.min(4.0, 1 + mm);
+                const rand = () => lo + Math.random() * (hi - lo);
+
+                const child = new Animal(
+                    [this.position.x, this.position.y, this.position.z + (this.type === 'sheep' ? 15 : 20)],
+                    this.type
+                );
+                child.isAdult = false;
+                child.birthTick = ticks;
+
+                // Crossover: average parents, then mutate
+                child.speed = ((this.speed + partner.speed) / 2) * rand();
+                child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
+                child.visionDistSq = child.visionDistance * child.visionDistance;
+                child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
+                                      * (0.9 + Math.random() * 0.2);
+
+                // Crossover brain: pick one parent's architecture, crossover learning rate
+                const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
+                child.brain = new DenseNetwork(
+                    ParentBrain.layerDims[0],
+                    ParentBrain.layerDims.slice(1),
+                    ((this.brain.learningRate + partner.brain.learningRate) / 2)
+                        * (0.5 + Math.random())
+                );
+
+                // Generation tracking
+                child.generation = Math.max(this.generation, partner.generation) + 1;
+
+                // Reset parents' reproductive state
+                const now = Date.now();
+                this.lastChildTime = now;
+                this.lookForMate = false;
+                this.reproductionNeed = 0;
+                partner.lastChildTime = now;
+                partner.lookForMate = false;
+                partner.reproductionNeed = 0;
+
+                return child;
             }
 
             eatPlant(plant) {
@@ -2649,6 +2730,20 @@
                         }
                     }
                 } else {
+                    // Sheep mate with nearby sheep (female initiates)
+                    if (a.sex === 'female' && a.lookForMate) {
+                        for (const other of spatialGrid.query(px, pz, 20)) {
+                            if (other !== a && other.alive && other.type === 'sheep' &&
+                                other.sex === 'male' && other.lookForMate &&
+                                tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
+                                const child = a.mate(other);
+                                animals.push(child);
+                                entities.push(child);
+                                break;
+                            }
+                        }
+                    }
+
                     // Sheep eat nearby plants
                     for (const plant of plantGrid.query(px, pz, 20)) {
                         if (plant.alive &&
