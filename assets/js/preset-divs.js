@@ -263,9 +263,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<!-- <a class="dropdown-item" href="/my/musicexhibition">Music Exhibit</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.oneai.cloud/">Cloud A.I.</a> -->
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/terrarium">Artificial Terrarium</a>
+					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/terrarium">Terrarium</a>
 				</div>
 			</li>
 		</ul>
