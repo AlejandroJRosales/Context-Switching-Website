@@ -491,7 +491,7 @@
             <span class="sp-value">↺</span>
         </button>
         <div class="sp-row" style="cursor:default;">
-            <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number">VERSION: 1.2.7</span>
+            <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number">VERSION: 1.2.6</span>
         </div>
     </div>
 
@@ -1425,8 +1425,14 @@
         };
 
         const SHARED_MATERIALS = {
-            sheep: new THREE.MeshStandardMaterial({ color: 0xE6E6E6 }),
-            wolf:  new THREE.MeshStandardMaterial({ color: 0x81613e })
+            sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+            wolf:  new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false })
+        };
+
+        // Per-sex color tints
+        const SEX_COLORS = {
+            sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0xE6E6E6) }, // male slightly darker
+            wolf:  { male: new THREE.Color(0x81613e), female: new THREE.Color(0xB8906A) }  // female slightly lighter
         };
 
         const PART_OFFSETS = {
@@ -1487,6 +1493,7 @@
             for (const type of ['sheep', 'wolf']) {
                 const im      = instancedMeshes[type];
                 const offsets = PART_OFFSETS[type];
+                const colors  = SEX_COLORS[type];
                 if (!im) continue;
                 let idx = 0;
 
@@ -1494,13 +1501,19 @@
                     if (!a.alive || a.type !== type) continue;
                     if (idx >= MAX_INSTANCES) break;
 
-                    // Age-based scale: 25% at birth → 100% at sim-day 3. Adults always full size.
+                    // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
                     const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
                     _scale.set(s, s, s);
 
                     const angle = DIRECTION_ANGLES[a.outputIdx % 8];
                     _quat.setFromAxisAngle(_yAxis, angle);
+
+                    // Sex-based color
+                    const col = colors[a.sex];
+                    for (const part of ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR']) {
+                        im[part].setColorAt(idx, col);
+                    }
 
                     // Body at animal world position
                     _world.set(a.position.x, a.position.y, a.position.z);
@@ -1520,6 +1533,7 @@
                 for (const mesh of Object.values(im)) {
                     mesh.count = idx;
                     mesh.instanceMatrix.needsUpdate = true;
+                    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
                 }
             }
         }
@@ -1540,7 +1554,7 @@
         const _statLabelCtx = _statLabelCanvas.getContext('2d');
 
         // Pool of sprites keyed by animal reference
-        const animalStatSprites = new Map(); // animal -> THREE.Sprite
+        const animalStatSprites = new Map();
 
         function createStatSprite() {
             const texture = new THREE.CanvasTexture(_statLabelCanvas);
@@ -1595,7 +1609,7 @@
             ctx.fillStyle = generation === 0 ? 'rgba(255,255,255,0.5)' : '#f1c40f';
             ctx.font = 'bold 8px monospace';
             ctx.textAlign = 'right';
-            ctx.fillText(`G${generation}`, 122, 10);
+            ctx.fillText(`${generation}`, 122, 10);
             ctx.textAlign = 'left';
 
             // Update sprite texture using the shared canvas
