@@ -516,11 +516,6 @@
             <div id="nnLabel">No Target</div>
         </div>
 
-        <div class="speed-indicator show" id="speedIndicator">
-            <div>SPEED</div>
-            <div id="speedValue">0.0</div>
-        </div>
-
         <div class="hud-crosshair"></div>
         <div class="scanlines"></div>
     </div>
@@ -541,7 +536,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.9</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.8-opt</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a dynamically generated ecosystem.
         </div>
@@ -659,9 +654,10 @@
             nnVisEnabled = hudCleared ? false : true;
             document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
-            if (hudCleared && typeof sphereVisEnabled !== 'undefined') {
-                sphereVisEnabled = false;
+            if (hudCleared && typeof sphereVisMode !== 'undefined') {
+                sphereVisMode = 'off';
                 document.getElementById('sphereVisState').textContent = 'OFF';
+                for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
             }
         });
 
@@ -2681,8 +2677,8 @@
 
         const _visionSphereGeo = new THREE.SphereGeometry(1, 12, 8);
         const _visionSphereMat = {
-            sheep: new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.35 }),
-            wolf:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.35 })
+            sheep: new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.15 }),
+            wolf:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.15 })
         };
         const _visionSphereInstanced = {
             sheep: new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.sheep, MAX_INSTANCES),
@@ -2694,42 +2690,61 @@
             scene.add(mesh);
         }
 
-        let sphereVisEnabled = false;
+        let sphereVisMode = 'off';
 
         const _svScale = new THREE.Vector3();
         const _svQuat  = new THREE.Quaternion();
         const _svMat4  = new THREE.Matrix4();
 
-        function updateVisionSpheres() {
+        function updateVisionSpheres(animals) {
             const target = currentTargetAnimal;
             for (const type of ['sheep', 'wolf']) {
                 const mesh = _visionSphereInstanced[type];
-                if (!sphereVisEnabled || !target || !target.alive || target.type !== type) {
+                if (sphereVisMode === 'off') {
                     mesh.visible = false;
                     mesh.count = 0;
                     mesh.instanceMatrix.needsUpdate = true;
                     continue;
                 }
-                const r = target.visionDistance;
-                _svScale.set(r, r, r);
-                _svMat4.compose(target.position, _svQuat, _svScale);
-                mesh.setMatrixAt(0, _svMat4);
-                mesh.count = 1;
-                mesh.visible = true;
-                mesh.instanceMatrix.needsUpdate = true;
+                if (sphereVisMode === 'single') {
+                    if (!target || !target.alive || target.type !== type) {
+                        mesh.visible = false;
+                        mesh.count = 0;
+                        mesh.instanceMatrix.needsUpdate = true;
+                        continue;
+                    }
+                    const r = target.visionDistance;
+                    _svScale.set(r, r, r);
+                    _svMat4.compose(target.position, _svQuat, _svScale);
+                    mesh.setMatrixAt(0, _svMat4);
+                    mesh.count = 1;
+                    mesh.visible = true;
+                    mesh.instanceMatrix.needsUpdate = true;
+                } else {
+                    let idx = 0;
+                    for (const a of animals) {
+                        if (!a.alive || a.type !== type) continue;
+                        if (idx >= MAX_INSTANCES) break;
+                        _svScale.set(a.visionDistance, a.visionDistance, a.visionDistance);
+                        _svMat4.compose(a.position, _svQuat, _svScale);
+                        mesh.setMatrixAt(idx, _svMat4);
+                        idx++;
+                    }
+                    mesh.count = idx;
+                    mesh.visible = idx > 0;
+                    mesh.instanceMatrix.needsUpdate = true;
+                }
             }
         }
 
         document.getElementById('sphereVisBtn').addEventListener('click', toggleSphereVis);
 
         function toggleSphereVis() {
-            sphereVisEnabled = !sphereVisEnabled;
+            const modes = ['off', 'single', 'all'];
+            sphereVisMode = modes[(modes.indexOf(sphereVisMode) + 1) % modes.length];
             const state = document.getElementById('sphereVisState');
-            if (sphereVisEnabled) {
-                if (state) state.textContent = 'ON';
-                for (const mesh of Object.values(_visionSphereInstanced)) mesh.visible = true;
-            } else {
-                if (state) state.textContent = 'OFF';
+            if (state) state.textContent = sphereVisMode === 'off' ? 'OFF' : sphereVisMode === 'single' ? 'SINGLE' : 'ALL';
+            if (sphereVisMode === 'off') {
                 for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
             }
         }
@@ -3269,7 +3284,7 @@
 
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals);
-            updateVisionSpheres();
+            updateVisionSpheres(animals);
 
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
