@@ -478,12 +478,8 @@
     <div id="settings-panel">
         <div class="sp-game-title" style="color:rgba(0,255,0,0.8);">🌿TERRARIUM <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number"> 1.2.7-opt</span></div>
         <div class="sp-game-desc" style="font-size:9px; color:rgba(0,255,0,0.8);">A game where A.I. animals have the freedom to explore and learn in a dynamically generated ecosystem.</div>
-        <div class="sp-game-desc" style="color:rgba(0,255,0,0.9);">Alejandro Rosales, the creator of <a style="text-decoration: none;background:-webkit-linear-gradient(320deg, rgba(131, 58, 180, 1) 0%, rgba(253, 29, 29, 1) 10%, rgba(252, 176, 69, 1) 75%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;" href="https://www.contextswitching.org">Context Switching</a>, built this for fun.</div>
-        <div class="sp-row" style="border-bottom:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:8px;">
-            <span class="sp-label">⚙ Settings</span>
-            <span class="sp-value" style="font-size:10px; color:rgba(0,255,0,0.4);" id="fps-counter">FPS: 60</span>
-        </div>
-        <div class="sp-row-scale">
+        <div class="sp-game-desc" style="color:rgba(0,255,0,0.9);padding-bottom:20px;">Alejandro Rosales, the creator of <a style="text-decoration: none;background:-webkit-linear-gradient(320deg, rgba(131, 58, 180, 1) 0%, rgba(253, 29, 29, 1) 10%, rgba(252, 176, 69, 1) 75%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;" href="https://www.contextswitching.org">contextswitching.org</a>, built this for fun.</div>
+        <div class="sp-row-scale" style="border-top:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:20px;">
             <label for="scale-slider">World Size: <span id="scaleDisplay">3</span></label>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
             <div class="sp-hint">World size changes take effect on reset</div>
@@ -492,21 +488,25 @@
             <span class="sp-label">Reset World</span>
             <span class="sp-value">↺</span>
         </button>
+        <div class="sp-row">
+            <span class="sp-label">FPS</span>
+            <span class="sp-value" id="fps-counter"></span>
+        </div>
         <button class="sp-row" id="flyBtn">
             <span class="sp-label">Creative Mode</span>
             <span class="sp-value" id="creativeState">OFF</span>
         </button>
-        <button class="sp-row" id="nnVisBtn">
-            <span class="sp-label">Vitals Board</span>
-            <span class="sp-value" id="nnVisState">OFF</span>
+        <button class="sp-row" id="fullscreenBtn">
+            <span class="sp-label">Fullscreen</span>
+            <span class="sp-value" id="fsState">OFF</span>
         </button>
         <button class="sp-row" id="clearHudBtn">
             <span class="sp-label">HUD</span>
             <span class="sp-value" id="hudState">ON</span>
         </button>
-        <button class="sp-row" id="fullscreenBtn">
-            <span class="sp-label">Fullscreen</span>
-            <span class="sp-value" id="fsState">OFF</span>
+        <button class="sp-row" id="nnVisBtn">
+            <span class="sp-label">Vitals Board</span>
+            <span class="sp-value" id="nnVisState">OFF</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -575,12 +575,13 @@
             const hudElements = [
                 document.querySelector('.hud'),
                 document.querySelector('.joystick-container'),
-                document.querySelector('.control-panel'),
-                document.getElementById('controlBtn'),
+                document.querySelector('.control-panel')
             ];
             hudElements.forEach(el => {
                 if (el) el.style.display = hudCleared ? 'none' : '';
             });
+            nnVisEnabled = hudCleared ? false : true;
+            document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
         });
 
@@ -3140,7 +3141,7 @@
 
             frameCount++;
             if (now - lastFpsUpdate > 1000) {
-                document.getElementById('fps-counter').textContent = 'FPS: ' + frameCount;
+                document.getElementById('fps-counter').textContent = frameCount;
                 frameCount = 0;
                 lastFpsUpdate = now;
             }
