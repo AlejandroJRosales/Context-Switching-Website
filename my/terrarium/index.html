@@ -9,6 +9,7 @@
     <!-- This code is made to be copy and pastable. Make it your own! :) -->
     <!-- TODO: Adjust vision distance, fine tune input, weights, starting stats -->
     <style>
+        /* Reset & Base */
         * {
             margin: 0;
             padding: 0;
@@ -20,12 +21,13 @@
 
         html, body {
             width: 100%;
-            height: 100%;
             height: 100dvh;
             overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Courier New', monospace;
             background: #000;
         }
+
+        /* Canvas */
 
         #canvas {
             display: block;
@@ -33,7 +35,9 @@
             height: 100%;
         }
 
-        /* Neural Network Visualizer, DOM panel hidden; rendered as 3D billboard sprite */
+        /* Neural Network Visualizer */
+        /* DOM panel hidden; rendered as 3D billboard sprite */
+
         #nnVisualizerContainer {
             display: none !important;
         }
@@ -54,23 +58,20 @@
         }
 
         #nnLabel {
-            color: #00ff00;
-            font-family: 'Courier New', monospace;
-            font-size: 10px;
             margin-top: 5px;
+            font-size: 10px;
             text-align: center;
             text-transform: uppercase;
             letter-spacing: 1px;
+            color: #00ff00;
         }
+
+        /* HUD */
 
         .hud {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             pointer-events: none;
-            font-family: 'Courier New', monospace;
             color: #00ff00;
             text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
             font-size: clamp(10px, 2.5vw, 16px);
@@ -91,14 +92,14 @@
             position: absolute;
             bottom: max(80px, calc(env(safe-area-inset-bottom) + 70px));
             left: max(10px, env(safe-area-inset-left));
-            font-size: clamp(9px, 1.8vw, 12px);
-            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            max-width: 90vw;
             padding: clamp(8px, 2vw, 15px);
+            font-size: clamp(9px, 1.8vw, 12px);
+            line-height: 1.5;
+            background: rgba(0, 0, 0, 0.7);
             border: 1px solid #00ff00;
             border-radius: 4px;
-            max-width: 90vw;
-            line-height: 1.5;
-            display: none;
         }
 
         .hud-controls.show {
@@ -122,69 +123,58 @@
         .hud-crosshair::after {
             content: '';
             position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             background: #00ff00;
         }
 
         .hud-crosshair::before {
             width: 10px;
             height: 2px;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
         }
 
         .hud-crosshair::after {
             width: 2px;
             height: 10px;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
         }
 
-        .speed-indicator {
-            position: absolute;
-            bottom: max(10px, env(safe-area-inset-bottom));
-            left: max(10px, env(safe-area-inset-left));
-            font-size: clamp(9px, 2vw, 12px);
-            background: rgba(0, 0, 0, 0.7);
-            padding: clamp(8px, 1.5vw, 12px);
-            border: 1px solid #00ff00;
-            border-radius: 4px;
-            min-width: 120px;
-            display: none;
-        }
+        /* Control Panel */
 
         .control-panel {
             position: absolute;
             bottom: max(10px, env(safe-area-inset-bottom));
             right: max(10px, env(safe-area-inset-right));
             display: flex;
-            gap: 10px;
-            pointer-events: auto;
             flex-wrap: wrap;
             justify-content: flex-end;
+            gap: 10px;
             max-width: 90vw;
+            pointer-events: auto;
         }
+
+        /* Buttons */
 
         button {
             padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 20px);
-            background: rgba(0, 0, 0, 0.8);
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            border-radius: 4px;
-            cursor: pointer;
             font-family: 'Courier New', monospace;
             font-size: clamp(9px, 2vw, 12px);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            transition: all 0.2s;
+            color: #00ff00;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            cursor: pointer;
             pointer-events: auto;
             touch-action: manipulation;
+            transition: all 0.2s;
             -webkit-appearance: none;
             appearance: none;
         }
 
-        button:hover, button:active {
+        button:hover,
+        button:active {
             background: rgba(0, 255, 0, 0.1);
             box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
         }
@@ -193,32 +183,32 @@
             transform: scale(0.95);
         }
 
+        /* Joystick */
+        /* Positioned dynamically via JS */
         .joystick-container {
             position: absolute;
+            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
+            left: max(20px, env(safe-area-inset-left));
+            display: none;
+            align-items: center;
+            justify-content: center;
             width: clamp(120px, 28vw, 180px);
             height: clamp(120px, 28vw, 180px);
             pointer-events: auto;
             touch-action: none;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            /* Positioned dynamically via JS */
-            bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
-            left: max(20px, env(safe-area-inset-left));
         }
 
         .joystick-container.show {
             display: flex;
         }
 
-        /* Outer base ring */
         .joystick-base {
             position: absolute;
             inset: 0;
             border-radius: 50%;
-            background: radial-gradient(circle at 40% 35%, rgba(0,255,0,0.08), rgba(0,0,0,0.45));
+            background: radial-gradient(circle at 40% 35%, rgba(0, 255, 0, 0.08), rgba(0, 0, 0, 0.45));
             border: 2px solid rgba(0, 255, 0, 0.35);
-            box-shadow: 0 0 18px rgba(0,255,0,0.15), inset 0 0 18px rgba(0,0,0,0.5);
+            box-shadow: 0 0 18px rgba(0, 255, 0, 0.15), inset 0 0 18px rgba(0, 0, 0, 0.5);
         }
 
         /* Tick marks for direction hints */
@@ -227,34 +217,33 @@
             position: absolute;
             inset: 6px;
             border-radius: 50%;
-            border: 1px dashed rgba(0,255,0,0.18);
+            border: 1px dashed rgba(0, 255, 0, 0.18);
         }
 
-        /* Inner dead-zone ring */
         .joystick-deadzone {
             position: absolute;
             width: 30%;
             height: 30%;
             border-radius: 50%;
-            border: 1px solid rgba(0,255,0,0.2);
+            border: 1px solid rgba(0, 255, 0, 0.2);
             pointer-events: none;
         }
 
         .joystick-knob {
+            position: absolute;
             width: clamp(38px, 9vw, 58px);
             height: clamp(38px, 9vw, 58px);
-            background: radial-gradient(circle at 38% 35%, rgba(100,255,130,0.9), rgba(0,180,60,0.7));
-            border: 2px solid #00ff00;
             border-radius: 50%;
-            position: absolute;
+            border: 2px solid #00ff00;
+            background: radial-gradient(circle at 38% 35%, rgba(100, 255, 130, 0.9), rgba(0, 180, 60, 0.7));
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.6), inset 0 1px 3px rgba(255, 255, 255, 0.3);
             touch-action: none;
-            box-shadow: 0 0 12px rgba(0,255,0,0.6), inset 0 1px 3px rgba(255,255,255,0.3);
             transition: box-shadow 0.1s ease;
             will-change: transform;
         }
 
         .joystick-knob.active {
-            box-shadow: 0 0 22px rgba(0,255,0,0.9), inset 0 1px 3px rgba(255,255,255,0.3);
+            box-shadow: 0 0 22px rgba(0, 255, 0, 0.9), inset 0 1px 3px rgba(255, 255, 255, 0.3);
         }
 
         /* Floating joystick mode: hide until first touch */
@@ -267,13 +256,11 @@
             opacity: 1;
         }
 
-        /* Scanline effect */
+        /* Scanlines */
+
         .scanlines {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background: repeating-linear-gradient(
                 0deg,
                 rgba(0, 0, 0, 0.03),
@@ -284,17 +271,56 @@
             pointer-events: none;
             z-index: 100;
         }
-        
+
+        /* Settings Panel */
+
         #settings-panel {
             display: none;
             position: absolute;
-            top: 50%; left: 50%;
+            top: 50%;
+            left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.92);
-            z-index: 200;
-            font-family: 'Courier New', monospace;
-            color: #00ff00;
             min-width: 280px;
+            background: rgba(0, 0, 0, 0.92);
+            color: #00ff00;
+            z-index: 200;
+        }
+
+        .sp-game-title {
+            padding: 10px 10px 6px;
+            color: rgba(0, 255, 0, 0.8);
+        }
+
+        .sp-game-desc {
+            padding: 4px 14px 6px;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(0, 255, 0, 0.4);
+        }
+
+        .sp-game-desc-bright {
+            color: rgba(0, 255, 0, 0.8);
+        }
+
+        .sp-game-desc-attribution {
+            color: rgba(0, 255, 0, 0.9);
+            padding-bottom: 20px;
+        }
+
+        .sp-game-desc a {
+            text-decoration: none;
+        }
+
+        .sp-link-gradient {
+            background: -webkit-linear-gradient(320deg, rgba(131, 58, 180, 1) 0%, rgba(253, 29, 29, 1) 10%, rgba(252, 176, 69, 1) 75%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sp-link-red {
+            color: red;
         }
 
         .sp-row {
@@ -305,93 +331,134 @@
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
+            border-bottom: 1px solid rgba(0, 255, 0, 0.08);
             cursor: default;
         }
 
-        .sp-bttns-main {
-            padding: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .sp-row:last-child {
+            border-bottom: none;
         }
 
-        .sp-row:last-child { 
-            border-bottom: none; 
+        .sp-label {
+            color: rgba(0, 255, 0, 0.75);
         }
 
-        .sp-label { 
-            color: rgba(0,255,0,0.75); 
-        }
-
-        .sp-value { 
-            color: #00ff00; 
+        .sp-value {
+            color: #00ff00;
         }
 
         button.sp-row {
             width: 100%;
-            background: none;
-            border: none;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
-            border-radius: 0;
             padding: 7px 14px;
             text-align: left;
             cursor: pointer;
+            background: none;
+            border: none;
+            border-bottom: 1px solid rgba(0, 255, 0, 0.08);
+            border-radius: 0;
             transition: none;
         }
 
-        button.sp-row:hover, button.sp-row:active {
-            background: rgba(0,255,0,0.06);
+        button.sp-row:hover,
+        button.sp-row:active {
+            background: rgba(0, 255, 0, 0.06);
             box-shadow: none;
             transform: none;
         }
 
         .sp-row-scale {
-            padding: 7px 14px 10px;
-            border-bottom: 1px solid rgba(0,255,0,0.08);
+            padding: 20px 14px 8px;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            border-top: 1px solid rgba(0, 255, 0, 0.15);
+            border-bottom: 1px solid rgba(0, 255, 0, 0.08);
         }
 
-        .sp-row-scale label { 
-            color: rgba(0,255,0,0.75); 
+        .sp-row-scale label {
+            color: rgba(0, 255, 0, 0.75);
         }
 
-        .sp-row-scale input { 
-            display: block; 
-            width: 100%; 
-            accent-color: #00ff00; 
-            margin-top: 5px; 
-            cursor: pointer; 
+        .sp-row-scale input {
+            display: block;
+            width: 100%;
+            margin-top: 5px;
+            accent-color: #00ff00;
+            cursor: pointer;
         }
 
-        .sp-hint { 
+        .sp-hint {
             padding-top: 6px;
-            font-size: 9px; 
-            color: rgba(0,255,0,0.4); 
-            text-transform: uppercase; 
-            letter-spacing: 0.5px; 
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(0, 255, 0, 0.4);
         }
 
-        .sp-game-title { 
-            padding: 10px 10px 6px 10px;
+        .sp-bttns-main {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            padding: 10px;
         }
 
-        .sp-game-desc {
-            padding: 4px 14px 6px; 
-            font-size: 9px; 
-            color: rgba(0,255,0,0.4); 
-            text-transform: uppercase; 
-            letter-spacing: 0.5px; 
+        /* VR Overlay */
+
+        #vr-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 50;
         }
+
+        #vr-hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 8px 12px;
+            font-size: 14px;
+            color: #00ff00;
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+        }
+
+        #vr-controls-hint {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 12px;
+            font-size: 11px;
+            text-align: center;
+            color: rgba(0, 255, 0, 0.7);
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        /* Settings Button */
+
+        #settings-btn-wrap {
+            position: absolute;
+            bottom: max(10px, env(safe-area-inset-top));
+            right: max(10px, env(safe-area-inset-right));
+            display: flex;
+            gap: 8px;
+            z-index: 20;
+        }
+
+        /* Animations */
 
         @keyframes pulse {
             0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
+            50%       { opacity: 1; }
         }
 
-        /* Responsive adjustments */
+        /* Responsive */
+
         @media (max-width: 600px) {
             .hud-header {
                 font-size: clamp(12px, 4vw, 16px);
@@ -405,7 +472,6 @@
                 width: clamp(150px, 35vw, 300px);
                 height: clamp(150px, 35vw, 300px);
             }
-
         }
 
         @media (orientation: landscape) {
@@ -424,17 +490,24 @@
     <canvas id="canvas"></canvas>
 
     <!-- VR DOM Overlay (visible inside Quest browser during VR session) -->
-    <div id="vr-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;">
-        <div id="vr-hud" style="position:absolute; top:10px; left:10px; font-family:'Courier New',monospace; color:#00ff00; font-size:14px; text-shadow:0 0 8px rgba(0,255,0,0.6); background:rgba(0,0,0,0.5); padding:8px 12px; border:1px solid #00ff00; border-radius:4px;">
-            <div id="vr-stats">🌿 Buidling World...</div>
+    <div id="vr-overlay">
+        <div id="vr-hud">
+            <div id="vr-stats">🌿 Building World...</div>
         </div>
-        <div id="vr-controls-hint" style="position:absolute; bottom:15px; left:50%; transform:translateX(-50%); font-family:'Courier New',monospace; color:rgba(0,255,0,0.7); font-size:11px; text-align:center; background:rgba(0,0,0,0.5); padding:6px 12px; border-radius:4px;">
-            Left stick: Move · Right stick: Turn · A: Jump · B: Reset
+        <div id="vr-controls-hint">
+            Left stick: Move - Right stick: Turn - A: Jump - B: Reset
         </div>
     </div>
 
+    <!-- HUD -->
     <div class="hud">
-        <div class="hud-header"><span id="deerCount">0</span>🐑 <span id="wolfCount">0</span>🐺 <span id="plantCount">0</span>🌱 Day <span id="dayCount">0</span> <span id="creativeIndicator" style="display:none; color:#88ffff;">✦ CREATIVE</span></div>
+        <div class="hud-header">
+            <span id="deerCount">0</span>🐑
+            <span id="wolfCount">0</span>🐺
+            <span id="plantCount">0</span>🌱
+            Day <span id="dayCount">0</span>
+            <span id="creativeIndicator" style="display:none; color:#88ffff;">✦ CREATIVE</span>
+        </div>
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
@@ -452,23 +525,33 @@
         <div class="scanlines"></div>
     </div>
 
+    <!-- Joystick -->
     <div class="joystick-container show floating" id="joystick">
         <div class="joystick-base"></div>
         <div class="joystick-deadzone"></div>
     </div>
 
-    <div class="control-panel">
-    </div>
+    <!-- Control Panel -->
+    <div class="control-panel"></div>
 
-    <div style="position:absolute; bottom:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:20; display:flex; gap:8px;">
+    <!-- Settings Button -->
+    <div id="settings-btn-wrap">
         <button id="settings-btn">⚙</button>
     </div>
 
+    <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title" style="color:rgba(0,255,0,0.8);">🌿TERRARIUM <span style="font-size:9px;" id="sp-hint"> 1.2.8</span></div>
-        <div class="sp-game-desc" style="font-size:9px; color:rgba(0,255,0,0.8);">A game where A.I. animals have the freedom to explore and learn in a dynamically generated ecosystem.</div>
-        <div class="sp-game-desc" style="color:rgba(0,255,0,0.9);padding-bottom:20px;">Alejandro Rosales, the creator of <a style="text-decoration:none;background:-webkit-linear-gradient(320deg, rgba(131, 58, 180, 1) 0%, rgba(253, 29, 29, 1) 10%, rgba(252, 176, 69, 1) 75%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;" href="https://www.contextswitching.org">contextswitching.org</a>, built this for fun. View the code <a style="text-decoration:none;color:red;background-clip:text;-webkit-background-clip:text;" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/terrarium/index.html">here</a>.</div>
-        <div class="sp-row-scale" style="border-top:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:20px;">
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.8</span></div>
+        <div class="sp-game-desc sp-game-desc-bright">
+            A game where A.I. animals have the freedom to explore and learn in a dynamically generated ecosystem.
+        </div>
+        <div class="sp-game-desc sp-game-desc-attribution">
+            Alejandro Rosales, the creator of
+            <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
+            built this for fun. View the code
+            <a class="sp-link-red" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/terrarium/index.html">here</a>.
+        </div>
+        <div class="sp-row-scale">
             <label for="scale-slider">World Size: <span id="scaleDisplay">3</span></label>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
             <div class="sp-hint">World size changes take effect on reset</div>
@@ -502,7 +585,7 @@
             <span class="sp-value" id="vrBtnText">Not Supported</span>
         </button>
         <div class="sp-bttns-main">
-            <button style="margin-right:15px;" id="controlBtn">Keyboard</button>
+            <button id="controlBtn">Keyboard</button>
             <button id="closeSPBtn">Close</button>
         </div>
     </div>
@@ -1078,7 +1161,7 @@
             }
         }, { passive: false });
 
-        // ── Unified touchmove: handles joystick AND camera in one pass ──
+        //  Unified touchmove: handles joystick AND camera in one pass 
         document.addEventListener('touchmove', (e) => {
             if (controls.controlMode !== 'touch') return;
             e.preventDefault();
@@ -1110,7 +1193,7 @@
             }
         }, { passive: false });
 
-        // ── Unified touchend ──
+        //  Unified touchend 
         document.addEventListener('touchend', (e) => {
             for (const touch of e.changedTouches) {
                 if (touch.identifier === joystickTouchId) resetJoystick();
@@ -1119,7 +1202,7 @@
             }
         });
 
-        // ── Unified touchcancel ──
+        //  Unified touchcancel 
         document.addEventListener('touchcancel', () => {
             resetJoystick();
             cameraTouchId = null;
