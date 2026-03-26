@@ -658,7 +658,6 @@
         });
 
         document.getElementById('resetBtn').addEventListener('click', () => {
-            // Patch CONFIG values using pendingScale before the existing reset logic runs
             CONFIG.initialDeer = Math.trunc(20 * pendingScale);
             CONFIG.initialWolves = Math.trunc(5 * pendingScale);
             CONFIG.initialPlants = Math.trunc(30 * pendingScale);
@@ -1099,8 +1098,8 @@
 
         // Touch screen camera control
         // Tap behaviour (right half, touch mode):
-        //   single tap  → start camera drag
-        //   double tap  → jump (if on ground)
+        // single tap means start camera drag
+        // double tap means jump (if on ground)
         let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
@@ -1292,8 +1291,8 @@
                 this.EMA = 0.001;
 
                 const L = this.layerDims.length - 1; // number of weight layers
-                this.weights = [];         // Float32Array per layer
-                this.biases = [];          // Float32Array per layer
+                this.weights = []; // Float32Array per layer
+                this.biases = []; // Float32Array per layer
                 this.weightVelocity = [];
                 this.biasVelocity = [];
                 this.activations = [];
@@ -1578,7 +1577,7 @@
             }
         }
 
-        // Reusable objects t0 avoid per-frame allocation
+        // Reusable objects to avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
         const _world = new THREE.Vector3();
@@ -1586,9 +1585,9 @@
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
 
-        const TICKS_PER_DAY  = 24 * 60;          // matches dayCount formula
+        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
         const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
-        const MIN_SCALE      = 0.25;               // 25% of parent size at birth
+        const MIN_SCALE      = 0.25; // 25% of parent size at birth
 
         function updateInstancedMeshes(animals) {
             for (const type of ['sheep', 'wolf']) {
