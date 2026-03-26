@@ -84,8 +84,8 @@ var oneaiDiv =
 		<script src="/assets/oneai/submission-pipeline.js"></script>
 	</div>
 
-					</div>
-			<button class="btn btn-primary oneai-contents-button" type="button" data-toggle="collapse" data-target="#oneai-collapse"
+			</div>
+				<button class="btn btn-primary oneai-contents-button" type="button" data-toggle="collapse" data-target="#oneai-collapse"
 						aria-expanded="false" aria-controls="collapseExample" id="oneai-contents-button">
 							<svg width="34" height="34" viewBox="0 0 64 64" fill="none">
 								<!-- Main sparkle -->
@@ -97,7 +97,7 @@ var oneaiDiv =
 									fill="currentColor"/>
 							</svg>
 				</button>
-	</div>
+			</div>
 </div>
 `
 
