@@ -322,6 +322,13 @@
             cursor: default;
         }
 
+        .sp-bttns-main {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .sp-row:last-child { 
             border-bottom: none; 
         }
@@ -393,7 +400,7 @@
                 font-size: clamp(12px, 4vw, 16px);
             }
 
-.control-panel {
+            .control-panel {
                 bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
             }
 
@@ -457,22 +464,22 @@
     </div>
 
     <div style="position:absolute; bottom:max(10px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:20; display:flex; gap:8px;">
-        <button id="controlBtn">Keyboard</button>
         <button id="settings-btn">⚙</button>
     </div>
 
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM</div>
-        <div class="sp-hint">A game where machine learning autonomous agents explore and learn in a dynamically generated ecosystem.</div>
+        <div class="sp-game-title" style="color:rgba(0,255,0,0.8);">🌿TERRARIUM <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number"> 1.2.7-opt</span></div>
+        <div class="sp-hint" style="font-size:9px; color:rgba(0,255,0,0.8);">A game where machine learning autonomous agents explore and learn in a dynamically generated ecosystem.</div>
+        <div class="sp-hint" style="color:rgba(0,255,0,0.9);">Coded by <a style="text-decoration: none;background:-webkit-linear-gradient(320deg, rgba(131, 58, 180, 1) 0%, rgba(253, 29, 29, 1) 10%, rgba(252, 176, 69, 1) 75%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;" href="/my/aboutme">Alejandro Rosales</a>.</div>
         <div class="sp-row" style="border-bottom:1px solid rgba(0,255,0,0.15); padding-bottom:8px; padding-top:8px;">
             <span class="sp-label">⚙ Settings</span>
             <span class="sp-value" style="font-size:10px; color:rgba(0,255,0,0.4);" id="fps-counter">FPS: 60</span>
         </div>
         <div class="sp-row-scale">
-            <label for="scale-slider">Scale: <span id="scaleDisplay">3</span></label>
+            <label for="scale-slider">World Size: <span id="scaleDisplay">3</span></label>
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
         </div>
-        <div class="sp-hint">Scale changes take effect on Reset</div>
+        <div class="sp-hint">World size changes take effect on reset</div>
         <button class="sp-row" id="flyBtn">
             <span class="sp-label">Creative Mode</span>
             <span class="sp-value" id="creativeState">OFF</span>
@@ -497,8 +504,9 @@
             <span class="sp-label">Reset World</span>
             <span class="sp-value">↺</span>
         </button>
-        <div class="sp-row" style="cursor:default;">
-            <span style="font-size:9px; color:rgba(0,255,0,0.3);" id="version-number">VERSION: 1.2.7-opt</span>
+        <div class="sp-bttns-main">
+            <button style="margin-right:15px;" id="controlBtn">Keyboard</button>
+            <button id="closeSPBtn">Close</button>
         </div>
     </div>
 
@@ -847,6 +855,10 @@
                 canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
                 canvas.requestPointerLock();
             }
+        });
+
+        document.getElementById('closeSPBtn').addEventListener('click', () => {
+            toggleSettings();
         });
 
         // Control mode toggle
@@ -3151,6 +3163,8 @@
         const vrCameraRig = new THREE.Group();
         vrCameraRig.add(camera);
         scene.add(vrCameraRig);
+
+        toggleSettings();
 
         // Initialize
         initializeWorld();
