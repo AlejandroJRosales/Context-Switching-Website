@@ -516,6 +516,11 @@
             <div id="nnLabel">No Target</div>
         </div>
 
+        <div class="speed-indicator show" id="speedIndicator">
+            <div>SPEED</div>
+            <div id="speedValue">0.0</div>
+        </div>
+
         <div class="hud-crosshair"></div>
         <div class="scanlines"></div>
     </div>
@@ -536,7 +541,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.8-opt</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.9</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a dynamically generated ecosystem.
         </div>
@@ -575,6 +580,10 @@
             <span class="sp-label">Vitals Board</span>
             <span class="sp-value" id="nnVisState">OFF</span>
         </button>
+        <button class="sp-row" id="sphereVisBtn">
+            <span class="sp-label">Sphere Display</span>
+            <span class="sp-value" id="sphereVisState">OFF</span>
+        </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
             <span class="sp-value" id="vrBtnText">Not Supported</span>
@@ -608,8 +617,8 @@
         const player = {
             position: new THREE.Vector3(400, 50, 300),
             velocity: new THREE.Vector3(0, 0, 0),
-            speed: 50 * Math.log1p(scale),
-            sprintSpeed: 100 * Math.log1p(scale),
+            speed: 80 * Math.log1p(scale),
+            sprintSpeed: 160 * Math.log1p(scale),
             jumpForce: 300 * Math.log1p(scale),
             isJumping: false,
             isCreative: false,
@@ -650,6 +659,10 @@
             nnVisEnabled = hudCleared ? false : true;
             document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
+            if (hudCleared && typeof sphereVisEnabled !== 'undefined') {
+                sphereVisEnabled = false;
+                document.getElementById('sphereVisState').textContent = 'OFF';
+            }
         });
 
         document.getElementById('scale-slider').addEventListener('input', function() {
@@ -658,6 +671,7 @@
         });
 
         document.getElementById('resetBtn').addEventListener('click', () => {
+            // Patch CONFIG values using pendingScale before the existing reset logic runs
             CONFIG.initialDeer = Math.trunc(20 * pendingScale);
             CONFIG.initialWolves = Math.trunc(5 * pendingScale);
             CONFIG.initialPlants = Math.trunc(30 * pendingScale);
@@ -665,8 +679,8 @@
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
             CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
             CONFIG.scale = pendingScale;
-            player.speed = 50 * Math.log1p(pendingScale);
-            player.sprintSpeed = 100 * Math.log1p(pendingScale);
+            player.speed = 80 * Math.log1p(pendingScale);
+            player.sprintSpeed = 160 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
         }, true);
 
@@ -1098,8 +1112,8 @@
 
         // Touch screen camera control
         // Tap behaviour (right half, touch mode):
-        // single tap means start camera drag
-        // double tap means jump (if on ground)
+        //   single tap  → start camera drag
+        //   double tap  → jump (if on ground)
         let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
@@ -1291,8 +1305,8 @@
                 this.EMA = 0.001;
 
                 const L = this.layerDims.length - 1; // number of weight layers
-                this.weights = []; // Float32Array per layer
-                this.biases = []; // Float32Array per layer
+                this.weights = [];         // Float32Array per layer
+                this.biases = [];          // Float32Array per layer
                 this.weightVelocity = [];
                 this.biasVelocity = [];
                 this.activations = [];
@@ -1577,7 +1591,7 @@
             }
         }
 
-        // Reusable objects to avoid per-frame allocation
+        // Reusable objects t0 avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
         const _world = new THREE.Vector3();
@@ -1585,9 +1599,9 @@
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
 
-        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
+        const TICKS_PER_DAY  = 24 * 60;          // matches dayCount formula
         const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
-        const MIN_SCALE      = 0.25; // 25% of parent size at birth
+        const MIN_SCALE      = 0.25;               // 25% of parent size at birth
 
         function updateInstancedMeshes(animals) {
             for (const type of ['sheep', 'wolf']) {
@@ -1703,7 +1717,7 @@
 
             // Generation label + age bar (only shown for born animals)
             if (ageRatio < 1) {
-                drawBar(52, '🚼', ageRatio, 1, '#2ecc71');
+                drawBar(52, '🌱', ageRatio, 1, '#2ecc71');
             }
             // Generation tag top-right
             ctx.fillStyle = generation === 0 ? 'rgba(255,255,255,0.5)' : '#f1c40f';
@@ -2085,7 +2099,7 @@
                 this.startHealth = type === 'wolf' ? 120 : 100;
                 this.health = this.startHealth;
                 this.maxHealth = this.health;
-                this.visionDistance = tools.random(400, 500);
+                this.visionDistance = tools.random(300, 400);
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
@@ -2665,6 +2679,61 @@
             }
         }
 
+        const _visionSphereGeo = new THREE.SphereGeometry(1, 12, 8);
+        const _visionSphereMat = {
+            sheep: new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.35 }),
+            wolf:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.35 })
+        };
+        const _visionSphereInstanced = {
+            sheep: new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.sheep, MAX_INSTANCES),
+            wolf:  new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.wolf,  MAX_INSTANCES)
+        };
+        for (const mesh of Object.values(_visionSphereInstanced)) {
+            mesh.frustumCulled = false;
+            mesh.visible = false;
+            scene.add(mesh);
+        }
+
+        let sphereVisEnabled = false;
+
+        const _svScale = new THREE.Vector3();
+        const _svQuat  = new THREE.Quaternion();
+        const _svMat4  = new THREE.Matrix4();
+
+        function updateVisionSpheres() {
+            const target = currentTargetAnimal;
+            for (const type of ['sheep', 'wolf']) {
+                const mesh = _visionSphereInstanced[type];
+                if (!sphereVisEnabled || !target || !target.alive || target.type !== type) {
+                    mesh.visible = false;
+                    mesh.count = 0;
+                    mesh.instanceMatrix.needsUpdate = true;
+                    continue;
+                }
+                const r = target.visionDistance;
+                _svScale.set(r, r, r);
+                _svMat4.compose(target.position, _svQuat, _svScale);
+                mesh.setMatrixAt(0, _svMat4);
+                mesh.count = 1;
+                mesh.visible = true;
+                mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        document.getElementById('sphereVisBtn').addEventListener('click', toggleSphereVis);
+
+        function toggleSphereVis() {
+            sphereVisEnabled = !sphereVisEnabled;
+            const state = document.getElementById('sphereVisState');
+            if (sphereVisEnabled) {
+                if (state) state.textContent = 'ON';
+                for (const mesh of Object.values(_visionSphereInstanced)) mesh.visible = true;
+            } else {
+                if (state) state.textContent = 'OFF';
+                for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
+            }
+        }
+
         // ============================================================================
         // WORLD STATE
         // ============================================================================
@@ -2707,9 +2776,8 @@
             // Clear stat label sprites from previous world
             clearAllStatLabels();
 
-            // Hide NN sprite and vision sphere on reset
+            // Hide NN sprite on reset
             nnSprite.visible = false;
-            if (typeof visionSphere !== 'undefined') visionSphere.visible = false;
 
             // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
@@ -3032,35 +3100,16 @@
             return closest;
         }
 
-        // Vision sphere: wireframe globe showing the targeted animal's perception radius
-        const _visionSphereGeo = new THREE.SphereGeometry(1, 24, 16);
-        const _visionSphereMat = new THREE.MeshBasicMaterial({
-            color: 0x00ff44,
-            wireframe: true,
-            transparent: true,
-            opacity: .3,
-            depthWrite: false
-        });
-        const visionSphere = new THREE.Mesh(_visionSphereGeo, _visionSphereMat);
-        visionSphere.visible = false;
-        scene.add(visionSphere);
-
         function updateTargetInfo() {
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
 
-            if (player.isCreative && target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
                 // Update 3D NN sprite
                 updateNN3DSprite(target);
-                // Update vision sphere
-                const r = target.visionDistance || 0;
-                visionSphere.position.copy(target.position);
-                visionSphere.scale.setScalar(r);
-                visionSphere.visible = true;
             } else {
                 // Hide 3D NN sprite when no target
                 updateNN3DSprite(null);
-                visionSphere.visible = false;
             }
         }
 
@@ -3220,6 +3269,7 @@
 
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals);
+            updateVisionSpheres();
 
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
