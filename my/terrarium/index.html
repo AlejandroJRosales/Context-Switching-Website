@@ -647,11 +647,8 @@
             hudElements.forEach(el => {
                 if (el) el.style.display = hudCleared ? 'none' : '';
             });
-            if (hudCleared) {
-                nnVisEnabled = false;
-                statLabelsEnabled = false;
-            }
-            document.getElementById('nnVisState').textContent = nnVisEnabled ? 'ON' : 'OFF';
+            nnVisEnabled = hudCleared ? false : true;
+            document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
         });
 
@@ -2088,7 +2085,7 @@
                 this.startHealth = type === 'wolf' ? 120 : 100;
                 this.health = this.startHealth;
                 this.maxHealth = this.health;
-                this.visionDistance = tools.random(400, 600);
+                this.visionDistance = tools.random(400, 500);
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
@@ -2646,7 +2643,9 @@
             nnSprite.visible = true;
         }
 
-        let statLabelsEnabled = false;
+        let statLabelsEnabled = true;
+
+        toggleNNVis();
 
         document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
 
@@ -2708,8 +2707,9 @@
             // Clear stat label sprites from previous world
             clearAllStatLabels();
 
-            // Hide NN sprite on reset
+            // Hide NN sprite and vision sphere on reset
             nnSprite.visible = false;
+            if (typeof visionSphere !== 'undefined') visionSphere.visible = false;
 
             // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
@@ -3032,16 +3032,35 @@
             return closest;
         }
 
+        // Vision sphere: wireframe globe showing the targeted animal's perception radius
+        const _visionSphereGeo = new THREE.SphereGeometry(1, 24, 16);
+        const _visionSphereMat = new THREE.MeshBasicMaterial({
+            color: 0x00ff44,
+            wireframe: true,
+            transparent: true,
+            opacity: .3,
+            depthWrite: false
+        });
+        const visionSphere = new THREE.Mesh(_visionSphereGeo, _visionSphereMat);
+        visionSphere.visible = false;
+        scene.add(visionSphere);
+
         function updateTargetInfo() {
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
 
-            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+            if (player.isCreative && target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
                 // Update 3D NN sprite
                 updateNN3DSprite(target);
+                // Update vision sphere
+                const r = target.visionDistance || 0;
+                visionSphere.position.copy(target.position);
+                visionSphere.scale.setScalar(r);
+                visionSphere.visible = true;
             } else {
                 // Hide 3D NN sprite when no target
                 updateNN3DSprite(null);
+                visionSphere.visible = false;
             }
         }
 
