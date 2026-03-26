@@ -18,7 +18,7 @@ $(document).ready(function () {
 
   setTimeout(() => {
     // toggleBg("on");
-    document.getElementById("ai-response").innerHTML = "Hi, I'm a Cloud A.I. coded by Alejandro, the creator of this website. Ask me anything! Like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more ask me, \"What can you do?\".";
+    document.getElementById("ai-response").innerHTML = "I'm an A.I. that lives in the cloud. Alejandro, the creator of this website, built me from the scratch for fun. Ask me anything! Like, \"What is Hilbert Space\", \"Go to the math page\", or \"Turn on dark mode\". For more ask me, \"What can you do?\".";
   }, 500);
 });
 

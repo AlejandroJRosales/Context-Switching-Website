@@ -53,8 +53,6 @@ var oneaiDiv =
 				<div class="content">
 
 		<div class="chatbox">
-			<!-- <p id="current-speaker">Cloud A.I.</p> -->
-			<!-- <hr> -->
 			<p id="ai-response"></p>
 		</div>
 
@@ -66,10 +64,10 @@ var oneaiDiv =
 
 			<div class="homepage-buttons">
 					<span style="float:left;">
-          <button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button>
+          			<button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button>
 				  <button onclick="topOfPage()" class="top-of-page"><i class="fa-solid fa-angles-up fa-2xl" style="color: #ffffff;"></i></button>
-					<button type="button" class="btn btn-sm" id="speech-btn" onclick="toggleSpeech()"><i
-							class="fa-solid fa-volume-xmark fa-2xl" style="color: #ffffff;"></i></button>
+					<!-- <button type="button" class="btn btn-sm" id="speech-btn" onclick="toggleSpeech()"><i
+							class="fa-solid fa-volume-xmark fa-2xl" style="color: #ffffff;"></i></button> -->
 					</span>
 					<span style="float:right;">
 					<button type="button" class="btn btn-sm" id="submit-query-btn" onclick="submitQuery()"><i
@@ -89,7 +87,15 @@ var oneaiDiv =
 					</div>
 			<button class="btn btn-primary oneai-contents-button" type="button" data-toggle="collapse" data-target="#oneai-collapse"
 						aria-expanded="false" aria-controls="collapseExample" id="oneai-contents-button">
-							<i class="fa-solid fa-robot" id="oneai-icon"></i>
+							<svg width="34" height="34" viewBox="0 0 64 64" fill="none">
+								<!-- Main sparkle -->
+								<path d="M32 6 L36 26 L58 32 L36 38 L32 58 L28 38 L6 32 L28 26 Z"
+									fill="currentColor"/>
+
+								<!-- Small sparkle (top-right) -->
+								<path d="M48 8 L50 16 L58 18 L50 20 L48 28 L46 20 L38 18 L46 16 Z"
+									fill="currentColor"/>
+							</svg>
 				</button>
 	</div>
 </div>
@@ -263,7 +269,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/terrarium">Terrarium</a>
+					<a class="dropdown-item" href="/my/terrarium">Terrarium</a>
 				</div>
 			</li>
 		</ul>
