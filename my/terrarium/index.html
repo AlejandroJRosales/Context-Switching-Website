@@ -233,6 +233,8 @@
 
         .joystick-knob {
             position: absolute;
+            top: 50%;
+            left: 50%;
             width: clamp(38px, 9vw, 58px);
             height: clamp(38px, 9vw, 58px);
             border-radius: 50%;
@@ -1044,6 +1046,14 @@
             let deltaX = x - joystickCenterX;
             let deltaY = y - joystickCenterY;
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            // Guard against uninitialized or zero radius
+            if (!joystickRadius || joystickRadius <= 0) {
+                controls.joystickX = 0;
+                controls.joystickY = 0;
+                joystickKnob.style.transform = 'translate(-50%, -50%)';
+                return;
+            }
 
             if (distance > joystickRadius) {
                 const angle = Math.atan2(deltaY, deltaX);
