@@ -1587,6 +1587,232 @@
             }
         }
 
+        // ============================================================================
+        // CAT
+        // ============================================================================
+
+        function createCatMesh() {
+            const group = new THREE.Group();
+
+            const blackMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+            const eyeMat    = new THREE.MeshStandardMaterial({
+                color: 0x88ee00,
+                emissive: 0x66cc00,
+                emissiveIntensity: 1.2,
+                roughness: 0.2,
+                metalness: 0.1
+            });
+            const pupilMat  = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 });
+            const noseMat   = new THREE.MeshStandardMaterial({ color: 0xff8888, roughness: 1 });
+
+            // long oval body that is a sphere scaled non-uniformly (wide along Z = body length)
+            const body = new THREE.Mesh(new THREE.SphereGeometry(5, 14, 10), blackMat);
+            body.scale.set(0.72, 0.78, 1.9); // narrow sides, tall-ish, very long
+            body.position.set(0, 5, 0);
+            body.castShadow = true;
+            group.add(body);
+
+            // Head
+            const head = new THREE.Mesh(new THREE.SphereGeometry(4.5, 12, 10), blackMat);
+            head.position.set(0, 8, 9);
+            head.castShadow = true;
+            group.add(head);
+
+            // Ears (two triangular cones)
+            const earGeo = new THREE.ConeGeometry(1.5, 3.5, 4);
+            const earL = new THREE.Mesh(earGeo, blackMat);
+            earL.position.set(-2.5, 11.5, 9);
+            earL.rotation.z =  0.25;
+            group.add(earL);
+            const earR = new THREE.Mesh(earGeo, blackMat);
+            earR.position.set( 2.5, 11.5, 9);
+            earR.rotation.z = -0.25;
+            group.add(earR);
+
+            // Eyes (iris + pupil)
+            const irisGeo  = new THREE.SphereGeometry(1.1, 8, 8);
+            const pupilGeo = new THREE.SphereGeometry(0.55, 6, 6);
+
+            const eyeL = new THREE.Mesh(irisGeo, eyeMat);
+            eyeL.position.set(-1.7, 8.6, 13.2);
+            group.add(eyeL);
+            const pupilL = new THREE.Mesh(pupilGeo, pupilMat);
+            pupilL.position.set(-1.7, 8.6, 13.7);
+            group.add(pupilL);
+
+            const eyeR = new THREE.Mesh(irisGeo, eyeMat);
+            eyeR.position.set( 1.7, 8.6, 13.2);
+            group.add(eyeR);
+            const pupilR = new THREE.Mesh(pupilGeo, pupilMat);
+            pupilR.position.set( 1.7, 8.6, 13.7);
+            group.add(pupilR);
+
+            // Nose
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(0.5, 6, 6), noseMat);
+            nose.position.set(0, 7.5, 13.5);
+            group.add(nose);
+
+            // stored on group for animation
+            const legGeo = new THREE.CylinderGeometry(1.2, 1.0, 7, 6);
+            const legPositions = [
+                [-3.2, 1, 5],   // front-left
+                [ 3.2, 1, 5],   // front-right
+                [-3.2, 1, -4],  // back-left
+                [ 3.2, 1, -4],  // back-right
+            ];
+            group.userData.legs = [];
+            for (const pos of legPositions) {
+                const leg = new THREE.Mesh(legGeo, blackMat);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                group.add(leg);
+                group.userData.legs.push(leg);
+            }
+
+            // Tail — a chain of segments stored for animation
+            const tailSegGeo = new THREE.SphereGeometry(1.0, 6, 6);
+            group.userData.tailSegments = [];
+            const tailCount = 7;
+            for (let i = 0; i < tailCount; i++) {
+                const t = i / (tailCount - 1);
+                const seg = new THREE.Mesh(tailSegGeo, blackMat);
+                const radius = 1.0 - t * 0.55;
+                seg.scale.setScalar(radius);
+                group.add(seg);
+                group.userData.tailSegments.push(seg);
+            }
+
+            // Point light for spooky eye glow (very subtle)
+            const eyeGlow = new THREE.PointLight(0x88ee00, 0.3, 30);
+            eyeGlow.position.set(0, 9, 13);
+            group.add(eyeGlow);
+
+            group.scale.setScalar(0.85);
+            return group;
+        }
+
+        const catMesh = createCatMesh();
+        catMesh.castShadow = true;
+        scene.add(catMesh);
+
+        const catState = {
+            position: new THREE.Vector3(400, 35, 310),
+            velocity: new THREE.Vector3(0, 0, 0),
+            yaw: 0,
+            animTime: 0,
+            wanderAngle: 0,
+            wanderTimer: 0,
+            playerHasMoved: false,
+            playerLastPos: new THREE.Vector3(),
+        };
+
+        // Place cat at ground level initially
+        catState.position.copy(player.position);
+        catState.position.z += 5;
+        catState.position.y  = 35;
+        catState.playerLastPos.copy(player.position);
+
+        function updateCat(deltaTime) {
+            catState.animTime += deltaTime;
+
+            const px = player.position.x;
+            const pz = player.position.z;
+
+            // Detect if the player has ever moved
+            if (!catState.playerHasMoved) {
+                const moveDist = catState.playerLastPos.distanceTo(player.position);
+                if (moveDist > 3) {
+                    catState.playerHasMoved = true;
+                }
+            }
+            catState.playerLastPos.copy(player.position);
+
+            const cx = catState.position.x;
+            const cz = catState.position.z;
+            const dx = px - cx;
+            const dz = pz - cz;
+            const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+
+            const followDist = 28;
+            const catchUpDist = 180;
+            let speed = 0;
+
+            if (!catState.playerHasMoved) {
+                // Stay perfectly still — just face the player
+                const faceAngle = Math.atan2(dx, dz);
+                catState.yaw += (faceAngle - catState.yaw) * Math.min(1, deltaTime * 3);
+            } else if (distToPlayer > catchUpDist) {
+                // Teleport next to player if too far away
+                catState.position.set(
+                    px - Math.sin(player.yaw) * followDist,
+                    35,
+                    pz - Math.cos(player.yaw) * followDist
+                );
+                catState.yaw = player.yaw;
+            } else if (distToPlayer > followDist + 5) {
+                // Chase player
+                speed = distToPlayer > 80 ? 40 : 25;
+                const angle = Math.atan2(dx, dz);
+                catState.yaw += (angle - catState.yaw) * Math.min(1, deltaTime * 6);
+                catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
+                catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
+            } else if (distToPlayer < 12) {
+                // Too close back away
+                speed = 20;
+                const angle = Math.atan2(-dx, -dz);
+                catState.yaw += (angle - catState.yaw) * Math.min(1, deltaTime * 5);
+                catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
+                catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
+            } else {
+                // Idle near player face them, no wandering
+                const faceAngle = Math.atan2(dx, dz);
+                catState.yaw += (faceAngle - catState.yaw) * Math.min(1, deltaTime * 2);
+            }
+
+            // Gravity / ground clamp
+            catState.velocity.y -= 400 * deltaTime;
+            catState.position.y += catState.velocity.y * deltaTime;
+            if (catState.position.y <= 35) {
+                catState.position.y = 5;
+                catState.velocity.y = 0;
+            }
+
+            // World wrap
+            catState.position.x = ((catState.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
+            catState.position.z = ((catState.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+
+            // Apply transform
+            catMesh.position.copy(catState.position);
+            catMesh.rotation.y = catState.yaw;
+            catMesh.scale.setScalar(0.85);
+
+            // Animate legs (walk cycle only when moving)
+            const legs = catMesh.userData.legs;
+            const walkFreq = speed > 50 ? 12 : 7;
+            const walkAmp  = speed > 0 ? 0.35 : 0;
+            if (legs) {
+                legs[0].rotation.x =  Math.sin(catState.animTime * walkFreq) * walkAmp;
+                legs[1].rotation.x = -Math.sin(catState.animTime * walkFreq) * walkAmp;
+                legs[2].rotation.x = -Math.sin(catState.animTime * walkFreq) * walkAmp;
+                legs[3].rotation.x =  Math.sin(catState.animTime * walkFreq) * walkAmp;
+            }
+
+            // Tail: stiff upright pose curving backward at the tip
+            const tailSegs = catMesh.userData.tailSegments;
+            if (tailSegs) {
+                const count = tailSegs.length;
+                for (let i = 0; i < count; i++) {
+                    const t = i / (count - 1);
+                    const curveBack = t * t * 6;
+                    tailSegs[i].position.set(
+                        0,
+                        5 + t * 11,
+                        -9 - curveBack
+                    );
+                }
+            }
+        }
+
         // Reusable objects t0 avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
@@ -2878,6 +3104,17 @@
             vrCameraRig.position.copy(player.position);
             camera.position.set(0, 0, 0);
             player.targetObject = null;
+
+            // Reset cat to near player
+            catState.position.set(
+                player.position.x - Math.sin(player.yaw) * 28,
+                35,
+                player.position.z - Math.cos(player.yaw) * 28
+            );
+            catState.velocity.set(0, 0, 0);
+            catState.wanderTimer = 0;
+            catState.playerHasMoved = false;
+            catState.playerLastPos.copy(player.position);
         }
 
         function updateStats() {
@@ -3238,6 +3475,9 @@
             } else {
                 updatePlayer(deltaTime);
             }
+
+            // Update cat companion
+            updateCat(deltaTime);
 
             // Rebuild spatial grid once per frame for all animals
             spatialGrid.clear();
