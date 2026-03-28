@@ -1066,8 +1066,8 @@
                 normY = (normY / mag) * scale;
             }
 
-            controls.joystickX = normX * Math.log1p(distance);
-            controls.joystickY = normY * Math.log1p(distance);
+            controls.joystickX = normX;
+            controls.joystickY = normY;
 
             joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
@@ -1083,8 +1083,8 @@
                 if (target.tagName === 'BUTTON' || target.closest('button') ||
                     target.closest('.control-panel') || target.closest('#settings-panel')) continue;
 
-                // Left 45% of screen is joystick zone
-                if (touch.clientX < window.innerWidth * 0.5) {
+                // Bottom-left quadrant is joystick zone
+                if (touch.clientX < window.innerWidth * 0.5 && touch.clientY >= window.innerHeight * 0.5) {
                     joystickTouchId = touch.identifier;
                     positionJoystick(touch.clientX, touch.clientY);
                     joystickRadius = getJoystickRadius();
@@ -1155,8 +1155,9 @@
                 if (target.tagName === 'BUTTON' || target.closest('button') ||
                     target.closest('.control-panel') || target.closest('#settings-panel')) continue;
 
-                // Right half: camera look + multi-tap gestures
-                if (touch.clientX >= window.innerWidth * 0.5 && controls.controlMode === 'touch') {
+                // All quadrants except bottom-left: camera look + multi-tap gestures
+                const isJoystickQuadrant = touch.clientX < window.innerWidth * 0.5 && touch.clientY >= window.innerHeight * 0.5;
+                if (!isJoystickQuadrant && controls.controlMode === 'touch') {
                     // Register tap for gesture detection regardless of existing camera touch
                     handleRightTap(touch.clientX, touch.clientY);
 
