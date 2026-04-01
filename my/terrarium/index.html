@@ -1028,18 +1028,18 @@
                 }
             }
 
-            // F — toggle creative mode (single press, no repeat)
+            // F, toggle creative mode (single press, no repeat)
             if ((e.key === 'f' || e.key === 'F') && !wasAlreadyDown) {
                 e.preventDefault();
                 toggleCreative();
             }
 
-            // Escape / M — toggle settings panel (single press, no repeat)
+            // Escape / M, toggle settings panel (single press, no repeat)
             if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !wasAlreadyDown) {
                 toggleSettings();
             }
 
-            // K — toggle keyboard/touch control mode (single press, no repeat)
+            // K, toggle keyboard/touch control mode (single press, no repeat)
             if ((e.key === 'k' || e.key === 'K') && !wasAlreadyDown) {
                 e.preventDefault();
                 document.getElementById('controlBtn').click();
@@ -1893,7 +1893,7 @@
                 catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
                 catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
             } else if (distToPlayer > catchUpDist) {
-                // Teleport next to player if too far away
+                // Teleport next to player
                 catState.position.set(
                     px - Math.sin(player.yaw) * followDist,
                     35,
@@ -1957,7 +1957,7 @@
             }
         }
 
-        // Reusable objects t0 avoid per-frame allocation
+        // Reusable objects to avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
         const _world = new THREE.Vector3();
@@ -1965,9 +1965,9 @@
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
 
-        const TICKS_PER_DAY  = 24 * 60;          // matches dayCount formula
+        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
         const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
-        const MIN_SCALE      = 0.25;               // 25% of parent size at birth
+        const MIN_SCALE      = 0.25; // 25% of parent size at birth
 
         function updateInstancedMeshes(animals) {
             for (const type of ['sheep', 'wolf']) {
@@ -2025,7 +2025,7 @@
         ];
 
         // ============================================================================
-        // STAT LABELS (billboarded sprites above entity heads)
+        // STAT LABELS (billboarded sprites)
         // ============================================================================
 
         const _statLabelCanvas = document.createElement('canvas');
@@ -2276,13 +2276,11 @@
 
                 // WALLS
                 for (let i = 0; i < ROWS; i++) {
-
                     const y = FLOOR_Y + i * LD + LR;
                     const bottomOfLog = y - LR;
 
                     // FRONT WALL (with door cutout)
                     if (bottomOfLog < FLOOR_Y + DOOR_HEIGHT) {
-
                         const sideLength = (CW / 2 + LD) - DOOR_WIDTH / 2;
 
                         // Left segment
@@ -2304,7 +2302,6 @@
                         );
 
                     } else {
-
                         // Full log above doorway
                         hlogX(CW + LD * 2, M.log, 0, y, CD / 2);
                     }
@@ -2350,7 +2347,7 @@
                     shape.lineTo(-(CW / 2 + OVH), 0);
 
                     const geo = new THREE.ExtrudeGeometry(shape, {
-                        depth: LD * 2,         // thickness (matches log diameter)
+                        depth: LD * 2,  // thickness (matches log diameter)
                         bevelEnabled: false
                     });
 
@@ -2361,7 +2358,7 @@
                     });
 
                     const mesh = new THREE.Mesh(geo, mat);
-                    // offset by half the depth so it's centered on the wall edge
+                    // offset by half the depth so centered on the wall edge
                     mesh.position.set(0, ROOF_BASE, sz * (CD / 2 + OVH + 2) - (sz * LD * 2));
                     add(mesh);
                 });
@@ -2382,12 +2379,12 @@
             const s = 1.75;
             const cx = 400, cz = 300;
             const CW = 80 * s, CD = 60 * s;
-            const LR = 2.5 * s;             // log radius scaled
+            const LR = 2.5 * s;  // log radius scaled
             const WALL_H = 44 * s;
             const FLOOR_Y = 2 * s;
-            const WALL_THICK = LR * 2;       // log diameter
-            const DOOR_WIDTH  = 18 * s;      // door opening width (scaled)
-            const DOOR_HEIGHT = 30 * s;      // door opening height (scaled)
+            const WALL_THICK = LR * 2;  // log diameter
+            const DOOR_WIDTH  = 18 * s;  // door opening width (scaled)
+            const DOOR_HEIGHT = 30 * s;  // door opening height (scaled)
 
             // Roof geometry
             const ROOF_BASE = FLOOR_Y + WALL_H - 4 * s;
@@ -2408,9 +2405,9 @@
 
             // FRONT WALL, split into left segment, right segment, and lintel above door
             // Left of door opening
-            box(cx - CW/2 - WALL_THICK, cx - halfDoor,     FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
+            box(cx - CW/2 - WALL_THICK, cx - halfDoor, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
             // Right of door opening
-            box(cx + halfDoor,           cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
+            box(cx + halfDoor, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
             // Lintel, solid log above doorway up to wall top
             box(cx - halfDoor, cx + halfDoor, FLOOR_Y + DOOR_HEIGHT, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
 
@@ -2672,7 +2669,7 @@
             }
 
             mate(partner) {
-                // --- Crossover + Mutate scalar traits ---
+                // Crossover + Mutate scalar traits
                 const mm = this.mutationMulti;
                 const lo = Math.max(0.1, 1 - mm);
                 const hi = Math.min(4.0, 1 + mm);
@@ -2692,7 +2689,7 @@
                 child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
                                       * (0.9 + Math.random() * 0.2);
 
-                // Crossover brain: pick one parent's architecture, crossover learning rate
+                // Crossover brain: pick one parent architecture, crossover learning rate
                 const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
                 child.brain = new DenseNetwork(
                     ParentBrain.layerDims[0],
@@ -2831,9 +2828,6 @@
                     const [minWeight, maxWeight] = this.getWeightRange(weights);
                     this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
                 }
-                
-                // Draw label after nodes
-                // this.drawLabel(nn);
             }
 
             drawLabel(nn) {
@@ -3145,7 +3139,7 @@
             graphicsMode = graphicsMode === 'high' ? 'low' : 'high';
             document.getElementById('graphicsState').textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
 
-            // Swap geometries on all instanced meshes in-place — no world reset needed
+            // Swap geometries on all instanced meshes in-place, no world reset needed
             for (const type of ['sheep', 'wolf']) {
                 const im = instancedMeshes[type];
                 if (!im) continue;
