@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.11</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.13</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -666,6 +666,10 @@
             <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
             <div class="sp-hint">World size changes take effect on reset</div>
         </div>
+        <button class="sp-row" id="graphicsBtn">
+            <span class="sp-label">Graphics</span>
+            <span class="sp-value" id="graphicsDisplay">High</span>
+        </button>
         <button class="sp-row" id="resetBtn">
             <span class="sp-label">Reset World</span>
             <span class="sp-value">↺</span>
@@ -782,6 +786,76 @@
         document.getElementById('scale-slider').addEventListener('input', function() {
             pendingScale = parseFloat(this.value);
             document.getElementById('scaleDisplay').textContent = pendingScale;
+        });
+
+        let graphicsLevel = 2;
+
+        const BOX_GEOMETRIES = {
+            sheep: {
+                body: new THREE.BoxGeometry(12, 12, 25),
+                head: new THREE.BoxGeometry(14, 14, 14),
+                leg:  new THREE.BoxGeometry(3, 18, 3)
+            },
+            wolf: {
+                body: new THREE.BoxGeometry(7, 11, 20),
+                head: new THREE.BoxGeometry(12, 12, 12),
+                leg:  new THREE.BoxGeometry(2.5, 18, 2.5)
+            }
+        };
+
+        function applyGraphicsLevel(level) {
+            graphicsLevel = level;
+
+            const isUltra = level >= 2;
+
+            renderer.shadowMap.enabled = isUltra;
+            directionalLight.castShadow = isUltra;
+
+            for (const type of ['sheep', 'wolf']) {
+                if (!instancedMeshes[type]) continue;
+                for (const mesh of Object.values(instancedMeshes[type])) {
+                    mesh.castShadow = isUltra;
+                    mesh.receiveShadow = isUltra;
+                }
+            }
+
+            const geomSet = isUltra ? SHARED_GEOMETRIES : BOX_GEOMETRIES;
+            for (const type of ['sheep', 'wolf']) {
+                const im = instancedMeshes[type];
+                if (!im) continue;
+                const g = geomSet[type];
+                im.body.geometry  = g.body;
+                im.head.geometry  = g.head;
+                im.legFL.geometry = g.leg;
+                im.legFR.geometry = g.leg;
+                im.legBL.geometry = g.leg;
+                im.legBR.geometry = g.leg;
+            }
+
+            for (const w of waters) {
+                if (w.mesh && w.mesh.material) {
+                    w.mesh.material.metalness = isUltra ? 0.3 : 0.0;
+                    w.mesh.material.roughness = isUltra ? 0.4 : 1.0;
+                    w.mesh.material.needsUpdate = true;
+                }
+            }
+
+            if (terrain) {
+                terrain.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = isUltra;
+                        child.receiveShadow = isUltra;
+                    }
+                });
+            }
+        }
+
+        document.getElementById('graphicsBtn').addEventListener('click', function() {
+            const levels = [1, 2];
+            graphicsLevel = levels[(levels.indexOf(graphicsLevel) + 1) % levels.length];
+            const labels = { 1: 'Low', 2: 'High' };
+            document.getElementById('graphicsDisplay').textContent = labels[graphicsLevel];
+            applyGraphicsLevel(graphicsLevel);
         });
 
         document.getElementById('resetBtn').addEventListener('click', () => {
@@ -3262,6 +3336,8 @@
             catState.wanderTimer = 0;
             catState.playerHasMoved = false;
             catState.playerLastPos.copy(player.position);
+
+            if (typeof graphicsLevel !== 'undefined') applyGraphicsLevel(graphicsLevel);
         }
 
         function updateStats() {
