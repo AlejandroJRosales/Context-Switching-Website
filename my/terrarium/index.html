@@ -670,6 +670,10 @@
             <span class="sp-label">Reset World</span>
             <span class="sp-value">↺</span>
         </button>
+        <button class="sp-row" id="graphicsBtn">
+            <span class="sp-label">Graphics</span>
+            <span class="sp-value" id="graphicsState">HIGH</span>
+        </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
             <span class="sp-value" id="fps-counter"></span>
@@ -693,10 +697,6 @@
         <button class="sp-row" id="sphereVisBtn">
             <span class="sp-label">Sphere Display</span>
             <span class="sp-value" id="sphereVisState">OFF</span>
-        </button>
-        <button class="sp-row" id="graphicsBtn">
-            <span class="sp-label">Graphics</span>
-            <span class="sp-value" id="graphicsState">HIGH</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -1824,7 +1824,7 @@
                 group.userData.legs.push(leg);
             }
 
-            // Tail — a chain of segments stored for animation
+            // Tail is a chain of segments stored for animation
             const tailSegGeo = new THREE.SphereGeometry(1.0, 6, 6);
             group.userData.tailSegments = [];
             const tailCount = 7;
@@ -1873,29 +1873,23 @@
             const px = player.position.x;
             const pz = player.position.z;
 
-            // Detect if the player has ever moved
-            if (!catState.playerHasMoved) {
-                const moveDist = catState.playerLastPos.distanceTo(player.position);
-                if (moveDist > 3) {
-                    catState.playerHasMoved = true;
-                }
-            }
-            catState.playerLastPos.copy(player.position);
-
             const cx = catState.position.x;
             const cz = catState.position.z;
             const dx = px - cx;
             const dz = pz - cz;
             const distToPlayer = Math.sqrt(dx * dx + dz * dz);
 
-            const followDist = 28;
+            const followDist = 100;
             const catchUpDist = 360;
             let speed = 0;
 
-            if (!catState.playerHasMoved) {
-                // Stay perfectly still, just face the player
-                const faceAngle = Math.atan2(dx, dz);
-                catState.yaw += (faceAngle - catState.yaw) * Math.min(1, deltaTime * 3);
+            if (distToPlayer + 50 > followDist) {
+                // Chase player
+                speed = distToPlayer > 80 ? 80 : 25;
+                const angle = Math.atan2(dx, dz);
+                catState.yaw += (angle - catState.yaw) * Math.min(1, deltaTime * 6);
+                catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
+                catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
             } else if (distToPlayer > catchUpDist) {
                 // Teleport next to player if too far away
                 catState.position.set(
@@ -1904,13 +1898,6 @@
                     pz - Math.cos(player.yaw) * followDist
                 );
                 catState.yaw = player.yaw;
-            } else if (distToPlayer > followDist + 5) {
-                // Chase player
-                speed = distToPlayer > 80 ? 80 : 25;
-                const angle = Math.atan2(dx, dz);
-                catState.yaw += (angle - catState.yaw) * Math.min(1, deltaTime * 6);
-                catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
-                catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
             } else if (distToPlayer < 12) {
                 // Too close back away
                 speed = 20;
