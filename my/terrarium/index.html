@@ -68,6 +68,32 @@
             color: #00ff00;
         }
 
+        /* NN section inside the fixed stat panel */
+
+        #asp-nn-wrapper {
+            margin-top: 6px;
+            border-top: 1px solid rgba(0, 255, 0, 0.2);
+            padding-top: 5px;
+        }
+
+        #asp-nn-wrapper canvas {
+            display: block;
+            width: 100%;
+            height: 100px;
+            border-radius: 3px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(0, 255, 0, 0.2);
+        }
+
+        #asp-nn-wrapper #asp-nn-label {
+            margin-top: 3px;
+            font-size: 8px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(0, 255, 0, 0.5);
+        }
+
         /* HUD */
 
         .hud {
@@ -454,6 +480,69 @@
             z-index: 20;
         }
 
+        /* Animal Stat Panel (fixed top-left HUD) */
+
+        #animal-stat-panel {
+            display: none;
+            position: fixed;
+            top: max(40px, calc(env(safe-area-inset-top) + 36px));
+            left: max(10px, env(safe-area-inset-left));
+            width: 160px;
+            background: rgba(0, 0, 0, 0.72);
+            border: 1px solid rgba(0, 255, 0, 0.35);
+            border-radius: 6px;
+            padding: 8px 10px 6px;
+            z-index: 15;
+            pointer-events: none;
+            font-size: 10px;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+        }
+
+        #animal-stat-panel.visible {
+            display: block;
+        }
+
+        .asp-generation {
+            font-size: 9px;
+            text-align: right;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .asp-generation.born {
+            color: #f1c40f;
+        }
+
+        .asp-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 4px;
+        }
+
+        .asp-bar-label {
+            width: 18px;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .asp-bar-track {
+            flex: 1;
+            height: 7px;
+            background: #222;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .asp-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.15s ease;
+        }
+
         /* Animations */
 
         @keyframes pulse {
@@ -515,13 +604,38 @@
 
         <div id="nnVisualizerContainer">
             <div id="nnCanvasWrapper">
-                <canvas id="nnCanvas"></canvas>
+                <canvas id="nnCanvasLegacy"></canvas>
             </div>
-            <div id="nnLabel">No Target</div>
+            <div id="nnLabelLegacy">No Target</div>
         </div>
 
         <div class="hud-crosshair"></div>
         <div class="scanlines"></div>
+    </div>
+
+    <!-- Fixed top-left animal stat HUD -->
+    <div id="animal-stat-panel">
+        <div class="asp-generation" id="asp-generation">Generation 0</div>
+        <div class="asp-bar-row">
+            <span class="asp-bar-label">❤️</span>
+            <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-hp" style="background:#e74c3c;width:100%"></div></div>
+        </div>
+        <div class="asp-bar-row">
+            <span class="asp-bar-label">🍽️</span>
+            <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-food" style="background:#e67e22;width:100%"></div></div>
+        </div>
+        <div class="asp-bar-row">
+            <span class="asp-bar-label">💧</span>
+            <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-water" style="background:#3498db;width:100%"></div></div>
+        </div>
+        <div class="asp-bar-row" id="asp-age-row" style="display:none">
+            <span class="asp-bar-label">🚼</span>
+            <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-age" style="background:#2ecc71;width:0%"></div></div>
+        </div>
+        <div id="asp-nn-wrapper">
+            <canvas id="nnCanvas"></canvas>
+            <div id="asp-nn-label">NEURAL NET</div>
+        </div>
     </div>
 
     <!-- Joystick -->
@@ -1971,37 +2085,77 @@
         // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
 
-        // Persistent set for stat label cleanup, avoids new Set() every frame
         const _seenAnimals = new Set();
+
+        const _aspPanel     = document.getElementById('animal-stat-panel');
+        const _aspGenEl     = document.getElementById('asp-generation');
+        const _aspHpEl      = document.getElementById('asp-hp');
+        const _aspFoodEl    = document.getElementById('asp-food');
+        const _aspWaterEl   = document.getElementById('asp-water');
+        const _aspAgeRowEl  = document.getElementById('asp-age-row');
+        const _aspAgeEl     = document.getElementById('asp-age');
 
         function updateStatLabels(animals) {
             _seenAnimals.clear();
+
+            let targetFound = false;
 
             for (const a of animals) {
                 if (!a.alive) continue;
                 _seenAnimals.add(a);
 
                 const isTarget = (a === currentTargetAnimal);
+                if (!isTarget || !statLabelsEnabled) continue;
 
-                let sprite = animalStatSprites.get(a);
-                if (!sprite) {
-                    sprite = createStatSprite();
-                    sprite.visible = false;
-                    animalStatSprites.set(a, sprite);
+                targetFound = true;
+
+                const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
+
+                const hpPct = Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100));
+                _aspHpEl.style.width = hpPct + '%';
+
+                const foodPct = Math.max(0, Math.min(100, 100 - Math.min(100, a.foodNeed)));
+                _aspFoodEl.style.width = foodPct + '%';
+
+                const waterPct = Math.max(0, Math.min(100, 100 - Math.min(100, a.waterNeed)));
+                _aspWaterEl.style.width = waterPct + '%';
+
+                if (ageRatio < 1) {
+                    _aspAgeRowEl.style.display = 'flex';
+                    _aspAgeEl.style.width = (ageRatio * 100) + '%';
+                } else {
+                    _aspAgeRowEl.style.display = 'none';
                 }
 
-                if (isTarget && statLabelsEnabled) {
-                    const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
-                    const ageS = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
-                    sprite.position.set(a.position.x, a.position.y + 20 * ageS, a.position.z);
-                    drawStatLabel(sprite, a.health, a.maxHealth, a.foodNeed, a.waterNeed, a.generation, ageRatio);
-                    sprite.visible = true;
-                } else {
-                    sprite.visible = false;
+                const gen = a.generation ?? 0;
+                _aspGenEl.textContent = 'Generation ' + gen;
+                _aspGenEl.className = 'asp-generation' + (gen > 0 ? ' born' : '');
+
+                _aspPanel.classList.add('visible');
+
+                if (!window._hudNNVisualizer) initNN3DVisualizer();
+                if (window._hudNNVisualizer) {
+                    try {
+                        window._hudNNVisualizer.draw(a);
+                        const ctx = window._hudNNVisualizer.ctx;
+                        ctx.globalCompositeOperation = 'destination-over';
+                        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+                        ctx.fillRect(0, 0, 256, 128);
+                        ctx.globalCompositeOperation = 'source-over';
+                        const aspNNLabel = document.getElementById('asp-nn-label');
+                        if (aspNNLabel) {
+                            const nn = a.brain;
+                            const type = (nn?.weights?.[0]?.W_i !== undefined) ? 'LSTM Network' : 'Dense Network';
+                            aspNNLabel.textContent = type;
+                        }
+                    } catch(e) {}
                 }
             }
 
-            // Remove sprites for dead/removed animals
+            if (!targetFound) {
+                _aspPanel.classList.remove('visible');
+            }
+
             for (const [animal, sprite] of animalStatSprites) {
                 if (!_seenAnimals.has(animal)) {
                     scene.remove(sprite);
@@ -2013,6 +2167,7 @@
         }
 
         function clearAllStatLabels() {
+            document.getElementById('animal-stat-panel').classList.remove('visible');
             for (const [, sprite] of animalStatSprites) {
                 scene.remove(sprite);
                 sprite.material.map.dispose();
@@ -2835,7 +2990,7 @@
 
         const nnCanvas = document.getElementById('nnCanvas');
         const nnContainer = document.getElementById('nnVisualizerContainer');
-        const nnLabel = document.getElementById('nnLabel');
+        const nnLabel = document.getElementById('asp-nn-label');
         let nnVisualizer = null;
         let nnSprite3DVisualizer = null;  // declared here; initialised lazily below
         let nnVisEnabled = false;
@@ -2858,38 +3013,14 @@
 
         function initNN3DVisualizer() {
             nnSprite3DVisualizer = new NNVisualizer(_nnSpriteCanvas, [256, 128]);
+            const hudNNCanvas = document.getElementById('nnCanvas');
+            hudNNCanvas.width  = 256;
+            hudNNCanvas.height = 128;
+            window._hudNNVisualizer = new NNVisualizer(hudNNCanvas, [256, 128]);
         }
 
         function updateNN3DSprite(target) {
-            if (!nnVisEnabled || !target || !target.alive) {
-                nnSprite.visible = false;
-                return;
-            }
-
-            if (!nnSprite3DVisualizer) initNN3DVisualizer();
-
-            const ctx = nnSprite3DVisualizer.ctx;
-
-            // draw() internally calls clearRect, let it run first so bg is drawn on clean canvas
-            try { nnSprite3DVisualizer.draw(target); } catch(e) { ctx.clearRect(0, 0, 256, 128); }
-
-            // Re-read pixels so we can composite bg behind the already-drawn network
-            ctx.globalCompositeOperation = 'destination-over';
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.beginPath();
-            ctx.roundRect(2, 2, 252, 124, 8);
-            ctx.fill();
-            ctx.globalCompositeOperation = 'source-over';
-
-            _nnSpriteTexture.needsUpdate = true;
-
-            // Stack stat bars and NN panel
-            nnSprite.position.set(
-                target.position.x,
-                target.position.y + 40,
-                target.position.z
-            );
-            nnSprite.visible = true;
+            nnSprite.visible = false;
         }
 
         let statLabelsEnabled = true;
@@ -2909,7 +3040,10 @@
             } else {
                 if (state) state.textContent = 'OFF';
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
-                // Hide any currently visible stat label
+                document.getElementById('animal-stat-panel').classList.remove('visible');
+                if (window._hudNNVisualizer) {
+                    window._hudNNVisualizer.ctx.clearRect(0, 0, 256, 128);
+                }
                 for (const [, sprite] of animalStatSprites) sprite.visible = false;
             }
         }
