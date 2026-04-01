@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.11-opt</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.11</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -669,10 +669,6 @@
         <button class="sp-row" id="resetBtn">
             <span class="sp-label">Reset World</span>
             <span class="sp-value">↺</span>
-        </button>
-        <button class="sp-row" id="graphicsBtn">
-            <span class="sp-label">Graphics</span>
-            <span class="sp-value" id="graphicsState">HIGH</span>
         </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
@@ -697,6 +693,10 @@
         <button class="sp-row" id="sphereVisBtn">
             <span class="sp-label">Sphere Display</span>
             <span class="sp-value" id="sphereVisState">OFF</span>
+        </button>
+        <button class="sp-row" id="graphicsBtn">
+            <span class="sp-label">Graphics</span>
+            <span class="sp-value" id="graphicsState">HIGH</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -970,20 +970,26 @@
         // LIGHTING
         // ============================================================================
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
-        directionalLight.position.set(800, 400, 600);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 1024;
-        directionalLight.shadow.mapSize.height = 1024;
-        directionalLight.shadow.camera.left = -1000;
-        directionalLight.shadow.camera.right = 1000;
-        directionalLight.shadow.camera.top = 1000;
-        directionalLight.shadow.camera.bottom = -1000;
-        directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 2000;
+        directionalLight.shadow.mapSize.width = 3000;
+        directionalLight.shadow.mapSize.height = 3000;
+        // Shadow frustum covers a generous area around the player (updated each frame)
+        const SHADOW_RADIUS = 3000;
+        directionalLight.shadow.camera.left   = -SHADOW_RADIUS;
+        directionalLight.shadow.camera.right  =  SHADOW_RADIUS;
+        directionalLight.shadow.camera.top    =  SHADOW_RADIUS;
+        directionalLight.shadow.camera.bottom = -SHADOW_RADIUS;
+        directionalLight.shadow.camera.near   = 1;
+        directionalLight.shadow.camera.far    = 3000;
+        // Light offset relative to its target (target follows the player)
+        const LIGHT_OFFSET = new THREE.Vector3(400, 800, 300);
+        directionalLight.target.position.set(400, 0, 300); // initial world centre
+        scene.add(directionalLight.target);
+        directionalLight.position.copy(directionalLight.target.position).add(LIGHT_OFFSET);
         scene.add(directionalLight);
 
         // ============================================================================
@@ -1652,8 +1658,6 @@
             return geometry;
         }
 
-        let graphicsMode = 'high';
-
         const SHARED_GEOMETRIES = {
             sheep: {
                 body: createRoundedBoxGeometry(12, 12, 25, 2.5),
@@ -1667,18 +1671,22 @@
             }
         };
 
-        const LOW_GEOMETRIES = {
+        // LOW graphics geometry: plain flat BoxGeometry for every part
+        const SHARED_GEOMETRIES_LOW = {
             sheep: {
                 body: new THREE.BoxGeometry(12, 12, 25),
-                head: new THREE.BoxGeometry(12, 12, 12),
+                head: new THREE.BoxGeometry(14, 14, 14),
                 leg:  new THREE.BoxGeometry(3, 18, 3)
             },
             wolf: {
                 body: new THREE.BoxGeometry(7, 11, 20),
-                head: new THREE.BoxGeometry(10, 10, 10),
+                head: new THREE.BoxGeometry(12, 12, 12),
                 leg:  new THREE.BoxGeometry(2.5, 18, 2.5)
             }
         };
+
+        // 'high' = rounded/sphere geometry (default), 'low' = flat box geometry
+        let graphicsMode = 'high';
 
         const SHARED_MATERIALS = {
             sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
@@ -1715,7 +1723,8 @@
                 if (instancedMeshes[type]) {
                     for (const part of Object.values(instancedMeshes[type])) scene.remove(part);
                 }
-                const geom = graphicsMode === 'low' ? LOW_GEOMETRIES[type] : SHARED_GEOMETRIES[type];
+                const geomSet = graphicsMode === 'low' ? SHARED_GEOMETRIES_LOW : SHARED_GEOMETRIES;
+                const geom = geomSet[type];
                 const mat  = SHARED_MATERIALS[type];
                 instancedMeshes[type] = {
                     body:  new THREE.InstancedMesh(geom.body, mat, MAX_INSTANCES),
@@ -3144,11 +3153,23 @@
         document.getElementById('graphicsBtn').addEventListener('click', toggleGraphics);
 
         function toggleGraphics() {
-            const modes = ['high', 'low'];
-            graphicsMode = modes[(modes.indexOf(graphicsMode) + 1) % modes.length];
-            const state = document.getElementById('graphicsState');
-            if (state) state.textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
-            initInstancedMeshes();
+            graphicsMode = graphicsMode === 'high' ? 'low' : 'high';
+            document.getElementById('graphicsState').textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
+
+            // Swap geometries on all instanced meshes in-place — no world reset needed
+            for (const type of ['sheep', 'wolf']) {
+                const im = instancedMeshes[type];
+                if (!im) continue;
+                const geomSet = graphicsMode === 'low' ? SHARED_GEOMETRIES_LOW : SHARED_GEOMETRIES;
+                const geom = geomSet[type];
+                const partGeoms = { body: geom.body, head: geom.head, legFL: geom.leg, legFR: geom.leg, legBL: geom.leg, legBR: geom.leg };
+                for (const [part, newGeom] of Object.entries(partGeoms)) {
+                    const mesh = im[part];
+                    if (!mesh) continue;
+                    mesh.geometry = newGeom;
+                    mesh.castShadow = true; // always keep shadows on
+                }
+            }
         }
 
         // ============================================================================
@@ -3718,6 +3739,16 @@
                 frameCount = 0;
                 lastFpsUpdate = now;
             }
+
+            // Keep shadow frustum centred on the player so animals nearby always cast shadows
+            directionalLight.target.position.set(player.position.x, 0, player.position.z);
+            directionalLight.target.updateMatrixWorld();
+            directionalLight.position.set(
+                player.position.x + LIGHT_OFFSET.x,
+                LIGHT_OFFSET.y,
+                player.position.z + LIGHT_OFFSET.z
+            );
+            directionalLight.shadow.camera.updateProjectionMatrix();
 
             renderer.render(scene, camera);
         }
