@@ -354,7 +354,7 @@ var footer =
 					<h3 id="footer-about-me-title">Context Switching</h3>
 		 			<br>
 					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I am Quantum Computer Graduate Researcher. In my free time, I update this website with new things topics I have learned. I dedicate this website to my best boy and best girl, whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. I hope you enjoy!
+						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I am a Quantum Computer Graduate Researcher. In my free time, I update this website with new things topics I have learned. I dedicate this website to my best boy and best girl, whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. I hope you enjoy!
 					</p>
 
 	 <hr class="rgba-white-light" style="margin: 0 15%;">
