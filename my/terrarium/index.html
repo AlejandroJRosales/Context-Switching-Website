@@ -926,12 +926,7 @@ body.light-mode .toggle-btn.on::after {
           <span class="app-icon-label">PyRunner</span>
         </div>
         <div class="app-icon" onclick="openApp('settings')">
-          <div class="app-icon-img" style="background:linear-gradient(135deg,#1c1c2e,#2a2a4a)">
-            <svg width="36" height="36" viewBox="0 0 44 44" fill="none">
-              <path d="M19 3 L19 7 Q16 8 13.5 9.8 L10 7.5 L7.5 10 L9.8 13.5 Q8 16 7 19 L3 19 L3 25 L7 25 Q8 28 9.8 30.5 L7.5 34 L10 36.5 L13.5 34.2 Q16 36 19 37 L19 41 L25 41 L25 37 Q28 36 30.5 34.2 L34 36.5 L36.5 34 L34.2 30.5 Q36 28 37 25 L41 25 L41 19 L37 19 Q36 16 34.2 13.5 L36.5 10 L34 7.5 L30.5 9.8 Q28 8 25 7 L25 3 Z" stroke="rgba(255,255,255,0.7)" stroke-width="2.2" stroke-linejoin="round" fill="rgba(255,255,255,0.08)"/>
-              <circle cx="22" cy="22" r="7" stroke="rgba(255,255,255,0.7)" stroke-width="2.2" fill="rgba(255,255,255,0.08)"/>
-            </svg>
-          </div>
+          <div class="app-icon-img" style="background:linear-gradient(135deg,#1c1c2e,#2a2a4a)">⚙️</div>
           <span class="app-icon-label">Settings</span>
         </div>
       </div>
@@ -1187,7 +1182,7 @@ body.light-mode .toggle-btn.on::after {
         <div class="app-panel" id="panel-pyrunner">
           <div>
             <div class="section-title">Python Runner</div>
-            <p style="font-size:0.8rem;color:var(--text-dim);margin-bottom:14px;line-height:1.6;">Write Python code below and run it on your server via <code style="font-family:var(--mono);background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:4px;">python -c "..."</code>. Note: You will need to have permissions to do so.</p>
+            <p style="font-size:0.8rem;color:var(--text-dim);margin-bottom:14px;line-height:1.6;">Write Python code below and run it on your server via <code style="font-family:var(--mono);background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:4px;">python -c "..."</code>. Note: You will need to have permissions to do so</p>
             <textarea id="py-code" spellcheck="false" style="font-family:var(--mono);font-size:0.8rem;min-height:clamp(140px,28vh,260px);width:100%;resize:vertical;line-height:1.65;tab-size:4;">mypi = 4 * sum((x**2 + y**2 &lt; 1) for x,y in __import__('random').sample([(i/1000,j/1000) for i in range(1000) for j in range(1000)], 10000)) / 10000
 print(mypi)</textarea>
             <div class="btn-group" style="margin-top:10px;">
@@ -1282,9 +1277,7 @@ print(mypi)</textarea>
           <div>
             <div class="section-title">About</div>
             <p style="font-size:0.82rem;color:var(--text-dim);line-height:1.8;">
-              Jarcey OS &mdash; Control Panel v1.0<br>
-              A unified interface for server interaction, file management,<br>
-              geolocation, text processing, and more.
+              Pocket OS &mdash; v1.0.1<br> A unified interface for server interaction, file management, geolocation, text processing, and more.
             </p>
           </div>
         </div>
@@ -1310,14 +1303,9 @@ print(mypi)</textarea>
     <!-- Dock -->
     <div id="dock">
       <div class="dock-btn" onclick="closeApp()" title="Home">⌂</div>
-      <div class="dock-btn" onclick="openApp('terminal')" title="Terminal">
-        <svg width="18" height="18" viewBox="0 0 44 44" fill="none">
-          <polyline points="10,18 17,22 10,26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <line x1="20" y1="27" x2="34" y2="27" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-        </svg>
-      </div>
       <div class="dock-btn" onclick="openApp('files')" title="Files">📂</div>
       <div class="dock-btn" onclick="openApp('input')" title="Input / Response">📋</div>
+      <div class="dock-btn" onclick="openApp('settings')" title="Settings">⚙️</div>
     </div>
   </div><!-- /bottom-area -->
 
@@ -2055,6 +2043,8 @@ function signIn() {
     setTimeout(() => { statusEl.textContent = ''; }, 2500);
     return;
   }
+  // Persist uid immediately
+  try { sessionStorage.setItem('jarcey_uid', uid); } catch(e) {}
   btn.disabled = true;
   statusEl.textContent = 'Signing in…';
   const sendUrl = endpoint + 'input=' + encodeURIComponent('whoami()') + '&uid=' + encodeURIComponent(uid);
@@ -2064,9 +2054,14 @@ function signIn() {
       btn.disabled = false;
       const resp = (this.responseText || '').trim();
       if (resp) {
+        const placeholder = 'Hello ' + resp + '…';
         const inEl = document.getElementById('in');
-        if (inEl) inEl.placeholder = 'Hello ' + resp + '…';
+        if (inEl) inEl.placeholder = placeholder;
         statusEl.textContent = '✓ Signed in';
+        try {
+          sessionStorage.setItem('jarcey_signin_status', '✓ Signed in');
+          sessionStorage.setItem('jarcey_placeholder', placeholder);
+        } catch(e) {}
         setTimeout(() => { statusEl.textContent = ''; }, 3000);
       } else {
         statusEl.textContent = 'No response.';
@@ -2150,6 +2145,9 @@ const SS = {
   save(key, value) { try { localStorage.setItem(key, value); } catch(e) {} },
   load(key, fallback = '') { try { return localStorage.getItem(key) ?? fallback; } catch(e) { return fallback; } },
 
+  ssSet(key, value) { try { sessionStorage.setItem(key, value); } catch(e) {} },
+  ssGet(key, fallback = '') { try { return sessionStorage.getItem(key) ?? fallback; } catch(e) { return fallback; } },
+
   restore() {
     // Login
     const loginEl = document.getElementById('id');
@@ -2179,6 +2177,26 @@ const SS = {
       const isDark = savedDark === 'true';
       document.body.classList.toggle('light-mode', !isDark);
       setToggle('dark-mode-toggle', isDark);
+    }
+
+    // Sign-in session restore
+    const savedUid = SS.ssGet('jarcey_uid');
+    const savedPlaceholder = SS.ssGet('jarcey_placeholder');
+    const savedSigninStatus = SS.ssGet('jarcey_signin_status');
+    if (savedUid) {
+      const idEl = document.getElementById('id');
+      if (idEl && !idEl.value) idEl.value = savedUid;
+    }
+    if (savedPlaceholder) {
+      const inEl = document.getElementById('in');
+      if (inEl) inEl.placeholder = savedPlaceholder;
+    }
+    if (savedSigninStatus) {
+      const statusEl = document.getElementById('sign-in-status');
+      if (statusEl) {
+        statusEl.textContent = savedSigninStatus;
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      }
     }
 
     // Patch settingsToggleDark to persist
