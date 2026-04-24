@@ -595,7 +595,7 @@
     <!-- HUD -->
     <div class="hud">
         <div class="hud-header">
-            <span id="deerCount">0</span>🐑
+            <span id="deerCount">0</span>🧍
             <span id="wolfCount">0</span>🐺
             <span id="plantCount">0</span>🌱
             Day <span id="dayCount">0</span>
@@ -1029,18 +1029,18 @@
             }
 
             // F, toggle creative mode (single press, no repeat)
-            if ((e.key === 'f' || e.key === 'F') && !wasAlreadyDown) {
+            if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
                 e.preventDefault();
                 toggleCreative();
             }
 
             // Escape / M, toggle settings panel (single press, no repeat)
-            if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !wasAlreadyDown) {
+            if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !e.repeat) {
                 toggleSettings();
             }
 
             // K, toggle keyboard/touch control mode (single press, no repeat)
-            if ((e.key === 'k' || e.key === 'K') && !wasAlreadyDown) {
+            if ((e.key === 'k' || e.key === 'K') && !e.repeat) {
                 e.preventDefault();
                 document.getElementById('controlBtn').click();
             }
@@ -1660,9 +1660,9 @@
 
         const SHARED_GEOMETRIES = {
             sheep: {
-                body: createRoundedBoxGeometry(12, 12, 25, 2.5),
-                head: new THREE.SphereGeometry(7, 15, 15),
-                leg:  createRoundedBoxGeometry(3, 18, 3, 1)
+                body: createRoundedBoxGeometry(7, 14, 6, 1.2),
+                head: new THREE.SphereGeometry(4, 15, 15),
+                leg:  createRoundedBoxGeometry(1.8, 11, 1.8, 0.6)
             },
             wolf: {
                 body: createRoundedBoxGeometry(7, 11, 20, 2),
@@ -1674,9 +1674,9 @@
         // LOW graphics geometry: plain flat BoxGeometry for every part
         const SHARED_GEOMETRIES_LOW = {
             sheep: {
-                body: new THREE.BoxGeometry(12, 12, 25),
-                head: new THREE.BoxGeometry(14, 14, 14),
-                leg:  new THREE.BoxGeometry(3, 18, 3)
+                body: new THREE.BoxGeometry(7, 14, 6),
+                head: new THREE.BoxGeometry(8, 8, 8),
+                leg:  new THREE.BoxGeometry(1.8, 11, 1.8)
             },
             wolf: {
                 body: new THREE.BoxGeometry(7, 11, 20),
@@ -1689,23 +1689,23 @@
         let graphicsMode = 'high';
 
         const SHARED_MATERIALS = {
-            sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+            sheep: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false }),
             wolf:  new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false })
         };
 
         // Per-sex color tints
         const SEX_COLORS = {
-            sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) }, // male slightly darker
+            sheep: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) },
             wolf:  { male: new THREE.Color(0x81613e), female: new THREE.Color(0xB8906A) }  // female slightly lighter
         };
 
         const PART_OFFSETS = {
             sheep: {
-                head:  new THREE.Vector3(0, 5, 15),
-                legFL: new THREE.Vector3(-5, -9,  8),
-                legFR: new THREE.Vector3( 5, -9,  8),
-                legBL: new THREE.Vector3(-5, -9, -8),
-                legBR: new THREE.Vector3( 5, -9, -8),
+                head:  new THREE.Vector3(0, 11, 0),
+                legFL: new THREE.Vector3(-5.5, 1.5, 0),
+                legFR: new THREE.Vector3( 5.5, 1.5, 0),
+                legBL: new THREE.Vector3(-1.8, -12.5, 0),
+                legBR: new THREE.Vector3( 1.8, -12.5, 0),
             },
             wolf: {
                 head:  new THREE.Vector3(0, 5, 15),
@@ -1984,7 +1984,8 @@
                     // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
                     const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
-                    _scale.set(s, s, s);
+                    const hs = (type === 'sheep') ? (a.heightScale ?? 1.0) : 1.0;
+                    _scale.set(s, s * hs, s);
 
                     const angle = DIRECTION_ANGLES[a.outputIdx % 8];
                     _quat.setFromAxisAngle(_yAxis, angle);
@@ -2002,7 +2003,9 @@
 
                     // Each other part: scale offset, rotate by yaw, then add world pos
                     for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
-                        _local.copy(offsets[part]).multiplyScalar(s).applyQuaternion(_quat).add(_world);
+                        _local.copy(offsets[part]);
+                        if (type === 'sheep') _local.y *= hs;
+                        _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
                         _mat4.compose(_local, _quat, _scale);
                         im[part].setMatrixAt(idx, _mat4);
                     }
@@ -2496,6 +2499,14 @@
             wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
         };
 
+        function randNormal(mean = 1.0, std = 0.12) {
+            let u, v;
+            do { u = Math.random(); } while (u === 0);
+            v = Math.random();
+            const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+            return Math.max(0.55, Math.min(1.55, mean + std * n)); // clamp to reasonable range
+        }
+
         class Animal extends Entity {
             constructor(position, type) {
                 super(position, type);
@@ -2506,6 +2517,8 @@
                 this.visionDistance = tools.random(300, 400);
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
+
+                this.heightScale = type === 'sheep' ? randNormal(1.0, 0.13) : 1.0;
 
                 this.waterNeed = Math.random() * 0.05;
                 this.foodNeed = Math.random() * 0.05;
@@ -2688,6 +2701,11 @@
                 child.visionDistSq = child.visionDistance * child.visionDistance;
                 child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
                                       * (0.9 + Math.random() * 0.2);
+
+                if (this.type === 'sheep') {
+                    const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
+                    child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + randNormal(0, 0.04)));
+                }
 
                 // Crossover brain: pick one parent architecture, crossover learning rate
                 const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -3278,7 +3296,7 @@
                 entities.push(p);
             }
 
-            spawnAnimals(CONFIG.initialDeer, 'sheep', 15);
+            spawnAnimals(CONFIG.initialDeer, 'sheep', 23);
             spawnAnimals(CONFIG.initialWolves, 'wolf', 15);
 
             vrCameraRig.position.copy(player.position);
@@ -3741,7 +3759,7 @@
             let sheep = 0, wolves = 0;
             for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
             document.getElementById('vr-stats').textContent =
-                `🌿 TERRARIUM  🐑${sheep}  🐺${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+                `🌿 TERRARIUM  🧍${sheep}  🐺${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
         }
 
         function resizeRenderer() {
