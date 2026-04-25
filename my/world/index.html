@@ -79,7 +79,7 @@
         #asp-nn-wrapper canvas {
             display: block;
             width: 100%;
-            height: 100px;
+            height: 160px;
             border-radius: 3px;
             background: rgba(0, 0, 0, 0.6);
             border: 1px solid rgba(0, 255, 0, 0.2);
@@ -487,7 +487,7 @@
             position: fixed;
             top: max(40px, calc(env(safe-area-inset-top) + 36px));
             left: max(10px, env(safe-area-inset-left));
-            width: 160px;
+            width: 200px;
             background: rgba(0, 0, 0, 0.72);
             border: 1px solid rgba(0, 255, 0, 0.35);
             border-radius: 6px;
@@ -2160,13 +2160,13 @@
                         const ctx = window._hudNNVisualizer.ctx;
                         ctx.globalCompositeOperation = 'destination-over';
                         ctx.fillStyle = 'rgba(0,0,0,0.75)';
-                        ctx.fillRect(0, 0, 256, 128);
+                        ctx.fillRect(0, 0, 320, 192);
                         ctx.globalCompositeOperation = 'source-over';
                         const aspNNLabel = document.getElementById('asp-nn-label');
                         if (aspNNLabel) {
                             const nn = a.brain;
                             const type = (nn?.weights?.[0]?.W_i !== undefined) ? 'LSTM Network' : 'Dense Network';
-                            aspNNLabel.textContent = type;
+                            aspNNLabel.textContent = "Brain: " + type;
                         }
                     } catch(e) {}
                 }
@@ -2521,7 +2521,7 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(6, [4, 4, 8], 0.01);
+                this.brain = new DenseNetwork(10, [16, 16, 8], 0.01);
                 this.outputIdx = 0;
                 this.brainUpdateCounter = 0;
 
@@ -2608,13 +2608,27 @@
                     this.priority = 'mate';
                 }
 
+                const focusDx = this.focusX - this.position.x;
+                const focusDz = this.focusZ - this.position.z;
+                const focusDist = Math.sqrt(focusDx * focusDx + focusDz * focusDz);
+                const worldDiag = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
                 const inputs = [
-                    Math.abs(this.position.x - this.focusX) / CONFIG.worldWidth,
-                    Math.abs(this.position.z - this.focusZ) / CONFIG.worldHeight,
+                    // Signed directional offset — lets the brain know which way to go
+                    focusDx / CONFIG.worldWidth,
+                    focusDz / CONFIG.worldHeight,
+                    // Absolute distance to focus target (normalised)
+                    focusDist / worldDiag,
+                    // Species identity
                     this.type === 'wolf' ? -1 : 1,
-                    this.foodNeed,
-                    this.waterNeed,
-                    this.reproductionNeed
+                    // Needs (clamped 0–1)
+                    Math.min(1, this.foodNeed / 100),
+                    Math.min(1, this.waterNeed / 100),
+                    Math.min(1, this.reproductionNeed / 100),
+                    // Health ratio
+                    Math.max(0, this.health / this.maxHealth),
+                    // Explicit danger / opportunity flags
+                    this.hasPredator ? 1 : 0,
+                    this.hasFood ? 1 : 0,
                 ];
                 this.outputIdx = this.brain.think(inputs);
             }
@@ -2850,7 +2864,7 @@
                 const nn_len = layerDims.length;
                 const allNodesPos = [];
 
-                this.node_size = Math.min(this.w_height * 0.04, 5);
+                this.node_size = Math.max(2, Math.min(this.w_height * 0.04, 10 / Math.sqrt(Math.max(...layerDims))));
 
                 for (let l_idx = 0; l_idx < nn_len; l_idx++) {
                     const l_nodes_pos = [];
@@ -3004,8 +3018,8 @@
         let nnVisEnabled = false;
 
         const _nnSpriteCanvas = document.createElement('canvas');
-        _nnSpriteCanvas.width  = 256;
-        _nnSpriteCanvas.height = 128;
+        _nnSpriteCanvas.width  = 320;
+        _nnSpriteCanvas.height = 192;
 
         const _nnSpriteTexture = new THREE.CanvasTexture(_nnSpriteCanvas);
 
@@ -3020,11 +3034,11 @@
         scene.add(nnSprite);
 
         function initNN3DVisualizer() {
-            nnSprite3DVisualizer = new NNVisualizer(_nnSpriteCanvas, [256, 128]);
+            nnSprite3DVisualizer = new NNVisualizer(_nnSpriteCanvas, [320, 192]);
             const hudNNCanvas = document.getElementById('nnCanvas');
-            hudNNCanvas.width  = 256;
-            hudNNCanvas.height = 128;
-            window._hudNNVisualizer = new NNVisualizer(hudNNCanvas, [256, 128]);
+            hudNNCanvas.width  = 320;
+            hudNNCanvas.height = 192;
+            window._hudNNVisualizer = new NNVisualizer(hudNNCanvas, [320, 192]);
         }
 
         function updateNN3DSprite(target) {
@@ -3050,7 +3064,7 @@
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
                 document.getElementById('animal-stat-panel').classList.remove('visible');
                 if (window._hudNNVisualizer) {
-                    window._hudNNVisualizer.ctx.clearRect(0, 0, 256, 128);
+                    window._hudNNVisualizer.ctx.clearRect(0, 0, 320, 192);
                 }
                 for (const [, sprite] of animalStatSprites) sprite.visible = false;
             }
