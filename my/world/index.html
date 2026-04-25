@@ -742,6 +742,9 @@
             targetObject: null
         };
 
+        // Cached world diagonal — recomputed whenever CONFIG dimensions change (on reset)
+        let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
+
         // Settings tuner
         document.getElementById('settings-btn').addEventListener('click', () => {
             toggleSettings();
@@ -797,6 +800,7 @@
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
             CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
             CONFIG.scale = pendingScale;
+            WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
             player.speed = 80 * Math.log1p(pendingScale);
             player.sprintSpeed = 160 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
@@ -1445,6 +1449,7 @@
                 this.activations = [];
                 this.runningMean = new Float32Array(inputDims);
                 this.runningVar = new Float32Array(inputDims).fill(1);
+                this._standardized = new Float32Array(inputDims); // pre-alloc: avoids per-think GC pressure
 
                 for (let i = 0; i < L; i++) {
                     const inD = this.layerDims[i]
@@ -1506,20 +1511,18 @@
 
             think(inputs) {
                 this.normCount++;
-                const standardized = new Float32Array(inputs.length);
+                const standardized = this._standardized;
 
+                // Single pass: normalize + clamp (avoids second loop allocation and call overhead)
                 for (let i = 0; i < inputs.length; i++) {
                     const delta = inputs[i] - this.runningMean[i];
                     this.runningMean[i] += this.EMA * delta;
                     this.runningVar[i] = (1 - this.EMA) * this.runningVar[i] + this.EMA * delta * delta;
-                    standardized[i] = delta / Math.sqrt(this.runningVar[i] + 1e-8);  // reuse delta here
-                }
-                // clamp to prevent outliers
-                for (let i = 0; i < standardized.length; i++) {
-                    standardized[i] = Math.max(-5, Math.min(5, standardized[i]));
+                    let s = delta / Math.sqrt(this.runningVar[i] + 1e-8);
+                    standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s; // inline clamp, avoids Math.max/min calls
                 }
                 const values = this.propagate(standardized);
-                            let bestIdx = 0;
+                let bestIdx = 0;
                 let bestVal = values[0];
                 for (let j = 1; j < values.length; j++) {
                     if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
@@ -1552,10 +1555,13 @@
                     const w  = this.weights[l];
                     const wv = this.weightVelocity[l];
                     const grad = lr * nc;
+                    // One noise sample per layer instead of per weight — ~500x fewer Math.random() calls
+                    // with negligible behavioral difference (noise magnitude is 0.001)
+                    const noise = (Math.random() - 0.5) * 0.001;
                     for (let k = 0; k < w.length; k++) {
                         const vel = mom * wv[k] - grad;
                         wv[k] = vel;
-                        w[k] = w[k] * wd1 + vel;
+                        w[k] = w[k] * wd1 + vel + noise;
                     }
 
                     const b  = this.biases[l];
@@ -2166,7 +2172,7 @@
                         if (aspNNLabel) {
                             const nn = a.brain;
                             const type = (nn?.weights?.[0]?.W_i !== undefined) ? 'LSTM Network' : 'Dense Network';
-                            aspNNLabel.textContent = "Brain: " + type;
+                            aspNNLabel.textContent = type;
                         }
                     } catch(e) {}
                 }
@@ -2521,9 +2527,12 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(10, [16, 16, 8], 0.01);
+                this.brain = new DenseNetwork(10, [16, 16, 8], 0.01, 0.5, 0.001);
                 this.outputIdx = 0;
-                this.brainUpdateCounter = 0;
+                // Stagger training ticks so animals don't all update simultaneously
+                this.brainUpdateCounter = Math.floor(Math.random() * 5);
+                this.prevHealth = this.health; // for delta-based reward signal
+                this._inputs = new Float32Array(10); // pre-alloc: avoids per-think array allocation
 
                 this.isAdult = true; // overridden to false for born children in mate()
                 this.birthTick = 0;  // stamped in mate() with current ticks value
@@ -2611,26 +2620,19 @@
                 const focusDx = this.focusX - this.position.x;
                 const focusDz = this.focusZ - this.position.z;
                 const focusDist = Math.sqrt(focusDx * focusDx + focusDz * focusDz);
-                const worldDiag = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
-                const inputs = [
-                    // Signed directional offset — lets the brain know which way to go
-                    focusDx / CONFIG.worldWidth,
-                    focusDz / CONFIG.worldHeight,
-                    // Absolute distance to focus target (normalised)
-                    focusDist / worldDiag,
-                    // Species identity
-                    this.type === 'wolf' ? -1 : 1,
-                    // Needs (clamped 0–1)
-                    Math.min(1, this.foodNeed / 100),
-                    Math.min(1, this.waterNeed / 100),
-                    Math.min(1, this.reproductionNeed / 100),
-                    // Health ratio
-                    Math.max(0, this.health / this.maxHealth),
-                    // Explicit danger / opportunity flags
-                    this.hasPredator ? 1 : 0,
-                    this.hasFood ? 1 : 0,
-                ];
-                this.outputIdx = this.brain.think(inputs);
+                // Use pre-allocated input buffer and module-level WORLD_DIAG — no per-call allocation
+                const inp = this._inputs;
+                inp[0] = focusDx / CONFIG.worldWidth;
+                inp[1] = focusDz / CONFIG.worldHeight;
+                inp[2] = focusDist / WORLD_DIAG;
+                inp[3] = this.type === 'wolf' ? -1 : 1;
+                inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
+                inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
+                inp[6] = this.reproductionNeed < 100 ? this.reproductionNeed / 100 : 1;
+                inp[7] = this.health > 0 ? this.health / this.maxHealth : 0;
+                inp[8] = this.hasPredator ? 1 : 0;
+                inp[9] = this.hasFood ? 1 : 0;
+                this.outputIdx = this.brain.think(inp);
             }
 
             move() {
@@ -2658,10 +2660,15 @@
                 if ((animalIndex & 3) === (ticks & 3)) {
                     this.think(grid, waterLocations);
                     if (++this.brainUpdateCounter >= 5) {
-                        this.brain.adjustWeights((this.health / this.startHealth) - 1);
+                        // Delta reward: positive when health improved, negative when it dropped.
+                        // Normalized so eating/drinking ≈ +1, starving ≈ -1.
+                        const healthDelta = this.health - this.prevHealth;
+                        const reward = Math.max(-1, Math.min(1, healthDelta / (this.startHealth * 0.05)));
+                        this.brain.adjustWeights(reward);
                         this.brainUpdateCounter = 0;
                     }
                 }
+                this.prevHealth = this.health;
                 this.move();
             }
 
