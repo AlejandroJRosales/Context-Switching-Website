@@ -269,7 +269,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<a class="dropdown-item" href="/my/terrarium">Terrarium</a>
+					<a class="dropdown-item" href="/my/world/">My World</a>
 				</div>
 			</li>
 		</ul>
