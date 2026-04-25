@@ -595,8 +595,8 @@
     <!-- HUD -->
     <div class="hud">
         <div class="hud-header">
-            <span id="deerCount">0</span>🧍
-            <span id="wolfCount">0</span>🐺
+            <span id="deerCount">0</span>🐑
+            <span id="wolfCount">0</span>🧍
             <span id="plantCount">0</span>🌱
             Day <span id="dayCount">0</span>
             <span id="creativeIndicator" style="display:none; color:#88ffff;">✦ CREATIVE</span>
@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.12</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.11</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -1660,28 +1660,28 @@
 
         const SHARED_GEOMETRIES = {
             sheep: {
-                body: createRoundedBoxGeometry(7, 14, 6, 1.2),
-                head: new THREE.SphereGeometry(4, 15, 15),
-                leg:  createRoundedBoxGeometry(1.8, 11, 1.8, 0.6)
+                body: createRoundedBoxGeometry(12, 12, 25, 2.5),
+                head: new THREE.SphereGeometry(7, 15, 15),
+                leg:  createRoundedBoxGeometry(3, 18, 3, 1)
             },
             wolf: {
-                body: createRoundedBoxGeometry(7, 11, 20, 2),
-                head: new THREE.SphereGeometry(6, 15, 15),
-                leg:  createRoundedBoxGeometry(2.5, 18, 2.5, 0.8)
+                body: createRoundedBoxGeometry(10, 22, 8, 1.5),  // upright torso
+                head: new THREE.SphereGeometry(5.5, 15, 15),     // round head
+                leg:  createRoundedBoxGeometry(2.5, 16, 2.5, 0.8) // slim limbs
             }
         };
 
         // LOW graphics geometry: plain flat BoxGeometry for every part
         const SHARED_GEOMETRIES_LOW = {
             sheep: {
-                body: new THREE.BoxGeometry(7, 14, 6),
-                head: new THREE.BoxGeometry(8, 8, 8),
-                leg:  new THREE.BoxGeometry(1.8, 11, 1.8)
+                body: new THREE.BoxGeometry(12, 12, 25),
+                head: new THREE.BoxGeometry(14, 14, 14),
+                leg:  new THREE.BoxGeometry(3, 18, 3)
             },
             wolf: {
-                body: new THREE.BoxGeometry(7, 11, 20),
-                head: new THREE.BoxGeometry(12, 12, 12),
-                leg:  new THREE.BoxGeometry(2.5, 18, 2.5)
+                body: new THREE.BoxGeometry(10, 22, 8),
+                head: new THREE.BoxGeometry(11, 11, 11),
+                leg:  new THREE.BoxGeometry(2.5, 16, 2.5)
             }
         };
 
@@ -1689,30 +1689,30 @@
         let graphicsMode = 'high';
 
         const SHARED_MATERIALS = {
-            sheep: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false }),
-            wolf:  new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false })
+            sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+            wolf:  new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })  // skin tone
         };
 
         // Per-sex color tints
         const SEX_COLORS = {
-            sheep: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) },
-            wolf:  { male: new THREE.Color(0x81613e), female: new THREE.Color(0xB8906A) }  // female slightly lighter
+            sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
+            wolf:  { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }  // human skin variants
         };
 
         const PART_OFFSETS = {
             sheep: {
-                head:  new THREE.Vector3(0, 11, 0),
-                legFL: new THREE.Vector3(-5.5, 1.5, 0),
-                legFR: new THREE.Vector3( 5.5, 1.5, 0),
-                legBL: new THREE.Vector3(-1.8, -12.5, 0),
-                legBR: new THREE.Vector3( 1.8, -12.5, 0),
-            },
-            wolf: {
                 head:  new THREE.Vector3(0, 5, 15),
                 legFL: new THREE.Vector3(-5, -9,  8),
-                legFR: new THREE.Vector3( 4, -9,  8),
+                legFR: new THREE.Vector3( 5, -9,  8),
                 legBL: new THREE.Vector3(-5, -9, -8),
-                legBR: new THREE.Vector3( 4, -9, -8),
+                legBR: new THREE.Vector3( 5, -9, -8),
+            },
+            wolf: {
+                head:  new THREE.Vector3(0, 17, 0),     // torso half=11 + head radius=5.5 + gap
+                legFL: new THREE.Vector3(-7, 4, 0),     // left arm
+                legFR: new THREE.Vector3( 7, 4, 0),     // right arm
+                legBL: new THREE.Vector3(-2.5, -19, 0), // left leg
+                legBR: new THREE.Vector3( 2.5, -19, 0), // right leg
             },
         };
 
@@ -1984,7 +1984,7 @@
                     // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
                     const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
-                    const hs = (type === 'sheep') ? (a.heightScale ?? 1.0) : 1.0;
+                    const hs = (type === 'wolf') ? (a.heightScale ?? 1.0) : 1.0;
                     _scale.set(s, s * hs, s);
 
                     const angle = DIRECTION_ANGLES[a.outputIdx % 8];
@@ -2004,7 +2004,7 @@
                     // Each other part: scale offset, rotate by yaw, then add world pos
                     for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
                         _local.copy(offsets[part]);
-                        if (type === 'sheep') _local.y *= hs;
+                        if (type === 'wolf') _local.y *= hs;
                         _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
                         _mat4.compose(_local, _quat, _scale);
                         im[part].setMatrixAt(idx, _mat4);
@@ -2518,7 +2518,7 @@
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
-                this.heightScale = type === 'sheep' ? randNormal(1.0, 0.13) : 1.0;
+                this.heightScale = type === 'wolf' ? randNormal(1.0, 0.13) : 1.0;
 
                 this.waterNeed = Math.random() * 0.05;
                 this.foodNeed = Math.random() * 0.05;
@@ -2702,7 +2702,7 @@
                 child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
                                       * (0.9 + Math.random() * 0.2);
 
-                if (this.type === 'sheep') {
+                if (this.type === 'wolf') {
                     const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
                     child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + randNormal(0, 0.04)));
                 }
@@ -3296,8 +3296,8 @@
                 entities.push(p);
             }
 
-            spawnAnimals(CONFIG.initialDeer, 'sheep', 23);
-            spawnAnimals(CONFIG.initialWolves, 'wolf', 15);
+            spawnAnimals(CONFIG.initialDeer, 'sheep', 15);
+            spawnAnimals(CONFIG.initialWolves, 'wolf', 28);
 
             vrCameraRig.position.copy(player.position);
             camera.position.set(0, 0, 0);
@@ -3759,7 +3759,7 @@
             let sheep = 0, wolves = 0;
             for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
             document.getElementById('vr-stats').textContent =
-                `🌿 TERRARIUM  🧍${sheep}  🐺${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+                `🌿 TERRARIUM  🐑${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
         }
 
         function resizeRenderer() {
