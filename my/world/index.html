@@ -2390,10 +2390,7 @@
         let CABIN_COLLIDERS = [];
 
         function buildCabinColliders(cx, cz, s, rotationY = 0) {
-            // Snap to nearest 90° and swap width/depth for 90°/270° rotations
-            const snap = Math.round(rotationY / (Math.PI / 2)) % 4;
-            const swapped = (snap === 1 || snap === -1 || snap === 3 || snap === -3);
-            const CW = swapped ? 60 * s : 80 * s, CD = swapped ? 80 * s : 60 * s;
+            const CW = 80 * s, CD = 60 * s;
             const LR = 2.5 * s;
             const WALL_H = 44 * s;
             const FLOOR_Y = 2 * s;
@@ -2407,58 +2404,71 @@
             const roofTop = ROOF_BASE + RIDGE_H;
 
             const CHW = 11 * s, CHD = 11 * s;
-            const CHX = cx + (-18 * s), CHZ = cz + (-12 * s);
+            const CHX_local = -18 * s, CHZ_local = -12 * s;
             const chimneyTop = ROOF_BASE + RIDGE_H + 20 * s;
 
-            const boxes = [];
-            const box = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
-
-            const frontZ = cz + CD / 2;
             const halfDoor = DOOR_WIDTH / 2;
+            const frontLZ = CD / 2;
+            const backLZ  = -CD / 2;
 
-            box(cx - CW/2 - WALL_THICK, cx - halfDoor, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
-            box(cx + halfDoor, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
-            box(cx - halfDoor, cx + halfDoor, FLOOR_Y + DOOR_HEIGHT, FLOOR_Y + WALL_H, frontZ - WALL_THICK, frontZ + WALL_THICK);
-            box(cx - CW/2 - WALL_THICK, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2 - WALL_THICK, cz - CD/2 + WALL_THICK);
-            box(cx - CW/2 - WALL_THICK, cx - CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2, cz + CD/2);
-            box(cx + CW/2 - WALL_THICK, cx + CW/2 + WALL_THICK, FLOOR_Y, FLOOR_Y + WALL_H, cz - CD/2, cz + CD/2);
-            box(cx - (CW/2 + OVH) - WALL_THICK, cx, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
-            box(cx, cx + (CW/2 + OVH) + WALL_THICK, ROOF_BASE, roofTop + 5, cz - (CD/2 + OVH), cz + (CD/2 + OVH));
-            box(CHX - CHW/2, CHX + CHW/2, 0, chimneyTop + 5, CHZ - CHD/2, CHZ + CHD/2);
+            const localBoxes = [
+                { minX: -CW/2 - WALL_THICK, maxX: -halfDoor,          minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX:  halfDoor,           maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX: -halfDoor,           maxX:  halfDoor,           minY: FLOOR_Y + DOOR_HEIGHT, maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX: -CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: backLZ + WALL_THICK  },
+                { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ,               maxZ: frontLZ              },
+                { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ,               maxZ: frontLZ              },
+                { minX: -(CW/2+OVH) - WALL_THICK, maxX: 0,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
+                { minX: 0, maxX:  (CW/2+OVH) + WALL_THICK,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
+                { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: 0,                     maxY: chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
+            ];
 
-            return boxes;
+            return {
+                cx, cz,
+                cosR:  Math.cos(rotationY),
+                sinR:  Math.sin(rotationY),
+                boxes: localBoxes
+            };
         }
 
         // Track cabin scene objects so they can be removed on reset
         let cabinObjects = [];
 
-        // Resolve a position (THREE.Vector3) against all cabin AABBs.
-        // radius = horizontal half-extent, halfH = vertical half-extent.
         function resolveCabinCollisions(pos, radius, halfH, velocityY) {
-            for (const b of CABIN_COLLIDERS) {
-                const pMinX = pos.x - radius, pMaxX = pos.x + radius;
-                const pMinY = pos.y - halfH,  pMaxY = pos.y + halfH;
-                const pMinZ = pos.z - radius, pMaxZ = pos.z + radius;
+            for (const cabin of CABIN_COLLIDERS) {
+                const dx = pos.x - cabin.cx, dz = pos.z - cabin.cz;
+                const lx =  dx * cabin.cosR + dz * cabin.sinR;
+                const lz = -dx * cabin.sinR + dz * cabin.cosR;
 
-                const overlapX = Math.min(pMaxX, b.maxX) - Math.max(pMinX, b.minX);
-                if (overlapX <= 0) continue;
-                const overlapY = Math.min(pMaxY, b.maxY) - Math.max(pMinY, b.minY);
-                if (overlapY <= 0) continue;
-                const overlapZ = Math.min(pMaxZ, b.maxZ) - Math.max(pMinZ, b.minZ);
-                if (overlapZ <= 0) continue;
+                for (const b of cabin.boxes) {
+                    const pMinX = lx - radius, pMaxX = lx + radius;
+                    const pMinY = pos.y - halfH,  pMaxY = pos.y + halfH;
+                    const pMinZ = lz - radius, pMaxZ = lz + radius;
 
-                if (overlapX <= overlapY && overlapX <= overlapZ) {
-                    const sign = pos.x < (b.minX + b.maxX) / 2 ? -1 : 1;
-                    pos.x += sign * overlapX;
-                } else if (overlapZ <= overlapY) {
-                    const sign = pos.z < (b.minZ + b.maxZ) / 2 ? -1 : 1;
-                    pos.z += sign * overlapZ;
-                } else {
-                    const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
-                    pos.y += sign * overlapY;
-                    player.isJumping = false;
+                    const overlapX = Math.min(pMaxX, b.maxX) - Math.max(pMinX, b.minX);
+                    if (overlapX <= 0) continue;
+                    const overlapY = Math.min(pMaxY, b.maxY) - Math.max(pMinY, b.minY);
+                    if (overlapY <= 0) continue;
+                    const overlapZ = Math.min(pMaxZ, b.maxZ) - Math.max(pMinZ, b.minZ);
+                    if (overlapZ <= 0) continue;
+
+                    if (overlapX <= overlapY && overlapX <= overlapZ) {
+                        const sign = lx < (b.minX + b.maxX) / 2 ? -1 : 1;
+                        const corrLocal = sign * overlapX;
+                        pos.x += corrLocal * cabin.cosR;
+                        pos.z -= corrLocal * cabin.sinR;
+                    } else if (overlapZ <= overlapY) {
+                        const sign = lz < (b.minZ + b.maxZ) / 2 ? -1 : 1;
+                        const corrLocal = sign * overlapZ;
+                        pos.x += corrLocal * (-cabin.sinR);
+                        pos.z += corrLocal * cabin.cosR;
+                    } else {
+                        const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
+                        pos.y += sign * overlapY;
+                        player.isJumping = false;
+                    }
+                    velocityY = 0;
                 }
-                velocityY = 0;
             }
             return velocityY;
         }
@@ -3241,12 +3251,13 @@
                         Math.hypot(cx - px, cz - pz) < minSep));
                 }
                 cabinPositions.push([cx, cz]);
-                // Pick a random cardinal direction (0, 90, 180, or 270 degrees)
-                const rotY = (Math.floor(Math.random() * 4)) * (Math.PI / 2);
+                const rotY = i === 0
+                    ? player.yaw + Math.PI
+                    : (Math.floor(Math.random() * 4)) * (Math.PI / 2);
                 const c = new Cabin({ scale: cabinScale, position: new THREE.Vector3(cx, 0, cz), rotationY: rotY });
                 scene.add(c);
                 cabinObjects.push(c);
-                CABIN_COLLIDERS.push(...buildCabinColliders(cx, cz, cabinScale, rotY));
+                CABIN_COLLIDERS.push(buildCabinColliders(cx, cz, cabinScale, rotY));
             }
 
             // Clear stat label sprites from previous world
