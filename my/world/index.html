@@ -3265,7 +3265,13 @@
         // 3rd-person offset: behind and slightly above the player
         const TPP_OFFSET = new THREE.Vector3(0, 18, 70);
         // Bird's eye: high overhead, looking straight down
-        const BIRD_HEIGHT = 600;
+        let birdHeight = 600;
+        const BIRD_HEIGHT_MIN = 80;
+        const BIRD_HEIGHT_MAX = 2000;
+        const BIRD_ZOOM_SPEED = 300; // units per second
+        // Camera pan offset for bird's eye (independent of player position)
+        const birdCamOffset = new THREE.Vector2(0, 0); // X, Z pan
+        const BIRD_PAN_SPEED = 0.6; // fraction of birdHeight per second (pans faster when zoomed out)
 
         // Reusable vector for POV camera maths
         const _povOffset = new THREE.Vector3();
@@ -3278,6 +3284,8 @@
             if (window._playerMesh) window._playerMesh.visible = (povMode !== '1st');
             // Seed pitch with a slight downward tilt when entering 3rd person
             if (povMode === '3rd') player.pitch = -0.3;
+            // Reset bird's eye pan offset when entering bird mode
+            if (povMode === 'bird') { birdCamOffset.set(0, 0); birdHeight = 600; }
         }
 
         document.getElementById('povBtn').addEventListener('click', cyclePov);
@@ -3549,6 +3557,19 @@
             _moveVector.set(0, 0, 0);
 
             if (controls.controlMode === 'keyboard') {
+                // Bird's eye mode: W/S zoom, A/D pan — player stays put
+                if (povMode === 'bird') {
+                    // W = zoom in (lower height), S = zoom out (raise height)
+                    if (keys['w']) birdHeight = Math.max(BIRD_HEIGHT_MIN, birdHeight - BIRD_ZOOM_SPEED * deltaTime);
+                    if (keys['s']) birdHeight = Math.min(BIRD_HEIGHT_MAX, birdHeight + BIRD_ZOOM_SPEED * deltaTime);
+
+                    // A/D = pan camera in world space (west/east)
+                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
+                    if (keys['a']) birdCamOffset.x += panAmt; // pan east
+                    if (keys['d']) birdCamOffset.x -= panAmt; // pan west
+                    // (no player movement in bird mode — skip to camera update)
+                } else {
+
                 const currentSpeed = player.isCreative
                     ? player.sprintSpeed
                     : (keys['shift'] ? player.sprintSpeed : player.speed);
@@ -3578,6 +3599,8 @@
                     if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
                     if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
                 }
+
+                } // end non-bird keyboard block
             } else {
                 // Touch joystick controls
                 // joystickX: left = negative, right = positive (screen X)
@@ -3615,7 +3638,7 @@
             }
 
             // Apply yaw rotation only for keyboard walking (creative mode + touch already compute world-space)
-            if (controls.controlMode === 'keyboard' && !player.isCreative) {
+            if (controls.controlMode === 'keyboard' && !player.isCreative && povMode !== 'bird') {
                 _rotMatrix.makeRotationY(player.yaw);
                 _moveVector.applyMatrix4(_rotMatrix);
             }
@@ -3679,7 +3702,12 @@
                 camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
             } else {
                 // Bird's eye: high above, looking straight down
-                vrCameraRig.position.set(player.position.x, player.position.y + BIRD_HEIGHT, player.position.z);
+                // Camera pans independently via birdCamOffset; player stays fixed
+                vrCameraRig.position.set(
+                    player.position.x + birdCamOffset.x,
+                    player.position.y + birdHeight,
+                    player.position.z + birdCamOffset.y
+                );
                 vrCameraRig.rotation.set(0, 0, 0);
                 camera.position.set(0, 0, 0);
                 camera.rotation.y = player.yaw; // keep north oriented to player facing
