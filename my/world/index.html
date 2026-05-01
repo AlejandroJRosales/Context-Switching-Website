@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿WORLD <span id="sp-hint" style="font-size:9px;"> 1.2.16</span></div>
+        <div class="sp-game-title">🌿WORLD <span id="sp-hint" style="font-size:9px;"> 1.2.15-opt</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -3563,10 +3563,13 @@
                     if (keys['w']) birdHeight = Math.max(BIRD_HEIGHT_MIN, birdHeight - BIRD_ZOOM_SPEED * deltaTime);
                     if (keys['s']) birdHeight = Math.min(BIRD_HEIGHT_MAX, birdHeight + BIRD_ZOOM_SPEED * deltaTime);
 
-                    // A/D = pan camera in world space (west/east)
+                    // A/D = pan camera left/right relative to player orientation
                     const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
-                    if (keys['a']) birdCamOffset.x += panAmt; // pan east
-                    if (keys['d']) birdCamOffset.x -= panAmt; // pan west
+                    const rightX = Math.cos(player.yaw);
+                    const rightZ = -Math.sin(player.yaw);
+                    const panDir = (keys['d'] ? -1 : 0) + (keys['a'] ? 1 : 0);
+                    birdCamOffset.x += rightX * panDir * panAmt;
+                    birdCamOffset.y += rightZ * panDir * panAmt;
                     // (no player movement in bird mode — skip to camera update)
                 } else {
 
@@ -3609,7 +3612,16 @@
                 const jRight = controls.joystickX;
                 const currentSpeed = player.isCreative ? player.sprintSpeed : player.speed;
 
-                if (player.isCreative) {
+                if (povMode === 'bird') {
+                    // Forward/back = zoom in/out, left/right = pan relative to orientation
+                    birdHeight = Math.max(BIRD_HEIGHT_MIN, Math.min(BIRD_HEIGHT_MAX,
+                        birdHeight - jFwd * BIRD_ZOOM_SPEED * deltaTime));
+                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
+                    const rightX = Math.cos(player.yaw);
+                    const rightZ = -Math.sin(player.yaw);
+                    birdCamOffset.x += rightX * jRight * panAmt;
+                    birdCamOffset.y += rightZ * jRight * panAmt;
+                } else if (player.isCreative) {
                     // Full 3D pitch-aware movement: looking up + moving forward = ascend
                     // Three.js camera looks down -Z; rotating by yaw around Y gives:
                     // forward = (-sin(yaw), 0, -cos(yaw)) at pitch=0
