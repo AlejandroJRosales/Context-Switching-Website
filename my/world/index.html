@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.14-opt</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.15-opt</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -673,6 +673,10 @@
         <button class="sp-row" id="graphicsBtn">
             <span class="sp-label">Graphics</span>
             <span class="sp-value" id="graphicsState">HIGH</span>
+        </button>
+        <button class="sp-row" id="povBtn">
+            <span class="sp-label">Camera</span>
+            <span class="sp-value" id="povState">1ST PERSON</span>
         </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
@@ -697,10 +701,6 @@
         <button class="sp-row" id="sphereVisBtn">
             <span class="sp-label">Sphere Display</span>
             <span class="sp-value" id="sphereVisState">OFF</span>
-        </button>
-        <button class="sp-row" id="povBtn">
-            <span class="sp-label">Camera</span>
-            <span class="sp-value" id="povState">1ST PERSON</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -810,6 +810,12 @@
             player.speed = 80 * Math.log1p(pendingScale);
             player.sprintSpeed = 160 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
+            // Sync fog and camera far plane to the new scale
+            const newFogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + pendingScale * 200);
+            scene.fog.near = newFogEnd * 0.4;
+            scene.fog.far  = newFogEnd;
+            camera.far = newFogEnd;
+            camera.updateProjectionMatrix();
         }, true);
 
         function getInputType() {
@@ -929,14 +935,16 @@
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB); // Sky blue
-        scene.fog = new THREE.Fog(0x87CEEB, 1500, CONFIG.maxDrawDistance);
+        // Cap the draw distance so the GPU frustum stays manageable at large scales
+        const _fogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + CONFIG.scale * 200);
+        scene.fog = new THREE.Fog(0x87CEEB, _fogEnd * 0.4, _fogEnd);
 
         const canvas = document.getElementById('canvas');
         const camera = new THREE.PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
             0.1,
-            CONFIG.maxDrawDistance
+            _fogEnd
         );
         const renderer = window.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2108,10 +2116,15 @@
             ctx.fillText(`Generation ${generation}`, 122, 10);
             ctx.textAlign = 'left';
 
-            // Update sprite texture using the shared canvas
-            const tex = new THREE.CanvasTexture(cv);
-            if (sprite.material.map) sprite.material.map.dispose();
-            sprite.material.map = tex;
+            // Reuse a single shared CanvasTexture — never allocate/dispose per frame
+            if (!drawStatLabel._sharedTex) {
+                drawStatLabel._sharedTex = new THREE.CanvasTexture(cv);
+            }
+            if (sprite.material.map !== drawStatLabel._sharedTex) {
+                if (sprite.material.map) sprite.material.map.dispose();
+                sprite.material.map = drawStatLabel._sharedTex;
+            }
+            drawStatLabel._sharedTex.needsUpdate = true;
             sprite.material.needsUpdate = true;
         }
 
@@ -3452,7 +3465,10 @@
             }
             document.getElementById('deerCount').textContent = sheep;
             document.getElementById('wolfCount').textContent = wolves;
-            document.getElementById('plantCount').textContent = plants.filter(p => p.alive).length;
+            // Avoid Array.filter() allocation — plain loop is zero-GC
+            let alivePlants = 0;
+            for (const p of plants) if (p.alive) alivePlants++;
+            document.getElementById('plantCount').textContent = alivePlants;
             document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
         }
 
@@ -3892,12 +3908,12 @@
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
 
-            // if (!inVR && ticks % 3 === 0) updateTargetInfo();
-            updateTargetInfo();
+            // Raycast every other frame — imperceptible latency, halves raycasting cost
+            if (ticks % 2 === 0) updateTargetInfo();
 
             ticks++;
-            // if (ticks % 60 === 0) updateStats();
-            updateStats();
+            // DOM stat update at ~2 Hz is plenty; avoid per-frame string writes
+            if (ticks % 30 === 0) updateStats();
 
             frameCount++;
             if (now - lastFpsUpdate > 1000) {
