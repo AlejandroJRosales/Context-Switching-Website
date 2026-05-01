@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.14-opt</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.15</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -662,8 +662,8 @@
             <a class="sp-link-red" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">here</a>.
         </div>
         <div class="sp-row-scale">
-            <label for="scale-slider">World Size: <span id="scaleDisplay">5</span></label>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="5">
+            <label for="scale-slider">World Size: <span id="scaleDisplay">3</span></label>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
             <div class="sp-hint">World size changes take effect on reset</div>
         </div>
         <button class="sp-row" id="resetBtn">
@@ -678,6 +678,10 @@
             <span class="sp-label">FPS</span>
             <span class="sp-value" id="fps-counter"></span>
         </div>
+        <button class="sp-row" id="povBtn">
+            <span class="sp-label">Camera</span>
+            <span class="sp-value" id="povState">1ST PERSON</span>
+        </button>
         <button class="sp-row" id="flyBtn">
             <span class="sp-label">Creative Mode</span>
             <span class="sp-value" id="creativeState">OFF</span>
@@ -3192,6 +3196,80 @@
         }
 
         // ============================================================================
+        // PLAYER MESH  (shown in 3rd-person and bird's-eye modes)
+        // ============================================================================
+
+        (function buildPlayerMesh() {
+            const mat = new THREE.MeshStandardMaterial({ color: 0x2255dd });
+
+            const geom = SHARED_GEOMETRIES.wolf;
+            const off  = PART_OFFSETS.wolf;
+
+            const group = new THREE.Group();
+
+            const body  = new THREE.Mesh(geom.body, mat);
+            // body origin is at 0 — matches the instanced mesh world position
+            group.add(body);
+
+            const head  = new THREE.Mesh(geom.head, mat);
+            head.position.copy(off.head);
+            group.add(head);
+
+            const armL  = new THREE.Mesh(geom.leg, mat);
+            armL.position.copy(off.legFL);
+            group.add(armL);
+
+            const armR  = new THREE.Mesh(geom.leg, mat);
+            armR.position.copy(off.legFR);
+            group.add(armR);
+
+            const legL  = new THREE.Mesh(geom.leg, mat);
+            legL.position.copy(off.legBL);
+            group.add(legL);
+
+            const legR  = new THREE.Mesh(geom.leg, mat);
+            legR.position.copy(off.legBR);
+            group.add(legR);
+
+            group.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+
+            group.visible = false;
+            scene.add(group);
+            window._playerMesh = group;
+        })();
+
+        // ============================================================================
+        // CAMERA POV
+        // ============================================================================
+
+        // Modes: '1st' | '3rd' | 'bird'
+        let povMode = '1st';
+
+        const POV_MODES   = ['1st', '3rd', 'bird'];
+        const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON', 'bird': "BIRD'S EYE" };
+
+        // 3rd-person: camera sits behind & above the player
+        // 3rd-person offset: behind and slightly above the player
+        const TPP_OFFSET = new THREE.Vector3(0, 25, 120);
+        // Bird's eye: high overhead, looking straight down
+        const BIRD_HEIGHT = 600;
+
+        // Reusable vector for POV camera maths
+        const _povOffset = new THREE.Vector3();
+
+        function cyclePov() {
+            povMode = POV_MODES[(POV_MODES.indexOf(povMode) + 1) % POV_MODES.length];
+            document.getElementById('povState').textContent = POV_LABELS[povMode];
+            // Hide crosshair in bird's-eye / 3rd-person where it is misleading
+            const ch = document.querySelector('.hud-crosshair');
+            if (ch) ch.style.display = povMode === '1st' ? '' : 'none';
+            // Player mesh only visible when not in first-person
+            if (window._playerMesh) window._playerMesh.visible = (povMode !== '1st');
+        }
+
+        document.getElementById('povBtn').addEventListener('click', cyclePov);
+
+        // ============================================================================
         // WORLD STATE
         // ============================================================================
 
@@ -3557,13 +3635,49 @@
                 player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
             }
 
-            // Update camera
-            vrCameraRig.position.copy(player.position);
-            vrCameraRig.rotation.set(0, 0, 0);
-            camera.position.set(0, 0, 0);
+            // Update camera based on POV mode
             camera.rotation.order = 'YXZ';
-            camera.rotation.y = player.yaw;
-            camera.rotation.x = player.pitch;
+            if (povMode === '1st') {
+                // First-person: camera at player's eyes, yaw + pitch look
+                vrCameraRig.position.copy(player.position);
+                vrCameraRig.rotation.set(0, 0, 0);
+                camera.position.set(0, 0, 0);
+                camera.rotation.y = player.yaw;
+                camera.rotation.x = player.pitch;
+            } else if (povMode === '3rd') {
+                // Camera sits behind the player. Player forward = (-sinY, 0, -cosY),
+                // so "behind" = (+sinY, 0, +cosY) * distance.
+                const sinY = Math.sin(player.yaw);
+                const cosY = Math.cos(player.yaw);
+                _povOffset.set(
+                    sinY * TPP_OFFSET.z,
+                    TPP_OFFSET.y,
+                    cosY * TPP_OFFSET.z
+                );
+                vrCameraRig.position.copy(player.position).add(_povOffset);
+                vrCameraRig.rotation.set(0, 0, 0);
+                camera.position.set(0, 0, 0);
+                // Camera is behind the player, so look in the player's forward direction (yaw)
+                // to see the player standing in front of it.
+                camera.rotation.y = player.yaw;
+                camera.rotation.x = -0.45; // tilt down enough to see figure below
+            } else {
+                // Bird's eye: high above, looking straight down
+                vrCameraRig.position.set(player.position.x, player.position.y + BIRD_HEIGHT, player.position.z);
+                vrCameraRig.rotation.set(0, 0, 0);
+                camera.position.set(0, 0, 0);
+                camera.rotation.y = player.yaw; // keep north oriented to player facing
+                camera.rotation.x = -Math.PI / 2; // look straight down
+            }
+
+            // Update player mesh (visible in 3rd-person and bird's-eye)
+            if (window._playerMesh && window._playerMesh.visible) {
+                // Wolf body origin matches a.position.y (=22 for spawned wolves).
+                // Player ground clamp is Y=35, wolves spawn at Y=22, delta=13.
+                // So place mesh at player.position.y - 13 to align feet with terrain.
+                window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
+                window._playerMesh.rotation.y = player.yaw;
+            }
 
             // Creative mode indicator
             const creativeIndicator = document.getElementById('creativeIndicator');
