@@ -662,8 +662,8 @@
             <a class="sp-link-red" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">here</a>.
         </div>
         <div class="sp-row-scale">
-            <label for="scale-slider">World Size: <span id="scaleDisplay">3</span></label>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
+            <label for="scale-slider">World Size: <span id="scaleDisplay">5</span></label>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="5">
             <div class="sp-hint">World size changes take effect on reset</div>
         </div>
         <button class="sp-row" id="resetBtn">
@@ -757,6 +757,8 @@
                 panel.style.display = 'block';
                 document.getElementById('scale-slider').value = pendingScale;
                 document.getElementById('scaleDisplay').textContent = pendingScale;
+                // Release pointer lock so the cursor is free to interact with the panel
+                if (document.exitPointerLock) document.exitPointerLock();
             } else {
                 panel.style.display = 'none';
             }
@@ -1056,7 +1058,8 @@
 
         // Mouse movement for camera look
         document.addEventListener('mousemove', (e) => {
-            if (controls.controlMode === 'keyboard') {
+            const settingsOpen = document.getElementById('settings-panel').style.display === 'block';
+            if (controls.controlMode === 'keyboard' && !settingsOpen) {
                 const deltaX = e.movementX || 0;
                 const deltaY = e.movementY || 0;
 
