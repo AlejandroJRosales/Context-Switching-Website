@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.15</span></div>
+        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.14-opt</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -678,10 +678,6 @@
             <span class="sp-label">FPS</span>
             <span class="sp-value" id="fps-counter"></span>
         </div>
-        <button class="sp-row" id="povBtn">
-            <span class="sp-label">Camera</span>
-            <span class="sp-value" id="povState">1ST PERSON</span>
-        </button>
         <button class="sp-row" id="flyBtn">
             <span class="sp-label">Creative Mode</span>
             <span class="sp-value" id="creativeState">OFF</span>
@@ -701,6 +697,10 @@
         <button class="sp-row" id="sphereVisBtn">
             <span class="sp-label">Sphere Display</span>
             <span class="sp-value" id="sphereVisState">OFF</span>
+        </button>
+        <button class="sp-row" id="povBtn">
+            <span class="sp-label">Camera</span>
+            <span class="sp-value" id="povState">1ST PERSON</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -3260,11 +3260,11 @@
         function cyclePov() {
             povMode = POV_MODES[(POV_MODES.indexOf(povMode) + 1) % POV_MODES.length];
             document.getElementById('povState').textContent = POV_LABELS[povMode];
-            // Hide crosshair in bird's-eye / 3rd-person where it is misleading
             const ch = document.querySelector('.hud-crosshair');
             if (ch) ch.style.display = povMode === '1st' ? '' : 'none';
-            // Player mesh only visible when not in first-person
             if (window._playerMesh) window._playerMesh.visible = (povMode !== '1st');
+            // Seed pitch with a slight downward tilt when entering 3rd person
+            if (povMode === '3rd') player.pitch = -0.3;
         }
 
         document.getElementById('povBtn').addEventListener('click', cyclePov);
@@ -3658,9 +3658,9 @@
                 vrCameraRig.rotation.set(0, 0, 0);
                 camera.position.set(0, 0, 0);
                 // Camera is behind the player, so look in the player's forward direction (yaw)
-                // to see the player standing in front of it.
+                // to see the player standing in front of it. Pitch follows mouse up/down.
                 camera.rotation.y = player.yaw;
-                camera.rotation.x = -0.45; // tilt down enough to see figure below
+                camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
             } else {
                 // Bird's eye: high above, looking straight down
                 vrCameraRig.position.set(player.position.x, player.position.y + BIRD_HEIGHT, player.position.z);
