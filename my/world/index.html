@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Terrarium</title>
+    <title>WORLD</title>
     <!-- This code is made to be copied and pastied. Make it your own! :) -->
     <!-- TODO: Adjust vision distance, fine tune input, weights, starting stats -->
     <!--       cat eats sheep meat or if robot needs enery cells, you eat plants and sheep/wolf -->
@@ -609,7 +609,7 @@
             <div id="nnLabelLegacy">No Target</div>
         </div>
 
-        <div class="hud-crosshair"></div>
+        <div class="hud-crosshair" style="display:none"></div>
         <div class="scanlines"></div>
     </div>
 
@@ -654,7 +654,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿TERRARIUM <span id="sp-hint" style="font-size:9px;"> 1.2.15-opt</span></div>
+        <div class="sp-game-title">🌿WORLD <span id="sp-hint" style="font-size:9px;"> 1.2.15-opt</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A game where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -676,7 +676,7 @@
         </button>
         <button class="sp-row" id="povBtn">
             <span class="sp-label">Camera</span>
-            <span class="sp-value" id="povState">1ST PERSON</span>
+            <span class="sp-value" id="povState">3RD PERSON</span>
         </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
@@ -733,7 +733,7 @@
             maxDrawDistance: Math.trunc(Number(2000 * scale))
         };
         const player = {
-            position: new THREE.Vector3(400, 50, 300),
+            position: new THREE.Vector3(400, 50, 330),
             velocity: new THREE.Vector3(0, 0, 0),
             speed: 80 * Math.log1p(scale),
             sprintSpeed: 160 * Math.log1p(scale),
@@ -742,7 +742,7 @@
             isCreative: false,
             creativeLiftTarget: null,  // set to target Y when lifting off in creative mode, null otherwise
             yaw: Math.PI,
-            pitch: 0,
+            pitch: -0.3,
             targetObject: null
         };
 
@@ -3246,7 +3246,7 @@
 
             group.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
 
-            group.visible = false;
+            group.visible = true;
             scene.add(group);
             window._playerMesh = group;
         })();
@@ -3256,14 +3256,14 @@
         // ============================================================================
 
         // Modes: '1st' | '3rd' | 'bird'
-        let povMode = '1st';
+        let povMode = '3rd';
 
         const POV_MODES   = ['1st', '3rd', 'bird'];
         const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON', 'bird': "BIRD'S EYE" };
 
         // 3rd-person: camera sits behind & above the player
         // 3rd-person offset: behind and slightly above the player
-        const TPP_OFFSET = new THREE.Vector3(0, 25, 120);
+        const TPP_OFFSET = new THREE.Vector3(0, 18, 70);
         // Bird's eye: high overhead, looking straight down
         const BIRD_HEIGHT = 600;
 
@@ -3940,7 +3940,7 @@
             let sheep = 0, wolves = 0;
             for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
             document.getElementById('vr-stats').textContent =
-                `🌿 TERRARIUM  🐑${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+                `🌿 WORLD  🐑${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
         }
 
         function resizeRenderer() {
