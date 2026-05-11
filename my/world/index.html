@@ -37,36 +37,7 @@
             height: 100%;
         }
 
-        /* Neural Network Visualizer */
-        /* DOM panel hidden; rendered as 3D billboard sprite */
-
-        #nnVisualizerContainer {
-            display: none !important;
-        }
-
-        #nnCanvasWrapper {
-            flex: 1;
-            position: relative;
-            background: #000;
-            border: 1px solid rgba(0, 255, 0, 0.3);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        #nnCanvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
-
-        #nnLabel {
-            margin-top: 5px;
-            font-size: 10px;
-            text-align: center;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #00ff00;
-        }
+        #nnVisualizerContainer { display: none !important; }
 
         /* NN section inside the fixed stat panel */
 
@@ -749,10 +720,7 @@
         // Cached world diagonal — recomputed whenever CONFIG dimensions change (on reset)
         let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
-        // Settings tuner
-        document.getElementById('settings-btn').addEventListener('click', () => {
-            toggleSettings();
-        });
+        document.getElementById('settings-btn').addEventListener('click', toggleSettings);
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -761,7 +729,6 @@
                 panel.style.display = 'block';
                 document.getElementById('scale-slider').value = pendingScale;
                 document.getElementById('scaleDisplay').textContent = pendingScale;
-                // Release pointer lock so the cursor is free to interact with the panel
                 if (document.exitPointerLock) document.exitPointerLock();
             } else {
                 panel.style.display = 'none';
@@ -769,19 +736,14 @@
         }
 
         let hudCleared = false;
-        document.getElementById('clearHudBtn').addEventListener('click', () => {
+        function onClearHud() {
             hudCleared = !hudCleared;
-            const hudElements = [
-                document.querySelector('.hud'),
-                document.querySelector('.control-panel')
-            ];
-            hudElements.forEach(el => {
-                if (el) el.style.display = hudCleared ? 'none' : '';
-            });
+            [document.querySelector('.hud'), document.querySelector('.control-panel')]
+                .forEach(el => { if (el) el.style.display = hudCleared ? 'none' : ''; });
             const joystick = document.querySelector('.joystick-container');
             if (joystick) joystick.style.opacity = hudCleared ? '0' : '';
-            nnVisEnabled = hudCleared ? false : true;
-            statLabelsEnabled = hudCleared ? false : true;
+            nnVisEnabled = !hudCleared;
+            statLabelsEnabled = !hudCleared;
             if (hudCleared) _aspPanel.classList.remove('visible');
             document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
@@ -790,15 +752,14 @@
                 document.getElementById('sphereVisState').textContent = 'OFF';
                 for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
             }
-        });
+        }
 
         document.getElementById('scale-slider').addEventListener('input', function() {
             pendingScale = parseFloat(this.value);
             document.getElementById('scaleDisplay').textContent = pendingScale;
         });
 
-        document.getElementById('resetBtn').addEventListener('click', () => {
-            // Patch CONFIG values using pendingScale before the existing reset logic runs
+        function onReset() {
             CONFIG.initialDeer = Math.trunc(20 * pendingScale);
             CONFIG.initialWolves = Math.trunc(5 * pendingScale);
             CONFIG.initialPlants = Math.trunc(30 * pendingScale);
@@ -810,13 +771,23 @@
             player.speed = 80 * Math.log1p(pendingScale);
             player.sprintSpeed = 160 * Math.log1p(pendingScale);
             player.jumpForce = 300 * Math.log1p(pendingScale);
-            // Sync fog and camera far plane to the new scale
             const newFogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + pendingScale * 200);
             scene.fog.near = newFogEnd * 0.4;
             scene.fog.far  = newFogEnd;
             camera.far = newFogEnd;
             camera.updateProjectionMatrix();
-        }, true);
+        }
+
+        [
+            ['clearHudBtn',  onClearHud],
+            ['resetBtn',     onReset],
+            ['closeSPBtn',   toggleSettings],
+            ['flyBtn',       toggleCreative],
+            ['graphicsBtn',  toggleGraphics],
+            ['povBtn',       cyclePov],
+            ['sphereVisBtn', toggleSphereVis],
+            ['nnVisBtn',     toggleNNVis],
+        ].forEach(([id, fn]) => document.getElementById(id).addEventListener('click', fn));
 
         function getInputType() {
             const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
@@ -1089,10 +1060,6 @@
             }
         });
 
-        document.getElementById('closeSPBtn').addEventListener('click', () => {
-            toggleSettings();
-        });
-
         function updateControlBtn() {
             document.getElementById('controlBtn').textContent =
                 controls.controlMode === 'touch' ? 'Touch' : 'Keyboard';
@@ -1144,12 +1111,6 @@
                 document.getElementById('creativeState').textContent = 'OFF';
             }
         }
-        document.getElementById('flyBtn').addEventListener('click', toggleCreative);
-
-        // ============================================================
-        // JOYSTICK SETUP
-        // ============================================================
-
         const joystickEl = document.getElementById('joystick');
         const joystickKnob = document.createElement('div');
         joystickKnob.className = 'joystick-knob';
@@ -2330,24 +2291,9 @@
                     return add(mesh);
                 };
 
-                const hlogX = (len, mat, x, y, z) => {
-                    const mesh = new THREE.Mesh(
-                        new THREE.CylinderGeometry(LR, LR, len, 10),
-                        mat
-                    );
-
-                    mesh.rotation.z = Math.PI / 2;
-                    mesh.position.set(x, y, z);
-                    return add(mesh);
-                };
-
-                const hlogZ = (len, mat, x, y, z) => {
-                    const mesh = new THREE.Mesh(
-                        new THREE.CylinderGeometry(LR, LR, len, 10),
-                        mat
-                    );
-
-                    mesh.rotation.x = Math.PI / 2;
+                const hlog = (len, mat, x, y, z, axis) => {
+                    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(LR, LR, len, 10), mat);
+                    mesh.rotation[axis] = Math.PI / 2;
                     mesh.position.set(x, y, z);
                     return add(mesh);
                 };
@@ -2364,37 +2310,16 @@
                     if (bottomOfLog < FLOOR_Y + DOOR_HEIGHT) {
                         const sideLength = (CW / 2 + LD) - DOOR_WIDTH / 2;
 
-                        // Left segment
-                        hlogX(
-                            sideLength,
-                            M.log,
-                            -(DOOR_WIDTH / 2) - sideLength / 2,
-                            y,
-                            CD / 2
-                        );
-
-                        // Right segment
-                        hlogX(
-                            sideLength,
-                            M.log,
-                            (DOOR_WIDTH / 2) + sideLength / 2,
-                            y,
-                            CD / 2
-                        );
+                        hlog(sideLength, M.log, -(DOOR_WIDTH / 2) - sideLength / 2, y, CD / 2, 'z');
+                        hlog(sideLength, M.log,  (DOOR_WIDTH / 2) + sideLength / 2, y, CD / 2, 'z');
 
                     } else {
-                        // Full log above doorway
-                        hlogX(CW + LD * 2, M.log, 0, y, CD / 2);
+                        hlog(CW + LD * 2, M.log, 0, y, CD / 2, 'z');
                     }
 
-                    // BACK WALL
-                    hlogX(CW + LD * 2, M.log, 0, y, -CD / 2);
-
-                    // LEFT WALL
-                    hlogZ(CD, M.log, -CW / 2, y, 0);
-
-                    // RIGHT WALL
-                    hlogZ(CD, M.log, CW / 2, y, 0);
+                    hlog(CW + LD * 2, M.log, 0, y, -CD / 2, 'z');
+                    hlog(CD, M.log, -CW / 2, y, 0, 'x');
+                    hlog(CD, M.log,  CW / 2, y, 0, 'x');
                 }
 
                 // ROOF
@@ -3141,8 +3066,6 @@
 
         toggleNNVis();
 
-        document.getElementById('nnVisBtn').addEventListener('click', toggleNNVis);
-
         function toggleNNVis() {
             nnVisEnabled = !nnVisEnabled;
             statLabelsEnabled = nnVisEnabled;
@@ -3224,8 +3147,6 @@
             }
         }
 
-        document.getElementById('sphereVisBtn').addEventListener('click', toggleSphereVis);
-
         function toggleSphereVis() {
             const modes = ['off', 'single', 'all'];
             sphereVisMode = modes[(modes.indexOf(sphereVisMode) + 1) % modes.length];
@@ -3235,8 +3156,6 @@
                 for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
             }
         }
-
-        document.getElementById('graphicsBtn').addEventListener('click', toggleGraphics);
 
         function toggleGraphics() {
             graphicsMode = graphicsMode === 'high' ? 'low' : 'high';
@@ -3337,8 +3256,6 @@
             // Reset bird's eye pan offset when entering bird mode
             if (povMode === 'bird') { birdCamOffset.set(0, 0); birdHeight = 600; }
         }
-
-        document.getElementById('povBtn').addEventListener('click', cyclePov);
 
         // ============================================================================
         // WORLD STATE
@@ -3599,107 +3516,64 @@
             }
         }
 
-        // Reusable objects for updatePlayer, avoids per-frame heap allocation
         const _moveVector = new THREE.Vector3();
         const _rotMatrix  = new THREE.Matrix4();
-        // Double-press spacebar = big jump
         function updatePlayer(deltaTime) {
             _moveVector.set(0, 0, 0);
 
+            const sinY = Math.sin(player.yaw);
+            const cosY = Math.cos(player.yaw);
+            const rightX =  cosY;
+            const rightZ = -sinY;
+
             if (controls.controlMode === 'keyboard') {
-                // Bird's eye mode: W/S zoom, A/D pan — player stays put
                 if (povMode === 'bird') {
-                    // W = zoom in (lower height), S = zoom out (raise height)
                     if (keys['w']) birdHeight = Math.max(BIRD_HEIGHT_MIN, birdHeight - BIRD_ZOOM_SPEED * deltaTime);
                     if (keys['s']) birdHeight = Math.min(BIRD_HEIGHT_MAX, birdHeight + BIRD_ZOOM_SPEED * deltaTime);
-
-                    // A/D = pan camera left/right relative to player orientation
-                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
-                    const rightX = Math.cos(player.yaw);
-                    const rightZ = -Math.sin(player.yaw);
                     const panDir = (keys['d'] ? -1 : 0) + (keys['a'] ? 1 : 0);
-                    birdCamOffset.x += rightX * panDir * panAmt;
-                    birdCamOffset.y += rightZ * panDir * panAmt;
-                    // (no player movement in bird mode — skip to camera update)
+                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime * panDir;
+                    birdCamOffset.x += rightX * panAmt;
+                    birdCamOffset.y += rightZ * panAmt;
                 } else {
-
-                const currentSpeed = player.isCreative
-                    ? player.sprintSpeed
-                    : (keys['shift'] ? player.sprintSpeed : player.speed);
-
-                if (player.isCreative) {
-                    // Pitch-aware: W/S move along the full camera look direction (up/down included)
-                    // Three.js camera looks down -Z, so forward = (-sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
-                    const cosPitch = Math.cos(player.pitch);
-                    const sinPitch = Math.sin(player.pitch);
-                    const fwdX = -Math.sin(player.yaw) * cosPitch;
-                    const fwdY =  sinPitch;
-                    const fwdZ = -Math.cos(player.yaw) * cosPitch;
-                    // Right is always horizontal
-                    const rightX =  Math.cos(player.yaw);
-                    const rightZ = -Math.sin(player.yaw);
-
-                    const fwd   = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0);
-                    const right = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
-
-                    _moveVector.x = (fwdX * fwd + rightX * right) * currentSpeed * deltaTime;
-                    _moveVector.y =  fwdY * fwd                    * currentSpeed * deltaTime;
-                    _moveVector.z = (fwdZ * fwd + rightZ * right)  * currentSpeed * deltaTime;
-                } else {
-                    // Walking: flat movement, yaw rotation applied below
-                    if (keys['w']) _moveVector.z -= currentSpeed * deltaTime;
-                    if (keys['s']) _moveVector.z += currentSpeed * deltaTime;
-                    if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
-                    if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
+                    const currentSpeed = player.isCreative
+                        ? player.sprintSpeed
+                        : (keys['shift'] ? player.sprintSpeed : player.speed);
+                    if (player.isCreative) {
+                        const cosPitch = Math.cos(player.pitch);
+                        const fwd   = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0);
+                        const right = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
+                        _moveVector.x = (-sinY * cosPitch * fwd + rightX * right) * currentSpeed * deltaTime;
+                        _moveVector.y =  Math.sin(player.pitch) * fwd             * currentSpeed * deltaTime;
+                        _moveVector.z = (-cosY * cosPitch * fwd + rightZ * right) * currentSpeed * deltaTime;
+                    } else {
+                        if (keys['w']) _moveVector.z -= currentSpeed * deltaTime;
+                        if (keys['s']) _moveVector.z += currentSpeed * deltaTime;
+                        if (keys['a']) _moveVector.x -= currentSpeed * deltaTime;
+                        if (keys['d']) _moveVector.x += currentSpeed * deltaTime;
+                    }
                 }
-
-                } // end non-bird keyboard block
             } else {
-                // Touch joystick controls
-                // joystickX: left = negative, right = positive (screen X)
-                // joystickY: push up = negative (screen Y decreases upward), push down = positive
-                const jFwd = -controls.joystickY;
-                const jRight = controls.joystickX;
+                const jFwd   = -controls.joystickY;
+                const jRight =  controls.joystickX;
                 const currentSpeed = player.isCreative ? player.sprintSpeed : player.speed;
 
                 if (povMode === 'bird') {
-                    // Forward/back = zoom in/out, left/right = pan relative to orientation
                     birdHeight = Math.max(BIRD_HEIGHT_MIN, Math.min(BIRD_HEIGHT_MAX,
                         birdHeight - jFwd * BIRD_ZOOM_SPEED * deltaTime));
                     const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
-                    const rightX = Math.cos(player.yaw);
-                    const rightZ = -Math.sin(player.yaw);
                     birdCamOffset.x += rightX * jRight * panAmt;
                     birdCamOffset.y += rightZ * jRight * panAmt;
                 } else if (player.isCreative) {
-                    // Full 3D pitch-aware movement: looking up + moving forward = ascend
-                    // Three.js camera looks down -Z; rotating by yaw around Y gives:
-                    // forward = (-sin(yaw), 0, -cos(yaw)) at pitch=0
                     const cosPitch = Math.cos(player.pitch);
-                    const sinPitch = Math.sin(player.pitch);
-                    const fwdX = -Math.sin(player.yaw) * cosPitch;
-                    const fwdY =  sinPitch;
-                    const fwdZ = -Math.cos(player.yaw) * cosPitch;
-                    // Right vector is horizontal, 90° clockwise from forward
-                    const rightX =  Math.cos(player.yaw);
-                    const rightZ = -Math.sin(player.yaw);
-
-                    _moveVector.x = (fwdX * jFwd + rightX * jRight) * currentSpeed * deltaTime;
-                    _moveVector.y =  fwdY * jFwd                     * currentSpeed * deltaTime;
-                    _moveVector.z = (fwdZ * jFwd + rightZ * jRight)  * currentSpeed * deltaTime;
+                    _moveVector.x = (-sinY * cosPitch * jFwd + rightX * jRight) * currentSpeed * deltaTime;
+                    _moveVector.y =  Math.sin(player.pitch) * jFwd              * currentSpeed * deltaTime;
+                    _moveVector.z = (-cosY * cosPitch * jFwd + rightZ * jRight) * currentSpeed * deltaTime;
                 } else {
-                    // Walking: horizontal only, yaw-relative
-                    const fwdX = -Math.sin(player.yaw);
-                    const fwdZ = -Math.cos(player.yaw);
-                    const rightX =  Math.cos(player.yaw);
-                    const rightZ = -Math.sin(player.yaw);
-
-                    _moveVector.x = (fwdX * jFwd + rightX * jRight) * currentSpeed * deltaTime;
-                    _moveVector.z = (fwdZ * jFwd + rightZ * jRight) * currentSpeed * deltaTime;
+                    _moveVector.x = (-sinY * jFwd + rightX * jRight) * currentSpeed * deltaTime;
+                    _moveVector.z = (-cosY * jFwd + rightZ * jRight) * currentSpeed * deltaTime;
                 }
             }
 
-            // Apply yaw rotation only for keyboard walking (creative mode + touch already compute world-space)
             if (controls.controlMode === 'keyboard' && !player.isCreative && povMode !== 'bird') {
                 _rotMatrix.makeRotationY(player.yaw);
                 _moveVector.applyMatrix4(_rotMatrix);
@@ -3708,7 +3582,6 @@
             player.position.add(_moveVector);
 
             if (player.isCreative) {
-                // Smooth lift-off
                 if (player.creativeLiftTarget !== null) {
                     player.position.y += (player.creativeLiftTarget - player.position.y) * Math.min(1, deltaTime * 8);
                     if (Math.abs(player.position.y - player.creativeLiftTarget) < 0.5) {
@@ -3716,55 +3589,35 @@
                         player.creativeLiftTarget = null;
                     }
                 }
-
-                // Damp vertical velocity
                 player.velocity.y = 0;
             } else {
-                // Wrap world
-                player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
+                player.position.x = ((player.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                 player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
-                
-                player.velocity.y -= 400 * deltaTime; // gravity
+                player.velocity.y -= 400 * deltaTime;
                 player.position.y += player.velocity.y * deltaTime;
-
                 if (player.position.y < 35) {
                     player.position.y = 35;
                     player.velocity.y = 0;
                     player.isJumping = false;
                 }
-
                 player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
             }
 
-            // Update camera based on POV mode
             camera.rotation.order = 'YXZ';
             if (povMode === '1st') {
-                // First-person: camera at player's eyes, yaw + pitch look
                 vrCameraRig.position.copy(player.position);
                 vrCameraRig.rotation.set(0, 0, 0);
                 camera.position.set(0, 0, 0);
                 camera.rotation.y = player.yaw;
                 camera.rotation.x = player.pitch;
             } else if (povMode === '3rd') {
-                // Camera sits behind the player. Player forward = (-sinY, 0, -cosY),
-                // so "behind" = (+sinY, 0, +cosY) * distance.
-                const sinY = Math.sin(player.yaw);
-                const cosY = Math.cos(player.yaw);
-                _povOffset.set(
-                    sinY * TPP_OFFSET.z,
-                    TPP_OFFSET.y,
-                    cosY * TPP_OFFSET.z
-                );
+                _povOffset.set(sinY * TPP_OFFSET.z, TPP_OFFSET.y, cosY * TPP_OFFSET.z);
                 vrCameraRig.position.copy(player.position).add(_povOffset);
                 vrCameraRig.rotation.set(0, 0, 0);
                 camera.position.set(0, 0, 0);
-                // Camera is behind the player, so look in the player's forward direction (yaw)
-                // to see the player standing in front of it. Pitch follows mouse up/down.
                 camera.rotation.y = player.yaw;
                 camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
             } else {
-                // Bird's eye: high above, looking straight down
-                // Camera pans independently via birdCamOffset; player stays fixed
                 vrCameraRig.position.set(
                     player.position.x + birdCamOffset.x,
                     player.position.y + birdHeight,
@@ -3772,20 +3625,15 @@
                 );
                 vrCameraRig.rotation.set(0, 0, 0);
                 camera.position.set(0, 0, 0);
-                camera.rotation.y = player.yaw; // keep north oriented to player facing
-                camera.rotation.x = -Math.PI / 2; // look straight down
+                camera.rotation.y = player.yaw;
+                camera.rotation.x = -Math.PI / 2;
             }
 
-            // Update player mesh (visible in 3rd-person and bird's-eye)
             if (window._playerMesh && window._playerMesh.visible) {
-                // Wolf body origin matches a.position.y (=22 for spawned wolves).
-                // Player ground clamp is Y=35, wolves spawn at Y=22, delta=13.
-                // So place mesh at player.position.y - 13 to align feet with terrain.
                 window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
                 window._playerMesh.rotation.y = player.yaw;
             }
 
-            // Creative mode indicator
             const creativeIndicator = document.getElementById('creativeIndicator');
             if (creativeIndicator) creativeIndicator.style.display = player.isCreative ? 'inline' : 'none';
         }
