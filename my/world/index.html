@@ -1331,6 +1331,8 @@
         document.addEventListener('touchmove', (e) => {
             if (controls.controlMode !== 'touch') return;
             e.preventDefault();
+            // If a pinch is active, skip camera/joystick processing to avoid jitter
+            if (pinchActive && e.touches.length === 2) return;
             for (const touch of e.changedTouches) {
                 // Joystick
                 if (touch.identifier === joystickTouchId) {
@@ -1366,6 +1368,11 @@
                 if (touch.identifier === cameraTouchId)        cameraTouchId = null;
                 if (touch.identifier === pendingCameraTouchId) pendingCameraTouchId = null;
             }
+            // End pinch if fewer than 2 touches remain
+            if (e.touches.length < 2) {
+                pinchActive = false;
+                pinchLastDist = 0;
+            }
         });
 
         //  Unified touchcancel 
@@ -1373,7 +1380,50 @@
             resetJoystick();
             cameraTouchId = null;
             pendingCameraTouchId = null;
+            pinchActive = false;
+            pinchLastDist = 0;
         });
+
+        // ============================================================
+        // PINCH-TO-ZOOM (bird's-eye mode, touch only)
+        // ============================================================
+
+        let pinchActive = false;
+        let pinchLastDist = 0;
+
+        function getPinchDist(touches) {
+            const t0 = touches[0], t1 = touches[1];
+            const dx = t1.clientX - t0.clientX;
+            const dy = t1.clientY - t0.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        document.addEventListener('touchstart', (e) => {
+            if (controls.controlMode !== 'touch') return;
+            if (povMode !== 'bird') return;
+            if (e.touches.length === 2) {
+                pinchActive = true;
+                pinchLastDist = getPinchDist(e.touches);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (controls.controlMode !== 'touch') return;
+            if (!pinchActive || povMode !== 'bird') return;
+            if (e.touches.length !== 2) { pinchActive = false; return; }
+
+            const newDist = getPinchDist(e.touches);
+            const delta = pinchLastDist - newDist; // positive = fingers closing = zoom in (lower height)
+            pinchLastDist = newDist;
+
+            // Scale zoom sensitivity with current height so it feels linear at any zoom level
+            const sensitivity = birdHeight / 300;
+            birdHeight = Math.max(BIRD_HEIGHT_MIN, Math.min(BIRD_HEIGHT_MAX,
+                birdHeight + delta * sensitivity));
+
+            e.preventDefault();
+        }, { passive: false });
 
         // ============================================================================
         // TERRAIN GENERATION
