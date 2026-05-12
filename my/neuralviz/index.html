@@ -339,10 +339,7 @@
 <div id="panel">
   <div id="panel-handle"></div>
 
-  <div class="section-label">Brain Regions</div>
   <div id="lobe-legend"></div>
-
-  <div class="section-label">Simulation</div>
 
   <div class="ctrl-row">
     <span class="ctrl-label">Speed</span>
@@ -356,22 +353,19 @@
     <span class="val-badge" id="vb-thresh">0.50</span>
   </div>
 
-  <button id="btn-pause">⏸ Pause</button>
-  <button id="btn-reset">↺ Reset Brain</button>
-  <div class="section-label">Vision Input</div>
+  <button id="btn-pause">Pause Rotation</button>
+  <button id="btn-reset">Reset Brain</button>
+  <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
+    <span>Enable Vision</span>
+  </div>
 
   <div class="ctrl-row">
     <span class="ctrl-label">Resolution</span>
     <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
-      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">−</button>
+      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">-</button>
       <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10 by 10</span>
       <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
     </div>
-  </div>
-
-  <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
-    <span id="cam-prompt-icon">👁</span>
-    <span>Enable Vision</span>
   </div>
 
   <div id="stats">
@@ -396,11 +390,11 @@
 const LOBE_DEFS = [
   { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
   { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
-  { name: 'occipital',   label: 'Occipital (Vision)',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.2,  0.8, -0.8 ] },
+  { name: 'occipital',   label: 'Occipital',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.2,  0.8, -0.8 ] },
   { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.2, -0.8,  0.8 ] },
-  { name: 'parietal',    label: 'Parietal (Memory)',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.2, -0.8, -0.8 ] },
-  { name: 'thalamus',    label: 'Thalamus (Router)',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
-  { name: 'brainstem',   label: 'Brainstem (Survival)', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
+  { name: 'parietal',    label: 'Parietal',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.2, -0.8, -0.8 ] },
+  { name: 'thalamus',    label: 'Thalamus',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
+  { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
 const LOBE_SPREAD = 2.0;   // how far neurons scatter inside a lobe cluster
@@ -968,7 +962,7 @@ function drawBW() {
       d[i] = d[i+1] = d[i+2] = grey;
       pixelValues[i >> 2] = grey / 255;
     }
-    // camCtx.putImageData(img, 0, 0);
+    camCtx.putImageData(img, 0, 0);
   }
   requestAnimationFrame(drawBW);
 }
@@ -1017,7 +1011,7 @@ document.getElementById('sl-thresh').addEventListener('input', function() {
 
 document.getElementById('btn-pause').addEventListener('click', function() {
   autoRotate = !autoRotate;
-  this.textContent = autoRotate ? '⏸ Pause' : '▶ Resume';
+  this.textContent = autoRotate ? 'Pause Rotation' : 'Resume Rotation';
 });
 document.getElementById('btn-reset').addEventListener('click', () => {
   tickCount = 0;
