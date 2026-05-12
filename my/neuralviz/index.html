@@ -3,26 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Neural Network 3D</title>
+<title>MAT · Modular Adaptive Topologies</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@300;400;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@300;400;700;800&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #050810;
-    --panel: rgba(10, 14, 28, 0.92);
-    --border: rgba(80, 160, 255, 0.18);
-    --accent: #3af;
+    --bg:      #04060f;
+    --panel:   rgba(6, 10, 22, 0.93);
+    --border:  rgba(80, 200, 160, 0.15);
+    --accent:  #2fffa0;
     --accent2: #a06fff;
     --accent3: #ff6fa0;
-    --text: #c8d8f0;
-    --dim: #5a7090;
-    --node-active: #3af;
-    --node-inactive: #1a3050;
-    --edge: rgba(60, 180, 255, 0.18);
-    /* touch-friendly minimum tap target */
-    --tap: 44px;
+    --warn:    #ffaa33;
+    --text:    #b8d8c8;
+    --dim:     #406050;
+    --tap:     44px;
+
+    /* Lobe palette */
+    --col-prefrontal:  #2fffa0;
+    --col-motor:       #ff6fa0;
+    --col-occipital:   #56b4e9;
+    --col-temporal:    #e6a020;
+    --col-parietal:    #a06fff;
+    --col-thalamus:    #ffffff;
+    --col-brainstem:   #ff4444;
   }
 
   body {
@@ -33,52 +39,46 @@
     overflow: hidden;
     touch-action: none;
     cursor: grab;
-    -webkit-tap-highlight-color: transparent;
     user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
-
   body.dragging { cursor: grabbing; }
 
-  #canvas-container {
-    position: fixed;
-    inset: 0;
-  }
-
+  #canvas-container { position: fixed; inset: 0; }
   canvas { display: block; }
 
   /* TITLE */
   #title {
     position: fixed;
-    top: 16px;
-    left: 16px;
+    top: 20px; left: 20px;
     pointer-events: none;
     z-index: 10;
   }
   #title h1 {
     font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 1.1rem;
-    letter-spacing: 0.12em;
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: 0.06em;
     color: #fff;
     text-transform: uppercase;
     line-height: 1;
   }
+  #title h1 span { color: var(--accent); }
   #title p {
-    font-size: 0.52rem;
-    letter-spacing: 0.22em;
+    font-size: 0.48rem;
+    letter-spacing: 0.28em;
     color: var(--accent);
-    margin-top: 4px;
+    margin-top: 5px;
     text-transform: uppercase;
   }
 
   /* HINT */
   #hint {
     position: fixed;
-    top: 16px;
-    left: 50%;
+    bottom: 22px; left: 50%;
     transform: translateX(-50%);
-    font-size: 0.5rem;
-    letter-spacing: 0.18em;
+    font-size: 0.48rem;
+    letter-spacing: 0.2em;
     color: var(--dim);
     text-transform: uppercase;
     pointer-events: none;
@@ -86,96 +86,94 @@
     animation: pulse 3s ease-in-out infinite;
     z-index: 10;
   }
-  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
+  @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.75} }
 
-  /* CAM (top-right corner on mobile) */
-  #cam-container {
+  /* GEN/TICK LABEL */
+  #gen-label {
     position: fixed;
-    top: 16px;
-    right: 16px;
-    width: 72px;
-    height: 72px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    background: #000;
+    top: 20px; right: 20px;
+    font-size: 0.44rem;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    text-transform: uppercase;
+    pointer-events: none;
     z-index: 20;
   }
+
+  /* CAMERA FEED */
+  #cam-prompt {
+    width: 100%;
+    padding: 9px 0;
+    border: 1px solid rgba(86,180,233,0.3);
+    border-radius: 8px;
+    background: rgba(86,180,233,0.06);
+    color: #56b4e9;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.52rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  #cam-prompt:active { background: rgba(86,180,233,0.18); }
+  #cam-prompt-icon { font-size: 0.85rem; line-height: 1; }
+  #cam-container {
+    position: fixed;
+    bottom: 86px; right: 20px;
+    width: 68px; height: 68px;
+    border: 1px solid rgba(86,180,233,0.4);
+    border-radius: 10px; overflow: hidden;
+    background: #000; z-index: 20; display: none;
+  }
   #cam-canvas {
-    display: block;
-    width: 72px;
-    height: 72px;
+    display: block; width: 68px; height: 68px;
     image-rendering: pixelated;
   }
   #cam-label {
-    position: absolute;
-    bottom: 3px;
-    left: 0; right: 0;
-    text-align: center;
-    font-size: 0.4rem;
-    letter-spacing: 0.12em;
-    color: var(--accent);
-    text-transform: uppercase;
-    pointer-events: none;
-    opacity: 0.7;
+    position: absolute; bottom: 3px; left: 0; right: 0;
+    text-align: center; font-size: 0.36rem;
+    letter-spacing: 0.1em; color: #56b4e9;
+    text-transform: uppercase; pointer-events: none; opacity: 0.7;
   }
-  #cam-prompt {
-    position: fixed;
-    top: 16px;
-    right: 16px;
-    width: 72px;
-    height: 72px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    backdrop-filter: blur(12px);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    cursor: pointer;
-    transition: background 0.2s;
-    z-index: 20;
+  #cam-active-dot {
+    position: absolute; top: 5px; right: 5px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #56b4e9;
+    box-shadow: 0 0 6px #56b4e9;
+    animation: blink 1.2s ease-in-out infinite;
   }
-  #cam-prompt:active { background: rgba(60,170,255,0.15); }
-  #cam-prompt-icon { font-size: 1.4rem; line-height: 1; }
-  #cam-prompt-text {
-    font-size: 0.38rem;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    text-transform: uppercase;
-    text-align: center;
-    line-height: 1.5;
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  @media (min-width: 640px) {
+    #cam-container {
+      bottom: auto; top: 80px; right: 32px;
+      width: 80px; height: 80px;
+    }
+    #cam-canvas { width: 80px; height: 80px; }
   }
 
-  /* PANEL TOGGLE BUTTON (mobile fab) */
+  /* PANEL TOGGLE */
   #panel-toggle {
     position: fixed;
-    bottom: 24px;
-    right: 20px;
-    width: 52px;
-    height: 52px;
+    bottom: 24px; right: 20px;
+    width: 52px; height: 52px;
     border-radius: 50%;
     background: var(--panel);
     border: 1px solid var(--border);
     backdrop-filter: blur(16px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 30;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-    transition: background 0.2s, box-shadow 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 30;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
     font-size: 1.2rem;
+    pointer-events: all;
   }
-  #panel-toggle:active { background: rgba(60,170,255,0.15); }
+  @media (min-width: 640px) { #panel-toggle { display: none; } }
 
-  /* BOTTOM SHEET (mobile default) */
+  /* SIDE PANEL */
   #panel {
     position: fixed;
-    left: 0; right: 0;
-    bottom: 0;
+    left: 0; right: 0; bottom: 0;
     background: var(--panel);
     border: 1px solid var(--border);
     border-bottom: none;
@@ -183,185 +181,135 @@
     padding: 0 20px 32px;
     backdrop-filter: blur(20px);
     z-index: 25;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    max-height: 72dvh;
-    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+    max-height: 75dvh; overflow-y: auto;
     overscroll-behavior: contain;
     transform: translateY(100%);
-    transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
   }
-  #panel.open {
-    transform: translateY(0);
-  }
+  #panel.open { transform: translateY(0); }
 
-  /* Drag handle */
   #panel-handle {
-    width: 40px;
-    height: 4px;
-    border-radius: 2px;
+    width: 40px; height: 4px; border-radius: 2px;
     background: var(--border);
     margin: 12px auto 4px;
     flex-shrink: 0;
   }
 
-  /* CONTROLS */
-  .ctrl-group label {
-    display: block;
-    font-size: 0.52rem;
-    letter-spacing: 0.2em;
+  @media (min-width: 640px) {
+    #title { top: 28px; left: 32px; }
+    #title h1 { font-size: 1.8rem; }
+    #gen-label { top: 28px; right: 32px; }
+    #panel {
+      position: fixed;
+      top: 50%; right: 28px;
+      left: auto; bottom: auto;
+      transform: translateY(-50%) !important;
+      border-radius: 14px;
+      border-bottom: 1px solid var(--border);
+      padding: 22px 18px;
+      width: 210px;
+      max-height: none; overflow-y: visible;
+      transition: none;
+    }
+    #panel-handle { display: none; }
+  }
+
+  /* PANEL INTERNALS */
+  .section-label {
+    font-size: 0.46rem;
+    letter-spacing: 0.26em;
     color: var(--accent);
     text-transform: uppercase;
-    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
   }
 
-  .layer-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .layer-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: var(--tap);
-  }
-  .layer-row span {
-    font-size: 0.6rem;
-    color: var(--dim);
-    width: 16px;
-    text-align: right;
-    flex-shrink: 0;
-  }
-
-  /* Larger thumb for touch */
-  input[type=range] {
-    -webkit-appearance: none;
-    appearance: none;
-    flex: 1;
-    height: 3px;
-    background: linear-gradient(to right, var(--accent), var(--accent2));
-    border-radius: 2px;
-    outline: none;
-    min-height: var(--tap);
+  /* Lobe legend */
+  #lobe-legend { display: flex; flex-direction: column; gap: 7px; }
+  .lobe-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.5rem; color: var(--text);
     cursor: pointer;
+  }
+  .lobe-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .lobe-row .lobe-count { margin-left: auto; color: var(--dim); font-size: 0.44rem; }
+
+  /* Controls */
+  .ctrl-row {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 36px;
+  }
+  .ctrl-label {
+    font-size: 0.46rem; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    flex: 1;
+  }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 80px; height: 2px;
+    background: linear-gradient(to right, var(--accent), var(--accent2));
+    border-radius: 2px; outline: none; cursor: pointer;
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--accent);
-    cursor: pointer;
-    box-shadow: 0 0 10px var(--accent);
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--accent);
+    box-shadow: 0 0 8px var(--accent);
   }
-  input[type=range]::-moz-range-thumb {
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--accent);
-    box-shadow: 0 0 10px var(--accent);
-  }
+  .val-badge { font-size: 0.52rem; color: #fff; width: 28px; text-align: right; }
 
-  .val-badge {
-    font-size: 0.62rem;
-    color: #fff;
-    width: 24px;
-    text-align: left;
-    flex-shrink: 0;
-  }
-
-  /* Buttons */
   button {
     width: 100%;
-    min-height: var(--tap);
-    padding: 10px 0;
+    padding: 9px 0;
     border: 1px solid var(--border);
-    border-radius: 10px;
-    background: rgba(60, 170, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(47,255,160,0.06);
     color: var(--accent);
     font-family: 'Space Mono', monospace;
-    font-size: 0.62rem;
+    font-size: 0.52rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     cursor: pointer;
-    transition: background 0.15s, box-shadow 0.15s;
-    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s;
   }
-  button:active {
-    background: rgba(60, 170, 255, 0.2);
-    box-shadow: 0 0 14px rgba(60,170,255,0.25);
-  }
+  button:active { background: rgba(47,255,160,0.18); }
   button.danger {
-    border-color: rgba(255, 100, 100, 0.3);
-    color: #ff6fa0;
-    background: rgba(255, 100, 160, 0.06);
+    border-color: rgba(255,100,100,0.25);
+    color: var(--accent3);
+    background: rgba(255,100,160,0.04);
   }
-  button.danger:active { background: rgba(255, 100, 160, 0.18); }
+  button.danger:active { background: rgba(255,100,160,0.15); }
 
   #stats {
-    font-size: 0.55rem;
-    color: var(--dim);
-    line-height: 2;
+    font-size: 0.5rem; color: var(--dim);
+    line-height: 2.1;
     border-top: 1px solid var(--border);
-    padding-top: 14px;
+    padding-top: 12px;
   }
   #stats span { color: var(--text); }
 
-  /* DESKTOP OVERRIDES (640px) */
-  @media (min-width: 640px) {
-    #title { top: 28px; left: 36px; }
-    #title h1 { font-size: 1.45rem; }
-    #title p  { font-size: 0.6rem; }
-
-    #hint {
-      top: auto;
-      bottom: 28px;
-      font-size: 0.58rem;
-    }
-
-    #cam-container, #cam-prompt {
-      top: auto;
-      right: auto;
-      bottom: 28px;
-      left: 28px;
-      width: 100px;
-      height: 100px;
-      border-radius: 6px;
-    }
-    #cam-canvas { width: 100px; height: 100px; }
-
-    #panel-toggle { display: none; }
-
-    /* Restore side panel on desktop */
-    #panel {
-      position: fixed;
-      top: 50%;
-      right: 28px;
-      left: auto;
-      bottom: auto;
-      transform: translateY(-50%) !important;
-      border-radius: 12px;
-      border-bottom: 1px solid var(--border);
-      padding: 20px 18px;
-      width: 200px;
-      max-height: none;
-      overflow-y: visible;
-      transition: none;
-    }
-
-    #panel-handle { display: none; }
-
-    input[type=range] { min-height: unset; height: 2px; }
-    input[type=range]::-webkit-slider-thumb { width: 12px; height: 12px; }
-    input[type=range]::-moz-range-thumb { width: 12px; height: 12px; }
-
-    button { min-height: unset; padding: 9px 0; border-radius: 7px; }
-    .layer-row { min-height: unset; }
+  /* TOOLTIP */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.5rem;
+    line-height: 1.9;
+    color: var(--text);
+    backdrop-filter: blur(12px);
+    z-index: 50;
+    display: none;
+    white-space: nowrap;
   }
-
+  #tooltip .tt-title { color: #fff; font-size: 0.55rem; margin-bottom: 3px; }
 </style>
 </head>
 <body>
@@ -369,589 +317,650 @@
 <div id="canvas-container"></div>
 
 <div id="title">
-  <h1>NeuralViz</h1>
-  <p>3D Network Explorer</p>
+  <h1>M<span>A</span>T</h1>
+  <p>Modular Adaptive Topologies - Proto-Brain - v0</p>
 </div>
 
-<div id="hint">drag to rotate &nbsp;·&nbsp; pinch to zoom</div>
+<div id="hint">drag to rotate - scroll to zoom - click neuron to inspect</div>
 
-<!-- Mobile panel toggle FAB -->
-<button id="panel-toggle" aria-label="Toggle controls">⚙</button>
+<div id="gen-label">Tick <span id="tick-num">0</span></div>
 
-<!-- Camera prompt button -->
-<div id="cam-prompt" title="Enable camera">
-  <div id="cam-prompt-text">Enable<br>Camera</div>
-</div>
-
-<!-- Live B&W feed (hidden until camera granted) -->
-<div id="cam-container" style="display:none;">
+<!-- Live B&W feed -->
+<div id="cam-container">
   <canvas id="cam-canvas" width="10" height="10"></canvas>
+  <div id="cam-label">occipital</div>
+  <div id="cam-active-dot"></div>
 </div>
 <video id="cam-video" style="display:none;" playsinline autoplay muted></video>
 
+<button id="panel-toggle" aria-label="Toggle controls">⚙</button>
+
 <div id="panel">
   <div id="panel-handle"></div>
-  <div class="ctrl-group">
-    <label>Input Resolution</label>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <button id="btn-res-dec" style="flex:1;padding:7px 0;">-</button>
-      <div id="res-badge" style="flex:2;text-align:center;font-size:0.58rem;color:#fff;white-space:nowrap;">10×10</div>
-      <button id="btn-res-inc" style="flex:1;padding:7px 0;">+</button>
+
+  <div class="section-label">Brain Regions</div>
+  <div id="lobe-legend"></div>
+
+  <div class="section-label">Simulation</div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">Speed</span>
+    <input type="range" id="sl-speed" min="1" max="20" value="5">
+    <span class="val-badge" id="vb-speed">5</span>
+  </div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">Fire Thresh</span>
+    <input type="range" id="sl-thresh" min="10" max="90" value="50">
+    <span class="val-badge" id="vb-thresh">0.50</span>
+  </div>
+
+  <button id="btn-pause">⏸ Pause</button>
+  <button id="btn-reset">↺ Reset Brain</button>
+  <div class="section-label">Vision Input</div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">Resolution</span>
+    <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
+      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">−</button>
+      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10×10</span>
+      <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
     </div>
   </div>
 
-  <div class="ctrl-group">
-    <label>Layer Neurons</label>
-    <div class="layer-inputs" id="layer-inputs"></div>
+  <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
+    <span id="cam-prompt-icon">👁</span>
+    <span>Enable Vision</span>
   </div>
-
-  <div class="ctrl-group">
-    <label>Layers</label>
-    <div style="display:flex;gap:5px;">
-      <button id="btn-add-layer">+ Add</button>
-      <button id="btn-rem-layer" class="danger">- Remove</button>
-    </div>
-  </div>
-
-  <button id="btn-rebuild" style="margin-top:2px;">↺ Rebuild</button>
-  <button id="btn-pause-rotate">⏸ Rotation</button>
 
   <div id="stats">
-    Layers: <span id="st-layers">-</span><br>
+    Lobes: <span id="st-lobes">-</span><br>
     Neurons: <span id="st-neurons">-</span><br>
-    Connections: <span id="st-conns">-</span>
+    Synapses: <span id="st-conns">-</span><br>
+    Active: <span id="st-active">-</span><br>
+    Firings/tick: <span id="st-fires">-</span>
   </div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-title" id="tt-title">-</div>
+  <div id="tt-body"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-// ═══════════════════════════════════════════════════════
-//  CONFIG
-// ═══════════════════════════════════════════════════════
-const DEFAULT_LAYERS = [100, 16, 8, 4]; // layerSizes[0] overridden by camRes (max 25×25=625)
-const MAX_LAYERS = 9;
-const MIN_LAYERS = 2;
-const MAX_NEURONS = 100;
-const MIN_NEURONS = 1;
+// ═══════════════════════════════════════════════════════════════
+//  MAT BRAIN CONFIG mirrors yaml structure
+// ═══════════════════════════════════════════════════════════════
+const LOBE_DEFS = [
+  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
+  { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
+  { name: 'occipital',   label: 'Occipital (Vision)',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.2,  0.8, -0.8 ] },
+  { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.2, -0.8,  0.8 ] },
+  { name: 'parietal',    label: 'Parietal (Memory)',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.2, -0.8, -0.8 ] },
+  { name: 'thalamus',    label: 'Thalamus (Router)',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
+  { name: 'brainstem',   label: 'Brainstem (Survival)', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
+];
 
-const LAYER_SPACING = 2.5;
-const NODE_RADIUS   = 0.22;
-const ORBIT_RADIUS  = 28;
+const LOBE_SPREAD = 2.0;   // how far neurons scatter inside a lobe cluster
+const ORBIT_RADIUS = 24;
+const NODE_R = 0.18;
+const MAX_CROSS_EDGES_DRAWN = 180;
+const MAX_INTRA_EDGES_DRAWN = 60;
 
-// ═══════════════════════════════════════════════════════
-//  SCENE SETUP
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  SCENE
+// ═══════════════════════════════════════════════════════════════
 const container = document.getElementById('canvas-container');
-const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+const renderer  = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.15;
 container.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0x050810);
-scene.fog = new THREE.FogExp2(0x050810, 0.022);
+scene.background = new THREE.Color(0x04060f);
+scene.fog = new THREE.FogExp2(0x04060f, 0.018);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.position.set(0, 0, ORBIT_RADIUS);
 
 // Lights
-const ambLight = new THREE.AmbientLight(0x1a2840, 1.8);
-scene.add(ambLight);
+scene.add(new THREE.AmbientLight(0x0a2020, 2.5));
+const dirL = new THREE.DirectionalLight(0x20ffaa, 2.0);
+dirL.position.set(4, 8, 6);
+scene.add(dirL);
+const ptA = new THREE.PointLight(0x6040ff, 5, 55);
+ptA.position.set(-8, 5, 0);
+scene.add(ptA);
+const ptB = new THREE.PointLight(0xff3060, 3, 45);
+ptB.position.set(8, -4, 0);
+scene.add(ptB);
 
-const dirLight = new THREE.DirectionalLight(0x3aaeff, 3.5);
-dirLight.position.set(5, 8, 10);
-scene.add(dirLight);
+// Shared geometries
+const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
+const haloGeo  = new THREE.SphereGeometry(NODE_R * 2.6, 8, 8);
 
-const pointA = new THREE.PointLight(0x6040ff, 6, 60);
-pointA.position.set(-10, 6, 0);
-scene.add(pointA);
+// ═══════════════════════════════════════════════════════════════
+//  SIMULATION STATE
+// ═══════════════════════════════════════════════════════════════
+let simRunning = true;
+let simSpeed   = 5;
+let fireThresh = 0.50;
+let tickCount  = 0;
+let firesThisTick = 0;
 
-const pointB = new THREE.PointLight(0xff4090, 4, 50);
-pointB.position.set(10, -5, 0);
-scene.add(pointB);
+// Camera / vision input
+const CAM_RES_MIN  = 5;
+const CAM_RES_MAX  = 25;
+const CAM_RES_STEP = 5;
+let camRes         = 10; // current resolution (side length); grid = camRes×camRes nodes
+let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
+let camActive      = false;
+let occipitalIdxs  = []; // filled by buildBrain, used by simTick
 
-// State
-let layerSizes = [...DEFAULT_LAYERS];
+// Neurons: flat array of objects
+let neurons = [];
+// networkGroup holds all Three.js objects
 let networkGroup = null;
-let animSpeed = 1;
-let camRes = 10; // current camera/input resolution (side length)
-let inputNodeMeshes = [];
-let pixelValues = new Float32Array(camRes * camRes);
+// Raycaster for click inspection
+const raycaster  = new THREE.Raycaster();
+const mouse2d    = new THREE.Vector2();
 
-// Forward-pass state
-let weights     = [];  // weights[l] = Float32Array of size layerSizes[l] * layerSizes[l+1]
-let biases      = [];  // biases[l]  = Float32Array of size layerSizes[l+1]
-let activations = [];  // activations[l] = Float32Array of size layerSizes[l]
-let nodeMeshes  = [];  // nodeMeshes[l][n] = THREE.Mesh
-let edgeMats    = [];  // edgeMats[l] = array of { mat, srcNi, dstNi }
-
-// Shared geometries & materials
-const nodeGeo = new THREE.SphereGeometry(NODE_RADIUS, 20, 20);
-
-// ═══════════════════════════════════════════════════════
-//  NETWORK BUILDER
-// ═══════════════════════════════════════════════════════
-function buildNetwork() {
+// ═══════════════════════════════════════════════════════════════
+//  BUILD BRAIN
+// ═══════════════════════════════════════════════════════════════
+function buildBrain() {
   if (networkGroup) {
     scene.remove(networkGroup);
-    networkGroup.traverse(obj => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-        else obj.material.dispose();
+    networkGroup.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
       }
     });
   }
-
   networkGroup = new THREE.Group();
   scene.add(networkGroup);
-  inputNodeMeshes = [];
-  pixelValues = new Float32Array(camRes * camRes);
-  nodeMeshes  = [];
-  edgeMats    = [];
-  activations = [];
-  smoothActs  = null; // force reinit so new layer sizes get correctly-sized arrays
+  neurons = [];
 
-  // Generate random weights & biases (Xavier-ish init)
-  weights = [];
-  biases  = [];
-  for (let l = 0; l < layerSizes.length - 1; l++) {
-    const fanIn  = layerSizes[l];
-    const fanOut = layerSizes[l + 1];
-    const scale  = Math.sqrt(2.0 / fanIn);
-    const w = new Float32Array(fanIn * fanOut);
-    for (let i = 0; i < w.length; i++) w[i] = (Math.random() * 2 - 1) * scale;
-    weights.push(w);
-    const b = new Float32Array(fanOut);
-    biases.push(b);
-  }
+  // Spawn neurons per lobe
+  const lobeNeuronMap = {}; // lobeName -> array of neuron indices
 
-  const L = layerSizes.length;
-  const totalWidth = (L - 1) * LAYER_SPACING;
+  for (const lobe of LOBE_DEFS) {
+    const lobeCenter = new THREE.Vector3(...lobe.pos);
+    const idxs = [];
+    for (let i = 0; i < lobe.neurons; i++) {
+      // Scatter inside sphere of radius LOBE_SPREAD
+      const r = LOBE_SPREAD * Math.cbrt(Math.random());
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const offset = new THREE.Vector3(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta),
+        r * Math.cos(phi)
+      );
+      const pos = lobeCenter.clone().add(offset);
+      const nid = neurons.length;
+      const col = new THREE.Color(lobe.color);
 
-  // Palette per layer (gradient from cyan -> purple -> pink)
-  function layerColor(i) {
-    const t = i / Math.max(L - 1, 1);
-    const r = Math.round(lerp(0x33, 0xcc, t));
-    const g = Math.round(lerp(0xaa, 0x44, t));
-    const b = Math.round(lerp(0xff, 0xff, t));
-    return new THREE.Color(r / 255, g / 255, b / 255);
-  }
-
-  const nodePositions = []; // [layer][neuron] = Vector3
-
-  // Nodes
-  for (let li = 0; li < L; li++) {
-    const n = layerSizes[li];
-    const x = li * LAYER_SPACING - totalWidth / 2;
-    const col = layerColor(li);
-    const layerNodes = [];
-    const layerMeshes = [];
-
-    for (let ni = 0; ni < n; ni++) {
-      // Input layer (li=0): arrange as camRes×camRes grid matching camera pixels
-      let y, z;
-      if (li === 0 && n === camRes * camRes) {
-        const col10 = ni % camRes;
-        const row10 = Math.floor(ni / camRes);
-        const half  = (camRes - 1) / 2;
-        // const spacing = Math.min(0.55, 5.0 / camRes); // shrink spacing at high res
-        const spacing = 0.55;
-        y = (half - row10) * spacing;
-        z = (col10 - half) * spacing;
-      } else if (n <= 6) {
-        // Linear column: spacing grows slightly with count
-        const spacing = 0.9 + n * 0.04;
-        y = (ni - (n - 1) / 2) * spacing;
-        z = 0;
-      } else {
-        // Circular ring: radius scales with node count so nodes never crowd
-        const angle = (ni / n) * Math.PI * 2;
-        // Enough arc-length per node: circumference = n * minArc, so r = n * minArc / (2π)
-        const minArcPerNode = 0.55; // minimum gap (world units) between adjacent nodes
-        const r = Math.max(n * minArcPerNode / (Math.PI * 2), 1.2);
-        y = Math.cos(angle) * r;
-        z = Math.sin(angle) * r;
-      }
-
-      const pos = new THREE.Vector3(x, y, z);
-      layerNodes.push(pos);
-
-      // Core sphere
+      // Core mesh
       const mat = new THREE.MeshPhongMaterial({
-        color: col,
-        emissive: col,
-        emissiveIntensity: 0.35,
-        shininess: 120,
-        transparent: true,
-        opacity: 0.95,
+        color: col, emissive: col,
+        emissiveIntensity: 0.2,
+        shininess: 100,
+        transparent: true, opacity: 0.5
       });
       const mesh = new THREE.Mesh(nodeGeo, mat);
       mesh.position.copy(pos);
-      mesh.userData = { type: 'node', li, ni, baseMat: mat, color: col };
+      mesh.userData = { neuronIdx: nid };
       networkGroup.add(mesh);
-      layerMeshes.push(mesh);
-      if (li === 0) inputNodeMeshes[ni] = mesh;
 
-      // Glow halo
-      const haloGeo = new THREE.SphereGeometry(NODE_RADIUS * 2.2, 12, 12);
+      // Halo
       const haloMat = new THREE.MeshBasicMaterial({
-        color: col, transparent: true, opacity: 0.07, side: THREE.BackSide
+        color: col, transparent: true, opacity: 0.04, side: THREE.BackSide
       });
       const halo = new THREE.Mesh(haloGeo, haloMat);
       halo.position.copy(pos);
       networkGroup.add(halo);
+
+      neurons.push({
+        id: `${lobe.name}_${i}`,
+        lobe: lobe.name,
+        lobeColor: lobe.color,
+        task: lobe.task,
+        inputSum: 0,       // weighted sum of inputs this tick
+        smoothInput: 0,    // EMA for visuals
+        threshold: fireThresh + (Math.random() - 0.5) * 0.1,
+        neurotransmitter: lobe.name === 'brainstem' ? 'norepinephrine' : lobe.name === 'thalamus' ? 'acetylcholine' : 'glutamate',
+        connections: [],   // indices of target neurons
+        weights: [],       // corresponding synaptic weights
+        mesh,
+        halo,
+        haloMat,
+        mat,
+        pos,
+        fired: false,
+      });
+      idxs.push(nid);
     }
-    nodePositions.push(layerNodes);
-    nodeMeshes.push(layerMeshes);
-    activations.push(new Float32Array(n));
+    lobeNeuronMap[lobe.name] = idxs;
   }
 
-  // Edges
-  let connCount = 0;
-  for (let li = 0; li < L - 1; li++) {
-    const src = nodePositions[li];
-    const dst = nodePositions[li + 1];
-    const colA = layerColor(li);
-    const colB = layerColor(li + 1);
+  // Intra-lobe connections
+  let totalConns = 0;
+  for (const lobe of LOBE_DEFS) {
+    const idxs = lobeNeuronMap[lobe.name];
+    for (const src of idxs) {
+      for (const tgt of idxs) {
+        if (src !== tgt && Math.random() < lobe.connP) {
+          const w = (Math.random() * 0.8 + 0.1);
+          neurons[src].connections.push(tgt);
+          neurons[src].weights.push(w);
+          totalConns++;
+        }
+      }
+    }
+  }
 
-    // Draw a visual sample of edges (too many to draw all)
-    const maxEdges = 150;
-    const pairs = [];
-    for (let a = 0; a < src.length; a++)
-      for (let b = 0; b < dst.length; b++)
-        pairs.push([a, b]);
+  // Cross-lobe connections (thalamus gets priority)
+  for (const lobe of LOBE_DEFS) {
+    const srcIdxs = lobeNeuronMap[lobe.name];
+    const otherLobes = LOBE_DEFS.filter(l => l.name !== lobe.name);
+    for (const src of srcIdxs) {
+      if (Math.random() < lobe.crossP) {
+        const targetLobe = otherLobes[Math.floor(Math.random() * otherLobes.length)];
+        const targetIdxs = lobeNeuronMap[targetLobe.name];
+        const tgt = targetIdxs[Math.floor(Math.random() * targetIdxs.length)];
+        const w = (Math.random() * 0.5 + 0.05);
+        neurons[src].connections.push(tgt);
+        neurons[src].weights.push(w);
+        totalConns++;
+      }
+    }
+  }
 
-    shuffleArray(pairs);
-    const drawn = pairs.slice(0, maxEdges);
+  // Draw intra-lobe edges
+  for (const lobe of LOBE_DEFS) {
+    const col = new THREE.Color(lobe.color);
+    const idxs = lobeNeuronMap[lobe.name];
+    let drawn = 0;
+    for (const src of idxs) {
+      for (let ci = 0; ci < neurons[src].connections.length; ci++) {
+        const tgt = neurons[src].connections[ci];
+        if (!lobeNeuronMap[lobe.name].includes(tgt)) continue;
+        if (drawn >= MAX_INTRA_EDGES_DRAWN) break;
+        addEdgeLine(neurons[src].pos, neurons[tgt].pos, col, col, 0.06);
+        drawn++;
+      }
+    }
+  }
 
-    const layerEdgeMats = [];
-    for (const [a, b] of drawn) {
-      const pts = [src[a], dst[b]];
-      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  // Draw cross-lobe edges (sampled)
+  const crossEdges = [];
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    for (let ci = 0; ci < n.connections.length; ci++) {
+      const tgt = n.connections[ci];
+      if (neurons[tgt].lobe !== n.lobe) {
+        crossEdges.push({ src: ni, tgt, w: n.weights[ci] });
+      }
+    }
+  }
+  shuffle(crossEdges);
+  for (let i = 0; i < Math.min(crossEdges.length, MAX_CROSS_EDGES_DRAWN); i++) {
+    const e = crossEdges[i];
+    const cA = new THREE.Color(neurons[e.src].lobeColor);
+    const cB = new THREE.Color(neurons[e.tgt].lobeColor);
+    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, 0.04);
+  }
 
+  // Stats
+  document.getElementById('st-lobes').textContent   = LOBE_DEFS.length;
+  document.getElementById('st-neurons').textContent = neurons.length;
+  document.getElementById('st-conns').textContent   = totalConns;
+
+  buildLobeLegend(lobeNeuronMap);
+
+  // Store occipital indices for camera injection
+  occipitalIdxs = lobeNeuronMap['occipital'] || [];
+
+  // Camera input layer: 10×10 grid of input nodes wired to occipital
+  buildCamInputLayer(lobeNeuronMap['occipital']);
+}
+
+function addEdgeLine(pA, pB, colA, colB, baseOpacity) {
+  const geo = new THREE.BufferGeometry().setFromPoints([pA, pB]);
+  const colors = new Float32Array([colA.r, colA.g, colA.b, colB.r, colB.g, colB.b]);
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity });
+  const line = new THREE.Line(geo, mat);
+  line.userData.isEdge = true;
+  line.userData.baseMat = mat;
+  networkGroup.add(line);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CAMERA INPUT LAYER  (camRes by camRes pixel nodes -> occipital lobe)
+// ═══════════════════════════════════════════════════════════════
+const CAM_NODE_R   = 0.09;
+const camNodeGeo   = new THREE.SphereGeometry(CAM_NODE_R, 8, 8);
+let   camNodeMeshes = [];
+let   camEdgeLines  = [];
+
+function buildCamInputLayer(occIdxs) {
+  camNodeMeshes = [];
+  camEdgeLines  = [];
+
+  const GRID_ORIGIN = new THREE.Vector3(4.8, 0.8, -0.8);
+  const SPACING = 0.22;
+  const half = (camRes - 1) / 2;
+  const camColor = new THREE.Color('#56b4e9');
+
+  const gridPositions = [];
+
+  for (let row = 0; row < camRes; row++) {
+    for (let col = 0; col < camRes; col++) {
+      const idx = row * camRes + col;
+      const pos = new THREE.Vector3(
+        GRID_ORIGIN.x,
+        GRID_ORIGIN.y + (half - row) * SPACING,
+        GRID_ORIGIN.z + (col - half) * SPACING
+      );
+      gridPositions.push(pos);
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: camColor, transparent: true, opacity: 0.25
+      });
+      const mesh = new THREE.Mesh(camNodeGeo, mat);
+      mesh.position.copy(pos);
+      mesh.userData = { isCamNode: true, pixelIdx: idx };
+      networkGroup.add(mesh);
+      camNodeMeshes.push({ mesh, mat });
+    }
+  }
+
+  const occCount = occIdxs.length;
+  for (let pi = 0; pi < camRes * camRes; pi++) {
+    const targA = occIdxs[pi % occCount];
+    const targB = occIdxs[(pi + Math.floor(occCount / 2)) % occCount];
+    const targets = [targA];
+    if (targA !== targB) targets.push(targB);
+
+    for (const tgt of targets) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        gridPositions[pi], neurons[tgt].pos
+      ]);
       const colors = new Float32Array([
-        colA.r, colA.g, colA.b,
-        colB.r, colB.g, colB.b,
+        camColor.r, camColor.g, camColor.b,
+        camColor.r * 0.5, camColor.g * 0.5, camColor.b * 0.5
       ]);
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
       const mat = new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.08,
+        vertexColors: true, transparent: true, opacity: 0.04
       });
       const line = new THREE.Line(geo, mat);
-      line.userData = { type: 'edge', li, a, b, mat };
+      line.userData.isCamEdge = true;
       networkGroup.add(line);
-      layerEdgeMats.push({ mat, srcNi: a, dstNi: b });
-      connCount++;
+      camEdgeLines.push({ mat, pixelIdx: pi, tgtNeuronIdx: tgt });
     }
-    edgeMats.push(layerEdgeMats);
   }
+}
+
+function updateCamInputVisuals() {
+  // Update pixel node brightness and edge glow based on pixelValues
+  for (let pi = 0; pi < camNodeMeshes.length; pi++) {
+    const v = camActive ? pixelValues[pi] : 0;
+    const { mat } = camNodeMeshes[pi];
+    mat.color.setRGB(
+      0.34 * (0.2 + v * 0.8),
+      0.71 * (0.2 + v * 0.8),
+      0.91 * (0.2 + v * 0.8)
+    );
+    mat.opacity = camActive ? 0.15 + v * 0.85 : 0.15;
+  }
+  for (const e of camEdgeLines) {
+    const v = camActive ? pixelValues[e.pixelIdx] : 0;
+    e.mat.opacity = 0.02 + v * 0.25;
+  }
+}
+// ═══════════════════════════════════════════════════════════════
+function buildLobeLegend(lobeNeuronMap) {
+  const el = document.getElementById('lobe-legend');
+  el.innerHTML = '';
+  for (const lobe of LOBE_DEFS) {
+    const row = document.createElement('div');
+    row.className = 'lobe-row';
+    row.innerHTML = `
+      <div class="lobe-dot" style="background:${lobe.color};color:${lobe.color}"></div>
+      <span>${lobe.label}</span>
+      <span class="lobe-count">${lobe.neurons}n</span>
+    `;
+    row.title = lobe.task;
+    el.appendChild(row);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SIMULATION TICK
+// ═══════════════════════════════════════════════════════════════
+function simTick() {
+  firesThisTick = 0;
+
+  // Phase 1: accumulate weighted inputs from last tick's fired neurons
+  // Reset inputSum for all neurons
+  for (let ni = 0; ni < neurons.length; ni++) {
+    neurons[ni].inputSum = 0;
+  }
+
+  // Each neuron that fired last tick sends weight to its targets
+  for (let ni = 0; ni < neurons.length; ni++) {
+    if (!neurons[ni].fired) continue;
+    const n = neurons[ni];
+    for (let ci = 0; ci < n.connections.length; ci++) {
+      neurons[n.connections[ci]].inputSum += n.weights[ci];
+    }
+  }
+
+  // Camera injection: add pixel brightness directly to occipital inputSum
+  if (camActive) {
+    const occCount = occipitalIdxs.length;
+    for (let i = 0; i < occCount; i++) {
+      const ni = occipitalIdxs[i];
+      const pi = i % (camRes * camRes);
+      neurons[ni].inputSum += pixelValues[pi];
+    }
+  }
+
+  // Phase 2: fire if inputSum meets threshold
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    n.fired = n.inputSum >= n.threshold;
+    if (n.fired) firesThisTick++;
+  }
+
+  tickCount++;
 
   // Update stats
-  document.getElementById('st-layers').textContent  = L;
-  document.getElementById('st-neurons').textContent = layerSizes.reduce((s,v) => s + v, 0);
-  document.getElementById('st-conns').textContent   = connCount;
+  document.getElementById('tick-num').textContent  = tickCount;
+  document.getElementById('st-active').textContent =
+    neurons.filter(n => n.inputSum > 0).length;
+  document.getElementById('st-fires').textContent  = firesThisTick;
 }
 
-function lerp(a, b, t) { return a + (b - a) * t; }
-function shuffleArray(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+// ═══════════════════════════════════════════════════════════════
+//  RENDER UPDATE
+// ═══════════════════════════════════════════════════════════════
+function updateVisuals(dt) {
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    // Smooth inputSum for display so visuals don't strobe every tick
+    n.smoothInput += (n.inputSum - n.smoothInput) * 0.25;
+    const v = Math.min(n.smoothInput / n.threshold, 1.0);
+    const fired = n.fired;
+
+    // Emissive intensity: dim -> bright
+    n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
+    n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
+    // Halo pulse on fire
+    n.haloMat.opacity = fired ? 0.22 : 0.02 + v * 0.05;
+
+    // Scale pulse on fire
+    const s = fired ? 1.5 : 1.0 + v * 0.15;
+    n.mesh.scale.setScalar(s);
+    n.halo.scale.setScalar(s * 0.9);
   }
+
+  updateCamInputVisuals();
 }
 
-// ═══════════════════════════════════════════════════════
-//  FORWARD PASS
-// ═══════════════════════════════════════════════════════
-function relu(x) { return x > 0 ? x : 0; }
+// ═══════════════════════════════════════════════════════════════
+//  ORBIT CAMERA
+// ═══════════════════════════════════════════════════════════════
+let isDragging = false, autoRotate = true;
+let lastMouse = { x: 0, y: 0 };
+let spherical = { theta: 0, phi: Math.PI / 2 };
+let targetSph = { theta: 0, phi: Math.PI / 2 };
+let zoomDist  = ORBIT_RADIUS, targetZoom = ORBIT_RADIUS;
 
-// Smooth exponential moving average for activations (prevents flickering)
-const ACT_SMOOTH = 0.15;
-let smoothActs = null; // lazily initialised
+const cv = renderer.domElement;
 
-function forwardPass() {
-  if (!activations.length) return;
-
-  const L = layerSizes.length;
-
-  // Layer 0: pixel values are the input activations
-  const inputN = camRes * camRes;
-  for (let ni = 0; ni < Math.min(layerSizes[0], inputN); ni++) {
-    activations[0][ni] = pixelValues[ni] || 0;
-  }
-
-  // Forward through each layer: act[l+1][j] = relu( sum_i( w[i*fanOut+j] * act[l][i] ) + b[j] )
-  for (let l = 0; l < L - 1; l++) {
-    const fanIn  = layerSizes[l];
-    const fanOut = layerSizes[l + 1];
-    const W = weights[l];
-    const B = biases[l];
-    const srcAct = activations[l];
-    const dstAct = activations[l + 1];
-
-    for (let j = 0; j < fanOut; j++) {
-      let sum = B[j];
-      for (let i = 0; i < fanIn; i++) {
-        sum += W[i * fanOut + j] * srcAct[i];
-      }
-      dstAct[j] = relu(sum);
-    }
-  }
-
-  // Lazy init smoothed activations — reinit if layer count or any layer size changed
-  if (!smoothActs || smoothActs.length !== L ||
-      smoothActs.some((sa, l) => sa.length !== layerSizes[l])) {
-    smoothActs = activations.map(a => new Float32Array(a.length));
-  }
-
-  // Smooth + find per-layer max for normalisation
-  for (let l = 0; l < L; l++) {
-    let maxV = 0.001;
-    for (let ni = 0; ni < layerSizes[l]; ni++) {
-      smoothActs[l][ni] += (activations[l][ni] - smoothActs[l][ni]) * ACT_SMOOTH;
-      if (smoothActs[l][ni] > maxV) maxV = smoothActs[l][ni];
-    }
-    // Store max on the array for use below
-    smoothActs[l]._max = maxV;
-  }
-}
-
-function animateNetwork(dt) {
-  if (!networkGroup) return;
-
-  forwardPass();
-
-  const L = layerSizes.length;
-
-  // Update node brightness
-  for (let l = 0; l < L; l++) {
-    const maxV = smoothActs && smoothActs[l] ? (smoothActs[l]._max || 0.001) : 0.001;
-    const meshes = nodeMeshes[l];
-    if (!meshes) continue;
-    for (let ni = 0; ni < meshes.length; ni++) {
-      const mesh = meshes[ni];
-      if (!mesh) continue;
-      const { baseMat } = mesh.userData;
-      const raw = smoothActs && smoothActs[l] ? smoothActs[l][ni] : 0;
-      const v = Math.min(raw / maxV, 1.0); // normalised 0..1
-      baseMat.emissiveIntensity = 0.04 + v * 1.4;
-      baseMat.opacity           = 0.25 + v * 0.73;
-    }
-  }
-
-  // Update edge opacity based on src activation × |weight|
-  for (let l = 0; l < L - 1; l++) {
-    const layerEdges = edgeMats[l];
-    if (!layerEdges) continue;
-    const srcMax = smoothActs && smoothActs[l] ? (smoothActs[l]._max || 0.001) : 0.001;
-    const fanOut = layerSizes[l + 1];
-
-    for (const { mat, srcNi, dstNi } of layerEdges) {
-      const srcV   = smoothActs && smoothActs[l] ? smoothActs[l][srcNi] / srcMax : 0;
-      const wIdx   = srcNi * fanOut + dstNi;
-      const wAbs   = weights[l] ? Math.abs(weights[l][wIdx]) : 0;
-      // Edge glow = how active is the source × how large is the weight
-      const signal = Math.min(srcV * wAbs * 3.0, 1.0);
-      mat.opacity  = 0.02 + signal * 0.55;
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-//  ORBIT CONTROLS (manual, no import needed)
-// ═══════════════════════════════════════════════════════
-let isDragging = false;
-let autoRotate  = true;
-let lastMouse  = { x: 0, y: 0 };
-let spherical  = { theta: 0, phi: Math.PI / 2 };
-let targetSph  = { theta: 0, phi: Math.PI / 2 };
-let zoomDist   = ORBIT_RADIUS;
-let targetZoom = ORBIT_RADIUS;
-
-const canvas = renderer.domElement;
-
-canvas.addEventListener('mousedown', e => {
+cv.addEventListener('mousedown', e => {
   isDragging = true;
   lastMouse = { x: e.clientX, y: e.clientY };
   document.body.classList.add('dragging');
 });
-canvas.addEventListener('touchstart', e => {
-  isDragging = true;
-  lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-}, { passive: true });
-
-window.addEventListener('mouseup',   () => { isDragging = false; document.body.classList.remove('dragging'); });
-window.addEventListener('touchend',  () => { isDragging = false; });
-
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  document.body.classList.remove('dragging');
+});
 window.addEventListener('mousemove', e => {
   if (!isDragging) return;
   const dx = e.clientX - lastMouse.x;
   const dy = e.clientY - lastMouse.y;
   lastMouse = { x: e.clientX, y: e.clientY };
-  targetSph.theta -= dx * 0.008;
-  targetSph.phi    = Math.max(0.15, Math.min(Math.PI - 0.15, targetSph.phi - dy * 0.008));
+  targetSph.theta -= dx * 0.007;
+  targetSph.phi = Math.max(0.12, Math.min(Math.PI - 0.12, targetSph.phi - dy * 0.007));
 });
+cv.addEventListener('wheel', e => {
+  targetZoom = Math.max(5, Math.min(55, targetZoom + e.deltaY * 0.04));
+}, { passive: true });
+
+// Touch orbit
+cv.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    isDragging = true;
+    lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+}, { passive: true });
+window.addEventListener('touchend', () => { isDragging = false; });
 window.addEventListener('touchmove', e => {
-  if (!isDragging) return;
+  if (!isDragging || e.touches.length !== 1) return;
   const dx = e.touches[0].clientX - lastMouse.x;
   const dy = e.touches[0].clientY - lastMouse.y;
   lastMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  targetSph.theta -= dx * 0.008;
-  targetSph.phi    = Math.max(0.15, Math.min(Math.PI - 0.15, targetSph.phi - dy * 0.008));
+  targetSph.theta -= dx * 0.007;
+  targetSph.phi = Math.max(0.12, Math.min(Math.PI - 0.12, targetSph.phi - dy * 0.007));
 }, { passive: true });
 
-canvas.addEventListener('wheel', e => {
-  targetZoom = Math.max(6, Math.min(60, targetZoom + e.deltaY * 0.04));
+// Pinch zoom
+let pinchStart = null, pinchZoomStart = null;
+cv.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    isDragging = false;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStart = Math.hypot(dx, dy);
+    pinchZoomStart = targetZoom;
+  }
 }, { passive: true });
+cv.addEventListener('touchmove', e => {
+  if (e.touches.length === 2 && pinchStart) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx, dy);
+    targetZoom = Math.max(5, Math.min(55, pinchZoomStart * (pinchStart / dist)));
+  }
+}, { passive: true });
+cv.addEventListener('touchend', e => { if (e.touches.length < 2) pinchStart = null; }, { passive: true });
 
 function updateCamera() {
-  // Smooth damp
   spherical.theta += (targetSph.theta - spherical.theta) * 0.1;
-  spherical.phi   += (targetSph.phi   - spherical.phi)   * 0.1;
-  zoomDist        += (targetZoom      - zoomDist)         * 0.1;
-
-  camera.position.x = zoomDist * Math.sin(spherical.phi) * Math.sin(spherical.theta);
-  camera.position.y = zoomDist * Math.cos(spherical.phi);
-  camera.position.z = zoomDist * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+  spherical.phi   += (targetSph.phi   - spherical.phi  ) * 0.1;
+  zoomDist        += (targetZoom      - zoomDist        ) * 0.1;
+  camera.position.set(
+    zoomDist * Math.sin(spherical.phi) * Math.sin(spherical.theta),
+    zoomDist * Math.cos(spherical.phi),
+    zoomDist * Math.sin(spherical.phi) * Math.cos(spherical.theta)
+  );
   camera.lookAt(0, 0, 0);
 }
 
-// ═══════════════════════════════════════════════════════
-//  RESIZE
-// ═══════════════════════════════════════════════════════
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+// ═══════════════════════════════════════════════════════════════
+//  CLICK -> TOOLTIP
+// ═══════════════════════════════════════════════════════════════
+const tooltip = document.getElementById('tooltip');
+cv.addEventListener('click', e => {
+  mouse2d.x = (e.clientX / window.innerWidth)  *  2 - 1;
+  mouse2d.y = (e.clientY / window.innerHeight) * -2 + 1;
+  raycaster.setFromCamera(mouse2d, camera);
+  const hits = raycaster.intersectObjects(networkGroup.children);
+  let found = null;
+  for (const h of hits) {
+    const idx = h.object.userData.neuronIdx;
+    if (idx !== undefined) { found = idx; break; }
+  }
+  if (found !== null) {
+    const n = neurons[found];
+    const lobeDef = LOBE_DEFS.find(l => l.name === n.lobe);
+    document.getElementById('tt-title').textContent = n.id;
+    document.getElementById('tt-body').innerHTML =
+      `Lobe: <span style="color:${n.lobeColor}">${lobeDef.label}</span><br>` +
+      `Task: ${n.task}<br>` +
+      `NT: ${n.neurotransmitter}<br>` +
+      `Input sum: ${n.inputSum.toFixed(3)}<br>` +
+      `Threshold: ${n.threshold.toFixed(3)}<br>` +
+      `Synapses: ${n.connections.length}`;
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top  = (e.clientY - 10) + 'px';
+    tooltip.style.display = 'block';
+  } else {
+    tooltip.style.display = 'none';
+  }
 });
 
-// ═══════════════════════════════════════════════════════
-//  RENDER LOOP
-// ═══════════════════════════════════════════════════════
-let lastTime = 0;
-function animate(time) {
-  requestAnimationFrame(animate);
-  const dt = Math.min((time - lastTime) / 1000, 0.05);
-  lastTime = time;
-
-  // Slow auto-rotate when idle
-  if (!isDragging && autoRotate) targetSph.theta += dt * 0.08;
-
-  updateCamera();
-  animateNetwork(dt);
-  renderer.render(scene, camera);
-}
-
-// ═══════════════════════════════════════════════════════
-//  UI
-// ═══════════════════════════════════════════════════════
-function buildLayerInputs() {
-  const container = document.getElementById('layer-inputs');
-  container.innerHTML = '';
-  layerSizes.forEach((v, i) => {
-    const row = document.createElement('div');
-    row.className = 'layer-row';
-
-    const lbl = document.createElement('span');
-    lbl.textContent = i + 1;
-
-    if (i === 0) {
-      // Input layer is locked to camera pixels
-      const badge = document.createElement('div');
-      badge.className = 'val-badge';
-      badge.style.cssText = 'width:auto;font-size:0.5rem;color:var(--accent);opacity:0.7;white-space:nowrap;';
-      badge.textContent = camRes + 'x' + camRes + ' · cam';
-      badge.id = 'cam-res-badge';
-      row.appendChild(lbl);
-      row.appendChild(badge);
-      container.appendChild(row);
-      return;
-    }
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min  = MIN_NEURONS;
-    slider.max  = MAX_NEURONS;
-    slider.value = v;
-
-    const badge = document.createElement('div');
-    badge.className = 'val-badge';
-    badge.textContent = v;
-
-    slider.addEventListener('input', () => {
-      layerSizes[i] = parseInt(slider.value);
-      badge.textContent = slider.value;
-      buildNetwork();
-    });
-
-    row.appendChild(lbl);
-    row.appendChild(slider);
-    row.appendChild(badge);
-    container.appendChild(row);
-  });
-}
-
-document.getElementById('btn-add-layer').addEventListener('click', () => {
-  if (layerSizes.length >= MAX_LAYERS) return;
-  layerSizes.push(4);
-  layerSizes[0] = camRes * camRes;
-  buildLayerInputs();
-  buildNetwork();
-});
-
-document.getElementById('btn-rem-layer').addEventListener('click', () => {
-  if (layerSizes.length <= MIN_LAYERS) return;
-  layerSizes.pop();
-  buildLayerInputs();
-  buildNetwork();
-});
-
-document.getElementById('btn-pause-rotate').addEventListener('click', function() {
-  autoRotate = !autoRotate;
-  this.textContent = autoRotate ? '⏸ Rotation' : '▶ Rotation';
-});
-
-document.getElementById('btn-rebuild').addEventListener('click', () => {
-  // Randomize sizes for fun
-  layerSizes = layerSizes.map((v, i) => i === 0 ? camRes * camRes : Math.floor(Math.random() * 14) + 2);
-  buildLayerInputs();
-  buildNetwork();
-});
-
-// ═══════════════════════════════════════════════════════
-//  CAMERA B&W FEED
-// ═══════════════════════════════════════════════════════
-const camPrompt    = document.getElementById('cam-prompt');
+// ═══════════════════════════════════════════════════════════════
+//  CAMERA B&W FEED -> OCCIPITAL INPUT
+// ═══════════════════════════════════════════════════════════════
+const camPromptEl  = document.getElementById('cam-prompt');
 const camContainer = document.getElementById('cam-container');
 const camCanvas    = document.getElementById('cam-canvas');
 const camVideo     = document.getElementById('cam-video');
 const camCtx       = camCanvas.getContext('2d');
 
-camPrompt.addEventListener('click', async () => {
+camCanvas.width  = camRes;
+camCanvas.height = camRes;
+
+camPromptEl.addEventListener('click', async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     camVideo.srcObject = stream;
     await camVideo.play();
-    camPrompt.style.display    = 'none';
-    camContainer.style.display = 'block';
+    camPromptEl.style.display    = 'none';
+    camContainer.style.display   = 'block';
+    camActive = true;
     drawBW();
   } catch (err) {
     const txt = document.getElementById('cam-prompt-text');
-    txt.textContent = err.name === 'NotAllowedError' ? 'Access Denied' : 'Not Available';
+    txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
   }
 });
 
 function drawBW() {
   if (camVideo.readyState >= 2) {
-    const r = camRes;
-    camCtx.drawImage(camVideo, 0, 0, r, r);
-    const img = camCtx.getImageData(0, 0, r, r);
+    camCtx.drawImage(camVideo, 0, 0, camRes, camRes);
+    const img = camCtx.getImageData(0, 0, camRes, camRes);
     const d   = img.data;
     for (let i = 0; i < d.length; i += 4) {
       const grey = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
@@ -963,87 +972,119 @@ function drawBW() {
   requestAnimationFrame(drawBW);
 }
 
-// ═══════════════════════════════════════════════════════
-//  RESOLUTION BUTTONS
-// ═══════════════════════════════════════════════════════
-(function() {
-  const badge  = document.getElementById('res-badge');
-  const btnDec = document.getElementById('btn-res-dec');
-  const btnInc = document.getElementById('btn-res-inc');
-  const MIN_RES = 10, MAX_RES = 25, STEP = 5;
+// ═══════════════════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════════════════
+let lastTime = 0;
+let simTickMs = 0;
+const SIM_INTERVAL_MS = 60; // base tick interval
 
-  function applyRes() {
-    const total = camRes * camRes;
-    badge.textContent = camRes + '×' + camRes;
-    btnDec.disabled = camRes <= MIN_RES;
-    btnInc.disabled = camRes >= MAX_RES;
+function animate(time) {
+  requestAnimationFrame(animate);
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
 
-    camCanvas.width  = camRes;
-    camCanvas.height = camRes;
-    pixelValues = new Float32Array(total);
-    layerSizes[0] = total;
-    smoothActs = null;
-    buildLayerInputs();
-    buildNetwork();
+  if (!isDragging && autoRotate) targetSph.theta -= dt * 0.06;
+  updateCamera();
+
+  // Sim ticks gated by speed
+  if (simRunning) {
+    simTickMs += dt * 1000 * simSpeed;
+    while (simTickMs >= SIM_INTERVAL_MS) {
+      simTick();
+      simTickMs -= SIM_INTERVAL_MS;
+    }
   }
 
-  btnDec.addEventListener('click', () => { if (camRes > MIN_RES) { camRes -= STEP; applyRes(); } });
-  btnInc.addEventListener('click', () => { if (camRes < MAX_RES) { camRes += STEP; applyRes(); } });
+  updateVisuals(dt);
+  renderer.render(scene, camera);
+}
 
-  // Set initial button states without rebuilding (network already built at init)
-  badge.textContent = camRes + '×' + camRes;
-  btnDec.disabled = camRes <= MIN_RES;
-  btnInc.disabled = camRes >= MAX_RES;
-})();
-
-// ═══════════════════════════════════════════════════════
-//  PINCH-TO-ZOOM (mobile)
-// ═══════════════════════════════════════════════════════
-let pinchStartDist = null;
-let pinchStartZoom = null;
-
-canvas.addEventListener('touchstart', e => {
-  if (e.touches.length === 2) {
-    isDragging = false;
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    pinchStartDist = Math.hypot(dx, dy);
-    pinchStartZoom = targetZoom;
-  }
-}, { passive: true });
-
-canvas.addEventListener('touchmove', e => {
-  if (e.touches.length === 2 && pinchStartDist !== null) {
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.hypot(dx, dy);
-    const scale = pinchStartDist / dist;
-    targetZoom = Math.max(6, Math.min(60, pinchStartZoom * scale));
-  }
-}, { passive: true });
-
-canvas.addEventListener('touchend', e => {
-  if (e.touches.length < 2) pinchStartDist = null;
-}, { passive: true });
-
-// ═══════════════════════════════════════════════════════
-//  MOBILE PANEL TOGGLE
-// ═══════════════════════════════════════════════════════
-const panelToggleBtn = document.getElementById('panel-toggle');
-const panelEl = document.getElementById('panel');
-
-panelToggleBtn.addEventListener('click', () => {
-  panelEl.classList.toggle('open');
+// ═══════════════════════════════════════════════════════════════
+//  UI BINDINGS
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('sl-speed').addEventListener('input', function() {
+  simSpeed = parseInt(this.value);
+  document.getElementById('vb-speed').textContent = simSpeed;
+});
+document.getElementById('sl-thresh').addEventListener('input', function() {
+  fireThresh = parseInt(this.value) / 100;
+  document.getElementById('vb-thresh').textContent = fireThresh.toFixed(2);
+  // Update all neuron thresholds
+  neurons.forEach(n => { n.threshold = fireThresh + (Math.random() - 0.5) * 0.1; });
 });
 
-// Close panel when tapping the canvas (mobile)
-canvas.addEventListener('touchstart', () => {
-  if (window.innerWidth < 640) panelEl.classList.remove('open');
+document.getElementById('btn-pause').addEventListener('click', function() {
+  autoRotate = !autoRotate;
+  this.textContent = autoRotate ? '⏸ Pause' : '▶ Resume';
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  tickCount = 0;
+  pixelValues = new Float32Array(camRes * camRes);
+  buildBrain();
+  animate(0);
+});
+// Input resolution buttons
+function applyResolution() {
+  pixelValues = new Float32Array(camRes * camRes);
+  camCanvas.width  = camRes;
+  camCanvas.height = camRes;
+  document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+  document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+  document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+
+  // Remove old cam nodes and edges by tag, then rebuild
+  const toRemove = networkGroup.children.filter(
+    o => o.userData && (o.userData.isCamNode || o.userData.isCamEdge)
+  );
+  toRemove.forEach(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+    networkGroup.remove(o);
+  });
+
+  buildCamInputLayer(occipitalIdxs);
+}
+
+document.getElementById('btn-res-dec').addEventListener('click', () => {
+  if (camRes > CAM_RES_MIN) { camRes -= CAM_RES_STEP; applyResolution(); }
+});
+document.getElementById('btn-res-inc').addEventListener('click', () => {
+  if (camRes < CAM_RES_MAX) { camRes += CAM_RES_STEP; applyResolution(); }
+});
+
+// Set initial button states
+document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+
+document.getElementById('panel-toggle').addEventListener('click', () => {
+  document.getElementById('panel').classList.toggle('open');
+});
+cv.addEventListener('touchstart', () => {
+  if (window.innerWidth < 640) document.getElementById('panel').classList.remove('open');
 }, { passive: true });
 
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
-buildLayerInputs();
-buildNetwork();
+// ═══════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+buildBrain();
 animate(0);
 </script>
 </body>
