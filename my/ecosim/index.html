@@ -47,7 +47,7 @@
   #canvas-container { position: fixed; inset: 0; }
   canvas { display: block; }
 
-  /* ── TITLE ── */
+  /* TITLE */
   #title {
     position: fixed;
     top: 20px; left: 20px;
@@ -72,7 +72,7 @@
     text-transform: uppercase;
   }
 
-  /* ── HINT ── */
+  /* HINT */
   #hint {
     position: fixed;
     bottom: 22px; left: 50%;
@@ -88,7 +88,7 @@
   }
   @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.75} }
 
-  /* ── GEN/TICK LABEL ── */
+  /* GEN/TICK LABEL */
   #gen-label {
     position: fixed;
     top: 20px; right: 20px;
@@ -100,7 +100,7 @@
     z-index: 20;
   }
 
-  /* ── CAMERA FEED ── */
+  /* CAMERA FEED */
   #cam-prompt {
     width: 100%;
     padding: 9px 0;
@@ -153,7 +153,7 @@
     #cam-canvas { width: 80px; height: 80px; }
   }
 
-  /* ── PANEL TOGGLE ── */
+  /* PANEL TOGGLE */
   #panel-toggle {
     position: fixed;
     bottom: 24px; right: 20px;
@@ -170,7 +170,7 @@
   }
   @media (min-width: 640px) { #panel-toggle { display: none; } }
 
-  /* ── SIDE PANEL ── */
+  /* SIDE PANEL */
   #panel {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -215,7 +215,7 @@
     #panel-handle { display: none; }
   }
 
-  /* ── PANEL INTERNALS ── */
+  /* PANEL INTERNALS */
   .section-label {
     font-size: 0.46rem;
     letter-spacing: 0.26em;
@@ -293,7 +293,7 @@
   }
   #stats span { color: var(--text); }
 
-  /* ── TOOLTIP ── */
+  /* TOOLTIP */
   #tooltip {
     position: fixed;
     pointer-events: none;
@@ -357,7 +357,18 @@
 
   <button id="btn-pause">⏸ Pause</button>
   <button id="btn-reset">↺ Reset Brain</button>
-  <div id="cam-prompt" title="Enable camera → feeds Occipital lobe">
+  <div class="section-label">Vision Input</div>
+
+  <div class="ctrl-row">
+    <span class="ctrl-label">Resolution</span>
+    <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
+      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">−</button>
+      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10×10</span>
+      <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
+    </div>
+  </div>
+
+  <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
     <span id="cam-prompt-icon">👁</span>
     <span>Enable Vision</span>
   </div>
@@ -372,14 +383,14 @@
 </div>
 
 <div id="tooltip">
-  <div class="tt-title" id="tt-title">—</div>
+  <div class="tt-title" id="tt-title">-</div>
   <div id="tt-body"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════
-//  MAT BRAIN CONFIG — mirrors neuron_config.yaml structure
+//  MAT BRAIN CONFIG mirrors yaml structure
 // ═══════════════════════════════════════════════════════════════
 const LOBE_DEFS = [
   { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
@@ -391,7 +402,7 @@ const LOBE_DEFS = [
   { name: 'brainstem',   label: 'Brainstem (Survival)', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
-const LOBE_SPREAD = 1.0;   // how far neurons scatter inside a lobe cluster
+const LOBE_SPREAD = 2.0;   // how far neurons scatter inside a lobe cluster
 const ORBIT_RADIUS = 24;
 const NODE_R = 0.18;
 const MAX_CROSS_EDGES_DRAWN = 180;
@@ -440,9 +451,12 @@ let fireThresh = 0.50;
 let tickCount  = 0;
 let firesThisTick = 0;
 
-// ── Camera / vision input ──
-const CAM_RES = 10; // 10×10 pixel grid → 100 input nodes
-let pixelValues    = new Float32Array(CAM_RES * CAM_RES); // greyscale 0..1
+// Camera / vision input
+const CAM_RES_MIN  = 5;
+const CAM_RES_MAX  = 25;
+const CAM_RES_STEP = 5;
+let camRes         = 10; // current resolution (side length); grid = camRes×camRes nodes
+let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
 
@@ -471,7 +485,7 @@ function buildBrain() {
   scene.add(networkGroup);
   neurons = [];
 
-  // ── Spawn neurons per lobe ──
+  // Spawn neurons per lobe
   const lobeNeuronMap = {}; // lobeName -> array of neuron indices
 
   for (const lobe of LOBE_DEFS) {
@@ -534,7 +548,7 @@ function buildBrain() {
     lobeNeuronMap[lobe.name] = idxs;
   }
 
-  // ── Intra-lobe connections ──
+  // Intra-lobe connections
   let totalConns = 0;
   for (const lobe of LOBE_DEFS) {
     const idxs = lobeNeuronMap[lobe.name];
@@ -550,7 +564,7 @@ function buildBrain() {
     }
   }
 
-  // ── Cross-lobe connections (thalamus gets priority) ──
+  // Cross-lobe connections (thalamus gets priority)
   for (const lobe of LOBE_DEFS) {
     const srcIdxs = lobeNeuronMap[lobe.name];
     const otherLobes = LOBE_DEFS.filter(l => l.name !== lobe.name);
@@ -567,7 +581,7 @@ function buildBrain() {
     }
   }
 
-  // ── Draw intra-lobe edges ──
+  // Draw intra-lobe edges
   for (const lobe of LOBE_DEFS) {
     const col = new THREE.Color(lobe.color);
     const idxs = lobeNeuronMap[lobe.name];
@@ -583,7 +597,7 @@ function buildBrain() {
     }
   }
 
-  // ── Draw cross-lobe edges (sampled) ──
+  // Draw cross-lobe edges (sampled)
   const crossEdges = [];
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
@@ -602,7 +616,7 @@ function buildBrain() {
     addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, 0.04);
   }
 
-  // ── Stats ──
+  // Stats
   document.getElementById('st-lobes').textContent   = LOBE_DEFS.length;
   document.getElementById('st-neurons').textContent = neurons.length;
   document.getElementById('st-conns').textContent   = totalConns;
@@ -612,7 +626,7 @@ function buildBrain() {
   // Store occipital indices for camera injection
   occipitalIdxs = lobeNeuronMap['occipital'] || [];
 
-  // ── Camera input layer: 10×10 grid of input nodes wired to occipital ──
+  // Camera input layer: 10×10 grid of input nodes wired to occipital
   buildCamInputLayer(lobeNeuronMap['occipital']);
 }
 
@@ -628,29 +642,27 @@ function addEdgeLine(pA, pB, colA, colB, baseOpacity) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA INPUT LAYER  (10×10 pixel nodes → occipital lobe)
+//  CAMERA INPUT LAYER  (camRes by camRes pixel nodes -> occipital lobe)
 // ═══════════════════════════════════════════════════════════════
 const CAM_NODE_R   = 0.09;
 const camNodeGeo   = new THREE.SphereGeometry(CAM_NODE_R, 8, 8);
-let   camNodeMeshes = [];   // THREE.Mesh per pixel node
-let   camEdgeLines  = [];   // Lines from pixel nodes to occipital neurons
+let   camNodeMeshes = [];
+let   camEdgeLines  = [];
 
 function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
 
-  // Position: to the right of occipital lobe (occipital is at [2.2, 0.8, -0.8])
-  // Camera grid sits further right/forward as a flat 2D plane
   const GRID_ORIGIN = new THREE.Vector3(4.8, 0.8, -0.8);
   const SPACING = 0.22;
-  const half = (CAM_RES - 1) / 2;
+  const half = (camRes - 1) / 2;
   const camColor = new THREE.Color('#56b4e9');
 
   const gridPositions = [];
 
-  for (let row = 0; row < CAM_RES; row++) {
-    for (let col = 0; col < CAM_RES; col++) {
-      const idx = row * CAM_RES + col;
+  for (let row = 0; row < camRes; row++) {
+    for (let col = 0; col < camRes; col++) {
+      const idx = row * camRes + col;
       const pos = new THREE.Vector3(
         GRID_ORIGIN.x,
         GRID_ORIGIN.y + (half - row) * SPACING,
@@ -669,11 +681,8 @@ function buildCamInputLayer(occIdxs) {
     }
   }
 
-  // Draw edges: each pixel node connects to a subset of occipital neurons
-  // Use modulo mapping so all occipital neurons get roughly equal coverage
   const occCount = occIdxs.length;
-  for (let pi = 0; pi < CAM_RES * CAM_RES; pi++) {
-    // Connect each pixel to 1–2 occipital neurons
+  for (let pi = 0; pi < camRes * camRes; pi++) {
     const targA = occIdxs[pi % occCount];
     const targB = occIdxs[(pi + Math.floor(occCount / 2)) % occCount];
     const targets = [targA];
@@ -692,6 +701,7 @@ function buildCamInputLayer(occIdxs) {
         vertexColors: true, transparent: true, opacity: 0.04
       });
       const line = new THREE.Line(geo, mat);
+      line.userData.isCamEdge = true;
       networkGroup.add(line);
       camEdgeLines.push({ mat, pixelIdx: pi, tgtNeuronIdx: tgt });
     }
@@ -758,7 +768,7 @@ function simTick() {
     const occCount = occipitalIdxs.length;
     for (let i = 0; i < occCount; i++) {
       const ni = occipitalIdxs[i];
-      const pi = i % pixelValues.length;
+      const pi = i % (camRes * camRes);
       neurons[ni].inputSum += pixelValues[pi];
     }
   }
@@ -790,7 +800,7 @@ function updateVisuals(dt) {
     const v = Math.min(n.smoothInput / n.threshold, 1.0);
     const fired = n.fired;
 
-    // Emissive intensity: dim → bright
+    // Emissive intensity: dim -> bright
     n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
     n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
     // Halo pulse on fire
@@ -888,7 +898,7 @@ function updateCamera() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CLICK → TOOLTIP
+//  CLICK -> TOOLTIP
 // ═══════════════════════════════════════════════════════════════
 const tooltip = document.getElementById('tooltip');
 cv.addEventListener('click', e => {
@@ -921,7 +931,7 @@ cv.addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA B&W FEED → OCCIPITAL INPUT
+//  CAMERA B&W FEED -> OCCIPITAL INPUT
 // ═══════════════════════════════════════════════════════════════
 const camPromptEl  = document.getElementById('cam-prompt');
 const camContainer = document.getElementById('cam-container');
@@ -929,8 +939,8 @@ const camCanvas    = document.getElementById('cam-canvas');
 const camVideo     = document.getElementById('cam-video');
 const camCtx       = camCanvas.getContext('2d');
 
-camCanvas.width  = CAM_RES;
-camCanvas.height = CAM_RES;
+camCanvas.width  = camRes;
+camCanvas.height = camRes;
 
 camPromptEl.addEventListener('click', async () => {
   try {
@@ -949,8 +959,8 @@ camPromptEl.addEventListener('click', async () => {
 
 function drawBW() {
   if (camVideo.readyState >= 2) {
-    camCtx.drawImage(camVideo, 0, 0, CAM_RES, CAM_RES);
-    const img = camCtx.getImageData(0, 0, CAM_RES, CAM_RES);
+    camCtx.drawImage(camVideo, 0, 0, camRes, camRes);
+    const img = camCtx.getImageData(0, 0, camRes, camRes);
     const d   = img.data;
     for (let i = 0; i < d.length; i += 4) {
       const grey = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
@@ -1005,15 +1015,49 @@ document.getElementById('sl-thresh').addEventListener('input', function() {
 });
 
 document.getElementById('btn-pause').addEventListener('click', function() {
-  simRunning = !simRunning;
-  this.textContent = simRunning ? '⏸ Pause' : '▶ Resume';
+  autoRotate = !autoRotate;
+  this.textContent = autoRotate ? '⏸ Pause' : '▶ Resume';
 });
 document.getElementById('btn-reset').addEventListener('click', () => {
   tickCount = 0;
-  pixelValues = new Float32Array(CAM_RES * CAM_RES);
+  pixelValues = new Float32Array(camRes * camRes);
   buildBrain();
   animate(0);
 });
+// Input resolution buttons
+function applyResolution() {
+  pixelValues = new Float32Array(camRes * camRes);
+  camCanvas.width  = camRes;
+  camCanvas.height = camRes;
+  document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+  document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+  document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+
+  // Remove old cam nodes and edges by tag, then rebuild
+  const toRemove = networkGroup.children.filter(
+    o => o.userData && (o.userData.isCamNode || o.userData.isCamEdge)
+  );
+  toRemove.forEach(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+    networkGroup.remove(o);
+  });
+
+  buildCamInputLayer(occipitalIdxs);
+}
+
+document.getElementById('btn-res-dec').addEventListener('click', () => {
+  if (camRes > CAM_RES_MIN) { camRes -= CAM_RES_STEP; applyResolution(); }
+});
+document.getElementById('btn-res-inc').addEventListener('click', () => {
+  if (camRes < CAM_RES_MAX) { camRes += CAM_RES_STEP; applyResolution(); }
+});
+
+// Set initial button states
+document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+
 document.getElementById('panel-toggle').addEventListener('click', () => {
   document.getElementById('panel').classList.toggle('open');
 });
