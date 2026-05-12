@@ -684,6 +684,7 @@
             initialDeer: Math.trunc(Number(20 * scale)),
             initialWolves: Math.trunc(Number(5 * scale)),
             initialPlants: Math.trunc(Number(30 * scale)),
+            probSpawnPlant: 0.05,
             scale: scale,
             worldWidth: Math.trunc(Number(850 * scale)),
             worldHeight: Math.trunc(Number(600 * scale)),
@@ -1332,7 +1333,6 @@
         // ============================================================
         // PINCH-TO-ZOOM (bird's-eye mode, touch only)
         // ============================================================
-
         let pinchActive = false;
         let pinchLastDist = 0;
 
@@ -1373,7 +1373,6 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
-
         function createTerrain() {
             const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
@@ -3811,14 +3810,13 @@
             if (anyRemoved) entities = [...animals, ...plants, ...waters];
 
             // Occasionally spawn new plants
-            if (Math.random() < 0.01) {
+            if (Math.random() < CONFIG.probSpawnPlant) {
                 const p = new Plant([
                     Math.random() * CONFIG.worldWidth, 3,
                     Math.random() * CONFIG.worldHeight
                 ]);
                 plants.push(p);
                 entities.push(p);
-                // entities is already up-to-date since we push directly
             }
 
             // Update instanced mesh transforms every frame
@@ -3828,7 +3826,7 @@
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
 
-            // Raycast every other frame — imperceptible latency, halves raycasting cost
+            // Raycast every other frame
             if (ticks % 2 === 0) updateTargetInfo();
 
             ticks++;
