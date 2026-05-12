@@ -2390,15 +2390,24 @@
             const backLZ  = -CD / 2;
 
             const localBoxes = [
+                // Front wall left segment (beside door)
                 { minX: -CW/2 - WALL_THICK, maxX: -halfDoor,          minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                // Front wall right segment (beside door)
                 { minX:  halfDoor,           maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                // Front wall above door
                 { minX: -halfDoor,           maxX:  halfDoor,           minY: FLOOR_Y + DOOR_HEIGHT, maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                // Back wall
                 { minX: -CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: backLZ + WALL_THICK  },
-                { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ,               maxZ: frontLZ              },
-                { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ,               maxZ: frontLZ              },
+                // Left side wall (covers full depth including corner overlaps)
+                { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
+                // Right side wall (covers full depth including corner overlaps)
+                { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
+                // Roof left panel
                 { minX: -(CW/2+OVH) - WALL_THICK, maxX: 0,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
+                // Roof right panel
                 { minX: 0, maxX:  (CW/2+OVH) + WALL_THICK,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
-                { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: 0,                     maxY: chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
+                // Chimney (start at FLOOR_Y so it doesn't extend into the ground)
+                { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: FLOOR_Y,               maxY: chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
             ];
 
             return {
@@ -2415,8 +2424,11 @@
         function resolveCabinCollisions(pos, radius, halfH, velocityY) {
             for (const cabin of CABIN_COLLIDERS) {
                 const dx = pos.x - cabin.cx, dz = pos.z - cabin.cz;
-                const lx =  dx * cabin.cosR + dz * cabin.sinR;
-                const lz = -dx * cabin.sinR + dz * cabin.cosR;
+                // Inverse of Three.js rotation.y=rotationY: local = R^T * world
+                // R(θ): world-from-local = [[cosθ,0,sinθ],[0,1,0],[-sinθ,0,cosθ]]
+                // R^T (local-from-world)  = [[cosθ,0,-sinθ],[0,1,0],[sinθ,0,cosθ]]
+                const lx = dx * cabin.cosR - dz * cabin.sinR;
+                const lz = dx * cabin.sinR + dz * cabin.cosR;
 
                 for (const b of cabin.boxes) {
                     const pMinX = lx - radius, pMaxX = lx + radius;
@@ -2438,14 +2450,14 @@
                     } else if (overlapZ <= overlapY) {
                         const sign = lz < (b.minZ + b.maxZ) / 2 ? -1 : 1;
                         const corrLocal = sign * overlapZ;
-                        pos.x += corrLocal * (-cabin.sinR);
+                        pos.x += corrLocal * cabin.sinR;
                         pos.z += corrLocal * cabin.cosR;
                     } else {
                         const sign = pos.y < (b.minY + b.maxY) / 2 ? -1 : 1;
                         pos.y += sign * overlapY;
-                        player.isJumping = false;
+                        if (velocityY !== undefined) player.isJumping = false;
                     }
-                    velocityY = 0;
+                    if (velocityY !== undefined) velocityY = 0;
                 }
             }
             return velocityY;
