@@ -83,7 +83,7 @@
     text-transform: uppercase;
     pointer-events: none;
     white-space: nowrap;
-    animation: pulse 3s ease-in-out infinite;
+    /* animation: pulse 3s ease-in-out infinite; */
     z-index: 10;
   }
   @keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.75} }
@@ -363,7 +363,7 @@
     <span class="ctrl-label">Resolution</span>
     <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
       <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">−</button>
-      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10×10</span>
+      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10 by 10</span>
       <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
     </div>
   </div>
@@ -455,7 +455,7 @@ let firesThisTick = 0;
 const CAM_RES_MIN  = 5;
 const CAM_RES_MAX  = 25;
 const CAM_RES_STEP = 5;
-let camRes         = 10; // current resolution (side length); grid = camRes×camRes nodes
+let camRes         = 10; // current resolution (side length); grid = camRes by camRes nodes
 let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
@@ -626,7 +626,7 @@ function buildBrain() {
   // Store occipital indices for camera injection
   occipitalIdxs = lobeNeuronMap['occipital'] || [];
 
-  // Camera input layer: 10×10 grid of input nodes wired to occipital
+  // Camera input layer: 10 by 10 grid of input nodes wired to occipital
   buildCamInputLayer(lobeNeuronMap['occipital']);
 }
 
@@ -967,7 +967,7 @@ function drawBW() {
       d[i] = d[i+1] = d[i+2] = grey;
       pixelValues[i >> 2] = grey / 255;
     }
-    camCtx.putImageData(img, 0, 0);
+    // camCtx.putImageData(img, 0, 0);
   }
   requestAnimationFrame(drawBW);
 }
@@ -1029,7 +1029,7 @@ function applyResolution() {
   pixelValues = new Float32Array(camRes * camRes);
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
-  document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+  document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
   document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
   document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
 
@@ -1054,7 +1054,7 @@ document.getElementById('btn-res-inc').addEventListener('click', () => {
 });
 
 // Set initial button states
-document.getElementById('res-badge').textContent = `${camRes}×${camRes}`;
+document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
 document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
 document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
 
