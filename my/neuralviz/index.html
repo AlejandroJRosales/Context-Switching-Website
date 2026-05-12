@@ -46,7 +46,7 @@
 
   canvas { display: block; }
 
-  /* ─── TITLE ─────────────────────────────────────── */
+  /* TITLE */
   #title {
     position: fixed;
     top: 16px;
@@ -71,7 +71,7 @@
     text-transform: uppercase;
   }
 
-  /* ─── HINT ───────────────────────────────────────── */
+  /* HINT */
   #hint {
     position: fixed;
     top: 16px;
@@ -88,7 +88,7 @@
   }
   @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.8} }
 
-  /* ─── CAM (top-right corner on mobile) ──────────── */
+  /* CAM (top-right corner on mobile) */
   #cam-container {
     position: fixed;
     top: 16px;
@@ -149,7 +149,7 @@
     line-height: 1.5;
   }
 
-  /* ─── PANEL TOGGLE BUTTON (mobile fab) ──────────── */
+  /* PANEL TOGGLE BUTTON (mobile fab) */
   #panel-toggle {
     position: fixed;
     bottom: 24px;
@@ -171,7 +171,7 @@
   }
   #panel-toggle:active { background: rgba(60,170,255,0.15); }
 
-  /* ─── BOTTOM SHEET (mobile default) ─────────────── */
+  /* BOTTOM SHEET (mobile default) */
   #panel {
     position: fixed;
     left: 0; right: 0;
@@ -206,7 +206,7 @@
     flex-shrink: 0;
   }
 
-  /* ─── CONTROLS ───────────────────────────────────── */
+  /* CONTROLS */
   .ctrl-group label {
     display: block;
     font-size: 0.52rem;
@@ -273,7 +273,7 @@
     flex-shrink: 0;
   }
 
-  /* Buttons — tall enough to tap comfortably */
+  /* Buttons */
   button {
     width: 100%;
     min-height: var(--tap);
@@ -310,7 +310,7 @@
   }
   #stats span { color: var(--text); }
 
-  /* ─── DESKTOP OVERRIDES (≥640px) ────────────────── */
+  /* DESKTOP OVERRIDES (640px) */
   @media (min-width: 640px) {
     #title { top: 28px; left: 36px; }
     #title h1 { font-size: 1.45rem; }
@@ -394,7 +394,7 @@
   <div class="ctrl-group">
     <label>Input Resolution</label>
     <div style="display:flex;align-items:center;gap:6px;">
-      <button id="btn-res-dec" style="flex:1;padding:7px 0;">−</button>
+      <button id="btn-res-dec" style="flex:1;padding:7px 0;">-</button>
       <div id="res-badge" style="flex:2;text-align:center;font-size:0.58rem;color:#fff;white-space:nowrap;">10×10</div>
       <button id="btn-res-inc" style="flex:1;padding:7px 0;">+</button>
     </div>
@@ -409,7 +409,7 @@
     <label>Layers</label>
     <div style="display:flex;gap:5px;">
       <button id="btn-add-layer">+ Add</button>
-      <button id="btn-rem-layer" class="danger">– Remove</button>
+      <button id="btn-rem-layer" class="danger">- Remove</button>
     </div>
   </div>
 
@@ -417,9 +417,9 @@
   <button id="btn-pause-rotate">⏸ Rotation</button>
 
   <div id="stats">
-    Layers: <span id="st-layers">–</span><br>
-    Neurons: <span id="st-neurons">–</span><br>
-    Connections: <span id="st-conns">–</span>
+    Layers: <span id="st-layers">-</span><br>
+    Neurons: <span id="st-neurons">-</span><br>
+    Connections: <span id="st-conns">-</span>
   </div>
 </div>
 
@@ -434,7 +434,7 @@ const MIN_LAYERS = 2;
 const MAX_NEURONS = 100;
 const MIN_NEURONS = 1;
 
-const LAYER_SPACING = 3.2;
+const LAYER_SPACING = 2.5;
 const NODE_RADIUS   = 0.22;
 const ORBIT_RADIUS  = 28;
 
@@ -512,6 +512,7 @@ function buildNetwork() {
   nodeMeshes  = [];
   edgeMats    = [];
   activations = [];
+  smoothActs  = null; // force reinit so new layer sizes get correctly-sized arrays
 
   // Generate random weights & biases (Xavier-ish init)
   weights = [];
@@ -530,7 +531,7 @@ function buildNetwork() {
   const L = layerSizes.length;
   const totalWidth = (L - 1) * LAYER_SPACING;
 
-  // Palette per layer (gradient from cyan → purple → pink)
+  // Palette per layer (gradient from cyan -> purple -> pink)
   function layerColor(i) {
     const t = i / Math.max(L - 1, 1);
     const r = Math.round(lerp(0x33, 0xcc, t));
@@ -556,15 +557,21 @@ function buildNetwork() {
         const col10 = ni % camRes;
         const row10 = Math.floor(ni / camRes);
         const half  = (camRes - 1) / 2;
-        const spacing = Math.min(0.55, 5.0 / camRes); // shrink spacing at high res
+        // const spacing = Math.min(0.55, 5.0 / camRes); // shrink spacing at high res
+        const spacing = 0.55;
         y = (half - row10) * spacing;
         z = (col10 - half) * spacing;
       } else if (n <= 6) {
-        y = (ni - (n - 1) / 2) * 1.1;
+        // Linear column: spacing grows slightly with count
+        const spacing = 0.9 + n * 0.04;
+        y = (ni - (n - 1) / 2) * spacing;
         z = 0;
       } else {
+        // Circular ring: radius scales with node count so nodes never crowd
         const angle = (ni / n) * Math.PI * 2;
-        const r = Math.min(n * 0.18, 2.2);
+        // Enough arc-length per node: circumference = n * minArc, so r = n * minArc / (2π)
+        const minArcPerNode = 0.55; // minimum gap (world units) between adjacent nodes
+        const r = Math.max(n * minArcPerNode / (Math.PI * 2), 1.2);
         y = Math.cos(angle) * r;
         z = Math.sin(angle) * r;
       }
@@ -645,9 +652,6 @@ function buildNetwork() {
     edgeMats.push(layerEdgeMats);
   }
 
-  // Axis label sprites (optional glow planes per layer)
-  // (skipped for cleanliness)
-
   // Update stats
   document.getElementById('st-layers').textContent  = L;
   document.getElementById('st-neurons').textContent = layerSizes.reduce((s,v) => s + v, 0);
@@ -700,8 +704,9 @@ function forwardPass() {
     }
   }
 
-  // Lazy init smoothed activations
-  if (!smoothActs || smoothActs.length !== L) {
+  // Lazy init smoothed activations — reinit if layer count or any layer size changed
+  if (!smoothActs || smoothActs.length !== L ||
+      smoothActs.some((sa, l) => sa.length !== layerSizes[l])) {
     smoothActs = activations.map(a => new Float32Array(a.length));
   }
 
@@ -920,7 +925,7 @@ document.getElementById('btn-rebuild').addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════════════════
-//  CAMERA — B&W FEED
+//  CAMERA B&W FEED
 // ═══════════════════════════════════════════════════════
 const camPrompt    = document.getElementById('cam-prompt');
 const camContainer = document.getElementById('cam-container');
