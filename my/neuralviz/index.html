@@ -397,11 +397,11 @@ const LOBE_DEFS = [
   { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
-const LOBE_SPREAD = 2.0;   // how far neurons scatter inside a lobe cluster
-const ORBIT_RADIUS = 24;
-const NODE_R = 0.18;
-const MAX_CROSS_EDGES_DRAWN = 180;
-const MAX_INTRA_EDGES_DRAWN = 60;
+const LOBE_SPREAD = 1.0;   // how far neurons scatter inside a lobe cluster
+const ORBIT_RADIUS = 10;
+const NODE_R = 0.09;
+const MAX_CROSS_EDGES_DRAWN = 50;
+const MAX_INTRA_EDGES_DRAWN = 50;
 
 // ═══════════════════════════════════════════════════════════════
 //  SCENE
@@ -446,10 +446,10 @@ let tickCount  = 0;
 let firesThisTick = 0;
 
 // Camera / vision input
-const CAM_RES_MIN  = 5;
-const CAM_RES_MAX  = 25;
+const CAM_RES_MIN  = 10;
+const CAM_RES_MAX  = 50;
 const CAM_RES_STEP = 5;
-let camRes         = 10; // current resolution (side length); grid = camRes by camRes nodes
+let camRes         = 20; // current resolution (side length); grid = camRes by camRes nodes
 let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
@@ -522,6 +522,7 @@ function buildBrain() {
         neurotransmitter: lobe.name === 'brainstem' ? 'norepinephrine' : lobe.name === 'thalamus' ? 'acetylcholine' : 'glutamate',
         connections: [],   // indices of target neurons
         weights: [],       // corresponding synaptic weights
+        camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0, // dedicated camera synapse weight (0.2-0.8)
         mesh,
         mat,
         pos,
@@ -539,7 +540,7 @@ function buildBrain() {
     for (const src of idxs) {
       for (const tgt of idxs) {
         if (src !== tgt && Math.random() < lobe.connP) {
-          const w = (Math.random() * 0.8 + 0.1);
+          const w = (Math.random() * 0.5 + 0.05);
           neurons[src].connections.push(tgt);
           neurons[src].weights.push(w);
           totalConns++;
@@ -732,28 +733,20 @@ function buildLobeLegend(lobeNeuronMap) {
 function simTick() {
   firesThisTick = 0;
 
-  // Phase 1: accumulate weighted inputs from last tick's fired neurons
+  // Phase 1: accumulate weighted inputs
   // Reset inputSum for all neurons
   for (let ni = 0; ni < neurons.length; ni++) {
     neurons[ni].inputSum = 0;
   }
 
-  // Each neuron that fired last tick sends weight to its targets
-  for (let ni = 0; ni < neurons.length; ni++) {
-    if (!neurons[ni].fired) continue;
-    const n = neurons[ni];
-    for (let ci = 0; ci < n.connections.length; ci++) {
-      neurons[n.connections[ci]].inputSum += n.weights[ci];
-    }
-  }
-
-  // Camera injection: add pixel brightness directly to occipital inputSum
+  // Camera injection: camWeight * pixel brightness -> occipital inputSum
   if (camActive) {
     const occCount = occipitalIdxs.length;
+    const pixCount = camRes * camRes;
     for (let i = 0; i < occCount; i++) {
       const ni = occipitalIdxs[i];
-      const pi = i % (camRes * camRes);
-      neurons[ni].inputSum += pixelValues[pi];
+      const pi = i % pixCount;
+      neurons[ni].inputSum += neurons[ni].camWeight * pixelValues[pi];
     }
   }
 
@@ -762,6 +755,15 @@ function simTick() {
     const n = neurons[ni];
     n.fired = n.inputSum >= n.threshold;
     if (n.fired) firesThisTick++;
+  }
+
+  // Phase 3: propagate fired outputs through synaptic connections
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    if (!n.fired) continue;
+    for (let ci = 0; ci < n.connections.length; ci++) {
+      neurons[n.connections[ci]].inputSum += n.weights[ci];
+    }
   }
 
   tickCount++;
@@ -902,7 +904,8 @@ cv.addEventListener('click', e => {
       `NT: ${n.neurotransmitter}<br>` +
       `Input sum: ${n.inputSum.toFixed(3)}<br>` +
       `Threshold: ${n.threshold.toFixed(3)}<br>` +
-      `Synapses: ${n.connections.length}`;
+      `Synapses: ${n.connections.length}` +
+      (n.camWeight > 0 ? `<br>Cam weight: ${n.camWeight.toFixed(3)}` : '');
     tooltip.style.left = (e.clientX + 14) + 'px';
     tooltip.style.top  = (e.clientY - 10) + 'px';
     tooltip.style.display = 'block';
@@ -928,8 +931,6 @@ camPromptEl.addEventListener('click', async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     camVideo.srcObject = stream;
     await camVideo.play();
-    camPromptEl.style.display    = 'none';
-    camContainer.style.display   = 'block';
     camActive = true;
     drawBW();
   } catch (err) {
