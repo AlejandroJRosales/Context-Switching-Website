@@ -490,6 +490,7 @@ function buildBrain() {
   networkGroup = new THREE.Group();
   scene.add(networkGroup);
   neurons = [];
+  edgeLines = [];
 
   // Spawn neurons per lobe
   const lobeNeuronMap = {}; // lobeName -> array of neuron indices
@@ -589,7 +590,7 @@ function buildBrain() {
         const tgt = neurons[src].connections[ci];
         if (!lobeNeuronMap[lobe.name].includes(tgt)) continue;
         if (drawn >= MAX_INTRA_EDGES_DRAWN) break;
-        addEdgeLine(neurons[src].pos, neurons[tgt].pos, col, col, 0.06);
+        addEdgeLine(neurons[src].pos, neurons[tgt].pos, col, col, 0.06, src, tgt);
         drawn++;
       }
     }
@@ -611,7 +612,7 @@ function buildBrain() {
     const e = crossEdges[i];
     const cA = new THREE.Color(neurons[e.src].lobeColor);
     const cB = new THREE.Color(neurons[e.tgt].lobeColor);
-    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, 0.04);
+    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, 0.04, e.src, e.tgt);
   }
 
   // Stats
@@ -628,15 +629,18 @@ function buildBrain() {
   buildCamInputLayer(lobeNeuronMap['occipital']);
 }
 
-function addEdgeLine(pA, pB, colA, colB, baseOpacity) {
+// edgeLines: flat array of { mat, srcIdx, tgtIdx, baseOpacity, colA, colB }
+let edgeLines = [];
+
+function addEdgeLine(pA, pB, colA, colB, baseOpacity, srcIdx, tgtIdx) {
   const geo = new THREE.BufferGeometry().setFromPoints([pA, pB]);
   const colors = new Float32Array([colA.r, colA.g, colA.b, colB.r, colB.g, colB.b]);
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: baseOpacity });
   const line = new THREE.Line(geo, mat);
   line.userData.isEdge = true;
-  line.userData.baseMat = mat;
   networkGroup.add(line);
+  edgeLines.push({ mat, srcIdx, tgtIdx, baseOpacity, colA: colA.clone(), colB: colB.clone(), geo });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -819,18 +823,51 @@ function simTick() {
 function updateVisuals(dt) {
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
-    // Smooth inputSum for display so visuals don't strobe every tick
     n.smoothInput += (n.inputSum - n.smoothInput) * 0.25;
     const v = Math.min(n.smoothInput / n.threshold, 1.0);
     const fired = n.fired;
 
-    // Emissive intensity: dim -> bright
     n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
     n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
 
-    // Scale pulse on fire
     const s = fired ? 1.5 : 1.0 + v * 0.15;
     n.mesh.scale.setScalar(s);
+  }
+
+  // Light up edges based on whether either endpoint neuron is active/fired
+  for (let ei = 0; ei < edgeLines.length; ei++) {
+    const e = edgeLines[ei];
+    const nSrc = neurons[e.srcIdx];
+    const nTgt = neurons[e.tgtIdx];
+    const srcFired = nSrc && nSrc.fired;
+    const tgtFired = nTgt && nTgt.fired;
+    const srcV = nSrc ? Math.min(nSrc.smoothInput / nSrc.threshold, 1.0) : 0;
+    const tgtV = nTgt ? Math.min(nTgt.smoothInput / nTgt.threshold, 1.0) : 0;
+    const activity = Math.max(srcV, tgtV);
+    const anyFired = srcFired || tgtFired;
+
+    // Opacity: ramp from base when active, spike when a node fires
+    e.mat.opacity = anyFired
+      ? Math.min(e.baseOpacity * 10, 0.95)
+      : e.baseOpacity + activity * (e.baseOpacity * 5);
+
+    // Tint the vertex colors brighter on activity
+    if (anyFired || activity > 0.1) {
+      const boost = anyFired ? 1.0 : activity;
+      const colArr = e.geo.attributes.color.array;
+      colArr[0] = Math.min(e.colA.r + boost * (1.0 - e.colA.r) * 0.9, 1);
+      colArr[1] = Math.min(e.colA.g + boost * (1.0 - e.colA.g) * 0.9, 1);
+      colArr[2] = Math.min(e.colA.b + boost * (1.0 - e.colA.b) * 0.9, 1);
+      colArr[3] = Math.min(e.colB.r + boost * (1.0 - e.colB.r) * 0.9, 1);
+      colArr[4] = Math.min(e.colB.g + boost * (1.0 - e.colB.g) * 0.9, 1);
+      colArr[5] = Math.min(e.colB.b + boost * (1.0 - e.colB.b) * 0.9, 1);
+      e.geo.attributes.color.needsUpdate = true;
+    } else {
+      const colArr = e.geo.attributes.color.array;
+      colArr[0] = e.colA.r; colArr[1] = e.colA.g; colArr[2] = e.colA.b;
+      colArr[3] = e.colB.r; colArr[4] = e.colB.g; colArr[5] = e.colB.b;
+      e.geo.attributes.color.needsUpdate = true;
+    }
   }
 
   updateCamInputVisuals();
