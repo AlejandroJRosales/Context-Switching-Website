@@ -361,8 +361,8 @@
 
   <button id="btn-pause">Pause Rotation</button>
   <button id="btn-reset">Reset Brain</button>
-  <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
-    <span>Enable Vision</span>
+  <div id="cam-prompt" title="Toggle camera vision -> feeds Occipital lobe">
+    <span id="cam-prompt-text">Enable Vision</span>
   </div>
 
   <div class="ctrl-row">
@@ -983,19 +983,42 @@ camCanvas.width  = camRes;
 camCanvas.height = camRes;
 
 camPromptEl.addEventListener('click', async () => {
+  const txt = document.getElementById('cam-prompt-text');
+
+  // If camera is active, toggle it off
+  if (camActive) {
+    camActive = false;
+    // Stop all tracks to release the hardware camera
+    if (camVideo.srcObject) {
+      camVideo.srcObject.getTracks().forEach(t => t.stop());
+      camVideo.srcObject = null;
+    }
+    pixelValues.fill(0);
+    camContainer.style.display = 'none';
+    txt.textContent = 'Enable Vision';
+    camPromptEl.style.borderColor   = 'rgba(86,180,233,0.3)';
+    camPromptEl.style.background    = 'rgba(86,180,233,0.06)';
+    return;
+  }
+
+  // Otherwise, request camera and turn on
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     camVideo.srcObject = stream;
     await camVideo.play();
     camActive = true;
+    camContainer.style.display = 'block';
+    txt.textContent = 'Disable Vision';
+    camPromptEl.style.borderColor = 'rgba(86,180,233,0.7)';
+    camPromptEl.style.background  = 'rgba(86,180,233,0.15)';
     drawBW();
   } catch (err) {
-    const txt = document.getElementById('cam-prompt-text');
     txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
   }
 });
 
 function drawBW() {
+  if (!camActive) return;
   if (camVideo.readyState >= 2) {
     camCtx.drawImage(camVideo, 0, 0, camRes, camRes);
     const img = camCtx.getImageData(0, 0, camRes, camRes);
