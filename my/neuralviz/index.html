@@ -353,6 +353,12 @@
     <span class="val-badge" id="vb-thresh">0.50</span>
   </div>
 
+  <div class="ctrl-row">
+    <span class="ctrl-label">Bio Noise</span>
+    <input type="range" id="sl-noise" min="0" max="100" value="25">
+    <span class="val-badge" id="vb-noise">25</span>
+  </div>
+
   <button id="btn-pause">Pause Rotation</button>
   <button id="btn-reset">Reset Brain</button>
   <div id="cam-prompt" title="Enable camera -> feeds Occipital lobe">
@@ -445,6 +451,30 @@ let fireThresh = 0.50;
 let tickCount  = 0;
 let firesThisTick = 0;
 
+// Biological noise parameters
+let noiseLevel = 0.25; // 0..1, controlled by slider
+// Derived noise constants (recomputed when noiseLevel changes)
+let NOISE_MEMBRANE   = 0;  // std-dev of per-tick Gaussian membrane noise
+let NOISE_SPONT_P    = 0;  // probability of spontaneous spike per neuron per tick
+let NOISE_SYN_FAIL_P = 0;  // probability a synapse silently fails to transmit
+const REFRACTORY_TICKS = 2; // ticks a neuron cannot fire after spiking
+
+function applyNoiseLevel(v) {
+  noiseLevel       = v;
+  NOISE_MEMBRANE   = v * 0.12;         // 0 .. 0.12 std-dev
+  NOISE_SPONT_P    = v * v * 0.018;   // 0 .. ~0.018 (quadratic: stays low at low noise)
+  NOISE_SYN_FAIL_P = v * 0.35;        // 0 .. 0.35 failure rate
+}
+applyNoiseLevel(noiseLevel);
+
+// Box-Muller Gaussian sample (mean 0, std 1)
+function randGauss() {
+  let u, v;
+  do { u = Math.random(); } while (u === 0);
+  v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
 // Camera / vision input
 const CAM_RES_MIN  = 10;
 const CAM_RES_MAX  = 50;
@@ -522,7 +552,8 @@ function buildBrain() {
         neurotransmitter: lobe.name === 'brainstem' ? 'norepinephrine' : lobe.name === 'thalamus' ? 'acetylcholine' : 'glutamate',
         connections: [],   // indices of target neurons
         weights: [],       // corresponding synaptic weights
-        camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0, // dedicated camera synapse weight (0.2-0.8)
+        camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0,
+        refractoryLeft: 0,  // ticks remaining in absolute refractory period
         mesh,
         mat,
         pos,
@@ -733,10 +764,10 @@ function buildLobeLegend(lobeNeuronMap) {
 function simTick() {
   firesThisTick = 0;
 
-  // Phase 1: accumulate weighted inputs
-  // Reset inputSum for all neurons
+  // Phase 1: reset inputSum, tick down refractory counters
   for (let ni = 0; ni < neurons.length; ni++) {
     neurons[ni].inputSum = 0;
+    if (neurons[ni].refractoryLeft > 0) neurons[ni].refractoryLeft--;
   }
 
   // Camera injection: camWeight * pixel brightness -> occipital inputSum
@@ -750,18 +781,43 @@ function simTick() {
     }
   }
 
-  // Phase 2: fire if inputSum meets threshold
-  for (let ni = 0; ni < neurons.length; ni++) {
-    const n = neurons[ni];
-    n.fired = n.inputSum >= n.threshold;
-    if (n.fired) firesThisTick++;
+  // Membrane noise: Gaussian thermal fluctuation on every neuron's inputSum
+  if (NOISE_MEMBRANE > 0) {
+    for (let ni = 0; ni < neurons.length; ni++) {
+      neurons[ni].inputSum += randGauss() * NOISE_MEMBRANE;
+    }
   }
 
-  // Phase 3: propagate fired outputs through synaptic connections
+  // Spontaneous firing: rare depolarisation without synaptic input
+  if (NOISE_SPONT_P > 0) {
+    for (let ni = 0; ni < neurons.length; ni++) {
+      if (neurons[ni].refractoryLeft === 0 && Math.random() < NOISE_SPONT_P) {
+        neurons[ni].inputSum += neurons[ni].threshold * 1.05; // just over threshold
+      }
+    }
+  }
+
+  // Phase 2: fire if inputSum meets threshold and not refractory
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    if (n.refractoryLeft > 0) {
+      n.fired = false;
+      continue;
+    }
+    n.fired = n.inputSum >= n.threshold;
+    if (n.fired) {
+      firesThisTick++;
+      n.refractoryLeft = REFRACTORY_TICKS;
+    }
+  }
+
+  // Phase 3: propagate fired outputs; synaptic release failure applied here
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     if (!n.fired) continue;
     for (let ci = 0; ci < n.connections.length; ci++) {
+      // Synaptic vesicle release failure (probabilistic)
+      if (NOISE_SYN_FAIL_P > 0 && Math.random() < NOISE_SYN_FAIL_P) continue;
       neurons[n.connections[ci]].inputSum += n.weights[ci];
     }
   }
@@ -992,8 +1048,11 @@ document.getElementById('sl-speed').addEventListener('input', function() {
 document.getElementById('sl-thresh').addEventListener('input', function() {
   fireThresh = parseInt(this.value) / 100;
   document.getElementById('vb-thresh').textContent = fireThresh.toFixed(2);
-  // Update all neuron thresholds
   neurons.forEach(n => { n.threshold = fireThresh + (Math.random() - 0.5) * 0.1; });
+});
+document.getElementById('sl-noise').addEventListener('input', function() {
+  applyNoiseLevel(parseInt(this.value) / 100);
+  document.getElementById('vb-noise').textContent = parseInt(this.value);
 });
 
 document.getElementById('btn-pause').addEventListener('click', function() {
