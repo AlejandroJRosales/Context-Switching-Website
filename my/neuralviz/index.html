@@ -386,7 +386,7 @@ const LOBE_DEFS = [
   { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
-const LOBE_SPREAD = 1.0;   // how far neurons scatter inside a lobe cluster
+const LOBE_SPREAD = 1.0;  // how far neurons scatter inside a lobe cluster
 const ORBIT_RADIUS = 10;
 const NODE_R = 0.09;
 const MAX_CROSS_EDGES_DRAWN = 50;
@@ -458,7 +458,7 @@ function randGauss() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Camera / vision input
+// Camera/vision input
 const CAM_RES_MIN  = 10;
 const CAM_RES_MAX  = 50;
 const CAM_RES_STEP = 5;
@@ -467,7 +467,7 @@ let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
 
-// Neurons: flat array of objects
+// Neurons is flat array of objects
 let neurons = [];
 // networkGroup holds all Three.js objects
 let networkGroup = null;
@@ -530,12 +530,12 @@ function buildBrain() {
         lobe: lobe.name,
         lobeColor: lobe.color,
         task: lobe.task,
-        inputSum: 0,       // weighted sum of inputs this tick
-        smoothInput: 0,    // EMA for visuals
+        inputSum: 0,        // weighted sum of inputs this tick
+        smoothInput: 0,     // EMA for visuals
         threshold: fireThresh + (Math.random() - 0.5) * 0.1,
         neurotransmitter: lobe.name === 'brainstem' ? 'norepinephrine' : lobe.name === 'thalamus' ? 'acetylcholine' : 'glutamate',
-        connections: [],   // indices of target neurons
-        weights: [],       // corresponding synaptic weights
+        connections: [],    // indices of target neurons
+        weights: [],        // corresponding synaptic weights
         camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0,
         refractoryLeft: 0,  // ticks remaining in absolute refractory period
         mesh,
@@ -645,7 +645,7 @@ function addEdgeLine(pA, pB, colA, colB, baseOpacity, srcIdx, tgtIdx) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA INPUT LAYER  (camRes by camRes pixel nodes -> occipital lobe)
+//  CAMERA INPUT LAYER  (camRes by camRes pixel nodes feed to occipital lobe)
 // ═══════════════════════════════════════════════════════════════
 const CAM_NODE_R   = 0.09;
 const camNodeGeo   = new THREE.SphereGeometry(CAM_NODE_R, 8, 8);
@@ -751,7 +751,7 @@ function buildLobeLegend(lobeNeuronMap) {
 function simTick() {
   firesThisTick = 0;
 
-  // Phase 1: reset inputSum, tick down refractory counters
+  // Step 1: reset inputSum, tick down refractory counters
   for (let ni = 0; ni < neurons.length; ni++) {
     neurons[ni].inputSum = 0;
     if (neurons[ni].refractoryLeft > 0) neurons[ni].refractoryLeft--;
@@ -784,7 +784,7 @@ function simTick() {
     }
   }
 
-  // Phase 2: fire if inputSum meets threshold and not refractory
+  // Step 2: fire if inputSum meets threshold and not refractory
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     if (n.refractoryLeft > 0) {
@@ -798,7 +798,7 @@ function simTick() {
     }
   }
 
-  // Phase 3: propagate fired outputs; synaptic release failure applied here
+  // Step 3: propagate fired outputs; synaptic release failure applied here
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     if (!n.fired) continue;
@@ -884,19 +884,13 @@ let targetSph = { theta: 0, phi: Math.PI / 2 };
 
 // Compute initial zoom so the entire brain + input layer fits in view,
 // scaled proportionally to screen pixel count.
-// Scene bounding radius: brain lobes reach ~3.2 units from origin,
-// input layer sits at x≈4.8 with half-extent ≈ camRes/2 * 0.22.
-// We use the camera's vertical FOV and the aspect ratio to fit both axes.
 function computeInitialZoom() {
   const sceneHalfW = 4.8 + (camRes / 2) * 0.22 + 0.5; // rightmost extent
   const sceneHalfH = 3.2;                               // vertical extent
   const fovRad = camera.fov * Math.PI / 180;
   const aspect  = window.innerWidth / window.innerHeight;
-  // Distance needed to fit height
   const distForH = sceneHalfH / Math.tan(fovRad / 2);
-  // Distance needed to fit width (accounting for aspect)
   const distForW = sceneHalfW / (Math.tan(fovRad / 2) * aspect);
-  // Use whichever is larger (more zoomed out), then add a small padding factor
   const baseDist = Math.max(distForH, distForW) * 1.15;
   // Scale by pixel density: larger screens get proportionally more zoom-out
   // so relative scene size stays consistent. Reference is 1920x1080.
@@ -1085,9 +1079,10 @@ function drawBW() {
 let lastTime = 0;
 let simTickMs = 0;
 const SIM_INTERVAL_MS = 60; // base tick interval
+let animFrameId = null;
 
 function animate(time) {
-  requestAnimationFrame(animate);
+  animFrameId = requestAnimationFrame(animate);
   const dt = Math.min((time - lastTime) / 1000, 0.05);
   lastTime = time;
 
@@ -1129,7 +1124,10 @@ document.getElementById('btn-pause').addEventListener('click', function() {
   this.textContent = autoRotate ? 'Pause Rotation' : 'Resume Rotation';
 });
 document.getElementById('btn-reset').addEventListener('click', () => {
+  if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
   tickCount = 0;
+  simTickMs = 0;
+  lastTime = 0;
   pixelValues = new Float32Array(camRes * camRes);
   buildBrain();
   const newZoom = computeInitialZoom();
