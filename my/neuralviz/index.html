@@ -435,7 +435,6 @@ scene.add(ptB);
 
 // Shared geometries
 const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
-const haloGeo  = new THREE.SphereGeometry(NODE_R * 2.6, 8, 8);
 
 // ═══════════════════════════════════════════════════════════════
 //  SIMULATION STATE
@@ -512,14 +511,6 @@ function buildBrain() {
       mesh.userData = { neuronIdx: nid };
       networkGroup.add(mesh);
 
-      // Halo
-      const haloMat = new THREE.MeshBasicMaterial({
-        color: col, transparent: true, opacity: 0.04, side: THREE.BackSide
-      });
-      const halo = new THREE.Mesh(haloGeo, haloMat);
-      halo.position.copy(pos);
-      networkGroup.add(halo);
-
       neurons.push({
         id: `${lobe.name}_${i}`,
         lobe: lobe.name,
@@ -532,8 +523,6 @@ function buildBrain() {
         connections: [],   // indices of target neurons
         weights: [],       // corresponding synaptic weights
         mesh,
-        halo,
-        haloMat,
         mat,
         pos,
         fired: false,
@@ -798,13 +787,10 @@ function updateVisuals(dt) {
     // Emissive intensity: dim -> bright
     n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
     n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
-    // Halo pulse on fire
-    n.haloMat.opacity = fired ? 0.22 : 0.02 + v * 0.05;
 
     // Scale pulse on fire
     const s = fired ? 1.5 : 1.0 + v * 0.15;
     n.mesh.scale.setScalar(s);
-    n.halo.scale.setScalar(s * 0.9);
   }
 
   updateCamInputVisuals();
