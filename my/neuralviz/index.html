@@ -376,16 +376,16 @@
 //  MAT BRAIN CONFIG mirrors yaml structure
 // ═══════════════════════════════════════════════════════════════
 const LOBE_DEFS = [
-  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
-  { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
-  { name: 'occipital',   label: 'Occipital',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.2,  0.8, -0.8 ] },
-  { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.2, -0.8,  0.8 ] },
-  { name: 'parietal',    label: 'Parietal',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.2, -0.8, -0.8 ] },
-  { name: 'thalamus',    label: 'Thalamus',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
-  { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
+  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,       1.7955,  0      ] },
+  { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.1945,  0.7980,  0.7980 ] },
+  { name: 'occipital',   label: 'Occipital',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.1945,  0.7980, -0.7980 ] },
+  { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.1945, -0.7980,  0.7980 ] },
+  { name: 'parietal',    label: 'Parietal',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.1945, -0.7980, -0.7980 ] },
+  { name: 'thalamus',    label: 'Thalamus',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,       0,       0      ] },
+  { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,      -1.9950,  0      ] },
 ];
 
-const LOBE_SPREAD = 1.0;   // how far neurons scatter inside a lobe cluster
+const LOBE_SPREAD = 0.5;   // how far neurons scatter inside a lobe cluster
 const ORBIT_RADIUS = 10;
 const NODE_R = 0.09;
 const MAX_CROSS_EDGES_DRAWN = 50;
@@ -843,7 +843,33 @@ let isDragging = false, autoRotate = true;
 let lastMouse = { x: 0, y: 0 };
 let spherical = { theta: 0, phi: Math.PI / 2 };
 let targetSph = { theta: 0, phi: Math.PI / 2 };
-let zoomDist  = ORBIT_RADIUS, targetZoom = ORBIT_RADIUS;
+
+// Compute initial zoom so the entire brain + input layer fits in view,
+// scaled proportionally to screen pixel count.
+// Scene bounding radius: brain lobes reach ~3.2 units from origin,
+// input layer sits at x≈4.8 with half-extent ≈ camRes/2 * 0.22.
+// We use the camera's vertical FOV and the aspect ratio to fit both axes.
+function computeInitialZoom() {
+  const sceneHalfW = 4.8 + (camRes / 2) * 0.22 + 0.5; // rightmost extent
+  const sceneHalfH = 3.2;                               // vertical extent
+  const fovRad = camera.fov * Math.PI / 180;
+  const aspect  = window.innerWidth / window.innerHeight;
+  // Distance needed to fit height
+  const distForH = sceneHalfH / Math.tan(fovRad / 2);
+  // Distance needed to fit width (accounting for aspect)
+  const distForW = sceneHalfW / (Math.tan(fovRad / 2) * aspect);
+  // Use whichever is larger (more zoomed out), then add a small padding factor
+  const baseDist = Math.max(distForH, distForW) * 1.15;
+  // Scale by pixel density: larger screens get proportionally more zoom-out
+  // so relative scene size stays consistent. Reference is 1920x1080.
+  const refPixels = 1920 * 1080;
+  const curPixels = window.innerWidth * window.innerHeight;
+  const densityScale = Math.sqrt(curPixels / refPixels);
+  return Math.max(8, Math.min(110, baseDist * densityScale * 2));
+}
+
+let zoomDist  = computeInitialZoom();
+let targetZoom = zoomDist;
 
 const cv = renderer.domElement;
 
@@ -865,7 +891,7 @@ window.addEventListener('mousemove', e => {
   targetSph.phi = Math.max(0.12, Math.min(Math.PI - 0.12, targetSph.phi - dy * 0.007));
 });
 cv.addEventListener('wheel', e => {
-  targetZoom = Math.max(5, Math.min(55, targetZoom + e.deltaY * 0.04));
+  targetZoom = Math.max(5, Math.min(110, targetZoom + e.deltaY * 0.04));
 }, { passive: true });
 
 // Touch orbit
@@ -901,7 +927,7 @@ cv.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const dist = Math.hypot(dx, dy);
-    targetZoom = Math.max(5, Math.min(55, pinchZoomStart * (pinchStart / dist)));
+    targetZoom = Math.max(5, Math.min(110, pinchZoomStart * (pinchStart / dist)));
   }
 }, { passive: true });
 cv.addEventListener('touchend', e => { if (e.touches.length < 2) pinchStart = null; }, { passive: true });
@@ -1068,6 +1094,9 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   tickCount = 0;
   pixelValues = new Float32Array(camRes * camRes);
   buildBrain();
+  const newZoom = computeInitialZoom();
+  zoomDist = newZoom;
+  targetZoom = newZoom;
   animate(0);
 });
 // Input resolution buttons
@@ -1115,6 +1144,10 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // Refit zoom to new screen size
+  const newZoom = computeInitialZoom();
+  zoomDist  = newZoom;
+  targetZoom = newZoom;
 });
 
 // ═══════════════════════════════════════════════════════════════
