@@ -311,10 +311,10 @@
 <!-- Live B&W feed -->
 <div id="cam-container">
   <canvas id="cam-canvas" width="10" height="10"></canvas>
-  <div id="cam-label">eye</div>
+  <div id="cam-label">occipital</div>
   <div id="cam-active-dot"></div>
 </div>
-<video id="cam-video" playsinline autoplay muted></video>
+<video id="cam-video" style="display:none;" playsinline autoplay muted></video>
 
 <button id="panel-toggle" aria-label="Toggle controls">⚙</button>
 
@@ -349,14 +349,17 @@
 
   <div class="ctrl-row">
     <span class="ctrl-label">Scale</span>
-    <input type="range" id="sl-scale" min="1" max="10" step="1" value="1">
-    <span class="val-badge" id="vb-scale">1</span>
+    <input type="range" id="sl-neurons" min="1" max="10" value="1" step="1">
+    <span class="val-badge" id="vb-neurons">1</span>
   </div>
 
   <div class="ctrl-row">
     <span class="ctrl-label">Resolution</span>
-    <input type="range" id="sl-res" min="10" max="50" step="5" value="20">
-    <span class="val-badge" id="vb-res">20</span>
+    <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
+      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">-</button>
+      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10 by 10</span>
+      <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
+    </div>
   </div>
 
   <div id="stats">
@@ -378,6 +381,9 @@
 // ═══════════════════════════════════════════════════════════════
 //  MAT BRAIN CONFIG mirrors yaml structure
 // ═══════════════════════════════════════════════════════════════
+let neuronScale = 1;
+const BASE_LOBE_NEURONS = [18, 14, 16, 14, 12, 8, 6];
+
 const LOBE_DEFS = [
   { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
   { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
@@ -388,15 +394,11 @@ const LOBE_DEFS = [
   { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
-// Store initial neuron counts for scale calculations
-const LOBE_BASE_NEURONS = Object.fromEntries(LOBE_DEFS.map(l => [l.name, l.neurons]));
-let neuronScale = 1.0;
-
 function applyNeuronScale(scale) {
   neuronScale = scale;
-  for (const lobe of LOBE_DEFS) {
-    lobe.neurons = Math.max(1, Math.round(LOBE_BASE_NEURONS[lobe.name] * scale));
-  }
+  LOBE_DEFS.forEach((lobe, i) => {
+    lobe.neurons = Math.max(1, Math.round(BASE_LOBE_NEURONS[i] * scale));
+  });
 }
 
 const LOBE_SPREAD = 1.0;  // how far neurons scatter inside a lobe cluster
@@ -1131,11 +1133,22 @@ document.getElementById('sl-noise').addEventListener('input', function() {
   applyNoiseLevel(parseInt(this.value) / 100);
   document.getElementById('vb-noise').textContent = parseInt(this.value);
 });
-document.getElementById('sl-scale').addEventListener('input', function() {
+
+document.getElementById('sl-neurons').addEventListener('input', function() {
   const scale = parseInt(this.value);
-  document.getElementById('vb-scale').textContent = scale;
+  document.getElementById('vb-neurons').textContent = scale + '×';
   applyNeuronScale(scale);
-  rebuildBrain();
+  // Rebuild the brain with the new neuron counts
+  if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+  tickCount = 0;
+  simTickMs = 0;
+  lastTime = 0;
+  pixelValues = new Float32Array(camRes * camRes);
+  buildBrain();
+  const newZoom = computeInitialZoom();
+  zoomDist = newZoom;
+  targetZoom = newZoom;
+  animate(0);
 });
 
 document.getElementById('btn-pause').addEventListener('click', function() {
@@ -1154,25 +1167,14 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   targetZoom = newZoom;
   animate(0);
 });
-
-function rebuildBrain() {
-  if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-  tickCount = 0;
-  simTickMs = 0;
-  lastTime  = 0;
-  pixelValues = new Float32Array(camRes * camRes);
-  buildBrain();
-  const newZoom = computeInitialZoom();
-  zoomDist   = newZoom;
-  targetZoom = newZoom;
-  animate(0);
-}
-// Input resolution slider
+// Input resolution buttons
 function applyResolution() {
   pixelValues = new Float32Array(camRes * camRes);
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
-  document.getElementById('vb-res').textContent = camRes;
+  document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
+  document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+  document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
 
   // Remove old cam nodes and edges by tag, then rebuild
   const toRemove = networkGroup.children.filter(
@@ -1187,13 +1189,17 @@ function applyResolution() {
   buildCamInputLayer(occipitalIdxs);
 }
 
-document.getElementById('sl-res').addEventListener('input', function() {
-  camRes = parseInt(this.value);
-  applyResolution();
+document.getElementById('btn-res-dec').addEventListener('click', () => {
+  if (camRes > CAM_RES_MIN) { camRes -= CAM_RES_STEP; applyResolution(); }
+});
+document.getElementById('btn-res-inc').addEventListener('click', () => {
+  if (camRes < CAM_RES_MAX) { camRes += CAM_RES_STEP; applyResolution(); }
 });
 
-// Set initial badge
-document.getElementById('vb-res').textContent = camRes;
+// Set initial button states
+document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
+document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
+document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
 
 document.getElementById('panel-toggle').addEventListener('click', () => {
   document.getElementById('panel').classList.toggle('open');
