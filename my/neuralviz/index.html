@@ -311,10 +311,10 @@
 <!-- Live B&W feed -->
 <div id="cam-container">
   <canvas id="cam-canvas" width="10" height="10"></canvas>
-  <div id="cam-label">occipital</div>
+  <div id="cam-label">eye</div>
   <div id="cam-active-dot"></div>
 </div>
-<video id="cam-video" style="display:none;" playsinline autoplay muted></video>
+<video id="cam-video" playsinline autoplay muted></video>
 
 <button id="panel-toggle" aria-label="Toggle controls">⚙</button>
 
@@ -349,17 +349,14 @@
 
   <div class="ctrl-row">
     <span class="ctrl-label">Scale</span>
-    <input type="range" id="sl-neurons" min="1" max="10" value="1" step="1">
-    <span class="val-badge" id="vb-neurons">1</span>
+    <input type="range" id="sl-scale" min="1" max="10" step="1" value="1">
+    <span class="val-badge" id="vb-scale">1</span>
   </div>
 
   <div class="ctrl-row">
     <span class="ctrl-label">Resolution</span>
-    <div style="display:flex;gap:5px;flex:1;justify-content:flex-end;align-items:center;">
-      <button id="btn-res-dec" style="width:28px;padding:5px 0;font-size:0.7rem;">-</button>
-      <span id="res-badge" style="font-size:0.5rem;color:#fff;white-space:nowrap;min-width:52px;text-align:center;">10 by 10</span>
-      <button id="btn-res-inc" style="width:28px;padding:5px 0;font-size:0.7rem;">+</button>
-    </div>
+    <input type="range" id="sl-res" min="10" max="50" step="5" value="20">
+    <span class="val-badge" id="vb-res">20</span>
   </div>
 
   <div id="stats">
@@ -381,9 +378,6 @@
 // ═══════════════════════════════════════════════════════════════
 //  MAT BRAIN CONFIG mirrors yaml structure
 // ═══════════════════════════════════════════════════════════════
-let neuronScale = 1;
-const BASE_LOBE_NEURONS = [18, 14, 16, 14, 12, 8, 6];
-
 const LOBE_DEFS = [
   { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
   { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
@@ -394,11 +388,15 @@ const LOBE_DEFS = [
   { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
 ];
 
+// Store initial neuron counts for scale calculations
+const LOBE_BASE_NEURONS = Object.fromEntries(LOBE_DEFS.map(l => [l.name, l.neurons]));
+let neuronScale = 1.0;
+
 function applyNeuronScale(scale) {
   neuronScale = scale;
-  LOBE_DEFS.forEach((lobe, i) => {
-    lobe.neurons = Math.max(1, Math.round(BASE_LOBE_NEURONS[i] * scale));
-  });
+  for (const lobe of LOBE_DEFS) {
+    lobe.neurons = Math.max(1, Math.round(LOBE_BASE_NEURONS[lobe.name] * scale));
+  }
 }
 
 const LOBE_SPREAD = 1.0;  // how far neurons scatter inside a lobe cluster
@@ -406,6 +404,10 @@ const ORBIT_RADIUS = 10;
 const NODE_R = 0.09;
 const MAX_CROSS_EDGES_DRAWN = 50;
 const MAX_INTRA_EDGES_DRAWN = 50;
+
+// ~20% of cortical neurons are inhibitory interneurons (GABAergic)
+// Brainstem/thalamus get slightly lower inhibitory fractions
+const INHIB_FRACTION = 0.20;
 
 // ═══════════════════════════════════════════════════════════════
 //  SCENE
@@ -526,29 +528,57 @@ function buildBrain() {
       );
       const pos = lobeCenter.clone().add(offset);
       const nid = neurons.length;
-      const col = new THREE.Color(lobe.color);
+
+      // Inhibitory interneurons: ~20% of each lobe (GABAergic)
+      // Brainstem and thalamus use neuromodulators, lower inhib fraction
+      const inhibFrac = (lobe.name === 'brainstem' || lobe.name === 'thalamus') ? 0.10 : INHIB_FRACTION;
+      const isInhibitory = Math.random() < inhibFrac;
+
+      // Excitatory neurons use lobe color; inhibitory get a red-shifted desaturated tint
+      const baseCol = new THREE.Color(lobe.color);
+      const col = isInhibitory
+        ? new THREE.Color().setHSL(
+            0.02,                        // hue: red-orange
+            0.55,
+            0.38
+          )
+        : baseCol.clone();
 
       // Core mesh
       const mat = new THREE.MeshPhongMaterial({
         color: col, emissive: col,
-        emissiveIntensity: 0.2,
-        shininess: 100,
-        transparent: true, opacity: 0.5
+        emissiveIntensity: isInhibitory ? 0.35 : 0.2,
+        shininess: isInhibitory ? 60 : 100,
+        transparent: true, opacity: isInhibitory ? 0.65 : 0.5
       });
       const mesh = new THREE.Mesh(nodeGeo, mat);
       mesh.position.copy(pos);
       mesh.userData = { neuronIdx: nid };
       networkGroup.add(mesh);
 
+      // Neurotransmitter: inhibitory → GABA; else lobe-specific
+      let nt;
+      if (isInhibitory) {
+        nt = 'GABA';
+      } else if (lobe.name === 'brainstem') {
+        nt = 'norepinephrine';
+      } else if (lobe.name === 'thalamus') {
+        nt = 'acetylcholine';
+      } else {
+        nt = 'glutamate';
+      }
+
       neurons.push({
         id: `${lobe.name}_${i}`,
         lobe: lobe.name,
         lobeColor: lobe.color,
+        inhibColor: '#ff4422',
         task: lobe.task,
         inputSum: 0,        // weighted sum of inputs this tick
         smoothInput: 0,     // EMA for visuals
         threshold: fireThresh + (Math.random() - 0.5) * 0.1,
-        neurotransmitter: lobe.name === 'brainstem' ? 'norepinephrine' : lobe.name === 'thalamus' ? 'acetylcholine' : 'glutamate',
+        neurotransmitter: nt,
+        inhibitory: isInhibitory,
         connections: [],    // indices of target neurons
         weights: [],        // corresponding synaptic weights
         camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0,
@@ -570,7 +600,9 @@ function buildBrain() {
     for (const src of idxs) {
       for (const tgt of idxs) {
         if (src !== tgt && Math.random() < lobe.connP) {
-          const w = (Math.random() * 0.5 + 0.05);
+          // Inhibitory neurons release GABA → negative weight
+          const sign = neurons[src].inhibitory ? -1 : 1;
+          const w = sign * (Math.random() * 0.5 + 0.05);
           neurons[src].connections.push(tgt);
           neurons[src].weights.push(w);
           totalConns++;
@@ -588,7 +620,9 @@ function buildBrain() {
         const targetLobe = otherLobes[Math.floor(Math.random() * otherLobes.length)];
         const targetIdxs = lobeNeuronMap[targetLobe.name];
         const tgt = targetIdxs[Math.floor(Math.random() * targetIdxs.length)];
-        const w = (Math.random() * 0.5 + 0.05);
+        // Inhibitory neurons release GABA → negative weight even cross-lobe
+        const sign = neurons[src].inhibitory ? -1 : 1;
+        const w = sign * (Math.random() * 0.5 + 0.05);
         neurons[src].connections.push(tgt);
         neurons[src].weights.push(w);
         totalConns++;
@@ -599,6 +633,7 @@ function buildBrain() {
   // Draw intra-lobe edges
   for (const lobe of LOBE_DEFS) {
     const col = new THREE.Color(lobe.color);
+    const inhibCol = new THREE.Color('#ff3311');
     const idxs = lobeNeuronMap[lobe.name];
     let drawn = 0;
     for (const src of idxs) {
@@ -606,7 +641,8 @@ function buildBrain() {
         const tgt = neurons[src].connections[ci];
         if (!lobeNeuronMap[lobe.name].includes(tgt)) continue;
         if (drawn >= MAX_INTRA_EDGES_DRAWN) break;
-        addEdgeLine(neurons[src].pos, neurons[tgt].pos, col, col, 0.06, src, tgt);
+        const srcCol = neurons[src].inhibitory ? inhibCol : col;
+        addEdgeLine(neurons[src].pos, neurons[tgt].pos, srcCol, col, neurons[src].inhibitory ? 0.09 : 0.06, src, tgt);
         drawn++;
       }
     }
@@ -619,16 +655,17 @@ function buildBrain() {
     for (let ci = 0; ci < n.connections.length; ci++) {
       const tgt = n.connections[ci];
       if (neurons[tgt].lobe !== n.lobe) {
-        crossEdges.push({ src: ni, tgt, w: n.weights[ci] });
+        crossEdges.push({ src: ni, tgt, w: n.weights[ci], inhib: n.inhibitory });
       }
     }
   }
   shuffle(crossEdges);
+  const inhibCrossCol = new THREE.Color('#ff3311');
   for (let i = 0; i < Math.min(crossEdges.length, MAX_CROSS_EDGES_DRAWN); i++) {
     const e = crossEdges[i];
-    const cA = new THREE.Color(neurons[e.src].lobeColor);
+    const cA = e.inhib ? inhibCrossCol.clone() : new THREE.Color(neurons[e.src].lobeColor);
     const cB = new THREE.Color(neurons[e.tgt].lobeColor);
-    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, 0.04, e.src, e.tgt);
+    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, e.inhib ? 0.07 : 0.04, e.src, e.tgt);
   }
 
   // Stats
@@ -748,12 +785,14 @@ function buildLobeLegend(lobeNeuronMap) {
   const el = document.getElementById('lobe-legend');
   el.innerHTML = '';
   for (const lobe of LOBE_DEFS) {
+    const idxs = lobeNeuronMap[lobe.name] || [];
+    const inhibCount = idxs.filter(i => neurons[i].inhibitory).length;
     const row = document.createElement('div');
     row.className = 'lobe-row';
     row.innerHTML = `
       <div class="lobe-dot" style="background:${lobe.color};color:${lobe.color}"></div>
       <span>${lobe.label}</span>
-      <span class="lobe-count">${lobe.neurons}n</span>
+      <span class="lobe-count">${lobe.neurons}n <span style="color:#ff4422;font-size:0.38rem">${inhibCount}i</span></span>
     `;
     row.title = lobe.task;
     el.appendChild(row);
@@ -840,11 +879,18 @@ function updateVisuals(dt) {
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     n.smoothInput += (n.inputSum - n.smoothInput) * 0.25;
-    const v = Math.min(n.smoothInput / n.threshold, 1.0);
+    // For inhibitory neurons, use the magnitude of inputSum for visual intensity
+    const v = Math.min(Math.abs(n.smoothInput) / n.threshold, 1.0);
     const fired = n.fired;
 
-    n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
-    n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
+    if (n.inhibitory) {
+      // Inhibitory: fire pulse is a cold red-orange dim flash, not a bright glow
+      n.mat.emissiveIntensity = fired ? 1.4 : 0.10 + v * 0.6;
+      n.mat.opacity           = fired ? 0.85 : 0.30 + v * 0.45;
+    } else {
+      n.mat.emissiveIntensity = fired ? 2.2 : 0.08 + v * 1.2;
+      n.mat.opacity           = fired ? 1.0 : 0.2 + v * 0.75;
+    }
 
     const s = fired ? 1.5 : 1.0 + v * 0.15;
     n.mesh.scale.setScalar(s);
@@ -1011,8 +1057,9 @@ cv.addEventListener('click', e => {
     document.getElementById('tt-title').textContent = n.id;
     document.getElementById('tt-body').innerHTML =
       `Lobe: <span style="color:${n.lobeColor}">${lobeDef.label}</span><br>` +
+      `Type: <span style="color:${n.inhibitory ? '#ff4422' : '#2fffa0'}">${n.inhibitory ? '⊖ Inhibitory' : '⊕ Excitatory'}</span><br>` +
       `Task: ${n.task}<br>` +
-      `NT: ${n.neurotransmitter}<br>` +
+      `NT: <span style="color:${n.inhibitory ? '#ff8866' : '#aaffcc'}">${n.neurotransmitter}</span><br>` +
       `Input sum: ${n.inputSum.toFixed(3)}<br>` +
       `Threshold: ${n.threshold.toFixed(3)}<br>` +
       `Synapses: ${n.connections.length}` +
@@ -1133,22 +1180,11 @@ document.getElementById('sl-noise').addEventListener('input', function() {
   applyNoiseLevel(parseInt(this.value) / 100);
   document.getElementById('vb-noise').textContent = parseInt(this.value);
 });
-
-document.getElementById('sl-neurons').addEventListener('input', function() {
+document.getElementById('sl-scale').addEventListener('input', function() {
   const scale = parseInt(this.value);
-  document.getElementById('vb-neurons').textContent = scale + '×';
+  document.getElementById('vb-scale').textContent = scale;
   applyNeuronScale(scale);
-  // Rebuild the brain with the new neuron counts
-  if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-  tickCount = 0;
-  simTickMs = 0;
-  lastTime = 0;
-  pixelValues = new Float32Array(camRes * camRes);
-  buildBrain();
-  const newZoom = computeInitialZoom();
-  zoomDist = newZoom;
-  targetZoom = newZoom;
-  animate(0);
+  rebuildBrain();
 });
 
 document.getElementById('btn-pause').addEventListener('click', function() {
@@ -1167,14 +1203,25 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   targetZoom = newZoom;
   animate(0);
 });
-// Input resolution buttons
+
+function rebuildBrain() {
+  if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+  tickCount = 0;
+  simTickMs = 0;
+  lastTime  = 0;
+  pixelValues = new Float32Array(camRes * camRes);
+  buildBrain();
+  const newZoom = computeInitialZoom();
+  zoomDist   = newZoom;
+  targetZoom = newZoom;
+  animate(0);
+}
+// Input resolution slider
 function applyResolution() {
   pixelValues = new Float32Array(camRes * camRes);
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
-  document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
-  document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
-  document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+  document.getElementById('vb-res').textContent = camRes;
 
   // Remove old cam nodes and edges by tag, then rebuild
   const toRemove = networkGroup.children.filter(
@@ -1189,17 +1236,13 @@ function applyResolution() {
   buildCamInputLayer(occipitalIdxs);
 }
 
-document.getElementById('btn-res-dec').addEventListener('click', () => {
-  if (camRes > CAM_RES_MIN) { camRes -= CAM_RES_STEP; applyResolution(); }
-});
-document.getElementById('btn-res-inc').addEventListener('click', () => {
-  if (camRes < CAM_RES_MAX) { camRes += CAM_RES_STEP; applyResolution(); }
+document.getElementById('sl-res').addEventListener('input', function() {
+  camRes = parseInt(this.value);
+  applyResolution();
 });
 
-// Set initial button states
-document.getElementById('res-badge').textContent = `${camRes} by ${camRes}`;
-document.getElementById('btn-res-dec').disabled = camRes <= CAM_RES_MIN;
-document.getElementById('btn-res-inc').disabled = camRes >= CAM_RES_MAX;
+// Set initial badge
+document.getElementById('vb-res').textContent = camRes;
 
 document.getElementById('panel-toggle').addEventListener('click', () => {
   document.getElementById('panel').classList.toggle('open');
