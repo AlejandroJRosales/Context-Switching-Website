@@ -384,9 +384,9 @@
 
     <label class="slider-label">
       <span class="slider-name">Bio Noise</span>
-      <span class="slider-val" id="vb-noise">10</span>
+      <span class="slider-val" id="vb-noise">0</span>
     </label>
-    <input type="range" id="sl-noise" min="0" max="100" value="10">
+    <input type="range" id="sl-noise" min="0" max="100" value="0">
 
     <label class="slider-label">
       <span class="slider-name">Scale</span>
@@ -423,13 +423,13 @@
 //  MAT BRAIN CONFIG mirrors yaml structure
 // ═══════════════════════════════════════════════════════════════
 const LOBE_DEFS = [
-  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.8,  0   ] },
-  { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-2.2,  0.8,  0.8 ] },
-  { name: 'occipital',   label: 'Occipital',   task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 2.2,  0.8, -0.8 ] },
-  { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.2, -0.8,  0.8 ] },
-  { name: 'parietal',    label: 'Parietal',    task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-2.2, -0.8, -0.8 ] },
-  { name: 'thalamus',    label: 'Thalamus',    task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
-  { name: 'brainstem',   label: 'Brainstem', task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0,  0   ] },
+  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    0.8, -2.2 ] },
+  { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [-1.8,  0.8,  0.0 ] },
+  { name: 'occipital',   label: 'Occipital',            task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 0,    0.5,  2.4 ] },
+  { name: 'temporal',    label: 'Temporal/Parietal',    task: 'sensory integration',      neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 1.8,  0.0,  0.8 ] },
+  { name: 'parietal',    label: 'Parietal',             task: 'memory routing',           neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [-1.8,  0.0, -0.8 ] },
+  { name: 'thalamus',    label: 'Thalamus',             task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0,    0   ] },
+  { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.0, -0.5 ] },
 ];
 
 // Store initial neuron counts for scale calculations
@@ -610,7 +610,7 @@ let tickCount  = 0;
 let firesThisTick = 0;
 
 // Biological noise parameters
-let noiseLevel = 0.25; // 0..1, controlled by slider
+let noiseLevel = 0.0; // 0..1, controlled by slider
 // Derived noise constants (recomputed when noiseLevel changes)
 let NOISE_MEMBRANE   = 0;  // std-dev of per-tick Gaussian membrane noise
 let NOISE_SPONT_P    = 0;  // probability of spontaneous spike per neuron per tick
@@ -883,7 +883,7 @@ function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
 
-  const GRID_ORIGIN = new THREE.Vector3(4.8, 0.8, -0.8);
+  const GRID_ORIGIN = new THREE.Vector3(0, 0, 6.2);
   const SPACING = 0.22;
   const half = (camRes - 1) / 2;
   const camColor = new THREE.Color('#56b4e9');
@@ -894,9 +894,9 @@ function buildCamInputLayer(occIdxs) {
     for (let col = 0; col < camRes; col++) {
       const idx = row * camRes + col;
       const pos = new THREE.Vector3(
-        GRID_ORIGIN.x,
+        GRID_ORIGIN.x + (col - half) * SPACING,
         GRID_ORIGIN.y + (half - row) * SPACING,
-        GRID_ORIGIN.z + (col - half) * SPACING
+        GRID_ORIGIN.z
       );
       gridPositions.push(pos);
 
@@ -1469,6 +1469,211 @@ function shuffle(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  RAT BODY
+// ═══════════════════════════════════════════════════════════════
+(function buildRat() {
+  const ratGroup = new THREE.Group();
+
+  // --- material helpers ---
+  function skinMat(col, opacity = 0.13, wire = false) {
+    return new THREE.MeshPhongMaterial({
+      color: col,
+      emissive: col,
+      emissiveIntensity: 0.06,
+      transparent: true,
+      opacity,
+      side: THREE.FrontSide,
+      wireframe: wire,
+      depthWrite: false,
+    });
+  }
+
+  // Soft pink-grey fur tones
+  const FUR   = 0x9aafaa;
+  const PINK  = 0xff88aa;
+  const DARK  = 0x556655;
+
+  // ── HEAD SKULL ──
+  // Encloses the brain cluster (roughly -3..3 on all axes)
+  // We want an ovoid that sits around the brain nodes
+  const skullGeo = new THREE.SphereGeometry(3.7, 32, 22);
+  skullGeo.applyMatrix4(new THREE.Matrix4().makeScale(1.05, 0.92, 1.10));
+  const skullMesh = new THREE.Mesh(skullGeo, skinMat(FUR, 0.11));
+  skullMesh.position.set(0, 0.2, 0);
+  ratGroup.add(skullMesh);
+
+  // Subtle wireframe outline for the skull so it reads as surface
+  const skullWire = new THREE.Mesh(skullGeo, skinMat(FUR, 0.045, true));
+  skullWire.position.copy(skullMesh.position);
+  ratGroup.add(skullWire);
+
+  // ── SNOUT ──
+  const snoutGeo = new THREE.SphereGeometry(1.05, 20, 14);
+  snoutGeo.applyMatrix4(new THREE.Matrix4().makeScale(1.0, 0.70, 1.35));
+  const snoutMesh = new THREE.Mesh(snoutGeo, skinMat(FUR, 0.14));
+  snoutMesh.position.set(0, -0.55, 3.7);
+  ratGroup.add(snoutMesh);
+
+  // Nostrils
+  [-0.28, 0.28].forEach(x => {
+    const nGeo = new THREE.SphereGeometry(0.14, 10, 8);
+    const nMesh = new THREE.Mesh(nGeo, skinMat(PINK, 0.55));
+    nMesh.position.set(x, -0.55, 5.0);
+    ratGroup.add(nMesh);
+  });
+
+  // ── EARS ──
+  [-1, 1].forEach(side => {
+    // Outer ear cup
+    const earGeo = new THREE.SphereGeometry(0.9, 18, 12);
+    earGeo.applyMatrix4(new THREE.Matrix4().makeScale(0.5, 1.25, 0.18));
+    const earMesh = new THREE.Mesh(earGeo, skinMat(FUR, 0.18));
+    earMesh.position.set(side * 3.5, 2.2, -0.6);
+    earMesh.rotation.z = side * 0.18;
+    ratGroup.add(earMesh);
+
+    // Inner ear (pink)
+    const iGeo = new THREE.SphereGeometry(0.62, 14, 10);
+    iGeo.applyMatrix4(new THREE.Matrix4().makeScale(0.4, 1.05, 0.12));
+    const iMesh = new THREE.Mesh(iGeo, skinMat(PINK, 0.30));
+    iMesh.position.set(side * 3.48, 2.18, -0.55);
+    iMesh.rotation.z = side * 0.18;
+    ratGroup.add(iMesh);
+  });
+
+  // ── EYES ──
+  [-1.4, 1.4].forEach(side => {
+    const eyeGeo = new THREE.SphereGeometry(0.25, 12, 10);
+    const eyeMesh = new THREE.Mesh(eyeGeo, skinMat(0x111111, 0.85));
+    eyeMesh.position.set(side * 2.9, 0.5, 2.85);
+    ratGroup.add(eyeMesh);
+
+    // Eye glint
+    const glintGeo = new THREE.SphereGeometry(0.09, 8, 6);
+    const glintMesh = new THREE.Mesh(glintGeo, skinMat(0xffffff, 0.9));
+    glintMesh.position.set(side * 2.88, 0.6, 3.08);
+    ratGroup.add(glintMesh);
+  });
+
+  // ── NECK ──
+  const neckGeo = new THREE.CylinderGeometry(1.35, 1.65, 1.6, 18);
+  const neckMesh = new THREE.Mesh(neckGeo, skinMat(FUR, 0.13));
+  neckMesh.position.set(0, -2.4, -0.5);
+  ratGroup.add(neckMesh);
+
+  // ── BODY (torso) ──
+  // Elongated ellipsoid behind and below the head
+  const bodyGeo = new THREE.SphereGeometry(2.6, 28, 18);
+  bodyGeo.applyMatrix4(new THREE.Matrix4().makeScale(1.0, 0.85, 1.75));
+  const bodyMesh = new THREE.Mesh(bodyGeo, skinMat(FUR, 0.13));
+  bodyMesh.position.set(0, -3.85, -3.8);
+  ratGroup.add(bodyMesh);
+
+  // Body wireframe
+  const bodyWire = new THREE.Mesh(bodyGeo, skinMat(DARK, 0.035, true));
+  bodyWire.position.copy(bodyMesh.position);
+  ratGroup.add(bodyWire);
+
+  // ── BELLY (slightly lighter) ──
+  const bellyGeo = new THREE.SphereGeometry(1.9, 20, 14);
+  bellyGeo.applyMatrix4(new THREE.Matrix4().makeScale(0.85, 0.60, 1.55));
+  const bellyMesh = new THREE.Mesh(bellyGeo, skinMat(0xbbccbb, 0.09));
+  bellyMesh.position.set(0, -4.55, -3.7);
+  ratGroup.add(bellyMesh);
+
+  // ── FRONT LEGS ──
+  [[-1.4, 0], [1.4, 0]].forEach(([x]) => {
+    // Upper leg
+    const ulGeo = new THREE.CylinderGeometry(0.32, 0.26, 1.4, 12);
+    const ulMesh = new THREE.Mesh(ulGeo, skinMat(FUR, 0.15));
+    ulMesh.position.set(x * 1.25, -5.0, -1.6);
+    ulMesh.rotation.z = x > 0 ? 0.35 : -0.35;
+    ulMesh.rotation.x = 0.55;
+    ratGroup.add(ulMesh);
+
+    // Paw
+    const pawGeo = new THREE.SphereGeometry(0.32, 10, 8);
+    pawGeo.applyMatrix4(new THREE.Matrix4().makeScale(1.2, 0.55, 1.4));
+    const pawMesh = new THREE.Mesh(pawGeo, skinMat(PINK, 0.22));
+    pawMesh.position.set(x * 1.55, -5.85, -0.6);
+    ratGroup.add(pawMesh);
+  });
+
+  // ── BACK LEGS ──
+  [[-1.4, 0], [1.4, 0]].forEach(([x]) => {
+    const blGeo = new THREE.CylinderGeometry(0.38, 0.28, 1.6, 12);
+    const blMesh = new THREE.Mesh(blGeo, skinMat(FUR, 0.15));
+    blMesh.position.set(x * 1.35, -5.2, -5.6);
+    blMesh.rotation.z = x > 0 ? 0.3 : -0.3;
+    blMesh.rotation.x = -0.45;
+    ratGroup.add(blMesh);
+
+    const pawGeo = new THREE.SphereGeometry(0.35, 10, 8);
+    pawGeo.applyMatrix4(new THREE.Matrix4().makeScale(1.3, 0.5, 1.55));
+    const pawMesh = new THREE.Mesh(pawGeo, skinMat(PINK, 0.22));
+    pawMesh.position.set(x * 1.55, -6.0, -6.5);
+    ratGroup.add(pawMesh);
+  });
+
+  // ── TAIL ──
+  // Segmented curve going back and then upward
+  const TAIL_SEGS = 16;
+  const tailRadius = [0.28, 0.22, 0.17, 0.13, 0.10, 0.08, 0.06, 0.05,
+                      0.05, 0.04, 0.04, 0.03, 0.03, 0.02, 0.02, 0.015];
+  for (let i = 0; i < TAIL_SEGS - 1; i++) {
+    const t  = i / (TAIL_SEGS - 1);
+    const t1 = (i + 1) / (TAIL_SEGS - 1);
+    // Parametric curve: starts at base of body, sweeps back then curls up
+    const angle  = t  * Math.PI * 0.65;
+    const angle1 = t1 * Math.PI * 0.65;
+    const len = 1.05;
+
+    const x0 = 0,   y0 = -4.5 - Math.sin(angle)  * 2.8 * t,    z0 = -6.5 - t  * 4.5 + Math.sin(t  * Math.PI) * 1.5;
+    const x1 = 0,   y1 = -4.5 - Math.sin(angle1) * 2.8 * t1,   z1 = -6.5 - t1 * 4.5 + Math.sin(t1 * Math.PI) * 1.5;
+
+    const segGeo = new THREE.CylinderGeometry(
+      tailRadius[Math.min(i+1, tailRadius.length-1)],
+      tailRadius[Math.min(i,   tailRadius.length-1)],
+      len * 0.88, 8
+    );
+    const seg = new THREE.Mesh(segGeo, skinMat(PINK, 0.28));
+    seg.position.set(
+      (x0 + x1) / 2,
+      (y0 + y1) / 2,
+      (z0 + z1) / 2
+    );
+    // orient along segment direction
+    const dir = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0).normalize();
+    const up  = new THREE.Vector3(0, 1, 0);
+    const q   = new THREE.Quaternion().setFromUnitVectors(up, dir);
+    seg.quaternion.copy(q);
+    ratGroup.add(seg);
+  }
+
+  // ── WHISKERS ──
+  // Lines from the snout region
+  const whiskerMat = new THREE.LineBasicMaterial({
+    color: 0xd0e8d0, transparent: true, opacity: 0.35
+  });
+  const whiskerData = [
+    // [from, to]  (x, y, z) pairs
+    [[-0.5, -0.4, 4.6], [-2.8, -0.2, 6.2]],
+    [[-0.4, -0.6, 4.6], [-2.6, -0.9, 6.4]],
+    [[-0.3, -0.8, 4.6], [-2.2, -1.4, 6.2]],
+    [[ 0.5, -0.4, 4.6], [ 2.8, -0.2, 6.2]],
+    [[ 0.4, -0.6, 4.6], [ 2.6, -0.9, 6.4]],
+    [[ 0.3, -0.8, 4.6], [ 2.2, -1.4, 6.2]],
+  ];
+  whiskerData.forEach(([from, to]) => {
+    const points = [new THREE.Vector3(...from), new THREE.Vector3(...to)];
+    const geo    = new THREE.BufferGeometry().setFromPoints(points);
+    ratGroup.add(new THREE.Line(geo, whiskerMat));
+  });
+
+  scene.add(ratGroup);
+})();
 
 // ═══════════════════════════════════════════════════════════════
 //  INIT
