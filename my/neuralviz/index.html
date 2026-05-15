@@ -456,14 +456,14 @@ const MAX_INTRA_EDGES_DRAWN = 50;
 // Brainstem/thalamus get slightly lower inhibitory fractions
 const INHIB_FRACTION = 0.20;
 
-// ── NEUROTRANSMITTER PROFILES ────────────────────────────────────
-// ntGain      : multiplier on synaptic weight contribution to inputSum
+// NEUROTRANSMITTER PROFILES
+// ntGain       : multiplier on synaptic weight contribution to inputSum
 // refractoryMod: added ticks to base REFRACTORY_TICKS (kinetics speed)
-// spontBoost  : extra spontaneous-fire probability beyond global NOISE_SPONT_P
-// color       : THREE.js hex for neuron mesh (overrides lobe color for NT-specific cells)
-// inhibitory  : whether this NT is sign-negative on targets
+// spontBoost   : extra spontaneous-fire probability beyond global NOISE_SPONT_P
+// color        : THREE.js hex for neuron mesh (overrides lobe color for NT-specific cells)
+// inhibitory   : whether this NT is sign-negative on targets
 const NT_PROFILES = {
-  // ── Fast amino acids ─────────────────────────────────────────
+  // Fast amino acids
   glutamate: {
     gain: 1.00,         // reference excitatory; dominant in cortex (~80-90% excit. synapses)
     refractoryMod: 0,   // fast kinetics
@@ -478,7 +478,7 @@ const NT_PROFILES = {
     color: '#ff6fa0',   // pink-red
     inhibitory: true,
   },
-  // ── Cholinergic ───────────────────────────────────────────────
+  // Cholinergic
   acetylcholine: {
     gain: 0.75,         // modulatory; slower nicotinic/muscarinic kinetics
     refractoryMod: 1,
@@ -486,7 +486,7 @@ const NT_PROFILES = {
     color: '#e6a020',   // amber
     inhibitory: false,
   },
-  // ── Monoamines ────────────────────────────────────────────────
+  // Monoamines
   dopamine: {
     gain: 0.55,         // neuromodulatory; slow volume transmission
     refractoryMod: 2,   // slow firing rate (VTA/SNc neurons ~4 Hz baseline)
@@ -510,7 +510,7 @@ const NT_PROFILES = {
   },
 };
 
-// ── PER-LOBE NT ASSIGNMENT RULES ────────────────────────────────
+// PER-LOBE NT ASSIGNMENT RULES
 // Each entry: array of { nt, fraction } — must sum to 1.0 across excitatory slots.
 // Inhibitory neurons always get GABA regardless.
 // fractions here apply only to the excitatory (non-inhibitory) pool.
@@ -702,7 +702,7 @@ function buildBrain() {
       if (isInhibitory) {
         col = new THREE.Color().setHSL(0.02, 0.55, 0.38); // GABA: red-orange tint
       } else if (nt === 'glutamate') {
-        col = baseCol.clone();                              // glutamate: keep lobe color
+        col = baseCol.clone();                            // glutamate: keep lobe color
       } else {
         // Monoamines / ACh: NT color blended with lobe color for spatial context
         col = new THREE.Color(ntProfile.color).lerp(baseCol, 0.25);
@@ -729,16 +729,16 @@ function buildBrain() {
         lobeColor: lobe.color,
         inhibColor: '#ff4422',
         task: lobe.task,
-        inputSum: 0,        // weighted sum of inputs this tick
-        smoothInput: 0,     // EMA for visuals
+        inputSum: 0,  // weighted sum of inputs this tick
+        smoothInput: 0,  // EMA for visuals
         threshold: fireThresh + (Math.random() - 0.5) * 0.1,
         neurotransmitter: nt,
-        ntGain: ntProfile.gain,           // synaptic strength multiplier
-        ntRefractory,                     // kinetics-adjusted refractory length
+        ntGain: ntProfile.gain,  // synaptic strength multiplier
+        ntRefractory,  // kinetics-adjusted refractory length
         ntSpontBoost: ntProfile.spontBoost, // per-NT spontaneous drive
         inhibitory: isInhibitory,
-        connections: [],    // indices of target neurons
-        weights: [],        // corresponding synaptic weights
+        connections: [],  // indices of target neurons
+        weights: [],  // corresponding synaptic weights
         camWeight: lobe.name === 'occipital' ? (Math.random() * 0.6 + 0.2) : 0,
         refractoryLeft: 0,  // ticks remaining in absolute refractory period
         mesh,
@@ -769,10 +769,7 @@ function buildBrain() {
     }
   }
 
-  // Cross-lobe connections — every lobe pair is guaranteed some connections.
-  // For each ordered (src lobe, tgt lobe) pair we iterate src neurons and
-  // connect each one to a random tgt neuron with probability crossP, ensuring
-  // at least MIN_CROSS_PER_PAIR connections exist for every pair.
+  // Cross-lobe connections so every lobe pair is guaranteed some connections
   const MIN_CROSS_PER_PAIR = 20;
   for (const lobe of LOBE_DEFS) {
     const srcIdxs = lobeNeuronMap[lobe.name];
