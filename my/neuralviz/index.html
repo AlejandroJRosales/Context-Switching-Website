@@ -378,27 +378,27 @@
 
     <label class="slider-label">
       <span class="slider-name">Fire Thresh</span>
-      <span class="slider-val" id="vb-thresh">0.50</span>
+      <span class="slider-val" id="vb-thresh">0.20</span>
     </label>
-    <input type="range" id="sl-thresh" min="10" max="90" value="50">
+    <input type="range" id="sl-thresh" min="10" max="90" value="20">
 
     <label class="slider-label">
       <span class="slider-name">Bio Noise</span>
-      <span class="slider-val" id="vb-noise">25</span>
+      <span class="slider-val" id="vb-noise">10</span>
     </label>
-    <input type="range" id="sl-noise" min="0" max="100" value="25">
+    <input type="range" id="sl-noise" min="0" max="100" value="10">
 
     <label class="slider-label">
       <span class="slider-name">Scale</span>
       <span class="slider-val" id="vb-scale">1</span>
     </label>
-    <input type="range" id="sl-scale" min="1" max="10" step="1" value="1">
+    <input type="range" id="sl-scale" min="1" max="5" step="1" value="1">
 
     <label class="slider-label">
       <span class="slider-name">Resolution</span>
-      <span class="slider-val" id="vb-res">20</span>
+      <span class="slider-val" id="vb-res">10</span>
     </label>
-    <input type="range" id="sl-res" min="10" max="50" step="5" value="20">
+    <input type="range" id="sl-res" min="10" max="50" step="5" value="10">
   </div>
 
   <div class="panel-divider"></div>
@@ -436,14 +436,17 @@ const LOBE_DEFS = [
 const LOBE_BASE_NEURONS = Object.fromEntries(LOBE_DEFS.map(l => [l.name, l.neurons]));
 let neuronScale = 1.0;
 
+const LOBE_SPREAD_BASE = 1.0; // base scatter radius at scale=1
+let LOBE_SPREAD = LOBE_SPREAD_BASE; // updated by applyNeuronScale; cube-root of scale keeps density constant
+
 function applyNeuronScale(scale) {
   neuronScale = scale;
+  // Spread grows as cube-root of scale so the volume (and density) stays roughly constant
+  LOBE_SPREAD = LOBE_SPREAD_BASE * Math.cbrt(scale);
   for (const lobe of LOBE_DEFS) {
     lobe.neurons = Math.max(1, Math.round(LOBE_BASE_NEURONS[lobe.name] * scale));
   }
 }
-
-const LOBE_SPREAD = 1.0;  // how far neurons scatter inside a lobe cluster
 const ORBIT_RADIUS = 10;
 const NODE_R = 0.09;
 const MAX_CROSS_EDGES_DRAWN = 50;
@@ -523,7 +526,7 @@ function randGauss() {
 const CAM_RES_MIN  = 10;
 const CAM_RES_MAX  = 50;
 const CAM_RES_STEP = 5;
-let camRes         = 20; // current resolution (side length); grid = camRes by camRes nodes
+let camRes         = 10; // current resolution (side length); grid = camRes by camRes nodes
 let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
@@ -655,21 +658,38 @@ function buildBrain() {
     }
   }
 
-  // Cross-lobe connections (thalamus gets priority)
+  // Cross-lobe connections — every lobe pair is guaranteed some connections.
+  // For each ordered (src lobe, tgt lobe) pair we iterate src neurons and
+  // connect each one to a random tgt neuron with probability crossP, ensuring
+  // at least MIN_CROSS_PER_PAIR connections exist for every pair.
+  const MIN_CROSS_PER_PAIR = 10;
   for (const lobe of LOBE_DEFS) {
     const srcIdxs = lobeNeuronMap[lobe.name];
     const otherLobes = LOBE_DEFS.filter(l => l.name !== lobe.name);
-    for (const src of srcIdxs) {
-      if (Math.random() < lobe.crossP) {
-        const targetLobe = otherLobes[Math.floor(Math.random() * otherLobes.length)];
-        const targetIdxs = lobeNeuronMap[targetLobe.name];
+    for (const targetLobe of otherLobes) {
+      const targetIdxs = lobeNeuronMap[targetLobe.name];
+      let pairConns = 0;
+      for (const src of srcIdxs) {
+        if (Math.random() < lobe.crossP) {
+          const tgt = targetIdxs[Math.floor(Math.random() * targetIdxs.length)];
+          const sign = neurons[src].inhibitory ? -1 : 1;
+          const w = sign * (Math.random() * 0.5 + 0.05);
+          neurons[src].connections.push(tgt);
+          neurons[src].weights.push(w);
+          totalConns++;
+          pairConns++;
+        }
+      }
+      // Guarantee minimum connections for this pair
+      while (pairConns < MIN_CROSS_PER_PAIR) {
+        const src = srcIdxs[Math.floor(Math.random() * srcIdxs.length)];
         const tgt = targetIdxs[Math.floor(Math.random() * targetIdxs.length)];
-        // Inhibitory neurons release GABA -> negative weight even cross-lobe
         const sign = neurons[src].inhibitory ? -1 : 1;
         const w = sign * (Math.random() * 0.5 + 0.05);
         neurons[src].connections.push(tgt);
         neurons[src].weights.push(w);
         totalConns++;
+        pairConns++;
       }
     }
   }
@@ -692,24 +712,27 @@ function buildBrain() {
     }
   }
 
-  // Draw cross-lobe edges (sampled)
-  const crossEdges = [];
-  for (let ni = 0; ni < neurons.length; ni++) {
-    const n = neurons[ni];
-    for (let ci = 0; ci < n.connections.length; ci++) {
-      const tgt = n.connections[ci];
-      if (neurons[tgt].lobe !== n.lobe) {
-        crossEdges.push({ src: ni, tgt, w: n.weights[ci], inhib: n.inhibitory });
+  // Draw cross-lobe edges (sampled per-lobe so every lobe gets representation)
+  const inhibCrossCol = new THREE.Color('#ff3311');
+  const MAX_CROSS_PER_LOBE = Math.ceil(MAX_CROSS_EDGES_DRAWN / LOBE_DEFS.length);
+  for (const lobe of LOBE_DEFS) {
+    const lobeCrossEdges = [];
+    for (const ni of lobeNeuronMap[lobe.name]) {
+      const n = neurons[ni];
+      for (let ci = 0; ci < n.connections.length; ci++) {
+        const tgt = n.connections[ci];
+        if (neurons[tgt].lobe !== n.lobe) {
+          lobeCrossEdges.push({ src: ni, tgt, w: n.weights[ci], inhib: n.inhibitory });
+        }
       }
     }
-  }
-  shuffle(crossEdges);
-  const inhibCrossCol = new THREE.Color('#ff3311');
-  for (let i = 0; i < Math.min(crossEdges.length, MAX_CROSS_EDGES_DRAWN); i++) {
-    const e = crossEdges[i];
-    const cA = e.inhib ? inhibCrossCol.clone() : new THREE.Color(neurons[e.src].lobeColor);
-    const cB = new THREE.Color(neurons[e.tgt].lobeColor);
-    addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, e.inhib ? 0.07 : 0.04, e.src, e.tgt);
+    shuffle(lobeCrossEdges);
+    for (let i = 0; i < Math.min(lobeCrossEdges.length, MAX_CROSS_PER_LOBE); i++) {
+      const e = lobeCrossEdges[i];
+      const cA = e.inhib ? inhibCrossCol.clone() : new THREE.Color(neurons[e.src].lobeColor);
+      const cB = new THREE.Color(neurons[e.tgt].lobeColor);
+      addEdgeLine(neurons[e.src].pos, neurons[e.tgt].pos, cA, cB, e.inhib ? 0.07 : 0.04, e.src, e.tgt);
+    }
   }
 
   // Stats
