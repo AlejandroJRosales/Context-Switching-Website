@@ -456,6 +456,117 @@ const MAX_INTRA_EDGES_DRAWN = 50;
 // Brainstem/thalamus get slightly lower inhibitory fractions
 const INHIB_FRACTION = 0.20;
 
+// ── NEUROTRANSMITTER PROFILES ────────────────────────────────────
+// ntGain      : multiplier on synaptic weight contribution to inputSum
+// refractoryMod: added ticks to base REFRACTORY_TICKS (kinetics speed)
+// spontBoost  : extra spontaneous-fire probability beyond global NOISE_SPONT_P
+// color       : THREE.js hex for neuron mesh (overrides lobe color for NT-specific cells)
+// inhibitory  : whether this NT is sign-negative on targets
+const NT_PROFILES = {
+  // ── Fast amino acids ─────────────────────────────────────────
+  glutamate: {
+    gain: 1.00,         // reference excitatory; dominant in cortex (~80-90% excit. synapses)
+    refractoryMod: 0,   // fast kinetics
+    spontBoost: 0.000,
+    color: '#2fffa0',   // green (lobe color, no override needed for most lobes)
+    inhibitory: false,
+  },
+  GABA: {
+    gain: 1.10,         // slightly stronger per synapse (well-coupled Cl⁻ channels)
+    refractoryMod: 1,   // slightly prolonged silence after inhibition
+    spontBoost: 0.000,
+    color: '#ff6fa0',   // pink-red
+    inhibitory: true,
+  },
+  // ── Cholinergic ───────────────────────────────────────────────
+  acetylcholine: {
+    gain: 0.75,         // modulatory; slower nicotinic/muscarinic kinetics
+    refractoryMod: 1,
+    spontBoost: 0.002,  // thalamus drives spontaneous rhythms
+    color: '#e6a020',   // amber
+    inhibitory: false,
+  },
+  // ── Monoamines ────────────────────────────────────────────────
+  dopamine: {
+    gain: 0.55,         // neuromodulatory; slow volume transmission
+    refractoryMod: 2,   // slow firing rate (VTA/SNc neurons ~4 Hz baseline)
+    spontBoost: 0.004,  // tonic dopamine drive
+    color: '#c084fc',   // violet
+    inhibitory: false,
+  },
+  serotonin: {
+    gain: 0.45,         // broad inhibitory-modulatory effect; slow autoreceptor feedback
+    refractoryMod: 3,   // raphe neurons very slow (~1-3 Hz)
+    spontBoost: 0.003,
+    color: '#f97316',   // orange
+    inhibitory: false,
+  },
+  norepinephrine: {
+    gain: 0.65,         // locus coeruleus: arousal and signal-to-noise amplification
+    refractoryMod: 2,
+    spontBoost: 0.005,  // highest spontaneous drive (arousal baseline)
+    color: '#ff4444',   // red (brainstem color, kept)
+    inhibitory: false,
+  },
+};
+
+// ── PER-LOBE NT ASSIGNMENT RULES ────────────────────────────────
+// Each entry: array of { nt, fraction } — must sum to 1.0 across excitatory slots.
+// Inhibitory neurons always get GABA regardless.
+// fractions here apply only to the excitatory (non-inhibitory) pool.
+const LOBE_NT_DIST = {
+  // Cortex: ~glutamate dominant; small dopaminergic/serotonergic projection terminals
+  prefrontal: [
+    { nt: 'glutamate',      frac: 0.82 },
+    { nt: 'dopamine',       frac: 0.10 }, // PFC richly innervated by VTA dopamine
+    { nt: 'serotonin',      frac: 0.08 }, // raphe projections
+  ],
+  motor: [
+    { nt: 'glutamate',      frac: 0.88 },
+    { nt: 'dopamine',       frac: 0.08 }, // striatal motor loop
+    { nt: 'norepinephrine', frac: 0.04 }, // LC arousal
+  ],
+  occipital: [
+    { nt: 'glutamate',      frac: 0.92 }, // heavily glutamatergic visual cortex
+    { nt: 'serotonin',      frac: 0.05 }, // 5-HT2A modulates visual processing
+    { nt: 'norepinephrine', frac: 0.03 },
+  ],
+  temporal: [
+    { nt: 'glutamate',      frac: 0.84 },
+    { nt: 'serotonin',      frac: 0.10 }, // auditory/memory modulation
+    { nt: 'dopamine',       frac: 0.06 },
+  ],
+  parietal: [
+    { nt: 'glutamate',      frac: 0.86 },
+    { nt: 'serotonin',      frac: 0.08 },
+    { nt: 'acetylcholine',  frac: 0.06 }, // cholinergic memory routing
+  ],
+  // Subcortical
+  thalamus: [
+    { nt: 'acetylcholine',  frac: 0.60 }, // basal forebrain cholinergic projection hub
+    { nt: 'glutamate',      frac: 0.30 }, // thalamocortical relay neurons
+    { nt: 'norepinephrine', frac: 0.10 }, // LC modulation of thalamic gating
+  ],
+  brainstem: [
+    { nt: 'norepinephrine', frac: 0.50 }, // locus coeruleus
+    { nt: 'serotonin',      frac: 0.30 }, // raphe nuclei
+    { nt: 'dopamine',       frac: 0.10 }, // VTA / SNc
+    { nt: 'acetylcholine',  frac: 0.10 }, // pedunculopontine nucleus
+  ],
+};
+
+// Pick NT for an excitatory neuron in a lobe using weighted random draw
+function pickNT(lobeName) {
+  const dist = LOBE_NT_DIST[lobeName] || [{ nt: 'glutamate', frac: 1.0 }];
+  const r = Math.random();
+  let cum = 0;
+  for (const { nt, frac } of dist) {
+    cum += frac;
+    if (r < cum) return nt;
+  }
+  return dist[dist.length - 1].nt;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  SCENE
 // ═══════════════════════════════════════════════════════════════
@@ -581,15 +692,21 @@ function buildBrain() {
       const inhibFrac = (lobe.name === 'brainstem' || lobe.name === 'thalamus') ? 0.10 : INHIB_FRACTION;
       const isInhibitory = Math.random() < inhibFrac;
 
-      // Excitatory neurons use lobe color; inhibitory get a red-shifted desaturated tint
+      // Neurotransmitter: inhibitory -> always GABA; excitatory -> lobe NT distribution
+      const nt = isInhibitory ? 'GABA' : pickNT(lobe.name);
+      const ntProfile = NT_PROFILES[nt];
+
+      // Color: NT-specific for monoamine/ACh neurons; lobe color for glutamate; red-orange for GABA
       const baseCol = new THREE.Color(lobe.color);
-      const col = isInhibitory
-        ? new THREE.Color().setHSL(
-            0.02,                        // hue: red-orange
-            0.55,
-            0.38
-          )
-        : baseCol.clone();
+      let col;
+      if (isInhibitory) {
+        col = new THREE.Color().setHSL(0.02, 0.55, 0.38); // GABA: red-orange tint
+      } else if (nt === 'glutamate') {
+        col = baseCol.clone();                              // glutamate: keep lobe color
+      } else {
+        // Monoamines / ACh: NT color blended with lobe color for spatial context
+        col = new THREE.Color(ntProfile.color).lerp(baseCol, 0.25);
+      }
 
       // Core mesh
       const mat = new THREE.MeshPhongMaterial({
@@ -603,17 +720,8 @@ function buildBrain() {
       mesh.userData = { neuronIdx: nid };
       networkGroup.add(mesh);
 
-      // Neurotransmitter: inhibitory -> GABA; else lobe-specific
-      let nt;
-      if (isInhibitory) {
-        nt = 'GABA';
-      } else if (lobe.name === 'brainstem') {
-        nt = 'norepinephrine';
-      } else if (lobe.name === 'thalamus') {
-        nt = 'acetylcholine';
-      } else {
-        nt = 'glutamate';
-      }
+      // Refractory: base ticks + NT-specific kinetic modifier
+      const ntRefractory = REFRACTORY_TICKS + ntProfile.refractoryMod;
 
       neurons.push({
         id: `${lobe.name}_${i}`,
@@ -625,6 +733,9 @@ function buildBrain() {
         smoothInput: 0,     // EMA for visuals
         threshold: fireThresh + (Math.random() - 0.5) * 0.1,
         neurotransmitter: nt,
+        ntGain: ntProfile.gain,           // synaptic strength multiplier
+        ntRefractory,                     // kinetics-adjusted refractory length
+        ntSpontBoost: ntProfile.spontBoost, // per-NT spontaneous drive
         inhibitory: isInhibitory,
         connections: [],    // indices of target neurons
         weights: [],        // corresponding synaptic weights
@@ -860,13 +971,8 @@ function buildLobeLegend(lobeNeuronMap) {
     el.appendChild(row);
   }
 
-  // ── NT COUNT SUMMARY ──
-  const NT_COLORS = {
-    'glutamate':      '#2fffa0',
-    'GABA':           '#ff6fa0',
-    'acetylcholine':  '#e6a020',
-    'norepinephrine': '#ff4444',
-  };
+  // ── NT COUNT SUMMARY ──────────────────────────────────────────
+  const NT_DISPLAY_ORDER = ['glutamate','GABA','acetylcholine','dopamine','serotonin','norepinephrine'];
 
   const ntTotals = {};
   for (const n of neurons) {
@@ -883,11 +989,13 @@ function buildLobeLegend(lobeNeuronMap) {
   header.textContent = 'Neurotransmitters';
   el.appendChild(header);
 
-  for (const [nt, count] of Object.entries(ntTotals)) {
+  for (const nt of NT_DISPLAY_ORDER) {
+    const count = ntTotals[nt] || 0;
+    if (count === 0) continue;
     const pct = ((count / total) * 100).toFixed(1);
-    const color = NT_COLORS[nt] || 'var(--text)';
+    const color = NT_PROFILES[nt]?.color || 'var(--text)';
     const row = document.createElement('div');
-    row.style.cssText = 'font-size:0.47rem;letter-spacing:0.05em;line-height:1.9;color:var(--text);display:flex;justify-content:space-between;align-items:baseline;gap:4px';
+    row.style.cssText = 'font-size:0.47rem;letter-spacing:0.05em;line-height:1.9;display:flex;justify-content:space-between;align-items:baseline;gap:4px';
     row.innerHTML = `<span>&#9679; <span style="color:${color}">${nt}</span></span><span style="color:var(--accent);font-size:0.43rem">${count} <span style="color:var(--dim)">(${pct}%)</span></span>`;
     el.appendChild(row);
   }
@@ -924,11 +1032,13 @@ function simTick() {
   }
 
   // Spontaneous firing: rare depolarisation without synaptic input
-  if (NOISE_SPONT_P > 0) {
-    for (let ni = 0; ni < neurons.length; ni++) {
-      if (neurons[ni].refractoryLeft === 0 && Math.random() < NOISE_SPONT_P) {
-        neurons[ni].inputSum += neurons[ni].threshold * 1.05; // just over threshold
-      }
+  // Each neuron also gets its NT-specific spontaneous drive on top of global noise
+  for (let ni = 0; ni < neurons.length; ni++) {
+    const n = neurons[ni];
+    if (n.refractoryLeft > 0) continue;
+    const p = NOISE_SPONT_P + n.ntSpontBoost;
+    if (p > 0 && Math.random() < p) {
+      n.inputSum += n.threshold * 1.05; // just over threshold
     }
   }
 
@@ -942,18 +1052,18 @@ function simTick() {
     n.fired = n.inputSum >= n.threshold;
     if (n.fired) {
       firesThisTick++;
-      n.refractoryLeft = REFRACTORY_TICKS;
+      n.refractoryLeft = n.ntRefractory; // NT-specific kinetics
     }
   }
 
-  // Step 3: propagate fired outputs; synaptic release failure applied here
+  // Step 3: propagate fired outputs; weight scaled by sender's ntGain; synaptic release failure applied here
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     if (!n.fired) continue;
     for (let ci = 0; ci < n.connections.length; ci++) {
       // Synaptic vesicle release failure (probabilistic)
       if (NOISE_SYN_FAIL_P > 0 && Math.random() < NOISE_SYN_FAIL_P) continue;
-      neurons[n.connections[ci]].inputSum += n.weights[ci];
+      neurons[n.connections[ci]].inputSum += n.weights[ci] * n.ntGain;
     }
   }
 
