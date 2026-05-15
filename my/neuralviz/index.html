@@ -454,7 +454,7 @@ const MAX_INTRA_EDGES_DRAWN = 50;
 
 // ~20% of cortical neurons are inhibitory interneurons (GABAergic)
 // Brainstem/thalamus get slightly lower inhibitory fractions
-const INHIB_FRACTION = 0.50;
+const INHIB_FRACTION = 0.20;
 
 // ═══════════════════════════════════════════════════════════════
 //  SCENE
@@ -662,7 +662,7 @@ function buildBrain() {
   // For each ordered (src lobe, tgt lobe) pair we iterate src neurons and
   // connect each one to a random tgt neuron with probability crossP, ensuring
   // at least MIN_CROSS_PER_PAIR connections exist for every pair.
-  const MIN_CROSS_PER_PAIR = 10;
+  const MIN_CROSS_PER_PAIR = 20;
   for (const lobe of LOBE_DEFS) {
     const srcIdxs = lobeNeuronMap[lobe.name];
     const otherLobes = LOBE_DEFS.filter(l => l.name !== lobe.name);
@@ -857,6 +857,38 @@ function buildLobeLegend(lobeNeuronMap) {
     const row = document.createElement('div');
     row.title = lobe.task;
     row.innerHTML = `&#9679; <span style="color:${lobe.color}">${lobe.label}</span> ${lobe.neurons}n, ${inhibCount}i`;
+    el.appendChild(row);
+  }
+
+  // ── NT COUNT SUMMARY ──
+  const NT_COLORS = {
+    'glutamate':      '#2fffa0',
+    'GABA':           '#ff6fa0',
+    'acetylcholine':  '#e6a020',
+    'norepinephrine': '#ff4444',
+  };
+
+  const ntTotals = {};
+  for (const n of neurons) {
+    ntTotals[n.neurotransmitter] = (ntTotals[n.neurotransmitter] || 0) + 1;
+  }
+  const total = neurons.length;
+
+  const divider = document.createElement('div');
+  divider.style.cssText = 'height:1px;background:rgba(80,200,160,0.15);margin:8px -12px 8px';
+  el.appendChild(divider);
+
+  const header = document.createElement('strong');
+  header.style.cssText = 'display:block;font-family:Syne,sans-serif;font-size:0.48rem;letter-spacing:0.25em;text-transform:uppercase;color:var(--dim);margin-bottom:7px';
+  header.textContent = 'Neurotransmitters';
+  el.appendChild(header);
+
+  for (const [nt, count] of Object.entries(ntTotals)) {
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = NT_COLORS[nt] || 'var(--text)';
+    const row = document.createElement('div');
+    row.style.cssText = 'font-size:0.47rem;letter-spacing:0.05em;line-height:1.9;color:var(--text);display:flex;justify-content:space-between;align-items:baseline;gap:4px';
+    row.innerHTML = `<span>&#9679; <span style="color:${color}">${nt}</span></span><span style="color:var(--accent);font-size:0.43rem">${count} <span style="color:var(--dim)">(${pct}%)</span></span>`;
     el.appendChild(row);
   }
 }
