@@ -144,7 +144,7 @@
   }
   #tooltip .tt-title { color: #fff; font-size: 0.55rem; margin-bottom: 3px; }
 
-  /* ── PANEL TOGGLE ── */
+  /* PANEL TOGGLE */
   #panel-toggle {
     position: fixed;
     top: 14px; right: 14px;
@@ -164,7 +164,7 @@
   #panel-toggle:hover { border-color: var(--accent); }
   #panel-toggle.panel-open { color: var(--accent3); border-color: var(--accent3); }
 
-  /* ── SIDE PANEL ── */
+  /* SIDE PANEL */
   #panel {
     position: fixed;
     top: 58px; right: 14px;
@@ -184,7 +184,7 @@
   #panel::-webkit-scrollbar { width: 3px; }
   #panel::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
 
-  /* ── LOBE LEGEND ── */
+  /* LOBE LEGEND */
   #lobe-legend strong {
     display: block;
     font-family: 'Syne', sans-serif;
@@ -204,14 +204,14 @@
     text-overflow: ellipsis;
   }
 
-  /* ── DIVIDER ── */
+  /* DIVIDER */
   .panel-divider {
     height: 1px;
     background: var(--border);
     margin: 10px -12px;
   }
 
-  /* ── BUTTONS ── */
+  /* BUTTONS */
   #panel button,
   #cam-prompt {
     width: 100%;
@@ -250,7 +250,7 @@
     color: var(--accent2);
   }
 
-  /* ── SLIDERS ── */
+  /* SLIDERS */
   .slider-group { display: flex; flex-direction: column; gap: 8px; }
 
   .slider-label {
@@ -302,7 +302,7 @@
   }
   input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 10px var(--accent); }
 
-  /* ── STATS ── */
+  /* STATS */
   #stats { display: flex; flex-direction: column; gap: 3px; }
   .stat-row {
     display: flex;
@@ -321,7 +321,7 @@
     letter-spacing: 0.06em;
   }
 
-  /* ── GEN LABEL ── */
+  /* GEN LABEL */
   #gen-label { font-size: 0.48rem; }
 
   @media (max-width: 639px) {
@@ -956,20 +956,23 @@ function updateCamInputVisuals() {
     e.mat.opacity = 0.02 + v * 0.25;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  Lobe Legend
 // ═══════════════════════════════════════════════════════════════
 function buildLobeLegend(lobeNeuronMap) {
   const el = document.getElementById('lobe-legend');
-  el.innerHTML = '<strong>Lobes</strong><br>';
+  el.innerHTML = '<strong>Lobes</strong>';
   for (const lobe of LOBE_DEFS) {
     const idxs = lobeNeuronMap[lobe.name] || [];
     const inhibCount = idxs.filter(i => neurons[i].inhibitory).length;
     const row = document.createElement('div');
     row.title = lobe.task;
-    row.innerHTML = `&#9679; <span style="color:${lobe.color}">${lobe.label}</span> ${lobe.neurons}n, ${inhibCount}i`;
+    row.innerHTML = `&#9679; <span style="color:${lobe.color}">${lobe.label}</span> ${lobe.neurons - inhibCount}e, ${inhibCount}i`;
     el.appendChild(row);
   }
 
-  // ── NT COUNT SUMMARY ──────────────────────────────────────────
+  // NT COUNT SUMMARY
   const NT_DISPLAY_ORDER = ['glutamate','GABA','acetylcholine','dopamine','serotonin','norepinephrine'];
 
   const ntTotals = {};
@@ -1011,7 +1014,7 @@ function simTick() {
     if (neurons[ni].refractoryLeft > 0) neurons[ni].refractoryLeft--;
   }
 
-  // Camera injection: camWeight * pixel brightness -> occipital inputSum
+  // Camera injection: camWeight * pixel brightness = occipital inputSum
   if (camActive) {
     const occCount = occipitalIdxs.length;
     const pixCount = camRes * camRes;
@@ -1275,7 +1278,7 @@ cv.addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA B&W FEED -> OCCIPITAL INPUT
+//  CAMERA B&W FEED
 // ═══════════════════════════════════════════════════════════════
 const camPromptEl  = document.getElementById('cam-prompt');
 const camContainer = document.getElementById('cam-container');
@@ -1289,7 +1292,7 @@ camCanvas.height = camRes;
 camPromptEl.addEventListener('click', async () => {
   const txt = document.getElementById('cam-prompt-text');
 
-  // If camera is active, toggle it off
+  // If camera is active, toggle off
   if (camActive) {
     camActive = false;
     // Stop all tracks to release the hardware camera
@@ -1418,6 +1421,7 @@ function rebuildBrain() {
   targetZoom = newZoom;
   animate(0);
 }
+
 // Input resolution slider
 function applyResolution() {
   pixelValues = new Float32Array(camRes * camRes);
