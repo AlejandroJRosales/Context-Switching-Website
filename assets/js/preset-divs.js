@@ -271,7 +271,7 @@ var navbar =
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
 					<a class="dropdown-item" href="/my/ecosim/">Ecosystem Simulation</a>
-					<a class="dropdown-item" href="/my/mat/">Neural Visualizer</a>
+					<a class="dropdown-item" href="/my/mat/">Neural Network Simulation</a>
 				</div>
 			</li>
 		</ul>
