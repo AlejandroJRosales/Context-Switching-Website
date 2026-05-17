@@ -380,7 +380,7 @@
     <input type="range" id="sl-thresh" min="10" max="90" value="20">
 
     <label class="slider-label">
-      <span class="slider-name">Syn Failure</span>
+      <span class="slider-name">Synaptic Failure</span>
       <span class="slider-val" id="vb-syn">7%</span>
     </label>
     <input type="range" id="sl-syn" min="0" max="90" value="7">
@@ -392,7 +392,7 @@
     <input type="range" id="sl-mem" min="0" max="120" value="24">
 
     <label class="slider-label">
-      <span class="slider-name">Spont Firing</span>
+      <span class="slider-name">Spontaneous Firing</span>
       <span class="slider-val" id="vb-spont">0.002</span>
     </label>
     <input type="range" id="sl-spont" min="0" max="100" value="11">
@@ -622,26 +622,11 @@ let fireThresh = 0.50;
 let tickCount  = 0;
 let firesThisTick = 0;
 
-// Biological noise parameters
-let noiseLevel = 0.25; // 0..1, controlled by slider
-// Derived noise constants (recomputed when noiseLevel changes)
-let NOISE_MEMBRANE   = 0;  // std-dev of per-tick Gaussian membrane noise
-let NOISE_SPONT_P    = 0;  // probability of spontaneous spike per neuron per tick
-let NOISE_SYN_FAIL_P = 0;  // probability a synapse silently fails to transmit
+// Stochastic noise parameters (each controlled independently)
+let NOISE_MEMBRANE   = 0.024;  // std-dev of per-tick Gaussian membrane noise
+let NOISE_SPONT_P    = 0.002;  // probability of spontaneous spike per neuron per tick
+let NOISE_SYN_FAIL_P = 0.07;   // probability a synapse silently fails to transmit
 const REFRACTORY_TICKS = 2; // ticks a neuron cannot fire after spiking
-
-function applyNoiseLevel(v) {
-  // Legacy combined setter — kept for reset path
-  noiseLevel       = v;
-  NOISE_MEMBRANE   = v * 0.12;
-  NOISE_SPONT_P    = v * v * 0.018;
-  NOISE_SYN_FAIL_P = v * 0.35;
-}
-// Default: biologically plausible baseline values
-// Syn failure ~7%, membrane std-dev ~0.024, spont ~0.002
-NOISE_SYN_FAIL_P = 0.07;
-NOISE_MEMBRANE   = 0.024;
-NOISE_SPONT_P    = 0.002;
 
 // Box-Muller Gaussian sample (mean 0, std 1)
 function randGauss() {
