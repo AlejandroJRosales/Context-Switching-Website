@@ -360,7 +360,7 @@
   </button>
 
   <div class="btn-row">
-    <button id="btn-pause">Pause</button>
+    <button id="btn-pause">Pause Rotation</button>
     <button id="btn-reset">Reset</button>
   </div>
 
@@ -380,10 +380,22 @@
     <input type="range" id="sl-thresh" min="10" max="90" value="20">
 
     <label class="slider-label">
-      <span class="slider-name">Bio Noise</span>
-      <span class="slider-val" id="vb-noise">10</span>
+      <span class="slider-name">Syn Failure</span>
+      <span class="slider-val" id="vb-syn">7%</span>
     </label>
-    <input type="range" id="sl-noise" min="0" max="100" value="10">
+    <input type="range" id="sl-syn" min="0" max="90" value="7">
+
+    <label class="slider-label">
+      <span class="slider-name">Membrane Noise</span>
+      <span class="slider-val" id="vb-mem">0.024</span>
+    </label>
+    <input type="range" id="sl-mem" min="0" max="120" value="24">
+
+    <label class="slider-label">
+      <span class="slider-name">Spont Firing</span>
+      <span class="slider-val" id="vb-spont">0.002</span>
+    </label>
+    <input type="range" id="sl-spont" min="0" max="100" value="11">
 
     <label class="slider-label">
       <span class="slider-name">Scale</span>
@@ -619,12 +631,17 @@ let NOISE_SYN_FAIL_P = 0;  // probability a synapse silently fails to transmit
 const REFRACTORY_TICKS = 2; // ticks a neuron cannot fire after spiking
 
 function applyNoiseLevel(v) {
+  // Legacy combined setter — kept for reset path
   noiseLevel       = v;
-  NOISE_MEMBRANE   = v * 0.12;         // 0 .. 0.12 std-dev
-  NOISE_SPONT_P    = v * v * 0.018;   // 0 .. ~0.018 (quadratic: stays low at low noise)
-  NOISE_SYN_FAIL_P = v * 0.35;        // 0 .. 0.35 failure rate
+  NOISE_MEMBRANE   = v * 0.12;
+  NOISE_SPONT_P    = v * v * 0.018;
+  NOISE_SYN_FAIL_P = v * 0.35;
 }
-applyNoiseLevel(noiseLevel);
+// Default: biologically plausible baseline values
+// Syn failure ~7%, membrane std-dev ~0.024, spont ~0.002
+NOISE_SYN_FAIL_P = 0.07;
+NOISE_MEMBRANE   = 0.024;
+NOISE_SPONT_P    = 0.002;
 
 // Box-Muller Gaussian sample (mean 0, std 1)
 function randGauss() {
@@ -1381,9 +1398,19 @@ document.getElementById('sl-thresh').addEventListener('input', function() {
   document.getElementById('vb-thresh').textContent = fireThresh.toFixed(2);
   neurons.forEach(n => { n.threshold = fireThresh + (Math.random() - 0.5) * 0.1; });
 });
-document.getElementById('sl-noise').addEventListener('input', function() {
-  applyNoiseLevel(parseInt(this.value) / 100);
-  document.getElementById('vb-noise').textContent = parseInt(this.value);
+document.getElementById('sl-syn').addEventListener('input', function() {
+  NOISE_SYN_FAIL_P = parseInt(this.value) / 100;
+  document.getElementById('vb-syn').textContent = parseInt(this.value) + '%';
+});
+document.getElementById('sl-mem').addEventListener('input', function() {
+  NOISE_MEMBRANE = parseInt(this.value) / 1000;
+  document.getElementById('vb-mem').textContent = NOISE_MEMBRANE.toFixed(3);
+});
+document.getElementById('sl-spont').addEventListener('input', function() {
+  // Quadratic mapping: 0..100 -> 0..0.018, matching original curve
+  const v = parseInt(this.value) / 100;
+  NOISE_SPONT_P = v * v * 0.018;
+  document.getElementById('vb-spont').textContent = NOISE_SPONT_P.toFixed(4);
 });
 document.getElementById('sl-scale').addEventListener('input', function() {
   const scale = parseInt(this.value);
