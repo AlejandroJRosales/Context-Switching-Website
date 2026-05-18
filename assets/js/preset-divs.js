@@ -206,6 +206,7 @@ var navbar =
 					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy and Histology of the<br>Hippocampus</a>
 					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
 					<a class="dropdown-item" href="/neuro/thalamicnuclei">Thalamic Nuclei</a>
+					<a class="dropdown-item" href="/neuro/mat">Modular-networks of Adaptive Topologies</a>
 					<!--
 					<hr>
 					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
