@@ -9,7 +9,7 @@
     <!-- This code is made to be copied and pasted. Make it your own :) -->
     <!-- TODO: 
          - fine tune neural network hyperparameters and starting stats
-         - cat eats sheep meat or if robot needs enery cells, you eat plants and sheep/wolf
+         - cat eats sheep meat or if robot needs enery cells, you eat plants and sheep/human
          - add cloud ai
     -->
     <style>
@@ -549,7 +549,7 @@
     <div class="hud">
         <div class="hud-header">
             <span id="deerCount">0</span>🐑
-            <span id="wolfCount">0</span>🧍
+            <span id="humanCount">0</span>🧍
             <span id="plantCount">0</span>🌱
             Day <span id="dayCount">0</span>
             <span id="creativeIndicator" style="display:none; color:#88ffff;">✦ CREATIVE</span>
@@ -1625,7 +1625,7 @@
                 head: new THREE.SphereGeometry(7, 15, 15),
                 leg:  createRoundedBoxGeometry(3, 18, 3, 1)
             },
-            wolf: {
+            human: {
                 body: createRoundedBoxGeometry(8, 17, 4, 1.2),  // torso, scaled for player height
                 head: new THREE.SphereGeometry(4.3, 15, 15),    // head radius
                 leg:  createRoundedBoxGeometry(2, 12.5, 2, 0.7) // slim limbs (arms & legs)
@@ -1639,7 +1639,7 @@
                 head: new THREE.BoxGeometry(14, 14, 14),
                 leg:  new THREE.BoxGeometry(3, 18, 3)
             },
-            wolf: {
+            human: {
                 body: new THREE.BoxGeometry(8, 17, 6),
                 head: new THREE.BoxGeometry(8.6, 8.6, 8.6),
                 leg:  new THREE.BoxGeometry(2, 12.5, 2)
@@ -1651,13 +1651,13 @@
 
         const SHARED_MATERIALS = {
             sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
-            wolf:  new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })  // skin tone
+            human:  new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })  // skin tone
         };
 
         // Per-sex color tints
         const SEX_COLORS = {
             sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
-            wolf:  { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }  // human skin variants
+            human:  { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }  // human skin variants
         };
 
         const PART_OFFSETS = {
@@ -1668,7 +1668,7 @@
                 legBL: new THREE.Vector3(-5, -9, -8),
                 legBR: new THREE.Vector3( 5, -9, -8),
             },
-            wolf: {
+            human: {
                 head:  new THREE.Vector3(0, 13, 0),      // body half=8.5 + head radius=4.3 + gap=0.2
                 legFL: new THREE.Vector3(-6, 2, 0),      // left arm — top flush with shoulder (body half 8.5 - arm half 6.25 = 2.25)
                 legFR: new THREE.Vector3( 6, 2, 0),      // right arm
@@ -1680,7 +1680,7 @@
         const instancedMeshes = {};
 
         function initInstancedMeshes() {
-            for (const type of ['sheep', 'wolf']) {
+            for (const type of ['sheep', 'human']) {
                 if (instancedMeshes[type]) {
                     for (const part of Object.values(instancedMeshes[type])) scene.remove(part);
                 }
@@ -1931,7 +1931,7 @@
         const MIN_SCALE      = 0.25; // 25% of parent size at birth
 
         function updateInstancedMeshes(animals) {
-            for (const type of ['sheep', 'wolf']) {
+            for (const type of ['sheep', 'human']) {
                 const im      = instancedMeshes[type];
                 const offsets = PART_OFFSETS[type];
                 const colors  = SEX_COLORS[type];
@@ -1945,7 +1945,7 @@
                     // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
                     const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
-                    const hs = (type === 'wolf') ? (a.heightScale ?? 1.0) : 1.0;
+                    const hs = (type === 'human') ? (a.heightScale ?? 1.0) : 1.0;
                     _scale.set(s, s * hs, s);
 
                     const angle = DIRECTION_ANGLES[a.outputIdx % 8];
@@ -1965,7 +1965,7 @@
                     // Each other part: scale offset, rotate by yaw, then add world pos
                     for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
                         _local.copy(offsets[part]);
-                        if (type === 'wolf') _local.y *= hs;
+                        if (type === 'human') _local.y *= hs;
                         _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
                         _mat4.compose(_local, _quat, _scale);
                         im[part].setMatrixAt(idx, _mat4);
@@ -2432,7 +2432,7 @@
         // Static movement tables per type
         const COORD_CHANGES = {
             sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
-            wolf:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
+            human:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
         };
 
         function randNormal(mean = 1.0, std = 0.12) {
@@ -2446,15 +2446,15 @@
         class Animal extends Entity {
             constructor(position, type) {
                 super(position, type);
-                this.speed = type === 'wolf' ? 35 : 25;
-                this.startHealth = type === 'wolf' ? 120 : 100;
+                this.speed = type === 'human' ? 35 : 25;
+                this.startHealth = type === 'human' ? 120 : 100;
                 this.health = this.startHealth;
                 this.maxHealth = this.health;
                 this.visionDistance = tools.random(300, 400);
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
-                this.heightScale = type === 'wolf' ? randNormal(1.0, 0.13) : 1.0;
+                this.heightScale = type === 'human' ? randNormal(1.0, 0.13) : 1.0;
 
                 this.waterNeed = Math.random() * 0.05;
                 this.foodNeed = Math.random() * 0.05;
@@ -2511,7 +2511,7 @@
                     if (d > vd) continue;
 
                     if (isSheep) {
-                        if (obj.type === 'wolf' && d < bestPredDist) {
+                        if (obj.type === 'human' && d < bestPredDist) {
                             bestPredDist = d;
                             this.memPredatorX = obj.position.x; this.memPredatorZ = obj.position.z;
                             this.hasPredator = true; this.avoidNeed = 0.5;
@@ -2576,7 +2576,7 @@
                 inp[0] = focusDx / CONFIG.worldWidth;
                 inp[1] = focusDz / CONFIG.worldHeight;
                 inp[2] = focusDist / WORLD_DIAG;
-                inp[3] = this.type === 'wolf' ? -1 : 1;
+                inp[3] = this.type === 'human' ? -1 : 1;
                 inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
                 inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
                 inp[6] = this.reproductionNeed < 100 ? this.reproductionNeed / 100 : 1;
@@ -2653,7 +2653,7 @@
                 child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
                                       * (0.9 + Math.random() * 0.2);
 
-                if (this.type === 'wolf') {
+                if (this.type === 'human') {
                     const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
                     child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + randNormal(0, 0.04)));
                 }
@@ -3029,11 +3029,11 @@
         const _visionSphereGeo = new THREE.SphereGeometry(1, 12, 8);
         const _visionSphereMat = {
             sheep: new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.15 }),
-            wolf:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.15 })
+            human:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.15 })
         };
         const _visionSphereInstanced = {
             sheep: new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.sheep, MAX_INSTANCES),
-            wolf:  new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.wolf,  MAX_INSTANCES)
+            human:  new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.human,  MAX_INSTANCES)
         };
         for (const mesh of Object.values(_visionSphereInstanced)) {
             mesh.frustumCulled = false;
@@ -3049,7 +3049,7 @@
 
         function updateVisionSpheres(animals) {
             const target = currentTargetAnimal;
-            for (const type of ['sheep', 'wolf']) {
+            for (const type of ['sheep', 'human']) {
                 const mesh = _visionSphereInstanced[type];
                 if (sphereVisMode === 'off') {
                     mesh.visible = false;
@@ -3103,7 +3103,7 @@
             document.getElementById('graphicsState').textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
 
             // Swap geometries on all instanced meshes in-place, no world reset needed
-            for (const type of ['sheep', 'wolf']) {
+            for (const type of ['sheep', 'human']) {
                 const im = instancedMeshes[type];
                 if (!im) continue;
                 const geomSet = graphicsMode === 'low' ? SHARED_GEOMETRIES_LOW : SHARED_GEOMETRIES;
@@ -3124,8 +3124,8 @@
         (function buildPlayerMesh() {
             const mat = new THREE.MeshStandardMaterial({ color: 0x2255dd });
 
-            const geom = SHARED_GEOMETRIES.wolf;
-            const off  = PART_OFFSETS.wolf;
+            const geom = SHARED_GEOMETRIES.human;
+            const off  = PART_OFFSETS.human;
 
             const group = new THREE.Group();
 
@@ -3349,7 +3349,7 @@
             }
 
             spawnAnimals(CONFIG.initialDeer, 'sheep', 15);
-            spawnAnimals(CONFIG.initialWolves, 'wolf', 22);
+            spawnAnimals(CONFIG.initialWolves, 'human', 22);
 
             vrCameraRig.position.copy(player.position);
             camera.position.set(0, 0, 0);
@@ -3374,7 +3374,7 @@
                 if (a.type === 'sheep') sheep++; else wolves++;
             }
             document.getElementById('deerCount').textContent = sheep;
-            document.getElementById('wolfCount').textContent = wolves;
+            document.getElementById('humanCount').textContent = wolves;
             // Avoid Array.filter() allocation — plain loop is zero-GC
             let alivePlants = 0;
             for (const p of plants) if (p.alive) alivePlants++;
@@ -3409,7 +3409,7 @@
                 if (!a.alive) continue;
                 const px = a.position.x, pz = a.position.z;
 
-                if (a.type === 'wolf') {
+                if (a.type === 'human') {
                     // Wolves hunt sheep, use main spatial grid
                     for (const other of spatialGrid.query(px, pz, 20)) {
                         if (other.alive && other.type === 'sheep' &&
@@ -3590,7 +3590,7 @@
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
 
-            if (target && target.alive && (target.type === 'sheep' || target.type === 'wolf')) {
+            if (target && target.alive && (target.type === 'sheep' || target.type === 'human')) {
                 // Update 3D NN sprite
                 updateNN3DSprite(target);
             } else {
