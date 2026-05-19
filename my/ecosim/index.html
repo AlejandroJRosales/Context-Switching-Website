@@ -1272,8 +1272,6 @@
         document.addEventListener('touchmove', (e) => {
             if (controls.controlMode !== 'touch') return;
             e.preventDefault();
-            // If a pinch is active, skip camera/joystick processing to avoid jitter
-            if (pinchActive && e.touches.length === 2) return;
             for (const touch of e.changedTouches) {
                 // Joystick
                 if (touch.identifier === joystickTouchId) {
@@ -1309,11 +1307,6 @@
                 if (touch.identifier === cameraTouchId)        cameraTouchId = null;
                 if (touch.identifier === pendingCameraTouchId) pendingCameraTouchId = null;
             }
-            // End pinch if fewer than 2 touches remain
-            if (e.touches.length < 2) {
-                pinchActive = false;
-                pinchLastDist = 0;
-            }
         });
 
         //  Unified touchcancel 
@@ -1321,49 +1314,7 @@
             resetJoystick();
             cameraTouchId = null;
             pendingCameraTouchId = null;
-            pinchActive = false;
-            pinchLastDist = 0;
         });
-
-        // ============================================================
-        // PINCH-TO-ZOOM (bird's-eye mode, touch only)
-        // ============================================================
-        let pinchActive = false;
-        let pinchLastDist = 0;
-
-        function getPinchDist(touches) {
-            const t0 = touches[0], t1 = touches[1];
-            const dx = t1.clientX - t0.clientX;
-            const dy = t1.clientY - t0.clientY;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-
-        document.addEventListener('touchstart', (e) => {
-            if (controls.controlMode !== 'touch') return;
-            if (povMode !== 'bird') return;
-            if (e.touches.length === 2) {
-                pinchActive = true;
-                pinchLastDist = getPinchDist(e.touches);
-                e.preventDefault();
-            }
-        }, { passive: false });
-
-        document.addEventListener('touchmove', (e) => {
-            if (controls.controlMode !== 'touch') return;
-            if (!pinchActive || povMode !== 'bird') return;
-            if (e.touches.length !== 2) { pinchActive = false; return; }
-
-            const newDist = getPinchDist(e.touches);
-            const delta = pinchLastDist - newDist; // positive = fingers closing = zoom in (lower height)
-            pinchLastDist = newDist;
-
-            // Scale zoom sensitivity with current height so it feels linear at any zoom level
-            const sensitivity = birdHeight / 300;
-            birdHeight = Math.max(BIRD_HEIGHT_MIN, Math.min(BIRD_HEIGHT_MAX,
-                birdHeight + delta * sensitivity));
-
-            e.preventDefault();
-        }, { passive: false });
 
         // ============================================================================
         // TERRAIN GENERATION
@@ -3168,7 +3119,7 @@
         }
 
         // ============================================================================
-        // PLAYER MESH  (shown in 3rd-person and bird's-eye modes)
+        // PLAYER MESH  (shown in 3rd-person mode)
         // ============================================================================
 
         (function buildPlayerMesh() {
@@ -3217,23 +3168,15 @@
         // CAMERA POV
         // ============================================================================
 
-        // Modes: '1st' | '3rd' | 'bird'
+        // Modes: '1st' | '3rd'
         let povMode = '1st';
 
-        const POV_MODES   = ['1st', '3rd', 'bird'];
-        const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON', 'bird': "BIRD'S EYE" };
+        const POV_MODES   = ['1st', '3rd'];
+        const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON' };
 
         // 3rd-person: camera sits behind & above the player
         // 3rd-person offset: behind and slightly above the player
         const TPP_OFFSET = new THREE.Vector3(0, 18, 70);
-        // Bird's eye: high overhead, looking straight down
-        let birdHeight = 600;
-        const BIRD_HEIGHT_MIN = 80;
-        const BIRD_HEIGHT_MAX = 2000;
-        const BIRD_ZOOM_SPEED = 300; // units per second
-        // Camera pan offset for bird's eye (independent of player position)
-        const birdCamOffset = new THREE.Vector2(0, 0); // X, Z pan
-        const BIRD_PAN_SPEED = 0.6; // fraction of birdHeight per second (pans faster when zoomed out)
 
         // Reusable vector for POV camera maths
         const _povOffset = new THREE.Vector3();
@@ -3251,8 +3194,6 @@
             }
             // Seed pitch with a slight downward tilt when entering 3rd person
             if (povMode === '3rd') player.pitch = -0.3;
-            // Reset bird's eye pan offset when entering bird mode
-            if (povMode === 'bird') { birdCamOffset.set(0, 0); birdHeight = 600; }
         }
 
         // ============================================================================
@@ -3481,10 +3422,10 @@
                         }
                     }
                 } else {
-                    // Sheep mate with nearby sheep (female initiates)
-                    if (a.sex === 'female' && a.lookForMate) {
+                    // Mate
+                    if (a.lookForMate) {
                         for (const other of spatialGrid.query(px, pz, 20)) {
-                            if (other !== a && other.alive && other.type === 'sheep' &&
+                            if (other !== a && other.alive && other.type === a.type &&
                                 other.sex === 'male' && other.lookForMate &&
                                 tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
                                 const child = a.mate(other);
@@ -3525,14 +3466,7 @@
             const rightZ = -sinY;
 
             if (controls.controlMode === 'keyboard') {
-                if (povMode === 'bird') {
-                    if (keys['w']) birdHeight = Math.max(BIRD_HEIGHT_MIN, birdHeight - BIRD_ZOOM_SPEED * deltaTime);
-                    if (keys['s']) birdHeight = Math.min(BIRD_HEIGHT_MAX, birdHeight + BIRD_ZOOM_SPEED * deltaTime);
-                    const panDir = (keys['d'] ? -1 : 0) + (keys['a'] ? 1 : 0);
-                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime * panDir;
-                    birdCamOffset.x += rightX * panAmt;
-                    birdCamOffset.y += rightZ * panAmt;
-                } else {
+                {
                     const currentSpeed = player.isCreative
                         ? player.sprintSpeed
                         : (keys['shift'] ? player.sprintSpeed : player.speed);
@@ -3555,11 +3489,7 @@
                 const jRight =  controls.joystickX;
                 const currentSpeed = player.isCreative ? player.sprintSpeed : player.speed;
 
-                if (povMode === 'bird') {
-                    const panAmt = birdHeight * BIRD_PAN_SPEED * deltaTime;
-                    birdCamOffset.x += (-sinY * jFwd + rightX * jRight) * panAmt;
-                    birdCamOffset.y += (-cosY * jFwd + rightZ * jRight) * panAmt;
-                } else if (player.isCreative) {
+                if (player.isCreative) {
                     const cosPitch = Math.cos(player.pitch);
                     _moveVector.x = (-sinY * cosPitch * jFwd + rightX * jRight) * currentSpeed * deltaTime;
                     _moveVector.y =  Math.sin(player.pitch) * jFwd              * currentSpeed * deltaTime;
@@ -3570,7 +3500,7 @@
                 }
             }
 
-            if (controls.controlMode === 'keyboard' && !player.isCreative && povMode !== 'bird') {
+            if (controls.controlMode === 'keyboard' && !player.isCreative) {
                 _rotMatrix.makeRotationY(player.yaw);
                 _moveVector.applyMatrix4(_rotMatrix);
             }
@@ -3613,16 +3543,6 @@
                 camera.position.set(0, 0, 0);
                 camera.rotation.y = player.yaw;
                 camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
-            } else {
-                vrCameraRig.position.set(
-                    player.position.x + birdCamOffset.x,
-                    player.position.y + birdHeight,
-                    player.position.z + birdCamOffset.y
-                );
-                vrCameraRig.rotation.set(0, 0, 0);
-                camera.position.set(0, 0, 0);
-                camera.rotation.y = player.yaw;
-                camera.rotation.x = -Math.PI / 2;
             }
 
             if (window._playerMesh) {
@@ -3688,7 +3608,6 @@
         // ============================================================================
         // MAIN LOOP  (uses renderer.setAnimationLoop for WebXR compatibility)
         // ============================================================================
-
         let lastTime = Date.now();
 
         // Helper: read Quest 2 gamepad axes / buttons each frame
