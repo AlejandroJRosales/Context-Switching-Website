@@ -696,7 +696,8 @@
             creativeLiftTarget: null,
             yaw: Math.PI,
             pitch: -0.3,
-            targetObject: null
+            targetObject: null,
+            animTime: 0,        // walk cycle accumulator
         };
 
         // Cached world diagonal; recomputed whenever CONFIG dimensions change (on reset)
@@ -3196,33 +3197,50 @@
             const group = new THREE.Group();
 
             const body  = new THREE.Mesh(geom.body, mat);
-            // body origin is at 0 — matches the instanced mesh world position
             group.add(body);
 
             const head  = new THREE.Mesh(geom.head, mat);
             head.position.copy(off.head);
             group.add(head);
-            group.userData.head = head; // keep reference for 1st-person toggling
+            group.userData.head = head;
 
-            const armL  = new THREE.Mesh(geom.leg, mat);
-            armL.position.copy(off.legFL);
-            group.add(armL);
+            // Limb geometry half-height — mesh center sits this far below the pivot
+            const limbHalf = 6.25;
 
-            const armR  = new THREE.Mesh(geom.leg, mat);
-            armR.position.copy(off.legFR);
-            group.add(armR);
+            // Helper: create a pivot Object3D at (px, py, pz) with a limb mesh hanging
+            // limbHalf units below it. Rotating the pivot on X swings from the joint.
+            function makePivotedLimb(px, py, pz) {
+                const pivot = new THREE.Object3D();
+                pivot.position.set(px, py, pz);
+                const mesh = new THREE.Mesh(geom.leg, mat);
+                mesh.position.set(0, -limbHalf, 0); // hangs below pivot
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                pivot.add(mesh);
+                group.add(pivot);
+                return pivot;
+            }
 
-            const legL  = new THREE.Mesh(geom.leg, mat);
-            legL.position.copy(off.legBL);
-            group.add(legL);
+            // Pivot positions = joint attachment points on the body
+            // Shoulder: off.legFL/FR x, but Y = top of arm = off.legFL.y + limbHalf
+            const shoulderY =  off.legFL.y + limbHalf;  //  2 + 6.25 = 8.25
+            const hipY      =  off.legBL.y + limbHalf;  // -15 + 6.25 = -8.75
 
-            const legR  = new THREE.Mesh(geom.leg, mat);
-            legR.position.copy(off.legBR);
-            group.add(legR);
+            const pivotArmL = makePivotedLimb( off.legFL.x, shoulderY, 0);
+            const pivotArmR = makePivotedLimb( off.legFR.x, shoulderY, 0);
+            const pivotLegL = makePivotedLimb( off.legBL.x, hipY,      0);
+            const pivotLegR = makePivotedLimb( off.legBR.x, hipY,      0);
 
-            group.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+            body.castShadow = true;  body.receiveShadow = true;
+            head.castShadow = true;  head.receiveShadow = true;
 
-            // Start in 1st person — hide head so camera sits at head position without clipping
+            // Store pivot refs — animation just sets pivot.rotation.x
+            group.userData.pivotArmL = pivotArmL;
+            group.userData.pivotArmR = pivotArmR;
+            group.userData.pivotLegL = pivotLegL;
+            group.userData.pivotLegR = pivotLegR;
+
+            // Start in 1st person — hide head so camera doesn't clip through it
             head.visible = false;
             group.visible = true;
             scene.add(group);
@@ -3615,6 +3633,29 @@
                     window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
                 }
                 window._playerMesh.rotation.y = player.yaw;
+
+                // Walk cycle — only animate when the player is actually moving
+                const isMoving = _moveVector.lengthSq() > 0.0001;
+                const pm = window._playerMesh;
+                const { pivotArmL, pivotArmR, pivotLegL, pivotLegR } = pm.userData;
+
+                if (pivotArmL && pivotArmR && pivotLegL && pivotLegR) {
+                    if (isMoving) {
+                        player.animTime += deltaTime;
+                        const swing = Math.sin(player.animTime * 5.5) * 0.6;
+                        // Arms opposite to legs for natural bipedal gait
+                        pivotArmL.rotation.x = -swing;
+                        pivotArmR.rotation.x =  swing;
+                        pivotLegL.rotation.x =  swing;
+                        pivotLegR.rotation.x = -swing;
+                    } else {
+                        // Smoothly return to rest when standing still
+                        pivotArmL.rotation.x *= 0.8;
+                        pivotArmR.rotation.x *= 0.8;
+                        pivotLegL.rotation.x *= 0.8;
+                        pivotLegR.rotation.x *= 0.8;
+                    }
+                }
             }
 
             const creativeIndicator = document.getElementById('creativeIndicator');
