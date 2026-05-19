@@ -1925,12 +1925,16 @@
         const _quat  = new THREE.Quaternion();
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
+        // Extra quaternions for walk animation (reused every frame, no allocation)
+        const _quatLeg  = new THREE.Quaternion(); // leg pitch rotation
+        const _quatFinal = new THREE.Quaternion(); // yaw * legPitch combined
+        const _xAxis = new THREE.Vector3(1, 0, 0); // leg swing axis
 
         const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
         const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
         const MIN_SCALE      = 0.25; // 25% of parent size at birth
 
-        function updateInstancedMeshes(animals) {
+        function updateInstancedMeshes(animals, deltaTime) {
             for (const type of ['sheep', 'human']) {
                 const im      = instancedMeshes[type];
                 const offsets = PART_OFFSETS[type];
@@ -1941,6 +1945,9 @@
                 for (const a of animals) {
                     if (!a.alive || a.type !== type) continue;
                     if (idx >= MAX_INSTANCES) break;
+
+                    // Advance walk cycle timer
+                    if (deltaTime) a.animTime += deltaTime;
 
                     // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
@@ -1957,17 +1964,58 @@
                         im[part].setColorAt(idx, col);
                     }
 
+                    // Walk cycle parameters — animals always move, so always animate
+                    const walkFreq = type === 'sheep' ? 6.5 : 5.0;
+                    const walkAmp  = type === 'sheep' ? 0.55 : 0.65; // radians of leg swing
+                    const t = a.animTime * walkFreq;
+
+                    // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
+                    // Bipedal alternating stride for humans (arms opposite to legs)
+                    const legAngles = type === 'sheep' ? {
+                        legFL:  Math.sin(t),
+                        legFR: -Math.sin(t),
+                        legBL: -Math.sin(t),
+                        legBR:  Math.sin(t),
+                    } : {
+                        legFL:  Math.sin(t),        // left arm swings forward with right leg
+                        legFR: -Math.sin(t),        // right arm swings back
+                        legBL: -Math.sin(t),        // left leg swings back
+                        legBR:  Math.sin(t),        // right leg swings forward
+                    };
+
                     // Body at animal world position
                     _world.set(a.position.x, a.position.y, a.position.z);
                     _mat4.compose(_world, _quat, _scale);
                     im.body.setMatrixAt(idx, _mat4);
 
-                    // Each other part: scale offset, rotate by yaw, then add world pos
-                    for (const part of ['head', 'legFL', 'legFR', 'legBL', 'legBR']) {
-                        _local.copy(offsets[part]);
-                        if (type === 'human') _local.y *= hs;
-                        _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
-                        _mat4.compose(_local, _quat, _scale);
+                    // Head: no swing
+                    _local.copy(offsets.head);
+                    if (type === 'human') _local.y *= hs;
+                    _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
+                    _mat4.compose(_local, _quat, _scale);
+                    im.head.setMatrixAt(idx, _mat4);
+
+                    // Limb half-lengths (distance from pivot joint to limb center)
+                    // leg geometry height = 12.5 → half = 6.25; arm same geometry
+                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 → half=9
+
+                    // Each limb: pivot at joint, swing down from there
+                    for (const part of ['legFL', 'legFR', 'legBL', 'legBR']) {
+                        const swing = legAngles[part] * walkAmp;
+                        _quatLeg.setFromAxisAngle(_xAxis, swing);
+                        _quatFinal.multiplyQuaternions(_quat, _quatLeg);
+
+                        // 1. Pivot point in world space (joint position)
+                        _pivot.copy(PIVOT_OFFSETS[type][part]);
+                        if (type === 'human') _pivot.y *= hs;
+                        _pivot.multiplyScalar(s).applyQuaternion(_quat).add(_world);
+
+                        // 2. Limb center = pivot + (down the swung limb by half its length)
+                        //    In limb-local space "down" = -Y; apply _quatFinal to get world-space down
+                        _local.set(0, -limbHalf * s, 0).applyQuaternion(_quatFinal);
+                        _local.add(_pivot);
+
+                        _mat4.compose(_local, _quatFinal, _scale);
                         im[part].setMatrixAt(idx, _mat4);
                     }
 
@@ -1982,7 +2030,23 @@
             }
         }
 
-        // Direction angles matching coordChanges order
+        // Pivot joint offsets (in body-local space, pre-allocated — reused every frame)
+        // Human: arm pivot = shoulder top, leg pivot = hip top
+        const PIVOT_OFFSETS = {
+            human: {
+                legFL: new THREE.Vector3(-6,  8.25, 0),  // left shoulder
+                legFR: new THREE.Vector3( 6,  8.25, 0),  // right shoulder
+                legBL: new THREE.Vector3(-2, -8.75, 0),  // left hip
+                legBR: new THREE.Vector3( 2, -8.75, 0),  // right hip
+            },
+            sheep: {
+                legFL: new THREE.Vector3(-5,  0,  8),
+                legFR: new THREE.Vector3( 5,  0,  8),
+                legBL: new THREE.Vector3(-5,  0, -8),
+                legBR: new THREE.Vector3( 5,  0, -8),
+            },
+        };
+        const _pivot = new THREE.Vector3(); // scratch vector for pivot world position
         const DIRECTION_ANGLES = [
             Math.PI / 2, -Math.PI / 2, 0, Math.PI,
             Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4
@@ -2487,6 +2551,8 @@
 
                 this.isAdult = true; // overridden to false for born children in mate()
                 this.birthTick = 0;  // stamped in mate() with current ticks value
+
+                this.animTime = Math.random() * Math.PI * 2; // walk cycle phase, randomized so animals aren't in sync
 
                 this.focusX = this.position.x;
                 this.focusZ = this.position.z;
@@ -3755,7 +3821,7 @@
             }
 
             // Update instanced mesh transforms every frame
-            updateInstancedMeshes(animals);
+            updateInstancedMeshes(animals, deltaTime);
             updateVisionSpheres(animals);
 
             // Update billboarded stat labels above each entity
