@@ -629,7 +629,7 @@
         </button>
         <button class="sp-row" id="povBtn">
             <span class="sp-label">Camera</span>
-            <span class="sp-value" id="povState">3RD PERSON</span>
+            <span class="sp-value" id="povState">1ST PERSON</span>
         </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
@@ -3186,6 +3186,7 @@
             const head  = new THREE.Mesh(geom.head, mat);
             head.position.copy(off.head);
             group.add(head);
+            group.userData.head = head; // keep reference for 1st-person toggling
 
             const armL  = new THREE.Mesh(geom.leg, mat);
             armL.position.copy(off.legFL);
@@ -3205,6 +3206,8 @@
 
             group.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
 
+            // Start in 1st person — hide head so camera sits at head position without clipping
+            head.visible = false;
             group.visible = true;
             scene.add(group);
             window._playerMesh = group;
@@ -3215,7 +3218,7 @@
         // ============================================================================
 
         // Modes: '1st' | '3rd' | 'bird'
-        let povMode = '3rd';
+        let povMode = '1st';
 
         const POV_MODES   = ['1st', '3rd', 'bird'];
         const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON', 'bird': "BIRD'S EYE" };
@@ -3240,7 +3243,12 @@
             document.getElementById('povState').textContent = POV_LABELS[povMode];
             const ch = document.querySelector('.hud-crosshair');
             if (ch) ch.style.display = povMode === '1st' ? '' : 'none';
-            if (window._playerMesh) window._playerMesh.visible = (povMode !== '1st');
+            if (window._playerMesh) {
+                window._playerMesh.visible = true;
+                if (window._playerMesh.userData.head) {
+                    window._playerMesh.userData.head.visible = (povMode !== '1st');
+                }
+            }
             // Seed pitch with a slight downward tilt when entering 3rd person
             if (povMode === '3rd') player.pitch = -0.3;
             // Reset bird's eye pan offset when entering bird mode
@@ -3617,8 +3625,13 @@
                 camera.rotation.x = -Math.PI / 2;
             }
 
-            if (window._playerMesh && window._playerMesh.visible) {
-                window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
+            if (window._playerMesh) {
+                if (povMode === '1st') {
+                    // Group positioned so head offset (y+13) sits at camera/eye level
+                    window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
+                } else {
+                    window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
+                }
                 window._playerMesh.rotation.y = player.yaw;
             }
 
