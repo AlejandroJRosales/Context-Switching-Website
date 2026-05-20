@@ -1947,8 +1947,8 @@
                     if (!a.alive || a.type !== type) continue;
                     if (idx >= MAX_INSTANCES) break;
 
-                    // Advance walk cycle timer
-                    if (deltaTime) a.animTime += deltaTime;
+                    // Advance walk cycle timer (freeze when staying still)
+                    if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
 
                     // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
@@ -1956,8 +1956,11 @@
                     const hs = (type === 'human') ? (a.heightScale ?? 1.0) : 1.0;
                     _scale.set(s, s * hs, s);
 
-                    const angle = DIRECTION_ANGLES[a.outputIdx % 8];
-                    _quat.setFromAxisAngle(_yAxis, angle);
+                    const angle = DIRECTION_ANGLES[a.outputIdx];
+                    if (angle !== null && angle !== undefined) {
+                        _quat.setFromAxisAngle(_yAxis, angle);
+                    }
+                    // else: keep _quat from previous frame (stay-still keeps facing direction)
 
                     // Sex-based color
                     const col = colors[a.sex];
@@ -1965,9 +1968,10 @@
                         im[part].setColorAt(idx, col);
                     }
 
-                    // Walk cycle parameters; animals always move, so always animate
+                    // Walk cycle parameters; freeze animation when staying still (outputIdx 8)
+                    const isIdle = a.outputIdx === 8;
                     const walkFreq = type === 'sheep' ? 6.5 : 5.0;
-                    const walkAmp  = type === 'sheep' ? 0.55 : 0.65; // radians of leg swing
+                    const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65); // radians of leg swing
                     const t = a.animTime * walkFreq;
 
                     // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
@@ -2049,7 +2053,8 @@
         const _pivot = new THREE.Vector3(); // scratch vector for pivot world position
         const DIRECTION_ANGLES = [
             Math.PI / 2, -Math.PI / 2, 0, Math.PI,
-            Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4
+            Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
+            null // index 8 = stay still; rotation kept from previous frame
         ];
 
         // ============================================================================
@@ -2542,7 +2547,7 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(10, [16, 16, 8], 0.01, 0.5, 0.001);
+                this.brain = new DenseNetwork(10, [16, 16, 9], 0.01, 0.5, 0.001);
                 this.outputIdx = 0;
                 // Stagger training ticks so animals don't all update simultaneously
                 this.brainUpdateCounter = Math.floor(Math.random() * 5);
@@ -2653,9 +2658,11 @@
             }
 
             move() {
+                // Output index 8 = stay still (no movement)
+                if (this.outputIdx === 8) return;
                 const s = this.speed;
                 const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
-                const cc = DIRS[this.outputIdx % 8];
+                const cc = DIRS[this.outputIdx];
                 this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                 this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
             }
