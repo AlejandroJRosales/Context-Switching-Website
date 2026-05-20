@@ -2630,41 +2630,15 @@
 
             think(grid, waterLocations) {
                 this.locate(grid, waterLocations);
-
-                // Inline priority selection
-                let bestNeed = -1;
-                if (this.hasPredator && this.avoidNeed > bestNeed) {
-                    bestNeed = this.avoidNeed; this.focusX = this.memPredatorX; this.focusZ = this.memPredatorZ;
-                    this.priority = 'predator';
-                }
-                if (this.hasFood && this.foodNeed > bestNeed) {
-                    bestNeed = this.foodNeed; this.focusX = this.memFoodX; this.focusZ = this.memFoodZ;
-                    this.priority = 'food';
-                }
-                if (this.hasWater && this.waterNeed > bestNeed) {
-                    bestNeed = this.waterNeed; this.focusX = this.memWaterX; this.focusZ = this.memWaterZ;
-                    this.priority = 'water';
-                }
-                if (this.hasMate && this.reproductionNeed > bestNeed) {
-                    this.focusX = this.memMateX; this.focusZ = this.memMateZ;
-                    this.priority = 'mate';
-                }
-
-                const focusDx = this.focusX - this.position.x;
-                const focusDz = this.focusZ - this.position.z;
-                const focusDist = Math.sqrt(focusDx * focusDx + focusDz * focusDz);
                 // Use pre-allocated input buffer and module-level WORLD_DIAG; no per-call allocation
                 const inp = this._inputs;
-                inp[0] = focusDx / CONFIG.worldWidth;
-                inp[1] = focusDz / CONFIG.worldHeight;
-                inp[2] = focusDist / WORLD_DIAG;
-                inp[3] = this.type === 'human' ? -1 : 1;
-                inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
-                inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
-                inp[6] = this.reproductionNeed < 100 ? this.reproductionNeed / 100 : 1;
+                inp[0] = this.memFoodX;
+                inp[1] = this.memFoodZ;
+                inp[2] = this.memWaterX;
+                inp[4] = this.memWaterZ;
+                inp[5] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
+                inp[6] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
                 inp[7] = this.health > 0 ? this.health / this.maxHealth : 0;
-                inp[8] = this.hasPredator ? 1 : 0;
-                inp[9] = this.hasFood ? 1 : 0;
                 this.outputIdx = this.brain.think(inp);
             }
 
