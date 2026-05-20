@@ -2735,6 +2735,20 @@
                     }
                 }
 
+                // Sheep scan for nearest plant as their food source
+                if (isSheep) {
+                    for (const plant of plants) {
+                        if (!plant.alive) continue;
+                        const dx = plant.position.x - px, dz = plant.position.z - pz;
+                        const d = dx*dx + dz*dz;
+                        if (d < vd && d < bestFoodDist) {
+                            bestFoodDist = d;
+                            this.memFoodX = plant.position.x; this.memFoodZ = plant.position.z;
+                            this.hasFood = true;
+                        }
+                    }
+                }
+
                 for (const water of waterLocations) {
                     const dx = water[0] - px, dz = water[1] - pz;
                     const d = dx * dx + dz * dz;
