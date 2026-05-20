@@ -125,7 +125,7 @@
     position: fixed;
     bottom: 86px; left: 96px;
     width: 68px; height: 68px;
-    border: 1px solid rgba(160, 111, 255, 0.4);
+    border: 1px solid rgba(86,180,233,0.4);
     border-radius: 10px; overflow: hidden;
     background: #000; z-index: 20; display: none;
   }
@@ -136,14 +136,14 @@
   #audio-label {
     position: absolute; bottom: 3px; left: 0; right: 0;
     text-align: center; font-size: 0.36rem;
-    letter-spacing: 0.1em; color: #a06fff;
+    letter-spacing: 0.1em; color: #56b4e9;
     text-transform: uppercase; pointer-events: none; opacity: 0.7;
   }
   #audio-active-dot {
     position: absolute; top: 5px; right: 5px;
     width: 5px; height: 5px; border-radius: 50%;
-    background: #a06fff;
-    box-shadow: 0 0 6px #a06fff;
+    background: #56b4e9;
+    box-shadow: 0 0 6px #56b4e9;
     animation: blink 1.2s ease-in-out infinite;
   }
   @media (min-width: 640px) {
@@ -403,7 +403,7 @@
     <span id="cam-prompt-text">Enable Vision</span>
   </button>
 
-  <button id="audio-prompt" title="Toggle microphone audio -> feeds Temporal lobe" style="border-color:rgba(160,111,255,0.3);color:#a06fff;background:rgba(160,111,255,0.06);">
+  <button id="audio-prompt" title="Toggle microphone audio -> feeds Temporal lobe" style="border-color:rgba(86,180,233,0.3);color:#56b4e9;background:rgba(86,180,233,0.06);">
     <span id="audio-prompt-text">Enable Hearing</span>
   </button>
 
@@ -470,7 +470,7 @@
   </div>
 
   <br>
-  <h5>v0.0.2</h5>
+  <h5>v0.0.3</h5>
 </div>
 
 <div id="tooltip">
@@ -1036,8 +1036,9 @@ function buildAudioInputLayer(tempIdxs) {
   const halfRows    = (numBands - 1) / 2;
   const gridPositions = [];
 
+  const audioColor = new THREE.Color('#56b4e9');
+
   for (let b = 0; b < numBands; b++) {
-    const bandColor = new THREE.Color(AUDIO_BANDS[b].color);
     for (let c = 0; c < AUDIO_COLS; c++) {
       const ni = b * AUDIO_COLS + c;
       const pos = new THREE.Vector3(
@@ -1048,7 +1049,7 @@ function buildAudioInputLayer(tempIdxs) {
       gridPositions.push(pos);
 
       const mat = new THREE.MeshBasicMaterial({
-        color: bandColor.clone(), transparent: true, opacity: 0.25
+        color: audioColor.clone(), transparent: true, opacity: 0.25
       });
       const mesh = new THREE.Mesh(audioNodeGeo, mat);
       mesh.position.copy(pos);
@@ -1061,8 +1062,6 @@ function buildAudioInputLayer(tempIdxs) {
   // Wire each audio node to 1-2 temporal neurons (round-robin)
   const tempCount = tempIdxs.length;
   for (let ni = 0; ni < numBands * AUDIO_COLS; ni++) {
-    const b = Math.floor(ni / AUDIO_COLS);
-    const bandColor = new THREE.Color(AUDIO_BANDS[b].color);
     const targA = tempIdxs[ni % tempCount];
     const targB = tempIdxs[(ni + Math.floor(tempCount / 2)) % tempCount];
     const targets = [targA];
@@ -1073,8 +1072,8 @@ function buildAudioInputLayer(tempIdxs) {
         gridPositions[ni], neurons[tgt].pos
       ]);
       const colors = new Float32Array([
-        bandColor.r, bandColor.g, bandColor.b,
-        bandColor.r * 0.5, bandColor.g * 0.5, bandColor.b * 0.5
+        audioColor.r, audioColor.g, audioColor.b,
+        audioColor.r * 0.5, audioColor.g * 0.5, audioColor.b * 0.5
       ]);
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       const mat = new THREE.LineBasicMaterial({
@@ -1089,14 +1088,14 @@ function buildAudioInputLayer(tempIdxs) {
 }
 
 function updateAudioInputVisuals() {
+  const audioBaseColor = new THREE.Color('#56b4e9');
   for (let ni = 0; ni < audioNodeMeshes.length; ni++) {
     const { mat, bandIdx, colIdx } = audioNodeMeshes[ni];
     const v = audioActive ? audioValues[bandIdx * AUDIO_COLS + colIdx] : 0;
-    const base = new THREE.Color(AUDIO_BANDS[bandIdx].color);
     mat.color.setRGB(
-      base.r * (0.2 + v * 0.8),
-      base.g * (0.2 + v * 0.8),
-      base.b * (0.2 + v * 0.8)
+      audioBaseColor.r * (0.2 + v * 0.8),
+      audioBaseColor.g * (0.2 + v * 0.8),
+      audioBaseColor.b * (0.2 + v * 0.8)
     );
     mat.opacity = audioActive ? 0.15 + v * 0.85 : 0.15;
   }
@@ -1160,8 +1159,7 @@ function drawAudioViz() {
     const y = b * rowH;
     for (let c = 0; c < AUDIO_COLS; c++) {
       const v   = audioValues[b * AUDIO_COLS + c];
-      const col = AUDIO_BANDS[b].color;
-      ctx.fillStyle = col;
+      ctx.fillStyle = '#56b4e9';
       ctx.globalAlpha = 0.15 + v * 0.85;
       ctx.fillRect(c * barW, y + 1, barW - 1, rowH - 2);
     }
@@ -1613,8 +1611,8 @@ audioPromptEl.addEventListener('click', async () => {
     audioValues.fill(0);
     audioContainer.style.display = 'none';
     txt.textContent = 'Enable Hearing';
-    audioPromptEl.style.borderColor = 'rgba(160,111,255,0.3)';
-    audioPromptEl.style.background  = 'rgba(160,111,255,0.06)';
+    audioPromptEl.style.borderColor = 'rgba(86,180,233,0.3)';
+    audioPromptEl.style.background  = 'rgba(86,180,233,0.06)';
     return;
   }
 
@@ -1634,8 +1632,8 @@ audioPromptEl.addEventListener('click', async () => {
     audioActive = true;
     audioContainer.style.display = 'block';
     txt.textContent = 'Disable Hearing';
-    audioPromptEl.style.borderColor = 'rgba(160,111,255,0.7)';
-    audioPromptEl.style.background  = 'rgba(160,111,255,0.15)';
+    audioPromptEl.style.borderColor = 'rgba(86,180,233,0.7)';
+    audioPromptEl.style.background  = 'rgba(86,180,233,0.15)';
   } catch (err) {
     txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
   }
