@@ -403,6 +403,10 @@
     <span id="cam-prompt-text">Enable Vision</span>
   </button>
 
+  <button id="cam-switch" title="Cycle to next camera" style="display:none;border-color:rgba(86,180,233,0.3);color:#56b4e9;background:rgba(86,180,233,0.06);">
+    <span id="cam-switch-text">Switch Camera</span>
+  </button>
+
   <button id="audio-prompt" title="Toggle microphone audio -> feeds Temporal lobe" style="border-color:rgba(86,180,233,0.3);color:#56b4e9;background:rgba(86,180,233,0.06);">
     <span id="audio-prompt-text">Enable Hearing</span>
   </button>
@@ -1525,6 +1529,7 @@ cv.addEventListener('click', e => {
 //  CAMERA B&W FEED
 // ═══════════════════════════════════════════════════════════════
 const camPromptEl  = document.getElementById('cam-prompt');
+const camSwitchEl  = document.getElementById('cam-switch');
 const camContainer = document.getElementById('cam-container');
 const camCanvas    = document.getElementById('cam-canvas');
 const camVideo     = document.getElementById('cam-video');
@@ -1533,13 +1538,52 @@ const camCtx       = camCanvas.getContext('2d');
 camCanvas.width  = camRes;
 camCanvas.height = camRes;
 
+// Multi-camera state
+let videoDevices   = [];   // MediaDeviceInfo list
+let currentDeviceIdx = 0;  // index into videoDevices
+
+async function enumerateVideoDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    videoDevices = devices.filter(d => d.kind === 'videoinput');
+  } catch (_) {
+    videoDevices = [];
+  }
+}
+
+async function startCamera(deviceId) {
+  // Stop any existing stream
+  if (camVideo.srcObject) {
+    camVideo.srcObject.getTracks().forEach(t => t.stop());
+    camVideo.srcObject = null;
+  }
+  const constraints = {
+    video: deviceId ? { deviceId: { exact: deviceId } } : true,
+    audio: false,
+  };
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  camVideo.srcObject = stream;
+  await camVideo.play();
+}
+
+function updateSwitchButton() {
+  // Show switch button only when camera is active and more than one camera available
+  camSwitchEl.style.display = (camActive && videoDevices.length > 1) ? '' : 'none';
+  if (videoDevices.length > 1) {
+    const next = videoDevices[(currentDeviceIdx + 1) % videoDevices.length];
+    const label = next.label || `Camera ${(currentDeviceIdx + 1) % videoDevices.length + 1}`;
+    // Trim long labels
+    const short = label.length > 20 ? label.slice(0, 18) + '…' : label;
+    document.getElementById('cam-switch-text').textContent = `→ ${short}`;
+  }
+}
+
 camPromptEl.addEventListener('click', async () => {
   const txt = document.getElementById('cam-prompt-text');
 
   // If camera is active, toggle off
   if (camActive) {
     camActive = false;
-    // Stop all tracks to release the hardware camera
     if (camVideo.srcObject) {
       camVideo.srcObject.getTracks().forEach(t => t.stop());
       camVideo.srcObject = null;
@@ -1547,24 +1591,41 @@ camPromptEl.addEventListener('click', async () => {
     pixelValues.fill(0);
     camContainer.style.display = 'none';
     txt.textContent = 'Enable Vision';
-    camPromptEl.style.borderColor   = 'rgba(86,180,233,0.3)';
-    camPromptEl.style.background    = 'rgba(86,180,233,0.06)';
+    camPromptEl.style.borderColor = 'rgba(86,180,233,0.3)';
+    camPromptEl.style.background  = 'rgba(86,180,233,0.06)';
+    updateSwitchButton();
     return;
   }
 
   // Otherwise, request camera and turn on
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    camVideo.srcObject = stream;
-    await camVideo.play();
+    // First call without deviceId to trigger permission prompt, then enumerate
+    await startCamera(null);
+    await enumerateVideoDevices();
+    currentDeviceIdx = 0;
+
     camActive = true;
     camContainer.style.display = 'block';
     txt.textContent = 'Disable Vision';
     camPromptEl.style.borderColor = 'rgba(86,180,233,0.7)';
     camPromptEl.style.background  = 'rgba(86,180,233,0.15)';
+    updateSwitchButton();
     drawBW();
   } catch (err) {
     txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
+  }
+});
+
+camSwitchEl.addEventListener('click', async () => {
+  if (!camActive || videoDevices.length < 2) return;
+  currentDeviceIdx = (currentDeviceIdx + 1) % videoDevices.length;
+  const device = videoDevices[currentDeviceIdx];
+  try {
+    await startCamera(device.deviceId);
+    updateSwitchButton();
+    // drawBW loop is already running; it will pick up the new srcObject
+  } catch (err) {
+    console.warn('Camera switch failed:', err);
   }
 });
 
