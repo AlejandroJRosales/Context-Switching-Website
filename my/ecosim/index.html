@@ -2253,28 +2253,32 @@
         }
 
         function updateAspMemories(a) {
+            function dist(mx, mz) {
+                const dx = mx - a.position.x, dz = mz - a.position.z;
+                return Math.round(Math.sqrt(dx * dx + dz * dz));
+            }
             _setMemSlot(
                 _aspMemPredDot, _aspMemPredTxt, a.hasPredator,
                 a.hasPredator
-                    ? `${Math.round(a.memPredatorX)}, ${Math.round(a.memPredatorZ)}`
+                    ? `${dist(a.memPredatorX, a.memPredatorZ)}`
                     : 'no threat'
             );
             _setMemSlot(
                 _aspMemFoodDot, _aspMemFoodTxt, a.hasFood,
                 a.hasFood
-                    ? `${Math.round(a.memFoodX)}, ${Math.round(a.memFoodZ)}`
+                    ? `${dist(a.memFoodX, a.memFoodZ)}`
                     : 'no food'
             );
             _setMemSlot(
                 _aspMemWaterDot, _aspMemWaterTxt, a.hasWater,
                 a.hasWater
-                    ? `${Math.round(a.memWaterX)}, ${Math.round(a.memWaterZ)}`
+                    ? `${dist(a.memWaterX, a.memWaterZ)}`
                     : 'no water'
             );
             _setMemSlot(
                 _aspMemMateDot, _aspMemMateTxt, a.hasMate,
                 a.hasMate
-                    ? `${Math.round(a.memMateX)}, ${Math.round(a.memMateZ)}`
+                    ? `${dist(a.memMateX, a.memMateZ)}`
                     : 'no mate'
             );
         }
@@ -2678,7 +2682,7 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(10, [16, 16, 9], 0.01, 0.5, 0.001);
+                this.brain = new DenseNetwork(7, [16, 16, 9], 0.01, 0.5, 0.001);
                 this.outputIdx = 0;
                 // Stagger training ticks so animals don't all update simultaneously
                 this.brainUpdateCounter = Math.floor(Math.random() * 5);
@@ -2687,7 +2691,7 @@
                 this.prevFoodNeed = this.foodNeed;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
-                this._inputs = new Float32Array(10); // pre-alloc: avoids per-think array allocation
+                this._inputs = new Float32Array(7); // pre-alloc: avoids per-think array allocation
 
                 this.isAdult = true; // overridden to false for born children in mate()
                 this.birthTick = 0;  // stamped in mate() with current ticks value
@@ -2721,7 +2725,7 @@
                             bestPredDist = d;
                             this.memPredatorX = obj.position.x; this.memPredatorZ = obj.position.z;
                             this.hasPredator = true; this.avoidNeed = 0.5;
-                        } else if (obj.type === 'sheep' && d < bestMateDist) {
+                        } else if (obj.type === 'sheep' && this.sex !== obj.sex && d < bestMateDist) {
                             bestMateDist = d;
                             this.memMateX = obj.position.x; this.memMateZ = obj.position.z;
                             this.hasMate = true;
@@ -2768,15 +2772,18 @@
 
             think(grid, waterLocations) {
                 this.locate(grid, waterLocations);
-                // Use pre-allocated input buffer and module-level WORLD_DIAG; no per-call allocation
+                // Use pre-allocated input buffer; no per-call allocation
                 const inp = this._inputs;
-                inp[0] = this.memFoodX;
-                inp[1] = this.memFoodZ;
-                inp[2] = this.memWaterX;
-                inp[4] = this.memWaterZ;
-                inp[5] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
-                inp[6] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
-                inp[7] = this.health > 0 ? this.health / this.maxHealth : 0;
+                const px = this.position.x, pz = this.position.z;
+                // Inputs 0–3: distSq to each memory target (0 when unknown)
+                inp[0] = this.hasFood     ? tools.distSq(px, pz, this.memFoodX,     this.memFoodZ)     : 0;
+                inp[1] = this.hasWater    ? tools.distSq(px, pz, this.memWaterX,    this.memWaterZ)    : 0;
+                inp[2] = this.hasPredator ? tools.distSq(px, pz, this.memPredatorX, this.memPredatorZ) : 0;
+                inp[3] = this.hasMate     ? tools.distSq(px, pz, this.memMateX,     this.memMateZ)     : 0;
+                // Inputs 4–7: needs and vitals (unchanged)
+                inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
+                inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
+                inp[6] = this.health > 0 ? this.health / this.maxHealth : 0;
                 this.outputIdx = this.brain.think(inp);
             }
 
