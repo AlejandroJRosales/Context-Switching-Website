@@ -120,6 +120,40 @@
     #cam-canvas { width: 80px; height: 80px; }
   }
 
+  /* AUDIO FEED */
+  #audio-container {
+    position: fixed;
+    bottom: 86px; left: 96px;
+    width: 68px; height: 68px;
+    border: 1px solid rgba(160, 111, 255, 0.4);
+    border-radius: 10px; overflow: hidden;
+    background: #000; z-index: 20; display: none;
+  }
+  #audio-canvas {
+    display: block; width: 68px; height: 68px;
+    image-rendering: pixelated;
+  }
+  #audio-label {
+    position: absolute; bottom: 3px; left: 0; right: 0;
+    text-align: center; font-size: 0.36rem;
+    letter-spacing: 0.1em; color: #a06fff;
+    text-transform: uppercase; pointer-events: none; opacity: 0.7;
+  }
+  #audio-active-dot {
+    position: absolute; top: 5px; right: 5px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #a06fff;
+    box-shadow: 0 0 6px #a06fff;
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @media (min-width: 640px) {
+    #audio-container {
+      bottom: auto; top: 80px; left: 120px;
+      width: 80px; height: 80px;
+    }
+    #audio-canvas { width: 80px; height: 80px; }
+  }
+
   @media (min-width: 640px) {
     #title { top: 28px; left: 32px; }
     #title h1 { font-size: 1.8rem; }
@@ -346,6 +380,13 @@
 </div>
 <video id="cam-video" playsinline autoplay muted style="display:none;position:fixed;width:0;height:0;"></video>
 
+<!-- Audio mini-visualizer -->
+<div id="audio-container">
+  <canvas id="audio-canvas" width="34" height="34"></canvas>
+  <div id="audio-label">ear</div>
+  <div id="audio-active-dot"></div>
+</div>
+
 <!-- panel toggle -->
 <button id="panel-toggle" aria-label="Toggle controls" onclick="var p=document.getElementById('panel');p.hidden=!p.hidden;this.classList.toggle('panel-open',!p.hidden)">&#9776;</button>
 
@@ -360,6 +401,10 @@
 
   <button id="cam-prompt" title="Toggle camera vision -> feeds Occipital lobe">
     <span id="cam-prompt-text">Enable Vision</span>
+  </button>
+
+  <button id="audio-prompt" title="Toggle microphone audio -> feeds Temporal lobe" style="border-color:rgba(160,111,255,0.3);color:#a06fff;background:rgba(160,111,255,0.06);">
+    <span id="audio-prompt-text">Enable Hearing</span>
   </button>
 
   <div class="btn-row">
@@ -527,7 +572,7 @@ const NT_PROFILES = {
 };
 
 // PER-LOBE NT ASSIGNMENT RULES
-// Each entry: array of { nt, fraction } — must sum to 1.0 across excitatory slots.
+// Each entry: array of { nt, fraction }; must sum to 1.0 across excitatory slots.
 // Inhibitory neurons always get GABA regardless.
 // fractions here apply only to the excitatory (non-inhibitory) pool.
 const LOBE_NT_DIST = {
@@ -647,6 +692,26 @@ let camRes         = 10; // current resolution (side length); grid = camRes by c
 let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
+
+// Audio/hearing input
+// Frequency bands (Hz ranges) mapped to rows in the audio input layer
+const AUDIO_BANDS = [
+  { name: 'RMS',      lo: 0,    hi: 20000, color: '#ffffff' }, // overall energy row
+  { name: 'Sub-bass', lo: 20,   hi: 80,    color: '#ff4444' },
+  { name: 'Bass',     lo: 80,   hi: 300,   color: '#e6a020' },
+  { name: 'Low-mid',  lo: 300,  hi: 800,   color: '#a06fff' },
+  { name: 'Mid',      lo: 800,  hi: 2500,  color: '#2fffa0' },
+  { name: 'High-mid', lo: 2500, hi: 6000,  color: '#56b4e9' },
+  { name: 'High',     lo: 6000, hi: 20000, color: '#ff6fa0' },
+];
+const AUDIO_COLS    = 8;   // nodes per band row
+let audioValues     = new Float32Array(AUDIO_BANDS.length * AUDIO_COLS); // [band*AUDIO_COLS + col]
+let audioActive     = false;
+let audioCtx        = null;
+let audioAnalyser   = null;
+let audioStream     = null;
+let audioFFTBuf     = null; // Uint8Array for analyser
+let temporalIdxs    = []; // filled by buildBrain
 
 // Neurons is flat array of objects
 let neurons = [];
@@ -859,8 +924,14 @@ function buildBrain() {
   // Store occipital indices for camera injection
   occipitalIdxs = lobeNeuronMap['occipital'] || [];
 
+  // Store temporal indices for audio injection
+  temporalIdxs = lobeNeuronMap['temporal'] || [];
+
   // Camera input layer: 10 by 10 grid of input nodes wired to occipital
   buildCamInputLayer(lobeNeuronMap['occipital']);
+
+  // Audio input layer: AUDIO_BANDS rows x AUDIO_COLS cols wired to temporal
+  buildAudioInputLayer(lobeNeuronMap['temporal']);
 }
 
 // edgeLines: flat array of { mat, srcIdx, tgtIdx, baseOpacity, colA, colB }
@@ -942,6 +1013,160 @@ function buildCamInputLayer(occIdxs) {
       camEdgeLines.push({ mat, pixelIdx: pi, tgtNeuronIdx: tgt });
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AUDIO INPUT LAYER  (AUDIO_BANDS rows per AUDIO_COLS cols -> temporal lobe)
+// ═══════════════════════════════════════════════════════════════
+const AUDIO_NODE_R  = 0.09;
+const audioNodeGeo  = new THREE.SphereGeometry(AUDIO_NODE_R, 8, 8);
+let   audioNodeMeshes = [];  // { mesh, mat, bandIdx, colIdx }
+let   audioEdgeLines  = [];  // { mat, nodeIdx, tgtNeuronIdx }
+
+function buildAudioInputLayer(tempIdxs) {
+  audioNodeMeshes = [];
+  audioEdgeLines  = [];
+
+  // Audio layer faces perpendicular to cam layer (cam=YZ plane at fixed X; audio=XY plane at fixed Z)
+  const GRID_ORIGIN = new THREE.Vector3(2, -0.8, 3.5);
+  const COL_SPACING = 0.22;
+  const ROW_SPACING = 0.28;
+  const numBands    = AUDIO_BANDS.length;
+  const halfCols    = (AUDIO_COLS - 1) / 2;
+  const halfRows    = (numBands - 1) / 2;
+  const gridPositions = [];
+
+  for (let b = 0; b < numBands; b++) {
+    const bandColor = new THREE.Color(AUDIO_BANDS[b].color);
+    for (let c = 0; c < AUDIO_COLS; c++) {
+      const ni = b * AUDIO_COLS + c;
+      const pos = new THREE.Vector3(
+        GRID_ORIGIN.x + (c - halfCols) * COL_SPACING,
+        GRID_ORIGIN.y + (halfRows - b) * ROW_SPACING,
+        GRID_ORIGIN.z
+      );
+      gridPositions.push(pos);
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: bandColor.clone(), transparent: true, opacity: 0.25
+      });
+      const mesh = new THREE.Mesh(audioNodeGeo, mat);
+      mesh.position.copy(pos);
+      mesh.userData = { isAudioNode: true, audioNodeIdx: ni };
+      networkGroup.add(mesh);
+      audioNodeMeshes.push({ mesh, mat, bandIdx: b, colIdx: c });
+    }
+  }
+
+  // Wire each audio node to 1-2 temporal neurons (round-robin)
+  const tempCount = tempIdxs.length;
+  for (let ni = 0; ni < numBands * AUDIO_COLS; ni++) {
+    const b = Math.floor(ni / AUDIO_COLS);
+    const bandColor = new THREE.Color(AUDIO_BANDS[b].color);
+    const targA = tempIdxs[ni % tempCount];
+    const targB = tempIdxs[(ni + Math.floor(tempCount / 2)) % tempCount];
+    const targets = [targA];
+    if (targA !== targB) targets.push(targB);
+
+    for (const tgt of targets) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        gridPositions[ni], neurons[tgt].pos
+      ]);
+      const colors = new Float32Array([
+        bandColor.r, bandColor.g, bandColor.b,
+        bandColor.r * 0.5, bandColor.g * 0.5, bandColor.b * 0.5
+      ]);
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.04
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData.isAudioEdge = true;
+      networkGroup.add(line);
+      audioEdgeLines.push({ mat, nodeIdx: ni, tgtNeuronIdx: tgt });
+    }
+  }
+}
+
+function updateAudioInputVisuals() {
+  for (let ni = 0; ni < audioNodeMeshes.length; ni++) {
+    const { mat, bandIdx, colIdx } = audioNodeMeshes[ni];
+    const v = audioActive ? audioValues[bandIdx * AUDIO_COLS + colIdx] : 0;
+    const base = new THREE.Color(AUDIO_BANDS[bandIdx].color);
+    mat.color.setRGB(
+      base.r * (0.2 + v * 0.8),
+      base.g * (0.2 + v * 0.8),
+      base.b * (0.2 + v * 0.8)
+    );
+    mat.opacity = audioActive ? 0.15 + v * 0.85 : 0.15;
+  }
+  for (const e of audioEdgeLines) {
+    const v = audioActive ? audioValues[e.nodeIdx] : 0;
+    e.mat.opacity = 0.02 + v * 0.25;
+  }
+}
+
+// Sample AnalyserNode -> audioValues every animation frame when active
+function pollAudio() {
+  if (!audioActive || !audioAnalyser) return;
+
+  audioAnalyser.getByteFrequencyData(audioFFTBuf);
+  const binCount   = audioAnalyser.frequencyBinCount;
+  const sampleRate = audioCtx.sampleRate;
+  const binHz      = sampleRate / (binCount * 2); // Hz per bin
+
+  const numBands = AUDIO_BANDS.length;
+
+  // Band 0: RMS; compute from full FFT magnitude
+  let sumSq = 0;
+  for (let i = 0; i < binCount; i++) sumSq += (audioFFTBuf[i] / 255) ** 2;
+  const rms = Math.sqrt(sumSq / binCount);
+  // RMS row: all AUDIO_COLS nodes get same value (uniform energy indicator)
+  for (let c = 0; c < AUDIO_COLS; c++) audioValues[c] = rms;
+
+  // Bands 1-N: spectral bands
+  for (let b = 1; b < numBands; b++) {
+    const { lo, hi } = AUDIO_BANDS[b];
+    const binLo = Math.max(0,         Math.floor(lo / binHz));
+    const binHi = Math.min(binCount - 1, Math.ceil(hi / binHz));
+    const count = Math.max(1, binHi - binLo + 1);
+
+    // Split band bins across AUDIO_COLS nodes
+    const step = count / AUDIO_COLS;
+    for (let c = 0; c < AUDIO_COLS; c++) {
+      const start = Math.floor(binLo + c * step);
+      const end   = Math.min(binCount - 1, Math.floor(binLo + (c + 1) * step));
+      let sum = 0, n = 0;
+      for (let i = start; i <= end; i++) { sum += audioFFTBuf[i] / 255; n++; }
+      audioValues[b * AUDIO_COLS + c] = n > 0 ? sum / n : 0;
+    }
+  }
+}
+
+// Draw mini spectrum visualizer in the audio container canvas
+function drawAudioViz() {
+  if (!audioActive) return;
+  const canvas = document.getElementById('audio-canvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const numBands = AUDIO_BANDS.length;
+  const barW     = Math.floor(W / AUDIO_COLS);
+  // Draw each band as a row of mini-bars, top = high freq, bottom = RMS
+  const rowH = H / numBands;
+
+  for (let b = 0; b < numBands; b++) {
+    const y = b * rowH;
+    for (let c = 0; c < AUDIO_COLS; c++) {
+      const v   = audioValues[b * AUDIO_COLS + c];
+      const col = AUDIO_BANDS[b].color;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.15 + v * 0.85;
+      ctx.fillRect(c * barW, y + 1, barW - 1, rowH - 2);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 function updateCamInputVisuals() {
@@ -1027,6 +1252,20 @@ function simTick() {
       const ni = occipitalIdxs[i];
       const pi = i % pixCount;
       neurons[ni].inputSum += neurons[ni].camWeight * pixelValues[pi];
+    }
+  }
+
+  // Audio injection: band energy drives temporal lobe neurons
+  if (audioActive) {
+    pollAudio();
+    const tempCount = temporalIdxs.length;
+    const numBands  = AUDIO_BANDS.length;
+    for (let i = 0; i < tempCount; i++) {
+      const ni  = temporalIdxs[i];
+      // Map each temporal neuron to an audio node index (round-robin across all nodes)
+      const ani = i % (numBands * AUDIO_COLS);
+      const v   = audioValues[ani];
+      neurons[ni].inputSum += v * 0.6; // 0.6 weight similar to camWeight range
     }
   }
 
@@ -1143,6 +1382,8 @@ function updateVisuals(dt) {
   }
 
   updateCamInputVisuals();
+  updateAudioInputVisuals();
+  drawAudioViz();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1156,8 +1397,8 @@ let targetSph = { theta: 0, phi: Math.PI / 2 };
 // Compute initial zoom so the entire brain + input layer fits in view,
 // scaled proportionally to screen pixel count.
 function computeInitialZoom() {
-  const sceneHalfW = 4.8 + (camRes / 2) * 0.22 + 0.5; // rightmost extent
-  const sceneHalfH = 3.2;                               // vertical extent
+  const sceneHalfW = 4.8 + Math.max((camRes / 2) * 0.22, AUDIO_COLS / 2 * 0.22) + 0.5;
+  const sceneHalfH = 3.2;
   const fovRad = camera.fov * Math.PI / 180;
   const aspect  = window.innerWidth / window.innerHeight;
   const distForH = sceneHalfH / Math.tan(fovRad / 2);
@@ -1346,6 +1587,61 @@ function drawBW() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  MICROPHONE AUDIO FEED
+// ═══════════════════════════════════════════════════════════════
+const audioPromptEl  = document.getElementById('audio-prompt');
+const audioContainer = document.getElementById('audio-container');
+
+// Init the audio canvas size
+const audioVizCanvas = document.getElementById('audio-canvas');
+audioVizCanvas.width  = 34;
+audioVizCanvas.height = 34;
+
+audioPromptEl.addEventListener('click', async () => {
+  const txt = document.getElementById('audio-prompt-text');
+
+  // Toggle off
+  if (audioActive) {
+    audioActive = false;
+    if (audioStream) {
+      audioStream.getTracks().forEach(t => t.stop());
+      audioStream = null;
+    }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    audioAnalyser = null;
+    audioFFTBuf   = null;
+    audioValues.fill(0);
+    audioContainer.style.display = 'none';
+    txt.textContent = 'Enable Hearing';
+    audioPromptEl.style.borderColor = 'rgba(160,111,255,0.3)';
+    audioPromptEl.style.background  = 'rgba(160,111,255,0.06)';
+    return;
+  }
+
+  // Toggle on
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioCtx    = new (window.AudioContext || window.webkitAudioContext)();
+    audioAnalyser = audioCtx.createAnalyser();
+    audioAnalyser.fftSize = 2048;
+    audioAnalyser.smoothingTimeConstant = 0.8;
+    audioFFTBuf = new Uint8Array(audioAnalyser.frequencyBinCount);
+
+    const src = audioCtx.createMediaStreamSource(audioStream);
+    src.connect(audioAnalyser);
+    // Do NOT connect to destination; avoids mic feedback
+
+    audioActive = true;
+    audioContainer.style.display = 'block';
+    txt.textContent = 'Disable Hearing';
+    audioPromptEl.style.borderColor = 'rgba(160,111,255,0.7)';
+    audioPromptEl.style.background  = 'rgba(160,111,255,0.15)';
+  } catch (err) {
+    txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 //  RENDER LOOP
 // ═══════════════════════════════════════════════════════════════
 let lastTime = 0;
@@ -1417,6 +1713,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   simTickMs = 0;
   lastTime = 0;
   pixelValues = new Float32Array(camRes * camRes);
+  audioValues = new Float32Array(AUDIO_BANDS.length * AUDIO_COLS);
   buildBrain();
   const newZoom = computeInitialZoom();
   zoomDist = newZoom;
@@ -1430,6 +1727,7 @@ function rebuildBrain() {
   simTickMs = 0;
   lastTime  = 0;
   pixelValues = new Float32Array(camRes * camRes);
+  audioValues = new Float32Array(AUDIO_BANDS.length * AUDIO_COLS);
   buildBrain();
   const newZoom = computeInitialZoom();
   zoomDist   = newZoom;
