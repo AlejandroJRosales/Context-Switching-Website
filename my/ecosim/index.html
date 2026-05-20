@@ -1498,31 +1498,38 @@
                 return this.learningRate;
             }
 
-            adjustWeights(cost) {
-                this.cost = cost;
-                const nc  = Math.max(-1, Math.min(1, cost));
+            adjustWeights(reward) {
+                this.cost = reward;
+                const r   = Math.max(-1, Math.min(1, reward));
                 const lr  = this.getAdaptiveLr();
                 const mom = this.momentum;
                 const wd  = this.weightDecay;
                 const wd1 = 1 - wd;
                 const wdB = 1 - wd * 0.1;
 
+                // REINFORCE-style eligibility: scale update by how surprising the chosen
+                // action was. Big update when action was unlikely but rewarded (or penalized);
+                // small update when the network was already confident. Avoids overconfident collapse.
+                const lastAct = this.activations[this.activations.length - 1];
+                const chosenProb = lastAct ? (lastAct[this.output] ?? 0.5) : 0.5;
+                const policyGrad = r * (1 - chosenProb);
+
                 for (let l = 0; l < this.weights.length; l++) {
                     const w  = this.weights[l];
                     const wv = this.weightVelocity[l];
-                    const grad = lr * nc;
-                    // One noise sample per layer instead of per weight; ~500x fewer Math.random() calls
-                    // with negligible behavioral difference (noise magnitude is 0.001)
-                    const noise = (Math.random() - 0.5) * 0.001;
+                    const grad = lr * policyGrad;
                     for (let k = 0; k < w.length; k++) {
-                        const vel = mom * wv[k] - grad;
+                        // Per-weight independent noise; magnitude shrinks when reward is strong
+                        // (exploit) and grows when reward is near zero (explore).
+                        const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
+                        const vel = mom * wv[k] - grad + noise;
                         wv[k] = vel;
-                        w[k] = w[k] * wd1 + vel + noise;
+                        w[k] = w[k] * wd1 + vel;
                     }
 
                     const b  = this.biases[l];
                     const bv = this.biasVelocity[l];
-                    const gradB = lr * 0.1 * nc;
+                    const gradB = lr * 0.1 * policyGrad;
                     for (let k = 0; k < b.length; k++) {
                         const vel = mom * bv[k] - gradB;
                         bv[k] = vel;
@@ -2552,6 +2559,10 @@
                 // Stagger training ticks so animals don't all update simultaneously
                 this.brainUpdateCounter = Math.floor(Math.random() * 5);
                 this.prevHealth = this.health; // for delta-based reward signal
+                this.prevWaterNeed = this.waterNeed;
+                this.prevFoodNeed = this.foodNeed;
+                this.prevWaterNeed = this.waterNeed;
+                this.prevFoodNeed = this.foodNeed;
                 this._inputs = new Float32Array(10); // pre-alloc: avoids per-think array allocation
 
                 this.isAdult = true; // overridden to false for born children in mate()
@@ -2680,19 +2691,28 @@
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
-                // Throttle think() across n frames using animal index
-                if ((animalIndex & 3) === (ticks & 3)) {
-                    this.think(grid, waterLocations);
-                    if (++this.brainUpdateCounter >= 5) {
-                        // Delta reward: positive when health improved, negative when it dropped.
-                        // Normalized so eating/drinking ≈ +1, starving ≈ -1.
-                        const healthDelta = this.health - this.prevHealth;
-                        const reward = Math.max(-1, Math.min(1, healthDelta / (this.startHealth * 0.05)));
-                        this.brain.adjustWeights(reward);
-                        this.brainUpdateCounter = 0;
-                    }
-                }
+                this.think(grid, waterLocations);
+
+                // Reward: positive when health improves and needs decrease; negative otherwise.
+                // Each term is normalised to [-1, 1] before combining so no single signal dominates.
+                const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
+                const waterDelta  = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05); // need drop = good
+                const foodDelta   = (this.prevFoodNeed  - this.foodNeed)  / (this.startHealth * 0.05);
+
+                // Urgency weighting: weight need-satisfaction higher when needs are critical
+                const waterUrgency = Math.min(1, this.waterNeed / 50);
+                const foodUrgency  = Math.min(1, this.foodNeed  / 50);
+
+                let reward = healthDelta * 0.5
+                           + waterDelta  * (0.25 + 0.25 * waterUrgency)
+                           + foodDelta   * (0.25 + 0.25 * foodUrgency);
+
+                reward = Math.max(-1, Math.min(1, reward));
+                this.brain.adjustWeights(reward);
+                this.brainUpdateCounter = 0;
                 this.prevHealth = this.health;
+                this.prevWaterNeed = this.waterNeed;
+                this.prevFoodNeed = this.foodNeed;
                 this.move();
             }
 
