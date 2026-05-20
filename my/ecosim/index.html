@@ -498,6 +498,63 @@
             transition: width 0.15s ease;
         }
 
+        /* Memory slots */
+        #asp-memories {
+            margin-top: 5px;
+            border-top: 1px solid rgba(0, 255, 0, 0.2);
+            padding-top: 4px;
+        }
+
+        .asp-mem-label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(0, 255, 0, 0.5);
+            margin-bottom: 3px;
+        }
+
+        .asp-mem-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 2px;
+            font-size: 9px;
+        }
+
+        .asp-mem-icon {
+            width: 14px;
+            flex-shrink: 0;
+        }
+
+        .asp-mem-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+
+        .asp-mem-dot.active {
+            background: #00ff00;
+            border-color: #00ff00;
+            box-shadow: 0 0 4px rgba(0, 255, 0, 0.8);
+        }
+
+        .asp-mem-dot.inactive {
+            background: transparent;
+        }
+
+        .asp-mem-text {
+            color: rgba(0, 255, 0, 0.6);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .asp-mem-text.active {
+            color: #00ff00;
+        }
+
         /* Animations */
         @keyframes pulse {
             0%, 100% { opacity: 0.6; }
@@ -584,6 +641,29 @@
         <div class="asp-bar-row" id="asp-age-row" style="display:none">
             <span class="asp-bar-label">🚼</span>
             <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-age" style="background:#2ecc71;width:0%"></div></div>
+        </div>
+        <div id="asp-memories">
+            <div class="asp-mem-label">Memory</div>
+            <div class="asp-mem-row" id="asp-mem-predator">
+                <span class="asp-mem-icon">⚠️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
+                <span class="asp-mem-text" id="asp-mem-predator-txt">no threat</span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-food">
+                <span class="asp-mem-icon">🍽️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
+                <span class="asp-mem-text" id="asp-mem-food-txt">no food</span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-water">
+                <span class="asp-mem-icon">💧</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
+                <span class="asp-mem-text" id="asp-mem-water-txt">no water</span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-mate">
+                <span class="asp-mem-icon">💞</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
+                <span class="asp-mem-text" id="asp-mem-mate-txt">no mate</span>
+            </div>
         </div>
         <div id="asp-nn-wrapper">
             <canvas id="nnCanvas"></canvas>
@@ -2157,6 +2237,48 @@
         const _aspAgeRowEl  = document.getElementById('asp-age-row');
         const _aspAgeEl     = document.getElementById('asp-age');
 
+        const _aspMemPredDot  = document.getElementById('asp-mem-predator-dot');
+        const _aspMemPredTxt  = document.getElementById('asp-mem-predator-txt');
+        const _aspMemFoodDot  = document.getElementById('asp-mem-food-dot');
+        const _aspMemFoodTxt  = document.getElementById('asp-mem-food-txt');
+        const _aspMemWaterDot = document.getElementById('asp-mem-water-dot');
+        const _aspMemWaterTxt = document.getElementById('asp-mem-water-txt');
+        const _aspMemMateDot  = document.getElementById('asp-mem-mate-dot');
+        const _aspMemMateTxt  = document.getElementById('asp-mem-mate-txt');
+
+        function _setMemSlot(dot, txt, active, label) {
+            dot.className = 'asp-mem-dot ' + (active ? 'active' : 'inactive');
+            txt.className = 'asp-mem-text' + (active ? ' active' : '');
+            txt.textContent = label;
+        }
+
+        function updateAspMemories(a) {
+            _setMemSlot(
+                _aspMemPredDot, _aspMemPredTxt, a.hasPredator,
+                a.hasPredator
+                    ? `${Math.round(a.memPredatorX)}, ${Math.round(a.memPredatorZ)}`
+                    : 'no threat'
+            );
+            _setMemSlot(
+                _aspMemFoodDot, _aspMemFoodTxt, a.hasFood,
+                a.hasFood
+                    ? `${Math.round(a.memFoodX)}, ${Math.round(a.memFoodZ)}`
+                    : 'no food'
+            );
+            _setMemSlot(
+                _aspMemWaterDot, _aspMemWaterTxt, a.hasWater,
+                a.hasWater
+                    ? `${Math.round(a.memWaterX)}, ${Math.round(a.memWaterZ)}`
+                    : 'no water'
+            );
+            _setMemSlot(
+                _aspMemMateDot, _aspMemMateTxt, a.hasMate,
+                a.hasMate
+                    ? `${Math.round(a.memMateX)}, ${Math.round(a.memMateZ)}`
+                    : 'no mate'
+            );
+        }
+
         function updateStatLabels(animals) {
             _seenAnimals.clear();
 
@@ -2194,6 +2316,8 @@
                 _aspGenEl.className = 'asp-generation' + (gen > 0 ? ' born' : '');
 
                 _aspPanel.classList.add('visible');
+
+                updateAspMemories(a);
 
                 if (!window._hudNNVisualizer) initNN3DVisualizer();
                 if (window._hudNNVisualizer) {
