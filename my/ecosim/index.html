@@ -575,6 +575,16 @@
             color: #00ff00;
         }
 
+        .asp-mem-tag {
+            margin-left: auto;
+            font-size: 7px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            opacity: 0.7;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
         /* Animations */
         @keyframes pulse {
             0%, 100% { opacity: 0.6; }
@@ -667,26 +677,30 @@
             </div>
         </div>
         <div id="asp-memories">
-            <div class="asp-mem-label">Memory</div>
+            <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px">· nn inputs</span></div>
             <div class="asp-mem-row" id="asp-mem-predator">
                 <span class="asp-mem-icon">⚠️</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
                 <span class="asp-mem-text" id="asp-mem-predator-txt">no threat</span>
+                <span class="asp-mem-tag" style="color:#e74c3c">pred·ray</span>
             </div>
             <div class="asp-mem-row" id="asp-mem-food">
                 <span class="asp-mem-icon">🍽️</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
                 <span class="asp-mem-text" id="asp-mem-food-txt">no food</span>
+                <span class="asp-mem-tag" style="color:#e67e22">food·ray</span>
             </div>
             <div class="asp-mem-row" id="asp-mem-water">
                 <span class="asp-mem-icon">💧</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
                 <span class="asp-mem-text" id="asp-mem-water-txt">no water</span>
+                <span class="asp-mem-tag" style="color:#3498db">watr·ray</span>
             </div>
             <div class="asp-mem-row" id="asp-mem-mate">
                 <span class="asp-mem-icon">💞</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
                 <span class="asp-mem-text" id="asp-mem-mate-txt">no mate</span>
+                <span class="asp-mem-tag" style="color:#9b59b6">mate·ray</span>
             </div>
         </div>
         </div>
@@ -2071,9 +2085,12 @@
 
                     const angle = DIRECTION_ANGLES[a.outputIdx];
                     if (angle !== null && angle !== undefined) {
+                        a.facingAngle = angle; // stamp so idle frames keep correct facing
                         _quat.setFromAxisAngle(_yAxis, angle);
+                    } else {
+                        // Stay-still: restore from this animal's own last heading
+                        _quat.setFromAxisAngle(_yAxis, a.facingAngle);
                     }
-                    // else: keep _quat from previous frame (stay-still keeps facing direction)
 
                     // Sex-based color
                     const col = colors[a.sex];
@@ -2718,6 +2735,7 @@
                 // 7 original inputs + 12 directional ray inputs = 19 total
                 this.brain = new DenseNetwork(15, [24, 24, 9], 0.001, 0.5, 0.001);
                 this.outputIdx = 0;
+                this.facingAngle = 0; // last non-idle heading in radians; updated each move
                 // Stagger training ticks so animals don't all update simultaneously
                 this.prevHealth = this.health; // for delta-based reward signal
                 this.prevWaterNeed = this.waterNeed;
@@ -3077,6 +3095,33 @@
                 this.fontSizeBase = 30;
             }
 
+            // Input node labels matching the 15-input layout
+            static get INPUT_LABELS() {
+                return [
+                    'food·sin', 'food·cos', 'food·d',
+                    'watr·sin', 'watr·cos', 'watr·d',
+                    'pred·sin', 'pred·cos', 'pred·d',
+                    'mate·sin', 'mate·cos', 'mate·d',
+                    'hunger', 'thirst', 'health',
+                ];
+            }
+
+            // Output node labels: 8 cardinal/diagonal directions + stay
+            static get OUTPUT_LABELS() {
+                return ['\u2192', '\u2190', '\u2193', '\u2191', '\u2198', '\u2199', '\u2197', '\u2196', '\u25cf'];
+            }
+
+            // Colour per input group
+            static get INPUT_GROUP_COLORS() {
+                return [
+                    '#e67e22', '#e67e22', '#e67e22',
+                    '#3498db', '#3498db', '#3498db',
+                    '#e74c3c', '#e74c3c', '#e74c3c',
+                    '#9b59b6', '#9b59b6', '#9b59b6',
+                    '#2ecc71', '#2ecc71', '#2ecc71',
+                ];
+            }
+
             draw(animal) {
                 const nn = animal.brain;
                 const markedNodeIdx = animal.outputIdx;
@@ -3091,6 +3136,42 @@
                     const [minWeight, maxWeight] = this.getWeightRange(weights);
                     this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
                 }
+
+                this.drawNodeLabels(allNodesPos, nn, markedNodeIdx);
+            }
+
+            drawNodeLabels(allNodesPos, nn, markedNodeIdx) {
+                const ctx = this.ctx;
+                const layerDims = this.getLayerDims(nn);
+                const nn_len = layerDims.length;
+                const inputLabels  = NNVisualizer.INPUT_LABELS;
+                const outputLabels = NNVisualizer.OUTPUT_LABELS;
+                const groupColors  = NNVisualizer.INPUT_GROUP_COLORS;
+                const fontSize = Math.max(5, Math.min(7, this.w_height * 0.036));
+
+                ctx.font = `${fontSize}px monospace`;
+
+                // Input layer labels — right-aligned to the left of each node
+                const inputNodes = allNodesPos[0];
+                for (let i = 0; i < inputNodes.length; i++) {
+                    const [nx, ny] = inputNodes[i];
+                    const label = inputLabels[i] ?? `in${i}`;
+                    ctx.fillStyle = groupColors[i] ?? 'rgba(0,255,0,0.7)';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(label, nx - this.node_size - 2, ny + fontSize * 0.35);
+                }
+
+                // Output layer labels — left-aligned to the right of each node
+                const outputNodes = allNodesPos[nn_len - 1];
+                for (let i = 0; i < outputNodes.length; i++) {
+                    const [nx, ny] = outputNodes[i];
+                    const isActive = (i === markedNodeIdx);
+                    ctx.fillStyle = isActive ? 'rgba(255,80,80,1)' : 'rgba(0,255,0,0.7)';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(outputLabels[i] ?? `out${i}`, nx + this.node_size + 2, ny + fontSize * 0.35);
+                }
+
+                ctx.textAlign = 'left';
             }
 
             drawLabel(nn) {
@@ -3108,10 +3189,13 @@
 
             drawNodes(nn, markedNodeIdx) {
                 const layerDims = this.getLayerDims(nn);
-                const padding = this.w_width * 0.1;
-                const availableWidth = this.w_width - (padding * 2);
-                const availableHeight = this.w_height - (padding * 2);
-                
+                const leftPad  = this.w_width * 0.22;
+                const rightPad = this.w_width * 0.10;
+                const topPad   = this.w_height * 0.05;
+                const botPad   = this.w_height * 0.05;
+                const availableWidth  = this.w_width  - leftPad - rightPad;
+                const availableHeight = this.w_height - topPad  - botPad;
+
                 const w_stride = availableWidth / Math.max(layerDims.length - 1, 1);
                 const nn_len = layerDims.length;
                 const allNodesPos = [];
@@ -3124,12 +3208,15 @@
                     const h_stride = availableHeight / Math.max(num_nodes - 1, 1);
 
                     for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
-                        const x = padding + (l_idx * w_stride);
-                        const y = padding + (n_idx * h_stride);
+                        const x = leftPad + (l_idx * w_stride);
+                        const y = topPad  + (n_idx * h_stride);
 
                         let nodeColor = 'rgba(0, 255, 0, 0.8)';
                         if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
                             nodeColor = 'rgba(255, 0, 0, 1)';
+                        }
+                        if (l_idx === 0) {
+                            nodeColor = NNVisualizer.INPUT_GROUP_COLORS[n_idx] ?? nodeColor;
                         }
 
                         this.ctx.strokeStyle = nodeColor;
@@ -3402,11 +3489,8 @@
                 const oz = a.position.z;
                 const rayLen = a.visionDistance * RAY_LEN_SCALE;
 
-                // Base heading from outputIdx; fall back to 0 when staying still (idx 8)
-                const baseAngle = (DIRECTION_ANGLES[a.outputIdx] !== null && DIRECTION_ANGLES[a.outputIdx] !== undefined)
-                    ? DIRECTION_ANGLES[a.outputIdx]
-                    : (DIRECTION_ANGLES[a._lastMoveIdx ?? 0] ?? 0);
-                if (a.outputIdx !== 8) a._lastMoveIdx = a.outputIdx;
+                // Use the animal's stamped facing angle — always correct, even when idle
+                const baseAngle = a.facingAngle;
 
                 for (let r = 0; r < 3; r++) {
                     const angle = baseAngle + RAY_OFFSETS[r];
