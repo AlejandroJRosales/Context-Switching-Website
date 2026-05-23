@@ -1631,6 +1631,31 @@
                 // Hidden state for Lobe A GRU cells (persists across think() calls)
                 this.hA = new Float32Array(N);
 
+                // ── Leaky Integrate-and-Fire state ────────────────────────────────────
+                // Membrane potentials for both lobes (persist across think() calls,
+                // leak toward rest between steps, fire when they cross threshold).
+                // Lobe A reuses hA as its membrane; hB is added here for Lobe B.
+                this.hB = new Float32Array(N);
+
+                // LIF hyperparameters
+                // lifLeak  : fraction of membrane potential retained per step (0–1).
+                //            0.9 ≈ τ_m ~ 10 steps; lower → faster forgetting.
+                // lifThresh: voltage threshold that triggers a spike.
+                //            Tuned so typical net inputs (~±1 after normalisation)
+                //            can accumulate to threshold in a few steps.
+                // lifReset : membrane potential immediately after a spike.
+                //            Sub-threshold reset creates relative refractory period.
+                this.lifLeak   = 0.85;   // membrane leak coefficient
+                this.lifThresh = 1.0;    // spike threshold (V_th)
+                this.lifReset  = -0.1;  // post-spike reset (V_reset < V_rest=0)
+
+                // Refractory counters: number of steps each node cannot fire
+                // (decremented each propagate call; node clamped to V_reset while > 0)
+                this.refracA = new Uint8Array(N);
+                this.refracB = new Uint8Array(N);
+                this.REFRAC_PERIOD = 3; // steps of silence after a spike
+                // ─────────────────────────────────────────────────────────────────────
+
                 // Activation buffers (pre-allocated)
                 this.actA = new Float32Array(N);
                 this.actB = new Float32Array(N);
@@ -1663,13 +1688,35 @@
                 const actO = this.actO;
                 const hA   = this.hA;
 
-                // Lobe A (GRU nodes)
-                // net_i = biasA[i]
-                //       + Σ_j  wIA[j*N+i] * inp[j]       (input -> A, sparse)
-                //       + Σ_k  wBA[k*N+i] * actB[k]      (B -> A,     sparse, previous step's B)
-                //       + wSelf[i] * hA[i]                (self-recurrence)
-                // h_A[i] = sigmoid(net_i)
+                // Lobe A — Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
+                //
+                // Each node maintains a membrane potential V = hA[i] that:
+                //   1. Leaks toward rest (0) each step:  V ← V * lifLeak
+                //   2. Integrates synaptic current (bias + weighted inputs + B→A + self)
+                //   3. Fires (actA[i] = 1) and resets when V ≥ lifThresh
+                //   4. Is clamped to lifReset during the refractory period
+                //
+                // A continuous "sub-threshold" signal (sigmoid of V − threshold) is
+                // passed to downstream layers so gradient information propagates even
+                // when no discrete spike occurs, preserving trainability under REINFORCE.
+                const refracA  = this.refracA;
+                const lifLeak  = this.lifLeak;
+                const lifTh    = this.lifThresh;
+                const lifRst   = this.lifReset;
+                const refracPd = this.REFRAC_PERIOD;
                 for (let i = 0; i < N; i++) {
+                    // --- refractory: node cannot integrate or fire ---
+                    if (refracA[i] > 0) {
+                        refracA[i]--;
+                        hA[i] = lifRst;
+                        actA[i] = 0.0;
+                        continue;
+                    }
+
+                    // --- leak: membrane drifts back toward rest ---
+                    hA[i] *= lifLeak;
+
+                    // --- integrate: accumulate weighted synaptic input ---
                     let net = this.biasA[i] + this.wSelf[i] * hA[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * N + i;
@@ -1679,16 +1726,45 @@
                         const idx = k * N + i;
                         if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
                     }
-                    const v = net < -500 ? -500 : net > 500 ? 500 : net;
-                    hA[i] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
-                    actA[i] = hA[i];
+                    // Clamp net current to prevent runaway integration
+                    hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
+
+                    // --- fire-and-reset or soft sub-threshold output ---
+                    if (hA[i] >= lifTh) {
+                        actA[i] = 1.0;          // spike
+                        hA[i]   = lifRst;       // hard reset
+                        refracA[i] = refracPd;  // enter refractory period
+                    } else {
+                        // Soft sigmoid of (V − threshold): gives graded output below
+                        // threshold, smoothly approaching 1 as V → lifTh.
+                        const vRel = hA[i] - lifTh;  // negative when sub-threshold
+                        actA[i] = vRel >= 0
+                            ? 1 / (1 + Math.exp(-vRel))
+                            : Math.exp(vRel) / (1 + Math.exp(vRel));
+                    }
                 }
 
-                // Lobe B (sigmoid nodes)
-                // net_i = biasB[i]
-                //       + Σ_j  wIB[j*N+i] * inp[j]       (input -> B, sparse)
-                //       + Σ_k  wAB[k*N+i] * actA[k]      (A -> B,     sparse)
+                // Lobe B — Leaky Integrate-and-Fire (LIF) nodes
+                //
+                // Same LIF dynamics as Lobe A but without self-recurrence.
+                // Lobe B acts as a "fast" integrator (no persistent hA self-loop),
+                // making it responsive to immediate sensory context (analogous to
+                // a more reactive cortical layer receiving feedforward + A→B input).
+                const hB      = this.hB;
+                const refracB = this.refracB;
                 for (let i = 0; i < N; i++) {
+                    // --- refractory ---
+                    if (refracB[i] > 0) {
+                        refracB[i]--;
+                        hB[i] = lifRst;
+                        actB[i] = 0.0;
+                        continue;
+                    }
+
+                    // --- leak ---
+                    hB[i] *= lifLeak;
+
+                    // --- integrate ---
                     let net = this.biasB[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * N + i;
@@ -1698,8 +1774,19 @@
                         const idx = k * N + i;
                         if (this.maskAB[idx]) net += this.wAB[idx] * actA[k];
                     }
-                    const v = net < -500 ? -500 : net > 500 ? 500 : net;
-                    actB[i] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
+                    hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
+
+                    // --- fire-and-reset or soft sub-threshold output ---
+                    if (hB[i] >= lifTh) {
+                        actB[i] = 1.0;
+                        hB[i]   = lifRst;
+                        refracB[i] = refracPd;
+                    } else {
+                        const vRel = hB[i] - lifTh;
+                        actB[i] = vRel >= 0
+                            ? 1 / (1 + Math.exp(-vRel))
+                            : Math.exp(vRel) / (1 + Math.exp(vRel));
+                    }
                 }
 
                 // Output (softmax)
@@ -2902,6 +2989,9 @@
 
                 // 7 original inputs + 12 directional ray inputs = 19 total
                 this.brain = new DenseNetwork(15, null, 0.001, 0.5, 0.001);
+                this.ACTION_HOLD   = 30; // hold each decision for n frames
+                this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD); // random phase offset so animals don't all re-decide on the same frame
+                this.currentAction = 0;
                 this.outputIdx = 0;
                 this.facingAngle = 0; // last non-idle heading in radians; updated each move
                 // Stagger training ticks so animals don't all update simultaneously
@@ -3075,7 +3165,11 @@
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
-                this.think(grid, waterLocations);
+                this.actionTimer--;
+                if (this.actionTimer <= 0) {
+                    this.think(grid, waterLocations);
+                    this.actionTimer   = this.ACTION_HOLD;
+                }
 
                 // Brain weight update: twice per 60 frames (every 30 frames), staggered per animal
                 // to avoid all animals updating simultaneously.
