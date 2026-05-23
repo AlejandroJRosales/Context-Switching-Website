@@ -758,7 +758,7 @@
             <span class="sp-value" id="nnVisState">OFF</span>
         </button>
         <button class="sp-row" id="sphereVisBtn">
-            <span class="sp-label">Sphere Display</span>
+            <span class="sp-label">Vision Rays</span>
             <span class="sp-value" id="sphereVisState">OFF</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
@@ -839,7 +839,7 @@
             if (hudCleared && typeof sphereVisMode !== 'undefined') {
                 sphereVisMode = 'off';
                 document.getElementById('sphereVisState').textContent = 'OFF';
-                for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
+                if (typeof _rayLines !== 'undefined') _rayLines.visible = false;
             }
         }
 
@@ -2694,7 +2694,7 @@
                 this.sex = Math.random() < 0.5 ? 'male' : 'female';
                 this.mutationMulti = 0.5;
                 this.lastChildTime = Date.now();
-                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15–30 s in ms
+                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15-30 s in ms
                 this.lookForMate = false;
 
                 this.waterIncrement = this.health * 0.0001;
@@ -2708,7 +2708,15 @@
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                this.brain = new DenseNetwork(7, [16, 16, 9], 0.001, 0.5, 0.001);
+                // Spatial direction rays: sin(angle), cos(angle), normalised distance [0,1]
+                // One ray per need (food, water, predator, mate) — 3 values × 4 = 12 extra inputs
+                this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodDist = 0;
+                this.rayWaterSin = 0;     this.rayWaterCos = 0;     this.rayWaterDist = 0;
+                this.rayPredatorSin = 0;  this.rayPredatorCos = 0;  this.rayPredatorDist = 0;
+                this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateDist = 0;
+
+                // 7 original inputs + 12 directional ray inputs = 19 total
+                this.brain = new DenseNetwork(19, [24, 24, 9], 0.001, 0.5, 0.001);
                 this.outputIdx = 0;
                 // Stagger training ticks so animals don't all update simultaneously
                 this.prevHealth = this.health; // for delta-based reward signal
@@ -2716,7 +2724,7 @@
                 this.prevFoodNeed = this.foodNeed;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
-                this._inputs = new Float32Array(7); // pre-alloc: avoids per-think array allocation
+                this._inputs = new Float32Array(19); // pre-alloc: 7 base + 12 directional ray inputs
 
                 this.isAdult = true; // overridden to false for born children in mate()
                 this.birthTick = 0;  // stamped in mate() with current ticks value
@@ -2750,20 +2758,32 @@
                             bestPredDist = d;
                             this.memPredatorX = obj.position.x; this.memPredatorZ = obj.position.z;
                             this.hasPredator = true; this.avoidNeed = 0.5;
+                            const dist = Math.sqrt(d);
+                            this.rayPredatorSin = dx / dist; this.rayPredatorCos = dz / dist;
+                            this.rayPredatorDist = Math.min(1, dist / this.visionDistance);
                         } else if (obj.type === 'sheep' && this.sex !== obj.sex && d < bestMateDist) {
                             bestMateDist = d;
                             this.memMateX = obj.position.x; this.memMateZ = obj.position.z;
                             this.hasMate = true;
+                            const dist = Math.sqrt(d);
+                            this.rayMateSin = dx / dist; this.rayMateCos = dz / dist;
+                            this.rayMateDist = Math.min(1, dist / this.visionDistance);
                         }
                     } else {
                         if (obj.type === 'sheep' && d < bestFoodDist) {
                             bestFoodDist = d;
                             this.memFoodX = obj.position.x; this.memFoodZ = obj.position.z;
                             this.hasFood = true;
+                            const dist = Math.sqrt(d);
+                            this.rayFoodSin = dx / dist; this.rayFoodCos = dz / dist;
+                            this.rayFoodDist = Math.min(1, dist / this.visionDistance);
                         } else if (obj.type === 'human' && this.sex !== obj.sex && d < bestMateDist) {
                             bestMateDist = d;
                             this.memMateX = obj.position.x; this.memMateZ = obj.position.z;
                             this.hasMate = true;
+                            const dist = Math.sqrt(d);
+                            this.rayMateSin = dx / dist; this.rayMateCos = dz / dist;
+                            this.rayMateDist = Math.min(1, dist / this.visionDistance);
                         }
                     }
                 }
@@ -2778,6 +2798,9 @@
                             bestFoodDist = d;
                             this.memFoodX = plant.position.x; this.memFoodZ = plant.position.z;
                             this.hasFood = true;
+                            const dist = Math.sqrt(d);
+                            this.rayFoodSin = dx / dist; this.rayFoodCos = dz / dist;
+                            this.rayFoodDist = Math.min(1, dist / this.visionDistance);
                         }
                     }
                 }
@@ -2789,14 +2812,29 @@
                         bestWaterDist = d;
                         this.memWaterX = water[0]; this.memWaterZ = water[1];
                         this.hasWater = true;
+                        const dist = Math.sqrt(d);
+                        this.rayWaterSin = dx / dist; this.rayWaterCos = dz / dist;
+                        this.rayWaterDist = Math.min(1, dist / this.visionDistance);
                     }
                 }
 
-                // Expire stale memories
-                if (this.hasPredator && tools.distSq(px,pz,this.memPredatorX,this.memPredatorZ) > vd) this.hasPredator = false;
-                if (this.hasFood && tools.distSq(px,pz,this.memFoodX, this.memFoodZ) > vd) this.hasFood = false;
-                if (this.hasWater && tools.distSq(px,pz,this.memWaterX, this.memWaterZ) > vd) this.hasWater = false;
-                if (this.hasMate && tools.distSq(px,pz,this.memMateX, this.memMateZ) > vd) this.hasMate = false;
+                // Expire stale memories and clear their rays
+                if (this.hasPredator && tools.distSq(px,pz,this.memPredatorX,this.memPredatorZ) > vd) {
+                    this.hasPredator = false;
+                    this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorDist = 0;
+                }
+                if (this.hasFood && tools.distSq(px,pz,this.memFoodX, this.memFoodZ) > vd) {
+                    this.hasFood = false;
+                    this.rayFoodSin = 0; this.rayFoodCos = 0; this.rayFoodDist = 0;
+                }
+                if (this.hasWater && tools.distSq(px,pz,this.memWaterX, this.memWaterZ) > vd) {
+                    this.hasWater = false;
+                    this.rayWaterSin = 0; this.rayWaterCos = 0; this.rayWaterDist = 0;
+                }
+                if (this.hasMate && tools.distSq(px,pz,this.memMateX, this.memMateZ) > vd) {
+                    this.hasMate = false;
+                    this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateDist = 0;
+                }
             }
 
             think(grid, waterLocations) {
@@ -2804,15 +2842,34 @@
                 // Use pre-allocated input buffer; no per-call allocation
                 const inp = this._inputs;
                 const px = this.position.x, pz = this.position.z;
-                // Inputs 0–3: distSq to each memory target (0 when unknown)
+
+                // Inputs 0-3: distSq to each memory target (0 when unknown)
                 inp[0] = this.hasFood     ? tools.distSq(px, pz, this.memFoodX,     this.memFoodZ)     : 0;
                 inp[1] = this.hasWater    ? tools.distSq(px, pz, this.memWaterX,    this.memWaterZ)    : 0;
                 inp[2] = this.hasPredator ? tools.distSq(px, pz, this.memPredatorX, this.memPredatorZ) : 0;
                 inp[3] = this.hasMate     ? tools.distSq(px, pz, this.memMateX,     this.memMateZ)     : 0;
-                // Inputs 4–7: needs and vitals (unchanged)
+                // Inputs 4-6: needs and vitals
                 inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
                 inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
                 inp[6] = this.health > 0 ? this.health / this.maxHealth : 0;
+
+                // Inputs 7-9: food ray  (sin, cos, normalised distance)
+                inp[7]  = this.hasFood     ? this.rayFoodSin      : 0;
+                inp[8]  = this.hasFood     ? this.rayFoodCos      : 0;
+                inp[9]  = this.hasFood     ? this.rayFoodDist     : 0;
+                // Inputs 10-12: water ray
+                inp[10] = this.hasWater    ? this.rayWaterSin     : 0;
+                inp[11] = this.hasWater    ? this.rayWaterCos     : 0;
+                inp[12] = this.hasWater    ? this.rayWaterDist    : 0;
+                // Inputs 13-15: predator ray
+                inp[13] = this.hasPredator ? this.rayPredatorSin  : 0;
+                inp[14] = this.hasPredator ? this.rayPredatorCos  : 0;
+                inp[15] = this.hasPredator ? this.rayPredatorDist : 0;
+                // Inputs 16-18: mate ray
+                inp[16] = this.hasMate     ? this.rayMateSin      : 0;
+                inp[17] = this.hasMate     ? this.rayMateCos      : 0;
+                inp[18] = this.hasMate     ? this.rayMateDist     : 0;
+
                 this.outputIdx = this.brain.think(inp);
             }
 
@@ -3270,76 +3327,127 @@
             }
         }
 
-        const _visionSphereGeo = new THREE.SphereGeometry(1, 12, 8);
-        const _visionSphereMat = {
-            sheep: new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, transparent: true, opacity: 0.15 }),
-            human:  new THREE.MeshBasicMaterial({ color: 0xff4444, wireframe: true, transparent: true, opacity: 0.15 })
-        };
-        const _visionSphereInstanced = {
-            sheep: new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.sheep, MAX_INSTANCES),
-            human:  new THREE.InstancedMesh(_visionSphereGeo, _visionSphereMat.human,  MAX_INSTANCES)
-        };
-        for (const mesh of Object.values(_visionSphereInstanced)) {
-            mesh.frustumCulled = false;
-            mesh.visible = false;
-            scene.add(mesh);
-        }
-
         let sphereVisMode = 'off';
-
-        const _svScale = new THREE.Vector3();
-        const _svQuat  = new THREE.Quaternion();
-        const _svMat4  = new THREE.Matrix4();
-
-        function updateVisionSpheres(animals) {
-            const target = currentTargetAnimal;
-            for (const type of ['sheep', 'human']) {
-                const mesh = _visionSphereInstanced[type];
-                if (sphereVisMode === 'off') {
-                    mesh.visible = false;
-                    mesh.count = 0;
-                    mesh.instanceMatrix.needsUpdate = true;
-                    continue;
-                }
-                if (sphereVisMode === 'single') {
-                    if (!target || !target.alive || target.type !== type) {
-                        mesh.visible = false;
-                        mesh.count = 0;
-                        mesh.instanceMatrix.needsUpdate = true;
-                        continue;
-                    }
-                    const r = target.visionDistance;
-                    _svScale.set(r, r, r);
-                    _svMat4.compose(target.position, _svQuat, _svScale);
-                    mesh.setMatrixAt(0, _svMat4);
-                    mesh.count = 1;
-                    mesh.visible = true;
-                    mesh.instanceMatrix.needsUpdate = true;
-                } else {
-                    let idx = 0;
-                    for (const a of animals) {
-                        if (!a.alive || a.type !== type) continue;
-                        if (idx >= MAX_INSTANCES) break;
-                        _svScale.set(a.visionDistance, a.visionDistance, a.visionDistance);
-                        _svMat4.compose(a.position, _svQuat, _svScale);
-                        mesh.setMatrixAt(idx, _svMat4);
-                        idx++;
-                    }
-                    mesh.count = idx;
-                    mesh.visible = idx > 0;
-                    mesh.instanceMatrix.needsUpdate = true;
-                }
-            }
-        }
 
         function toggleSphereVis() {
             const modes = ['off', 'single', 'all'];
             sphereVisMode = modes[(modes.indexOf(sphereVisMode) + 1) % modes.length];
             const state = document.getElementById('sphereVisState');
             if (state) state.textContent = sphereVisMode === 'off' ? 'OFF' : sphereVisMode === 'single' ? 'SINGLE' : 'ALL';
-            if (sphereVisMode === 'off') {
-                for (const mesh of Object.values(_visionSphereInstanced)) { mesh.visible = false; mesh.count = 0; mesh.instanceMatrix.needsUpdate = true; }
+            _rayLines.visible = sphereVisMode !== 'off';
+        }
+
+        // ============================================================================
+        // VISION RAYS (3 dynamic rays per animal showing current heading ± spread)
+        // ============================================================================
+        // Each animal gets 3 rays: center (forward), left spread, right spread.
+        // Ray directions are derived from the animal's current outputIdx heading so
+        // they rotate in real time as the animal changes direction.
+        // Layout in the position buffer: for animal i, rays are at segments i*3, i*3+1, i*3+2.
+        // Each segment = 2 vertices × 3 floats.  Total floats = MAX_RAY_ANIMALS*3*2*3.
+
+        const MAX_RAY_ANIMALS = 600;          // cap to keep buffer size sane
+        const RAY_SPREAD      = Math.PI / 6;  // ±30° for the flanking rays
+        const RAY_LEN_SCALE   = 0.55;         // fraction of visionDistance each ray reaches
+
+        // Colours: center = white, left = cyan, right = orange
+        const _rayColors = [
+            new THREE.Color(0xffffff),  // center
+            new THREE.Color(0x00ffff),  // left flank
+            new THREE.Color(0xff8800),  // right flank
+        ];
+
+        // One geometry with pre-allocated buffers; we update positions each frame.
+        const _rayPositions = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3); // 3 rays × 2 pts × xyz
+        const _rayColorsArr = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3); // matching vertex colours
+
+        const _rayGeo = new THREE.BufferGeometry();
+        _rayGeo.setAttribute('position', new THREE.BufferAttribute(_rayPositions, 3));
+        _rayGeo.setAttribute('color',    new THREE.BufferAttribute(_rayColorsArr, 3));
+
+        const _rayMat = new THREE.LineBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.55,
+            depthTest: false,
+        });
+
+        const _rayLines = new THREE.LineSegments(_rayGeo, _rayMat);
+        _rayLines.frustumCulled = false;
+        _rayLines.visible = false;
+        scene.add(_rayLines);
+
+        // Scratch angles for the three rays relative to heading
+        const RAY_OFFSETS = [0, -RAY_SPREAD, RAY_SPREAD]; // center, left, right
+
+        function updateVisionRays(animals) {
+            if (!_rayLines.visible) return;
+
+            const pos = _rayPositions;
+            const col = _rayColorsArr;
+            const target = currentTargetAnimal;
+
+            // Decide which animals to draw rays for based on sphere vis mode
+            let rayAnimals;
+            if (sphereVisMode === 'single') {
+                rayAnimals = (target && target.alive) ? [target] : [];
+            } else if (sphereVisMode === 'all') {
+                rayAnimals = animals.filter(a => a.alive);
+                if (rayAnimals.length > MAX_RAY_ANIMALS) rayAnimals.length = MAX_RAY_ANIMALS;
+            } else {
+                // Sphere vis is off — show rays only for the targeted animal
+                rayAnimals = (target && target.alive) ? [target] : [];
             }
+
+            const n = Math.min(rayAnimals.length, MAX_RAY_ANIMALS);
+            let vi = 0; // vertex index (floats)
+
+            for (let ai = 0; ai < n; ai++) {
+                const a = rayAnimals[ai];
+                const ox = a.position.x;
+                const oy = a.position.y + 8; // elevate slightly so rays aren't buried in ground
+                const oz = a.position.z;
+                const rayLen = a.visionDistance * RAY_LEN_SCALE;
+
+                // Base heading from outputIdx; fall back to 0 when staying still (idx 8)
+                const baseAngle = (DIRECTION_ANGLES[a.outputIdx] !== null && DIRECTION_ANGLES[a.outputIdx] !== undefined)
+                    ? DIRECTION_ANGLES[a.outputIdx]
+                    : (DIRECTION_ANGLES[a._lastMoveIdx ?? 0] ?? 0);
+                if (a.outputIdx !== 8) a._lastMoveIdx = a.outputIdx;
+
+                for (let r = 0; r < 3; r++) {
+                    const angle = baseAngle + RAY_OFFSETS[r];
+                    // Three.js heading 0 = +Z axis; sin→X, cos→Z
+                    const dx = Math.sin(angle) * rayLen;
+                    const dz = Math.cos(angle) * rayLen;
+
+                    const c = _rayColors[r];
+
+                    // Start vertex
+                    pos[vi]     = ox;
+                    pos[vi + 1] = oy;
+                    pos[vi + 2] = oz;
+                    col[vi]     = c.r; col[vi + 1] = c.g; col[vi + 2] = c.b;
+                    vi += 3;
+
+                    // End vertex
+                    pos[vi]     = ox + dx;
+                    pos[vi + 1] = oy;
+                    pos[vi + 2] = oz + dz;
+                    col[vi]     = c.r; col[vi + 1] = c.g; col[vi + 2] = c.b;
+                    vi += 3;
+                }
+            }
+
+            // Zero out any leftover segments from a previous larger frame
+            const totalFloats = MAX_RAY_ANIMALS * 3 * 2 * 3;
+            for (let i = vi; i < totalFloats; i++) {
+                pos[i] = 0; col[i] = 0;
+            }
+
+            _rayGeo.setDrawRange(0, (n * 3 * 2)); // n animals × 3 rays × 2 vertices
+            _rayGeo.attributes.position.needsUpdate = true;
+            _rayGeo.attributes.color.needsUpdate    = true;
         }
 
         function toggleGraphics() {
@@ -3887,6 +3995,11 @@
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
 
+            // Always show vision rays when an animal is targeted, regardless of sphere mode
+            if (typeof _rayLines !== 'undefined') {
+                _rayLines.visible = !!(currentTargetAnimal) || sphereVisMode !== 'off';
+            }
+
             if (target && target.alive && (target.type === 'sheep' || target.type === 'human')) {
                 // Update 3D NN sprite
                 updateNN3DSprite(target);
@@ -4053,7 +4166,7 @@
 
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals, deltaTime);
-            updateVisionSpheres(animals);
+            updateVisionRays(animals);
 
             // Update billboarded stat labels above each entity
             updateStatLabels(animals);
