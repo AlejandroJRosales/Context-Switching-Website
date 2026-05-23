@@ -462,7 +462,7 @@
             border-radius: 6px;
             padding: 8px 10px 6px;
             z-index: 15;
-            pointer-events: none;
+            pointer-events: auto;
             font-size: 10px;
             color: #00ff00;
             font-family: 'Courier New', monospace;
@@ -788,7 +788,7 @@
         </button>
         <button class="sp-row" id="sphereVisBtn">
             <span class="sp-label">Vision Rays</span>
-            <span class="sp-value" id="sphereVisState">OFF</span>
+            <span class="sp-value" id="sphereVisState">SINGLE</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -862,13 +862,17 @@
             if (joystick) joystick.style.opacity = hudCleared ? '0' : '';
             nnVisEnabled = !hudCleared;
             statLabelsEnabled = !hudCleared;
-            if (hudCleared) _aspPanel.classList.remove('visible');
+            if (hudCleared) { _aspPanel.classList.remove('visible'); lockedTargetAnimal = null; }
             document.getElementById('nnVisState').textContent = hudCleared ? 'OFF' : 'ON';
             document.getElementById('hudState').textContent = hudCleared ? 'OFF' : 'ON';
             if (hudCleared && typeof sphereVisMode !== 'undefined') {
                 sphereVisMode = 'off';
                 document.getElementById('sphereVisState').textContent = 'OFF';
                 if (typeof _rayLines !== 'undefined') _rayLines.visible = false;
+            } else if (!hudCleared && typeof sphereVisMode !== 'undefined') {
+                sphereVisMode = 'single';
+                document.getElementById('sphereVisState').textContent = 'SINGLE';
+                if (typeof _rayLines !== 'undefined') _rayLines.visible = true;
             }
         }
 
@@ -2433,6 +2437,23 @@
 
         // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
+        let lockedTargetAnimal = null; // stays set until click outside ASP panel
+
+        // Click outside the ASP panel clears the locked selection
+        document.addEventListener('click', (e) => {
+            if (lockedTargetAnimal && _aspPanel.classList.contains('visible') && !e.target.closest('#animal-stat-panel')) {
+                lockedTargetAnimal = null;
+            }
+        });
+        document.addEventListener('touchend', (e) => {
+            if (lockedTargetAnimal && _aspPanel.classList.contains('visible')) {
+                const touch = e.changedTouches[0];
+                const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                if (el && !el.closest('#animal-stat-panel')) {
+                    lockedTargetAnimal = null;
+                }
+            }
+        }, { capture: true });
 
         const _seenAnimals = new Set();
 
@@ -2499,7 +2520,7 @@
                 if (!a.alive) continue;
                 _seenAnimals.add(a);
 
-                const isTarget = (a === currentTargetAnimal);
+                const isTarget = (a === lockedTargetAnimal);
                 if (!isTarget || !statLabelsEnabled) continue;
 
                 targetFound = true;
@@ -3751,7 +3772,7 @@
             }
         }
 
-        let sphereVisMode = 'off';
+        let sphereVisMode = 'single';
 
         function toggleSphereVis() {
             const modes = ['off', 'single', 'all'];
@@ -3798,7 +3819,7 @@
 
         const _rayLines = new THREE.LineSegments(_rayGeo, _rayMat);
         _rayLines.frustumCulled = false;
-        _rayLines.visible = false;
+        _rayLines.visible = true; // default: single mode
         scene.add(_rayLines);
 
         // Scratch angles for the three rays relative to heading
@@ -3809,7 +3830,7 @@
 
             const pos = _rayPositions;
             const col = _rayColorsArr;
-            const target = currentTargetAnimal;
+            const target = lockedTargetAnimal || currentTargetAnimal;
 
             // Decide which animals to draw rays for based on sphere vis mode
             let rayAnimals;
@@ -4144,6 +4165,7 @@
             vrCameraRig.position.copy(player.position);
             camera.position.set(0, 0, 0);
             player.targetObject = null;
+            lockedTargetAnimal = null;
 
             // Reset cat to near player
             catState.position.set(
@@ -4415,6 +4437,15 @@
         function updateTargetInfo() {
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
+
+            // Lock onto the new animal whenever crosshairs sweep over one
+            if (currentTargetAnimal && currentTargetAnimal !== lockedTargetAnimal) {
+                lockedTargetAnimal = currentTargetAnimal;
+            }
+            // If the locked animal died, clear it
+            if (lockedTargetAnimal && !lockedTargetAnimal.alive) {
+                lockedTargetAnimal = null;
+            }
 
             // Always show vision rays when an animal is targeted, regardless of sphere mode
             if (typeof _rayLines !== 'undefined') {
