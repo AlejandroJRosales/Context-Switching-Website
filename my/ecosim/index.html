@@ -52,10 +52,22 @@
         #asp-nn-wrapper canvas {
             display: block;
             width: 100%;
-            height: 160px;
             border-radius: 3px;
             background: rgba(0, 0, 0, 0.6);
             border: 1px solid rgba(0, 255, 0, 0.2);
+        }
+
+        #nnCanvasH { height: 130px; }
+        #nnCanvasV { height: 130px; margin-top: 4px; }
+
+        .asp-nn-panel-label {
+            margin-top: 2px;
+            margin-bottom: 1px;
+            font-size: 7px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(0, 255, 0, 0.4);
         }
 
         #asp-nn-wrapper #asp-nn-label {
@@ -706,8 +718,11 @@
         </div>
         <div id="asp-nn-wrapper">
             <div class="asp-mem-label">Brain</div>
-            <canvas id="nnCanvas"></canvas>
-            <div id="asp-nn-label">BRAIN</div>
+            <div class="asp-nn-panel-label">Horizontal ×</div>
+            <canvas id="nnCanvasH"></canvas>
+            <div class="asp-nn-panel-label">Vertical ×</div>
+            <canvas id="nnCanvasV"></canvas>
+            <div id="asp-nn-label">TWO-LOBE GRU NETWORK</div>
         </div>
     </div>
 
@@ -1500,102 +1515,240 @@
             }
         };
 
+        // ============================================================================
+        // TWO-LOBE NETWORK TUNERS
+        // ============================================================================
+        const LOBE_SIZE     = 6;    // number of nodes in each lobe (Lobe A GRU + Lobe B standard)
+        const LOBE_SPARSITY = 0.20; // fraction of possible connections that are active (0–1)
+
+        // ============================================================================
+        // Helper: build a sparse random boolean mask (Uint8Array, flat [inD * outD])
+        // ============================================================================
+        function makeSparseMask(inD, outD, sparsity) {
+            const mask = new Uint8Array(inD * outD); // all 0
+            const total = inD * outD;
+            const target = Math.max(1, Math.round(total * sparsity));
+            // Fisher-Yates partial shuffle to pick exactly `target` positions
+            const indices = new Int32Array(total);
+            for (let i = 0; i < total; i++) indices[i] = i;
+            for (let i = 0; i < target; i++) {
+                const j = i + Math.floor(Math.random() * (total - i));
+                const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+                mask[indices[i]] = 1;
+            }
+            return mask;
+        }
+
+        // Helper: initialise a weight array respecting a mask (Xavier, masked positions stay 0)
+        function makeMaskedWeights(inD, outD, mask) {
+            const limit = Math.sqrt(6.0 / (inD + outD));
+            const w = new Float32Array(inD * outD);
+            for (let k = 0; k < w.length; k++) {
+                if (mask[k]) w[k] = tools.random(-limit, limit);
+            }
+            return w;
+        }
+
+        // ============================================================================
+        // TWO-LOBE NETWORK
+        //
+        // Topology (all sparse at LOBE_SPARSITY):
+        //   Input maskIA ->  Lobe A (GRU nodes, hidden state h_A)
+        //   Input maskIB ->  Lobe B (sigmoid nodes)
+        //   Lobe AmaskAB ->  Lobe B   (directed; creates intentional cycle with B->A)
+        //   Lobe BmaskBA ->  Lobe A   (feeds into GRU update of each A node)
+        //   Lobe AmaskAO ->  Output   (softmax, 9 actions)
+        //   Lobe BmaskBO ->  Output
+        //
+        // GRU cell (simplified – single gate + self-recurrence, no full reset/update gate):
+        // ============================================================================
         class DenseNetwork {
-            constructor(inputDims, layerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001) {
-                this.layerDims = [inputDims, ...layerDims];
+            constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
+                // Public fields the rest of the codebase reads
+                this.inputDims    = inputDims;
+                this.lobeSize     = LOBE_SIZE;
+                this.outputDims   = 9;
                 this.learningRate = learningRate;
-                this.momentum = momentum;
-                this.weightDecay = weightDecay;
-                this.cost = 0.0;
-                this.lastCost = 0.0;
+                this.momentum     = momentum;
+                this.weightDecay  = weightDecay;
+                this.cost         = 0.0;
+                this.lastCost     = 0.0;
                 this.costHistoryLen = 0;
-                this.output = null;
-                this.normCount = 0;
-                this.EMA = 0.001;
+                this.output       = null;
+                this.normCount    = 0;
+                this.EMA          = 0.001;
 
-                const L = this.layerDims.length - 1; // number of weight layers
-                this.weights = [];         // Float32Array per layer
-                this.biases = [];          // Float32Array per layer
-                this.weightVelocity = [];
-                this.biasVelocity = [];
-                this.activations = [];
-                this.runningMean = new Float32Array(inputDims);
-                this.runningVar = new Float32Array(inputDims).fill(1);
-                this._standardized = new Float32Array(inputDims); // pre-alloc: avoids per-think GC pressure
+                // Running normalisation for inputs (kept identical to old code)
+                this.runningMean   = new Float32Array(inputDims);
+                this.runningVar    = new Float32Array(inputDims).fill(1);
+                this._standardized = new Float32Array(inputDims);
 
-                for (let i = 0; i < L; i++) {
-                    const inD = this.layerDims[i]
-                    const outD = this.layerDims[i + 1];
-                    const limit = Math.sqrt(6.0 / (inD + outD));
-                    const w = new Float32Array(inD * outD);
-                    for (let k = 0; k < w.length; k++) w[k] = tools.random(-limit, limit);
-                    this.weights.push(w);
-                    this.biases.push(new Float32Array(outD));
-                    this.weightVelocity.push(new Float32Array(inD * outD));
-                    this.biasVelocity.push(new Float32Array(outD));
-                    this.activations.push(new Float32Array(outD));
+                const N  = this.lobeSize;
+                const I  = inputDims;
+                const O  = this.outputDims;
+
+                // Topology masks
+                // Accept inherited masks or generate fresh random ones
+                if (masks) {
+                    this.maskIA = masks.maskIA; // Input  -> Lobe A  [I*N]
+                    this.maskIB = masks.maskIB; // Input  -> Lobe B  [I*N]
+                    this.maskAB = masks.maskAB; // Lobe A -> Lobe B  [N*N]
+                    this.maskBA = masks.maskBA; // Lobe B -> Lobe A  [N*N]
+                    this.maskAO = masks.maskAO; // Lobe A -> Output  [N*O]
+                    this.maskBO = masks.maskBO; // Lobe B -> Output  [N*O]
+                } else {
+                    this.maskIA = makeSparseMask(I, N, LOBE_SPARSITY);
+                    this.maskIB = makeSparseMask(I, N, LOBE_SPARSITY);
+                    this.maskAB = makeSparseMask(N, N, LOBE_SPARSITY);
+                    this.maskBA = makeSparseMask(N, N, LOBE_SPARSITY);
+                    this.maskAO = makeSparseMask(N, O, LOBE_SPARSITY);
+                    this.maskBO = makeSparseMask(N, O, LOBE_SPARSITY);
                 }
+
+                // Weights (freshly randomised, masks applied)
+                this.wIA = makeMaskedWeights(I, N, this.maskIA);
+                this.wIB = makeMaskedWeights(I, N, this.maskIB);
+                this.wAB = makeMaskedWeights(N, N, this.maskAB);
+                this.wBA = makeMaskedWeights(N, N, this.maskBA);
+                this.wAO = makeMaskedWeights(N, O, this.maskAO);
+                this.wBO = makeMaskedWeights(N, O, this.maskBO);
+
+                // GRU self-recurrence weight (one scalar per Lobe-A node)
+                this.wSelf = new Float32Array(N);
+                const selfLimit = Math.sqrt(6.0 / (N + N));
+                for (let i = 0; i < N; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
+
+                // Biases
+                this.biasA  = new Float32Array(N);
+                this.biasB  = new Float32Array(N);
+                this.biasO  = new Float32Array(O);
+
+                // Momentum velocity buffers (parallel structure to weights)
+                this.vIA   = new Float32Array(I * N);
+                this.vIB   = new Float32Array(I * N);
+                this.vAB   = new Float32Array(N * N);
+                this.vBA   = new Float32Array(N * N);
+                this.vAO   = new Float32Array(N * O);
+                this.vBO   = new Float32Array(N * O);
+                this.vSelf = new Float32Array(N);
+                this.vBiasA = new Float32Array(N);
+                this.vBiasB = new Float32Array(N);
+                this.vBiasO = new Float32Array(O);
+
+                // Hidden state for Lobe A GRU cells (persists across think() calls)
+                this.hA = new Float32Array(N);
+
+                // Activation buffers (pre-allocated)
+                this.actA = new Float32Array(N);
+                this.actB = new Float32Array(N);
+                this.actO = new Float32Array(O);
+
+                // Expose layerDims in the shape the visualizer and mate() may read
+                // (input, lobeA, lobeB, output; notional; visualizer update deferred)
+                this.layerDims = [I, N, N, O];
+
+                // Expose activations array in the shape adjustWeights reads for REINFORCE
+                // We'll keep actO as activations[last] so the existing REINFORCE code works
+                this.activations = [this.actA, this.actB, this.actO];
             }
 
-            propagate(inputs) {
-                let prev = inputs;
-                const L = this.layerDims.length - 1;
+            // Returns a plain object of mask Uint8Arrays for inheritance
+            getMasks() {
+                return {
+                    maskIA: this.maskIA, maskIB: this.maskIB,
+                    maskAB: this.maskAB, maskBA: this.maskBA,
+                    maskAO: this.maskAO, maskBO: this.maskBO,
+                };
+            }
 
-                for (let l = 0; l < L; l++) {
-                    const outD = this.layerDims[l + 1];
-                    const inD = this.layerDims[l];
-                    const out = this.activations[l];
-                    const w = this.weights[l];
-                    const b = this.biases[l];
-                    const isLast = l === L - 1;
+            propagate(inp) {
+                const N = this.lobeSize;
+                const I = this.inputDims;
+                const O = this.outputDims;
+                const actA = this.actA;
+                const actB = this.actB;
+                const actO = this.actO;
+                const hA   = this.hA;
 
-                    // out = bias + W^T * prev
-                    out.set(b);
-                    for (let i = 0; i < inD; i++) {
-                        const pi = prev[i];
-                        const base = i * outD;
-                        for (let j = 0; j < outD; j++) {
-                            out[j] += pi * w[base + j];
-                        }
+                // Lobe A (GRU nodes)
+                // net_i = biasA[i]
+                //       + Σ_j  wIA[j*N+i] * inp[j]       (input -> A, sparse)
+                //       + Σ_k  wBA[k*N+i] * actB[k]      (B -> A,     sparse, previous step's B)
+                //       + wSelf[i] * hA[i]                (self-recurrence)
+                // h_A[i] = sigmoid(net_i)
+                for (let i = 0; i < N; i++) {
+                    let net = this.biasA[i] + this.wSelf[i] * hA[i];
+                    for (let j = 0; j < I; j++) {
+                        const k = j * N + i;
+                        if (this.maskIA[k]) net += this.wIA[k] * inp[j];
                     }
-
-                    if (!isLast) {
-                        // sigmoid activation
-                        for (let j = 0; j < outD; j++) {
-                            const v = Math.max(-500, Math.min(500, out[j]));
-                            out[j] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
-                        }
+                    for (let k = 0; k < N; k++) {
+                        const idx = k * N + i;
+                        if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
                     }
-
-                    prev = out;
+                    const v = net < -500 ? -500 : net > 500 ? 500 : net;
+                    hA[i] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
+                    actA[i] = hA[i];
                 }
 
-                // softmax on last layer output
-                const last = this.activations[L - 1];
-                let maxV = last[0];
-                for (let j = 1; j < last.length; j++) if (last[j] > maxV) maxV = last[j];
-                let sum = 0;
-                for (let j = 0; j < last.length; j++) { last[j] = Math.exp(last[j] - maxV); sum += last[j]; }
-                for (let j = 0; j < last.length; j++) last[j] /= sum;
+                // Lobe B (sigmoid nodes)
+                // net_i = biasB[i]
+                //       + Σ_j  wIB[j*N+i] * inp[j]       (input -> B, sparse)
+                //       + Σ_k  wAB[k*N+i] * actA[k]      (A -> B,     sparse)
+                for (let i = 0; i < N; i++) {
+                    let net = this.biasB[i];
+                    for (let j = 0; j < I; j++) {
+                        const k = j * N + i;
+                        if (this.maskIB[k]) net += this.wIB[k] * inp[j];
+                    }
+                    for (let k = 0; k < N; k++) {
+                        const idx = k * N + i;
+                        if (this.maskAB[idx]) net += this.wAB[idx] * actA[k];
+                    }
+                    const v = net < -500 ? -500 : net > 500 ? 500 : net;
+                    actB[i] = v >= 0 ? 1 / (1 + Math.exp(-v)) : Math.exp(v) / (1 + Math.exp(v));
+                }
 
-                return last;
+                // Output (softmax)
+                // net_i = biasO[i]
+                //       + Σ_k  wAO[k*O+i] * actA[k]      (A -> output, sparse)
+                //       + Σ_k  wBO[k*O+i] * actB[k]      (B -> output, sparse)
+                for (let i = 0; i < O; i++) {
+                    let net = this.biasO[i];
+                    for (let k = 0; k < N; k++) {
+                        const idxA = k * O + i;
+                        if (this.maskAO[idxA]) net += this.wAO[idxA] * actA[k];
+                        const idxB = k * O + i;
+                        if (this.maskBO[idxB]) net += this.wBO[idxB] * actB[k];
+                    }
+                    actO[i] = net;
+                }
+
+                // Softmax over actO
+                let maxV = actO[0];
+                for (let i = 1; i < O; i++) if (actO[i] > maxV) maxV = actO[i];
+                let sum = 0;
+                for (let i = 0; i < O; i++) { actO[i] = Math.exp(actO[i] - maxV); sum += actO[i]; }
+                for (let i = 0; i < O; i++) actO[i] /= sum;
+
+                return actO;
             }
 
             think(inputs) {
                 this.normCount++;
                 const standardized = this._standardized;
 
-                // Single pass: normalize + clamp (avoids second loop allocation and call overhead)
+                // Online input normalisation (identical to old DenseNetwork)
                 for (let i = 0; i < inputs.length; i++) {
                     const delta = inputs[i] - this.runningMean[i];
                     this.runningMean[i] += this.EMA * delta;
                     this.runningVar[i] = (1 - this.EMA) * this.runningVar[i] + this.EMA * delta * delta;
                     let s = delta / Math.sqrt(this.runningVar[i] + 1e-8);
-                    standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s; // inline clamp, avoids Math.max/min calls
+                    standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s;
                 }
+
                 const values = this.propagate(standardized);
-                let bestIdx = 0;
-                let bestVal = values[0];
+                let bestIdx = 0, bestVal = values[0];
                 for (let j = 1; j < values.length; j++) {
                     if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
                 }
@@ -1619,39 +1772,56 @@
                 const r   = Math.max(-1, Math.min(1, reward));
                 const lr  = this.getAdaptiveLr();
                 const mom = this.momentum;
-                const wd  = this.weightDecay;
-                const wd1 = 1 - wd;
-                const wdB = 1 - wd * 0.1;
+                const wd1 = 1 - this.weightDecay;
+                const wdB = 1 - this.weightDecay * 0.1;
 
-                // REINFORCE-style eligibility: scale update by how surprising the chosen
-                // action was. Big update when action was unlikely but rewarded (or penalized);
-                // small update when the network was already confident. Avoids overconfident collapse.
-                const lastAct = this.activations[this.activations.length - 1];
-                const chosenProb = lastAct ? (lastAct[this.output] ?? 0.5) : 0.5;
+                // REINFORCE-style policy gradient (identical logic to old DenseNetwork)
+                const chosenProb = this.actO[this.output] ?? 0.5;
                 const policyGrad = r * (1 - chosenProb);
+                const grad  = lr * policyGrad;
+                const gradB = lr * 0.1 * policyGrad;
 
-                for (let l = 0; l < this.weights.length; l++) {
-                    const w  = this.weights[l];
-                    const wv = this.weightVelocity[l];
-                    const grad = lr * policyGrad;
-                    for (let k = 0; k < w.length; k++) {
-                        // Per-weight independent noise; magnitude shrinks when reward is strong
-                        // (exploit) and grows when reward is near zero (explore).
+                // Helper: update one flat weight array with its velocity and mask
+                const updateW = (w, v, mask, len) => {
+                    for (let k = 0; k < len; k++) {
+                        if (!mask[k]) continue; // respect topology; never activate pruned edges
                         const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
-                        const vel = mom * wv[k] - grad + noise;
-                        wv[k] = vel;
+                        const vel = mom * v[k] - grad + noise;
+                        v[k] = vel;
                         w[k] = w[k] * wd1 + vel;
                     }
+                };
 
-                    const b  = this.biases[l];
-                    const bv = this.biasVelocity[l];
-                    const gradB = lr * 0.1 * policyGrad;
-                    for (let k = 0; k < b.length; k++) {
-                        const vel = mom * bv[k] - gradB;
-                        bv[k] = vel;
+                const N = this.lobeSize;
+                const I = this.inputDims;
+                const O = this.outputDims;
+
+                updateW(this.wIA, this.vIA, this.maskIA, I * N);
+                updateW(this.wIB, this.vIB, this.maskIB, I * N);
+                updateW(this.wAB, this.vAB, this.maskAB, N * N);
+                updateW(this.wBA, this.vBA, this.maskBA, N * N);
+                updateW(this.wAO, this.vAO, this.maskAO, N * O);
+                updateW(this.wBO, this.vBO, this.maskBO, N * O);
+
+                // Self-recurrence weights (no mask; every GRU node has one)
+                for (let k = 0; k < N; k++) {
+                    const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
+                    const vel = mom * this.vSelf[k] - grad + noise;
+                    this.vSelf[k] = vel;
+                    this.wSelf[k] = this.wSelf[k] * wd1 + vel;
+                }
+
+                // Biases
+                const updateBias = (b, v, len) => {
+                    for (let k = 0; k < len; k++) {
+                        const vel = mom * v[k] - gradB;
+                        v[k] = vel;
                         b[k] = b[k] * wdB + vel;
                     }
-                }
+                };
+                updateBias(this.biasA, this.vBiasA, N);
+                updateBias(this.biasB, this.vBiasB, N);
+                updateBias(this.biasO, this.vBiasO, O);
             }
         }
 
@@ -2125,8 +2295,8 @@
                     im.head.setMatrixAt(idx, _mat4);
 
                     // Limb half-lengths (distance from pivot joint to limb center)
-                    // leg geometry height = 12.5 → half = 6.25; arm same geometry
-                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 → half=9
+                    // leg geometry height = 12.5 -> half = 6.25; arm same geometry
+                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 -> half=9
 
                     // Each limb: pivot at joint, swing down from there
                     for (const part of ['legFL', 'legFR', 'legBL', 'legBR']) {
@@ -2360,21 +2530,27 @@
 
                 updateAspMemories(a);
 
-                if (!window._hudNNVisualizer) initNN3DVisualizer();
-                if (window._hudNNVisualizer) {
+                if (!window._hudNNVisualizerH) initNN3DVisualizer();
+                if (window._hudNNVisualizerH) {
                     try {
-                        window._hudNNVisualizer.draw(a);
-                        const ctx = window._hudNNVisualizer.ctx;
-                        ctx.globalCompositeOperation = 'destination-over';
-                        ctx.fillStyle = 'rgba(0,0,0,0.75)';
-                        ctx.fillRect(0, 0, 320, 192);
-                        ctx.globalCompositeOperation = 'source-over';
+                        // Horizontal panel
+                        window._hudNNVisualizerH.drawHorizontal(a);
+                        const ctxH = window._hudNNVisualizerH.ctx;
+                        ctxH.globalCompositeOperation = 'destination-over';
+                        ctxH.fillStyle = 'rgba(0,0,0,0.75)';
+                        ctxH.fillRect(0, 0, ctxH.canvas.width, ctxH.canvas.height);
+                        ctxH.globalCompositeOperation = 'source-over';
+
+                        // Vertical panel
+                        window._hudNNVisualizerV.drawVertical(a);
+                        const ctxV = window._hudNNVisualizerV.ctx;
+                        ctxV.globalCompositeOperation = 'destination-over';
+                        ctxV.fillStyle = 'rgba(0,0,0,0.75)';
+                        ctxV.fillRect(0, 0, ctxV.canvas.width, ctxV.canvas.height);
+                        ctxV.globalCompositeOperation = 'source-over';
+
                         const aspNNLabel = document.getElementById('asp-nn-label');
-                        if (aspNNLabel) {
-                            const nn = a.brain;
-                            const type = (nn?.weights?.[0]?.W_i !== undefined) ? 'LSTM Network' : 'Dense Network';
-                            aspNNLabel.textContent = type;
-                        }
+                        if (aspNNLabel) aspNNLabel.textContent = 'Two-Lobe GRU Network';
                     } catch(e) {}
                 }
             }
@@ -2730,7 +2906,7 @@
                 this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateDist = 0;
 
                 // 7 original inputs + 12 directional ray inputs = 19 total
-                this.brain = new DenseNetwork(15, [24, 24, 9], 0.001, 0.5, 0.001);
+                this.brain = new DenseNetwork(15, null, 0.001, 0.5, 0.001);
                 this.outputIdx = 0;
                 this.facingAngle = 0; // last non-idle heading in radians; updated each move
                 // Stagger training ticks so animals don't all update simultaneously
@@ -2965,13 +3141,16 @@
                 const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
                 child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + randNormal(0, 0.04)));
 
-                // Crossover brain: pick one parent architecture, crossover learning rate
+                // Inherit topology (masks) from one parent (50/50); weights are freshly randomised
                 const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
                 child.brain = new DenseNetwork(
-                    ParentBrain.layerDims[0],
-                    ParentBrain.layerDims.slice(1),
+                    ParentBrain.inputDims,
+                    null, // layerDims ignored by new constructor
                     ((this.brain.learningRate + partner.brain.learningRate) / 2)
-                        * (0.5 + Math.random())
+                        * (0.5 + Math.random()),
+                    ParentBrain.momentum,
+                    ParentBrain.weightDecay,
+                    ParentBrain.getMasks()  // topology inherited; weights start fresh
                 );
 
                 // Generation tracking
@@ -3076,275 +3255,438 @@
         }
 
         // ============================================================================
-        // NEURAL NETWORK VISUALIZER CLASS
+        // NEURAL NETWORK VISUALIZER CLASS ;  Two-lobe cross-section layout
+        //
+        //  Canvas (320 × 192) split into two equal panels:
+        //
+        //  TOP HALF  – Horizontal cross-section  (layers flow left -> right)
+        //    Input  |  LobeA  |  LobeB  |  Output
+        //    Sparse edges drawn per mask; A↔B cycle shown as curved arcs above/below
+        //    the node columns; GRU self-loops drawn as small arcs on LobeA nodes.
+        //
+        //  BOTTOM HALF – Vertical cross-section  (layers flow top -> bottom)
+        //    Input row  ->  LobeA row  ->  LobeB row  ->  Output row
+        //    A↔B cycle shown as horizontal curved arrows crossing between the two
+        //    middle rows, making the recurrent structure visually distinct from the
+        //    downward feedforward flow.
+        //
+        //  Edge colour: blue = positive weight, red = negative weight (alpha ∝ |w|).
+        //  Only active (mask=1) edges are drawn.
         // ============================================================================
-
         class NNVisualizer {
             constructor(canvasElement, screenSize) {
                 this.canvas = canvasElement;
                 this.ctx = this.canvas.getContext('2d');
-                this.w_width = screenSize[0];
+                this.w_width  = screenSize[0];
                 this.w_height = screenSize[1];
-                this.node_size = 15;
-                this.scale = 0.75;
-                this.fontSizeBase = 30;
             }
 
-            // Input node labels matching the 15-input layout
+            // Static label / color tables
             static get INPUT_LABELS() {
                 return [
-                    'food·sin', 'food·cos', 'food·d',
-                    'watr·sin', 'watr·cos', 'watr·d',
-                    'pred·sin', 'pred·cos', 'pred·d',
-                    'mate·sin', 'mate·cos', 'mate·d',
-                    'hunger', 'thirst', 'health',
+                    'food·sin','food·cos','food·d',
+                    'watr·sin','watr·cos','watr·d',
+                    'pred·sin','pred·cos','pred·d',
+                    'mate·sin','mate·cos','mate·d',
+                    'hunger','thirst','health',
                 ];
             }
-
-            // Output node labels: 8 cardinal/diagonal directions + stay
             static get OUTPUT_LABELS() {
-                return ['\u2192', '\u2190', '\u2193', '\u2191', '\u2198', '\u2199', '\u2197', '\u2196', '\u25cf'];
+                return ['->','←','↓','↑','↘','↙','↗','↖','•'];
             }
-
-            // Colour per input group
             static get INPUT_GROUP_COLORS() {
                 return [
-                    '#e67e22', '#e67e22', '#e67e22',
-                    '#3498db', '#3498db', '#3498db',
-                    '#e74c3c', '#e74c3c', '#e74c3c',
-                    '#9b59b6', '#9b59b6', '#9b59b6',
-                    '#2ecc71', '#2ecc71', '#2ecc71',
+                    '#e67e22','#e67e22','#e67e22',
+                    '#3498db','#3498db','#3498db',
+                    '#e74c3c','#e74c3c','#e74c3c',
+                    '#9b59b6','#9b59b6','#9b59b6',
+                    '#2ecc71','#2ecc71','#2ecc71',
                 ];
             }
 
-            draw(animal) {
-                const nn = animal.brain;
-                const markedNodeIdx = animal.outputIdx;
-
-                // Clear with transparency instead of filling background
-                this.ctx.clearRect(0, 0, this.w_width, this.w_height);
-
-                const allNodesPos = this.drawNodes(nn, markedNodeIdx);
-                const weights = this.extractWeights(nn);
-                
-                if (weights.length > 0) {
-                    const [minWeight, maxWeight] = this.getWeightRange(weights);
-                    this.drawEdges(allNodesPos, weights, minWeight, maxWeight);
-                }
-
-                this.drawNodeLabels(allNodesPos, nn, markedNodeIdx);
+            // Public entry points
+            // Each visualizer instance calls only one of these, filling the whole canvas.
+            drawHorizontal(animal) {
+                const nn  = animal.brain;
+                const out = animal.outputIdx;
+                const ctx = this.ctx;
+                const W = this.w_width, H = this.w_height;
+                ctx.clearRect(0, 0, W, H);
+                if (!nn || !nn.maskIA) return;
+                this._drawHorizontal(nn, out, 0, H);
             }
 
-            drawNodeLabels(allNodesPos, nn, markedNodeIdx) {
+            drawVertical(animal) {
+                const nn  = animal.brain;
+                const out = animal.outputIdx;
                 const ctx = this.ctx;
-                const layerDims = this.getLayerDims(nn);
-                const nn_len = layerDims.length;
+                const W = this.w_width, H = this.w_height;
+                ctx.clearRect(0, 0, W, H);
+                if (!nn || !nn.maskIA) return;
+                this._drawVertical(nn, out, 0, H);
+            }
+
+            // Legacy single-canvas draw (kept for any callers that still use it)
+            draw(animal) {
+                this.drawHorizontal(animal);
+            }
+
+            // Weight -> colour
+            _edgeColor(w, alpha) {
+                // positive -> blue, negative -> red
+                if (w >= 0) return `rgba(80,160,255,${alpha})`;
+                return `rgba(255,80,80,${alpha})`;
+            }
+
+            // Normalise a flat Float32Array to get per-weight alpha [0.25, 1]
+            _alphaMap(arr, mask) {
+                let maxAbs = 1e-6;
+                for (let k = 0; k < arr.length; k++) if (mask[k] && Math.abs(arr[k]) > maxAbs) maxAbs = Math.abs(arr[k]);
+                return k => mask[k] ? 0.25 + 0.75 * Math.abs(arr[k]) / maxAbs : 0;
+            }
+
+            // Arrow helpers
+            _arrowHead(ctx, x1, y1, x2, y2, size = 3) {
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - size * Math.cos(angle - 0.4), y2 - size * Math.sin(angle - 0.4));
+                ctx.lineTo(x2 - size * Math.cos(angle + 0.4), y2 - size * Math.sin(angle + 0.4));
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Straight edge + optional arrowhead
+            _line(ctx, x1, y1, x2, y2, color, alpha, arrow = false) {
+                ctx.strokeStyle = color;
+                ctx.fillStyle   = color;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth   = 0.75;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+                if (arrow) this._arrowHead(ctx, x1, y1, x2, y2);
+                ctx.globalAlpha = 1;
+            }
+
+            // Quadratic curved edge (for cross-lobe arcs)
+            _curve(ctx, x1, y1, x2, y2, cpx, cpy, color, alpha, arrow = false) {
+                ctx.strokeStyle = color;
+                ctx.fillStyle   = color;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth   = 0.75;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+                ctx.stroke();
+                if (arrow) {
+                    // approximate arrow direction from control point -> end
+                    const dx = x2 - cpx, dy = y2 - cpy;
+                    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+                    this._arrowHead(ctx, x2 - dx/len*4, y2 - dy/len*4, x2, y2);
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            // Small self-loop arc on a node (GRU recurrence)
+            _selfLoop(ctx, nx, ny, r, dir, color) {
+                // dir: 'up' draws loop above node, 'left' draws to left
+                ctx.strokeStyle = color;
+                ctx.globalAlpha = 0.6;
+                ctx.lineWidth   = 0.75;
+                const loopR = r * 1.1;
+                if (dir === 'up') {
+                    ctx.beginPath();
+                    ctx.arc(nx, ny - r - loopR * 0.6, loopR, Math.PI * 0.2, Math.PI * 0.8, true);
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(nx - r - loopR * 0.6, ny, loopR, -Math.PI * 0.3, Math.PI * 0.3, false);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            // Draw a node circle; return its centre
+            _node(ctx, x, y, r, strokeColor, filled = false) {
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth   = 1.2;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                if (filled) {
+                    ctx.fillStyle = strokeColor;
+                    ctx.globalAlpha = 0.25;
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+                ctx.stroke();
+            }
+
+            // Shared geometry builder
+            // Returns { posIn, posA, posB, posOut, r }  for a given panel rectangle
+            // orientation: 'h' = horizontal (x is the "layer" axis)
+            //              'v' = vertical   (y is the "layer" axis)
+            _buildLayout(nn, ox, oy, pw, ph, orientation) {
+                const N  = nn.lobeSize;      // 6
+                const I  = nn.inputDims;     // 15
+                const O  = nn.outputDims;    // 9
+
+                if (orientation === 'h') {
+                    // Horizontal: columns flow left->right, nodes spaced top->bottom
+                    const leftPad  = pw * 0.24; // room for input labels
+                    const rightPad = pw * 0.07;
+                    const padV     = ph * 0.07; // symmetric top/bottom margin
+
+                    // Node radius: fit I=15 nodes in the available height
+                    const r = Math.min(
+                        (ph - 2 * padV) / (2 * (I + 1)) * 0.9,
+                        pw / 14
+                    );
+
+                    const usableW = pw - leftPad - rightPad;
+                    const colW    = usableW / 3;
+                    const colX = [
+                        ox + leftPad,
+                        ox + leftPad + colW,
+                        ox + leftPad + colW * 1.95,
+                        ox + leftPad + colW * 2.9,
+                    ];
+
+                    // Center each column's nodes within [oy+padV, oy+ph-padV]
+                    const colNodes = (count) => {
+                        const totalSpan = ph - 2 * padV;
+                        const gap = totalSpan / (count + 1);
+                        return Array.from({length: count}, (_, i) => oy + padV + gap * (i + 1));
+                    };
+
+                    return {
+                        r,
+                        posIn:  colNodes(I).map((y, i) => [colX[0], y]),
+                        posA:   colNodes(N).map((y, i) => [colX[1], y]),
+                        posB:   colNodes(N).map((y, i) => [colX[2], y]),
+                        posOut: colNodes(O).map((y, i) => [colX[3], y]),
+                    };
+
+                } else { // 'v'
+                    // Vertical: rows flow top->bottom, nodes spaced left->right
+                    const topPad  = ph * 0.10;
+                    const botPad  = ph * 0.10;
+                    const padH    = pw * 0.04; // symmetric left/right margin
+
+                    // Node radius: fit I=15 nodes across the available width
+                    const r = Math.min(
+                        (pw - 2 * padH) / (2 * (I + 1)) * 0.9,
+                        ph / 14
+                    );
+
+                    const usableH = ph - topPad - botPad;
+                    // 4 rows: evenly divide usable height
+                    const rowH = usableH / 3;
+                    const rowY = [
+                        oy + topPad,
+                        oy + topPad + rowH,
+                        oy + topPad + rowH * 2,
+                        oy + topPad + rowH * 3,
+                    ];
+
+                    // Center each row's nodes within [ox+padH, ox+pw-padH]
+                    const rowNodes = (count) => {
+                        const totalSpan = pw - 2 * padH;
+                        const gap = totalSpan / (count + 1);
+                        return Array.from({length: count}, (_, i) => ox + padH + gap * (i + 1));
+                    };
+
+                    return {
+                        r,
+                        posIn:  rowNodes(I).map((x, i) => [x, rowY[0]]),
+                        posA:   rowNodes(N).map((x, i) => [x, rowY[1]]),
+                        posB:   rowNodes(N).map((x, i) => [x, rowY[2]]),
+                        posOut: rowNodes(O).map((x, i) => [x, rowY[3]]),
+                    };
+                }
+            }
+
+            // Draw all edges for one panel
+            _drawEdges(ctx, nn, lay, orientation) {
+                const N = nn.lobeSize, I = nn.inputDims, O = nn.outputDims;
+
+                // For each weight matrix: iterate only active (mask=1) entries
+                const drawMatrix = (w, mask, posFrom, posTo, inD, outD, curved, curveBias, arrow) => {
+                    const alphaFn = this._alphaMap(w, mask);
+                    for (let i = 0; i < inD; i++) {
+                        for (let j = 0; j < outD; j++) {
+                            const k = i * outD + j;
+                            const a = alphaFn(k);
+                            if (a < 0.01) continue;
+                            const [x1, y1] = posFrom[i];
+                            const [x2, y2] = posTo[j];
+                            const col = this._edgeColor(w[k], a);
+                            if (!curved) {
+                                this._line(ctx, x1, y1, x2, y2, col, a, arrow);
+                            } else {
+                                // control point pushed perpendicular to the straight line
+                                let cpx, cpy;
+                                if (orientation === 'h') {
+                                    cpx = (x1 + x2) * 0.5;
+                                    cpy = (y1 + y2) * 0.5 + curveBias;
+                                } else {
+                                    cpx = (x1 + x2) * 0.5 + curveBias;
+                                    cpy = (y1 + y2) * 0.5;
+                                }
+                                this._curve(ctx, x1, y1, x2, y2, cpx, cpy, col, a, arrow);
+                            }
+                        }
+                    }
+                };
+
+                // Input -> LobeA  (straight)
+                drawMatrix(nn.wIA, nn.maskIA, lay.posIn, lay.posA, I, N, false, 0, false);
+                // Input -> LobeB  (straight)
+                drawMatrix(nn.wIB, nn.maskIB, lay.posIn, lay.posB, I, N, false, 0, false);
+                // LobeA -> LobeB  (curved, bias away from LobeB->LobeA to avoid overlap)
+                const biasAB = orientation === 'h' ? -14 :  14;
+                drawMatrix(nn.wAB, nn.maskAB, lay.posA, lay.posB, N, N, true, biasAB, true);
+                // LobeB -> LobeA  (curved, bias opposite)
+                const biasBA = orientation === 'h' ?  14 : -14;
+                drawMatrix(nn.wBA, nn.maskBA, lay.posB, lay.posA, N, N, true, biasBA, true);
+                // LobeA -> Output (straight)
+                drawMatrix(nn.wAO, nn.maskAO, lay.posA, lay.posOut, N, O, false, 0, false);
+                // LobeB -> Output (straight)
+                drawMatrix(nn.wBO, nn.maskBO, lay.posB, lay.posOut, N, O, false, 0, false);
+            }
+
+            // Draw all nodes for one panel
+            _drawNodes(ctx, nn, lay, markedOut, orientation) {
+                const groupColors = NNVisualizer.INPUT_GROUP_COLORS;
+                const r = lay.r;
+
+                // Input nodes (coloured by group)
+                for (let i = 0; i < lay.posIn.length; i++) {
+                    const [x, y] = lay.posIn[i];
+                    this._node(ctx, x, y, r, groupColors[i] ?? 'rgba(0,255,0,0.7)');
+                }
+
+                // LobeA nodes (cyan, with self-loop)
+                const loopDir = orientation === 'h' ? 'left' : 'up';
+                for (let i = 0; i < lay.posA.length; i++) {
+                    const [x, y] = lay.posA[i];
+                    this._node(ctx, x, y, r, '#00e5ff', true);
+                    this._selfLoop(ctx, x, y, r, loopDir, '#00e5ff');
+                }
+
+                // LobeB nodes (yellow-green)
+                for (let i = 0; i < lay.posB.length; i++) {
+                    const [x, y] = lay.posB[i];
+                    this._node(ctx, x, y, r, '#aaff00');
+                }
+
+                // Output nodes (active = red, others = green)
+                for (let i = 0; i < lay.posOut.length; i++) {
+                    const [x, y] = lay.posOut[i];
+                    const isActive = (i === markedOut);
+                    this._node(ctx, x, y, r, isActive ? '#ff4444' : 'rgba(0,255,0,0.7)', isActive);
+                }
+            }
+
+            // Labels for one panel
+            _drawLabels(ctx, nn, lay, markedOut, orientation) {
                 const inputLabels  = NNVisualizer.INPUT_LABELS;
                 const outputLabels = NNVisualizer.OUTPUT_LABELS;
                 const groupColors  = NNVisualizer.INPUT_GROUP_COLORS;
-                const fontSize = Math.max(5, Math.min(7, this.w_height * 0.036));
+                const r = lay.r;
+                const fs = Math.max(4, Math.min(6, r * 1.1));
+                ctx.font = `${fs}px monospace`;
 
-                ctx.font = `${fontSize}px monospace`;
+                if (orientation === 'h') {
+                    // Input labels: right-aligned left of each node
+                    for (let i = 0; i < lay.posIn.length; i++) {
+                        const [x, y] = lay.posIn[i];
+                        ctx.fillStyle  = groupColors[i] ?? 'rgba(0,255,0,0.7)';
+                        ctx.textAlign  = 'right';
+                        ctx.fillText(inputLabels[i] ?? `i${i}`, x - r - 1, y + fs * 0.35);
+                    }
+                    // LobeA label above column
+                    const [ax] = lay.posA[0];
+                    ctx.fillStyle = '#00e5ff'; ctx.textAlign = 'center';
+                    ctx.fillText('A·GRU', ax, lay.posA[0][1] - r - 2);
+                    // LobeB label above column
+                    const [bx] = lay.posB[0];
+                    ctx.fillStyle = '#aaff00';
+                    ctx.fillText('B', bx, lay.posB[0][1] - r - 2);
+                    // Output labels: left-aligned right of each node
+                    for (let i = 0; i < lay.posOut.length; i++) {
+                        const [x, y] = lay.posOut[i];
+                        ctx.fillStyle = i === markedOut ? '#ff4444' : 'rgba(0,255,0,0.7)';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(outputLabels[i] ?? `o${i}`, x + r + 1, y + fs * 0.35);
+                    }
 
-                // Input layer labels; right-aligned to the left of each node
-                const inputNodes = allNodesPos[0];
-                for (let i = 0; i < inputNodes.length; i++) {
-                    const [nx, ny] = inputNodes[i];
-                    const label = inputLabels[i] ?? `in${i}`;
-                    ctx.fillStyle = groupColors[i] ?? 'rgba(0,255,0,0.7)';
-                    ctx.textAlign = 'right';
-                    ctx.fillText(label, nx - this.node_size - 2, ny + fontSize * 0.35);
+                } else { // vertical
+                    // Input labels: below each node (rotated would be nicer but too complex for canvas)
+                    // Just show index to save space
+                    for (let i = 0; i < lay.posIn.length; i++) {
+                        const [x, y] = lay.posIn[i];
+                        ctx.fillStyle = groupColors[i] ?? 'rgba(0,255,0,0.7)';
+                        ctx.textAlign = 'center';
+                        // Group letter above node for first of each group
+                        if (i % 3 === 0) {
+                            const groupLetters = ['F','W','P','M','V'];
+                            ctx.fillText(groupLetters[Math.floor(i/3)] ?? '', x, y - r - 1);
+                        }
+                    }
+                    // LobeA row label
+                    ctx.fillStyle = '#00e5ff'; ctx.textAlign = 'right';
+                    ctx.fillText('A·GRU', lay.posA[0][0] - r - 2, lay.posA[0][1] + fs * 0.4);
+                    // LobeB row label
+                    ctx.fillStyle = '#aaff00'; ctx.textAlign = 'right';
+                    ctx.fillText('B', lay.posB[0][0] - r - 2, lay.posB[0][1] + fs * 0.4);
+                    // Output labels below each node
+                    for (let i = 0; i < lay.posOut.length; i++) {
+                        const [x, y] = lay.posOut[i];
+                        ctx.fillStyle = i === markedOut ? '#ff4444' : 'rgba(0,255,0,0.7)';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(outputLabels[i] ?? `o${i}`, x, y + r + fs + 1);
+                    }
                 }
-
-                // Output layer labels; left-aligned to the right of each node
-                const outputNodes = allNodesPos[nn_len - 1];
-                for (let i = 0; i < outputNodes.length; i++) {
-                    const [nx, ny] = outputNodes[i];
-                    const isActive = (i === markedNodeIdx);
-                    ctx.fillStyle = isActive ? 'rgba(255,80,80,1)' : 'rgba(0,255,0,0.7)';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(outputLabels[i] ?? `out${i}`, nx + this.node_size + 2, ny + fontSize * 0.35);
-                }
-
                 ctx.textAlign = 'left';
             }
 
-            drawLabel(nn) {
-                const networkLabel = this.getNetworkLabel(nn);
-                
-                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
-                this.ctx.font = `10px Arial`;
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText(networkLabel, this.w_width / 2, this.w_height - 5);
+            // Panel renderers
+            _drawHorizontal(nn, markedOut, oy, ph) {
+                const ctx = this.ctx;
+                const lay = this._buildLayout(nn, 0, oy, this.w_width, ph, 'h');
+                // Edges drawn before nodes so nodes sit on top
+                this._drawEdges (ctx, nn, lay, 'h');
+                this._drawNodes (ctx, nn, lay, markedOut, 'h');
+                this._drawLabels(ctx, nn, lay, markedOut, 'h');
             }
 
-            getNetworkLabel(nn) {
-                return nn.weights?.[0]?.W_i !== undefined ? 'LSTMNetwork' : 'DenseNetwork';
+            _drawVertical(nn, markedOut, oy, ph) {
+                const ctx = this.ctx;
+                const lay = this._buildLayout(nn, 0, oy, this.w_width, ph, 'v');
+                this._drawEdges (ctx, nn, lay, 'v');
+                this._drawNodes (ctx, nn, lay, markedOut, 'v');
+                this._drawLabels(ctx, nn, lay, markedOut, 'v');
             }
 
-            drawNodes(nn, markedNodeIdx) {
-                const layerDims = this.getLayerDims(nn);
-                const leftPad  = this.w_width * 0.22;
-                const rightPad = this.w_width * 0.10;
-                const topPad   = this.w_height * 0.05;
-                const botPad   = this.w_height * 0.05;
-                const availableWidth  = this.w_width  - leftPad - rightPad;
-                const availableHeight = this.w_height - topPad  - botPad;
-
-                const w_stride = availableWidth / Math.max(layerDims.length - 1, 1);
-                const nn_len = layerDims.length;
-                const allNodesPos = [];
-
-                this.node_size = Math.max(2, Math.min(this.w_height * 0.04, 10 / Math.sqrt(Math.max(...layerDims))));
-
-                for (let l_idx = 0; l_idx < nn_len; l_idx++) {
-                    const l_nodes_pos = [];
-                    const num_nodes = layerDims[l_idx];
-                    const h_stride = availableHeight / Math.max(num_nodes - 1, 1);
-
-                    for (let n_idx = 0; n_idx < num_nodes; n_idx++) {
-                        const x = leftPad + (l_idx * w_stride);
-                        const y = topPad  + (n_idx * h_stride);
-
-                        let nodeColor = 'rgba(0, 255, 0, 0.8)';
-                        if (l_idx === nn_len - 1 && n_idx === markedNodeIdx) {
-                            nodeColor = 'rgba(255, 0, 0, 1)';
-                        }
-                        if (l_idx === 0) {
-                            nodeColor = NNVisualizer.INPUT_GROUP_COLORS[n_idx] ?? nodeColor;
-                        }
-
-                        this.ctx.strokeStyle = nodeColor;
-                        this.ctx.lineWidth = 2;
-                        this.ctx.beginPath();
-                        this.ctx.arc(x, y, this.node_size, 0, 2 * Math.PI);
-                        this.ctx.stroke();
-
-                        l_nodes_pos.push([x, y]);
-                    }
-                    allNodesPos.push(l_nodes_pos);
-                }
-
-                return allNodesPos;
-            }
-
-            drawEdges(allNodesPos, weights, minWeight, maxWeight) {
-                for (let l_idx = 0; l_idx < allNodesPos.length - 1; l_idx++) {
-                    for (let n1_idx = 0; n1_idx < allNodesPos[l_idx].length; n1_idx++) {
-                        for (let n2_idx = 0; n2_idx < allNodesPos[l_idx + 1].length; n2_idx++) {
-                            const weight = weights[l_idx][n1_idx][n2_idx];
-
-                            const threshold = minWeight + (maxWeight - minWeight) * 0.1;
-                            if (Math.abs(weight) < Math.abs(threshold)) {
-                                continue;
-                            }
-
-                            const currentNodePos = allNodesPos[l_idx][n1_idx];
-                            const nextNodePos = allNodesPos[l_idx + 1][n2_idx];
-
-                            const scaledWeight =
-                                maxWeight !== minWeight
-                                    ? (weight - minWeight) / (maxWeight - minWeight)
-                                    : 0.5;
-
-                            const lineColor = this.getWeightColor(weight, scaledWeight);
-
-                            this.ctx.strokeStyle = lineColor;
-                            this.ctx.lineWidth = 1;
-                            this.ctx.globalAlpha = 1;
-                            this.ctx.beginPath();
-                            this.ctx.moveTo(currentNodePos[0], currentNodePos[1]);
-                            this.ctx.lineTo(nextNodePos[0], nextNodePos[1]);
-                            this.ctx.stroke();
-                            this.ctx.globalAlpha = 1.0;
-                        }
-                    }
-                }
-            }
-
-            extractWeights(nn) {
-                if (!nn.weights?.length) return [];
-                const firstLayer = nn.weights[0];
-                // Float32Array (new flat format), reconstruct 3D array for visualizer
-                if (firstLayer instanceof Float32Array) {
-                    const result = [];
-                    for (let l = 0; l < nn.weights.length; l++) {
-                        const inD  = nn.layerDims[l];
-                        const outD = nn.layerDims[l + 1];
-                        const flat = nn.weights[l];
-                        const layer = [];
-                        for (let i = 0; i < inD; i++) {
-                            const row = [];
-                            for (let j = 0; j < outD; j++) row.push(flat[i * outD + j]);
-                            layer.push(row);
-                        }
-                        result.push(layer);
-                    }
-                    return result;
-                }
-                if (firstLayer?.W_i !== undefined) return this.extractLSTMWeights(nn);
-                return nn.weights;
-            }
-
-            extractLSTMWeights(nn) {
-                const combined = nn.weights.map(layer => {
-                    const { W_i=[], W_f=[], W_c=[], W_o=[] } = layer;
-                    return this.averageMatrices([W_i, W_f, W_c, W_o]);
-                });
-                if (nn.V) combined.push(nn.V);
-                return combined;
-            }
-
-            averageMatrices(matrices) {
-                if (!matrices.length || !matrices[0].length) return [];
-                const rows = matrices[0].length;
-                const cols = matrices[0][0].length;
-                return Array.from({ length: rows }, (_, i) =>
-                    Array.from({ length: cols }, (_, j) =>
-                        matrices.reduce((sum, mat) => sum + (mat[i]?.[j] ?? 0), 0) / matrices.length
-                    )
-                );
-            }
-
-            getLayerDims(nn) {
-                if (nn.layerDims) return nn.layerDims;
-                if (nn.layer_dims) return nn.layer_dims;
-                if (nn.weights?.length) {
-                    return [nn.weights[0].length, ...nn.weights.map(l => l[0]?.length ?? 0)];
-                }
-                return [6, 6, 9, 8, 8];
-            }
-
-            getWeightRange(weights) {
-                const flat = weights.flatMap(layer => layer.flatMap(row => row));
-                const min = Math.min(...flat);
-                const max = Math.max(...flat);
-                return [isFinite(min) ? min : -1, isFinite(max) ? max : 1];
-            }
-
-            getWeightColor(weight, maxAbsWeight = 1.0) {
-                const normalized = Math.max(-1, Math.min(1, weight / (maxAbsWeight || 1)));
-                const t = 1 - Math.abs(normalized);
-                const r = normalized < 0 ? 255 : Math.floor(255 * t);
-                const g = Math.floor(255 * t);
-                const b = normalized >= 0 ? 255 : Math.floor(255 * t);
-                const isGray = Math.abs(r - g) < 20 && Math.abs(g - b) < 20;
-                return `rgba(${r},${g},${b},${isGray ? 0.3 : 0.7})`;
-            }
-
+            // Resize
             resize(screenSize) {
-                this.w_width = screenSize[0];
+                this.w_width  = screenSize[0];
                 this.w_height = screenSize[1];
-                this.canvas.width = this.w_width;
+                this.canvas.width  = this.w_width;
                 this.canvas.height = this.w_height;
             }
+
+            // Legacy stubs kept so the rest of the codebase doesn't break
+            getLayerDims(nn) { return nn.layerDims ?? [15, 6, 6, 9]; }
+            extractWeights()  { return []; }
+            getWeightRange()  { return [-1, 1]; }
         }
 
         // ============================================================================
         // NEURAL NETWORK VISUALIZER (billboarded, above the stat-bar sprite)
         // ============================================================================
-
-        const nnCanvas = document.getElementById('nnCanvas');
         const nnContainer = document.getElementById('nnVisualizerContainer');
         const nnLabel = document.getElementById('asp-nn-label');
         let nnVisualizer = null;
@@ -3369,10 +3711,14 @@
 
         function initNN3DVisualizer() {
             nnSprite3DVisualizer = new NNVisualizer(_nnSpriteCanvas, [320, 192]);
-            const hudNNCanvas = document.getElementById('nnCanvas');
-            hudNNCanvas.width  = 320;
-            hudNNCanvas.height = 192;
-            window._hudNNVisualizer = new NNVisualizer(hudNNCanvas, [320, 192]);
+
+            const hudCanvasH = document.getElementById('nnCanvasH');
+            const hudCanvasV = document.getElementById('nnCanvasV');
+            hudCanvasH.width  = 480; hudCanvasH.height = 260;
+            hudCanvasV.width  = 480; hudCanvasV.height = 260;
+
+            window._hudNNVisualizerH = new NNVisualizer(hudCanvasH, [480, 260]);
+            window._hudNNVisualizerV = new NNVisualizer(hudCanvasV, [480, 260]);
         }
 
         function updateNN3DSprite(target) {
@@ -3395,8 +3741,11 @@
                 if (state) state.textContent = 'OFF';
                 if (typeof nnSprite !== 'undefined') nnSprite.visible = false;
                 document.getElementById('animal-stat-panel').classList.remove('visible');
-                if (window._hudNNVisualizer) {
-                    window._hudNNVisualizer.ctx.clearRect(0, 0, 320, 192);
+                if (window._hudNNVisualizerH) {
+                    const cH = window._hudNNVisualizerH.canvas;
+                    const cV = window._hudNNVisualizerV.canvas;
+                    window._hudNNVisualizerH.ctx.clearRect(0, 0, cH.width, cH.height);
+                    window._hudNNVisualizerV.ctx.clearRect(0, 0, cV.width, cV.height);
                 }
                 for (const [, sprite] of animalStatSprites) sprite.visible = false;
             }
@@ -3489,7 +3838,7 @@
 
                 for (let r = 0; r < 3; r++) {
                     const angle = baseAngle + RAY_OFFSETS[r];
-                    // Three.js heading 0 = +Z axis; sin→X, cos→Z
+                    // Three.js heading 0 = +Z axis; sin->X, cos->Z
                     const dx = Math.sin(angle) * rayLen;
                     const dz = Math.cos(angle) * rayLen;
 
