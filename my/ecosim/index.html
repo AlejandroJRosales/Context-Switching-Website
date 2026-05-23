@@ -2694,7 +2694,7 @@
                 this.sex = Math.random() < 0.5 ? 'male' : 'female';
                 this.mutationMulti = 0.5;
                 this.lastChildTime = Date.now();
-                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15-30 s in ms
+                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15–30 s in ms
                 this.lookForMate = false;
 
                 this.waterIncrement = this.health * 0.0001;
@@ -2716,7 +2716,7 @@
                 this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateDist = 0;
 
                 // 7 original inputs + 12 directional ray inputs = 19 total
-                this.brain = new DenseNetwork(19, [24, 24, 9], 0.001, 0.5, 0.001);
+                this.brain = new DenseNetwork(15, [24, 24, 9], 0.001, 0.5, 0.001);
                 this.outputIdx = 0;
                 // Stagger training ticks so animals don't all update simultaneously
                 this.prevHealth = this.health; // for delta-based reward signal
@@ -2724,7 +2724,7 @@
                 this.prevFoodNeed = this.foodNeed;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
-                this._inputs = new Float32Array(19); // pre-alloc: 7 base + 12 directional ray inputs
+                this._inputs = new Float32Array(15); // pre-alloc: 12 directional ray inputs + 3 vitals
 
                 this.isAdult = true; // overridden to false for born children in mate()
                 this.birthTick = 0;  // stamped in mate() with current ticks value
@@ -2841,34 +2841,27 @@
                 this.locate(grid, waterLocations);
                 // Use pre-allocated input buffer; no per-call allocation
                 const inp = this._inputs;
-                const px = this.position.x, pz = this.position.z;
 
-                // Inputs 0-3: distSq to each memory target (0 when unknown)
-                inp[0] = this.hasFood     ? tools.distSq(px, pz, this.memFoodX,     this.memFoodZ)     : 0;
-                inp[1] = this.hasWater    ? tools.distSq(px, pz, this.memWaterX,    this.memWaterZ)    : 0;
-                inp[2] = this.hasPredator ? tools.distSq(px, pz, this.memPredatorX, this.memPredatorZ) : 0;
-                inp[3] = this.hasMate     ? tools.distSq(px, pz, this.memMateX,     this.memMateZ)     : 0;
-                // Inputs 4-6: needs and vitals
-                inp[4] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
-                inp[5] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
-                inp[6] = this.health > 0 ? this.health / this.maxHealth : 0;
-
-                // Inputs 7-9: food ray  (sin, cos, normalised distance)
-                inp[7]  = this.hasFood     ? this.rayFoodSin      : 0;
-                inp[8]  = this.hasFood     ? this.rayFoodCos      : 0;
-                inp[9]  = this.hasFood     ? this.rayFoodDist     : 0;
-                // Inputs 10-12: water ray
-                inp[10] = this.hasWater    ? this.rayWaterSin     : 0;
-                inp[11] = this.hasWater    ? this.rayWaterCos     : 0;
-                inp[12] = this.hasWater    ? this.rayWaterDist    : 0;
-                // Inputs 13-15: predator ray
-                inp[13] = this.hasPredator ? this.rayPredatorSin  : 0;
-                inp[14] = this.hasPredator ? this.rayPredatorCos  : 0;
-                inp[15] = this.hasPredator ? this.rayPredatorDist : 0;
-                // Inputs 16-18: mate ray
-                inp[16] = this.hasMate     ? this.rayMateSin      : 0;
-                inp[17] = this.hasMate     ? this.rayMateCos      : 0;
-                inp[18] = this.hasMate     ? this.rayMateDist     : 0;
+                // Inputs 0–2: food ray    (sin, cos, normalised distance)
+                inp[0]  = this.hasFood     ? this.rayFoodSin      : 0;
+                inp[1]  = this.hasFood     ? this.rayFoodCos      : 0;
+                inp[2]  = this.hasFood     ? this.rayFoodDist     : 0;
+                // Inputs 3–5: water ray
+                inp[3]  = this.hasWater    ? this.rayWaterSin     : 0;
+                inp[4]  = this.hasWater    ? this.rayWaterCos     : 0;
+                inp[5]  = this.hasWater    ? this.rayWaterDist    : 0;
+                // Inputs 6–8: predator ray
+                inp[6]  = this.hasPredator ? this.rayPredatorSin  : 0;
+                inp[7]  = this.hasPredator ? this.rayPredatorCos  : 0;
+                inp[8]  = this.hasPredator ? this.rayPredatorDist : 0;
+                // Inputs 9–11: mate ray
+                inp[9]  = this.hasMate     ? this.rayMateSin      : 0;
+                inp[10] = this.hasMate     ? this.rayMateCos      : 0;
+                inp[11] = this.hasMate     ? this.rayMateDist     : 0;
+                // Inputs 12–14: needs and vitals
+                inp[12] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
+                inp[13] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
+                inp[14] = this.health > 0 ? this.health / this.maxHealth : 0;
 
                 this.outputIdx = this.brain.think(inp);
             }
