@@ -4507,10 +4507,18 @@
 
         function updateTargetInfo() {
             const target = raycaster();
+            const prevTargetAnimal = currentTargetAnimal;
             currentTargetAnimal = (target && target.alive) ? target : null;
 
-            // Lock onto the new animal whenever crosshairs sweep over one
-            if (currentTargetAnimal && currentTargetAnimal !== lockedTargetAnimal) {
+            // Only switch the locked subject when the crosshair enters a new animal
+            // (i.e. it was previously on nothing, or the previous animal was already
+            // the locked one and the crosshair has now moved to a different animal).
+            const crosshairEnteredNewAnimal =
+                currentTargetAnimal !== null &&
+                currentTargetAnimal !== lockedTargetAnimal &&
+                prevTargetAnimal === null;
+
+            if (crosshairEnteredNewAnimal) {
                 lockedTargetAnimal = currentTargetAnimal;
             }
             // If the locked animal died, clear it
