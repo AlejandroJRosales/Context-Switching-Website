@@ -729,7 +729,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿Ecosystem Simulation <span id="sp-hint" style="font-size:9px;"> 1.2.20</span></div>
+        <div class="sp-game-title">🌿Ecosystem Simulation <span id="sp-hint" style="font-size:9px;"> 1.2.21</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             An simulation where A.I. animals have the freedom to explore and learn in a procedurally generated ecosystem. Alejandro Rosales, the creator of
             <a class="sp-link-gradient" href="https://www.contextswitching.org">contextswitching.org</a>,
@@ -1631,7 +1631,7 @@
                 // Hidden state for Lobe A GRU cells (persists across think() calls)
                 this.hA = new Float32Array(N);
 
-                // ── Leaky Integrate-and-Fire state ────────────────────────────────────
+                // Leaky Integrate-and-Fire state
                 // Membrane potentials for both lobes (persist across think() calls,
                 // leak toward rest between steps, fire when they cross threshold).
                 // Lobe A reuses hA as its membrane; hB is added here for Lobe B.
@@ -1639,9 +1639,9 @@
 
                 // LIF hyperparameters
                 // lifLeak  : fraction of membrane potential retained per step (0–1).
-                //            0.9 ≈ τ_m ~ 10 steps; lower → faster forgetting.
+                //            0.9 ≈ \tau_m ~ 10 steps; lower -> faster forgetting.
                 // lifThresh: voltage threshold that triggers a spike.
-                //            Tuned so typical net inputs (~±1 after normalisation)
+                //            Tuned so typical net inputs (~+-1 after normalisation)
                 //            can accumulate to threshold in a few steps.
                 // lifReset : membrane potential immediately after a spike.
                 //            Sub-threshold reset creates relative refractory period.
@@ -1654,7 +1654,6 @@
                 this.refracA = new Uint8Array(N);
                 this.refracB = new Uint8Array(N);
                 this.REFRAC_PERIOD = 3; // steps of silence after a spike
-                // ─────────────────────────────────────────────────────────────────────
 
                 // Activation buffers (pre-allocated)
                 this.actA = new Float32Array(N);
@@ -1691,9 +1690,9 @@
                 // Lobe A — Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
                 //
                 // Each node maintains a membrane potential V = hA[i] that:
-                //   1. Leaks toward rest (0) each step:  V ← V * lifLeak
-                //   2. Integrates synaptic current (bias + weighted inputs + B→A + self)
-                //   3. Fires (actA[i] = 1) and resets when V ≥ lifThresh
+                //   1. Leaks toward rest (0) each step:  V <- V * lifLeak
+                //   2. Integrates synaptic current (bias + weighted inputs + B->A + self)
+                //   3. Fires (actA[i] = 1) and resets when V >= lifThresh
                 //   4. Is clamped to lifReset during the refractory period
                 //
                 // A continuous "sub-threshold" signal (sigmoid of V − threshold) is
@@ -1705,7 +1704,7 @@
                 const lifRst   = this.lifReset;
                 const refracPd = this.REFRAC_PERIOD;
                 for (let i = 0; i < N; i++) {
-                    // --- refractory: node cannot integrate or fire ---
+                    // refractory: node cannot integrate or fire
                     if (refracA[i] > 0) {
                         refracA[i]--;
                         hA[i] = lifRst;
@@ -1713,10 +1712,10 @@
                         continue;
                     }
 
-                    // --- leak: membrane drifts back toward rest ---
+                    // leak: membrane drifts back toward rest
                     hA[i] *= lifLeak;
 
-                    // --- integrate: accumulate weighted synaptic input ---
+                    // integrate: accumulate weighted synaptic input
                     let net = this.biasA[i] + this.wSelf[i] * hA[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * N + i;
@@ -1729,14 +1728,14 @@
                     // Clamp net current to prevent runaway integration
                     hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
 
-                    // --- fire-and-reset or soft sub-threshold output ---
+                    // fire-and-reset or soft sub-threshold output
                     if (hA[i] >= lifTh) {
                         actA[i] = 1.0;          // spike
                         hA[i]   = lifRst;       // hard reset
                         refracA[i] = refracPd;  // enter refractory period
                     } else {
                         // Soft sigmoid of (V − threshold): gives graded output below
-                        // threshold, smoothly approaching 1 as V → lifTh.
+                        // threshold, smoothly approaching 1 as V -> lifTh.
                         const vRel = hA[i] - lifTh;  // negative when sub-threshold
                         actA[i] = vRel >= 0
                             ? 1 / (1 + Math.exp(-vRel))
@@ -1749,7 +1748,7 @@
                 // Same LIF dynamics as Lobe A but without self-recurrence.
                 // Lobe B acts as a "fast" integrator (no persistent hA self-loop),
                 // making it responsive to immediate sensory context (analogous to
-                // a more reactive cortical layer receiving feedforward + A→B input).
+                // a more reactive cortical layer receiving feedforward + A->B input).
                 const hB      = this.hB;
                 const refracB = this.refracB;
                 for (let i = 0; i < N; i++) {
@@ -1791,8 +1790,8 @@
 
                 // Output (softmax)
                 // net_i = biasO[i]
-                //       + Σ_k  wAO[k*O+i] * actA[k]      (A -> output, sparse)
-                //       + Σ_k  wBO[k*O+i] * actB[k]      (B -> output, sparse)
+                //       + \sum_k  wAO[k*O+i] * actA[k]      (A -> output, sparse)
+                //       + \sum_k  wBO[k*O+i] * actB[k]      (B -> output, sparse)
                 for (let i = 0; i < O; i++) {
                     let net = this.biasO[i];
                     for (let k = 0; k < N; k++) {
@@ -2911,7 +2910,6 @@
         // ============================================================================
         // ENTITY SYSTEM
         // ============================================================================
-
         class Entity {
             constructor(position, type) {
                 this.position = new THREE.Vector3(...position);
@@ -3856,7 +3854,7 @@
         }
 
         // ============================================================================
-        // VISION RAYS (3 dynamic rays per animal showing current heading ± spread)
+        // VISION RAYS (3 dynamic rays per animal showing current heading +- spread)
         // ============================================================================
         // Each animal gets 3 rays: center (forward), left spread, right spread.
         // Ray directions are derived from the animal's current outputIdx heading so
@@ -3865,7 +3863,7 @@
         // Each segment = 2 vertices x 3 floats.  Total floats = MAX_RAY_ANIMALS*3*2*3.
 
         const MAX_RAY_ANIMALS = 600;          // cap to keep buffer size sane
-        const RAY_SPREAD      = Math.PI / 6;  // ±30° for the flanking rays
+        const RAY_SPREAD      = Math.PI / 6;  // +-30° for the flanking rays
         const RAY_LEN_SCALE   = 0.55;         // fraction of visionDistance each ray reaches
 
         // Colours: center = white, left = cyan, right = orange
