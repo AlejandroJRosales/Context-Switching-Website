@@ -2761,6 +2761,10 @@
                             bestFoodDist = d;
                             this.memFoodX = obj.position.x; this.memFoodZ = obj.position.z;
                             this.hasFood = true;
+                        } else if (obj.type === 'human' && this.sex !== obj.sex && d < bestMateDist) {
+                            bestMateDist = d;
+                            this.memMateX = obj.position.x; this.memMateZ = obj.position.z;
+                            this.hasMate = true;
                         }
                     }
                 }
@@ -3665,11 +3669,24 @@
                 const px = a.position.x, pz = a.position.z;
 
                 if (a.type === 'human') {
-                    // Wolves hunt sheep, use main spatial grid
+                    // Humans hunt sheep
                     for (const other of spatialGrid.query(px, pz, 20)) {
                         if (other.alive && other.type === 'sheep' &&
                             tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
                             other.attacked(a);
+                        }
+                    }
+                    // Humans also mate with opposite-sex humans
+                    if (a.lookForMate && a.sex === 'female') {
+                        for (const other of spatialGrid.query(px, pz, 20)) {
+                            if (other !== a && other.alive && other.type === 'human' &&
+                                other.sex === 'male' && other.lookForMate &&
+                                tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
+                                const child = a.mate(other);
+                                animals.push(child);
+                                entities.push(child);
+                                break;
+                            }
                         }
                     }
                 } else {
