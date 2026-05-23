@@ -653,7 +653,7 @@
         <div class="scanlines"></div>
     </div>
 
-    <!-- Fixed top-left animal stat HUD -->
+    <!-- Animal stat HUD -->
     <div id="animal-stat-panel">
         <div id="asp-left-col">
         <div id="asp-stats-section">
@@ -817,10 +817,10 @@
             yaw: Math.PI,
             pitch: -0.3,
             targetObject: null,
-            animTime: 0,        // walk cycle accumulator
+            animTime: 0  // walk cycle accumulator
         };
 
-        // Cached world diagonal; recomputed whenever CONFIG dimensions change (on reset)
+        // Cached world diagonal
         let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
@@ -1006,7 +1006,7 @@
         // THREE.JS SETUP
         // ============================================================================
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.background = new THREE.Color(0x87CEEB);
         // Cap draw distance so GPU frustum stays manageable at large scales
         const _fogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + CONFIG.scale * 200);
         scene.fog = new THREE.Fog(0x87CEEB, _fogEnd * 0.4, _fogEnd);
@@ -1059,7 +1059,6 @@
         // ============================================================================
         // LIGHTING
         // ============================================================================
-
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
         scene.add(ambientLight);
 
@@ -1085,7 +1084,6 @@
         // ============================================================================
         // TOUCH & DEVICE CONTROLS
         // ============================================================================
-
         const controls = {
             touchX: 0,
             touchY: 0,
@@ -1101,7 +1099,7 @@
 
         const keys = {};
 
-        // Double-press spacebar = big jump
+        // Double-press spacebar/tap = big jump
         let lastSpaceTime = 0;
         const DOUBLE_TAP_MS = 300;
 
@@ -1112,7 +1110,6 @@
             if (e.key === ' ') {
                 e.preventDefault();
                 if (!player.isJumping) {
-                    // Single press: normal jump. Double press: bigger jump.
                     player.velocity.y = player.jumpForce;
                     player.isJumping = true;
                 }
@@ -1124,7 +1121,7 @@
                 toggleCreative();
             }
 
-            // Escape / M, toggle settings panel (single press, no repeat)
+            // Escape/M, toggle settings panel (single press, no repeat)
             if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !e.repeat) {
                 toggleSettings();
             }
@@ -1389,7 +1386,7 @@
             }
         }, { passive: false });
 
-        //  Unified touchmove: handles joystick AND camera in one pass 
+        // Unified touchmove: handles joystick AND camera in one pass 
         document.addEventListener('touchmove', (e) => {
             if (controls.controlMode !== 'touch') return;
             e.preventDefault();
@@ -1421,7 +1418,7 @@
             }
         }, { passive: false });
 
-        //  Unified touchend 
+        // Unified touchend 
         document.addEventListener('touchend', (e) => {
             for (const touch of e.changedTouches) {
                 if (touch.identifier === joystickTouchId) resetJoystick();
@@ -1430,7 +1427,7 @@
             }
         });
 
-        //  Unified touchcancel 
+        // Unified touchcancel 
         document.addEventListener('touchcancel', () => {
             resetJoystick();
             cameraTouchId = null;
@@ -1441,7 +1438,7 @@
         // TERRAIN GENERATION
         // ============================================================================
         function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 50, 50);
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 100, 100);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
 
             const positionAttribute = geometry.getAttribute('position');
@@ -1463,7 +1460,6 @@
         // ============================================================================
         // NEURAL NETWORK UTILITIES
         // ============================================================================
-
         const tools = {
             distSq(x1, y1, x2, y2) {
                 return (x2 - x1) ** 2 + (y2 - y1) ** 2;
@@ -1662,7 +1658,6 @@
         // ============================================================================
         // SPATIAL GRID
         // ============================================================================
-
         class SpatialGrid {
             constructor(worldW, worldH, cellSize) {
                 this.cellSize = cellSize;
@@ -1724,7 +1719,6 @@
         // ============================================================================
         // INSTANCED MESH RENDERER
         // ============================================================================
-
         const MAX_INSTANCES = 12000;
 
         function createRoundedBoxGeometry(width, height, depth, radius = 2) {
@@ -1747,6 +1741,7 @@
             return geometry;
         }
 
+        // HIGH graphics geometry
         const SHARED_GEOMETRIES = {
             sheep: {
                 body: createRoundedBoxGeometry(12, 12, 25, 2.5),
@@ -1754,13 +1749,13 @@
                 leg:  createRoundedBoxGeometry(3, 18, 3, 1)
             },
             human: {
-                body: createRoundedBoxGeometry(8, 17, 4, 1.2),  // torso, scaled for player height
-                head: new THREE.SphereGeometry(4.3, 15, 15),    // head radius
-                leg:  createRoundedBoxGeometry(2, 12.5, 2, 0.7) // slim limbs (arms & legs)
+                body: createRoundedBoxGeometry(8, 17, 4, 1.2),
+                head: new THREE.SphereGeometry(4.3, 15, 15),
+                leg:  createRoundedBoxGeometry(2, 12.5, 2, 0.7)
             }
         };
 
-        // LOW graphics geometry: plain flat BoxGeometry for every part
+        // LOW graphics geometry
         const SHARED_GEOMETRIES_LOW = {
             sheep: {
                 body: new THREE.BoxGeometry(12, 12, 25),
@@ -1834,7 +1829,6 @@
         // ============================================================================
         // CAT COMPANION MESH
         // ============================================================================
-
         function createCatMesh() {
             const group = new THREE.Group();
 
