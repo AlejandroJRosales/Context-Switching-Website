@@ -2522,10 +2522,15 @@
         });
         document.addEventListener('touchend', (e) => {
             if (lockedTargetAnimal && _aspPanel.classList.contains('visible')) {
-                const touch = e.changedTouches[0];
-                const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                if (el && !el.closest('#animal-stat-panel')) {
-                    lockedTargetAnimal = null;
+                for (const touch of e.changedTouches) {
+                    // Only a genuine tap (not a joystick or camera drag release) should dismiss the panel
+                    if (touch.identifier === joystickTouchId) continue;
+                    if (touch.identifier === cameraTouchId) continue;
+                    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (el && !el.closest('#animal-stat-panel')) {
+                        lockedTargetAnimal = null;
+                        break;
+                    }
                 }
             }
         }, { capture: true });
@@ -2631,7 +2636,7 @@
                     try {
                         window._hudNNVisualizer3D.update(a);
                         const aspNNLabel = document.getElementById('asp-nn-label');
-                        if (aspNNLabel) aspNNLabel.textContent = 'Two-Lobe GRU Network · 3D';
+                        if (aspNNLabel) aspNNLabel.textContent = 'Two-Lobe GRU Network';
                     } catch(e) {}
                 }
             }
