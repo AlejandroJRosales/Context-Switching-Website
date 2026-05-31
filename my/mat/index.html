@@ -82,14 +82,39 @@
     z-index: 20;
   }
 
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* FEED ROW — holds cam + audio side by side, never overlapping */
+  #feed-row {
+    position: fixed;
+    top: 118px; left: 20px;
+    z-index: 20;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 6px;
+    pointer-events: none; /* children re-enable as needed */
+  }
+  @media (min-width: 640px) {
+    #feed-row { top: 144px; left: 32px; }
+  }
+
+  /* CAM COLUMN — feed box + optional switch button stacked vertically */
+  #cam-col {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    pointer-events: auto;
+  }
+
   /* CAMERA FEED */
   #cam-container {
-    position: fixed;
-    bottom: 86px; left: 20px;
+    position: relative;
     width: 68px; height: 68px;
     border: 1px solid rgba(86,180,233,0.4);
     border-radius: 10px; overflow: hidden;
-    background: #000; z-index: 20; display: none;
+    background: #000; display: none;
   }
   #cam-canvas {
     display: block; width: 68px; height: 68px;
@@ -108,24 +133,19 @@
     box-shadow: 0 0 6px #56b4e9;
     animation: blink 1.2s ease-in-out infinite;
   }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
   @media (min-width: 640px) {
-    #cam-container {
-      bottom: auto; top: 80px; left: 32px;
-      width: 80px; height: 80px;
-    }
-    #cam-canvas { width: 80px; height: 80px; }
+    #cam-container { width: 80px; height: 80px; }
+    #cam-canvas    { width: 80px; height: 80px; }
   }
 
   /* AUDIO FEED */
   #audio-container {
-    position: fixed;
-    bottom: 86px; left: 96px;
+    position: relative;
     width: 68px; height: 68px;
     border: 1px solid rgba(86,180,233,0.4);
     border-radius: 10px; overflow: hidden;
-    background: #000; z-index: 20; display: none;
+    background: #000; display: none;
+    pointer-events: auto;
   }
   #audio-canvas {
     display: block; width: 68px; height: 68px;
@@ -145,11 +165,8 @@
     animation: blink 1.2s ease-in-out infinite;
   }
   @media (min-width: 640px) {
-    #audio-container {
-      bottom: auto; top: 80px; left: 120px;
-      width: 80px; height: 80px;
-    }
-    #audio-canvas { width: 80px; height: 80px; }
+    #audio-container { width: 80px; height: 80px; }
+    #audio-canvas    { width: 80px; height: 80px; }
   }
 
   @media (min-width: 640px) {
@@ -244,8 +261,7 @@
   }
 
   /* BUTTONS */
-  #panel button,
-  #cam-prompt {
+  #panel button {
     width: 100%;
     padding: 7px 0;
     background: transparent;
@@ -260,8 +276,7 @@
     transition: border-color 0.2s, color 0.2s, background 0.2s;
     margin-bottom: 6px;
   }
-  #panel button:hover,
-  #cam-prompt:hover {
+  #panel button:hover {
     border-color: var(--accent);
     background: rgba(47, 255, 160, 0.07);
   }
@@ -359,6 +374,73 @@
   @media (max-width: 639px) {
     #panel { width: 180px; }
   }
+
+  /* FEED BUTTONS — live inside #feed-row flex layout, not fixed-positioned */
+  /* Button row above the feed panels */
+  #feed-btn-row {
+    position: fixed;
+    top: 72px; left: 20px;
+    z-index: 21;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+  @media (min-width: 640px) {
+    #feed-btn-row { top: 96px; left: 32px; }
+  }
+
+  .feed-btn {
+    position: relative; /* no longer fixed */
+    background: rgba(6, 10, 22, 0.75);
+    border: 1px solid rgba(86,180,233,0.55);
+    border-radius: 8px;
+    color: #7dd8f0;
+    cursor: pointer;
+    padding: 6px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+    backdrop-filter: blur(6px);
+    flex-shrink: 0;
+  }
+  .feed-btn svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+    stroke-width: 2.2;
+  }
+  .feed-btn .icon-slash { display: none; }
+  .feed-btn--off .icon-slash {
+    display: block;
+    stroke: rgba(86,180,233,0.7);
+    stroke-width: 2.2;
+  }
+  .feed-btn--off {
+    color: rgba(86,180,233,0.45);
+    border-color: rgba(86,180,233,0.25);
+    background: rgba(6, 10, 22, 0.6);
+  }
+  .feed-btn:hover {
+    border-color: rgba(86,180,233,0.9);
+    background: rgba(86,180,233,0.15);
+    color: #aeeeff;
+  }
+
+  /* Switch button sits below the cam feed box, inside #cam-col */
+  .feed-btn--switch {
+    width: 100%;
+    height: auto;
+    padding: 4px 0;
+    font-size: 0.34rem;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: 6px;
+  }
 </style>
 </head>
 <body>
@@ -370,25 +452,55 @@
   <h5>Modular-Network of Adaptive Topologies</h5>
 </div>
 
-<!-- Live B&W feed -->
-<div id="cam-container">
-  <canvas id="cam-canvas" width="10" height="10"></canvas>
-  <div id="cam-label">eye</div>
-  <div id="cam-active-dot"></div>
+<!-- ── Feed toggle button row ─────────────────────────────────── -->
+<div id="feed-btn-row">
+  <!-- Vision toggle -->
+  <button id="cam-prompt" class="feed-btn feed-btn--vision feed-btn--off" title="Toggle camera vision -> feeds Occipital lobe">
+    <svg id="cam-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="12" rx="9" ry="5.5"/>
+      <circle cx="12" cy="12" r="2.5"/>
+      <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+  </button>
+  <!-- Hearing toggle -->
+  <button id="audio-prompt" class="feed-btn feed-btn--hearing feed-btn--off" title="Toggle microphone audio -> feeds Temporal lobe">
+    <svg id="audio-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9a6 6 0 1 1 12 0c0 4-3 5-3 8H9"/>
+      <path d="M9 17a3 3 0 0 0 6 0"/>
+      <path d="M12 9a2 2 0 0 0-2 2c0 1.5 2 2 2 4"/>
+      <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+  </button>
 </div>
-<video id="cam-video" playsinline autoplay muted style="display:none;position:fixed;width:0;height:0;"></video>
 
-<!-- Audio mini-visualizer -->
-<div id="audio-container">
-  <canvas id="audio-canvas" width="34" height="34"></canvas>
-  <div id="audio-label">ear</div>
-  <div id="audio-active-dot"></div>
+<!-- ── Live feed panels row ───────────────────────────────────── -->
+<div id="feed-row">
+  <!-- Camera column: feed box + optional switch button -->
+  <div id="cam-col">
+    <div id="cam-container">
+      <canvas id="cam-canvas" width="10" height="10"></canvas>
+      <div id="cam-label">eye</div>
+      <div id="cam-active-dot"></div>
+    </div>
+    <button id="cam-switch" class="feed-btn feed-btn--switch" title="Cycle to next camera" style="display:none;">
+      <span id="cam-switch-text">Switch Cam</span>
+    </button>
+  </div>
+
+  <!-- Audio visualizer -->
+  <div id="audio-container">
+    <canvas id="audio-canvas" width="34" height="34"></canvas>
+    <div id="audio-label">ear</div>
+    <div id="audio-active-dot"></div>
+  </div>
 </div>
+
+<video id="cam-video" playsinline autoplay muted style="display:none;position:fixed;width:0;height:0;"></video>
 
 <!-- panel toggle -->
 <button id="panel-toggle" aria-label="Toggle controls" onclick="var p=document.getElementById('panel');p.hidden=!p.hidden;this.classList.toggle('panel-open',!p.hidden)">&#9776;</button>
 
-<div id="panel">
+<div id="panel" hidden>
   <h6><a style="color:white" class="sp-link-gradient" href="https://www.contextswitching.org/neuro/mat">Click here to read about this simulation</a></h6>
   <br>
 
@@ -396,18 +508,6 @@
   <div id="lobe-legend"></div>
 
   <div class="panel-divider"></div>
-
-  <button id="cam-prompt" title="Toggle camera vision -> feeds Occipital lobe">
-    <span id="cam-prompt-text">Enable Vision</span>
-  </button>
-
-  <button id="cam-switch" title="Cycle to next camera" style="display:none;border-color:rgba(86,180,233,0.3);color:#56b4e9;background:rgba(86,180,233,0.06);">
-    <span id="cam-switch-text">Switch Camera</span>
-  </button>
-
-  <button id="audio-prompt" title="Toggle microphone audio -> feeds Temporal lobe" style="border-color:rgba(86,180,233,0.3);color:#56b4e9;background:rgba(86,180,233,0.06);">
-    <span id="audio-prompt-text">Enable Hearing</span>
-  </button>
 
   <div class="btn-row">
     <button id="btn-pause">Pause Rotation</button>
@@ -455,9 +555,9 @@
 
     <label class="slider-label">
       <span class="slider-name">Resolution</span>
-      <span class="slider-val" id="vb-res">10</span>
+      <span class="slider-val" id="vb-res">20</span>
     </label>
-    <input type="range" id="sl-res" min="10" max="50" step="5" value="10">
+    <input type="range" id="sl-res" min="10" max="50" step="5" value="20">
   </div>
 
   <div class="panel-divider"></div>
@@ -472,7 +572,7 @@
   </div>
 
   <br>
-  <h5>v0.0.3-opt</h5>
+  <h5>v0.0.4</h5>
 </div>
 
 <div id="tooltip">
@@ -664,6 +764,84 @@ scene.add(ptB);
 const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 
 // ═══════════════════════════════════════════════════════════════
+//  JAR + DESK
+// ═══════════════════════════════════════════════════════════════
+(function buildJarAndDesk() {
+  // -- Desk --
+  const deskGeo = new THREE.BoxGeometry(36, 0.5, 18);
+  const deskMat = new THREE.MeshPhongMaterial({
+    color: 0x3b1f0a,
+    specular: 0x884422,
+    shininess: 40,
+  });
+  const desk = new THREE.Mesh(deskGeo, deskMat);
+  desk.position.set(0, -5.25, 0);
+  scene.add(desk);
+
+  // Desk top surface highlight strip
+  const stripGeo = new THREE.BoxGeometry(36, 0.02, 18);
+  const stripMat = new THREE.MeshPhongMaterial({
+    color: 0x5c3010,
+    specular: 0xbb6633,
+    shininess: 80,
+  });
+  const strip = new THREE.Mesh(stripGeo, stripMat);
+  strip.position.set(0, -4.99, 0);
+  scene.add(strip);
+
+  // -- Jar glass cylinder (sides) --
+  const jarR      = 4.2;   // radius
+  const jarH      = 8.5;   // height
+  const jarY      = -5.0 + jarH / 2; // bottom sits on desk top
+
+  const jarSideGeo = new THREE.CylinderGeometry(jarR, jarR, jarH, 64, 1, true);
+  const glassMat   = new THREE.MeshPhongMaterial({
+    color: 0x88ccbb,
+    specular: 0xffffff,
+    shininess: 200,
+    transparent: true,
+    opacity: 0.13,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const jarSide = new THREE.Mesh(jarSideGeo, glassMat);
+  jarSide.position.set(0, jarY, 0);
+  scene.add(jarSide);
+
+  // Jar bottom disc
+  const jarBottomGeo = new THREE.CylinderGeometry(jarR, jarR, 0.18, 64);
+  const jarBottomMat = new THREE.MeshPhongMaterial({
+    color: 0x99ddcc,
+    specular: 0xffffff,
+    shininess: 160,
+    transparent: true,
+    opacity: 0.35,
+  });
+  const jarBottom = new THREE.Mesh(jarBottomGeo, jarBottomMat);
+  jarBottom.position.set(0, -5.0 + 0.09, 0);
+  scene.add(jarBottom);
+
+  // Jar rim ring at top
+  const rimGeo = new THREE.TorusGeometry(jarR, 0.10, 16, 64);
+  const rimMat = new THREE.MeshPhongMaterial({
+    color: 0xaaddcc,
+    specular: 0xffffff,
+    shininess: 180,
+    transparent: true,
+    opacity: 0.55,
+  });
+  const rim = new THREE.Mesh(rimGeo, rimMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, -5.0 + jarH, 0);
+  scene.add(rim);
+
+  // Subtle green glow point light inside jar
+  const jarGlow = new THREE.PointLight(0x2fffa0, 1.8, 14);
+  jarGlow.position.set(0, 0, 0);
+  scene.add(jarGlow);
+})();
+
+// ═══════════════════════════════════════════════════════════════
 //  SIMULATION STATE
 // ═══════════════════════════════════════════════════════════════
 let simRunning = true;
@@ -690,7 +868,7 @@ function randGauss() {
 const CAM_RES_MIN  = 10;
 const CAM_RES_MAX  = 50;
 const CAM_RES_STEP = 5;
-let camRes         = 10; // current resolution (side length); grid = camRes by camRes nodes
+let camRes         = 20; // current resolution (side length); grid = camRes by camRes nodes
 let pixelValues    = new Float32Array(camRes * camRes); // greyscale 0..1
 let camActive      = false;
 let occipitalIdxs  = []; // filled by buildBrain, used by simTick
@@ -737,6 +915,7 @@ function buildBrain() {
     });
   }
   networkGroup = new THREE.Group();
+  networkGroup.position.y = -0.5; // center brain inside jar (jar bottom at y=-5, jar center at y=-0.75)
   scene.add(networkGroup);
   neurons = [];
   edgeLines = [];
@@ -1391,8 +1570,8 @@ function updateVisuals(dt) {
 // ═══════════════════════════════════════════════════════════════
 let isDragging = false, autoRotate = true;
 let lastMouse = { x: 0, y: 0 };
-let spherical = { theta: 0, phi: Math.PI / 2 };
-let targetSph = { theta: 0, phi: Math.PI / 2 };
+let spherical = { theta: 0, phi: Math.PI * 0.42 };
+let targetSph = { theta: 0, phi: Math.PI * 0.42 };
 
 // Compute initial zoom so the entire brain + input layer fits in view,
 // scaled proportionally to screen pixel count.
@@ -1409,7 +1588,7 @@ function computeInitialZoom() {
   const refPixels = 1920 * 1080;
   const curPixels = window.innerWidth * window.innerHeight;
   const densityScale = Math.sqrt(curPixels / refPixels);
-  return Math.max(8, Math.min(110, baseDist * densityScale * 2));
+  return Math.max(8, Math.min(110, baseDist * densityScale * 2 * 1.20));
 }
 
 let zoomDist  = computeInitialZoom();
@@ -1577,8 +1756,6 @@ function updateSwitchButton() {
 }
 
 camPromptEl.addEventListener('click', async () => {
-  const txt = document.getElementById('cam-prompt-text');
-
   // If camera is active, toggle off
   if (camActive) {
     camActive = false;
@@ -1588,9 +1765,9 @@ camPromptEl.addEventListener('click', async () => {
     }
     pixelValues.fill(0);
     camContainer.style.display = 'none';
-    txt.textContent = 'Enable Vision';
-    camPromptEl.style.borderColor = 'rgba(86,180,233,0.3)';
-    camPromptEl.style.background  = 'rgba(86,180,233,0.06)';
+    camPromptEl.classList.add('feed-btn--off');
+    camPromptEl.style.borderColor = '';
+    camPromptEl.style.background  = '';
     updateSwitchButton();
     return;
   }
@@ -1604,13 +1781,14 @@ camPromptEl.addEventListener('click', async () => {
 
     camActive = true;
     camContainer.style.display = 'block';
-    txt.textContent = 'Disable Vision';
-    camPromptEl.style.borderColor = 'rgba(86,180,233,0.7)';
-    camPromptEl.style.background  = 'rgba(86,180,233,0.15)';
+    camPromptEl.classList.remove('feed-btn--off');
+    camPromptEl.style.borderColor = '';
+    camPromptEl.style.background  = '';
     updateSwitchButton();
     drawBW();
   } catch (err) {
-    txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
+    camPromptEl.classList.add('feed-btn--off');
+    camPromptEl.title = err.name === 'NotAllowedError' ? 'Permission denied' : 'Not available';
   }
 });
 
@@ -1655,8 +1833,6 @@ audioVizCanvas.width  = 34;
 audioVizCanvas.height = 34;
 
 audioPromptEl.addEventListener('click', async () => {
-  const txt = document.getElementById('audio-prompt-text');
-
   // Toggle off
   if (audioActive) {
     audioActive = false;
@@ -1669,9 +1845,9 @@ audioPromptEl.addEventListener('click', async () => {
     audioFFTBuf   = null;
     audioValues.fill(0);
     audioContainer.style.display = 'none';
-    txt.textContent = 'Enable Hearing';
-    audioPromptEl.style.borderColor = 'rgba(86,180,233,0.3)';
-    audioPromptEl.style.background  = 'rgba(86,180,233,0.06)';
+    audioPromptEl.classList.add('feed-btn--off');
+    audioPromptEl.style.borderColor = '';
+    audioPromptEl.style.background  = '';
     return;
   }
 
@@ -1690,11 +1866,12 @@ audioPromptEl.addEventListener('click', async () => {
 
     audioActive = true;
     audioContainer.style.display = 'block';
-    txt.textContent = 'Disable Hearing';
-    audioPromptEl.style.borderColor = 'rgba(86,180,233,0.7)';
-    audioPromptEl.style.background  = 'rgba(86,180,233,0.15)';
+    audioPromptEl.classList.remove('feed-btn--off');
+    audioPromptEl.style.borderColor = '';
+    audioPromptEl.style.background  = '';
   } catch (err) {
-    txt.textContent = err.name === 'NotAllowedError' ? 'Denied' : 'N/A';
+    audioPromptEl.classList.add('feed-btn--off');
+    audioPromptEl.title = err.name === 'NotAllowedError' ? 'Permission denied' : 'Not available';
   }
 });
 
@@ -1853,4 +2030,4 @@ buildBrain();
 animate(0);
 </script>
 </body>
-</html> 
+</html>
