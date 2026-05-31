@@ -82,14 +82,39 @@
     z-index: 20;
   }
 
-  /* CAMERA FEED */
-  #cam-container {
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* FEED ROW — holds cam + audio side by side, never overlapping */
+  #feed-row {
     position: fixed;
     top: 118px; left: 20px;
+    z-index: 20;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 6px;
+    pointer-events: none; /* children re-enable as needed */
+  }
+  @media (min-width: 640px) {
+    #feed-row { top: 144px; left: 32px; }
+  }
+
+  /* CAM COLUMN — feed box + optional switch button stacked vertically */
+  #cam-col {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    pointer-events: auto;
+  }
+
+  /* CAMERA FEED */
+  #cam-container {
+    position: relative;
     width: 68px; height: 68px;
     border: 1px solid rgba(86,180,233,0.4);
     border-radius: 10px; overflow: hidden;
-    background: #000; z-index: 20; display: none;
+    background: #000; display: none;
   }
   #cam-canvas {
     display: block; width: 68px; height: 68px;
@@ -108,24 +133,19 @@
     box-shadow: 0 0 6px #56b4e9;
     animation: blink 1.2s ease-in-out infinite;
   }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
   @media (min-width: 640px) {
-    #cam-container {
-      bottom: auto; top: 80px; left: 32px;
-      width: 80px; height: 80px;
-    }
-    #cam-canvas { width: 80px; height: 80px; }
+    #cam-container { width: 80px; height: 80px; }
+    #cam-canvas    { width: 80px; height: 80px; }
   }
 
   /* AUDIO FEED */
   #audio-container {
-    position: fixed;
-    top: 118px; left: 64px;
+    position: relative;
     width: 68px; height: 68px;
     border: 1px solid rgba(86,180,233,0.4);
     border-radius: 10px; overflow: hidden;
-    background: #000; z-index: 20; display: none;
+    background: #000; display: none;
+    pointer-events: auto;
   }
   #audio-canvas {
     display: block; width: 68px; height: 68px;
@@ -145,11 +165,8 @@
     animation: blink 1.2s ease-in-out infinite;
   }
   @media (min-width: 640px) {
-    #audio-container {
-      bottom: auto; top: 80px; left: 120px;
-      width: 80px; height: 80px;
-    }
-    #audio-canvas { width: 80px; height: 80px; }
+    #audio-container { width: 80px; height: 80px; }
+    #audio-canvas    { width: 80px; height: 80px; }
   }
 
   @media (min-width: 640px) {
@@ -358,10 +375,23 @@
     #panel { width: 180px; }
   }
 
-  /* FEED BUTTONS — anchored below their feed boxes */
-  .feed-btn {
+  /* FEED BUTTONS — live inside #feed-row flex layout, not fixed-positioned */
+  /* Button row above the feed panels */
+  #feed-btn-row {
     position: fixed;
+    top: 72px; left: 20px;
     z-index: 21;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+  @media (min-width: 640px) {
+    #feed-btn-row { top: 96px; left: 32px; }
+  }
+
+  .feed-btn {
+    position: relative; /* no longer fixed */
     background: rgba(6, 10, 22, 0.75);
     border: 1px solid rgba(86,180,233,0.55);
     border-radius: 8px;
@@ -375,6 +405,7 @@
     justify-content: center;
     transition: border-color 0.2s, background 0.2s, color 0.2s;
     backdrop-filter: blur(6px);
+    flex-shrink: 0;
   }
   .feed-btn svg {
     width: 20px;
@@ -382,9 +413,7 @@
     display: block;
     stroke-width: 2.2;
   }
-  .feed-btn .icon-slash {
-    display: none;
-  }
+  .feed-btn .icon-slash { display: none; }
   .feed-btn--off .icon-slash {
     display: block;
     stroke: rgba(86,180,233,0.7);
@@ -400,13 +429,17 @@
     background: rgba(86,180,233,0.15);
     color: #aeeeff;
   }
-  .feed-btn--vision  { top: 72px; left: 20px; }
-  .feed-btn--hearing { top: 72px; left: 64px; }
-  .feed-btn--switch  { top: 72px; left: 20px; font-size: 0.34rem; font-family: 'Courier New', Courier, monospace; letter-spacing: 0.1em; text-transform: uppercase; width: 68px; height: auto; padding: 4px 0; }
-  @media (min-width: 640px) {
-    .feed-btn--vision  { bottom: auto; top: 168px; left: 32px; }
-    .feed-btn--hearing { bottom: auto; top: 168px; left: 76px; }
-    .feed-btn--switch  { bottom: auto; top: 168px; left: 32px; }
+
+  /* Switch button sits below the cam feed box, inside #cam-col */
+  .feed-btn--switch {
+    width: 100%;
+    height: auto;
+    padding: 4px 0;
+    font-size: 0.34rem;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: 6px;
   }
 </style>
 </head>
@@ -419,49 +452,53 @@
   <h5>Modular-Network of Adaptive Topologies</h5>
 </div>
 
-<!-- Live B&W feed -->
-<div id="cam-container">
-  <canvas id="cam-canvas" width="10" height="10"></canvas>
-  <div id="cam-label">eye</div>
-  <div id="cam-active-dot"></div>
+<!-- ── Feed toggle button row ─────────────────────────────────── -->
+<div id="feed-btn-row">
+  <!-- Vision toggle -->
+  <button id="cam-prompt" class="feed-btn feed-btn--vision feed-btn--off" title="Toggle camera vision -> feeds Occipital lobe">
+    <svg id="cam-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="12" rx="9" ry="5.5"/>
+      <circle cx="12" cy="12" r="2.5"/>
+      <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+  </button>
+  <!-- Hearing toggle -->
+  <button id="audio-prompt" class="feed-btn feed-btn--hearing feed-btn--off" title="Toggle microphone audio -> feeds Temporal lobe">
+    <svg id="audio-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9a6 6 0 1 1 12 0c0 4-3 5-3 8H9"/>
+      <path d="M9 17a3 3 0 0 0 6 0"/>
+      <path d="M12 9a2 2 0 0 0-2 2c0 1.5 2 2 2 4"/>
+      <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
+    </svg>
+  </button>
 </div>
-<video id="cam-video" playsinline autoplay muted style="display:none;position:fixed;width:0;height:0;"></video>
 
-<!-- Audio mini-visualizer -->
-<div id="audio-container">
-  <canvas id="audio-canvas" width="34" height="34"></canvas>
-  <div id="audio-label">ear</div>
-  <div id="audio-active-dot"></div>
+<!-- ── Live feed panels row ───────────────────────────────────── -->
+<div id="feed-row">
+  <!-- Camera column: feed box + optional switch button -->
+  <div id="cam-col">
+    <div id="cam-container">
+      <canvas id="cam-canvas" width="10" height="10"></canvas>
+      <div id="cam-label">eye</div>
+      <div id="cam-active-dot"></div>
+    </div>
+    <button id="cam-switch" class="feed-btn feed-btn--switch" title="Cycle to next camera" style="display:none;">
+      <span id="cam-switch-text">Switch Cam</span>
+    </button>
+  </div>
+
+  <!-- Audio visualizer -->
+  <div id="audio-container">
+    <canvas id="audio-canvas" width="34" height="34"></canvas>
+    <div id="audio-label">ear</div>
+    <div id="audio-active-dot"></div>
+  </div>
 </div>
+
+<video id="cam-video" playsinline autoplay muted style="display:none;position:fixed;width:0;height:0;"></video>
 
 <!-- panel toggle -->
 <button id="panel-toggle" aria-label="Toggle controls" onclick="var p=document.getElementById('panel');p.hidden=!p.hidden;this.classList.toggle('panel-open',!p.hidden)">&#9776;</button>
-
-<!-- Vision toggle button — anchored below cam feed -->
-<button id="cam-prompt" class="feed-btn feed-btn--vision feed-btn--off" title="Toggle camera vision -> feeds Occipital lobe">
-  <svg id="cam-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Eye shape -->
-    <ellipse cx="12" cy="12" rx="9" ry="5.5"/>
-    <circle cx="12" cy="12" r="2.5"/>
-    <!-- Slash (shown when disabled) -->
-    <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
-  </svg>
-</button>
-<button id="cam-switch" class="feed-btn feed-btn--switch" title="Cycle to next camera" style="display:none;">
-  <span id="cam-switch-text">Switch Cam</span>
-</button>
-
-<!-- Hearing toggle button — anchored below audio feed -->
-<button id="audio-prompt" class="feed-btn feed-btn--hearing feed-btn--off" title="Toggle microphone audio -> feeds Temporal lobe">
-  <svg id="audio-prompt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Ear shape -->
-    <path d="M6 9a6 6 0 1 1 12 0c0 4-3 5-3 8H9"/>
-    <path d="M9 17a3 3 0 0 0 6 0"/>
-    <path d="M12 9a2 2 0 0 0-2 2c0 1.5 2 2 2 4"/>
-    <!-- Slash (shown when disabled) -->
-    <line class="icon-slash" x1="3" y1="3" x2="21" y2="21"/>
-  </svg>
-</button>
 
 <div id="panel" hidden>
   <h6><a style="color:white" class="sp-link-gradient" href="https://www.contextswitching.org/neuro/mat">Click here to read about this simulation</a></h6>
@@ -1551,7 +1588,7 @@ function computeInitialZoom() {
   const refPixels = 1920 * 1080;
   const curPixels = window.innerWidth * window.innerHeight;
   const densityScale = Math.sqrt(curPixels / refPixels);
-  return Math.max(8, Math.min(110, baseDist * densityScale * 2 * 1.20));
+  return Math.max(8, Math.min(110, baseDist * densityScale * 2 * .85));
 }
 
 let zoomDist  = computeInitialZoom();
