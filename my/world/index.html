@@ -10,7 +10,6 @@
     <!-- TODO: 
          - fine tune neural network hyperparameters and starting stats
          - cat eats sheep meat or if robot needs enery cells, you eat plants and sheep/human
-         - add cloud ai
     -->
     <style>
         /* Reset and base */
@@ -40,7 +39,7 @@
 
         #nnVisualizerContainer { display: none !important; }
 
-        /* NN section below stats+memory */
+        /* NN section below stats + memory */
         #asp-nn-wrapper {
             margin-top: 0;
             border-top: 1px solid rgba(0, 255, 0, 0.2);
@@ -824,9 +823,9 @@
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
-        // Initial settings
         const scale = 2;
         let pendingScale = scale;
+        let hudCleared = false;
         const CONFIG = {
             isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
             isDeviceTilt: window.DeviceOrientationEvent !== undefined,
@@ -853,11 +852,13 @@
             targetObject: null,
             animTime: 0  // walk cycle accumulator
         };
-
-        // Cached world diagonal
-        let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
+        const WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
+        document.getElementById('scale-slider').addEventListener('input', function() {
+            pendingScale = parseFloat(this.value);
+            document.getElementById('scaleDisplay').textContent = pendingScale;
+        });
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -872,7 +873,6 @@
             }
         }
 
-        let hudCleared = false;
         function onClearHud() {
             hudCleared = !hudCleared;
             [document.querySelector('.hud'), document.querySelector('.control-panel')]
@@ -894,11 +894,6 @@
                 if (typeof _rayLines !== 'undefined') _rayLines.visible = true;
             }
         }
-
-        document.getElementById('scale-slider').addEventListener('input', function() {
-            pendingScale = parseFloat(this.value);
-            document.getElementById('scaleDisplay').textContent = pendingScale;
-        });
 
         function onReset() {
             CONFIG.initialDeer = Math.trunc(20 * pendingScale);
@@ -1090,7 +1085,6 @@
             xrReferenceSpace = await renderer.xr.getSession().requestReferenceSpace('local-floor')
                 .catch(() => renderer.xr.getReferenceSpace());
         });
-        //
 
         camera.position.set(0, 0, 0);
 
@@ -1120,7 +1114,7 @@
         scene.add(directionalLight);
 
         // ============================================================================
-        // TOUCH & DEVICE CONTROLS
+        // TOUCH + DEVICE CONTROLS
         // ============================================================================
         const controls = {
             touchX: 0,
@@ -4100,7 +4094,7 @@
         const POV_MODES   = ['1st', '3rd'];
         const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON' };
 
-        // 3rd-person: camera sits behind & above the player
+        // 3rd-person: camera sits behind above the player
         // 3rd-person offset: behind and slightly above the player
         const TPP_OFFSET = new THREE.Vector3(0, 18, 70);
 
