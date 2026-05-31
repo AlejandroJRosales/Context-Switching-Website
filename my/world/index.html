@@ -1537,8 +1537,14 @@
         // ============================================================================
         // TWO-LOBE NETWORK TUNERS
         // ============================================================================
-        const LOBE_SIZE     = 6;    // number of nodes in each lobe (Lobe A GRU + Lobe B standard)
+        const LOBE_SIZE_MIN = 4;    // minimum nodes per lobe (randomised at birth)
+        const LOBE_SIZE_MAX = 10;   // maximum nodes per lobe
         const LOBE_SPARSITY = 0.20; // fraction of possible connections that are active (0–1)
+
+        // Pick a random lobe size in [MIN, MAX] inclusive
+        function randLobeSize() {
+            return LOBE_SIZE_MIN + Math.floor(Math.random() * (LOBE_SIZE_MAX - LOBE_SIZE_MIN + 1));
+        }
 
         // ============================================================================
         // Helper: build a sparse random boolean mask (Uint8Array, flat [inD * outD])
@@ -1585,7 +1591,6 @@
             constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
                 // Public fields the rest of the codebase reads
                 this.inputDims    = inputDims;
-                this.lobeSize     = LOBE_SIZE;
                 this.outputDims   = 9;
                 this.learningRate = learningRate;
                 this.momentum     = momentum;
@@ -1602,66 +1607,77 @@
                 this.runningVar    = new Float32Array(inputDims).fill(1);
                 this._standardized = new Float32Array(inputDims);
 
-                const N  = this.lobeSize;
                 const I  = inputDims;
                 const O  = this.outputDims;
+
+                // Lobe sizes: inherited from masks (fixed per animal) or freshly randomised.
+                // lobeSizeA = GRU lobe (Lobe A), lobeSizeB = standard LIF lobe (Lobe B).
+                if (masks) {
+                    this.lobeSizeA = masks.lobeSizeA;
+                    this.lobeSizeB = masks.lobeSizeB;
+                } else {
+                    this.lobeSizeA = randLobeSize();
+                    this.lobeSizeB = randLobeSize();
+                }
+                // Legacy alias so any external code reading .lobeSize still works
+                this.lobeSize = this.lobeSizeA;
+
+                const NA = this.lobeSizeA;
+                const NB = this.lobeSizeB;
 
                 // Topology masks
                 // Accept inherited masks or generate fresh random ones
                 if (masks) {
-                    this.maskIA = masks.maskIA; // Input  -> Lobe A  [I*N]
-                    this.maskIB = masks.maskIB; // Input  -> Lobe B  [I*N]
-                    this.maskAB = masks.maskAB; // Lobe A -> Lobe B  [N*N]
-                    this.maskBA = masks.maskBA; // Lobe B -> Lobe A  [N*N]
-                    this.maskAO = masks.maskAO; // Lobe A -> Output  [N*O]
-                    this.maskBO = masks.maskBO; // Lobe B -> Output  [N*O]
+                    this.maskIA = masks.maskIA; // Input   -> Lobe A  [I*NA]
+                    this.maskIB = masks.maskIB; // Input   -> Lobe B  [I*NB]
+                    this.maskAB = masks.maskAB; // Lobe A  -> Lobe B  [NA*NB]
+                    this.maskBA = masks.maskBA; // Lobe B  -> Lobe A  [NB*NA]
+                    this.maskAO = masks.maskAO; // Lobe A  -> Output  [NA*O]
+                    this.maskBO = masks.maskBO; // Lobe B  -> Output  [NB*O]
                 } else {
-                    this.maskIA = makeSparseMask(I, N, LOBE_SPARSITY);
-                    this.maskIB = makeSparseMask(I, N, LOBE_SPARSITY);
-                    this.maskAB = makeSparseMask(N, N, LOBE_SPARSITY);
-                    this.maskBA = makeSparseMask(N, N, LOBE_SPARSITY);
-                    this.maskAO = makeSparseMask(N, O, LOBE_SPARSITY);
-                    this.maskBO = makeSparseMask(N, O, LOBE_SPARSITY);
+                    this.maskIA = makeSparseMask(I,  NA, LOBE_SPARSITY);
+                    this.maskIB = makeSparseMask(I,  NB, LOBE_SPARSITY);
+                    this.maskAB = makeSparseMask(NA, NB, LOBE_SPARSITY);
+                    this.maskBA = makeSparseMask(NB, NA, LOBE_SPARSITY);
+                    this.maskAO = makeSparseMask(NA, O,  LOBE_SPARSITY);
+                    this.maskBO = makeSparseMask(NB, O,  LOBE_SPARSITY);
                 }
 
                 // Weights (freshly randomised, masks applied)
-                this.wIA = makeMaskedWeights(I, N, this.maskIA);
-                this.wIB = makeMaskedWeights(I, N, this.maskIB);
-                this.wAB = makeMaskedWeights(N, N, this.maskAB);
-                this.wBA = makeMaskedWeights(N, N, this.maskBA);
-                this.wAO = makeMaskedWeights(N, O, this.maskAO);
-                this.wBO = makeMaskedWeights(N, O, this.maskBO);
+                this.wIA = makeMaskedWeights(I,  NA, this.maskIA);
+                this.wIB = makeMaskedWeights(I,  NB, this.maskIB);
+                this.wAB = makeMaskedWeights(NA, NB, this.maskAB);
+                this.wBA = makeMaskedWeights(NB, NA, this.maskBA);
+                this.wAO = makeMaskedWeights(NA, O,  this.maskAO);
+                this.wBO = makeMaskedWeights(NB, O,  this.maskBO);
 
                 // GRU self-recurrence weight (one scalar per Lobe-A node)
-                this.wSelf = new Float32Array(N);
-                const selfLimit = Math.sqrt(6.0 / (N + N));
-                for (let i = 0; i < N; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
+                this.wSelf = new Float32Array(NA);
+                const selfLimit = Math.sqrt(6.0 / (NA + NA));
+                for (let i = 0; i < NA; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
 
                 // Biases
-                this.biasA  = new Float32Array(N);
-                this.biasB  = new Float32Array(N);
+                this.biasA  = new Float32Array(NA);
+                this.biasB  = new Float32Array(NB);
                 this.biasO  = new Float32Array(O);
 
                 // Momentum velocity buffers (parallel structure to weights)
-                this.vIA   = new Float32Array(I * N);
-                this.vIB   = new Float32Array(I * N);
-                this.vAB   = new Float32Array(N * N);
-                this.vBA   = new Float32Array(N * N);
-                this.vAO   = new Float32Array(N * O);
-                this.vBO   = new Float32Array(N * O);
-                this.vSelf = new Float32Array(N);
-                this.vBiasA = new Float32Array(N);
-                this.vBiasB = new Float32Array(N);
+                this.vIA    = new Float32Array(I  * NA);
+                this.vIB    = new Float32Array(I  * NB);
+                this.vAB    = new Float32Array(NA * NB);
+                this.vBA    = new Float32Array(NB * NA);
+                this.vAO    = new Float32Array(NA * O);
+                this.vBO    = new Float32Array(NB * O);
+                this.vSelf  = new Float32Array(NA);
+                this.vBiasA = new Float32Array(NA);
+                this.vBiasB = new Float32Array(NB);
                 this.vBiasO = new Float32Array(O);
 
                 // Hidden state for Lobe A GRU cells (persists across think() calls)
-                this.hA = new Float32Array(N);
+                this.hA = new Float32Array(NA);
 
                 // Leaky Integrate-and-Fire state
-                // Membrane potentials for both lobes (persist across think() calls,
-                // leak toward rest between steps, fire when they cross threshold).
-                // Lobe A reuses hA as its membrane; hB is added here for Lobe B.
-                this.hB = new Float32Array(N);
+                this.hB = new Float32Array(NB);
 
                 // LIF hyperparameters
                 // lifLeak  : fraction of membrane potential retained per step (0–1).
@@ -1677,18 +1693,18 @@
 
                 // Refractory counters: number of steps each node cannot fire
                 // (decremented each propagate call; node clamped to V_reset while > 0)
-                this.refracA = new Uint8Array(N);
-                this.refracB = new Uint8Array(N);
+                this.refracA = new Uint8Array(NA);
+                this.refracB = new Uint8Array(NB);
                 this.REFRAC_PERIOD = 3; // steps of silence after a spike
 
                 // Activation buffers (pre-allocated)
-                this.actA = new Float32Array(N);
-                this.actB = new Float32Array(N);
+                this.actA = new Float32Array(NA);
+                this.actB = new Float32Array(NB);
                 this.actO = new Float32Array(O);
 
                 // Expose layerDims in the shape the visualizer and mate() may read
                 // (input, lobeA, lobeB, output; notional; visualizer update deferred)
-                this.layerDims = [I, N, N, O];
+                this.layerDims = [I, NA, NB, O];
 
                 // Expose activations array in the shape adjustWeights reads for REINFORCE
                 // We'll keep actO as activations[last] so the existing REINFORCE code works
@@ -1698,6 +1714,7 @@
             // Returns a plain object of mask Uint8Arrays for inheritance
             getMasks() {
                 return {
+                    lobeSizeA: this.lobeSizeA, lobeSizeB: this.lobeSizeB,
                     maskIA: this.maskIA, maskIB: this.maskIB,
                     maskAB: this.maskAB, maskBA: this.maskBA,
                     maskAO: this.maskAO, maskBO: this.maskBO,
@@ -1705,7 +1722,8 @@
             }
 
             propagate(inp) {
-                const N = this.lobeSize;
+                const NA = this.lobeSizeA;
+                const NB = this.lobeSizeB;
                 const I = this.inputDims;
                 const O = this.outputDims;
                 const actA = this.actA;
@@ -1729,7 +1747,7 @@
                 const lifTh    = this.lifThresh;
                 const lifRst   = this.lifReset;
                 const refracPd = this.REFRAC_PERIOD;
-                for (let i = 0; i < N; i++) {
+                for (let i = 0; i < NA; i++) {
                     // refractory: node cannot integrate or fire
                     if (refracA[i] > 0) {
                         refracA[i]--;
@@ -1744,11 +1762,11 @@
                     // integrate: accumulate weighted synaptic input
                     let net = this.biasA[i] + this.wSelf[i] * hA[i];
                     for (let j = 0; j < I; j++) {
-                        const k = j * N + i;
+                        const k = j * NA + i;
                         if (this.maskIA[k]) net += this.wIA[k] * inp[j];
                     }
-                    for (let k = 0; k < N; k++) {
-                        const idx = k * N + i;
+                    for (let k = 0; k < NB; k++) {
+                        const idx = k * NA + i;
                         if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
                     }
                     // Clamp net current to prevent runaway integration
@@ -1777,7 +1795,7 @@
                 // a more reactive cortical layer receiving feedforward + A->B input).
                 const hB      = this.hB;
                 const refracB = this.refracB;
-                for (let i = 0; i < N; i++) {
+                for (let i = 0; i < NB; i++) {
                     // --- refractory ---
                     if (refracB[i] > 0) {
                         refracB[i]--;
@@ -1792,11 +1810,11 @@
                     // --- integrate ---
                     let net = this.biasB[i];
                     for (let j = 0; j < I; j++) {
-                        const k = j * N + i;
+                        const k = j * NB + i;
                         if (this.maskIB[k]) net += this.wIB[k] * inp[j];
                     }
-                    for (let k = 0; k < N; k++) {
-                        const idx = k * N + i;
+                    for (let k = 0; k < NA; k++) {
+                        const idx = k * NB + i;
                         if (this.maskAB[idx]) net += this.wAB[idx] * actA[k];
                     }
                     hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
@@ -1820,9 +1838,11 @@
                 //       + \sum_k  wBO[k*O+i] * actB[k]      (B -> output, sparse)
                 for (let i = 0; i < O; i++) {
                     let net = this.biasO[i];
-                    for (let k = 0; k < N; k++) {
+                    for (let k = 0; k < NA; k++) {
                         const idxA = k * O + i;
                         if (this.maskAO[idxA]) net += this.wAO[idxA] * actA[k];
+                    }
+                    for (let k = 0; k < NB; k++) {
                         const idxB = k * O + i;
                         if (this.maskBO[idxB]) net += this.wBO[idxB] * actB[k];
                     }
@@ -1897,19 +1917,20 @@
                     }
                 };
 
-                const N = this.lobeSize;
+                const NA = this.lobeSizeA;
+                const NB = this.lobeSizeB;
                 const I = this.inputDims;
                 const O = this.outputDims;
 
-                updateW(this.wIA, this.vIA, this.maskIA, I * N);
-                updateW(this.wIB, this.vIB, this.maskIB, I * N);
-                updateW(this.wAB, this.vAB, this.maskAB, N * N);
-                updateW(this.wBA, this.vBA, this.maskBA, N * N);
-                updateW(this.wAO, this.vAO, this.maskAO, N * O);
-                updateW(this.wBO, this.vBO, this.maskBO, N * O);
+                updateW(this.wIA, this.vIA, this.maskIA, I  * NA);
+                updateW(this.wIB, this.vIB, this.maskIB, I  * NB);
+                updateW(this.wAB, this.vAB, this.maskAB, NA * NB);
+                updateW(this.wBA, this.vBA, this.maskBA, NB * NA);
+                updateW(this.wAO, this.vAO, this.maskAO, NA * O);
+                updateW(this.wBO, this.vBO, this.maskBO, NB * O);
 
                 // Self-recurrence weights (no mask; every GRU node has one)
-                for (let k = 0; k < N; k++) {
+                for (let k = 0; k < NA; k++) {
                     const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
                     const vel = mom * this.vSelf[k] - grad + noise;
                     this.vSelf[k] = vel;
@@ -1924,8 +1945,8 @@
                         b[k] = b[k] * wdB + vel;
                     }
                 };
-                updateBias(this.biasA, this.vBiasA, N);
-                updateBias(this.biasB, this.vBiasB, N);
+                updateBias(this.biasA, this.vBiasA, NA);
+                updateBias(this.biasB, this.vBiasB, NB);
                 updateBias(this.biasO, this.vBiasO, O);
             }
         }
@@ -3571,7 +3592,8 @@
                 this._clearScene();
                 this._builtFor = nn;
 
-                const N = nn.lobeSize;   // 6
+                const NA = nn.lobeSizeA;  // GRU lobe
+                const NB = nn.lobeSizeB;  // standard LIF lobe
                 const I = nn.inputDims;  // 15
                 const O = nn.outputDims; // 9
 
@@ -3601,8 +3623,8 @@
                         ));
                     }
                 }
-                const posA   = spread(N, 0.70);
-                const posB   = spread(N, 0.70);
+                const posA   = spread(NA, 0.70);
+                const posB   = spread(NB, 0.70);
                 const posOut = spread(O, 0.90);
 
                 // Layer X offsets
@@ -3630,7 +3652,7 @@
                     this._nodeMeshes.in.push(mesh);
                 }
                 // Lobe A nodes + self-loop tori
-                for (let i = 0; i < N; i++) {
+                for (let i = 0; i < NA; i++) {
                     const mat = makeMat(this.COL_A);
                     const mesh = new THREE.Mesh(this._nodeGeo, mat);
                     mesh.position.copy(posA[i]);
@@ -3651,7 +3673,7 @@
                     this._selfLoops.push(loop);
                 }
                 // Lobe B nodes
-                for (let i = 0; i < N; i++) {
+                for (let i = 0; i < NB; i++) {
                     const mat = makeMat(this.COL_B);
                     const mesh = new THREE.Mesh(this._nodeGeo, mat);
                     mesh.position.copy(posB[i]);
@@ -3727,20 +3749,29 @@
                 const mxAB = maxAbs(nn.wAB), mxBA = maxAbs(nn.wBA);
                 const mxAO = maxAbs(nn.wAO), mxBO = maxAbs(nn.wBO);
 
-                for (let i = 0; i < I; i++) for (let j = 0; j < N; j++) {
-                    const k = i * N + j;
+                for (let i = 0; i < I; i++) for (let j = 0; j < NA; j++) {
+                    const k = i * NA + j;
                     if (nn.maskIA[k]) addStraight(posIn[i], posA[j], nn.wIA[k], 'in', i, 'a', j);
+                }
+                for (let i = 0; i < I; i++) for (let j = 0; j < NB; j++) {
+                    const k = i * NB + j;
                     if (nn.maskIB[k]) addStraight(posIn[i], posB[j], nn.wIB[k], 'in', i, 'b', j);
                 }
                 // A->B  : curved +Y  (above the straight line)
-                for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
-                    const k = i * N + j;
+                for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
+                    const k = i * NB + j;
                     if (nn.maskAB[k]) addCurved(posA[i], posB[j], nn.wAB[k],  0.80, 'a', i, 'b', j);
+                }
+                for (let i = 0; i < NB; i++) for (let j = 0; j < NA; j++) {
+                    const k = i * NA + j;
                     if (nn.maskBA[k]) addCurved(posB[i], posA[j], nn.wBA[k], -0.80, 'b', i, 'a', j);
                 }
-                for (let i = 0; i < N; i++) for (let j = 0; j < O; j++) {
+                for (let i = 0; i < NA; i++) for (let j = 0; j < O; j++) {
                     const k = i * O + j;
                     if (nn.maskAO[k]) addStraight(posA[i], posOut[j], nn.wAO[k], 'a', i, 'out', j);
+                }
+                for (let i = 0; i < NB; i++) for (let j = 0; j < O; j++) {
+                    const k = i * O + j;
                     if (nn.maskBO[k]) addStraight(posB[i], posOut[j], nn.wBO[k], 'b', i, 'out', j);
                 }
             }
