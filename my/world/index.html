@@ -596,6 +596,23 @@
             flex-shrink: 0;
         }
 
+        .asp-mem-arrow {
+            width: 12px;
+            height: 12px;
+            flex-shrink: 0;
+            display: none;
+        }
+
+        .asp-mem-arrow.active {
+            display: block;
+        }
+
+        .asp-mem-arrow svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
         /* Animations */
         @keyframes pulse {
             0%, 100% { opacity: 0.6; }
@@ -693,26 +710,30 @@
                 <div class="asp-mem-row" id="asp-mem-predator">
                     <span class="asp-mem-icon">⚠️</span>
                     <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
+                    <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
                     <span class="asp-mem-text" id="asp-mem-predator-txt">no threat</span>
-                    <span class="asp-mem-tag" style="color:#e74c3c">pred·ray</span>
+                    <span class="asp-mem-tag" style="color:#e74c3c">pred</span>
                 </div>
                 <div class="asp-mem-row" id="asp-mem-food">
                     <span class="asp-mem-icon">🍽️</span>
                     <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
+                    <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
                     <span class="asp-mem-text" id="asp-mem-food-txt">no food</span>
-                    <span class="asp-mem-tag" style="color:#e67e22">food·ray</span>
+                    <span class="asp-mem-tag" style="color:#e67e22">food</span>
                 </div>
                 <div class="asp-mem-row" id="asp-mem-water">
                     <span class="asp-mem-icon">💧</span>
                     <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
+                    <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
                     <span class="asp-mem-text" id="asp-mem-water-txt">no water</span>
-                    <span class="asp-mem-tag" style="color:#3498db">watr·ray</span>
+                    <span class="asp-mem-tag" style="color:#3498db">watr</span>
                 </div>
                 <div class="asp-mem-row" id="asp-mem-mate">
                     <span class="asp-mem-icon">💞</span>
                     <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
+                    <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
                     <span class="asp-mem-text" id="asp-mem-mate-txt">no mate</span>
-                    <span class="asp-mem-tag" style="color:#9b59b6">mate·ray</span>
+                    <span class="asp-mem-tag" style="color:#9b59b6">mate</span>
                 </div>
             </div>
         </div>
@@ -2556,14 +2577,18 @@
         const _aspAgeRowEl  = document.getElementById('asp-age-row');
         const _aspAgeEl     = document.getElementById('asp-age');
 
-        const _aspMemPredDot  = document.getElementById('asp-mem-predator-dot');
-        const _aspMemPredTxt  = document.getElementById('asp-mem-predator-txt');
-        const _aspMemFoodDot  = document.getElementById('asp-mem-food-dot');
-        const _aspMemFoodTxt  = document.getElementById('asp-mem-food-txt');
-        const _aspMemWaterDot = document.getElementById('asp-mem-water-dot');
-        const _aspMemWaterTxt = document.getElementById('asp-mem-water-txt');
-        const _aspMemMateDot  = document.getElementById('asp-mem-mate-dot');
-        const _aspMemMateTxt  = document.getElementById('asp-mem-mate-txt');
+        const _aspMemPredDot    = document.getElementById('asp-mem-predator-dot');
+        const _aspMemPredTxt    = document.getElementById('asp-mem-predator-txt');
+        const _aspMemPredArrow  = document.getElementById('asp-mem-predator-arrow');
+        const _aspMemFoodDot    = document.getElementById('asp-mem-food-dot');
+        const _aspMemFoodTxt    = document.getElementById('asp-mem-food-txt');
+        const _aspMemFoodArrow  = document.getElementById('asp-mem-food-arrow');
+        const _aspMemWaterDot   = document.getElementById('asp-mem-water-dot');
+        const _aspMemWaterTxt   = document.getElementById('asp-mem-water-txt');
+        const _aspMemWaterArrow = document.getElementById('asp-mem-water-arrow');
+        const _aspMemMateDot    = document.getElementById('asp-mem-mate-dot');
+        const _aspMemMateTxt    = document.getElementById('asp-mem-mate-txt');
+        const _aspMemMateArrow  = document.getElementById('asp-mem-mate-arrow');
 
         function _setMemSlot(dot, txt, active, label) {
             dot.className = 'asp-mem-dot ' + (active ? 'active' : 'inactive');
@@ -2576,30 +2601,35 @@
                 const dx = mx - a.position.x, dz = mz - a.position.z;
                 return Math.round(Math.sqrt(dx * dx + dz * dz));
             }
-            _setMemSlot(
-                _aspMemPredDot, _aspMemPredTxt, a.hasPredator,
-                a.hasPredator
-                    ? `${dist(a.memPredatorX, a.memPredatorZ)}`
-                    : 'no threat'
-            );
-            _setMemSlot(
-                _aspMemFoodDot, _aspMemFoodTxt, a.hasFood,
-                a.hasFood
-                    ? `${dist(a.memFoodX, a.memFoodZ)}`
-                    : 'no food'
-            );
-            _setMemSlot(
-                _aspMemWaterDot, _aspMemWaterTxt, a.hasWater,
-                a.hasWater
-                    ? `${dist(a.memWaterX, a.memWaterZ)}`
-                    : 'no water'
-            );
-            _setMemSlot(
-                _aspMemMateDot, _aspMemMateTxt, a.hasMate,
-                a.hasMate
-                    ? `${dist(a.memMateX, a.memMateZ)}`
-                    : 'no mate'
-            );
+            // raySin=dx/dist, rayCos=dz/dist in world space.
+            // Subtract facingAngle to get direction relative to animal's own heading
+            // (0 = straight ahead, ±π = behind), then rotate SVG arrow accordingly.
+            function setArrow(arrow, active, sin, cos) {
+                if (active) {
+                    const worldAngle = Math.atan2(sin, cos);
+                    const relAngle = worldAngle - a.facingAngle;
+                    const deg = relAngle * (180 / Math.PI);
+                    arrow.querySelector('svg').style.transform = `rotate(${deg}deg)`;
+                    arrow.classList.add('active');
+                } else {
+                    arrow.classList.remove('active');
+                }
+            }
+            _setMemSlot(_aspMemPredDot, _aspMemPredTxt, a.hasPredator,
+                a.hasPredator ? `${dist(a.memPredatorX, a.memPredatorZ)}` : 'no threat');
+            setArrow(_aspMemPredArrow, a.hasPredator, a.rayPredatorSin, a.rayPredatorCos);
+
+            _setMemSlot(_aspMemFoodDot, _aspMemFoodTxt, a.hasFood,
+                a.hasFood ? `${dist(a.memFoodX, a.memFoodZ)}` : 'no food');
+            setArrow(_aspMemFoodArrow, a.hasFood, a.rayFoodSin, a.rayFoodCos);
+
+            _setMemSlot(_aspMemWaterDot, _aspMemWaterTxt, a.hasWater,
+                a.hasWater ? `${dist(a.memWaterX, a.memWaterZ)}` : 'no water');
+            setArrow(_aspMemWaterArrow, a.hasWater, a.rayWaterSin, a.rayWaterCos);
+
+            _setMemSlot(_aspMemMateDot, _aspMemMateTxt, a.hasMate,
+                a.hasMate ? `${dist(a.memMateX, a.memMateZ)}` : 'no mate');
+            setArrow(_aspMemMateArrow, a.hasMate, a.rayMateSin, a.rayMateCos);
         }
 
         function updateStatLabels(animals) {
