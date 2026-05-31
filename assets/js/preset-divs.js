@@ -132,131 +132,29 @@ var navbar =
 	<a class="nav-bar-brand" href="/">Context<br>Switching</a>
 	<button class="navbar-toggler custom-toggler" type="button" data-toggle="collapse" data-target="#navbarColor01"
 		aria-controls="navbarColor01" aria-expanded="false" aria-label="Toggle navigation">
-		<!-- <i class="fas fa-atom"></i> -->
-		<!-- <i class="fab fa-cloudsmith"></i> -->
-		<!-- <i class="fab fa-connectdevelop"></i> -->
-		<!-- <span class="fab fa-connectdevelop"></span> -->
-		<!-- <i class="fas fa-ellipsis-v"></i> -->
 		<i class="fas fa-bars"></i>
 	</button>
 	<div class="collapse navbar-collapse" id="navbarColor01">
 		<ul class="navbar-nav mr-auto">
 			
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Computer Science
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/cs/quantumsvm">Quantum Support Vector Machine</a>
-					<a class="dropdown-item" href="/cs/quantumcnn">Quantum Convolutional<br>Neural Network</a>
-					<a class="dropdown-item" href="/cs/quantumcomputingtheory">Quantum Computing Theory</a>
-					<a class="dropdown-item" href="/cs/quantumec">Quantum Error Correction</a>
-					<a class="dropdown-item" href="/cs/multilevelcongitionforai">Multilevel Development of Cognitive<br>Abilities for Artificial Intelligence</a>
-					<a class="dropdown-item" href="/cs/highdimquantumfm">High-Dimensional Quantum Feature<br>Mapping</a>
-		 			<a class="dropdown-item" href="/cs/theoryofcomputation">Theory of Computation</a>
-					<a class="dropdown-item" href="/cs/algorithmicanalysis">Algorithmic Analysis</a>
-					<!--
-					<hr>
-					<a class="dropdown-item" href="/cs">Explore Computer Science</a>
-					<hr>
-					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
-					<a class="dropdown-item todo" href="/todo">Combinatorial and Stochastic Optimization</a>
-					<a class="dropdown-item todo" href="/todo">Quantum Networks</a>
-					<a class="dropdown-item todo" href="/todo">Combinatorics and Graph Theory</a>
-					<a class="dropdown-item todo" href="/todo">Approximation Algorithms</a>
-		 			<a class="dropdown-item todo" href="/todo">Pseudorandomness</a>
-					<a class="dropdown-item todo" href="/todo">Algorithmic Game Theory</a>
-					-->
-			</li>
-	 
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Mathematics
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/math/differentialmanifolds">Differential Manifolds</a>
-					<a class="dropdown-item" href="/math/informationtheory">Information Theory</a>
-					<a class="dropdown-item" href="/math/chernclasses">Chern Classes</a>
-					<a class="dropdown-item" href="/math/abstractalgebra">Abstract Algebra</a>
-		 			<a class="dropdown-item" href="/math/graphtheory">Graph Theory</a>
-					<a class="dropdown-item" href="/math/hiddenmarkovprocesses">Hidden Markov Processes</a>
-					<!--
-		 			<hr>
-					<a class="dropdown-item" href="/math">Explore Mathematics</a>
-					<hr>
-					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo">Approximation Functions</a>
-					<a class="dropdown-item todo" href="/todo">Total Curvature of Knots</a>
-					-->
-				</div>
-			</li>
-	 
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Neuroscience
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/neuro/memoryformation">Molecular Bases of<br> Memory Formation</a>
-		 			<a class="dropdown-item" href="/neuro/topologicalneuroscience">Topological Neuroscience</a>
-					<a class="dropdown-item" href="/neuro/connectionsinhumanstructuralconnectome">Connections in the<br>Human Structural
-				Connectome</a>
-					<a class="dropdown-item" href="/neuro/anatomyhistologyhippocampus">Anatomy and Histology of the<br>Hippocampus</a>
-					<a class="dropdown-item" href="/neuro/multistorememory">Multi-Store Memory Model</a>
-					<a class="dropdown-item" href="/neuro/thalamicnuclei">Thalamic Nuclei</a>
-					<a class="dropdown-item" href="/neuro/mat">Modular-networks of Adaptive Topologies</a>
-					<!--
-					<hr>
-					<a class="dropdown-item" href="/neuro">Explore Neuroscience</a>
-					<hr>
-					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-		 			<a class="dropdown-item todo" href="/todo">Veterinary Neuroanatomy</a>
-		 			<a class="dropdown-item todo" href="/todo">Neocortex</a>
-					<a class="dropdown-item todo" href="/todo">Working Memory</a>
-					-->
-				</div>
+			<li class="nav-item">
+				<a class="nav-link" href="/cs">Computer Science</a>
 			</li>
 
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					Physics
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/phys/qfandadsmaldacenaconjecture">Quantum Fields in Anti-de<br>Sitter Space and the Maldacena<br>Conjecture</a>
-					<a class="dropdown-item" href="/phys/comptificationandscatteringinads">Compatification and Massless<br>Scarttering in Anti-de Sitter<br>Space</a>
-					<a class="dropdown-item" href="/phys/topologicalqft">Topological Quantum Field Theory</a>
-					<a class="dropdown-item" href="/phys/quantummechanics">Quantum Mechanics</a>
-					<!--
-					<hr>
-					<a class="dropdown-item" href="/phys">Explore Physics</a>
-					<hr>
-					<p class="dropdown-item coming-soon-text">Topics to Come!</p>
-					<a class="dropdown-item todo" href="/todo">Conformal Field Theory</a>
-					<a class="dropdown-item todo" href="/todo">Geometrical Physics in<br>Minkowski Spacetime</a>
-					-->
+			<li class="nav-item">
+				<a class="nav-link" href="/math">Mathematics</a>
 			</li>
 
-			<li class="nav-item dropdown">
-				<a class="nav-link dropdown-toggle" href="#" role="button" data-toggle="dropdown" aria-haspopup="true"
-					aria-expanded="false">
-					General Topics
-				</a>
-				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
-					<a class="dropdown-item" href="/misc/deontologyconsequentialismvirtueethics">Deontology, Consequentialism,<br>
-            Virtue Ethics</a>
-          			<a class="dropdown-item" href="/misc/bioinformaticsfunctionalgenomics">Bioinformatics and Functional Genomics</a>
-					<a class="dropdown-item" href="/misc/epigeneticsandinheritance">Epigenetics and Inheritance</a>
-					<!--
-		 			<hr>
-					<a class="dropdown-item" href="/misc">Explore More</a>
-					<hr>
-					<p class="dropdown-item coming-soon-text">Topics To Come!</p>
-					<a class="dropdown-item todo" href="/todo">Utilitarianism</a>
-					-->
-				</div>
+			<li class="nav-item">
+				<a class="nav-link" href="/neuro">Neuroscience</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link" href="/phys">Physics</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link" href="/misc">General Topics</a>
 			</li>
 
 			<li class="nav-item dropdown">
@@ -275,25 +173,8 @@ var navbar =
 					<a class="dropdown-item" href="/my/mat/">Neural Network Simulation</a>
 				</div>
 			</li>
+
 		</ul>
-	<!--
-		<br>
-		<form class="form-inline navbar-search">
-			<div class="btn btn-outline-light nav-search-div">
-				<div class="nav-search-glyph">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search"
-						viewBox="0 0 16 16">
-						<path
-							d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z">
-						</path>
-					</svg>
-				</div>
-				<div class="nav-search-box-div" onclick="openSearch()">
-					<input id="nav-search-box" placeholder="Search My Website"></input>
-				</div>
-			</div>
-		</form>
-	-->
 		<br>
 	</div>
 </nav>
@@ -347,23 +228,11 @@ var footer =
       </div>
       <!-- Grid row-->
 
-    <hr class="rgba-white-light" style="margin: 0 15%;">
-
 		<!-- Grid row-->
 		<div class="row d-flex text-center justify-content-center mb-md-0 mb-4">
 			<!-- Grid column -->
 			<div class="col-md-8 col-12 mt-5">
 				<div class="footer-about-me">
-					<h3 id="footer-about-me-title">Context Switching</h3>
-		 			<br>
-					<p style="line-height: 1.7rem">Welcome to my website! My
-						name is Alejandro Rosales, and I coded this website from scratch. It's not much, but it's honest work. I am a Quantum Computer Graduate Researcher. In my free time, I update this website with new things topics I have learned. I dedicate this website to my best boy and best girl, whose constant warmth I could never repay, even with a lifetime of dog treats and scratches. I hope you enjoy!
-					</p>
-
-	 <hr class="rgba-white-light" style="margin: 0 15%;">
-
-					<br>
-
 	 				<p style="line-height: 1.7rem">Contact me
 			<br><br><i class="fa-solid fa-envelope"></i> <b>Email:</b> alejand.j.rosales@gmail.com
 			<br><i class="fa-solid fa-phone"></i> <b>Phone:</b> +16149064179
