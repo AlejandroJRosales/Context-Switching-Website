@@ -514,6 +514,10 @@
     <button id="btn-reset">Reset</button>
   </div>
 
+  <div class="btn-row">
+  <button id="btn-kill">Kill Brain Function</button>
+</div>
+
   <div class="panel-divider"></div>
 
   <div class="slider-group">
@@ -604,7 +608,7 @@ const LOBE_DEFS = [
   // Thalamus — deep midline, central relay; slightly superior to brainstem
   { name: 'thalamus',    label: 'Thalamus',             task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0.0,  0.0 ] },
   // Brainstem — inferior, posterior; connects spinal cord, below thalamus
-  { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.2, -0.6 ] },
+  { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons: 12, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.2, -0.6 ] },
 ];
 
 // Store initial neuron counts for scale calculations
@@ -619,6 +623,8 @@ function applyNeuronScale(scale) {
   // Spread grows as cube-root of scale so the volume (and density) stays roughly constant
   LOBE_SPREAD = LOBE_SPREAD_BASE * Math.cbrt(scale);
   for (const lobe of LOBE_DEFS) {
+    // Brainstem is fixed at 12 — one neuron per joint, regardless of scale
+    if (lobe.name === 'brainstem') { lobe.neurons = 12; continue; }
     lobe.neurons = Math.max(1, Math.round(LOBE_BASE_NEURONS[lobe.name] * scale));
   }
 }
@@ -755,184 +761,550 @@ container.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x04060f);
-scene.fog = new THREE.FogExp2(0x04060f, 0.018);
+scene.fog = new THREE.FogExp2(0x04060f, 0.008);
 
-const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 600);
 camera.position.set(0, 0, ORBIT_RADIUS);
 
 // Lights
-scene.add(new THREE.AmbientLight(0x0a2020, 2.5));
-const dirL = new THREE.DirectionalLight(0x20ffaa, 2.0);
-dirL.position.set(4, 8, 6);
+scene.add(new THREE.AmbientLight(0x0a1a14, 2.8));
+const dirL = new THREE.DirectionalLight(0x20ffaa, 2.2);
+dirL.position.set(4, 10, 6);
 scene.add(dirL);
+// Warm top-down skull light (simulates overhead autopsy lamp)
+const dirSkull = new THREE.DirectionalLight(0xffe8c0, 1.4);
+dirSkull.position.set(0, 12, 2);
+scene.add(dirSkull);
 const ptA = new THREE.PointLight(0x6040ff, 5, 55);
 ptA.position.set(-8, 5, 0);
 scene.add(ptA);
 const ptB = new THREE.PointLight(0xff3060, 3, 45);
 ptB.position.set(8, -4, 0);
 scene.add(ptB);
+// Subtle warm fill from front to highlight skull face
+const ptFront = new THREE.PointLight(0xd0a060, 2.5, 35);
+ptFront.position.set(0, -1, 14);
+scene.add(ptFront);
+// Lower body fill lights
+const ptLegs = new THREE.PointLight(0x4060a0, 3.5, 80);
+ptLegs.position.set(0, -30, 8);
+scene.add(ptLegs);
+const ptLegsBack = new THREE.PointLight(0x203050, 2.0, 70);
+ptLegsBack.position.set(0, -22, -10);
+scene.add(ptLegsBack);
 
 // Shared geometries
 const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 
 // ═══════════════════════════════════════════════════════════════
-//  JAR + DESK
+//  SKULL GEOMETRY
 // ═══════════════════════════════════════════════════════════════
-(function buildJarAndDesk() {
-  // -- Wood grain texture (procedural canvas) --
-  function makeWoodTexture(w, h, opts) {
-    opts = opts || {};
-    const baseLight  = opts.baseLight  || '#7a4010';
-    const baseDark   = opts.baseDark   || '#4a2208';
-    const grainLight = opts.grainLight || '#8b5a22';
-    const grainDark  = opts.grainDark  || '#3a1a06';
-    const grainCount = opts.grainCount || 28;
+(function buildSkull() {
+  const skullGroup = new THREE.Group();
+  // Brain networkGroup is offset by y=-0.9, so skull is centered at y=-0.9 in scene
+  skullGroup.position.y = -0.9;
 
-    const cv2 = document.createElement('canvas');
-    cv2.width = w; cv2.height = h;
-    const cx = cv2.getContext('2d');
-
-    // Base gradient along X (length of plank)
-    const bg = cx.createLinearGradient(0, 0, w, 0);
-    bg.addColorStop(0,    baseDark);
-    bg.addColorStop(0.18, baseLight);
-    bg.addColorStop(0.42, baseDark);
-    bg.addColorStop(0.65, baseLight);
-    bg.addColorStop(0.85, baseDark);
-    bg.addColorStop(1,    baseLight);
-    cx.fillStyle = bg;
-    cx.fillRect(0, 0, w, h);
-
-    // Draw grain lines along X, with gentle sinusoidal waviness
-    for (let i = 0; i < grainCount; i++) {
-      const y0    = (i / grainCount) * h;
-      const amp   = 2 + Math.random() * 6;
-      const freq  = 0.004 + Math.random() * 0.008;
-      const phase = Math.random() * Math.PI * 2;
-      const width = 0.5 + Math.random() * 2.5;
-      const color = Math.random() > 0.5 ? grainLight : grainDark;
-      const alpha = 0.25 + Math.random() * 0.55;
-
-      cx.beginPath();
-      cx.moveTo(0, y0 + amp * Math.sin(phase));
-      for (let x = 1; x <= w; x += 2) {
-        const y = y0 + amp * Math.sin(freq * x + phase);
-        cx.lineTo(x, y);
-      }
-      cx.strokeStyle = color;
-      cx.globalAlpha = alpha;
-      cx.lineWidth   = width;
-      cx.stroke();
-      cx.globalAlpha = 1;
-    }
-
-    // Subtle knot-like oval every so often
-    const knotCount = opts.knotCount !== undefined ? opts.knotCount : 2;
-    for (let k = 0; k < knotCount; k++) {
-      const kx  = w * (0.2 + Math.random() * 0.6);
-      const ky  = h * (0.2 + Math.random() * 0.6);
-      const rx  = 18 + Math.random() * 22;
-      const ry  = 10 + Math.random() * 14;
-      const rg  = cx.createRadialGradient(kx, ky, 2, kx, ky, rx);
-      rg.addColorStop(0,   'rgba(30,10,2,0.70)');
-      rg.addColorStop(0.5, 'rgba(80,35,8,0.40)');
-      rg.addColorStop(1,   'rgba(80,35,8,0.00)');
-      cx.save();
-      cx.translate(kx, ky);
-      cx.scale(1, ry / rx);
-      cx.beginPath();
-      cx.arc(0, 0, rx, 0, Math.PI * 2);
-      cx.fillStyle = rg;
-      cx.fill();
-      cx.restore();
-    }
-
-    const tex = new THREE.CanvasTexture(cv2);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 1);
-    return tex;
-  }
-
-  // -- Desk body --
-  const deskGeo  = new THREE.BoxGeometry(36, 0.5, 18);
-  const woodTex  = makeWoodTexture(1024, 256, { grainCount: 32, knotCount: 3 });
-  const deskMat  = new THREE.MeshPhongMaterial({
-    map:       woodTex,
-    specular:  0x1a0a04,
-    shininess: 5,
-  });
-  const desk = new THREE.Mesh(deskGeo, deskMat);
-  desk.position.set(0, -5.25, 0);
-  scene.add(desk);
-
-  // Desk top surface — shinier lacquered wood strip
-  const stripGeo  = new THREE.BoxGeometry(36, 0.02, 18);
-  const stripTex  = makeWoodTexture(1024, 256, {
-    baseLight:  '#9a6025', baseDark:  '#5a2e0c',
-    grainLight: '#b07030', grainDark: '#3e1a05',
-    grainCount: 36, knotCount: 2,
-  });
-  const stripMat  = new THREE.MeshPhongMaterial({
-    map:       stripTex,
-    specular:  0x221108,
-    shininess: 12,
-  });
-  const strip = new THREE.Mesh(stripGeo, stripMat);
-  strip.position.set(0, -4.99, 0);
-  scene.add(strip);
-
-  // -- Jar glass cylinder (sides) --
-  const jarR      = 4.2;   // radius
-  const jarH      = 8.5;   // height
-  const jarY      = -5.0 + jarH / 2; // bottom sits on desk top
-
-  const jarSideGeo = new THREE.CylinderGeometry(jarR, jarR, jarH, 64, 1, true);
-  const glassMat   = new THREE.MeshPhongMaterial({
-    color: 0x88ccbb,
-    specular: 0xffffff,
-    shininess: 200,
+  // Shared skull material — bone-white, semi-transparent so brain shows through
+  const skullMat = new THREE.MeshPhongMaterial({
+    color: 0xd4c8aa,
+    emissive: 0x1a1510,
+    emissiveIntensity: 0.15,
+    shininess: 30,
     transparent: true,
-    opacity: 0.13,
-    side: THREE.DoubleSide,
+    opacity: 0.22,
+    side: THREE.FrontSide,
     depthWrite: false,
   });
-  const jarSide = new THREE.Mesh(jarSideGeo, glassMat);
-  jarSide.position.set(0, jarY, 0);
-  scene.add(jarSide);
-
-  // Jar bottom disc
-  const jarBottomGeo = new THREE.CylinderGeometry(jarR, jarR, 0.18, 64);
-  const jarBottomMat = new THREE.MeshPhongMaterial({
-    color: 0x99ddcc,
-    specular: 0xffffff,
-    shininess: 160,
+  // Slightly more opaque mat for outer shell edges
+  const skullMatSolid = new THREE.MeshPhongMaterial({
+    color: 0xc8ba98,
+    emissive: 0x100e08,
+    emissiveIntensity: 0.1,
+    shininess: 20,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.38,
+    side: THREE.BackSide,
+    depthWrite: false,
   });
-  const jarBottom = new THREE.Mesh(jarBottomGeo, jarBottomMat);
-  jarBottom.position.set(0, -5.0 + 0.09, 0);
-  scene.add(jarBottom);
 
-  // Jar rim ring at top
-  const rimGeo = new THREE.TorusGeometry(jarR, 0.10, 16, 64);
-  const rimMat = new THREE.MeshPhongMaterial({
-    color: 0xaaddcc,
-    specular: 0xffffff,
-    shininess: 180,
-    transparent: true,
-    opacity: 0.55,
+  // ── CRANIUM (upper skull dome) ────────────────────────────────
+  // Ellipsoid approximated with scaled sphere
+  const craniumGeo = new THREE.SphereGeometry(3.5, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  const cranium = new THREE.Mesh(craniumGeo, skullMat);
+  cranium.scale.set(1.0, 1.05, 1.12);
+  cranium.position.set(0, 0.55, -0.1);
+  skullGroup.add(cranium);
+
+  const craniumB = new THREE.Mesh(craniumGeo, skullMatSolid);
+  craniumB.scale.set(1.0, 1.05, 1.12);
+  craniumB.position.set(0, 0.55, -0.1);
+  skullGroup.add(craniumB);
+
+  // ── OCCIPITAL BASE (back-bottom of skull) ─────────────────────
+  const occGeo = new THREE.SphereGeometry(2.8, 32, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.5);
+  const occ = new THREE.Mesh(occGeo, skullMat);
+  occ.scale.set(1.0, 0.9, 1.05);
+  occ.position.set(0, 0.55, -0.1);
+  skullGroup.add(occ);
+
+  // ── FRONTAL BONE (forehead) ───────────────────────────────────
+  const frontalGeo = new THREE.SphereGeometry(2.6, 32, 24, -0.5, Math.PI * 1.0, 0, Math.PI * 0.5);
+  const frontal = new THREE.Mesh(frontalGeo, skullMat);
+  frontal.scale.set(1.0, 1.1, 0.88);
+  frontal.position.set(0, 0.4, 1.4);
+  frontal.rotation.x = 0.18;
+  skullGroup.add(frontal);
+
+  // ── ZYGOMATIC ARCHES (cheekbones, left & right) ───────────────
+  for (const side of [-1, 1]) {
+    const zygGeo = new THREE.TorusGeometry(1.55, 0.18, 8, 24, Math.PI * 0.55);
+    const zyg = new THREE.Mesh(zygGeo, skullMat);
+    zyg.position.set(side * 2.55, -0.85, 0.55);
+    zyg.rotation.set(0.35, side * 0.55, side * 0.28);
+    skullGroup.add(zyg);
+  }
+
+  // ── ORBITAL RIMS (eye sockets — just the bony rim rings) ──────
+  for (const side of [-1, 1]) {
+    const orbGeo = new THREE.TorusGeometry(0.72, 0.14, 8, 28);
+    const orb = new THREE.Mesh(orbGeo, skullMat);
+    orb.position.set(side * 1.22, 0.28, 2.42);
+    orb.rotation.set(0.32, side * 0.18, 0);
+    orb.scale.set(1.0, 0.72, 0.5);
+    skullGroup.add(orb);
+  }
+
+  // ── NASAL APERTURE (pyriform — simplified as a small arch) ────
+  const nasalGeo = new THREE.TorusGeometry(0.42, 0.10, 8, 20, Math.PI);
+  const nasal = new THREE.Mesh(nasalGeo, skullMat);
+  nasal.position.set(0, -0.22, 2.68);
+  nasal.rotation.set(-0.2, 0, 0);
+  nasal.scale.set(1.0, 1.3, 0.5);
+  skullGroup.add(nasal);
+
+  // ── TEMPORAL PLATES (side walls of skull, left & right) ───────
+  for (const side of [-1, 1]) {
+    const tempGeo = new THREE.SphereGeometry(2.3, 24, 16, 0, Math.PI * 2, 0.2, Math.PI * 0.65);
+    const temp = new THREE.Mesh(tempGeo, skullMat);
+    temp.scale.set(0.38, 0.95, 1.0);
+    temp.position.set(side * 3.32, 0.0, -0.15);
+    skullGroup.add(temp);
+  }
+
+  // ── MAXILLA / UPPER JAW (lower face) ─────────────────────────
+  const maxGeo = new THREE.SphereGeometry(2.0, 24, 16, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.4);
+  const max = new THREE.Mesh(maxGeo, skullMat);
+  max.scale.set(1.0, 0.65, 0.78);
+  max.position.set(0, -1.05, 1.65);
+  max.rotation.x = -0.3;
+  skullGroup.add(max);
+
+  // ── MANDIBLE (lower jaw — separate bone, slightly detached) ───
+  const mandGeo = new THREE.SphereGeometry(1.85, 24, 12, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.28);
+  const mand = new THREE.Mesh(mandGeo, skullMat);
+  mand.scale.set(1.0, 0.55, 0.75);
+  mand.position.set(0, -1.72, 1.35);
+  mand.rotation.x = -0.15;
+  skullGroup.add(mand);
+
+  // ── TOOTH ROW HINT (upper) ────────────────────────────────────
+  const toothMat = new THREE.MeshPhongMaterial({
+    color: 0xeeeedd, emissive: 0x111108, shininess: 60,
+    transparent: true, opacity: 0.32, depthWrite: false
   });
-  const rim = new THREE.Mesh(rimGeo, rimMat);
-  rim.rotation.x = Math.PI / 2;
-  rim.position.set(0, -5.0 + jarH, 0);
-  scene.add(rim);
+  for (let t = -4; t <= 4; t++) {
+    if (t === 0) continue;
+    const tGeo = new THREE.BoxGeometry(0.17, 0.26, 0.14);
+    const tooth = new THREE.Mesh(tGeo, toothMat);
+    tooth.position.set(t * 0.20, -1.30, 2.35 - Math.abs(t) * 0.04);
+    tooth.rotation.x = 0.12;
+    skullGroup.add(tooth);
+  }
 
-  // Subtle green glow point light inside jar
-  const jarGlow = new THREE.PointLight(0x2fffa0, 1.8, 14);
-  jarGlow.position.set(0, 0, 0);
-  scene.add(jarGlow);
+  // ── CRANIAL SUTURE LINES (cosmetic wireframe arcs on top) ─────
+  const sutureMat = new THREE.LineBasicMaterial({
+    color: 0x8a7d5a, transparent: true, opacity: 0.18
+  });
+  // Sagittal suture — front to back along midline
+  {
+    const pts = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const phi = Math.PI * 0.08 + t * Math.PI * 0.5;
+      pts.push(new THREE.Vector3(
+        (Math.random() - 0.5) * 0.06,
+        0.55 + 3.5 * 1.05 * Math.cos(phi),
+        -0.1 + 3.5 * 1.12 * Math.sin(phi) * 0.5
+      ));
+    }
+    const sg = new THREE.BufferGeometry().setFromPoints(pts);
+    skullGroup.add(new THREE.Line(sg, sutureMat));
+  }
+  // Coronal suture — across top
+  {
+    const pts = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const theta = -Math.PI * 0.5 + t * Math.PI;
+      pts.push(new THREE.Vector3(
+        3.45 * Math.cos(theta),
+        0.55 + 1.8 + (Math.random() - 0.5) * 0.08,
+        0.85
+      ));
+    }
+    const cg = new THREE.BufferGeometry().setFromPoints(pts);
+    skullGroup.add(new THREE.Line(cg, sutureMat));
+  }
+
+  scene.add(skullGroup);
 })();
+
+// ═══════════════════════════════════════════════════════════════
+//  SKELETON BODY GEOMETRY  (hierarchical pivot groups for joint animation)
+// ═══════════════════════════════════════════════════════════════
+
+// Pivot groups keyed by joint id — rotated by the animation system
+const limbPivots = {};
+
+(function buildBody() {
+  const bodyGroup = new THREE.Group();
+  bodyGroup.position.y = -0.9;
+  scene.add(bodyGroup);
+
+  const boneMat = new THREE.MeshPhongMaterial({
+    color: 0xcfc0a0, emissive: 0x181410, emissiveIntensity: 0.12,
+    shininess: 25, transparent: true, opacity: 0.28,
+    side: THREE.FrontSide, depthWrite: false,
+  });
+  const boneMatBack = new THREE.MeshPhongMaterial({
+    color: 0xb8aa88, emissive: 0x100e08, emissiveIntensity: 0.08,
+    shininess: 15, transparent: true, opacity: 0.40,
+    side: THREE.BackSide, depthWrite: false,
+  });
+  const cartMat = new THREE.MeshPhongMaterial({
+    color: 0x8abecc, emissive: 0x050a0c, emissiveIntensity: 0.1,
+    shininess: 55, transparent: true, opacity: 0.22, depthWrite: false,
+  });
+
+  // Add a bone mesh (both faces) to a target group, with local-space position
+  function bone(parent, geo, px, py, pz, rx=0, ry=0, rz=0, sx=1, sy=1, sz=1) {
+    [boneMat, boneMatBack].forEach(m => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(px, py, pz);
+      mesh.rotation.set(rx, ry, rz);
+      mesh.scale.set(sx, sy, sz);
+      parent.add(mesh);
+    });
+  }
+
+  // Make a pivot group at world position (px,py,pz) inside bodyGroup
+  function pivot(px, py, pz) {
+    const g = new THREE.Group();
+    g.position.set(px, py, pz);
+    bodyGroup.add(g);
+    return g;
+  }
+
+  // ── CERVICAL SPINE (neck vertebrae) ───────────────────────────
+  for (let i = 0; i < 7; i++) {
+    const vy = -2.25 - i * 0.34;
+    bone(bodyGroup, new THREE.CylinderGeometry(0.30, 0.33, 0.26, 12), 0, vy, 0);
+    bone(bodyGroup, new THREE.BoxGeometry(0.12, 0.18, 0.32), 0, vy, -0.38);
+  }
+
+  // ── THORACIC SPINE (12 vertebrae) ────────────────────────────
+  for (let i = 0; i < 12; i++) {
+    const vy = -4.65 - i * 0.42;
+    const r = 0.38 + i * 0.012;
+    bone(bodyGroup, new THREE.CylinderGeometry(r, r + 0.02, 0.30, 12), 0, vy, 0);
+    bone(bodyGroup, new THREE.BoxGeometry(0.13, 0.22, 0.48 + i * 0.02), 0, vy, -0.52 - i * 0.02);
+    for (const side of [-1, 1]) {
+      bone(bodyGroup, new THREE.CylinderGeometry(0.07, 0.05, 0.55, 8), side * 0.62, vy, -0.1, 0, 0, Math.PI / 2);
+    }
+  }
+
+  // ── LUMBAR SPINE (5 vertebrae) ────────────────────────────────
+  for (let i = 0; i < 5; i++) {
+    const vy = -9.7 - i * 0.50;
+    bone(bodyGroup, new THREE.CylinderGeometry(0.52, 0.54, 0.38, 12), 0, vy, 0);
+    bone(bodyGroup, new THREE.BoxGeometry(0.17, 0.28, 0.55), 0, vy, -0.62);
+  }
+
+  // ── SACRUM + COCCYX ───────────────────────────────────────────
+  bone(bodyGroup, new THREE.SphereGeometry(0.72, 16, 12, 0, Math.PI*2, 0, Math.PI*0.6), 0, -12.3, 0, 0.3, 0, 0, 1.0, 0.8, 0.7);
+  bone(bodyGroup, new THREE.CylinderGeometry(0.14, 0.06, 0.55, 8), 0, -13.0, 0, 0.4);
+
+  // ── RIBCAGE ───────────────────────────────────────────────────
+  const RIB_DATA = [
+    { y: -4.70, w: 1.6, drop: 0.30, fwd: 2.0, tube: 0.095 },
+    { y: -5.10, w: 2.1, drop: 0.35, fwd: 2.2, tube: 0.100 },
+    { y: -5.50, w: 2.5, drop: 0.40, fwd: 2.4, tube: 0.105 },
+    { y: -5.90, w: 2.8, drop: 0.45, fwd: 2.5, tube: 0.108 },
+    { y: -6.30, w: 2.9, drop: 0.50, fwd: 2.55, tube: 0.110 },
+    { y: -6.70, w: 2.9, drop: 0.55, fwd: 2.5, tube: 0.110 },
+    { y: -7.10, w: 2.8, drop: 0.60, fwd: 2.4, tube: 0.108 },
+    { y: -7.50, w: 2.6, drop: 0.65, fwd: 2.2, tube: 0.105 },
+    { y: -7.90, w: 2.35, drop: 0.70, fwd: 1.9, tube: 0.098 },
+    { y: -8.25, w: 2.05, drop: 0.72, fwd: 1.5, tube: 0.090 },
+    { y: -8.55, w: 1.75, drop: 0.70, fwd: 1.0, tube: 0.082 },
+    { y: -8.80, w: 1.45, drop: 0.65, fwd: 0.5, tube: 0.074 },
+  ];
+  RIB_DATA.forEach(({ y, w, drop, fwd, tube }, ri) => {
+    const isFloating = ri >= 10;
+    for (const side of [-1, 1]) {
+      const pts = [
+        new THREE.Vector3(side * 0.28, y, -0.28),
+        new THREE.Vector3(side * w * 0.55, y - drop * 0.3, 0.2),
+        new THREE.Vector3(side * w, y - drop, 0.8),
+        new THREE.Vector3(side * w * 0.7, y - drop * 1.1, fwd * 0.65),
+        new THREE.Vector3(side * (isFloating ? w * 0.4 : 0.35), y - drop * 1.05, isFloating ? fwd * 0.9 : fwd),
+      ];
+      const ribGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, tube, 7, false);
+      [boneMat, boneMatBack].forEach(m => {
+        bodyGroup.add(Object.assign(new THREE.Mesh(ribGeo, m)));
+      });
+    }
+  });
+
+  // ── STERNUM ───────────────────────────────────────────────────
+  bone(bodyGroup, new THREE.BoxGeometry(0.50, 4.0, 0.35), 0, -6.55, 2.45, -0.08);
+  bone(bodyGroup, new THREE.ConeGeometry(0.15, 0.50, 8), 0, -8.72, 2.40, Math.PI, 0, 0);
+
+  // ── CLAVICLES ─────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    bone(bodyGroup, new THREE.CylinderGeometry(0.16, 0.14, 3.2, 10), side * 1.68, -4.42, 1.55, 0, 0, side * 0.40);
+  }
+
+  // ── SCAPULAE ──────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    bone(bodyGroup, new THREE.SphereGeometry(1.12, 16, 12, 0, Math.PI*2, 0, Math.PI*0.55), side * 3.05, -5.8, -1.0, 0.22, side * 0.18, 0, 0.65, 1.0, 0.38);
+  }
+
+  // ── PELVIS ────────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    bone(bodyGroup, new THREE.SphereGeometry(1.85, 20, 14, 0, Math.PI*2, 0, Math.PI*0.58), side * 1.55, -11.55, 0.25, -0.12, side * 0.30, side * 0.20, 0.75, 0.82, 0.55);
+  }
+  bone(bodyGroup, new THREE.SphereGeometry(0.72, 14, 10), 0, -12.15, 1.45, 0, 0, 0, 1.0, 0.55, 0.60);
+  for (const side of [-1, 1]) {
+    bone(bodyGroup, new THREE.SphereGeometry(0.85, 12, 10), side * 1.22, -12.55, -0.35, 0, 0, 0, 0.85, 0.70, 0.75);
+  }
+
+  // ── ARMS (hierarchical) ───────────────────────────────────────
+  // Flex axis: X (lateral). Flex = negative X rotation (arm raises forward).
+  // shoulder pivot → upper arm + elbow pivot
+  //   elbow pivot  → forearm + wrist pivot
+  //     wrist pivot  → hand
+  for (const side of [-1, 1]) {
+    const sKey = side > 0 ? 'L' : 'R';
+    const ax = side * 3.55; // resting X of arm centre
+
+    // — SHOULDER PIVOT at humeral head position —
+    const shoulderPiv = pivot(ax - side * 0.22, -4.88, -0.18);
+    limbPivots[`shoulder_${sKey}`] = shoulderPiv;
+
+    // Upper arm (humerus) — local: centre is 2.4 units below the pivot
+    bone(shoulderPiv, new THREE.CylinderGeometry(0.30, 0.24, 4.8, 12), side * 0.22, -2.32, 0.18, 0, 0, side * 0.18);
+    // Humeral head stays at pivot origin (visual knob)
+    bone(shoulderPiv, new THREE.SphereGeometry(0.52, 14, 10), 0, 0, 0);
+
+    // — ELBOW PIVOT — local pos relative to shoulder pivot
+    // Elbow is ~4.7 below humeral head
+    const elbowPiv = new THREE.Group();
+    elbowPiv.position.set(side * 0.22, -4.70, 0.18);
+    shoulderPiv.add(elbowPiv);
+    limbPivots[`elbow_${sKey}`] = elbowPiv;
+
+    // Elbow knob at pivot origin
+    bone(elbowPiv, new THREE.SphereGeometry(0.36, 10, 8), 0, 0, 0);
+    // Olecranon nub
+    bone(elbowPiv, new THREE.SphereGeometry(0.22, 8, 8), -side * 0.18, 0, -0.42);
+
+    // Forearm bones — local: 1.8 below elbow pivot
+    bone(elbowPiv, new THREE.CylinderGeometry(0.17, 0.20, 3.6, 10),  side * 0.28, -1.82, 0, 0, 0, side * 0.08);
+    bone(elbowPiv, new THREE.CylinderGeometry(0.14, 0.10, 3.7, 10), -side * 0.18, -1.87, -0.1, 0, 0, side * 0.05);
+
+    // — WRIST PIVOT — local pos relative to elbow pivot
+    // Wrist is ~3.77 below elbow
+    const wristPiv = new THREE.Group();
+    wristPiv.position.set(0, -3.77, 0);
+    elbowPiv.add(wristPiv);
+    limbPivots[`wrist_${sKey}`] = wristPiv;
+
+    // Carpal cluster at pivot origin
+    for (let ci = 0; ci < 5; ci++) {
+      bone(wristPiv, new THREE.SphereGeometry(0.14, 8, 6), (ci - 2) * 0.20, 0, (ci % 2) * 0.08 - 0.04);
+    }
+
+    // Hand — metacarpals + phalanges, local below wrist pivot
+    for (let fi = 0; fi < 5; fi++) {
+      const fx = (fi - 2) * 0.32;
+      bone(wristPiv, new THREE.CylinderGeometry(0.09, 0.09, 0.85, 8), fx, -0.75, 0, 0, 0, (fi - 2) * 0.06);
+      bone(wristPiv, new THREE.CylinderGeometry(0.08, 0.07, 0.55, 8), fx, -1.47, 0);
+      if (fi > 0) {
+        bone(wristPiv, new THREE.CylinderGeometry(0.07, 0.06, 0.40, 8), fx, -1.93, 0);
+        bone(wristPiv, new THREE.CylinderGeometry(0.06, 0.04, 0.32, 8), fx, -2.28, 0);
+      }
+    }
+  }
+
+  // ── LEGS (hierarchical) ───────────────────────────────────────
+  // Flex axis: X. Hip flex = negative X (leg raises forward).
+  // hip pivot → femur + knee pivot
+  //   knee pivot → tibia/fibula + ankle pivot
+  //     ankle pivot → foot
+  for (const side of [-1, 1]) {
+    const sKey = side > 0 ? 'L' : 'R';
+    const lx = side * 1.28;
+
+    // — HIP PIVOT at femoral head —
+    const hipPiv = pivot(lx + side * 0.45, -12.85, 0.12);
+    limbPivots[`hip_${sKey}`] = hipPiv;
+
+    // Femoral head knob at pivot origin
+    bone(hipPiv, new THREE.SphereGeometry(0.68, 14, 10), 0, 0, 0);
+
+    // Femur shaft — local: centre 3.6 below pivot, slight lateral offset back
+    bone(hipPiv, new THREE.CylinderGeometry(0.44, 0.38, 7.2, 14), -side * 0.45, -3.50, -0.12, 0, 0, side * 0.07);
+
+    // Femoral condyles — local: ~7.0 below pivot
+    bone(hipPiv, new THREE.SphereGeometry(0.52, 12, 10, 0, Math.PI*2, 0, Math.PI*0.6), -side * 0.45, -7.05, -0.12, 0, 0, 0, 1.2, 0.75, 0.90);
+
+    // Patella — local: ~7.2 below pivot, slightly forward
+    bone(hipPiv, new THREE.SphereGeometry(0.38, 10, 8), -side * 0.45, -7.25, 0.60, 0, 0, 0, 1.0, 0.80, 0.55);
+
+    // — KNEE PIVOT — local relative to hip pivot (~7.15 below)
+    const kneePiv = new THREE.Group();
+    kneePiv.position.set(-side * 0.45, -7.15, -0.12);
+    hipPiv.add(kneePiv);
+    limbPivots[`knee_${sKey}`] = kneePiv;
+
+    // Tibia — local: 3.2 below knee pivot
+    bone(kneePiv, new THREE.CylinderGeometry(0.32, 0.22, 6.4, 12), 0, -3.20, 0);
+    // Tibial tuberosity
+    bone(kneePiv, new THREE.SphereGeometry(0.24, 8, 6), 0, -0.35, 0.58);
+    // Fibula
+    bone(kneePiv, new THREE.CylinderGeometry(0.10, 0.09, 6.2, 8), side * 0.52, -3.15, -0.1);
+
+    // — ANKLE PIVOT — local relative to knee pivot (~6.4 below)
+    const anklePiv = new THREE.Group();
+    anklePiv.position.set(0, -6.40, 0);
+    kneePiv.add(anklePiv);
+    limbPivots[`ankle_${sKey}`] = anklePiv;
+
+    // Talus + calcaneus at pivot origin
+    bone(anklePiv, new THREE.SphereGeometry(0.42, 10, 8), 0, 0, 0.10);
+    bone(anklePiv, new THREE.SphereGeometry(0.52, 10, 8, 0, Math.PI*2, 0, Math.PI*0.7), 0, -0.15, -0.50, -0.3, 0, 0, 0.85, 0.75, 1.10);
+
+    // Foot — metatarsals + toes, local below ankle pivot
+    for (let fi = 0; fi < 5; fi++) {
+      const fz = 0.55 + fi * 0.28;
+      bone(anklePiv, new THREE.CylinderGeometry(0.09, 0.08, 1.05, 8), (fi - 2) * 0.22, -0.40, fz, Math.PI*0.5, 0, (fi-2)*0.04);
+      bone(anklePiv, new THREE.CylinderGeometry(0.07, 0.05, 0.55, 6), (fi - 2) * 0.22, -0.40, fz + 0.80, Math.PI*0.5);
+    }
+  }
+
+  // ── CARTILAGE RINGS on trachea ────────────────────────────────
+  for (let i = 0; i < 6; i++) {
+    const trachGeo = new THREE.TorusGeometry(0.32, 0.07, 6, 16, Math.PI * 1.5);
+    const trach = new THREE.Mesh(trachGeo, cartMat);
+    trach.position.set(0, -2.62 - i * 0.36, 0.48);
+    trach.rotation.set(0.2, 0, 0);
+    bodyGroup.add(trach);
+  }
+})();
+
+// ═══════════════════════════════════════════════════════════════
+//  JOINT NEURONS
+//  One neuron per joint, placed in networkGroup (y offset = -0.9).
+//  bodyGroup is also at y=-0.9, so body-local coords map 1:1 here.
+//  Not connected to the brain network yet.
+// ═══════════════════════════════════════════════════════════════
+const JOINT_DEFS = [
+  // Shoulders
+  { id: 'shoulder_L', x:  3.33, y: -4.88, z: -0.18, color: '#ff6fa0' },
+  { id: 'shoulder_R', x: -3.33, y: -4.88, z: -0.18, color: '#ff6fa0' },
+  // Elbows
+  { id: 'elbow_L',    x:  3.55, y: -9.58, z:  0.00, color: '#ff6fa0' },
+  { id: 'elbow_R',    x: -3.55, y: -9.58, z:  0.00, color: '#ff6fa0' },
+  // Wrists
+  { id: 'wrist_L',    x:  3.55, y: -13.35, z:  0.00, color: '#ff6fa0' },
+  { id: 'wrist_R',    x: -3.55, y: -13.35, z:  0.00, color: '#ff6fa0' },
+  // Hips
+  { id: 'hip_L',      x:  1.73, y: -12.85, z:  0.12, color: '#a06fff' },
+  { id: 'hip_R',      x: -1.73, y: -12.85, z:  0.12, color: '#a06fff' },
+  // Knees
+  { id: 'knee_L',     x:  1.28, y: -20.00, z:  0.00, color: '#a06fff' },
+  { id: 'knee_R',     x: -1.28, y: -20.00, z:  0.00, color: '#a06fff' },
+  // Ankles
+  { id: 'ankle_L',    x:  1.28, y: -26.45, z:  0.10, color: '#a06fff' },
+  { id: 'ankle_R',    x: -1.28, y: -26.45, z:  0.10, color: '#a06fff' },
+];
+
+// Stored for future wiring; populated after buildBrain runs
+const jointNeurons = [];
+
+function buildJointNeurons() {
+  // Clear any previously built joint neurons from scene
+  for (const jn of jointNeurons) {
+    if (jn.mesh) {
+      if (jn.mesh.geometry) jn.mesh.geometry.dispose();
+      if (jn.mesh.material) jn.mesh.material.dispose();
+      networkGroup.remove(jn.mesh);
+    }
+    if (jn.edgeLine) {
+      if (jn.edgeLine.geometry) jn.edgeLine.geometry.dispose();
+      if (jn.edgeLine.material) jn.edgeLine.material.dispose();
+      networkGroup.remove(jn.edgeLine);
+    }
+  }
+  jointNeurons.length = 0;
+
+  const jGeo = new THREE.SphereGeometry(0.28, 14, 10);
+
+  // Collect brainstem neurons in order
+  const brainstemNeurons = neurons.filter(n => n.lobe === 'brainstem');
+
+  for (let ji = 0; ji < JOINT_DEFS.length; ji++) {
+    const def = JOINT_DEFS[ji];
+    const col = new THREE.Color(def.color);
+    const mat = new THREE.MeshPhongMaterial({
+      color: col,
+      emissive: col,
+      emissiveIntensity: 0.35,
+      shininess: 120,
+      transparent: true,
+      opacity: 0.75,
+    });
+    const mesh = new THREE.Mesh(jGeo, mat);
+    mesh.position.set(def.x, def.y, def.z);
+    mesh.userData = { isJointNeuron: true, jointId: def.id };
+    networkGroup.add(mesh);
+
+    // Wire brainstem neuron ji → this joint neuron
+    const bsn = brainstemNeurons[ji];
+    let edgeLine = null;
+    if (bsn) {
+      const jointWorldPos = new THREE.Vector3(def.x, def.y, def.z);
+      const bsnPos = bsn.pos; // already in networkGroup local space
+
+      const edgeGeo = new THREE.BufferGeometry().setFromPoints([bsnPos, jointWorldPos]);
+      const bsCol = new THREE.Color('#ff4444');
+      const colors = new Float32Array([
+        bsCol.r, bsCol.g, bsCol.b,
+        col.r, col.g, col.b,
+      ]);
+      edgeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const edgeMat = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.30,
+      });
+      edgeLine = new THREE.Line(edgeGeo, edgeMat);
+      edgeLine.userData = { isJointEdge: true };
+      networkGroup.add(edgeLine);
+    }
+
+    jointNeurons.push({ id: def.id, mesh, mat, col: col.clone(), bsNeuron: bsn || null, edgeLine });
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  SIMULATION STATE
@@ -1008,7 +1380,7 @@ function buildBrain() {
     });
   }
   networkGroup = new THREE.Group();
-  networkGroup.position.y = -0.9; // shift brain down so it's vertically centered in jar (jar center ~y=-0.75 in scene)
+  networkGroup.position.y = -0.9; // shift brain down so it's centered inside skull cranium
   scene.add(networkGroup);
   neurons = [];
   edgeLines = [];
@@ -1193,11 +1565,7 @@ function buildBrain() {
   // Store temporal indices for audio injection
   temporalIdxs = lobeNeuronMap['temporal'] || [];
 
-  // Camera input layer: 10 by 10 grid of input nodes wired to occipital
-  buildCamInputLayer(lobeNeuronMap['occipital']);
-
-  // Audio input layer: AUDIO_BANDS rows x AUDIO_COLS cols wired to temporal
-  buildAudioInputLayer(lobeNeuronMap['temporal']);
+  buildJointNeurons();
 }
 
 // edgeLines: flat array of { mat, srcIdx, tgtIdx, baseOpacity, colA, colB }
@@ -1215,7 +1583,7 @@ function addEdgeLine(pA, pB, colA, colB, baseOpacity, srcIdx, tgtIdx) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA INPUT LAYER  (camRes by camRes pixel nodes feed to occipital lobe)
+//  CAMERA INPUT LAYER  (visual nodes removed; input data still injected)
 // ═══════════════════════════════════════════════════════════════
 const CAM_NODE_R   = 0.09;
 const camNodeGeo   = new THREE.SphereGeometry(CAM_NODE_R, 8, 8);
@@ -1225,150 +1593,25 @@ let   camEdgeLines  = [];
 function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
-
-  const GRID_ORIGIN = new THREE.Vector3(-4.8, 0.8, -0.8);
-  const SPACING = 0.22;
-  const half = (camRes - 1) / 2;
-  const camColor = new THREE.Color('#56b4e9');
-
-  const gridPositions = [];
-
-  for (let row = 0; row < camRes; row++) {
-    for (let col = 0; col < camRes; col++) {
-      const idx = row * camRes + col;
-      const pos = new THREE.Vector3(
-        GRID_ORIGIN.x,
-        GRID_ORIGIN.y + (half - row) * SPACING,
-        GRID_ORIGIN.z + (col - half) * SPACING
-      );
-      gridPositions.push(pos);
-
-      const mat = new THREE.MeshBasicMaterial({
-        color: camColor, transparent: true, opacity: 0.25
-      });
-      const mesh = new THREE.Mesh(camNodeGeo, mat);
-      mesh.position.copy(pos);
-      mesh.userData = { isCamNode: true, pixelIdx: idx };
-      networkGroup.add(mesh);
-      camNodeMeshes.push({ mesh, mat });
-    }
-  }
-
-  const occCount = occIdxs.length;
-  for (let pi = 0; pi < camRes * camRes; pi++) {
-    const targA = occIdxs[pi % occCount];
-    const targB = occIdxs[(pi + Math.floor(occCount / 2)) % occCount];
-    const targets = [targA];
-    if (targA !== targB) targets.push(targB);
-
-    for (const tgt of targets) {
-      const geo = new THREE.BufferGeometry().setFromPoints([
-        gridPositions[pi], neurons[tgt].pos
-      ]);
-      const colors = new Float32Array([
-        camColor.r, camColor.g, camColor.b,
-        camColor.r * 0.5, camColor.g * 0.5, camColor.b * 0.5
-      ]);
-      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      const mat = new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.04
-      });
-      const line = new THREE.Line(geo, mat);
-      line.userData.isCamEdge = true;
-      networkGroup.add(line);
-      camEdgeLines.push({ mat, pixelIdx: pi, tgtNeuronIdx: tgt });
-    }
-  }
+  // No meshes or edges added to scene — input still injected via pixelValues in simTick
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AUDIO INPUT LAYER  (AUDIO_BANDS rows per AUDIO_COLS cols -> temporal lobe)
+//  AUDIO INPUT LAYER  (visual nodes removed; input still injected via audioValues)
 // ═══════════════════════════════════════════════════════════════
 const AUDIO_NODE_R  = 0.09;
 const audioNodeGeo  = new THREE.SphereGeometry(AUDIO_NODE_R, 8, 8);
-let   audioNodeMeshes = [];  // { mesh, mat, bandIdx, colIdx }
-let   audioEdgeLines  = [];  // { mat, nodeIdx, tgtNeuronIdx }
+let   audioNodeMeshes = [];
+let   audioEdgeLines  = [];
 
 function buildAudioInputLayer(tempIdxs) {
   audioNodeMeshes = [];
   audioEdgeLines  = [];
-
-  // Audio layer faces perpendicular to cam layer (cam=YZ plane at fixed X; audio=XY plane at fixed Z)
-  const GRID_ORIGIN = new THREE.Vector3(2, -0.8, 3.5);
-  const COL_SPACING = 0.22;
-  const ROW_SPACING = 0.28;
-  const numBands    = AUDIO_BANDS.length;
-  const halfCols    = (AUDIO_COLS - 1) / 2;
-  const halfRows    = (numBands - 1) / 2;
-  const gridPositions = [];
-
-  const audioColor = new THREE.Color('#56b4e9');
-
-  for (let b = 0; b < numBands; b++) {
-    for (let c = 0; c < AUDIO_COLS; c++) {
-      const ni = b * AUDIO_COLS + c;
-      const pos = new THREE.Vector3(
-        GRID_ORIGIN.x + (c - halfCols) * COL_SPACING,
-        GRID_ORIGIN.y + (halfRows - b) * ROW_SPACING,
-        GRID_ORIGIN.z
-      );
-      gridPositions.push(pos);
-
-      const mat = new THREE.MeshBasicMaterial({
-        color: audioColor.clone(), transparent: true, opacity: 0.25
-      });
-      const mesh = new THREE.Mesh(audioNodeGeo, mat);
-      mesh.position.copy(pos);
-      mesh.userData = { isAudioNode: true, audioNodeIdx: ni };
-      networkGroup.add(mesh);
-      audioNodeMeshes.push({ mesh, mat, bandIdx: b, colIdx: c });
-    }
-  }
-
-  // Wire each audio node to 1-2 temporal neurons (round-robin)
-  const tempCount = tempIdxs.length;
-  for (let ni = 0; ni < numBands * AUDIO_COLS; ni++) {
-    const targA = tempIdxs[ni % tempCount];
-    const targB = tempIdxs[(ni + Math.floor(tempCount / 2)) % tempCount];
-    const targets = [targA];
-    if (targA !== targB) targets.push(targB);
-
-    for (const tgt of targets) {
-      const geo = new THREE.BufferGeometry().setFromPoints([
-        gridPositions[ni], neurons[tgt].pos
-      ]);
-      const colors = new Float32Array([
-        audioColor.r, audioColor.g, audioColor.b,
-        audioColor.r * 0.5, audioColor.g * 0.5, audioColor.b * 0.5
-      ]);
-      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      const mat = new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.04
-      });
-      const line = new THREE.Line(geo, mat);
-      line.userData.isAudioEdge = true;
-      networkGroup.add(line);
-      audioEdgeLines.push({ mat, nodeIdx: ni, tgtNeuronIdx: tgt });
-    }
-  }
+  // No meshes or edges added to scene — input still injected via audioValues in simTick
 }
 
 function updateAudioInputVisuals() {
-  const audioBaseColor = new THREE.Color('#56b4e9');
-  for (let ni = 0; ni < audioNodeMeshes.length; ni++) {
-    const { mat, bandIdx, colIdx } = audioNodeMeshes[ni];
-    const v = audioActive ? audioValues[bandIdx * AUDIO_COLS + colIdx] : 0;
-    mat.color.setRGB(
-      audioBaseColor.r * (0.2 + v * 0.8),
-      audioBaseColor.g * (0.2 + v * 0.8),
-      audioBaseColor.b * (0.2 + v * 0.8)
-    );
-    mat.opacity = audioActive ? 0.15 + v * 0.85 : 0.15;
-  }
-  for (const e of audioEdgeLines) {
-    const v = audioActive ? audioValues[e.nodeIdx] : 0;
-    e.mat.opacity = 0.02 + v * 0.25;
-  }
+  // No visual nodes — audio data still drives temporal lobe via simTick
 }
 
 // Sample AnalyserNode -> audioValues every animation frame when active
@@ -1434,21 +1677,7 @@ function drawAudioViz() {
 }
 
 function updateCamInputVisuals() {
-  // Update pixel node brightness and edge glow based on pixelValues
-  for (let pi = 0; pi < camNodeMeshes.length; pi++) {
-    const v = camActive ? pixelValues[pi] : 0;
-    const { mat } = camNodeMeshes[pi];
-    mat.color.setRGB(
-      0.34 * (0.2 + v * 0.8),
-      0.71 * (0.2 + v * 0.8),
-      0.91 * (0.2 + v * 0.8)
-    );
-    mat.opacity = camActive ? 0.15 + v * 0.85 : 0.15;
-  }
-  for (const e of camEdgeLines) {
-    const v = camActive ? pixelValues[e.pixelIdx] : 0;
-    e.mat.opacity = 0.02 + v * 0.25;
-  }
+  // No visual nodes — camera data still drives occipital lobe via simTick
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1589,6 +1818,7 @@ function simTick() {
 //  RENDER UPDATE
 // ═══════════════════════════════════════════════════════════════
 function updateVisuals(dt) {
+if (brainDead) return;
   for (let ni = 0; ni < neurons.length; ni++) {
     const n = neurons[ni];
     n.smoothInput += (n.inputSum - n.smoothInput) * 0.25;
@@ -1648,6 +1878,57 @@ function updateVisuals(dt) {
   updateCamInputVisuals();
   updateAudioInputVisuals();
   drawAudioViz();
+
+  // Joint neuron idle pulse + flex/ext driven by brainstem firing
+  const t = performance.now() * 0.001;
+
+  // Flex target angles (radians) when fired vs resting — negative X = forward flex
+  const FLEX_ANGLES = {
+    shoulder_L: -1.2, shoulder_R: -1.2,  // arm swings forward ~70°
+    elbow_L:    -1.4, elbow_R:    -1.4,  // forearm curls up ~80°
+    wrist_L:    -0.6, wrist_R:    -0.6,  // wrist curls ~35°
+    hip_L:      -0.9, hip_R:      -0.9,  // leg raises forward ~52°
+    knee_L:      1.5, knee_R:      1.5,  // knee bends backward ~86° (positive X)
+    ankle_L:    -0.5, ankle_R:    -0.5,  // dorsiflexion ~29°
+  };
+  const LERP_SPEED = 0.5; // smoothing factor per frame
+
+  for (let ji = 0; ji < jointNeurons.length; ji++) {
+    const jn = jointNeurons[ji];
+    const bsn = jn.bsNeuron;
+    const fired = bsn && bsn.fired;
+    const activity = bsn ? Math.min(Math.abs(bsn.smoothInput) / bsn.threshold, 1.0) : 0;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.2 + ji * 0.55);
+
+    // Visual glow
+    if (fired) {
+      jn.mat.emissiveIntensity = 2.4;
+      jn.mat.opacity = 1.0;
+      jn.mesh.scale.setScalar(1.5);
+    } else if (activity > 0.05) {
+      jn.mat.emissiveIntensity = 0.30 + activity * 1.2;
+      jn.mat.opacity = 0.65 + activity * 0.35;
+      jn.mesh.scale.setScalar(1.0 + activity * 0.3);
+    } else {
+      jn.mat.emissiveIntensity = 0.20 + pulse * 0.40;
+      jn.mat.opacity = 0.55 + pulse * 0.25;
+      jn.mesh.scale.setScalar(0.92 + pulse * 0.16);
+    }
+
+    // Edge pulse
+    if (jn.edgeLine) {
+      jn.edgeLine.material.opacity = fired
+        ? 0.90
+        : 0.12 + activity * 0.45 + pulse * 0.08;
+    }
+
+    // Flex/ext: drive pivot rotation toward target or zero
+    const piv = limbPivots[jn.id];
+    if (piv) {
+      const targetAngle = fired ? (FLEX_ANGLES[jn.id] || 0) : 0;
+      piv.rotation.x += (targetAngle - piv.rotation.x) * LERP_SPEED;
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1655,8 +1936,8 @@ function updateVisuals(dt) {
 // ═══════════════════════════════════════════════════════════════
 let isDragging = false, autoRotate = true;
 let lastMouse = { x: 0, y: 0 };
-let spherical = { theta: 0, phi: Math.PI * 0.42 };
-let targetSph = { theta: 0, phi: Math.PI * 0.42 };
+let spherical = { theta: 0.1, phi: Math.PI * 0.40 };
+let targetSph = { theta: 0.1, phi: Math.PI * 0.40 };
 
 // Compute initial zoom so the entire brain + input layer fits in view,
 // scaled proportionally to screen pixel count.
@@ -1673,7 +1954,7 @@ function computeInitialZoom() {
   const refPixels = 1920 * 1080;
   const curPixels = window.innerWidth * window.innerHeight;
   const densityScale = Math.sqrt(curPixels / refPixels);
-  return Math.max(8, Math.min(110, baseDist * densityScale * 2 * 1.20));
+  return Math.max(8, Math.min(200, baseDist * densityScale * 2 * 1.20));
 }
 
 let zoomDist  = computeInitialZoom();
@@ -1699,7 +1980,7 @@ window.addEventListener('mousemove', e => {
   targetSph.phi = Math.max(0.12, Math.min(Math.PI - 0.12, targetSph.phi - dy * 0.007));
 });
 cv.addEventListener('wheel', e => {
-  targetZoom = Math.max(5, Math.min(110, targetZoom + e.deltaY * 0.04));
+  targetZoom = Math.max(5, Math.min(200, targetZoom + e.deltaY * 0.04));
 }, { passive: true });
 
 // Touch orbit
@@ -1735,7 +2016,7 @@ cv.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const dist = Math.hypot(dx, dy);
-    targetZoom = Math.max(5, Math.min(110, pinchZoomStart * (pinchStart / dist)));
+    targetZoom = Math.max(5, Math.min(200, pinchZoomStart * (pinchStart / dist)));
   }
 }, { passive: true });
 cv.addEventListener('touchend', e => { if (e.touches.length < 2) pinchStart = null; }, { passive: true });
@@ -2059,6 +2340,41 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   animate(0);
 });
 
+// Brain death state
+let brainDead = false;
+
+document.getElementById("btn-kill").addEventListener("click", () => {
+  brainDead = true;
+
+  // Stop spontaneous firing
+  NOISE_SPONT_P = 0;
+
+  // Silence neurons
+  neurons.forEach(n => {
+    n.fire = false;
+    n.inputSum = -9999;
+    n.refractory = 999999;
+
+    // Dim neuron visuals
+    if (n.mesh) {
+      n.mesh.material.emissiveIntensity = 0;
+      n.mesh.material.opacity = 0.08;
+    }
+  });
+
+  // Fade synapses
+  intraLines.forEach(l => {
+    l.material.opacity = 0.02;
+  });
+
+  crossLines.forEach(l => {
+    l.material.opacity = 0.02;
+  });
+
+  // Update title
+  document.querySelector("#title h1").innerHTML = "MAT <span style='color:#ff4444'>DECEASED</span>";
+});
+
 function rebuildBrain() {
   if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
   tickCount = 0;
@@ -2079,18 +2395,7 @@ function applyResolution() {
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
   document.getElementById('vb-res').textContent = camRes;
-
-  // Remove old cam nodes and edges by tag, then rebuild
-  const toRemove = networkGroup.children.filter(
-    o => o.userData && (o.userData.isCamNode || o.userData.isCamEdge)
-  );
-  toRemove.forEach(o => {
-    if (o.geometry) o.geometry.dispose();
-    if (o.material) o.material.dispose();
-    networkGroup.remove(o);
-  });
-
-  buildCamInputLayer(occipitalIdxs);
+  // No visual layer to rebuild — cam input injected directly into occipital neurons
 }
 
 document.getElementById('sl-res').addEventListener('input', function() {
