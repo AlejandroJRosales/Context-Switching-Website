@@ -735,7 +735,7 @@ function pickNT(lobeName) {
 // ═══════════════════════════════════════════════════════════════
 const container = document.getElementById('canvas-container');
 const renderer  = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(window.innerWidth < 640 ? 1 : Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
@@ -1964,8 +1964,27 @@ let simTickMs = 0;
 const SIM_INTERVAL_MS = 60; // base tick interval
 let animFrameId = null;
 
+// Frame rate cap — 30 fps saves significant battery vs uncapped 120 Hz
+const TARGET_FPS = 30;
+const FRAME_MS   = 1000 / TARGET_FPS;
+let lastFrameTime = 0;
+
+// Visibility pause — stop rendering when tab is hidden
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+  } else {
+    if (animFrameId === null) { lastTime = 0; lastFrameTime = 0; animate(performance.now()); }
+  }
+});
+
 function animate(time) {
   animFrameId = requestAnimationFrame(animate);
+
+  // Skip frame if not enough time has elapsed (frame rate cap)
+  if (time - lastFrameTime < FRAME_MS) return;
+  lastFrameTime = time;
+
   const dt = Math.min((time - lastTime) / 1000, 0.05);
   lastTime = time;
 
