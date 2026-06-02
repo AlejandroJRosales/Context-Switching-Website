@@ -24,6 +24,7 @@
     --col-motor:       #ff6fa0;
     --col-occipital:   #56b4e9;
     --col-temporal:    #e6a020;
+    --col-temporal-r:  #c47f10;
     --col-parietal:    #a06fff;
     --col-thalamus:    #ffffff;
     --col-brainstem:   #ff4444;
@@ -602,9 +603,11 @@ const LOBE_DEFS = [
   { name: 'parietal',    label: 'Parietal Lobe',        task: 'sensory integration',      neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [ 0,    1.5, -1.2 ] },
   // Occipital Lobe: most posterior, inferior-superior mid; visual cortex at the very back
   { name: 'occipital',   label: 'Occipital Lobe',       task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 0,    0.5, -2.6 ] },
-  // Temporal Lobe: lateral & inferior, mid-height; flanks both hemispheres (averaged to one center)
-  // Sits below and lateral to parietal, anterior of occipital
-  { name: 'temporal',    label: 'Temporal Lobe',        task: 'auditory / memory',        neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.0, -0.4, -0.2 ] },
+  // Temporal Lobe: split into left (dominant) and right hemispheres, lateral & inferior, mid-height
+  // Left temporal: language, semantic memory, speech comprehension (Wernicke's area)
+  { name: 'temporal_L',  label: 'Temporal Lobe (L)',    task: 'language / semantic memory', neurons: 8, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.0, -0.4, -0.2 ] },
+  // Right temporal: prosody, non-verbal memory, face recognition, music processing
+  { name: 'temporal_R',  label: 'Temporal Lobe (R)',    task: 'prosody / non-verbal memory', neurons: 6, connP: 0.20, crossP: 0.10, color: '#c47f10', pos: [-2.0, -0.4, -0.2 ] },
   // Thalamus: deep midline, central relay; slightly superior to brainstem
   { name: 'thalamus',    label: 'Thalamus',             task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0.0,  0.0 ] },
   // Brainstem: inferior, posterior; connects spinal cord, below thalamus
@@ -712,10 +715,17 @@ const LOBE_NT_DIST = {
     { nt: 'serotonin',      frac: 0.05 }, // 5-HT2A modulates visual processing
     { nt: 'norepinephrine', frac: 0.03 },
   ],
-  temporal: [
-    { nt: 'glutamate',      frac: 0.84 },
-    { nt: 'serotonin',      frac: 0.10 }, // auditory/memory modulation
-    { nt: 'dopamine',       frac: 0.06 },
+  // Left temporal: language-dominant; strong cholinergic (Wernicke's/hippocampal projections)
+  temporal_L: [
+    { nt: 'glutamate',      frac: 0.80 },
+    { nt: 'acetylcholine',  frac: 0.12 }, // basal forebrain → hippocampus → language memory
+    { nt: 'serotonin',      frac: 0.08 },
+  ],
+  // Right temporal: prosody/non-verbal; stronger dopaminergic reward/novelty drive
+  temporal_R: [
+    { nt: 'glutamate',      frac: 0.80 },
+    { nt: 'serotonin',      frac: 0.12 }, // emotional prosody modulation
+    { nt: 'dopamine',       frac: 0.08 }, // novelty / music reward
   ],
   parietal: [
     { nt: 'glutamate',      frac: 0.86 },
@@ -1583,8 +1593,17 @@ function buildBrain() {
   // Store occipital indices for camera injection
   occipitalIdxs = lobeNeuronMap['occipital'] || [];
 
-  // Store temporal indices for audio injection
-  temporalIdxs = lobeNeuronMap['temporal'] || [];
+  // Store temporal indices for audio injection (both hemispheres)
+  temporalIdxs = [
+    ...(lobeNeuronMap['temporal_L'] || []),
+    ...(lobeNeuronMap['temporal_R'] || []),
+  ];
+
+  // Camera input layer: camRes × camRes grid of pixel nodes wired to occipital
+  buildCamInputLayer(lobeNeuronMap['occipital'] || []);
+
+  // Audio input layer: AUDIO_BANDS × AUDIO_COLS grid wired to both temporal lobes
+  buildAudioInputLayer(temporalIdxs);
 
   buildJointNeurons();
 }
@@ -1604,7 +1623,7 @@ function addEdgeLine(pA, pB, colA, colB, baseOpacity, srcIdx, tgtIdx) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  CAMERA INPUT LAYER  (visual nodes removed; input data still injected)
+//  CAMERA INPUT LAYER  (camRes × camRes pixel nodes → occipital lobe)
 // ═══════════════════════════════════════════════════════════════
 const CAM_NODE_R   = 0.09;
 const camNodeGeo   = new THREE.SphereGeometry(CAM_NODE_R, 8, 8);
@@ -1614,25 +1633,153 @@ let   camEdgeLines  = [];
 function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
-  // No meshes or edges added to scene: input still injected via pixelValues in simTick
+
+  // Grid sits on the XY plane behind the skull (posterior = -Z).
+  // networkGroup is offset y=-2.94; occipital lobe center is at z=-2.6 in group space.
+  // z=-4.2 places the grid just outside the back of the cranium.
+  const GRID_ORIGIN = new THREE.Vector3(0, 0.8, -4.2);
+  const SPACING = 0.22;
+  const half = (camRes - 1) / 2;
+  const camColor = new THREE.Color('#56b4e9');
+
+  const gridPositions = [];
+
+  for (let row = 0; row < camRes; row++) {
+    for (let col = 0; col < camRes; col++) {
+      const idx = row * camRes + col;
+      const pos = new THREE.Vector3(
+        GRID_ORIGIN.x + (col - half) * SPACING,
+        GRID_ORIGIN.y + (half - row) * SPACING,
+        GRID_ORIGIN.z
+      );
+      gridPositions.push(pos);
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: camColor, transparent: true, opacity: 0.25
+      });
+      const mesh = new THREE.Mesh(camNodeGeo, mat);
+      mesh.position.copy(pos);
+      mesh.userData = { isCamNode: true, pixelIdx: idx };
+      networkGroup.add(mesh);
+      camNodeMeshes.push({ mesh, mat });
+    }
+  }
+
+  const occCount = occIdxs.length;
+  for (let pi = 0; pi < camRes * camRes; pi++) {
+    const targA = occIdxs[pi % occCount];
+    const targB = occIdxs[(pi + Math.floor(occCount / 2)) % occCount];
+    const targets = [targA];
+    if (targA !== targB) targets.push(targB);
+
+    for (const tgt of targets) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        gridPositions[pi], neurons[tgt].pos
+      ]);
+      const colors = new Float32Array([
+        camColor.r, camColor.g, camColor.b,
+        camColor.r * 0.5, camColor.g * 0.5, camColor.b * 0.5
+      ]);
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.04
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData.isCamEdge = true;
+      networkGroup.add(line);
+      camEdgeLines.push({ mat, pixelIdx: pi, tgtNeuronIdx: tgt });
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AUDIO INPUT LAYER  (visual nodes removed; input still injected via audioValues)
+//  AUDIO INPUT LAYER  (AUDIO_BANDS rows × AUDIO_COLS cols → temporal lobes L+R)
 // ═══════════════════════════════════════════════════════════════
 const AUDIO_NODE_R  = 0.09;
 const audioNodeGeo  = new THREE.SphereGeometry(AUDIO_NODE_R, 8, 8);
-let   audioNodeMeshes = [];
-let   audioEdgeLines  = [];
+let   audioNodeMeshes = [];  // { mesh, mat, bandIdx, colIdx }
+let   audioEdgeLines  = [];  // { mat, nodeIdx, tgtNeuronIdx }
 
 function buildAudioInputLayer(tempIdxs) {
   audioNodeMeshes = [];
   audioEdgeLines  = [];
-  // No meshes or edges added to scene: input still injected via audioValues in simTick
+
+  // Audio layer: XY plane at fixed Z, centred laterally between the two temporal lobes
+  const GRID_ORIGIN = new THREE.Vector3(0, -0.8, 3.5);
+  const COL_SPACING = 0.22;
+  const ROW_SPACING = 0.28;
+  const numBands    = AUDIO_BANDS.length;
+  const halfCols    = (AUDIO_COLS - 1) / 2;
+  const halfRows    = (numBands - 1) / 2;
+  const gridPositions = [];
+
+  const audioColor = new THREE.Color('#56b4e9');
+
+  for (let b = 0; b < numBands; b++) {
+    for (let c = 0; c < AUDIO_COLS; c++) {
+      const ni = b * AUDIO_COLS + c;
+      const pos = new THREE.Vector3(
+        GRID_ORIGIN.x + (c - halfCols) * COL_SPACING,
+        GRID_ORIGIN.y + (halfRows - b) * ROW_SPACING,
+        GRID_ORIGIN.z
+      );
+      gridPositions.push(pos);
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: audioColor.clone(), transparent: true, opacity: 0.25
+      });
+      const mesh = new THREE.Mesh(audioNodeGeo, mat);
+      mesh.position.copy(pos);
+      mesh.userData = { isAudioNode: true, audioNodeIdx: ni };
+      networkGroup.add(mesh);
+      audioNodeMeshes.push({ mesh, mat, bandIdx: b, colIdx: c });
+    }
+  }
+
+  // Wire each audio node to 1–2 temporal neurons (round-robin across both hemispheres)
+  const tempCount = tempIdxs.length;
+  for (let ni = 0; ni < numBands * AUDIO_COLS; ni++) {
+    const targA = tempIdxs[ni % tempCount];
+    const targB = tempIdxs[(ni + Math.floor(tempCount / 2)) % tempCount];
+    const targets = [targA];
+    if (targA !== targB) targets.push(targB);
+
+    for (const tgt of targets) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        gridPositions[ni], neurons[tgt].pos
+      ]);
+      const colors = new Float32Array([
+        audioColor.r, audioColor.g, audioColor.b,
+        audioColor.r * 0.5, audioColor.g * 0.5, audioColor.b * 0.5
+      ]);
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.04
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData.isAudioEdge = true;
+      networkGroup.add(line);
+      audioEdgeLines.push({ mat, nodeIdx: ni, tgtNeuronIdx: tgt });
+    }
+  }
 }
 
 function updateAudioInputVisuals() {
-  // No visual nodes: audio data still drives temporal lobe via simTick
+  const audioBaseColor = new THREE.Color('#56b4e9');
+  for (let ni = 0; ni < audioNodeMeshes.length; ni++) {
+    const { mat, bandIdx, colIdx } = audioNodeMeshes[ni];
+    const v = audioActive ? audioValues[bandIdx * AUDIO_COLS + colIdx] : 0;
+    mat.color.setRGB(
+      audioBaseColor.r * (0.2 + v * 0.8),
+      audioBaseColor.g * (0.2 + v * 0.8),
+      audioBaseColor.b * (0.2 + v * 0.8)
+    );
+    mat.opacity = audioActive ? 0.15 + v * 0.85 : 0.15;
+  }
+  for (const e of audioEdgeLines) {
+    const v = audioActive ? audioValues[e.nodeIdx] : 0;
+    e.mat.opacity = 0.02 + v * 0.25;
+  }
 }
 
 // Sample AnalyserNode -> audioValues every animation frame when active
@@ -1698,7 +1845,21 @@ function drawAudioViz() {
 }
 
 function updateCamInputVisuals() {
-  // No visual nodes: camera data still drives occipital lobe via simTick
+  // Update pixel node brightness and edge glow based on pixelValues
+  for (let pi = 0; pi < camNodeMeshes.length; pi++) {
+    const v = camActive ? pixelValues[pi] : 0;
+    const { mat } = camNodeMeshes[pi];
+    mat.color.setRGB(
+      0.34 * (0.2 + v * 0.8),
+      0.71 * (0.2 + v * 0.8),
+      0.91 * (0.2 + v * 0.8)
+    );
+    mat.opacity = camActive ? 0.15 + v * 0.85 : 0.15;
+  }
+  for (const e of camEdgeLines) {
+    const v = camActive ? pixelValues[e.pixelIdx] : 0;
+    e.mat.opacity = 0.02 + v * 0.25;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2430,7 +2591,8 @@ function applyResolution() {
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
   document.getElementById('vb-res').textContent = camRes;
-  // No visual layer to rebuild: cam input injected directly into occipital neurons
+  // Rebuild the visual cam input layer to match the new grid size
+  rebuildBrain();
 }
 
 document.getElementById('sl-res').addEventListener('input', function() {
