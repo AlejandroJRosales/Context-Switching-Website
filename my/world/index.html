@@ -39,12 +39,13 @@
 
         #nnVisualizerContainer { display: none !important; }
 
-        /* NN section below stats + memory */
+        /* NN section: now right column in top-row alongside stats */
         #asp-nn-wrapper {
             margin-top: 0;
-            padding-top: 6px;
-            padding-left: 0;
-            padding-right: 0;
+            padding-top: 0;
+            padding-left: 4px;
+            flex: 0 0 auto;
+            overflow: visible;
         }
 
         #asp-nn-wrapper canvas {
@@ -54,7 +55,7 @@
             background: rgba(0, 0, 0, 0.6);
         }
 
-        #nnCanvas3D { height: 220px; cursor: grab; pointer-events: auto; }
+        #nnCanvas3D { width: 150px; height: 115px; cursor: grab; pointer-events: auto; }
         #nnCanvas3D:active { cursor: grabbing; }
 
         #asp-nn-wrapper #asp-nn-label {
@@ -443,7 +444,7 @@
             position: fixed;
             top: max(40px, calc(env(safe-area-inset-top) + 36px));
             left: max(10px, env(safe-area-inset-left));
-            width: 270px;
+            width: 330px;
             max-width: calc(100vw - 20px);
             background: rgba(0, 0, 0, 0.72);
             border: 1px solid rgba(0, 255, 0, 0.35);
@@ -461,22 +462,31 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            gap: 6px;
+            gap: 0;
         }
 
-        /* Top row: Stats | Memory side by side */
+        /* Top row: left-col (Stats+Memory) | Brain side by side, equal height */
         #asp-top-row {
             display: flex;
             flex-direction: row;
-            align-items: flex-start;
+            align-items: stretch;
             gap: 10px;
             overflow: hidden;
         }
 
-        /* Wrap the stats bars section so it has a fixed width */
-        #asp-stats-section {
+        /* Left column: stacks stats on top, memory below — height matches NN */
+        #asp-left-col {
+            display: flex;
+            flex-direction: column;
             width: 155px;
             min-width: 155px;
+            flex-shrink: 0;
+        }
+
+        /* Wrap the stats bars section so it has a fixed width */
+        #asp-stats-section {
+            width: 100%;
+            min-width: 0;
             flex-shrink: 0;
         }
 
@@ -520,15 +530,29 @@
         }
 
 
-        /* Memory slots */
+        /* Memory slots: stacked below stats inside asp-left-col */
         #asp-memories {
-            margin-top: 0;
-            border-top: none;
-            padding-top: 0;
-            padding-left: 4px;
+            margin-top: 2px;
+            border-top: 1px solid rgba(0, 255, 0, 0.12);
+            padding-top: 3px;
+            padding-left: 0;
+            width: 100%;
             min-width: 0;
-            flex: 0 0 auto;
+            flex: 1;
             overflow: hidden;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 1px 8px;
+        }
+
+        #asp-memories .asp-mem-label {
+            width: 100%;
+            margin-bottom: 1px;
+        }
+
+        #asp-memories .asp-mem-row {
+            flex: 0 0 auto;
         }
 
         .asp-mem-label {
@@ -678,8 +702,9 @@
 
     <!-- Animal stat HUD -->
     <div id="animal-stat-panel">
-        <!-- Top row: Stats | Memory -->
+        <!-- Top row: Stats+Memory (left col) | Brain (NN, right col) -->
         <div id="asp-top-row">
+            <div id="asp-left-col">
             <div id="asp-stats-section">
                 <div class="asp-generation" id="asp-generation">Generation 0</div>
                 <div class="asp-bar-row">
@@ -699,39 +724,41 @@
                     <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-age" style="background:#2ecc71;width:0%"></div></div>
                 </div>
             </div>
-            <div id="asp-memories">
-                <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
-                <div class="asp-mem-row" id="asp-mem-predator">
-                    <span class="asp-mem-icon">⚠️</span>
-                    <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
-                    <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
+            <!-- Memory now inside left col, below stats -->
+        <div id="asp-memories">
+            <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
+            <div class="asp-mem-row" id="asp-mem-predator">
+                <span class="asp-mem-icon">⚠️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
 
-                </div>
-                <div class="asp-mem-row" id="asp-mem-food">
-                    <span class="asp-mem-icon">🍽️</span>
-                    <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
-                    <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-food">
+                <span class="asp-mem-icon">🍽️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
 
-                </div>
-                <div class="asp-mem-row" id="asp-mem-water">
-                    <span class="asp-mem-icon">💧</span>
-                    <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
-                    <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-water">
+                <span class="asp-mem-icon">💧</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
 
-                </div>
-                <div class="asp-mem-row" id="asp-mem-mate">
-                    <span class="asp-mem-icon">💞</span>
-                    <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
-                    <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-mate">
+                <span class="asp-mem-icon">💞</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
 
-                </div>
             </div>
         </div>
-        <!-- Bottom: Brain visualizer full width -->
-        <div id="asp-nn-wrapper">
-            <div class="asp-mem-label">Brain</div>
-            <canvas id="nnCanvas3D"></canvas>
-        </div>
+            </div><!-- end asp-left-col -->
+            <!-- Brain visualizer: right col of top-row -->
+            <div id="asp-nn-wrapper">
+                <div class="asp-mem-label">Brain</div>
+                <canvas id="nnCanvas3D"></canvas>
+            </div>
+        </div><!-- end asp-top-row -->
     </div>
 
     <!-- Joystick -->
@@ -3430,7 +3457,7 @@
 
                 this.scene  = new THREE.Scene();
                 this.camera = new THREE.PerspectiveCamera(42, canvasEl.clientWidth / canvasEl.clientHeight, 0.1, 100);
-                this.camera.position.set(0, 0, 9);
+                this.camera.position.set(0, 0, 12);
 
                 // Lights
                 this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
