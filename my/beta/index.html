@@ -761,7 +761,7 @@ container.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x04060f);
-scene.fog = new THREE.FogExp2(0x04060f, 0.008);
+scene.fog = new THREE.FogExp2(0x04060f, 0.003);
 
 const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 600);
 camera.position.set(0, 0, ORBIT_RADIUS);
@@ -786,11 +786,11 @@ const ptFront = new THREE.PointLight(0xd0a060, 2.5, 35);
 ptFront.position.set(0, -1, 14);
 scene.add(ptFront);
 // Lower body fill lights
-const ptLegs = new THREE.PointLight(0x4060a0, 3.5, 80);
-ptLegs.position.set(0, -30, 8);
+const ptLegs = new THREE.PointLight(0x4060a0, 3.5, 140);
+ptLegs.position.set(0, -52, 8);
 scene.add(ptLegs);
-const ptLegsBack = new THREE.PointLight(0x203050, 2.0, 70);
-ptLegsBack.position.set(0, -22, -10);
+const ptLegsBack = new THREE.PointLight(0x203050, 2.0, 120);
+ptLegsBack.position.set(0, -40, -10);
 scene.add(ptLegsBack);
 
 // Shared geometries
@@ -969,6 +969,9 @@ const limbPivots = {};
 (function buildBody() {
   const bodyGroup = new THREE.Group();
   bodyGroup.position.y = -0.9;
+  // Scale body so it's ~7.5x the head height (head ≈ 6 units → body ≈ 42 units below neck).
+  // Current body spans ~24 units, so multiply Y by 1.75 and X/Z slightly for bulk.
+  bodyGroup.scale.set(1.15, 1.75, 1.15);
   scene.add(bodyGroup);
 
   const boneMat = new THREE.MeshPhongMaterial({
@@ -1228,25 +1231,28 @@ const limbPivots = {};
 //  bodyGroup is also at y=-0.9, so body-local coords map 1:1 here.
 //  Not connected to the brain network yet.
 // ═══════════════════════════════════════════════════════════════
+// Joint positions scaled to match bodyGroup.scale = (1.15, 1.75, 1.15).
+// Body-local (x, y, z) → world: x*1.15, y*1.75 - 0.9, z*1.15
+// (The -0.9 is bodyGroup.position.y; networkGroup also sits at y=-0.9 so it cancels → multiply y by 1.75 only)
 const JOINT_DEFS = [
-  // Shoulders
-  { id: 'shoulder_L', x:  3.33, y: -4.88, z: -0.18, color: '#ff6fa0' },
-  { id: 'shoulder_R', x: -3.33, y: -4.88, z: -0.18, color: '#ff6fa0' },
-  // Elbows
-  { id: 'elbow_L',    x:  3.55, y: -9.58, z:  0.00, color: '#ff6fa0' },
-  { id: 'elbow_R',    x: -3.55, y: -9.58, z:  0.00, color: '#ff6fa0' },
-  // Wrists
-  { id: 'wrist_L',    x:  3.55, y: -13.35, z:  0.00, color: '#ff6fa0' },
-  { id: 'wrist_R',    x: -3.55, y: -13.35, z:  0.00, color: '#ff6fa0' },
-  // Hips
-  { id: 'hip_L',      x:  1.73, y: -12.85, z:  0.12, color: '#a06fff' },
-  { id: 'hip_R',      x: -1.73, y: -12.85, z:  0.12, color: '#a06fff' },
-  // Knees
-  { id: 'knee_L',     x:  1.28, y: -20.00, z:  0.00, color: '#a06fff' },
-  { id: 'knee_R',     x: -1.28, y: -20.00, z:  0.00, color: '#a06fff' },
-  // Ankles
-  { id: 'ankle_L',    x:  1.28, y: -26.45, z:  0.10, color: '#a06fff' },
-  { id: 'ankle_R',    x: -1.28, y: -26.45, z:  0.10, color: '#a06fff' },
+  // Shoulders  (body-local y≈-4.88 → *1.75 = -8.54; x≈±3.33 → *1.15 = ±3.83)
+  { id: 'shoulder_L', x:  3.83, y: -8.54, z: -0.21, color: '#ff6fa0' },
+  { id: 'shoulder_R', x: -3.83, y: -8.54, z: -0.21, color: '#ff6fa0' },
+  // Elbows  (body-local y≈-9.58 → *1.75 = -16.77; x≈±3.55 → *1.15 = ±4.08)
+  { id: 'elbow_L',    x:  4.08, y: -16.77, z:  0.00, color: '#ff6fa0' },
+  { id: 'elbow_R',    x: -4.08, y: -16.77, z:  0.00, color: '#ff6fa0' },
+  // Wrists  (body-local y≈-13.35 → *1.75 = -23.36; x≈±3.55 → ±4.08)
+  { id: 'wrist_L',    x:  4.08, y: -23.36, z:  0.00, color: '#ff6fa0' },
+  { id: 'wrist_R',    x: -4.08, y: -23.36, z:  0.00, color: '#ff6fa0' },
+  // Hips  (body-local y≈-12.85 → *1.75 = -22.49; x≈±1.73 → ±1.99)
+  { id: 'hip_L',      x:  1.99, y: -22.49, z:  0.14, color: '#a06fff' },
+  { id: 'hip_R',      x: -1.99, y: -22.49, z:  0.14, color: '#a06fff' },
+  // Knees  (body-local y≈-20.00 → *1.75 = -35.00; x≈±1.28 → ±1.47)
+  { id: 'knee_L',     x:  1.47, y: -35.00, z:  0.00, color: '#a06fff' },
+  { id: 'knee_R',     x: -1.47, y: -35.00, z:  0.00, color: '#a06fff' },
+  // Ankles  (body-local y≈-26.45 → *1.75 = -46.29; x≈±1.28 → ±1.47)
+  { id: 'ankle_L',    x:  1.47, y: -46.29, z:  0.12, color: '#a06fff' },
+  { id: 'ankle_R',    x: -1.47, y: -46.29, z:  0.12, color: '#a06fff' },
 ];
 
 // Stored for future wiring; populated after buildBrain runs
@@ -1948,22 +1954,20 @@ let lastMouse = { x: 0, y: 0 };
 let spherical = { theta: 0.1, phi: Math.PI * 0.40 };
 let targetSph = { theta: 0.1, phi: Math.PI * 0.40 };
 
-// Compute initial zoom so the entire brain + input layer fits in view,
-// scaled proportionally to screen pixel count.
+// Compute initial zoom so the entire figure fits in view.
+// Body now extends to ~y=-47 in world space; center is around y=-23.
 function computeInitialZoom() {
   const sceneHalfW = 4.8 + Math.max((camRes / 2) * 0.22, AUDIO_COLS / 2 * 0.22) + 0.5;
-  const sceneHalfH = 3.2;
+  const sceneHalfH = 26;  // half-height of full figure (head to feet ≈ 52 units)
   const fovRad = camera.fov * Math.PI / 180;
   const aspect  = window.innerWidth / window.innerHeight;
   const distForH = sceneHalfH / Math.tan(fovRad / 2);
   const distForW = sceneHalfW / (Math.tan(fovRad / 2) * aspect);
   const baseDist = Math.max(distForH, distForW) * 1.15;
-  // Scale by pixel density: larger screens get proportionally more zoom-out
-  // so relative scene size stays consistent. Reference is 1920x1080.
   const refPixels = 1920 * 1080;
   const curPixels = window.innerWidth * window.innerHeight;
   const densityScale = Math.sqrt(curPixels / refPixels);
-  return Math.max(8, Math.min(200, baseDist * densityScale * 2 * 1.20));
+  return Math.max(8, Math.min(300, baseDist * densityScale * 1.20));
 }
 
 let zoomDist  = computeInitialZoom();
@@ -2039,7 +2043,7 @@ function updateCamera() {
     zoomDist * Math.cos(spherical.phi),
     zoomDist * Math.sin(spherical.phi) * Math.cos(spherical.theta)
   );
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(0, -22, 0);
 }
 
 // ═══════════════════════════════════════════════════════════════
