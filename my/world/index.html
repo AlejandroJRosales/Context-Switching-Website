@@ -1723,7 +1723,7 @@
                 const actO = this.actO;
                 const hA   = this.hA;
 
-                // Lobe A — Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
+                // Lobe A - Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
                 //
                 // Each node maintains a membrane potential V = hA[i] that:
                 //   1. Leaks toward rest (0) each step:  V <- V * lifLeak
@@ -1779,7 +1779,7 @@
                     }
                 }
 
-                // Lobe B — Leaky Integrate-and-Fire (LIF) nodes
+                // Lobe B - Leaky Integrate-and-Fire (LIF) nodes
                 //
                 // Same LIF dynamics as Lobe A but without self-recurrence.
                 // Lobe B acts as a "fast" integrator (no persistent hA self-loop),
@@ -3399,15 +3399,15 @@
         // NEURAL NETWORK VISUALIZER  –  3-D WebGL edition
         //
         //  Topology (mirrors DenseNetwork):
-        //    Input   (15 nodes)  –  arranged in a 3x5 grid on the left
-        //    Lobe A  ( 6 nodes)  –  GRU lobe, centre-left cluster
-        //    Lobe B  ( 6 nodes)  –  sigmoid lobe, centre-right cluster
+        //    Input   (15 nodes)  –  arranged in a 3x5 ring on the left
+        //    Lobe A  ( N nodes)  –  GRU lobe,  stacked ABOVE centre (same X as Lobe B)
+        //    Lobe B  ( N nodes)  –  LIF lobe,  stacked BELOW centre (same X as Lobe A)
         //    Output  ( 9 nodes)  –  action layer on the right
         //
         //  Edges:
         //    Input->A, Input->B, A->Out, B->Out  :  straight LineSegments
-        //    A->B  :  QuadraticBezierCurve3 bent +Y (above)
-        //    B->A  :  QuadraticBezierCurve3 bent -Y (below) preserves 2-D motif
+        //    A->B  :  QuadraticBezierCurve3 bent +Z (forward, toward viewer)
+        //    B->A  :  QuadraticBezierCurve3 bent -Z (backward)
         //    A self-loop  :  small torus ring on each Lobe-A node
         //
         //  Activation:
@@ -3590,8 +3590,9 @@
                 const O = nn.outputDims; // 9
 
                 // Node positions
-                //   X axis = layer depth:  Input=-3.2  A=-0.8  B=+0.8  Out=+3.2
-                //   Y,Z spread within each layer cluster
+                //   X axis = layer depth:  Input=-2.8  A=B=0  Out=+2.8
+                //   Lobe A cluster offset +Y, Lobe B cluster offset -Y (stacked)
+                //   Y,Z spread within each lobe cluster
 
                 const spread = (count, radius) => {
                     // evenly space on a circle in Y-Z plane
@@ -3615,15 +3616,17 @@
                         ));
                     }
                 }
-                const posA   = spread(NA, 0.70);
-                const posB   = spread(NB, 0.70);
+                const posA   = spread(NA, 0.55);
+                const posB   = spread(NB, 0.55);
                 const posOut = spread(O, 0.90);
 
-                // Layer X offsets
-                const X_IN = -2.8, X_A = -0.9, X_B = 0.9, X_OUT = 2.8;
+                // Layer X offsets - A and B share X=0 (stacked mid-column)
+                const X_IN = -2.8, X_MID = 0.0, X_OUT = 2.8;
+                // Y offsets: Lobe A above centre, Lobe B below centre
+                const Y_A = +1.1, Y_B = -1.1;
                 posIn.forEach(p  => p.x += X_IN);
-                posA.forEach(p   => p.x += X_A);
-                posB.forEach(p   => p.x += X_B);
+                posA.forEach(p   => { p.x += X_MID; p.y += Y_A; });
+                posB.forEach(p   => { p.x += X_MID; p.y += Y_B; });
                 posOut.forEach(p => p.x += X_OUT);
 
                 // Node meshes
@@ -3736,6 +3739,37 @@
                     this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
                 };
 
+                // Curved edge helper arcing in Z – used for A <-> B between stacked lobes
+                const addCurvedZ = (pA, pB, weight, zBias, srcRole, si, tgtRole, ti) => {
+                    const mid = pA.clone().lerp(pB, 0.5);
+                    mid.z += zBias;
+                    const curve = new THREE.QuadraticBezierCurve3(pA, mid, pB);
+                    const pts   = curve.getPoints(16);
+                    const geo   = new THREE.BufferGeometry().setFromPoints(pts);
+                    const col   = weight >= 0
+                        ? new THREE.Color(0x50a0ff)
+                        : new THREE.Color(0xff5050);
+                    const mat = new THREE.LineBasicMaterial({
+                        color: col, transparent: true, opacity: 0.22,
+                    });
+                    const line = new THREE.Line(geo, mat);
+                    this.group.add(line);
+                    this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.22, weight });
+
+                    // Arrow-head cone at pB end
+                    const dir = pB.clone().sub(mid).normalize();
+                    const aGeo = new THREE.ConeGeometry(0.04, 0.12, 5);
+                    const aMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 });
+                    const arrow = new THREE.Mesh(aGeo, aMat);
+                    arrow.position.copy(pB);
+                    const quat = new THREE.Quaternion().setFromUnitVectors(
+                        new THREE.Vector3(0, 1, 0), dir
+                    );
+                    arrow.quaternion.copy(quat);
+                    this.group.add(arrow);
+                    this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
+                };
+
                 // Build all masked connections
                 const mxIA = maxAbs(nn.wIA), mxIB = maxAbs(nn.wIB);
                 const mxAB = maxAbs(nn.wAB), mxBA = maxAbs(nn.wBA);
@@ -3749,14 +3783,15 @@
                     const k = i * NB + j;
                     if (nn.maskIB[k]) addStraight(posIn[i], posB[j], nn.wIB[k], 'in', i, 'b', j);
                 }
-                // A->B  : curved +Y  (above the straight line)
+                // A->B  : curved +Z  (in front of the straight line between stacked lobes)
+                // B->A  : curved -Z  (behind)
                 for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
                     const k = i * NB + j;
-                    if (nn.maskAB[k]) addCurved(posA[i], posB[j], nn.wAB[k],  0.80, 'a', i, 'b', j);
+                    if (nn.maskAB[k]) addCurvedZ(posA[i], posB[j], nn.wAB[k],  0.70, 'a', i, 'b', j);
                 }
                 for (let i = 0; i < NB; i++) for (let j = 0; j < NA; j++) {
                     const k = i * NA + j;
-                    if (nn.maskBA[k]) addCurved(posB[i], posA[j], nn.wBA[k], -0.80, 'b', i, 'a', j);
+                    if (nn.maskBA[k]) addCurvedZ(posB[i], posA[j], nn.wBA[k], -0.70, 'b', i, 'a', j);
                 }
                 for (let i = 0; i < NA; i++) for (let j = 0; j < O; j++) {
                     const k = i * O + j;
