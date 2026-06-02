@@ -44,7 +44,8 @@
             margin-top: 0;
             padding-top: 0;
             padding-left: 4px;
-            flex: 0 0 auto;
+            flex: 1 1 0;
+            min-width: 0;
             overflow: visible;
         }
 
@@ -55,7 +56,7 @@
             background: rgba(0, 0, 0, 0.6);
         }
 
-        #nnCanvas3D { width: 150px; height: 115px; cursor: grab; pointer-events: auto; }
+        #nnCanvas3D { width: 100%; height: 115px; cursor: grab; pointer-events: auto; }
         #nnCanvas3D:active { cursor: grabbing; }
 
         #asp-nn-wrapper #asp-nn-label {
@@ -444,7 +445,7 @@
             position: fixed;
             top: max(40px, calc(env(safe-area-inset-top) + 36px));
             left: max(10px, env(safe-area-inset-left));
-            width: 330px;
+            width: min(370px, calc(100vw - 20px));
             max-width: calc(100vw - 20px);
             background: rgba(0, 0, 0, 0.72);
             border: 1px solid rgba(0, 255, 0, 0.35);
@@ -474,12 +475,12 @@
             overflow: hidden;
         }
 
-        /* Left column: stacks stats on top, memory below — height matches NN */
+        /* Left column: stacks stats on top, memory below: height matches NN */
         #asp-left-col {
             display: flex;
             flex-direction: column;
-            width: 155px;
-            min-width: 155px;
+            width: 175px;
+            min-width: 175px;
             flex-shrink: 0;
         }
 
@@ -529,7 +530,6 @@
             transition: width 0.15s ease;
         }
 
-
         /* Memory slots: stacked below stats inside asp-left-col */
         #asp-memories {
             margin-top: 2px;
@@ -540,13 +540,14 @@
             min-width: 0;
             flex: 1;
             overflow: hidden;
-            display: flex;
-            flex-direction: row;
-            flex-wrap: wrap;
-            gap: 1px 8px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 2px 4px;
         }
 
         #asp-memories .asp-mem-label {
+            grid-column: 1 / -1;
             width: 100%;
             margin-bottom: 1px;
         }
@@ -630,6 +631,18 @@
             width: 100%;
             height: 100%;
             overflow: visible;
+        }
+
+        .asp-mem-dist {
+            font-size: 8px;
+            color: rgba(0, 255, 0, 0.5);
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            margin-left: 2px;
+        }
+
+        .asp-mem-dist.active {
+            color: rgba(0, 255, 0, 0.85);
         }
 
         /* Animations */
@@ -731,25 +744,25 @@
                 <span class="asp-mem-icon">⚠️</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
                 <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
-
+                <span class="asp-mem-dist" id="asp-mem-predator-dist"></span>
             </div>
             <div class="asp-mem-row" id="asp-mem-food">
                 <span class="asp-mem-icon">🍽️</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
                 <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
-
+                <span class="asp-mem-dist" id="asp-mem-food-dist"></span>
             </div>
             <div class="asp-mem-row" id="asp-mem-water">
                 <span class="asp-mem-icon">💧</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
                 <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
-
+                <span class="asp-mem-dist" id="asp-mem-water-dist"></span>
             </div>
             <div class="asp-mem-row" id="asp-mem-mate">
                 <span class="asp-mem-icon">💞</span>
                 <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
                 <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
-
+                <span class="asp-mem-dist" id="asp-mem-mate-dist"></span>
             </div>
         </div>
             </div><!-- end asp-left-col -->
@@ -1555,7 +1568,7 @@
         // ============================================================================
         const LOBE_SIZE_MIN = 4;    // minimum nodes per lobe (randomised at birth)
         const LOBE_SIZE_MAX = 10;   // maximum nodes per lobe
-        const LOBE_SPARSITY = 0.20; // fraction of possible connections that are active (0–1)
+        const LOBE_SPARSITY = 0.20; // fraction of possible connections that are active (0-1)
 
         // Pick a random lobe size in [MIN, MAX] inclusive
         function randLobeSize() {
@@ -1601,7 +1614,7 @@
         //   Lobe AmaskAO ->  Output   (softmax, 9 actions)
         //   Lobe BmaskBO ->  Output
         //
-        // GRU cell (simplified – single gate + self-recurrence, no full reset/update gate):
+        // GRU cell (simplified - single gate + self-recurrence, no full reset/update gate):
         // ============================================================================
         class DenseNetwork {
             constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
@@ -1696,7 +1709,7 @@
                 this.hB = new Float32Array(NB);
 
                 // LIF hyperparameters
-                // lifLeak  : fraction of membrane potential retained per step (0–1).
+                // lifLeak  : fraction of membrane potential retained per step (0-1).
                 //            0.9 ≈ \tau_m ~ 10 steps; lower -> faster forgetting.
                 // lifThresh: voltage threshold that triggers a spike.
                 //            Tuned so typical net inputs (~+-1 after normalisation)
@@ -2610,21 +2623,24 @@
         const _aspAgeEl     = document.getElementById('asp-age');
 
         const _aspMemPredDot    = document.getElementById('asp-mem-predator-dot');
-        const _aspMemPredTxt    = null;
+        const _aspMemPredTxt    = document.getElementById('asp-mem-predator-dist');
         const _aspMemPredArrow  = document.getElementById('asp-mem-predator-arrow');
         const _aspMemFoodDot    = document.getElementById('asp-mem-food-dot');
-        const _aspMemFoodTxt    = null;
+        const _aspMemFoodTxt    = document.getElementById('asp-mem-food-dist');
         const _aspMemFoodArrow  = document.getElementById('asp-mem-food-arrow');
         const _aspMemWaterDot   = document.getElementById('asp-mem-water-dot');
-        const _aspMemWaterTxt   = null;
+        const _aspMemWaterTxt   = document.getElementById('asp-mem-water-dist');
         const _aspMemWaterArrow = document.getElementById('asp-mem-water-arrow');
         const _aspMemMateDot    = document.getElementById('asp-mem-mate-dot');
-        const _aspMemMateTxt    = null;
+        const _aspMemMateTxt    = document.getElementById('asp-mem-mate-dist');
         const _aspMemMateArrow  = document.getElementById('asp-mem-mate-arrow');
 
         function _setMemSlot(dot, txt, active, label) {
             dot.className = 'asp-mem-dot ' + (active ? 'active' : 'inactive');
-            if (txt) { txt.className = 'asp-mem-text' + (active ? ' active' : ''); txt.textContent = label; }
+            if (txt) {
+                txt.textContent = active ? label : '';
+                txt.className = 'asp-mem-dist' + (active ? ' active' : '');
+            }
         }
 
         function updateAspMemories(a) {
@@ -3041,7 +3057,7 @@
                 this.sex = Math.random() < 0.5 ? 'male' : 'female';
                 this.mutationMulti = 0.5;
                 this.lastChildTime = Date.now();
-                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15–30 s in ms
+                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15-30 s in ms
                 this.lookForMate = false;
 
                 this.waterIncrement = this.health * 0.0001;
@@ -3193,23 +3209,23 @@
                 // Use pre-allocated input buffer; no per-call allocation
                 const inp = this._inputs;
 
-                // Inputs 0–2: food ray    (sin, cos, normalised distance)
+                // Inputs 0-2: food ray    (sin, cos, normalised distance)
                 inp[0]  = this.hasFood     ? this.rayFoodSin      : 0;
                 inp[1]  = this.hasFood     ? this.rayFoodCos      : 0;
                 inp[2]  = this.hasFood     ? this.rayFoodDist     : 0;
-                // Inputs 3–5: water ray
+                // Inputs 3-5: water ray
                 inp[3]  = this.hasWater    ? this.rayWaterSin     : 0;
                 inp[4]  = this.hasWater    ? this.rayWaterCos     : 0;
                 inp[5]  = this.hasWater    ? this.rayWaterDist    : 0;
-                // Inputs 6–8: predator ray
+                // Inputs 6-8: predator ray
                 inp[6]  = this.hasPredator ? this.rayPredatorSin  : 0;
                 inp[7]  = this.hasPredator ? this.rayPredatorCos  : 0;
                 inp[8]  = this.hasPredator ? this.rayPredatorDist : 0;
-                // Inputs 9–11: mate ray
+                // Inputs 9-11: mate ray
                 inp[9]  = this.hasMate     ? this.rayMateSin      : 0;
                 inp[10] = this.hasMate     ? this.rayMateCos      : 0;
                 inp[11] = this.hasMate     ? this.rayMateDist     : 0;
-                // Inputs 12–14: needs and vitals
+                // Inputs 12-14: needs and vitals
                 inp[12] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
                 inp[13] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
                 inp[14] = this.health > 0 ? this.health / this.maxHealth : 0;
@@ -3419,13 +3435,13 @@
         }
 
         // ============================================================================
-        // NEURAL NETWORK VISUALIZER  –  3-D WebGL edition
+        // NEURAL NETWORK VISUALIZER  -  3-D WebGL edition
         //
         //  Topology (mirrors DenseNetwork):
-        //    Input   (15 nodes)  –  arranged in a 3x5 ring on the left
-        //    Lobe A  ( N nodes)  –  GRU lobe,  stacked ABOVE centre (same X as Lobe B)
-        //    Lobe B  ( N nodes)  –  LIF lobe,  stacked BELOW centre (same X as Lobe A)
-        //    Output  ( 9 nodes)  –  action layer on the right
+        //    Input   (15 nodes)  -  arranged in a 3x5 ring on the left
+        //    Lobe A  ( N nodes)  -  GRU lobe,  stacked ABOVE centre (same X as Lobe B)
+        //    Lobe B  ( N nodes)  -  LIF lobe,  stacked BELOW centre (same X as Lobe A)
+        //    Output  ( 9 nodes)  -  action layer on the right
         //
         //  Edges:
         //    Input->A, Input->B, A->Out, B->Out  :  straight LineSegments
@@ -3456,8 +3472,8 @@
                 this._syncSize();
 
                 this.scene  = new THREE.Scene();
-                this.camera = new THREE.PerspectiveCamera(42, canvasEl.clientWidth / canvasEl.clientHeight, 0.1, 100);
-                this.camera.position.set(0, 0, 12);
+                this.camera = new THREE.PerspectiveCamera(40, canvasEl.clientWidth / canvasEl.clientHeight, 0.1, 100);
+                this.camera.position.set(0, 0, 9);
 
                 // Lights
                 this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
@@ -3465,7 +3481,7 @@
                 dl.position.set(4, 6, 8);
                 this.scene.add(dl);
 
-                // Root group – everything rotates together
+                // Root group - everything rotates together
                 this.group = new THREE.Group();
                 this.scene.add(this.group);
 
@@ -3625,7 +3641,7 @@
                     });
                 };
 
-                // Input: 5 groups of 3 – arrange groups in a ring, intra-group tight
+                // Input: 5 groups of 3 - arrange groups in a ring, intra-group tight
                 const posIn = [];
                 for (let g = 0; g < 5; g++) {
                     const ga = (g / 5) * Math.PI * 2 - Math.PI / 2;
@@ -3729,7 +3745,7 @@
                     this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.18, weight });
                 };
 
-                // Curved edge helper (QuadraticBezierCurve3) – preserves the A↔B motif
+                // Curved edge helper (QuadraticBezierCurve3) - preserves the A↔B motif
                 const addCurved = (pA, pB, weight, yBias, srcRole, si, tgtRole, ti) => {
                     const mid = pA.clone().lerp(pB, 0.5);
                     mid.y += yBias;
@@ -3762,7 +3778,7 @@
                     this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
                 };
 
-                // Curved edge helper arcing in Z – used for A <-> B between stacked lobes
+                // Curved edge helper arcing in Z - used for A <-> B between stacked lobes
                 const addCurvedZ = (pA, pB, weight, zBias, srcRole, si, tgtRole, ti) => {
                     const mid = pA.clone().lerp(pB, 0.5);
                     mid.z += zBias;
@@ -3826,10 +3842,7 @@
                 }
             }
 
-            // Returns 1 (firing) or 0 (silent) — binary, like an action potential.
-            // A/B: spike when actA/actB === 1.0 (hard threshold hit).
-            // In:  fires when standardized input magnitude exceeds 0.5 (above noise floor).
-            // Out: only the argmax (chosen action) fires.
+            // Returns 1 (firing) or 0 (silent): binary, like an action potential
             _isFiring(role, idx) {
                 if (!this.nn) return 0;
                 switch (role) {
@@ -3932,7 +3945,7 @@
         scene.add(nnSprite);
 
         function initNN3DVisualizer() {
-            nnSprite3DVisualizer = true; // sentinel – prevents re-init
+            nnSprite3DVisualizer = true; // sentinel - prevents re-init
             const canvas3D = document.getElementById('nnCanvas3D');
             window._hudNNVisualizer3D = new NNVisualizer3D(canvas3D);
         }
