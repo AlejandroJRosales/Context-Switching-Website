@@ -857,12 +857,18 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   skullGroup.add(frontal);
 
   // ── ZYGOMATIC ARCHES (cheekbones, left & right) ───────────────
+  // Each arch runs from just below the orbital rim (front) curving
+  // laterally and back to the temporal region — mirrored on X only.
   for (const side of [-1, 1]) {
-    const zygGeo = new THREE.TorusGeometry(1.55, 0.18, 8, 24, Math.PI * 0.55);
-    const zyg = new THREE.Mesh(zygGeo, skullMat);
-    zyg.position.set(side * 2.55, -0.85, 0.55);
-    zyg.rotation.set(0.35, side * 0.55, side * 0.28);
-    skullGroup.add(zyg);
+    const zygPts = [
+      new THREE.Vector3(side * 1.80, -0.55,  1.80),  // frontal/malar origin
+      new THREE.Vector3(side * 2.70, -0.75,  1.10),  // peak lateral bulge
+      new THREE.Vector3(side * 3.10, -0.90,  0.20),  // mid-arch
+      new THREE.Vector3(side * 3.00, -0.95, -0.60),  // sweeping back
+      new THREE.Vector3(side * 2.55, -0.85, -1.10),  // temporal insertion
+    ];
+    const zygGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(zygPts), 20, 0.12, 8, false);
+    skullGroup.add(new THREE.Mesh(zygGeo, skullMat));
   }
 
   // ── ORBITAL RIMS (eye sockets — just the bony rim rings) ──────
