@@ -2057,16 +2057,32 @@ cv.addEventListener('touchmove', e => {
 }, { passive: true });
 cv.addEventListener('touchend', e => { if (e.touches.length < 2) pinchStart = null; }, { passive: true });
 
+// Look-at target: lerps from body centre (zoomed out) to brain (zoomed in)
+const LOOKAT_BODY  = new THREE.Vector3(0, -22, 0);
+const LOOKAT_BRAIN = new THREE.Vector3(0, -2.94, 0);
+const _lookAtCur   = new THREE.Vector3().copy(LOOKAT_BODY);
+
 function updateCamera() {
   spherical.theta += (targetSph.theta - spherical.theta) * 0.1;
   spherical.phi   += (targetSph.phi   - spherical.phi  ) * 0.1;
   zoomDist        += (targetZoom      - zoomDist        ) * 0.1;
+
+  // t=0 → full body view (far), t=1 → brain close-up (near)
+  // Transition happens between zoom distances ~60 (far) and ~12 (near)
+  const ZOOM_FAR  = 60;
+  const ZOOM_NEAR = 12;
+  const t = Math.max(0, Math.min(1, (zoomDist - ZOOM_NEAR) / (ZOOM_FAR - ZOOM_NEAR)));
+  // t=1 far (body), t=0 near (brain) — invert so near=brain
+  const brainT = 1 - t;
+  const targetLook = LOOKAT_BODY.clone().lerp(LOOKAT_BRAIN, brainT);
+  _lookAtCur.lerp(targetLook, 0.08); // smooth follow
+
   camera.position.set(
     zoomDist * Math.sin(spherical.phi) * Math.sin(spherical.theta),
     zoomDist * Math.cos(spherical.phi),
     zoomDist * Math.sin(spherical.phi) * Math.cos(spherical.theta)
   );
-  camera.lookAt(0, -22, 0);
+  camera.lookAt(_lookAtCur);
 }
 
 // ═══════════════════════════════════════════════════════════════
