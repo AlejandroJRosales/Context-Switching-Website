@@ -801,8 +801,9 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 // ═══════════════════════════════════════════════════════════════
 (function buildSkull() {
   const skullGroup = new THREE.Group();
-  // Brain networkGroup is offset by y=-0.9, so skull is centered at y=-0.9 in scene
-  skullGroup.position.y = -0.9;
+  // Body Y-scale is 1.75; neck top is at body-local y=-2.25 → world y = -0.9 + (-2.25*1.75) = -4.84
+  // Skull base sits ~1.9 units below skullGroup.position.y, so place group at y = -4.84 + 1.9 = -2.94
+  skullGroup.position.y = -2.94;
 
   // Shared skull material — bone-white, semi-transparent so brain shows through
   const skullMat = new THREE.MeshPhongMaterial({
@@ -881,15 +882,6 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   nasal.rotation.set(-0.2, 0, 0);
   nasal.scale.set(1.0, 1.3, 0.5);
   skullGroup.add(nasal);
-
-  // ── TEMPORAL PLATES (side walls of skull, left & right) ───────
-  for (const side of [-1, 1]) {
-    const tempGeo = new THREE.SphereGeometry(2.3, 24, 16, 0, Math.PI * 2, 0.2, Math.PI * 0.65);
-    const temp = new THREE.Mesh(tempGeo, skullMat);
-    temp.scale.set(0.22, 0.80, 0.75);
-    temp.position.set(side * 3.18, 0.0, -0.15);
-    skullGroup.add(temp);
-  }
 
   // ── MAXILLA / UPPER JAW (lower face) ─────────────────────────
   const maxGeo = new THREE.SphereGeometry(2.0, 24, 16, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.4);
@@ -970,7 +962,6 @@ const limbPivots = {};
   const bodyGroup = new THREE.Group();
   bodyGroup.position.y = -0.9;
   // Scale body so it's ~7.5x the head height (head ≈ 6 units → body ≈ 42 units below neck).
-  // Current body spans ~24 units, so multiply Y by 1.75 and X/Z slightly for bulk.
   bodyGroup.scale.set(1.15, 1.75, 1.15);
   scene.add(bodyGroup);
 
@@ -989,18 +980,38 @@ const limbPivots = {};
     shininess: 55, transparent: true, opacity: 0.22, depthWrite: false,
   });
 
-  // Add a bone mesh (both faces) to a target group, with local-space position
-  function bone(parent, geo, px, py, pz, rx=0, ry=0, rz=0, sx=1, sy=1, sz=1) {
-    [boneMat, boneMatBack].forEach(m => {
-      const mesh = new THREE.Mesh(geo, m);
-      mesh.position.set(px, py, pz);
-      mesh.rotation.set(rx, ry, rz);
-      mesh.scale.set(sx, sy, sz);
-      parent.add(mesh);
-    });
+  // Reusable dummy for computing instance matrices
+  const _dummy = new THREE.Object3D();
+  function setInst(im, idx, px, py, pz, rx=0, ry=0, rz=0, sx=1, sy=1, sz=1) {
+    _dummy.position.set(px, py, pz);
+    _dummy.rotation.set(rx, ry, rz);
+    _dummy.scale.set(sx, sy, sz);
+    _dummy.updateMatrix();
+    im.setMatrixAt(idx, _dummy.matrix);
   }
 
-  // Make a pivot group at world position (px,py,pz) inside bodyGroup
+  // Create an InstancedMesh pair (front+back) and add to parent
+  function addInstanced(parent, geo, count, setupFn) {
+    for (const mat of [boneMat, boneMatBack]) {
+      const im = new THREE.InstancedMesh(geo, mat, count);
+      im.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      setupFn(im);
+      im.instanceMatrix.needsUpdate = true;
+      parent.add(im);
+    }
+  }
+
+  // One-off unique bones (not worth instancing)
+  function bone(parent, geo, px, py, pz, rx=0, ry=0, rz=0, sx=1, sy=1, sz=1) {
+    for (const mat of [boneMat, boneMatBack]) {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(px, py, pz);
+      m.rotation.set(rx, ry, rz);
+      m.scale.set(sx, sy, sz);
+      parent.add(m);
+    }
+  }
+
   function pivot(px, py, pz) {
     const g = new THREE.Group();
     g.position.set(px, py, pz);
@@ -1008,36 +1019,43 @@ const limbPivots = {};
     return g;
   }
 
-  // ── CERVICAL SPINE (neck vertebrae) ───────────────────────────
-  for (let i = 0; i < 7; i++) {
-    const vy = -2.25 - i * 0.34;
-    bone(bodyGroup, new THREE.CylinderGeometry(0.30, 0.33, 0.26, 12), 0, vy, 0);
-    bone(bodyGroup, new THREE.BoxGeometry(0.12, 0.18, 0.32), 0, vy, -0.38);
-  }
+  // ── CERVICAL SPINE — 7 vertebrae bodies (instanced) ──────────
+  addInstanced(bodyGroup, new THREE.CylinderGeometry(0.30, 0.33, 0.26, 6), 7, im => {
+    for (let i = 0; i < 7; i++) setInst(im, i, 0, -2.25 - i * 0.34, 0);
+  });
+  addInstanced(bodyGroup, new THREE.BoxGeometry(0.12, 0.18, 0.32), 7, im => {
+    for (let i = 0; i < 7; i++) setInst(im, i, 0, -2.25 - i * 0.34, -0.38);
+  });
 
-  // ── THORACIC SPINE (12 vertebrae) ────────────────────────────
+  // ── THORACIC SPINE — bodies vary in radius (unique geos, kept as bone())
+  //    Transverse processes: 24 identical cylinders (instanced)
   for (let i = 0; i < 12; i++) {
     const vy = -4.65 - i * 0.42;
     const r = 0.38 + i * 0.012;
-    bone(bodyGroup, new THREE.CylinderGeometry(r, r + 0.02, 0.30, 12), 0, vy, 0);
+    bone(bodyGroup, new THREE.CylinderGeometry(r, r + 0.02, 0.30, 6), 0, vy, 0);
     bone(bodyGroup, new THREE.BoxGeometry(0.13, 0.22, 0.48 + i * 0.02), 0, vy, -0.52 - i * 0.02);
-    for (const side of [-1, 1]) {
-      bone(bodyGroup, new THREE.CylinderGeometry(0.07, 0.05, 0.55, 8), side * 0.62, vy, -0.1, 0, 0, Math.PI / 2);
+  }
+  addInstanced(bodyGroup, new THREE.CylinderGeometry(0.07, 0.05, 0.55, 6), 24, im => {
+    let idx = 0;
+    for (let i = 0; i < 12; i++) {
+      const vy = -4.65 - i * 0.42;
+      for (const side of [-1, 1]) setInst(im, idx++, side * 0.62, vy, -0.1, 0, 0, Math.PI / 2);
     }
-  }
+  });
 
-  // ── LUMBAR SPINE (5 vertebrae) ────────────────────────────────
-  for (let i = 0; i < 5; i++) {
-    const vy = -9.7 - i * 0.50;
-    bone(bodyGroup, new THREE.CylinderGeometry(0.52, 0.54, 0.38, 12), 0, vy, 0);
-    bone(bodyGroup, new THREE.BoxGeometry(0.17, 0.28, 0.55), 0, vy, -0.62);
-  }
+  // ── LUMBAR SPINE — 5 vertebrae (instanced) ───────────────────
+  addInstanced(bodyGroup, new THREE.CylinderGeometry(0.52, 0.54, 0.38, 6), 5, im => {
+    for (let i = 0; i < 5; i++) setInst(im, i, 0, -9.7 - i * 0.50, 0);
+  });
+  addInstanced(bodyGroup, new THREE.BoxGeometry(0.17, 0.28, 0.55), 5, im => {
+    for (let i = 0; i < 5; i++) setInst(im, i, 0, -9.7 - i * 0.50, -0.62);
+  });
 
   // ── SACRUM + COCCYX ───────────────────────────────────────────
-  bone(bodyGroup, new THREE.SphereGeometry(0.72, 16, 12, 0, Math.PI*2, 0, Math.PI*0.6), 0, -12.3, 0, 0.3, 0, 0, 1.0, 0.8, 0.7);
-  bone(bodyGroup, new THREE.CylinderGeometry(0.14, 0.06, 0.55, 8), 0, -13.0, 0, 0.4);
+  bone(bodyGroup, new THREE.SphereGeometry(0.72, 10, 8, 0, Math.PI*2, 0, Math.PI*0.6), 0, -12.3, 0, 0.3, 0, 0, 1.0, 0.8, 0.7);
+  bone(bodyGroup, new THREE.CylinderGeometry(0.14, 0.06, 0.55, 6), 0, -13.0, 0, 0.4);
 
-  // ── RIBCAGE ───────────────────────────────────────────────────
+  // ── RIBCAGE — unique TubeGeometry per rib (not instancable) ──
   const RIB_DATA = [
     { y: -4.70, w: 1.6, drop: 0.30, fwd: 2.0, tube: 0.095 },
     { y: -5.10, w: 2.1, drop: 0.35, fwd: 2.2, tube: 0.100 },
@@ -1062,167 +1080,171 @@ const limbPivots = {};
         new THREE.Vector3(side * w * 0.7, y - drop * 1.1, fwd * 0.65),
         new THREE.Vector3(side * (isFloating ? w * 0.4 : 0.35), y - drop * 1.05, isFloating ? fwd * 0.9 : fwd),
       ];
-      const ribGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, tube, 7, false);
-      [boneMat, boneMatBack].forEach(m => {
-        bodyGroup.add(Object.assign(new THREE.Mesh(ribGeo, m)));
-      });
+      const ribGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, tube, 6, false);
+      for (const mat of [boneMat, boneMatBack]) bodyGroup.add(new THREE.Mesh(ribGeo, mat));
     }
   });
 
   // ── STERNUM ───────────────────────────────────────────────────
   bone(bodyGroup, new THREE.BoxGeometry(0.50, 4.0, 0.35), 0, -6.55, 2.45, -0.08);
-  bone(bodyGroup, new THREE.ConeGeometry(0.15, 0.50, 8), 0, -8.72, 2.40, Math.PI, 0, 0);
 
   // ── CLAVICLES ─────────────────────────────────────────────────
-  // S-curved clavicles running from sternum (x~±0.3) to shoulder (x~±3.4)
   for (const side of [-1, 1]) {
     const clavPts = [
-      new THREE.Vector3(side * 0.32, -4.30, 1.80),   // medial end at sternum
-      new THREE.Vector3(side * 1.20, -4.22, 1.50),   // medial curve
-      new THREE.Vector3(side * 2.30, -4.28, 0.90),   // mid-shaft
-      new THREE.Vector3(side * 3.10, -4.45, 0.40),   // lateral, sweeps back
-      new THREE.Vector3(side * 3.52, -4.62, -0.10),  // acromial end at shoulder
+      new THREE.Vector3(side * 0.32, -4.30, 1.80),
+      new THREE.Vector3(side * 1.20, -4.22, 1.50),
+      new THREE.Vector3(side * 2.30, -4.28, 0.90),
+      new THREE.Vector3(side * 3.10, -4.45, 0.40),
+      new THREE.Vector3(side * 3.52, -4.62, -0.10),
     ];
-    const clavGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(clavPts), 20, 0.13, 8, false);
-    [boneMat, boneMatBack].forEach(m => bodyGroup.add(new THREE.Mesh(clavGeo, m)));
+    const clavGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(clavPts), 16, 0.13, 6, false);
+    for (const mat of [boneMat, boneMatBack]) bodyGroup.add(new THREE.Mesh(clavGeo, mat));
   }
 
   // ── SCAPULAE ──────────────────────────────────────────────────
   for (const side of [-1, 1]) {
-    bone(bodyGroup, new THREE.SphereGeometry(1.12, 16, 12, 0, Math.PI*2, 0, Math.PI*0.55), side * 3.05, -5.8, -1.0, 0.22, side * 0.18, 0, 0.65, 1.0, 0.38);
+    bone(bodyGroup, new THREE.SphereGeometry(1.12, 10, 8, 0, Math.PI*2, 0, Math.PI*0.55), side * 3.05, -5.8, -1.0, 0.22, side * 0.18, 0, 0.65, 1.0, 0.38);
   }
 
   // ── PELVIS ────────────────────────────────────────────────────
   for (const side of [-1, 1]) {
-    bone(bodyGroup, new THREE.SphereGeometry(1.85, 20, 14, 0, Math.PI*2, 0, Math.PI*0.58), side * 1.55, -11.55, 0.25, -0.12, side * 0.30, side * 0.20, 0.75, 0.82, 0.55);
+    bone(bodyGroup, new THREE.SphereGeometry(1.85, 12, 10, 0, Math.PI*2, 0, Math.PI*0.58), side * 1.55, -11.55, 0.25, -0.12, side * 0.30, side * 0.20, 0.75, 0.82, 0.55);
   }
-  bone(bodyGroup, new THREE.SphereGeometry(0.72, 14, 10), 0, -12.15, 1.45, 0, 0, 0, 1.0, 0.55, 0.60);
-  for (const side of [-1, 1]) {
-    bone(bodyGroup, new THREE.SphereGeometry(0.85, 12, 10), side * 1.22, -12.55, -0.35, 0, 0, 0, 0.85, 0.70, 0.75);
-  }
+  // Acetabula — 2 matching spheres (instanced)
+  addInstanced(bodyGroup, new THREE.SphereGeometry(0.85, 8, 6), 2, im => {
+    [-1, 1].forEach((side, idx) => setInst(im, idx, side * 1.22, -12.55, -0.35, 0, 0, 0, 0.85, 0.70, 0.75));
+  });
 
-  // ── ARMS (hierarchical) ───────────────────────────────────────
-  // Flex axis: X (lateral). Flex = negative X rotation (arm raises forward).
-  // shoulder pivot → upper arm + elbow pivot
-  //   elbow pivot  → forearm + wrist pivot
-  //     wrist pivot  → hand
+  // ── ARMS ──────────────────────────────────────────────────────
+  // Shared hand geometries reused across both wrists
+  const carpGeo = new THREE.SphereGeometry(0.14, 6, 5);
+  const metaGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.85, 6);
+  const midGeo  = new THREE.CylinderGeometry(0.08, 0.07, 0.55, 6);
+  const distGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.40, 6);
+  const tipGeo  = new THREE.CylinderGeometry(0.06, 0.04, 0.32, 6);
+
+  const wristPivots = [];
+
   for (const side of [-1, 1]) {
     const sKey = side > 0 ? 'L' : 'R';
-    const ax = side * 3.55; // resting X of arm centre
-
-    // — SHOULDER PIVOT at humeral head position —
-    const shoulderPiv = pivot(ax - side * 0.22, -4.88, -0.18);
+    const shoulderPiv = pivot(side * 3.55 - side * 0.22, -4.88, -0.18);
     limbPivots[`shoulder_${sKey}`] = shoulderPiv;
 
-    // Upper arm (humerus) — local: centre is 2.4 units below the pivot
-    bone(shoulderPiv, new THREE.CylinderGeometry(0.30, 0.24, 4.8, 12), side * 0.22, -2.32, 0.18, 0, 0, side * 0.18);
-    // Humeral head stays at pivot origin (visual knob)
-    bone(shoulderPiv, new THREE.SphereGeometry(0.52, 14, 10), 0, 0, 0);
+    bone(shoulderPiv, new THREE.CylinderGeometry(0.30, 0.24, 4.8, 8), side * 0.22, -2.32, 0.18, 0, 0, side * 0.18);
+    bone(shoulderPiv, new THREE.SphereGeometry(0.52, 8, 6), 0, 0, 0);
 
-    // — ELBOW PIVOT — local pos relative to shoulder pivot
-    // Elbow is ~4.7 below humeral head
     const elbowPiv = new THREE.Group();
     elbowPiv.position.set(side * 0.22, -4.70, 0.18);
     shoulderPiv.add(elbowPiv);
     limbPivots[`elbow_${sKey}`] = elbowPiv;
 
-    // Elbow knob at pivot origin
-    bone(elbowPiv, new THREE.SphereGeometry(0.36, 10, 8), 0, 0, 0);
-    // Olecranon nub
-    bone(elbowPiv, new THREE.SphereGeometry(0.22, 8, 8), -side * 0.18, 0, -0.42);
+    bone(elbowPiv, new THREE.SphereGeometry(0.36, 8, 6), 0, 0, 0);
+    bone(elbowPiv, new THREE.SphereGeometry(0.22, 6, 5), -side * 0.18, 0, -0.42);
+    bone(elbowPiv, new THREE.CylinderGeometry(0.17, 0.20, 3.6, 8),  side * 0.28, -1.82, 0, 0, 0, side * 0.08);
+    bone(elbowPiv, new THREE.CylinderGeometry(0.14, 0.10, 3.7, 8), -side * 0.18, -1.87, -0.1, 0, 0, side * 0.05);
 
-    // Forearm bones — local: 1.8 below elbow pivot
-    bone(elbowPiv, new THREE.CylinderGeometry(0.17, 0.20, 3.6, 10),  side * 0.28, -1.82, 0, 0, 0, side * 0.08);
-    bone(elbowPiv, new THREE.CylinderGeometry(0.14, 0.10, 3.7, 10), -side * 0.18, -1.87, -0.1, 0, 0, side * 0.05);
-
-    // — WRIST PIVOT — local pos relative to elbow pivot
-    // Wrist is ~3.77 below elbow
     const wristPiv = new THREE.Group();
     wristPiv.position.set(0, -3.77, 0);
     elbowPiv.add(wristPiv);
     limbPivots[`wrist_${sKey}`] = wristPiv;
+    wristPivots.push(wristPiv);
+  }
 
-    // Carpal cluster at pivot origin
-    for (let ci = 0; ci < 5; ci++) {
-      bone(wristPiv, new THREE.SphereGeometry(0.14, 8, 6), (ci - 2) * 0.20, 0, (ci % 2) * 0.08 - 0.04);
+  // Instanced hand bones per wrist (preserves pivot hierarchy)
+  for (const wristPiv of wristPivots) {
+    // 5 carpals
+    for (const mat of [boneMat, boneMatBack]) {
+      const im = new THREE.InstancedMesh(carpGeo, mat, 5);
+      im.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      for (let ci = 0; ci < 5; ci++) setInst(im, ci, (ci - 2) * 0.20, 0, (ci % 2) * 0.08 - 0.04);
+      im.instanceMatrix.needsUpdate = true;
+      wristPiv.add(im);
     }
-
-    // Hand — metacarpals + phalanges, local below wrist pivot
-    for (let fi = 0; fi < 5; fi++) {
-      const fx = (fi - 2) * 0.32;
-      bone(wristPiv, new THREE.CylinderGeometry(0.09, 0.09, 0.85, 8), fx, -0.75, 0, 0, 0, (fi - 2) * 0.06);
-      bone(wristPiv, new THREE.CylinderGeometry(0.08, 0.07, 0.55, 8), fx, -1.47, 0);
-      if (fi > 0) {
-        bone(wristPiv, new THREE.CylinderGeometry(0.07, 0.06, 0.40, 8), fx, -1.93, 0);
-        bone(wristPiv, new THREE.CylinderGeometry(0.06, 0.04, 0.32, 8), fx, -2.28, 0);
+    // 5 metacarpals, 5 mid phalanges, 4 distal, 4 tip
+    for (const mat of [boneMat, boneMatBack]) {
+      const metaIM = new THREE.InstancedMesh(metaGeo, mat, 5);
+      const midIM  = new THREE.InstancedMesh(midGeo,  mat, 5);
+      const distIM = new THREE.InstancedMesh(distGeo, mat, 4);
+      const tipIM  = new THREE.InstancedMesh(tipGeo,  mat, 4);
+      for (const im of [metaIM, midIM, distIM, tipIM]) im.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      for (let fi = 0; fi < 5; fi++) {
+        const fx = (fi - 2) * 0.32;
+        setInst(metaIM, fi, fx, -0.75, 0, 0, 0, (fi - 2) * 0.06);
+        setInst(midIM,  fi, fx, -1.47, 0);
+        if (fi > 0) {
+          setInst(distIM, fi - 1, fx, -1.93, 0);
+          setInst(tipIM,  fi - 1, fx, -2.28, 0);
+        }
+      }
+      for (const im of [metaIM, midIM, distIM, tipIM]) {
+        im.instanceMatrix.needsUpdate = true;
+        wristPiv.add(im);
       }
     }
   }
 
-  // ── LEGS (hierarchical) ───────────────────────────────────────
-  // Flex axis: X. Hip flex = negative X (leg raises forward).
-  // hip pivot → femur + knee pivot
-  //   knee pivot → tibia/fibula + ankle pivot
-  //     ankle pivot → foot
+  // ── LEGS ──────────────────────────────────────────────────────
+  const metaToeGeo = new THREE.CylinderGeometry(0.09, 0.08, 1.05, 6);
+  const proxToeGeo = new THREE.CylinderGeometry(0.07, 0.05, 0.55, 6);
+
+  const anklePivots = [];
+
   for (const side of [-1, 1]) {
     const sKey = side > 0 ? 'L' : 'R';
     const lx = side * 1.28;
 
-    // — HIP PIVOT at femoral head —
     const hipPiv = pivot(lx + side * 0.45, -12.85, 0.12);
     limbPivots[`hip_${sKey}`] = hipPiv;
 
-    // Femoral head knob at pivot origin
-    bone(hipPiv, new THREE.SphereGeometry(0.68, 14, 10), 0, 0, 0);
+    bone(hipPiv, new THREE.SphereGeometry(0.68, 8, 6), 0, 0, 0);
+    bone(hipPiv, new THREE.CylinderGeometry(0.44, 0.38, 5.0, 10), -side * 0.45, -2.45, -0.12, 0, 0, side * 0.07);
+    bone(hipPiv, new THREE.SphereGeometry(0.52, 8, 6, 0, Math.PI*2, 0, Math.PI*0.6), -side * 0.45, -4.95, -0.12, 0, 0, 0, 1.2, 0.75, 0.90);
+    bone(hipPiv, new THREE.SphereGeometry(0.38, 8, 6), -side * 0.45, -5.10, 0.60, 0, 0, 0, 1.0, 0.80, 0.55);
 
-    // Femur shaft — local: centre 3.6 below pivot, slight lateral offset back
-    bone(hipPiv, new THREE.CylinderGeometry(0.44, 0.38, 7.2, 14), -side * 0.45, -3.50, -0.12, 0, 0, side * 0.07);
-
-    // Femoral condyles — local: ~7.0 below pivot
-    bone(hipPiv, new THREE.SphereGeometry(0.52, 12, 10, 0, Math.PI*2, 0, Math.PI*0.6), -side * 0.45, -7.05, -0.12, 0, 0, 0, 1.2, 0.75, 0.90);
-
-    // Patella — local: ~7.2 below pivot, slightly forward
-    bone(hipPiv, new THREE.SphereGeometry(0.38, 10, 8), -side * 0.45, -7.25, 0.60, 0, 0, 0, 1.0, 0.80, 0.55);
-
-    // — KNEE PIVOT — local relative to hip pivot (~7.15 below)
     const kneePiv = new THREE.Group();
-    kneePiv.position.set(-side * 0.45, -7.15, -0.12);
+    kneePiv.position.set(-side * 0.45, -5.0, -0.12);
     hipPiv.add(kneePiv);
     limbPivots[`knee_${sKey}`] = kneePiv;
 
-    // Tibia — local: 3.2 below knee pivot
-    bone(kneePiv, new THREE.CylinderGeometry(0.32, 0.22, 6.4, 12), 0, -3.20, 0);
-    // Tibial tuberosity
-    bone(kneePiv, new THREE.SphereGeometry(0.24, 8, 6), 0, -0.35, 0.58);
-    // Fibula
-    bone(kneePiv, new THREE.CylinderGeometry(0.10, 0.09, 6.2, 8), side * 0.52, -3.15, -0.1);
+    bone(kneePiv, new THREE.CylinderGeometry(0.32, 0.22, 5.0, 8), 0, -2.50, 0);
+    bone(kneePiv, new THREE.SphereGeometry(0.24, 6, 5), 0, -0.35, 0.58);
+    bone(kneePiv, new THREE.CylinderGeometry(0.10, 0.09, 4.8, 6), side * 0.52, -2.45, -0.1);
 
-    // — ANKLE PIVOT — local relative to knee pivot (~6.4 below)
     const anklePiv = new THREE.Group();
-    anklePiv.position.set(0, -6.40, 0);
+    anklePiv.position.set(0, -5.0, 0);
     kneePiv.add(anklePiv);
     limbPivots[`ankle_${sKey}`] = anklePiv;
 
-    // Talus + calcaneus at pivot origin
-    bone(anklePiv, new THREE.SphereGeometry(0.42, 10, 8), 0, 0, 0.10);
-    bone(anklePiv, new THREE.SphereGeometry(0.52, 10, 8, 0, Math.PI*2, 0, Math.PI*0.7), 0, -0.15, -0.50, -0.3, 0, 0, 0.85, 0.75, 1.10);
+    bone(anklePiv, new THREE.SphereGeometry(0.42, 8, 6), 0, 0, 0.10);
+    bone(anklePiv, new THREE.SphereGeometry(0.52, 8, 6, 0, Math.PI*2, 0, Math.PI*0.7), 0, -0.15, -0.50, -0.3, 0, 0, 0.85, 0.75, 1.10);
+    anklePivots.push(anklePiv);
+  }
 
-    // Foot — metatarsals + toes, local below ankle pivot
-    for (let fi = 0; fi < 5; fi++) {
-      const fz = 0.55 + fi * 0.28;
-      bone(anklePiv, new THREE.CylinderGeometry(0.09, 0.08, 1.05, 8), (fi - 2) * 0.22, -0.40, fz, Math.PI*0.5, 0, (fi-2)*0.04);
-      bone(anklePiv, new THREE.CylinderGeometry(0.07, 0.05, 0.55, 6), (fi - 2) * 0.22, -0.40, fz + 0.80, Math.PI*0.5);
+  // Instanced toe bones per ankle pivot
+  for (const anklePiv of anklePivots) {
+    for (const mat of [boneMat, boneMatBack]) {
+      const metaToeIM = new THREE.InstancedMesh(metaToeGeo, mat, 5);
+      const proxToeIM = new THREE.InstancedMesh(proxToeGeo, mat, 5);
+      for (const im of [metaToeIM, proxToeIM]) im.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      for (let fi = 0; fi < 5; fi++) {
+        const fz = 0.55 + fi * 0.28;
+        setInst(metaToeIM, fi, (fi - 2) * 0.22, -0.40, fz, Math.PI * 0.5, 0, (fi - 2) * 0.04);
+        setInst(proxToeIM, fi, (fi - 2) * 0.22, -0.40, fz + 0.80, Math.PI * 0.5);
+      }
+      for (const im of [metaToeIM, proxToeIM]) {
+        im.instanceMatrix.needsUpdate = true;
+        anklePiv.add(im);
+      }
     }
   }
 
-  // ── CARTILAGE RINGS on trachea ────────────────────────────────
-  for (let i = 0; i < 6; i++) {
-    const trachGeo = new THREE.TorusGeometry(0.32, 0.07, 6, 16, Math.PI * 1.5);
-    const trach = new THREE.Mesh(trachGeo, cartMat);
-    trach.position.set(0, -2.62 - i * 0.36, 0.48);
-    trach.rotation.set(0.2, 0, 0);
-    bodyGroup.add(trach);
-  }
+  // ── TRACHEAL RINGS — 6 identical tori (instanced) ─────────────
+  const trachGeo = new THREE.TorusGeometry(0.32, 0.07, 6, 12, Math.PI * 1.5);
+  const trachIM  = new THREE.InstancedMesh(trachGeo, cartMat, 6);
+  trachIM.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  for (let i = 0; i < 6; i++) setInst(trachIM, i, 0, -2.62 - i * 0.36, 0.48, 0.2, 0, 0);
+  trachIM.instanceMatrix.needsUpdate = true;
+  bodyGroup.add(trachIM);
 })();
 
 // ═══════════════════════════════════════════════════════════════
@@ -1231,28 +1253,29 @@ const limbPivots = {};
 //  bodyGroup is also at y=-0.9, so body-local coords map 1:1 here.
 //  Not connected to the brain network yet.
 // ═══════════════════════════════════════════════════════════════
-// Joint positions scaled to match bodyGroup.scale = (1.15, 1.75, 1.15).
-// Body-local (x, y, z) → world: x*1.15, y*1.75 - 0.9, z*1.15
-// (The -0.9 is bodyGroup.position.y; networkGroup also sits at y=-0.9 so it cancels → multiply y by 1.75 only)
+// Joint positions in networkGroup local space (networkGroup.position.y = -2.94).
+// world_y = -0.9 + body_local_y * 1.75  (bodyGroup at y=-0.9, scaleY=1.75)
+// neuron_y = world_y - (-2.94) = 2.04 + body_local_y * 1.75
+// x: body_local_x * 1.15 (bodyGroup scaleX=1.15), z: body_local_z * 1.15
 const JOINT_DEFS = [
-  // Shoulders  (body-local y≈-4.88 → *1.75 = -8.54; x≈±3.33 → *1.15 = ±3.83)
-  { id: 'shoulder_L', x:  3.83, y: -8.54, z: -0.21, color: '#ff6fa0' },
-  { id: 'shoulder_R', x: -3.83, y: -8.54, z: -0.21, color: '#ff6fa0' },
-  // Elbows  (body-local y≈-9.58 → *1.75 = -16.77; x≈±3.55 → *1.15 = ±4.08)
-  { id: 'elbow_L',    x:  4.08, y: -16.77, z:  0.00, color: '#ff6fa0' },
-  { id: 'elbow_R',    x: -4.08, y: -16.77, z:  0.00, color: '#ff6fa0' },
-  // Wrists  (body-local y≈-13.35 → *1.75 = -23.36; x≈±3.55 → ±4.08)
-  { id: 'wrist_L',    x:  4.08, y: -23.36, z:  0.00, color: '#ff6fa0' },
-  { id: 'wrist_R',    x: -4.08, y: -23.36, z:  0.00, color: '#ff6fa0' },
-  // Hips  (body-local y≈-12.85 → *1.75 = -22.49; x≈±1.73 → ±1.99)
-  { id: 'hip_L',      x:  1.99, y: -22.49, z:  0.14, color: '#a06fff' },
-  { id: 'hip_R',      x: -1.99, y: -22.49, z:  0.14, color: '#a06fff' },
-  // Knees  (body-local y≈-20.00 → *1.75 = -35.00; x≈±1.28 → ±1.47)
-  { id: 'knee_L',     x:  1.47, y: -35.00, z:  0.00, color: '#a06fff' },
-  { id: 'knee_R',     x: -1.47, y: -35.00, z:  0.00, color: '#a06fff' },
-  // Ankles  (body-local y≈-26.45 → *1.75 = -46.29; x≈±1.28 → ±1.47)
-  { id: 'ankle_L',    x:  1.47, y: -46.29, z:  0.12, color: '#a06fff' },
-  { id: 'ankle_R',    x: -1.47, y: -46.29, z:  0.12, color: '#a06fff' },
+  // Shoulders  (body-local y≈-4.88 → neuron_y = 2.04 + -8.54 = -6.50; x≈±3.07 → *1.15 = ±3.53)
+  { id: 'shoulder_L', x:  3.53, y: -6.50, z: -0.21, color: '#ff6fa0' },
+  { id: 'shoulder_R', x: -3.53, y: -6.50, z: -0.21, color: '#ff6fa0' },
+  // Elbows  (body-local y≈-9.58 → neuron_y = 2.04 + -16.77 = -14.73; x≈±3.55 → ±4.08)
+  { id: 'elbow_L',    x:  4.08, y: -14.73, z:  0.00, color: '#ff6fa0' },
+  { id: 'elbow_R',    x: -4.08, y: -14.73, z:  0.00, color: '#ff6fa0' },
+  // Wrists  (body-local y≈-13.35 → neuron_y = 2.04 + -23.36 = -21.32; x≈±3.55 → ±4.08)
+  { id: 'wrist_L',    x:  4.08, y: -21.32, z:  0.00, color: '#ff6fa0' },
+  { id: 'wrist_R',    x: -4.08, y: -21.32, z:  0.00, color: '#ff6fa0' },
+  // Hips  (body-local y≈-12.85 → neuron_y = 2.04 + -22.49 = -20.45; x≈±1.55*1.15 = ±1.78)
+  { id: 'hip_L',      x:  1.78, y: -20.45, z:  0.14, color: '#a06fff' },
+  { id: 'hip_R',      x: -1.78, y: -20.45, z:  0.14, color: '#a06fff' },
+  // Knees  (hip body-local y=-12.85, knee 5.0 below = -17.85 → neuron_y = 2.04 + -31.24 = -29.20)
+  { id: 'knee_L',     x:  1.47, y: -29.20, z:  0.00, color: '#a06fff' },
+  { id: 'knee_R',     x: -1.47, y: -29.20, z:  0.00, color: '#a06fff' },
+  // Ankles  (knee body-local y=-17.85, ankle 5.0 below = -22.85 → neuron_y = 2.04 + -39.99 = -37.95)
+  { id: 'ankle_L',    x:  1.47, y: -37.95, z:  0.12, color: '#a06fff' },
+  { id: 'ankle_R',    x: -1.47, y: -37.95, z:  0.12, color: '#a06fff' },
 ];
 
 // Stored for future wiring; populated after buildBrain runs
@@ -1395,7 +1418,7 @@ function buildBrain() {
     });
   }
   networkGroup = new THREE.Group();
-  networkGroup.position.y = -0.9; // shift brain down so it's centered inside skull cranium
+  networkGroup.position.y = -2.94; // match skull position so brain stays inside cranium
   scene.add(networkGroup);
   neurons = [];
   edgeLines = [];
@@ -2262,8 +2285,8 @@ let simTickMs = 0;
 const SIM_INTERVAL_MS = 60; // base tick interval
 let animFrameId = null;
 
-// Frame rate cap — 30 fps saves significant battery vs uncapped 120 Hz
-const TARGET_FPS = 30;
+// Frame rate cap — 60 fps
+const TARGET_FPS = 60;
 const FRAME_MS   = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
