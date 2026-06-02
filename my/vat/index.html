@@ -84,7 +84,7 @@
 
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-  /* FEED ROW — holds cam + audio side by side, never overlapping */
+  /* FEED ROW: holds cam + audio side by side, never overlapping */
   #feed-row {
     position: fixed;
     top: 118px; left: 20px;
@@ -99,7 +99,7 @@
     #feed-row { top: 144px; left: 32px; }
   }
 
-  /* CAM COLUMN — feed box + optional switch button stacked vertically */
+  /* CAM COLUMN: feed box + optional switch button stacked vertically */
   #cam-col {
     display: flex;
     flex-direction: column;
@@ -375,7 +375,7 @@
     #panel { width: 180px; }
   }
 
-  /* FEED BUTTONS — live inside #feed-row flex layout, not fixed-positioned */
+  /* FEED BUTTONS: live inside #feed-row flex layout, not fixed-positioned */
   /* Button row above the feed panels */
   #feed-btn-row {
     position: fixed;
@@ -590,28 +590,30 @@
 // Superior (top) = +Y, inferior (bottom) = -Y
 // Lobes are spread to fill the jar (radius ~3.6 usable) without clipping the glass
 const LOBE_DEFS = [
-  // Prefrontal Cortex — anterior, superior; large frontal mass, slightly left-right symmetric
-  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.5,  2.0 ] },
-  // Motor Cortex — precentral gyrus; just posterior to prefrontal, still superior
+  // Prefrontal Cortex: anterior, superior; large frontal mass, slightly left-right symmetric
+  { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.2,  2.0 ] },
+  // Motor Cortex: precentral gyrus; just posterior to prefrontal, still superior
   { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [ 0,    1.6,  0.4 ] },
-  // Parietal Lobe — superior, posterior to motor (post-central gyrus and beyond)
+  // Parietal Lobe: superior, posterior to motor (post-central gyrus and beyond)
   { name: 'parietal',    label: 'Parietal Lobe',        task: 'sensory integration',      neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [ 0,    1.5, -1.2 ] },
-  // Occipital Lobe — most posterior, inferior-superior mid; visual cortex at the very back
-  { name: 'occipital',   label: 'Occipital Lobe',       task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 0,    0.5, -2.6 ] },
-  // Temporal Lobe — lateral & inferior, mid-height; flanks both hemispheres (averaged to one center)
-  // Sits below and lateral to parietal, anterior of occipital
-  { name: 'temporal',    label: 'Temporal Lobe',        task: 'auditory / memory',        neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.0, -0.4, -0.2 ] },
-  // Thalamus — deep midline, central relay; slightly superior to brainstem
+  // Occipital Lobe: most posterior, inferior-superior mid; visual cortex at the very back
+  { name: 'occipital',   label: 'Occipital Lobe',       task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 0,   0.5, -2 ] },
+  // Temporal Lobe: split into left and right hemispheres; lateral & inferior, mid-height
+  // Right hemisphere (+X side)
+  { name: 'temporal_r',  label: 'Temporal Lobe (R)',     task: 'auditory / memory',        neurons:  7, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 1.5, 0.5, -0 ] },
+  // Left hemisphere (−X side, mirror of right)
+  { name: 'temporal_l',  label: 'Temporal Lobe (L)',     task: 'auditory / memory',        neurons:  7, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [-1.5, 0.5, -0 ] },
+  // Thalamus: deep midline, central relay; slightly superior to brainstem
   { name: 'thalamus',    label: 'Thalamus',             task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0.0,  0.0 ] },
-  // Brainstem — inferior, posterior; connects spinal cord, below thalamus
-  { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.2, -0.6 ] },
+  // Brainstem: inferior, posterior; connects spinal cord, below thalamus
+  { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons:  6, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -1.2, -0.6 ] },
 ];
 
 // Store initial neuron counts for scale calculations
 const LOBE_BASE_NEURONS = Object.fromEntries(LOBE_DEFS.map(l => [l.name, l.neurons]));
 let neuronScale = 5.0;
 
-const LOBE_SPREAD_BASE = 0.85; // base scatter radius — tighter per-lobe clouds for cleaner anatomy
+const LOBE_SPREAD_BASE = 0.85; // base scatter radius: tighter per-lobe clouds for cleaner anatomy
 let LOBE_SPREAD = LOBE_SPREAD_BASE; // updated by applyNeuronScale; cube-root of scale keeps density constant
 
 function applyNeuronScale(scale) {
@@ -711,6 +713,16 @@ const LOBE_NT_DIST = {
     { nt: 'serotonin',      frac: 0.10 }, // auditory/memory modulation
     { nt: 'dopamine',       frac: 0.06 },
   ],
+  temporal_r: [
+    { nt: 'glutamate',      frac: 0.84 },
+    { nt: 'serotonin',      frac: 0.10 },
+    { nt: 'dopamine',       frac: 0.06 },
+  ],
+  temporal_l: [
+    { nt: 'glutamate',      frac: 0.84 },
+    { nt: 'serotonin',      frac: 0.10 },
+    { nt: 'dopamine',       frac: 0.06 },
+  ],
   parietal: [
     { nt: 'glutamate',      frac: 0.86 },
     { nt: 'serotonin',      frac: 0.08 },
@@ -758,7 +770,7 @@ scene.background = new THREE.Color(0x04060f);
 scene.fog = new THREE.FogExp2(0x04060f, 0.018);
 
 const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 300);
-camera.position.set(0, 0, ORBIT_RADIUS);
+camera.position.set(0, 1.5, ORBIT_RADIUS + 2); // raised & pulled back to show table + jar
 
 // Lights
 scene.add(new THREE.AmbientLight(0x0a2020, 2.5));
@@ -772,167 +784,148 @@ const ptB = new THREE.PointLight(0xff3060, 3, 45);
 ptB.position.set(8, -4, 0);
 scene.add(ptB);
 
+// ═══════════════════════════════════════════════════════════════
+//  VAT (glass jar) + TABLE
+// ═══════════════════════════════════════════════════════════════
+(function buildVatAndTable() {
+
+  // ── TABLE ─────────────────────────────────────────────────────
+  // A matte, slightly rough table surface sitting below the jar.
+  // We use a flat box so it has visible thickness at the edge.
+  const tableGeo = new THREE.BoxGeometry(28, 0.35, 16);
+  const tableMat = new THREE.MeshStandardMaterial({
+    color:     0x2a2118,   // dark walnut-ish wood
+    roughness: 0.92,       // very matte — no specular sheen
+    metalness: 0.00,
+  });
+  const tableMesh = new THREE.Mesh(tableGeo, tableMat);
+  // Brain lobes sit roughly between y ≈ -2 and +2 in world space
+  // (networkGroup.position.y = -0.9, lobe y spans ~±1.8 → bottom ~-2.7)
+  // Jar inner bottom at y ≈ -3.05; table top just under that.
+  tableMesh.position.set(0, -3.55, 0);
+  scene.add(tableMesh);
+
+  // Subtle edge highlight so the table reads as a surface
+  const tableEdgeGeo = new THREE.BoxGeometry(28.04, 0.37, 16.04);
+  const tableEdgeMat = new THREE.MeshStandardMaterial({
+    color:     0x3a3020,
+    roughness: 1.0,
+    metalness: 0.0,
+  });
+  const tableEdge = new THREE.Mesh(tableEdgeGeo, tableEdgeMat);
+  tableEdge.position.copy(tableMesh.position);
+  scene.add(tableEdge);
+  // Put solid table on top so edge is just the border
+  tableMesh.renderOrder = 1;
+
+  // ── GLASS JAR (vat) ───────────────────────────────────────────
+  // Brain occupies roughly a sphere of radius ~3.  We build:
+  //   • cylinder body + hemisphere top cap  → outer shell
+  //   • matching inner surfaces (slightly smaller) to fake glass thickness
+  //   • a flat disk bottom (opaque-ish, frosted)
+  //
+  // All glass parts use MeshPhysicalMaterial for real transmission/IOR.
+
+  const JAR_R       = 3.6;   // outer radius
+  const JAR_H       = 5.8;   // cylinder body height (from bottom to shoulder)
+  const JAR_THICK   = 0.12;  // glass wall thickness
+  const JAR_BOTTOM  = -3.2;  // world-y of the jar's inner floor
+  const JAR_CY_BOT  = JAR_BOTTOM - JAR_THICK; // outer bottom
+
+  // Shared glass material — transmission ON gives the refraction effect
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color:           0xc8ffe8,  // very faint greenish tint (old lab glass)
+    transmission:    0.94,
+    opacity:         1.0,
+    transparent:     true,
+    roughness:       0.04,
+    metalness:       0.0,
+    ior:             1.52,      // borosilicate
+    reflectivity:    0.5,
+    envMapIntensity: 1.2,
+    side:            THREE.DoubleSide,
+    depthWrite:      false,
+  });
+
+  // Slightly darker rim/edge material for the top lip
+  const rimMat = new THREE.MeshPhysicalMaterial({
+    color:       0xa0d8c0,
+    transmission:0.80,
+    opacity:     1.0,
+    transparent: true,
+    roughness:   0.06,
+    metalness:   0.0,
+    ior:         1.52,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+  });
+
+  // Helper: open-ended cylinder (CylinderGeometry with openEnded=true)
+  function makeCylShell(rTop, rBot, h, segs=64, open=true) {
+    return new THREE.CylinderGeometry(rTop, rBot, h, segs, 1, open);
+  }
+
+  // ── Outer cylinder body
+  const outerBodyGeo = makeCylShell(JAR_R, JAR_R, JAR_H);
+  const outerBody    = new THREE.Mesh(outerBodyGeo, glassMat);
+  outerBody.position.y = JAR_CY_BOT + JAR_H / 2;
+  scene.add(outerBody);
+
+  // ── Inner cylinder body (slightly smaller, flipped normals via DoubleSide)
+  const innerR = JAR_R - JAR_THICK;
+  const innerBodyGeo = makeCylShell(innerR, innerR, JAR_H - JAR_THICK);
+  const innerBody    = new THREE.Mesh(innerBodyGeo, glassMat);
+  innerBody.position.y = outerBody.position.y;
+  scene.add(innerBody);
+
+  // ── Flat glass bottom disk (outer)
+  const botGeo  = new THREE.CircleGeometry(JAR_R, 64);
+  const botDisk = new THREE.Mesh(botGeo, new THREE.MeshPhysicalMaterial({
+    color:       0x90d4b8,
+    transmission:0.55,
+    opacity:     1.0,
+    transparent: true,
+    roughness:   0.15,   // slightly frosted bottom
+    metalness:   0.0,
+    ior:         1.52,
+    side:        THREE.DoubleSide,
+    depthWrite:  false,
+  }));
+  botDisk.rotation.x = -Math.PI / 2;
+  botDisk.position.y = JAR_CY_BOT;
+  scene.add(botDisk);
+
+  // ── Thick lip ring at the top opening
+  const lipGeo = new THREE.TorusGeometry(JAR_R, JAR_THICK * 1.5, 16, 80);
+  const lip    = new THREE.Mesh(lipGeo, rimMat);
+  lip.position.y = JAR_CY_BOT + JAR_H; // top of cylinder
+  lip.rotation.x = Math.PI / 2;
+  scene.add(lip);
+
+  // ── Subtle liquid-level plane inside jar (faintly tinted, very transparent)
+  // Makes it look like the brain is submerged in fluid.
+  const liquidGeo = new THREE.CircleGeometry(innerR * 0.98, 64);
+  const liquidMat = new THREE.MeshStandardMaterial({
+    color:       0x1affe0,
+    transparent: true,
+    opacity:     0.06,
+    roughness:   0.0,
+    metalness:   0.15,
+    side:        THREE.FrontSide,
+    depthWrite:  false,
+  });
+  const liquid = new THREE.Mesh(liquidGeo, liquidMat);
+  liquid.rotation.x = -Math.PI / 2;
+  // Just below the lip: lip is at JAR_CY_BOT + JAR_H = -3.32 + 5.8 = 2.48
+  liquid.position.y = 2.3;
+  scene.add(liquid);
+
+})();
+
 // Shared geometries
 const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 
-// ═══════════════════════════════════════════════════════════════
-//  JAR + DESK
-// ═══════════════════════════════════════════════════════════════
-(function buildJarAndDesk() {
-  // -- Wood grain texture (procedural canvas) --
-  function makeWoodTexture(w, h, opts) {
-    opts = opts || {};
-    const baseLight  = opts.baseLight  || '#7a4010';
-    const baseDark   = opts.baseDark   || '#4a2208';
-    const grainLight = opts.grainLight || '#8b5a22';
-    const grainDark  = opts.grainDark  || '#3a1a06';
-    const grainCount = opts.grainCount || 28;
 
-    const cv2 = document.createElement('canvas');
-    cv2.width = w; cv2.height = h;
-    const cx = cv2.getContext('2d');
-
-    // Base gradient along X (length of plank)
-    const bg = cx.createLinearGradient(0, 0, w, 0);
-    bg.addColorStop(0,    baseDark);
-    bg.addColorStop(0.18, baseLight);
-    bg.addColorStop(0.42, baseDark);
-    bg.addColorStop(0.65, baseLight);
-    bg.addColorStop(0.85, baseDark);
-    bg.addColorStop(1,    baseLight);
-    cx.fillStyle = bg;
-    cx.fillRect(0, 0, w, h);
-
-    // Draw grain lines along X, with gentle sinusoidal waviness
-    for (let i = 0; i < grainCount; i++) {
-      const y0    = (i / grainCount) * h;
-      const amp   = 2 + Math.random() * 6;
-      const freq  = 0.004 + Math.random() * 0.008;
-      const phase = Math.random() * Math.PI * 2;
-      const width = 0.5 + Math.random() * 2.5;
-      const color = Math.random() > 0.5 ? grainLight : grainDark;
-      const alpha = 0.25 + Math.random() * 0.55;
-
-      cx.beginPath();
-      cx.moveTo(0, y0 + amp * Math.sin(phase));
-      for (let x = 1; x <= w; x += 2) {
-        const y = y0 + amp * Math.sin(freq * x + phase);
-        cx.lineTo(x, y);
-      }
-      cx.strokeStyle = color;
-      cx.globalAlpha = alpha;
-      cx.lineWidth   = width;
-      cx.stroke();
-      cx.globalAlpha = 1;
-    }
-
-    // Subtle knot-like oval every so often
-    const knotCount = opts.knotCount !== undefined ? opts.knotCount : 2;
-    for (let k = 0; k < knotCount; k++) {
-      const kx  = w * (0.2 + Math.random() * 0.6);
-      const ky  = h * (0.2 + Math.random() * 0.6);
-      const rx  = 18 + Math.random() * 22;
-      const ry  = 10 + Math.random() * 14;
-      const rg  = cx.createRadialGradient(kx, ky, 2, kx, ky, rx);
-      rg.addColorStop(0,   'rgba(30,10,2,0.70)');
-      rg.addColorStop(0.5, 'rgba(80,35,8,0.40)');
-      rg.addColorStop(1,   'rgba(80,35,8,0.00)');
-      cx.save();
-      cx.translate(kx, ky);
-      cx.scale(1, ry / rx);
-      cx.beginPath();
-      cx.arc(0, 0, rx, 0, Math.PI * 2);
-      cx.fillStyle = rg;
-      cx.fill();
-      cx.restore();
-    }
-
-    const tex = new THREE.CanvasTexture(cv2);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 1);
-    return tex;
-  }
-
-  // -- Desk body --
-  const deskGeo  = new THREE.BoxGeometry(36, 0.5, 18);
-  const woodTex  = makeWoodTexture(1024, 256, { grainCount: 32, knotCount: 3 });
-  const deskMat  = new THREE.MeshPhongMaterial({
-    map:       woodTex,
-    specular:  0x1a0a04,
-    shininess: 5,
-  });
-  const desk = new THREE.Mesh(deskGeo, deskMat);
-  desk.position.set(0, -5.25, 0);
-  scene.add(desk);
-
-  // Desk top surface — shinier lacquered wood strip
-  const stripGeo  = new THREE.BoxGeometry(36, 0.02, 18);
-  const stripTex  = makeWoodTexture(1024, 256, {
-    baseLight:  '#9a6025', baseDark:  '#5a2e0c',
-    grainLight: '#b07030', grainDark: '#3e1a05',
-    grainCount: 36, knotCount: 2,
-  });
-  const stripMat  = new THREE.MeshPhongMaterial({
-    map:       stripTex,
-    specular:  0x221108,
-    shininess: 12,
-  });
-  const strip = new THREE.Mesh(stripGeo, stripMat);
-  strip.position.set(0, -4.99, 0);
-  scene.add(strip);
-
-  // -- Jar glass cylinder (sides) --
-  const jarR      = 4.2;   // radius
-  const jarH      = 8.5;   // height
-  const jarY      = -5.0 + jarH / 2; // bottom sits on desk top
-
-  const jarSideGeo = new THREE.CylinderGeometry(jarR, jarR, jarH, 64, 1, true);
-  const glassMat   = new THREE.MeshPhongMaterial({
-    color: 0x88ccbb,
-    specular: 0xffffff,
-    shininess: 200,
-    transparent: true,
-    opacity: 0.13,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const jarSide = new THREE.Mesh(jarSideGeo, glassMat);
-  jarSide.position.set(0, jarY, 0);
-  scene.add(jarSide);
-
-  // Jar bottom disc
-  const jarBottomGeo = new THREE.CylinderGeometry(jarR, jarR, 0.18, 64);
-  const jarBottomMat = new THREE.MeshPhongMaterial({
-    color: 0x99ddcc,
-    specular: 0xffffff,
-    shininess: 160,
-    transparent: true,
-    opacity: 0.35,
-  });
-  const jarBottom = new THREE.Mesh(jarBottomGeo, jarBottomMat);
-  jarBottom.position.set(0, -5.0 + 0.09, 0);
-  scene.add(jarBottom);
-
-  // Jar rim ring at top
-  const rimGeo = new THREE.TorusGeometry(jarR, 0.10, 16, 64);
-  const rimMat = new THREE.MeshPhongMaterial({
-    color: 0xaaddcc,
-    specular: 0xffffff,
-    shininess: 180,
-    transparent: true,
-    opacity: 0.55,
-  });
-  const rim = new THREE.Mesh(rimGeo, rimMat);
-  rim.rotation.x = Math.PI / 2;
-  rim.position.set(0, -5.0 + jarH, 0);
-  scene.add(rim);
-
-  // Subtle green glow point light inside jar
-  const jarGlow = new THREE.PointLight(0x2fffa0, 1.8, 14);
-  jarGlow.position.set(0, 0, 0);
-  scene.add(jarGlow);
-})();
 
 // ═══════════════════════════════════════════════════════════════
 //  SIMULATION STATE
@@ -1190,14 +1183,14 @@ function buildBrain() {
   // Store occipital indices for camera injection
   occipitalIdxs = lobeNeuronMap['occipital'] || [];
 
-  // Store temporal indices for audio injection
-  temporalIdxs = lobeNeuronMap['temporal'] || [];
+  // Store temporal indices for audio injection: pool both hemispheres
+  temporalIdxs = [...(lobeNeuronMap['temporal_r'] || []), ...(lobeNeuronMap['temporal_l'] || []), ...(lobeNeuronMap['temporal'] || [])];
 
   // Camera input layer: 10 by 10 grid of input nodes wired to occipital
   buildCamInputLayer(lobeNeuronMap['occipital']);
 
-  // Audio input layer: AUDIO_BANDS rows x AUDIO_COLS cols wired to temporal
-  buildAudioInputLayer(lobeNeuronMap['temporal']);
+  // Audio input layer: AUDIO_BANDS rows x AUDIO_COLS cols wired to temporal (both hemispheres)
+  buildAudioInputLayer([...(lobeNeuronMap['temporal_r'] || []), ...(lobeNeuronMap['temporal_l'] || []), ...(lobeNeuronMap['temporal'] || [])]);
 }
 
 // edgeLines: flat array of { mat, srcIdx, tgtIdx, baseOpacity, colA, colB }
@@ -1226,7 +1219,8 @@ function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
 
-  const GRID_ORIGIN = new THREE.Vector3(-4.8, 0.8, -0.8);
+  // Cam grid mirrors audio layer: centered at x=0, behind occipital lobe at z=-3.5
+  const GRID_ORIGIN = new THREE.Vector3(0, 2, -5.2);
   const SPACING = 0.22;
   const half = (camRes - 1) / 2;
   const camColor = new THREE.Color('#56b4e9');
@@ -1237,9 +1231,9 @@ function buildCamInputLayer(occIdxs) {
     for (let col = 0; col < camRes; col++) {
       const idx = row * camRes + col;
       const pos = new THREE.Vector3(
-        GRID_ORIGIN.x,
+        GRID_ORIGIN.x + (col - half) * SPACING,
         GRID_ORIGIN.y + (half - row) * SPACING,
-        GRID_ORIGIN.z + (col - half) * SPACING
+        GRID_ORIGIN.z
       );
       gridPositions.push(pos);
 
@@ -1293,8 +1287,8 @@ function buildAudioInputLayer(tempIdxs) {
   audioNodeMeshes = [];
   audioEdgeLines  = [];
 
-  // Audio layer faces perpendicular to cam layer (cam=YZ plane at fixed X; audio=XY plane at fixed Z)
-  const GRID_ORIGIN = new THREE.Vector3(2, -0.8, 3.5);
+  // Audio layer on same side as visual layer (z=-5.2), centered x=0, down 5 from cam grid
+  const GRID_ORIGIN = new THREE.Vector3(0, -2, -5.2);
   const COL_SPACING = 0.22;
   const ROW_SPACING = 0.28;
   const numBands    = AUDIO_BANDS.length;
@@ -1968,12 +1962,12 @@ let simTickMs = 0;
 const SIM_INTERVAL_MS = 60; // base tick interval
 let animFrameId = null;
 
-// Frame rate cap — 30 fps saves significant battery vs uncapped 120 Hz
+// Frame rate cap: 30 fps saves significant battery vs uncapped 120 Hz
 const TARGET_FPS = 30;
 const FRAME_MS   = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
-// Visibility pause — stop rendering when tab is hidden
+// Visibility pause: stop rendering when tab is hidden
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
