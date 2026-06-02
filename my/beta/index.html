@@ -84,7 +84,7 @@
 
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-  /* FEED ROW — holds cam + audio side by side, never overlapping */
+  /* FEED ROW: holds cam + audio side by side, never overlapping */
   #feed-row {
     position: fixed;
     top: 118px; left: 20px;
@@ -99,7 +99,7 @@
     #feed-row { top: 144px; left: 32px; }
   }
 
-  /* CAM COLUMN — feed box + optional switch button stacked vertically */
+  /* CAM COLUMN: feed box + optional switch button stacked vertically */
   #cam-col {
     display: flex;
     flex-direction: column;
@@ -375,7 +375,7 @@
     #panel { width: 180px; }
   }
 
-  /* FEED BUTTONS — live inside #feed-row flex layout, not fixed-positioned */
+  /* FEED BUTTONS: live inside #feed-row flex layout, not fixed-positioned */
   /* Button row above the feed panels */
   #feed-btn-row {
     position: fixed;
@@ -594,20 +594,20 @@
 // Superior (top) = +Y, inferior (bottom) = -Y
 // Lobes are spread to fill the jar (radius ~3.6 usable) without clipping the glass
 const LOBE_DEFS = [
-  // Prefrontal Cortex — anterior, superior; large frontal mass, slightly left-right symmetric
+  // Prefrontal Cortex: anterior, superior; large frontal mass, slightly left-right symmetric
   { name: 'prefrontal',  label: 'Prefrontal Cortex',   task: 'planning / decision',      neurons: 18, connP: 0.25, crossP: 0.12, color: '#2fffa0', pos: [ 0,    1.5,  2.0 ] },
-  // Motor Cortex — precentral gyrus; just posterior to prefrontal, still superior
+  // Motor Cortex: precentral gyrus; just posterior to prefrontal, still superior
   { name: 'motor',       label: 'Motor Cortex',         task: 'action control',           neurons: 14, connP: 0.20, crossP: 0.10, color: '#ff6fa0', pos: [ 0,    1.6,  0.4 ] },
-  // Parietal Lobe — superior, posterior to motor (post-central gyrus and beyond)
+  // Parietal Lobe: superior, posterior to motor (post-central gyrus and beyond)
   { name: 'parietal',    label: 'Parietal Lobe',        task: 'sensory integration',      neurons: 12, connP: 0.18, crossP: 0.09, color: '#a06fff', pos: [ 0,    1.5, -1.2 ] },
-  // Occipital Lobe — most posterior, inferior-superior mid; visual cortex at the very back
+  // Occipital Lobe: most posterior, inferior-superior mid; visual cortex at the very back
   { name: 'occipital',   label: 'Occipital Lobe',       task: 'visual processing',        neurons: 16, connP: 0.22, crossP: 0.08, color: '#56b4e9', pos: [ 0,    0.5, -2.6 ] },
-  // Temporal Lobe — lateral & inferior, mid-height; flanks both hemispheres (averaged to one center)
+  // Temporal Lobe: lateral & inferior, mid-height; flanks both hemispheres (averaged to one center)
   // Sits below and lateral to parietal, anterior of occipital
   { name: 'temporal',    label: 'Temporal Lobe',        task: 'auditory / memory',        neurons: 14, connP: 0.20, crossP: 0.10, color: '#e6a020', pos: [ 2.0, -0.4, -0.2 ] },
-  // Thalamus — deep midline, central relay; slightly superior to brainstem
+  // Thalamus: deep midline, central relay; slightly superior to brainstem
   { name: 'thalamus',    label: 'Thalamus',             task: 'inter-lobe routing',       neurons:  8, connP: 0.30, crossP: 0.25, color: '#e8e8e8', pos: [ 0,    0.0,  0.0 ] },
-  // Brainstem — inferior, posterior; connects spinal cord, below thalamus
+  // Brainstem: inferior, posterior; connects spinal cord, below thalamus
   { name: 'brainstem',   label: 'Brainstem',            task: 'reflex / survival drives', neurons: 12, connP: 0.35, crossP: 0.18, color: '#ff4444', pos: [ 0,   -2.2, -0.6 ] },
 ];
 
@@ -615,7 +615,7 @@ const LOBE_DEFS = [
 const LOBE_BASE_NEURONS = Object.fromEntries(LOBE_DEFS.map(l => [l.name, l.neurons]));
 let neuronScale = 5.0;
 
-const LOBE_SPREAD_BASE = 0.85; // base scatter radius — tighter per-lobe clouds for cleaner anatomy
+const LOBE_SPREAD_BASE = 0.85; // base scatter radius: tighter per-lobe clouds for cleaner anatomy
 let LOBE_SPREAD = LOBE_SPREAD_BASE; // updated by applyNeuronScale; cube-root of scale keeps density constant
 
 function applyNeuronScale(scale) {
@@ -623,7 +623,7 @@ function applyNeuronScale(scale) {
   // Spread grows as cube-root of scale so the volume (and density) stays roughly constant
   LOBE_SPREAD = LOBE_SPREAD_BASE * Math.cbrt(scale);
   for (const lobe of LOBE_DEFS) {
-    // Brainstem is fixed at 12 — one neuron per joint, regardless of scale
+    // Brainstem is fixed at 12: one neuron per joint, regardless of scale
     if (lobe.name === 'brainstem') { lobe.neurons = 12; continue; }
     lobe.neurons = Math.max(1, Math.round(LOBE_BASE_NEURONS[lobe.name] * scale));
   }
@@ -805,7 +805,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   // Skull base sits ~1.9 units below skullGroup.position.y, so place group at y = -4.84 + 1.9 = -2.94
   skullGroup.position.y = -2.94;
 
-  // Shared skull material — bone-white, semi-transparent so brain shows through
+  // Shared skull material: bone-white, semi-transparent so brain shows through
   const skullMat = new THREE.MeshPhongMaterial({
     color: 0xd4c8aa,
     emissive: 0x1a1510,
@@ -830,7 +830,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 
   // CRANIUM (upper skull dome)
   // Ellipsoid approximated with scaled sphere
-  const craniumGeo = new THREE.SphereGeometry(3.5, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  const craniumGeo = new THREE.SphereGeometry(3, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.62);
   const cranium = new THREE.Mesh(craniumGeo, skullMat);
   cranium.scale.set(1.0, 1.05, 1.12);
   cranium.position.set(0, 0.55, -0.1);
@@ -842,36 +842,13 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   skullGroup.add(craniumB);
 
   // OCCIPITAL BASE (back-bottom of skull)
-  const occGeo = new THREE.SphereGeometry(2.8, 32, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.5);
+  const occGeo = new THREE.SphereGeometry(2.3, 32, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.5);
   const occ = new THREE.Mesh(occGeo, skullMat);
   occ.scale.set(1.0, 0.9, 1.05);
-  occ.position.set(0, 0.55, -0.1);
+  occ.position.set(0, -0.29, -0.87);
   skullGroup.add(occ);
 
-  // FRONTAL BONE (forehead)
-  const frontalGeo = new THREE.SphereGeometry(2.6, 32, 24, -0.5, Math.PI * 1.0, 0, Math.PI * 0.5);
-  const frontal = new THREE.Mesh(frontalGeo, skullMat);
-  frontal.scale.set(1.0, 1.1, 0.88);
-  frontal.position.set(0, 0.4, 1.4);
-  frontal.rotation.x = 0.18;
-  skullGroup.add(frontal);
-
-  // ZYGOMATIC ARCHES (cheekbones, left & right)
-  // Each arch runs from just below the orbital rim (front) curving
-  // laterally and back to the temporal region — mirrored on X only.
-  for (const side of [-1, 1]) {
-    const zygPts = [
-      new THREE.Vector3(side * 1.80, -0.55,  1.80),  // frontal/malar origin
-      new THREE.Vector3(side * 2.70, -0.75,  1.10),  // peak lateral bulge
-      new THREE.Vector3(side * 3.10, -0.90,  0.20),  // mid-arch
-      new THREE.Vector3(side * 3.00, -0.95, -0.60),  // sweeping back
-      new THREE.Vector3(side * 2.55, -0.85, -1.10),  // temporal insertion
-    ];
-    const zygGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(zygPts), 20, 0.12, 8, false);
-    skullGroup.add(new THREE.Mesh(zygGeo, skullMat));
-  }
-
-  // ORBITAL RIMS (eye sockets — just the bony rim rings)
+  // ORBITAL RIMS (eye sockets: just the bony rim rings)
   for (const side of [-1, 1]) {
     const orbGeo = new THREE.TorusGeometry(0.72, 0.14, 8, 28);
     const orb = new THREE.Mesh(orbGeo, skullMat);
@@ -881,7 +858,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
     skullGroup.add(orb);
   }
 
-  // NASAL APERTURE (pyriform — simplified as a small arch)
+  // NASAL APERTURE (pyriform: simplified as a small arch)
   const nasalGeo = new THREE.TorusGeometry(0.42, 0.10, 8, 20, Math.PI);
   const nasal = new THREE.Mesh(nasalGeo, skullMat);
   nasal.position.set(0, -0.22, 2.68);
@@ -890,14 +867,14 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   skullGroup.add(nasal);
 
   // MAXILLA / UPPER JAW (lower face)
-  const maxGeo = new THREE.SphereGeometry(2.0, 24, 16, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.4);
+  const maxGeo = new THREE.SphereGeometry(2.0, 24, 16, 0, Math.PI * 2, Math.PI * 0.1, Math.PI * 0.4);
   const max = new THREE.Mesh(maxGeo, skullMat);
   max.scale.set(1.0, 0.65, 0.78);
   max.position.set(0, -1.05, 1.65);
-  max.rotation.x = -0.3;
+  max.rotation.x = -0.05;
   skullGroup.add(max);
 
-  // MANDIBLE (lower jaw — separate bone, slightly detached)
+  // MANDIBLE (lower jaw: separate bone, slightly detached)
   const mandGeo = new THREE.SphereGeometry(1.85, 24, 12, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.28);
   const mand = new THREE.Mesh(mandGeo, skullMat);
   mand.scale.set(1.0, 0.55, 0.75);
@@ -923,7 +900,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   const sutureMat = new THREE.LineBasicMaterial({
     color: 0x8a7d5a, transparent: true, opacity: 0.18
   });
-  // Sagittal suture — front to back along midline
+  // Sagittal suture: front to back along midline
   {
     const pts = [];
     for (let i = 0; i <= 20; i++) {
@@ -938,7 +915,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
     const sg = new THREE.BufferGeometry().setFromPoints(pts);
     skullGroup.add(new THREE.Line(sg, sutureMat));
   }
-  // Coronal suture — across top
+  // Coronal suture: across top
   {
     const pts = [];
     for (let i = 0; i <= 20; i++) {
@@ -961,7 +938,7 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
 //  SKELETON BODY GEOMETRY  (hierarchical pivot groups for joint animation)
 // ═══════════════════════════════════════════════════════════════
 
-// Pivot groups keyed by joint id — rotated by the animation system
+// Pivot groups keyed by joint id: rotated by the animation system
 const limbPivots = {};
 
 (function buildBody() {
@@ -1025,7 +1002,7 @@ const limbPivots = {};
     return g;
   }
 
-  // CERVICAL SPINE — 7 vertebrae bodies (instanced)
+  // CERVICAL SPINE: 7 vertebrae bodies (instanced)
   addInstanced(bodyGroup, new THREE.CylinderGeometry(0.30, 0.33, 0.26, 6), 7, im => {
     for (let i = 0; i < 7; i++) setInst(im, i, 0, -2.25 - i * 0.34, 0);
   });
@@ -1033,7 +1010,7 @@ const limbPivots = {};
     for (let i = 0; i < 7; i++) setInst(im, i, 0, -2.25 - i * 0.34, -0.38);
   });
 
-  // THORACIC SPINE — bodies vary in radius (unique geos, kept as bone())
+  // THORACIC SPINE: bodies vary in radius (unique geos, kept as bone())
   //    Transverse processes: 24 identical cylinders (instanced)
   for (let i = 0; i < 12; i++) {
     const vy = -4.65 - i * 0.42;
@@ -1049,7 +1026,7 @@ const limbPivots = {};
     }
   });
 
-  // LUMBAR SPINE — 5 vertebrae (instanced)
+  // LUMBAR SPINE: 5 vertebrae (instanced)
   addInstanced(bodyGroup, new THREE.CylinderGeometry(0.52, 0.54, 0.38, 6), 5, im => {
     for (let i = 0; i < 5; i++) setInst(im, i, 0, -9.7 - i * 0.50, 0);
   });
@@ -1061,7 +1038,7 @@ const limbPivots = {};
   bone(bodyGroup, new THREE.SphereGeometry(0.72, 10, 8, 0, Math.PI*2, 0, Math.PI*0.6), 0, -12.3, 0, 0.3, 0, 0, 1.0, 0.8, 0.7);
   bone(bodyGroup, new THREE.CylinderGeometry(0.14, 0.06, 0.55, 6), 0, -13.0, 0, 0.4);
 
-  // RIBCAGE — unique TubeGeometry per rib (not instancable)
+  // RIBCAGE: unique TubeGeometry per rib (not instancable)
   const RIB_DATA = [
     { y: -4.70, w: 1.6, drop: 0.30, fwd: 2.0, tube: 0.095 },
     { y: -5.10, w: 2.1, drop: 0.35, fwd: 2.2, tube: 0.100 },
@@ -1116,7 +1093,7 @@ const limbPivots = {};
   for (const side of [-1, 1]) {
     bone(bodyGroup, new THREE.SphereGeometry(1.85, 12, 10, 0, Math.PI*2, 0, Math.PI*0.58), side * 1.55, -11.55, 0.25, -0.12, side * 0.30, side * 0.20, 0.75, 0.82, 0.55);
   }
-  // Acetabula — 2 matching spheres (instanced)
+  // Acetabula: 2 matching spheres (instanced)
   addInstanced(bodyGroup, new THREE.SphereGeometry(0.85, 8, 6), 2, im => {
     [-1, 1].forEach((side, idx) => setInst(im, idx, side * 1.22, -12.55, -0.35, 0, 0, 0, 0.85, 0.70, 0.75));
   });
@@ -1244,7 +1221,7 @@ const limbPivots = {};
     }
   }
 
-  // TRACHEAL RINGS — 6 identical tori (instanced)
+  // TRACHEAL RINGS: 6 identical tori (instanced)
   const trachGeo = new THREE.TorusGeometry(0.32, 0.07, 6, 12, Math.PI * 1.5);
   const trachIM  = new THREE.InstancedMesh(trachGeo, cartMat, 6);
   trachIM.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -1637,7 +1614,7 @@ let   camEdgeLines  = [];
 function buildCamInputLayer(occIdxs) {
   camNodeMeshes = [];
   camEdgeLines  = [];
-  // No meshes or edges added to scene — input still injected via pixelValues in simTick
+  // No meshes or edges added to scene: input still injected via pixelValues in simTick
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1651,11 +1628,11 @@ let   audioEdgeLines  = [];
 function buildAudioInputLayer(tempIdxs) {
   audioNodeMeshes = [];
   audioEdgeLines  = [];
-  // No meshes or edges added to scene — input still injected via audioValues in simTick
+  // No meshes or edges added to scene: input still injected via audioValues in simTick
 }
 
 function updateAudioInputVisuals() {
-  // No visual nodes — audio data still drives temporal lobe via simTick
+  // No visual nodes: audio data still drives temporal lobe via simTick
 }
 
 // Sample AnalyserNode -> audioValues every animation frame when active
@@ -1721,7 +1698,7 @@ function drawAudioViz() {
 }
 
 function updateCamInputVisuals() {
-  // No visual nodes — camera data still drives occipital lobe via simTick
+  // No visual nodes: camera data still drives occipital lobe via simTick
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1926,7 +1903,7 @@ if (brainDead) return;
   // Joint neuron idle pulse + flex/ext driven by brainstem firing
   const t = performance.now() * 0.001;
 
-  // Flex target angles (radians) when fired vs resting — negative X = forward flex
+  // Flex target angles (radians) when fired vs resting: negative X = forward flex
   const FLEX_ANGLES = {
     shoulder_L: -1.2, shoulder_R: -1.2,  // arm swings forward ~70°
     elbow_L:    -1.4, elbow_R:    -1.4,  // forearm curls up ~80°
@@ -2078,7 +2055,7 @@ function updateCamera() {
   const ZOOM_FAR  = 60;
   const ZOOM_NEAR = 12;
   const t = Math.max(0, Math.min(1, (zoomDist - ZOOM_NEAR) / (ZOOM_FAR - ZOOM_NEAR)));
-  // t=1 far (body), t=0 near (brain) — invert so near=brain
+  // t=1 far (body), t=0 near (brain): invert so near=brain
   const brainT = 1 - t;
   const targetLook = LOOKAT_BODY.clone().lerp(LOOKAT_BRAIN, brainT);
   _lookAtCur.lerp(targetLook, 0.08); // smooth follow
@@ -2307,12 +2284,12 @@ let simTickMs = 0;
 const SIM_INTERVAL_MS = 60; // base tick interval
 let animFrameId = null;
 
-// Frame rate cap — 60 fps
+// Frame rate cap: 60 fps
 const TARGET_FPS = 60;
 const FRAME_MS   = 1000 / TARGET_FPS;
 let lastFrameTime = 0;
 
-// Visibility pause — stop rendering when tab is hidden
+// Visibility pause: stop rendering when tab is hidden
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
@@ -2453,7 +2430,7 @@ function applyResolution() {
   camCanvas.width  = camRes;
   camCanvas.height = camRes;
   document.getElementById('vb-res').textContent = camRes;
-  // No visual layer to rebuild — cam input injected directly into occipital neurons
+  // No visual layer to rebuild: cam input injected directly into occipital neurons
 }
 
 document.getElementById('sl-res').addEventListener('input', function() {
