@@ -1677,7 +1677,7 @@
                 // lifReset : membrane potential immediately after a spike.
                 //            Sub-threshold reset creates relative refractory period.
                 this.lifLeak   = 0.85;   // membrane leak coefficient
-                this.lifThresh = 1.0;    // spike threshold (V_th)
+                this.lifThresh = 0.25;    // spike threshold (V_th)
                 this.lifReset  = -0.1;  // post-spike reset (V_reset < V_rest=0)
 
                 // Refractory counters: number of steps each node cannot fire
@@ -1728,7 +1728,7 @@
                 //   3. Fires (actA[i] = 1) and resets when V >= lifThresh
                 //   4. Is clamped to lifReset during the refractory period
                 //
-                // A continuous "sub-threshold" signal (sigmoid of V − threshold) is
+                // A continuous "sub-threshold" signal (sigmoid of V - threshold) is
                 // passed to downstream layers so gradient information propagates even
                 // when no discrete spike occurs, preserving trainability under REINFORCE.
                 const refracA  = this.refracA;
@@ -1767,7 +1767,7 @@
                         hA[i]   = lifRst;       // hard reset
                         refracA[i] = refracPd;  // enter refractory period
                     } else {
-                        // Soft sigmoid of (V − threshold): gives graded output below
+                        // Soft sigmoid of (V - threshold): gives graded output below
                         // threshold, smoothly approaching 1 as V -> lifTh.
                         const vRel = hA[i] - lifTh;  // negative when sub-threshold
                         actA[i] = vRel >= 0
@@ -1785,7 +1785,7 @@
                 const hB      = this.hB;
                 const refracB = this.refracB;
                 for (let i = 0; i < NB; i++) {
-                    // --- refractory ---
+                    // refractory
                     if (refracB[i] > 0) {
                         refracB[i]--;
                         hB[i] = lifRst;
@@ -1793,10 +1793,10 @@
                         continue;
                     }
 
-                    // --- leak ---
+                    // leak
                     hB[i] *= lifLeak;
 
-                    // --- integrate ---
+                    // integrate
                     let net = this.biasB[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * NB + i;
@@ -1808,7 +1808,7 @@
                     }
                     hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
 
-                    // --- fire-and-reset or soft sub-threshold output ---
+                    // fire-and-reset or soft sub-threshold output
                     if (hB[i] >= lifTh) {
                         actB[i] = 1.0;
                         hB[i]   = lifRst;
@@ -3037,7 +3037,7 @@
 
                 // 7 original inputs + 12 directional ray inputs = 19 total
                 this.brain = new DenseNetwork(15, null, 0.001, 0.5, 0.001);
-                this.ACTION_HOLD   = 30; // hold each decision for n frames
+                this.ACTION_HOLD   = 60; // hold each decision for n frames
                 this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD); // random phase offset so animals don't all re-decide on the same frame
                 this.currentAction = 0;
                 this.outputIdx = 0;
@@ -3799,13 +3799,17 @@
                 }
             }
 
-            _getAct(role, idx) {
+            // Returns 1 (firing) or 0 (silent) — binary, like an action potential.
+            // A/B: spike when actA/actB === 1.0 (hard threshold hit).
+            // In:  fires when standardized input magnitude exceeds 0.5 (above noise floor).
+            // Out: only the argmax (chosen action) fires.
+            _isFiring(role, idx) {
                 if (!this.nn) return 0;
                 switch (role) {
-                    case 'in':  return Math.abs(this.nn._standardized?.[idx] ?? 0) / 5;
-                    case 'a':   return this.nn.actA[idx] ?? 0;
-                    case 'b':   return this.nn.actB[idx] ?? 0;
-                    case 'out': return this.nn.actO[idx] ?? 0;
+                    case 'in':  return Math.abs(this.nn._standardized?.[idx] ?? 0) > 0.5 ? 1 : 0;
+                    case 'a':   return (this.nn.actA[idx] ?? 0) >= 1.0 ? 1 : 0;
+                    case 'b':   return (this.nn.actB[idx] ?? 0) >= 1.0 ? 1 : 0;
+                    case 'out': return (idx === this.outputIdx) ? 1 : 0;
                 }
                 return 0;
             }
@@ -3813,47 +3817,42 @@
             _updateActivations() {
                 if (!this.nn) return;
 
-                // Update node meshes
-                const applyNode = (mesh, act, isActiveOut) => {
-                    const ei = isActiveOut ? 3.5 : 0.08 + act * 2.2;
-                    mesh.material.emissiveIntensity = ei;
-                    mesh.material.opacity = isActiveOut ? 1.0 : 0.3 + act * 0.65;
-                    const s = isActiveOut ? 1.6 : 1.0 + act * 0.4;
-                    mesh.scale.setScalar(s);
-                    if (isActiveOut) {
-                        mesh.material.emissive.copy(this.COL_OUT_ACTIVE);
-                        mesh.material.color.copy(this.COL_OUT_ACTIVE);
+                // Binary node appearance: firing = fully lit + scaled up; silent = dim + normal scale
+                const applyNode = (mesh, firing, baseCol, fireCol) => {
+                    if (firing) {
+                        mesh.material.color.copy(fireCol ?? baseCol);
+                        mesh.material.emissive.copy(fireCol ?? baseCol);
+                        mesh.material.emissiveIntensity = 1;
+                        mesh.material.opacity = 1.0;
+                        mesh.scale.setScalar(1.6);
+                    } else {
+                        mesh.material.color.copy(baseCol);
+                        mesh.material.emissive.copy(baseCol);
+                        mesh.material.emissiveIntensity = 0.05;
+                        mesh.material.opacity = 0.28;
+                        mesh.scale.setScalar(1.0);
                     }
                 };
 
-                for (let i = 0; i < this._nodeMeshes.in.length;  i++)
-                    applyNode(this._nodeMeshes.in[i],  this._getAct('in',  i), false);
-                for (let i = 0; i < this._nodeMeshes.a.length;   i++)
-                    applyNode(this._nodeMeshes.a[i],   this._getAct('a',   i), false);
-                for (let i = 0; i < this._nodeMeshes.b.length;   i++)
-                    applyNode(this._nodeMeshes.b[i],   this._getAct('b',   i), false);
-                for (let i = 0; i < this._nodeMeshes.out.length;  i++) {
-                    const isActive = (i === this.outputIdx);
-                    const mesh = this._nodeMeshes.out[i];
-                    // Reset colour before applying (output nodes toggle red/green)
-                    if (isActive) {
-                        mesh.material.color.copy(this.COL_OUT_ACTIVE);
-                        mesh.material.emissive.copy(this.COL_OUT_ACTIVE);
-                    } else {
-                        mesh.material.color.copy(this.COL_OUT);
-                        mesh.material.emissive.copy(this.COL_OUT);
-                    }
-                    applyNode(mesh, this._getAct('out', i), isActive);
+                for (let i = 0; i < this._nodeMeshes.in.length; i++) {
+                    const col = this._inputGroupCols[i] ?? this.COL_IN;
+                    applyNode(this._nodeMeshes.in[i], this._isFiring('in', i), col, col);
+                }
+                for (let i = 0; i < this._nodeMeshes.a.length; i++)
+                    applyNode(this._nodeMeshes.a[i], this._isFiring('a', i), this.COL_A, this.COL_A);
+                for (let i = 0; i < this._nodeMeshes.b.length; i++)
+                    applyNode(this._nodeMeshes.b[i], this._isFiring('b', i), this.COL_B, this.COL_B);
+                for (let i = 0; i < this._nodeMeshes.out.length; i++) {
+                    const firing = (i === this.outputIdx);
+                    applyNode(this._nodeMeshes.out[i], firing, this.COL_OUT, this.COL_OUT_ACTIVE);
                 }
 
-                // Update edge opacities
+                // Edges: lit only when the source neuron is firing (signal propagates forward)
                 for (const e of this._edges) {
-                    const actSrc = this._getAct(e.srcRole, e.si);
-                    const actTgt = this._getAct(e.tgtRole, e.ti);
-                    const act = Math.max(actSrc, actTgt);
-                    e.mat.opacity = e.isArrow
-                        ? e.baseOp + act * (1.0 - e.baseOp) * 0.8
-                        : e.baseOp + act * (1.0 - e.baseOp) * 0.6;
+                    const firing = this._isFiring(e.srcRole, e.si) === 1;
+                    e.mat.opacity = firing
+                        ? (e.isArrow ? 0.9 : 0.75)
+                        : e.baseOp;
                 }
             }
 
