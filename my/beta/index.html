@@ -886,8 +886,8 @@ const nodeGeo  = new THREE.SphereGeometry(NODE_R, 16, 16);
   for (const side of [-1, 1]) {
     const tempGeo = new THREE.SphereGeometry(2.3, 24, 16, 0, Math.PI * 2, 0.2, Math.PI * 0.65);
     const temp = new THREE.Mesh(tempGeo, skullMat);
-    temp.scale.set(0.38, 0.95, 1.0);
-    temp.position.set(side * 3.32, 0.0, -0.15);
+    temp.scale.set(0.22, 0.80, 0.75);
+    temp.position.set(side * 3.18, 0.0, -0.15);
     skullGroup.add(temp);
   }
 
@@ -1071,8 +1071,17 @@ const limbPivots = {};
   bone(bodyGroup, new THREE.ConeGeometry(0.15, 0.50, 8), 0, -8.72, 2.40, Math.PI, 0, 0);
 
   // ── CLAVICLES ─────────────────────────────────────────────────
+  // S-curved clavicles running from sternum (x~±0.3) to shoulder (x~±3.4)
   for (const side of [-1, 1]) {
-    bone(bodyGroup, new THREE.CylinderGeometry(0.16, 0.14, 3.2, 10), side * 1.68, -4.42, 1.55, 0, 0, side * 0.40);
+    const clavPts = [
+      new THREE.Vector3(side * 0.32, -4.30, 1.80),   // medial end at sternum
+      new THREE.Vector3(side * 1.20, -4.22, 1.50),   // medial curve
+      new THREE.Vector3(side * 2.30, -4.28, 0.90),   // mid-shaft
+      new THREE.Vector3(side * 3.10, -4.45, 0.40),   // lateral, sweeps back
+      new THREE.Vector3(side * 3.52, -4.62, -0.10),  // acromial end at shoulder
+    ];
+    const clavGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(clavPts), 20, 0.13, 8, false);
+    [boneMat, boneMatBack].forEach(m => bodyGroup.add(new THREE.Mesh(clavGeo, m)));
   }
 
   // ── SCAPULAE ──────────────────────────────────────────────────
