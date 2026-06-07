@@ -475,14 +475,16 @@
             overflow: hidden;
         }
 
-        /* Left column: stats only */
+        /* Left column: stacks stats on top, memory below: height matches NN */
         #asp-left-col {
             display: flex;
             flex-direction: column;
+            width: 175px;
+            min-width: 175px;
             flex-shrink: 0;
         }
 
-        /* Wrap the stats section so it has a fixed width */
+        /* Wrap the stats bars section so it has a fixed width */
         #asp-stats-section {
             width: 100%;
             min-width: 0;
@@ -501,22 +503,50 @@
             color: #f1c40f;
         }
 
-        .asp-stat-line {
-            font-size: 10px;
-            margin-bottom: 2px;
-            color: rgba(0, 255, 0, 0.8);
+        .asp-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 4px;
         }
 
-        /* Memory: middle column */
-        #asp-memories {
-            padding-left: 4px;
+        .asp-bar-label {
+            width: 18px;
+            font-size: 11px;
             flex-shrink: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+        }
+
+        .asp-bar-track {
+            flex: 1;
+            height: 7px;
+            background: #222;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .asp-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.15s ease;
+        }
+
+        /* Memory slots: stacked below stats inside asp-left-col */
+        #asp-memories {
+            margin-top: 2px;
+            padding-top: 3px;
+            padding-left: 0;
+            width: 100%;
+            min-width: 0;
+            flex: 1;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 2px 4px;
         }
 
         #asp-memories .asp-mem-label {
+            grid-column: 1 / -1;
             width: 100%;
             margin-bottom: 1px;
         }
@@ -546,6 +576,23 @@
             flex-shrink: 0;
         }
 
+        .asp-mem-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+
+        .asp-mem-dot.active {
+            background: #00ff00;
+            border-color: #00ff00;
+            box-shadow: 0 0 4px rgba(0, 255, 0, 0.8);
+        }
+
+        .asp-mem-dot.inactive {
+            background: transparent;
+        }
 
         .asp-mem-text {
             color: rgba(0, 255, 0, 0.6);
@@ -667,47 +714,58 @@
 
     <!-- Animal stat HUD -->
     <div id="animal-stat-panel">
-        <!-- Top row: Stats (left) | Memory (mid) | Brain (right) -->
+        <!-- Top row: Stats+Memory (left col) | Brain (NN, right col) -->
         <div id="asp-top-row">
-            <!-- Stats col -->
             <div id="asp-left-col">
-                <div id="asp-stats-section">
-                    <div class="asp-generation" id="asp-generation">Generation 0</div>
-                    <div class="asp-stat-line">❤️ <span id="asp-hp-val">100.0</span></div>
-                    <div class="asp-stat-line">🍽️ <span id="asp-food-val">100.0</span></div>
-                    <div class="asp-stat-line">💧 <span id="asp-water-val">100.0</span></div>
-                    <div class="asp-stat-line" id="asp-age-line" style="display:none">🚼 <span id="asp-age-val">0.0</span>%</div>
+            <div id="asp-stats-section">
+                <div class="asp-generation" id="asp-generation">Generation 0</div>
+                <div class="asp-bar-row">
+                    <span class="asp-bar-label">❤️</span>
+                    <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-hp" style="background:#e74c3c;width:100%"></div></div>
                 </div>
+                <div class="asp-bar-row">
+                    <span class="asp-bar-label">🍽️</span>
+                    <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-food" style="background:#e67e22;width:100%"></div></div>
+                </div>
+                <div class="asp-bar-row">
+                    <span class="asp-bar-label">💧</span>
+                    <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-water" style="background:#3498db;width:100%"></div></div>
+                </div>
+                <div class="asp-bar-row" id="asp-age-row" style="display:none">
+                    <span class="asp-bar-label">🚼</span>
+                    <div class="asp-bar-track"><div class="asp-bar-fill" id="asp-age" style="background:#2ecc71;width:0%"></div></div>
+                </div>
+            </div>
+            <!-- Memory now inside left col, below stats -->
+        <div id="asp-memories">
+            <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
+            <div class="asp-mem-row" id="asp-mem-predator">
+                <span class="asp-mem-icon">⚠️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-predator-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
+                <span class="asp-mem-dist" id="asp-mem-predator-dist"></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-food">
+                <span class="asp-mem-icon">🍽️</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-food-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
+                <span class="asp-mem-dist" id="asp-mem-food-dist"></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-water">
+                <span class="asp-mem-icon">💧</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-water-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
+                <span class="asp-mem-dist" id="asp-mem-water-dist"></span>
+            </div>
+            <div class="asp-mem-row" id="asp-mem-mate">
+                <span class="asp-mem-icon">💞</span>
+                <div class="asp-mem-dot inactive" id="asp-mem-mate-dot"></div>
+                <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
+                <span class="asp-mem-dist" id="asp-mem-mate-dist"></span>
+            </div>
+        </div>
             </div><!-- end asp-left-col -->
-            <!-- Memory col -->
-            <div id="asp-memories">
-                <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
-                <div class="asp-mem-row" id="asp-mem-predator">
-                    <span class="asp-mem-icon">⚠️</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-predator-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-food">
-                    <span class="asp-mem-icon">🍽️</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-food-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-water">
-                    <span class="asp-mem-icon">💧</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-water-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-mate">
-                    <span class="asp-mem-icon">💞</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-mate-dist"></span>
-                </div>
-            </div><!-- end asp-memories -->
-            <!-- Brain visualizer: right col -->
+            <!-- Brain visualizer: right col of top-row -->
             <div id="asp-nn-wrapper">
                 <div class="asp-mem-label">Brain</div>
                 <canvas id="nnCanvas3D"></canvas>
@@ -752,7 +810,7 @@
         </button>
         <button class="sp-row" id="povBtn">
             <span class="sp-label">Camera</span>
-            <span class="sp-value" id="povState">3RD PERSON</span>
+            <span class="sp-value" id="povState">1ST PERSON</span>
         </button>
         <div class="sp-row">
             <span class="sp-label">FPS</span>
@@ -2557,23 +2615,27 @@
 
         const _aspPanel     = document.getElementById('animal-stat-panel');
         const _aspGenEl     = document.getElementById('asp-generation');
-        const _aspHpValEl   = document.getElementById('asp-hp-val');
-        const _aspFoodValEl = document.getElementById('asp-food-val');
-        const _aspWaterValEl= document.getElementById('asp-water-val');
-        const _aspAgeLineEl = document.getElementById('asp-age-line');
-        const _aspAgeValEl  = document.getElementById('asp-age-val');
+        const _aspHpEl      = document.getElementById('asp-hp');
+        const _aspFoodEl    = document.getElementById('asp-food');
+        const _aspWaterEl   = document.getElementById('asp-water');
+        const _aspAgeRowEl  = document.getElementById('asp-age-row');
+        const _aspAgeEl     = document.getElementById('asp-age');
 
-
+        const _aspMemPredDot    = document.getElementById('asp-mem-predator-dot');
         const _aspMemPredTxt    = document.getElementById('asp-mem-predator-dist');
         const _aspMemPredArrow  = document.getElementById('asp-mem-predator-arrow');
+        const _aspMemFoodDot    = document.getElementById('asp-mem-food-dot');
         const _aspMemFoodTxt    = document.getElementById('asp-mem-food-dist');
         const _aspMemFoodArrow  = document.getElementById('asp-mem-food-arrow');
+        const _aspMemWaterDot   = document.getElementById('asp-mem-water-dot');
         const _aspMemWaterTxt   = document.getElementById('asp-mem-water-dist');
         const _aspMemWaterArrow = document.getElementById('asp-mem-water-arrow');
+        const _aspMemMateDot    = document.getElementById('asp-mem-mate-dot');
         const _aspMemMateTxt    = document.getElementById('asp-mem-mate-dist');
         const _aspMemMateArrow  = document.getElementById('asp-mem-mate-arrow');
 
-        function _setMemSlot(txt, active, label) {
+        function _setMemSlot(dot, txt, active, label) {
+            dot.className = 'asp-mem-dot ' + (active ? 'active' : 'inactive');
             if (txt) {
                 txt.textContent = active ? label : '';
                 txt.className = 'asp-mem-dist' + (active ? ' active' : '');
@@ -2599,19 +2661,19 @@
                     arrow.classList.remove('active');
                 }
             }
-            _setMemSlot(_aspMemPredTxt, a.hasPredator,
+            _setMemSlot(_aspMemPredDot, _aspMemPredTxt, a.hasPredator,
                 a.hasPredator ? `${dist(a.memPredatorX, a.memPredatorZ)}` : 'no threat');
             setArrow(_aspMemPredArrow, a.hasPredator, a.rayPredatorSin, a.rayPredatorCos);
 
-            _setMemSlot(_aspMemFoodTxt, a.hasFood,
+            _setMemSlot(_aspMemFoodDot, _aspMemFoodTxt, a.hasFood,
                 a.hasFood ? `${dist(a.memFoodX, a.memFoodZ)}` : 'no food');
             setArrow(_aspMemFoodArrow, a.hasFood, a.rayFoodSin, a.rayFoodCos);
 
-            _setMemSlot(_aspMemWaterTxt, a.hasWater,
+            _setMemSlot(_aspMemWaterDot, _aspMemWaterTxt, a.hasWater,
                 a.hasWater ? `${dist(a.memWaterX, a.memWaterZ)}` : 'no water');
             setArrow(_aspMemWaterArrow, a.hasWater, a.rayWaterSin, a.rayWaterCos);
 
-            _setMemSlot(_aspMemMateTxt, a.hasMate,
+            _setMemSlot(_aspMemMateDot, _aspMemMateTxt, a.hasMate,
                 a.hasMate ? `${dist(a.memMateX, a.memMateZ)}` : 'no mate');
             setArrow(_aspMemMateArrow, a.hasMate, a.rayMateSin, a.rayMateCos);
         }
@@ -2630,19 +2692,25 @@
 
                 targetFound = true;
 
-                const gen = a.generation ?? 0;
-                _aspHpValEl.textContent   = Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100)).toFixed(1);
-                _aspFoodValEl.textContent = Math.max(0, a.foodNeed).toFixed(1);
-                _aspWaterValEl.textContent= Math.max(0, a.waterNeed).toFixed(1);
+                const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
 
-                if (!a.isAdult) {
-                    const agePct = Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS) * 100;
-                    _aspAgeValEl.textContent = agePct.toFixed(1);
-                    _aspAgeLineEl.style.display = '';
+                const hpPct = Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100));
+                _aspHpEl.style.width = hpPct + '%';
+
+                const foodPct = Math.max(0, Math.min(100, 100 - Math.min(100, a.foodNeed)));
+                _aspFoodEl.style.width = foodPct + '%';
+
+                const waterPct = Math.max(0, Math.min(100, 100 - Math.min(100, a.waterNeed)));
+                _aspWaterEl.style.width = waterPct + '%';
+
+                if (ageRatio < 1) {
+                    _aspAgeRowEl.style.display = 'flex';
+                    _aspAgeEl.style.width = (ageRatio * 100) + '%';
                 } else {
-                    _aspAgeLineEl.style.display = 'none';
+                    _aspAgeRowEl.style.display = 'none';
                 }
 
+                const gen = a.generation ?? 0;
                 _aspGenEl.textContent = 'Generation ' + gen;
                 _aspGenEl.className = 'asp-generation' + (gen > 0 ? ' born' : '');
 
@@ -4103,9 +4171,9 @@
             group.userData.pivotLegL = pivotLegL;
             group.userData.pivotLegR = pivotLegR;
 
-            // Start in 3rd person; show entire mesh
-            head.visible = true;
-            group.visible = true;
+            // Start in 1st person; hide entire mesh
+            head.visible = false;
+            group.visible = false;
             scene.add(group);
             window._playerMesh = group;
         })();
@@ -4114,7 +4182,7 @@
         // CAMERA POV
         // ============================================================================
         // Modes: '1st' or '3rd'
-        let povMode = '3rd';
+        let povMode = '1st';
 
         const POV_MODES   = ['1st', '3rd'];
         const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON' };
