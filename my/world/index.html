@@ -731,7 +731,7 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿Ecosystem Simulation <span id="sp-hint" style="font-size:9px;"> 1.2.24-opt</span></div>
+        <div class="sp-game-title">🌿Ecosystem Simulation <span id="sp-hint" style="font-size:9px;"> 1.2.24</span></div>
         <div class="sp-game-desc sp-game-desc-bright">
             A simulation where animals roam, eat, drink, and reproduce without any explicit rules. They have the ability freely explore, experience, make choices, and learn on their own in their procedurally generated world.
             <br><br>Creator: <a class="sp-link-gradient" href="https://www.contextswitching.org">Alejandro Rosales</a> and 
@@ -822,7 +822,7 @@
             targetObject: null,
             animTime: 0  // walk cycle accumulator
         };
-        const WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
+        let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
         document.getElementById('scale-slider').addEventListener('input', function() {
@@ -2637,7 +2637,11 @@
                 if (active) {
                     const worldAngle = Math.atan2(sin, cos);
                     const relAngle = worldAngle - a.facingAngle;
-                    const deg = relAngle * (180 / Math.PI);
+                    // Screen rotate() is clockwise and the arrow rests pointing "forward"
+                    // (+Z). A target on the animal's right sits at -X (relAngle < 0), which
+                    // must rotate the arrow clockwise on screen, so negate the world-space
+                    // relative angle when converting to a CSS rotation.
+                    const deg = -relAngle * (180 / Math.PI);
                     arrow.querySelector('svg').style.transform = `rotate(${deg}deg)`;
                     arrow.classList.add('active');
                 } else {
@@ -3398,8 +3402,8 @@
 
             createMesh() {
                 const depth = 20;
-                const w = this.size.width + 20; 
-                const l = this.size.length + 20;
+                const w = this.size.width + 15;
+                const l = this.size.length + 15;
                 const geometry = new THREE.BoxGeometry(w, depth, l);
                 const material = new THREE.MeshStandardMaterial({
                     color: 0x4a90e2,
