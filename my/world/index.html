@@ -974,8 +974,6 @@
         // ============================================================================
         // THREE.JS SETUP
         // ============================================================================
-        // physicalGroundY: vertical offset added to all mesh starting positions
-        // (everything except the ground/terrain mesh, which stays at 0)
         const physicalGroundY = 5;
 
         const scene = new THREE.Scene();
@@ -1408,69 +1406,6 @@
             pendingCameraTouchId = null;
         });
 
-        // ============================================================================
-        // TERRAIN GENERATION
-        // ============================================================================
-        function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 250, 180);
-            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
-
-            const positionAttribute = geometry.getAttribute('position');
-            const positions = positionAttribute.array;
-
-            for (let i = 2; i < positions.length; i += 3) {
-                positions[i] = 5;
-            }
-            positionAttribute.needsUpdate = true;
-            geometry.computeVertexNormals();
-
-            const terrain = new THREE.Mesh(geometry, material);
-            terrain.receiveShadow = true;
-            terrain.rotation.x = -Math.PI / 2;
-            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
-            return terrain;
-        }
-
-        // Push terrain vertices down where water sits, so each water cube rests in a
-        // real depression instead of having opaque ground fill its translucent volume.
-        function carveWaterDepressions(terrainMesh, locations) {
-            if (!terrainMesh || !locations.length) return;
-            const geometry = terrainMesh.geometry;
-            const positionAttribute = geometry.getAttribute('position');
-            const positions = positionAttribute.array;
-            const halfW = CONFIG.worldWidth / 2;
-            const halfH = CONFIG.worldHeight / 2;
-            const tileHalf = 10;       // water tile is 20 wide; carve out to its edge
-            const blend = 14;          // extra falloff distance beyond the tile edge
-            const reach = tileHalf + blend;
-            const reachSq = reach * reach;
-            const baseHeight = 5;      // original flat terrain height
-            const carveDepth = 22;     // a bit deeper than the cube (depth 20) to clear its bottom
-
-            for (let i = 0; i < positions.length; i += 3) {
-                // Terrain plane is rotated -90° about X, so local +Y maps to world -Z;
-                // local X maps to world X. Both are then offset by the mesh's half extents.
-                const worldX = positions[i]     + halfW;
-                const worldZ = -positions[i + 1] + halfH;
-
-                let lowest = baseHeight;
-                for (let k = 0; k < locations.length; k++) {
-                    const dx = worldX - locations[k][0];
-                    const dz = worldZ - locations[k][1];
-                    const dSq = dx * dx + dz * dz;
-                    if (dSq >= reachSq) continue;
-                    const d = Math.sqrt(dSq);
-                    // Full depth inside the tile, smooth falloff across the blend band.
-                    const t = d <= tileHalf ? 1 : 1 - (d - tileHalf) / blend;
-                    const eased = t * t * (3 - 2 * t); // smoothstep
-                    const h = baseHeight - carveDepth * eased;
-                    if (h < lowest) lowest = h;
-                }
-                positions[i + 2] = lowest;
-            }
-            positionAttribute.needsUpdate = true;
-            geometry.computeVertexNormals();
-        }
 
         // ============================================================================
         // INSTANCED MESH RENDERER
@@ -1859,152 +1794,7 @@
         }
 
         // ============================================================================
-        // REUSABLE ANIMATION & RENDERING
-        // ============================================================================
-        // Reusable objects to avoid per-frame allocation
-        const _mat4  = new THREE.Matrix4();
-        const _local = new THREE.Vector3();
-        const _world = new THREE.Vector3();
-        const _quat  = new THREE.Quaternion();
-        const _yAxis = new THREE.Vector3(0, 1, 0);
-        const _scale = new THREE.Vector3(1, 1, 1);
-        // Extra quaternions for walk animation (reused every frame, no allocation)
-        const _quatLeg  = new THREE.Quaternion(); // leg pitch rotation
-        const _quatFinal = new THREE.Quaternion(); // yaw * legPitch combined
-        const _xAxis = new THREE.Vector3(1, 0, 0); // leg swing axis
-
-        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
-        const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
-        const MIN_SCALE      = 0.25; // 25% of parent size at birth
-
-        function updateInstancedMeshes(animals, deltaTime) {
-            for (const type of ['sheep', 'human']) {
-                const im      = instancedMeshes[type];
-                const offsets = PART_OFFSETS[type];
-                const colors  = SEX_COLORS[type];
-                if (!im) continue;
-                let idx = 0;
-
-                for (const a of animals) {
-                    if (!a.alive || a.type !== type) continue;
-                    if (idx >= MAX_INSTANCES) break;
-
-                    // Advance walk cycle timer (freeze when staying still)
-                    if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
-
-                    // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
-                    const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
-                    const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
-                    const hs = a.heightScale ?? 1.0;
-                    _scale.set(s, s * hs, s);
-
-                    const angle = DIRECTION_ANGLES[a.outputIdx];
-                    if (angle !== null && angle !== undefined) {
-                        a.facingAngle = angle; // stamp so idle frames keep correct facing
-                        _quat.setFromAxisAngle(_yAxis, angle);
-                    } else {
-                        // Stay-still: restore from this animal's own last heading
-                        _quat.setFromAxisAngle(_yAxis, a.facingAngle);
-                    }
-
-                    // Sex-based color
-                    const col = colors[a.sex];
-                    for (const part of ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR']) {
-                        im[part].setColorAt(idx, col);
-                    }
-
-                    // Walk cycle parameters; freeze animation when staying still (outputIdx 8)
-                    const isIdle = a.outputIdx === 8;
-                    const walkFreq = type === 'sheep' ? 6.5 : 5.0;
-                    const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65); // radians of leg swing
-                    const t = a.animTime * walkFreq;
-
-                    // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
-                    // Bipedal alternating stride for humans (arms opposite to legs)
-                    const legAngles = type === 'sheep' ? {
-                        legFL:  Math.sin(t),
-                        legFR: -Math.sin(t),
-                        legBL: -Math.sin(t),
-                        legBR:  Math.sin(t),
-                    } : {
-                        legFL:  Math.sin(t),        // left arm swings forward with right leg
-                        legFR: -Math.sin(t),        // right arm swings back
-                        legBL: -Math.sin(t),        // left leg swings back
-                        legBR:  Math.sin(t),        // right leg swings forward
-                    };
-
-                    // Body at animal world position, adjusted so legs always touch the ground
-                    const groundOffset = type === 'sheep' ? 9 : 15;
-                    _world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
-                    _mat4.compose(_world, _quat, _scale);
-                    im.body.setMatrixAt(idx, _mat4);
-
-                    // Head: no swing
-                    _local.copy(offsets.head);
-                    if (type === 'human') _local.y *= hs;
-                    _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
-                    _mat4.compose(_local, _quat, _scale);
-                    im.head.setMatrixAt(idx, _mat4);
-
-                    // Limb half-lengths (distance from pivot joint to limb center)
-                    // leg geometry height = 12.5 -> half = 6.25; arm same geometry
-                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 -> half=9
-
-                    // Each limb: pivot at joint, swing down from there
-                    for (const part of ['legFL', 'legFR', 'legBL', 'legBR']) {
-                        const swing = legAngles[part] * walkAmp;
-                        _quatLeg.setFromAxisAngle(_xAxis, swing);
-                        _quatFinal.multiplyQuaternions(_quat, _quatLeg);
-
-                        // 1. Pivot point in world space (joint position)
-                        _pivot.copy(PIVOT_OFFSETS[type][part]);
-                        if (type === 'human') _pivot.y *= hs;
-                        _pivot.multiplyScalar(s).applyQuaternion(_quat).add(_world);
-
-                        // 2. Limb center = pivot + (down the swung limb by half its length)
-                        //    In limb-local space "down" = -Y; apply _quatFinal to get world-space down
-                        _local.set(0, -limbHalf * s, 0).applyQuaternion(_quatFinal);
-                        _local.add(_pivot);
-
-                        _mat4.compose(_local, _quatFinal, _scale);
-                        im[part].setMatrixAt(idx, _mat4);
-                    }
-
-                    idx++;
-                }
-
-                for (const mesh of Object.values(im)) {
-                    mesh.count = idx;
-                    mesh.instanceMatrix.needsUpdate = true;
-                    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-                }
-            }
-        }
-
-        // Pivot joint offsets (in body-local space, pre-allocated; reused every frame)
-        const PIVOT_OFFSETS = {
-            human: {
-                legFL: new THREE.Vector3(-6,  8.25, 0),  // left shoulder
-                legFR: new THREE.Vector3( 6,  8.25, 0),  // right shoulder
-                legBL: new THREE.Vector3(-2, -8.75, 0),  // left hip
-                legBR: new THREE.Vector3( 2, -8.75, 0),  // right hip
-            },
-            sheep: {
-                legFL: new THREE.Vector3(-5,  0,  8),
-                legFR: new THREE.Vector3( 5,  0,  8),
-                legBL: new THREE.Vector3(-5,  0, -8),
-                legBR: new THREE.Vector3( 5,  0, -8),
-            },
-        };
-        const _pivot = new THREE.Vector3(); // scratch vector for pivot world position
-        const DIRECTION_ANGLES = [
-            Math.PI / 2, -Math.PI / 2, 0, Math.PI,
-            Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
-            null // index 8 = stay still; rotation kept from previous frame
-        ];
-
-        // ============================================================================
-        // CABIN
+        // CABIN MESH
         // ============================================================================
         let CABIN_COLLIDERS = [];
         let cabinObjects = [];
@@ -2251,9 +2041,217 @@
         }
 
         // ============================================================================
+        // REUSABLE ANIMATION & RENDERING
+        // ============================================================================
+        // Reusable objects to avoid per-frame allocation
+        const _mat4  = new THREE.Matrix4();
+        const _local = new THREE.Vector3();
+        const _world = new THREE.Vector3();
+        const _quat  = new THREE.Quaternion();
+        const _yAxis = new THREE.Vector3(0, 1, 0);
+        const _scale = new THREE.Vector3(1, 1, 1);
+        // Extra quaternions for walk animation (reused every frame, no allocation)
+        const _quatLeg  = new THREE.Quaternion(); // leg pitch rotation
+        const _quatFinal = new THREE.Quaternion(); // yaw * legPitch combined
+        const _xAxis = new THREE.Vector3(1, 0, 0); // leg swing axis
+
+        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
+        const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
+        const MIN_SCALE      = 0.25; // 25% of parent size at birth
+
+        function updateInstancedMeshes(animals, deltaTime) {
+            for (const type of ['sheep', 'human']) {
+                const im      = instancedMeshes[type];
+                const offsets = PART_OFFSETS[type];
+                const colors  = SEX_COLORS[type];
+                if (!im) continue;
+                let idx = 0;
+
+                for (const a of animals) {
+                    if (!a.alive || a.type !== type) continue;
+                    if (idx >= MAX_INSTANCES) break;
+
+                    // Advance walk cycle timer (freeze when staying still)
+                    if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
+
+                    // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
+                    const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
+                    const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
+                    const hs = a.heightScale ?? 1.0;
+                    _scale.set(s, s * hs, s);
+
+                    const angle = DIRECTION_ANGLES[a.outputIdx];
+                    if (angle !== null && angle !== undefined) {
+                        a.facingAngle = angle; // stamp so idle frames keep correct facing
+                        _quat.setFromAxisAngle(_yAxis, angle);
+                    } else {
+                        // Stay-still: restore from this animal's own last heading
+                        _quat.setFromAxisAngle(_yAxis, a.facingAngle);
+                    }
+
+                    // Sex-based color
+                    const col = colors[a.sex];
+                    for (const part of ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR']) {
+                        im[part].setColorAt(idx, col);
+                    }
+
+                    // Walk cycle parameters; freeze animation when staying still (outputIdx 8)
+                    const isIdle = a.outputIdx === 8;
+                    const walkFreq = type === 'sheep' ? 6.5 : 5.0;
+                    const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65); // radians of leg swing
+                    const t = a.animTime * walkFreq;
+
+                    // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
+                    // Bipedal alternating stride for humans (arms opposite to legs)
+                    const legAngles = type === 'sheep' ? {
+                        legFL:  Math.sin(t),
+                        legFR: -Math.sin(t),
+                        legBL: -Math.sin(t),
+                        legBR:  Math.sin(t),
+                    } : {
+                        legFL:  Math.sin(t),        // left arm swings forward with right leg
+                        legFR: -Math.sin(t),        // right arm swings back
+                        legBL: -Math.sin(t),        // left leg swings back
+                        legBR:  Math.sin(t),        // right leg swings forward
+                    };
+
+                    // Body at animal world position, adjusted so legs always touch the ground
+                    const groundOffset = type === 'sheep' ? 9 : 15;
+                    _world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
+                    _mat4.compose(_world, _quat, _scale);
+                    im.body.setMatrixAt(idx, _mat4);
+
+                    // Head: no swing
+                    _local.copy(offsets.head);
+                    if (type === 'human') _local.y *= hs;
+                    _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
+                    _mat4.compose(_local, _quat, _scale);
+                    im.head.setMatrixAt(idx, _mat4);
+
+                    // Limb half-lengths (distance from pivot joint to limb center)
+                    // leg geometry height = 12.5 -> half = 6.25; arm same geometry
+                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 -> half=9
+
+                    // Each limb: pivot at joint, swing down from there
+                    for (const part of ['legFL', 'legFR', 'legBL', 'legBR']) {
+                        const swing = legAngles[part] * walkAmp;
+                        _quatLeg.setFromAxisAngle(_xAxis, swing);
+                        _quatFinal.multiplyQuaternions(_quat, _quatLeg);
+
+                        // 1. Pivot point in world space (joint position)
+                        _pivot.copy(PIVOT_OFFSETS[type][part]);
+                        if (type === 'human') _pivot.y *= hs;
+                        _pivot.multiplyScalar(s).applyQuaternion(_quat).add(_world);
+
+                        // 2. Limb center = pivot + (down the swung limb by half its length)
+                        //    In limb-local space "down" = -Y; apply _quatFinal to get world-space down
+                        _local.set(0, -limbHalf * s, 0).applyQuaternion(_quatFinal);
+                        _local.add(_pivot);
+
+                        _mat4.compose(_local, _quatFinal, _scale);
+                        im[part].setMatrixAt(idx, _mat4);
+                    }
+
+                    idx++;
+                }
+
+                for (const mesh of Object.values(im)) {
+                    mesh.count = idx;
+                    mesh.instanceMatrix.needsUpdate = true;
+                    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+                }
+            }
+        }
+
+        // Pivot joint offsets (in body-local space, pre-allocated; reused every frame)
+        const PIVOT_OFFSETS = {
+            human: {
+                legFL: new THREE.Vector3(-6,  8.25, 0),  // left shoulder
+                legFR: new THREE.Vector3( 6,  8.25, 0),  // right shoulder
+                legBL: new THREE.Vector3(-2, -8.75, 0),  // left hip
+                legBR: new THREE.Vector3( 2, -8.75, 0),  // right hip
+            },
+            sheep: {
+                legFL: new THREE.Vector3(-5,  0,  8),
+                legFR: new THREE.Vector3( 5,  0,  8),
+                legBL: new THREE.Vector3(-5,  0, -8),
+                legBR: new THREE.Vector3( 5,  0, -8),
+            },
+        };
+        const _pivot = new THREE.Vector3(); // scratch vector for pivot world position
+        const DIRECTION_ANGLES = [
+            Math.PI / 2, -Math.PI / 2, 0, Math.PI,
+            Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
+            null // index 8 = stay still; rotation kept from previous frame
+        ];
+
+        // ============================================================================
+        // TERRAIN GENERATION
+        // ============================================================================
+        function createTerrain() {
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 250, 180);
+            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
+
+            const positionAttribute = geometry.getAttribute('position');
+            const positions = positionAttribute.array;
+
+            for (let i = 2; i < positions.length; i += 3) {
+                positions[i] = 5;
+            }
+            positionAttribute.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            const terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
+            return terrain;
+        }
+
+        // Push terrain vertices down where water sits, so each water cube rests in a
+        // real depression instead of having opaque ground fill its translucent volume.
+        function carveWaterDepressions(terrainMesh, locations) {
+            if (!terrainMesh || !locations.length) return;
+            const geometry = terrainMesh.geometry;
+            const positionAttribute = geometry.getAttribute('position');
+            const positions = positionAttribute.array;
+            const halfW = CONFIG.worldWidth / 2;
+            const halfH = CONFIG.worldHeight / 2;
+            const tileHalf = 10;       // water tile is 20 wide; carve out to its edge
+            const blend = 14;          // extra falloff distance beyond the tile edge
+            const reach = tileHalf + blend;
+            const reachSq = reach * reach;
+            const baseHeight = 5;      // original flat terrain height
+            const carveDepth = 22;     // a bit deeper than the cube (depth 20) to clear its bottom
+
+            for (let i = 0; i < positions.length; i += 3) {
+                // Terrain plane is rotated -90° about X, so local +Y maps to world -Z;
+                // local X maps to world X. Both are then offset by the mesh's half extents.
+                const worldX = positions[i]     + halfW;
+                const worldZ = -positions[i + 1] + halfH;
+
+                let lowest = baseHeight;
+                for (let k = 0; k < locations.length; k++) {
+                    const dx = worldX - locations[k][0];
+                    const dz = worldZ - locations[k][1];
+                    const dSq = dx * dx + dz * dz;
+                    if (dSq >= reachSq) continue;
+                    const d = Math.sqrt(dSq);
+                    // Full depth inside the tile, smooth falloff across the blend band.
+                    const t = d <= tileHalf ? 1 : 1 - (d - tileHalf) / blend;
+                    const eased = t * t * (3 - 2 * t); // smoothstep
+                    const h = baseHeight - carveDepth * eased;
+                    if (h < lowest) lowest = h;
+                }
+                positions[i + 2] = lowest;
+            }
+            positionAttribute.needsUpdate = true;
+            geometry.computeVertexNormals();
+        }
+        
+        // ============================================================================
         // ENTITY SYSTEM
         // ============================================================================
-       
         // Static movement tables per type
         const COORD_CHANGES = {
             sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
@@ -2268,7 +2266,7 @@
             return Math.max(0.55, Math.min(1.55, mean + std * n)); // clamp to reasonable range
         }
 
-         class Entity {
+        class Entity {
             constructor(position, type) {
                 this.position = new THREE.Vector3(...position);
                 this.type = type;
@@ -3441,26 +3439,7 @@
         }
 
         // ============================================================================
-        // NEURAL NETWORK VISUALIZER (3-D WebGL edition + billboarded)
-        //
-        //  Topology (mirrors DenseNetwork):
-        //    Input   (15 nodes)  -  arranged in a 3x5 ring on the left
-        //    Lobe A  ( N nodes)  -  GRU lobe,  stacked ABOVE centre (same X as Lobe B)
-        //    Lobe B  ( N nodes)  -  LIF lobe,  stacked BELOW centre (same X as Lobe A)
-        //    Output  ( 9 nodes)  -  action layer on the right
-        //
-        //  Edges:
-        //    Input->A, Input->B, A->Out, B->Out  :  straight LineSegments
-        //    A->B  :  QuadraticBezierCurve3 bent +Z (forward, toward viewer)
-        //    B->A  :  QuadraticBezierCurve3 bent -Z (backward)
-        //    A self-loop  :  small torus ring on each Lobe-A node
-        //
-        //  Activation:
-        //    Node emissiveIntensity and scale driven by actA / actB / actO each frame.
-        //    Active output node turns red; others stay lobe-coloured.
-        //    Edge opacity spikes when either endpoint is active.
-        //
-        //  Camera: slow auto-rotation; drag to orbit; no zoom.
+        // NEURAL NETWORK VISUALIZER
         // ============================================================================
         class NNVisualizer3D {
             constructor(canvasEl) {
