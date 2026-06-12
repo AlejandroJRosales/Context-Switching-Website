@@ -740,8 +740,8 @@
             <span class="sp-value" id="vrBtnText">Not Supported</span>
         </button>
         <div class="sp-row-scale">
-            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">3</span></label>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="3">
+            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">10</span></label>
+            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="10">
             <div class="sp-hint">Size changes take effect on reset</div>
         </div>
         <button class="sp-row" id="resetBtn">
@@ -759,7 +759,7 @@
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
-        const scale = 2;
+        const scale = 10;
         let pendingScale = scale;
         let hudCleared = false;
         const CONFIG = {
@@ -2156,6 +2156,7 @@
                 const cc = DIRS[this.outputIdx];
                 this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                 this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
+                this.position.y = getTerrainHeight(this.position.x, this.position.z) + (this.type === 'sheep' ? 9 : 15);
             }
 
             update(now, grid, waterLocations, animalIndex) {
@@ -2324,6 +2325,8 @@
             }
 
             update() {
+                this.position.y = getTerrainHeight(this.position.x, this.position.z) + 3;
+                this.mesh.position.y = this.position.y;
                 this.updateScale();
             }
         }
@@ -2336,7 +2339,7 @@
             }
 
             createMesh() {
-                const depth = 20;
+                const depth = 30;
                 const w = this.size.width + 15;
                 const l = this.size.length + 15;
                 const geometry = new THREE.BoxGeometry(w, depth, l);
@@ -2350,8 +2353,8 @@
                 });
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.position.copy(this.position);
-                // Keep the top surface at the original water height; extend the cube downward.
-                mesh.position.y -= depth / 2 + 5;
+                // Top surface sits at this.position.y; box extends downward by depth.
+                mesh.position.y = this.position.y - depth / 2;
                 mesh.receiveShadow = false;
                 this.mesh = mesh;
                 scene.add(this.mesh);
@@ -2723,8 +2726,9 @@
             // Gravity / ground clamp
             catState.velocity.y -= 400 * deltaTime;
             catState.position.y += catState.velocity.y * deltaTime;
-            if (catState.position.y <= physicalGroundY + 35) {
-                catState.position.y = physicalGroundY + 2;
+            const catGround = getTerrainHeight(catState.position.x, catState.position.z) + 2;
+            if (catState.position.y <= catGround + 33) {
+                catState.position.y = catGround;
                 catState.velocity.y = 0;
             }
 
@@ -3014,6 +3018,33 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
+
+        // Layered sine/cosine noise — no external library needed.
+        // Returns a height value for any world (wx, wz) coordinate.
+        // The seed offsets make each world feel unique on reset.
+        let _terrainSeed = { ox: 0, oz: 0 };
+        function initTerrainSeed() {
+            _terrainSeed.ox = Math.random() * 1000;
+            _terrainSeed.oz = Math.random() * 1000;
+        }
+
+        function getTerrainHeight(wx, wz) {
+            const ox = _terrainSeed.ox, oz = _terrainSeed.oz;
+            const x = wx + ox, z = wz + oz;
+
+            // Large rolling hills
+            let h = physicalGroundY;
+            h += 28 * Math.sin(x * 0.0031) * Math.cos(z * 0.0027);
+            h += 18 * Math.sin(x * 0.0055 + 1.1) * Math.cos(z * 0.0048 + 0.7);
+            // // Medium bumps
+            // h += 9  * Math.sin(x * 0.011  + 2.3) * Math.sin(z * 0.013  + 1.9);
+            // h += 6  * Math.cos(x * 0.019  + 0.5) * Math.cos(z * 0.021  + 3.1);
+            // // Fine surface detail
+            // h += 3  * Math.sin(x * 0.038  + 4.7) * Math.cos(z * 0.041  + 2.2);
+
+            return h;
+        }
+
         function createTerrain() {
             const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 250, 180);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
@@ -3021,8 +3052,13 @@
             const positionAttribute = geometry.getAttribute('position');
             const positions = positionAttribute.array;
 
-            for (let i = 2; i < positions.length; i += 3) {
-                positions[i] = 5;
+            const halfW = CONFIG.worldWidth  / 2;
+            const halfH = CONFIG.worldHeight / 2;
+            for (let i = 0; i < positions.length; i += 3) {
+                // Plane is rotated -90° about X so local X→worldX, local Y→world -Z
+                const worldX = positions[i]     + halfW;
+                const worldZ = -positions[i + 1] + halfH;
+                positions[i + 2] = getTerrainHeight(worldX, worldZ);
             }
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
@@ -3047,7 +3083,6 @@
             const blend = 14;          // extra falloff distance beyond the tile edge
             const reach = tileHalf + blend;
             const reachSq = reach * reach;
-            const baseHeight = 5;      // original flat terrain height
             const carveDepth = 22;     // a bit deeper than the cube (depth 20) to clear its bottom
 
             for (let i = 0; i < positions.length; i += 3) {
@@ -3056,7 +3091,8 @@
                 const worldX = positions[i]     + halfW;
                 const worldZ = -positions[i + 1] + halfH;
 
-                let lowest = baseHeight;
+                const naturalH = getTerrainHeight(worldX, worldZ);
+                let lowest = naturalH;
                 for (let k = 0; k < locations.length; k++) {
                     const dx = worldX - locations[k][0];
                     const dz = worldZ - locations[k][1];
@@ -3066,7 +3102,7 @@
                     // Full depth inside the tile, smooth falloff across the blend band.
                     const t = d <= tileHalf ? 1 : 1 - (d - tileHalf) / blend;
                     const eased = t * t * (3 - 2 * t); // smoothstep
-                    const h = baseHeight - carveDepth * eased;
+                    const h = naturalH - carveDepth * eased;
                     if (h < lowest) lowest = h;
                 }
                 positions[i + 2] = lowest;
@@ -4205,6 +4241,7 @@
             initInstancedMeshes();
 
             // Add terrain
+            initTerrainSeed();
             terrain = createTerrain();
             scene.add(terrain);
 
@@ -4282,8 +4319,11 @@
                     const length = (maxZ - minZ) + pad * 2;
                     const cx = (minX + maxX) / 2;
                     const cz = (minZ + maxZ) / 2;
+                    // Place water surface at the natural terrain height at the cluster centre —
+                    // carveWaterDepressions will hollow out the ground below it.
+                    const waterSurfaceY = getTerrainHeight(cx, cz) - 2;
 
-                    const w = new Water([cx, 6, cz], { width, length });
+                    const w = new Water([cx, waterSurfaceY, cz], { width, length });
                     waters.push(w);
                     entities.push(w);
                 }
@@ -4295,9 +4335,11 @@
 
             // Add plants
             for (let i = 0; i < CONFIG.initialPlants; i++) {
+                const px = Math.random() * CONFIG.worldWidth;
+                const pz = Math.random() * CONFIG.worldHeight;
                 const p = new Plant([
-                    Math.random() * CONFIG.worldWidth, physicalGroundY + 3,
-                    Math.random() * CONFIG.worldHeight
+                    px, getTerrainHeight(px, pz) + 3,
+                    pz
                 ]);
                 plants.push(p);
                 entities.push(p);
@@ -4478,8 +4520,9 @@
                 player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
                 player.velocity.y -= 400 * deltaTime;
                 player.position.y += player.velocity.y * deltaTime;
-                if (player.position.y < physicalGroundY + 35) {
-                    player.position.y = physicalGroundY + 35;
+                const groundAtPlayer = getTerrainHeight(player.position.x, player.position.z) + 35;
+                if (player.position.y < groundAtPlayer) {
+                    player.position.y = groundAtPlayer;
                     player.velocity.y = 0;
                     player.isJumping = false;
                 }
@@ -4688,8 +4731,9 @@
                 player.velocity.y -= 400 * deltaTime; // gravity
                 player.position.y += player.velocity.y * deltaTime;
 
-                if (player.position.y < physicalGroundY + 35) {
-                    player.position.y = physicalGroundY + 35;
+                const vrGroundAtPlayer = getTerrainHeight(player.position.x, player.position.z) + 35;
+                if (player.position.y < vrGroundAtPlayer) {
+                    player.position.y = vrGroundAtPlayer;
                     player.velocity.y = 0;
                     player.isJumping = false;
                 }
@@ -4749,9 +4793,11 @@
 
             // Occasionally spawn new plants
             if (Math.random() < CONFIG.probSpawnPlant) {
+                const px = Math.random() * CONFIG.worldWidth;
+                const pz = Math.random() * CONFIG.worldHeight;
                 const p = new Plant([
-                    Math.random() * CONFIG.worldWidth, physicalGroundY + 3,
-                    Math.random() * CONFIG.worldHeight
+                    px, getTerrainHeight(px, pz) + 3,
+                    pz
                 ]);
                 plants.push(p);
                 entities.push(p);
