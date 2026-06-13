@@ -1015,6 +1015,7 @@
         scene.add(directionalLight.target);
         directionalLight.position.copy(directionalLight.target.position).add(LIGHT_OFFSET);
         scene.add(directionalLight);
+        directionalLight.shadow.autoUpdate = false; // reuse cached map; needsUpdate raised every 3rd frame
 
         // ============================================================================
         // FULLSCREEN
@@ -2475,6 +2476,10 @@
             graphicsMode = graphicsMode === 'high' ? 'low' : 'high';
             document.getElementById('graphicsState').textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
 
+            const shadowsOn = graphicsMode !== 'low';
+            renderer.shadowMap.enabled = shadowsOn;
+            directionalLight.castShadow = shadowsOn;
+
             // Swap geometries on all instanced meshes in-place, no world reset needed
             for (const type of ['sheep', 'human']) {
                 const im = instancedMeshes[type];
@@ -2486,7 +2491,7 @@
                     const mesh = im[part];
                     if (!mesh) continue;
                     mesh.geometry = newGeom;
-                    mesh.castShadow = true; // always keep shadows on
+                    mesh.castShadow = shadowsOn;
                 }
             }
         }
@@ -4336,10 +4341,15 @@
                 const clusterRadius = 60; // Radius around cluster center
                 
                 // Find a valid cluster location that doesn't overlap with existing ones
+                // and sits close to sea level so water never appears on hillsides.
+                const MAX_WATER_HEIGHT = physicalGroundY + 30;
                 while (!isValidCluster) {
                     clusterX = Math.random() * CONFIG.worldWidth;
                     clusterZ = Math.random() * CONFIG.worldHeight;
-                    
+
+                    // Reject clusters on elevated terrain
+                    if (getTerrainHeight(clusterX, clusterZ) > MAX_WATER_HEIGHT) continue;
+
                     // Check if this cluster overlaps with existing water clusters
                     isValidCluster = true;
                     for (let existing of waterLocations) {
@@ -4936,6 +4946,9 @@
                 player.position.z + LIGHT_OFFSET.z
             );
             directionalLight.shadow.camera.updateProjectionMatrix();
+
+            // Refresh shadow map every 3rd frame (autoUpdate is off; LOW mode skips entirely)
+            if (graphicsMode !== 'low' && ticks % 3 === 0) directionalLight.shadow.needsUpdate = true;
 
             renderer.render(scene, camera);
         }
