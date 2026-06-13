@@ -2784,7 +2784,7 @@
 
                 this.scaleFactor = scale;
                 this.position.copy(position);
-                this.position.y += physicalGroundY;
+                this.position.y += getTerrainHeight(position.x, position.z);
 
                 this._build();
                 this.scale.set(scale, scale, scale);
@@ -2812,7 +2812,7 @@
                 const FLOOR_Y = 2;
                 const ROWS = Math.floor(WALL_H / LD);
                 const DOOR_WIDTH  = 18;
-                const DOOR_HEIGHT = 30;
+                const DOOR_HEIGHT = 42;
 
                 // HELPERS
                 const add = (mesh, cast = true, receive = true) => {
@@ -2922,7 +2922,7 @@
             }
         }
 
-        function buildCabinColliders(cx, cz, s, rotationY = 0) {
+        function buildCabinColliders(cx, cz, s, rotationY = 0, baseY = physicalGroundY) {
             const CW = 80 * s, CD = 60 * s;
             const LR = 2.5 * s;
             const WALL_H = 44 * s;
@@ -2944,25 +2944,30 @@
             const frontLZ = CD / 2;
             const backLZ  = -CD / 2;
 
+            // All minY/maxY values are local to the cabin group (which sits at baseY in world space).
+            // Shift them by baseY so collision checks in world-Y space work correctly.
+            const by = baseY;
             const localBoxes = [
+                // Floor
+                { minX: -(CW/2 + 4), maxX: CW/2 + 4, minY: by, maxY: by + FLOOR_Y, minZ: -(CD/2 + 4), maxZ: CD/2 + 4 },
                 // Front wall left segment (beside door)
-                { minX: -CW/2 - WALL_THICK, maxX: -halfDoor,          minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX: -CW/2 - WALL_THICK, maxX: -halfDoor,          minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
                 // Front wall right segment (beside door)
-                { minX:  halfDoor,           maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX:  halfDoor,           maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
                 // Front wall above door
-                { minX: -halfDoor,           maxX:  halfDoor,           minY: FLOOR_Y + DOOR_HEIGHT, maxY: FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
+                { minX: -halfDoor,           maxX:  halfDoor,           minY: by+FLOOR_Y + DOOR_HEIGHT, maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
                 // Back wall
-                { minX: -CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: backLZ + WALL_THICK  },
+                { minX: -CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: backLZ + WALL_THICK  },
                 // Left side wall (covers full depth including corner overlaps)
-                { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
+                { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
                 // Right side wall (covers full depth including corner overlaps)
-                { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: FLOOR_Y,               maxY: FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
+                { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
                 // Roof left panel
-                { minX: -(CW/2+OVH) - WALL_THICK, maxX: 0,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
+                { minX: -(CW/2+OVH) - WALL_THICK, maxX: 0,            minY: by+ROOF_BASE,             maxY: by+roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
                 // Roof right panel
-                { minX: 0, maxX:  (CW/2+OVH) + WALL_THICK,            minY: ROOF_BASE,             maxY: roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
+                { minX: 0, maxX:  (CW/2+OVH) + WALL_THICK,            minY: by+ROOF_BASE,             maxY: by+roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
                 // Chimney (start at FLOOR_Y so it doesn't extend into the ground)
-                { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: FLOOR_Y,               maxY: chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
+                { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: by+FLOOR_Y,               maxY: by+chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
             ];
 
             return {
@@ -3018,35 +3023,87 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
-
-        // Layered sine/cosine noise — no external library needed.
+        // Layered sine/cosine noise - no external library needed.
         // Returns a height value for any world (wx, wz) coordinate.
         // The seed offsets make each world feel unique on reset.
-        let _terrainSeed = { ox: 0, oz: 0 };
+        let _terrainSeed = { ox: 0, oz: 0, seed: 1337 };
         function initTerrainSeed() {
             _terrainSeed.ox = Math.random() * 1000;
             _terrainSeed.oz = Math.random() * 1000;
+            _terrainSeed.seed = (Math.random() * 0x7fffffff) | 0;
+        }
+
+        // Seeded value noise + fBm helpers
+        // Deterministic hash -> [0,1) from integer grid coords. Cheap and stable.
+        function _hash2(ix, iz) {
+            let h = (Math.imul(ix, 374761393) + Math.imul(iz, 668265263)
+                     + Math.imul(_terrainSeed.seed, 1274126177)) | 0;
+            h = (h ^ (h >>> 13)) | 0;
+            h = Math.imul(h, 1274126177) | 0;
+            h = (h ^ (h >>> 16)) >>> 0;
+            return h / 4294967295;
+        }
+        // Smooth (cubic) interpolated value noise in continuous space.
+        function _valueNoise(x, z) {
+            const ix = Math.floor(x), iz = Math.floor(z);
+            const fx = x - ix, fz = z - iz;
+            // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st AND 2nd derivative at
+            // cell edges, so no creasing/grain between noise cells.
+            const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+            const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+            const n00 = _hash2(ix,     iz);
+            const n10 = _hash2(ix + 1, iz);
+            const n01 = _hash2(ix,     iz + 1);
+            const n11 = _hash2(ix + 1, iz + 1);
+            const nx0 = n00 + (n10 - n00) * ux;
+            const nx1 = n01 + (n11 - n01) * ux;
+            return nx0 + (nx1 - nx0) * uz; // [0,1]
+        }
+        // Fractional Brownian motion: layered octaves of value noise. Returns [0,1].
+        function _fbm(x, z, octaves, lacunarity, gain) {
+            let amp = 1, freq = 1, sum = 0, norm = 0;
+            for (let o = 0; o < octaves; o++) {
+                sum  += amp * _valueNoise(x * freq, z * freq);
+                norm += amp;
+                amp  *= gain;
+                freq *= lacunarity;
+            }
+            return sum / norm;
         }
 
         function getTerrainHeight(wx, wz) {
             const ox = _terrainSeed.ox, oz = _terrainSeed.oz;
-            const x = wx + ox, z = wz + oz;
+            // Scale world coords into noise space (controls overall feature size).
+            const nx = (wx + ox) * 0.0016;
+            const nz = (wz + oz) * 0.0016;
 
-            // Large rolling hills
             let h = physicalGroundY;
-            h += 28 * Math.sin(x * 0.0031) * Math.cos(z * 0.0027);
-            h += 18 * Math.sin(x * 0.0055 + 1.1) * Math.cos(z * 0.0048 + 0.7);
-            // // Medium bumps
-            // h += 9  * Math.sin(x * 0.011  + 2.3) * Math.sin(z * 0.013  + 1.9);
-            // h += 6  * Math.cos(x * 0.019  + 0.5) * Math.cos(z * 0.021  + 3.1);
-            // // Fine surface detail
-            // h += 3  * Math.sin(x * 0.038  + 4.7) * Math.cos(z * 0.041  + 2.2);
+
+            // Rolling base terrain: multi-octave fBm centred around 0.
+            // Fewer octaves + lower gain = smoother, less grainy base.
+            const base = _fbm(nx, nz, 4, 2.0, 0.42) - 0.5;
+            h += base * 150;
+
+            // Gentle warble so slopes aren't uniform (kept low-frequency).
+            h += (_fbm(nx * 2.2 + 11.3, nz * 2.2 - 7.1, 2, 2.0, 0.45) - 0.5) * 26;
+
+            // Mountain mask: a low-frequency field that decides WHERE mountains
+            // appear, so peaks cluster into ranges instead of covering everything.
+            const mask = _fbm(nx * 0.45 + 50.0, nz * 0.45 + 50.0, 2, 2.0, 0.5);
+            const m = Math.max(0, (mask - 0.55) / 0.45); // 0 in lowlands, ramps up in ranges
+            if (m > 0) {
+                // Ridged noise: sharp crests instead of rounded blobs.
+                const r = _fbm(nx * 1.6 + 19.0, nz * 1.6 - 23.0, 5, 2.0, 0.5);
+                const ridge = 1 - Math.abs(2 * r - 1); // [0,1], peaks at ridgelines
+                const mountain = Math.pow(ridge, 1.6) * (m * m); // power sharpens crests
+                h += mountain * 1320;
+            }
 
             return h;
         }
 
         function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 250, 180);
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 350, 260);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
 
             const positionAttribute = geometry.getAttribute('position');
@@ -4228,7 +4285,7 @@
                 const c = new Cabin({ scale: cabinScale, position: new THREE.Vector3(cx, 0, cz), rotationY: rotY });
                 scene.add(c);
                 cabinObjects.push(c);
-                CABIN_COLLIDERS.push(buildCabinColliders(cx, cz, cabinScale, rotY));
+                CABIN_COLLIDERS.push(buildCabinColliders(cx, cz, cabinScale, rotY, getTerrainHeight(cx, cz)));
             }
 
             // Clear stat label sprites from previous world
@@ -4244,6 +4301,14 @@
             initTerrainSeed();
             terrain = createTerrain();
             scene.add(terrain);
+
+            // Place player inside the first cabin.
+            {
+                const [cabinX, cabinZ] = cabinPositions[0];
+                player.position.x = cabinX;
+                player.position.z = cabinZ;
+                player.position.y = getTerrainHeight(cabinX, cabinZ) + 35 + 10;
+            }
 
             // Add water bodies and track locations
             for (let i = 0; i < 3 * Math.log1p(CONFIG.scale); i++) {
@@ -4319,7 +4384,7 @@
                     const length = (maxZ - minZ) + pad * 2;
                     const cx = (minX + maxX) / 2;
                     const cz = (minZ + maxZ) / 2;
-                    // Place water surface at the natural terrain height at the cluster centre —
+                    // Place water surface at the natural terrain height at the cluster centre -
                     // carveWaterDepressions will hollow out the ground below it.
                     const waterSurfaceY = getTerrainHeight(cx, cz) - 2;
 
