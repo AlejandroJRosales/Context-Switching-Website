@@ -701,7 +701,7 @@
         </button >
         <button class="sp-row">
             <span class="sp-label">Code</span>
-            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">1.2.25</a></span>
+            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">1.2.25-opt</a></span>
         </button>
         <button class="sp-row">
             <span class="sp-label">FPS</span>
@@ -956,7 +956,7 @@
         );
         const renderer = window.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(1);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -3103,7 +3103,7 @@
         }
 
         function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 350, 260);
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 175, 130);
             const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
 
             const positionAttribute = geometry.getAttribute('position');
@@ -3564,9 +3564,10 @@
                 // Three.js mini-renderer
                 this.renderer = new THREE.WebGLRenderer({
                     canvas: canvasEl,
-                    antialias: true,
+                    antialias: false,
                     alpha: true,
                 });
+                this.renderer.setPixelRatio(1);
                 this.renderer.setClearColor(0x000000, 0);
                 this._syncSize();
 
@@ -3639,6 +3640,8 @@
             clear() {
                 this.nn = null;
                 this._clearScene();
+                // Render one blank frame so the idle guard doesn't leave a stale image
+                this.renderer.render(this.scene, this.camera);
             }
 
             dispose() {
@@ -3997,6 +4000,10 @@
 
             _animate() {
                 this._raf = requestAnimationFrame(this._animate);
+
+                // Idle: no animal selected — skip all sizing, rotation, and rendering
+                if (!this.nn) return;
+
                 this._syncSize();
 
                 // Auto-rotate when not dragging
