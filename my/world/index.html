@@ -3111,7 +3111,7 @@
 
         function createTerrain() {
             const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 175, 130);
-            const material = new THREE.MeshLambertMaterial({ color: 0x2d5016 });
+            const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
             const positionAttribute = geometry.getAttribute('position');
             const positions = positionAttribute.array;
@@ -3127,11 +3127,45 @@
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
 
+            paintTerrainBySlope(geometry);
+
             const terrain = new THREE.Mesh(geometry, material);
             terrain.receiveShadow = true;
             terrain.rotation.x = -Math.PI / 2;
             terrain.position.set(CONFIG.worldWidth / 2, 0, CONFIG.worldHeight / 2);
             return terrain;
+        }
+
+        // Paint terrain vertices green (grass) on gentle ground and grey (rock) on
+        // steep faces, giving cliffs/mountainsides a rocky look. Steepness is read
+        // from each vertex normal: a normal pointing straight up (y≈1) is flat;
+        // as the surface tilts, normal.y drops toward 0.
+        const _grassColor = new THREE.Color(0x2d5016);
+        const _rockColor  = new THREE.Color(0x6e6e6e);
+        function paintTerrainBySlope(geometry) {
+            const normals = geometry.getAttribute('normal').array;
+            const count = normals.length / 3;
+            let colorAttr = geometry.getAttribute('color');
+            if (!colorAttr) {
+                colorAttr = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
+                geometry.setAttribute('color', colorAttr);
+            }
+            const colors = colorAttr.array;
+            // Slope threshold: above ROCK_START it's grass, below ROCK_FULL it's full rock.
+            const ROCK_START = 0.12;  // ~23° begins rock
+            const ROCK_FULL  = 0.84;  // ~42° is solid rock
+            for (let i = 0; i < count; i++) {
+                const ny = Math.abs(normals[i * 3 + 1]); // up-component of normal: 1=flat, 0=vertical
+                let t = (ROCK_START - ny) / (ROCK_START - ROCK_FULL);
+                t = Math.max(0, Math.min(1, t));
+                const r = _grassColor.r + (_rockColor.r - _grassColor.r) * t;
+                const g = _grassColor.g + (_rockColor.g - _grassColor.g) * t;
+                const b = _grassColor.b + (_rockColor.b - _grassColor.b) * t;
+                colors[i * 3]     = r;
+                colors[i * 3 + 1] = g;
+                colors[i * 3 + 2] = b;
+            }
+            colorAttr.needsUpdate = true;
         }
 
         // Push terrain vertices down where water sits, so each water cube rests in a
@@ -3186,8 +3220,9 @@
             }
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
+            paintTerrainBySlope(geometry);
         }
-        
+
         // ============================================================================
         // REUSABLE ANIMATION & RENDERING
         // ============================================================================
