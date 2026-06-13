@@ -2340,8 +2340,8 @@
 
             createMesh() {
                 const depth = 30;
-                const w = this.size.width + 15;
-                const l = this.size.length + 15;
+                const w = this.size.width * (CONFIG.scale * .8);
+                const l = this.size.length * (CONFIG.scale * .8);
                 const geometry = new THREE.BoxGeometry(w, depth, l);
                 const material = new THREE.MeshStandardMaterial({
                     color: 0x4a90e2,
@@ -2354,7 +2354,7 @@
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.position.copy(this.position);
                 // Top surface sits at this.position.y; box extends downward by depth.
-                mesh.position.y = this.position.y - depth / 2;
+                mesh.position.y = this.position.y - depth / 2 - 20;
                 mesh.receiveShadow = false;
                 this.mesh = mesh;
                 scene.add(this.mesh);
@@ -3129,6 +3129,10 @@
 
         // Push terrain vertices down where water sits, so each water cube rests in a
         // real depression instead of having opaque ground fill its translucent volume.
+        // `locations` entries are [x, z] or [x, z, surfaceY]. When a surface height is
+        // present we carve the ground to an absolute basin floor sitting below that
+        // water box's bottom, so the opaque terrain never intrudes into the translucent
+        // volume even where the pool spans a slope.
         function carveWaterDepressions(terrainMesh, locations) {
             if (!terrainMesh || !locations.length) return;
             const geometry = terrainMesh.geometry;
@@ -3136,16 +3140,19 @@
             const positions = positionAttribute.array;
             const halfW = CONFIG.worldWidth / 2;
             const halfH = CONFIG.worldHeight / 2;
-            const tileHalf = 10;       // water tile is 20 wide; carve out to its edge
+            const tileHalf = 10 * (CONFIG.scale * 3);       // water tile is 20 wide; carve out to its edge
             const blend = 14;          // extra falloff distance beyond the tile edge
             const reach = tileHalf + blend;
             const reachSq = reach * reach;
-            const carveDepth = 22;     // a bit deeper than the cube (depth 20) to clear its bottom
+            const carveDepth = 22 * CONFIG.scale;     // fallback depth when no surfaceY is given
+            // Water box bottom relative to its surface: depth(30)/2 + 20 in Water.createMesh.
+            const boxBottomBelowSurface = (30 / 2 + 20) * CONFIG.scale;
+            const floorClearance = 4 * CONFIG.scale;  // keep floor a touch under the box bottom
 
             for (let i = 0; i < positions.length; i += 3) {
                 // Terrain plane is rotated -90° about X, so local +Y maps to world -Z;
                 // local X maps to world X. Both are then offset by the mesh's half extents.
-                const worldX = positions[i]     + halfW;
+                const worldX = positions[i]      + halfW;
                 const worldZ = -positions[i + 1] + halfH;
 
                 const naturalH = getTerrainHeight(worldX, worldZ);
@@ -3159,7 +3166,13 @@
                     // Full depth inside the tile, smooth falloff across the blend band.
                     const t = d <= tileHalf ? 1 : 1 - (d - tileHalf) / blend;
                     const eased = t * t * (3 - 2 * t); // smoothstep
-                    const h = naturalH - carveDepth * eased;
+                    const surfaceY = locations[k][2];
+                    // Target floor: below this pool's box bottom when we know the surface,
+                    // otherwise fall back to a fixed depth under the local natural height.
+                    const floor = (surfaceY !== undefined)
+                        ? surfaceY - boxBottomBelowSurface - floorClearance
+                        : naturalH - carveDepth;
+                    const h = naturalH + (floor - naturalH) * eased;
                     if (h < lowest) lowest = h;
                 }
                 positions[i + 2] = lowest;
@@ -4372,8 +4385,9 @@
                         }
                     }
                     
-                    clusterPoints.push([wx, wz]);
-                    waterLocations.push([wx, wz]);
+                    const pt = [wx, wz];
+                    clusterPoints.push(pt);
+                    waterLocations.push(pt);
                 }
 
                 // One filled pool covering the cluster's bounding box (padded to the
@@ -4391,9 +4405,26 @@
                     const length = (maxZ - minZ) + pad * 2;
                     const cx = (minX + maxX) / 2;
                     const cz = (minZ + maxZ) / 2;
-                    // Place water surface at the natural terrain height at the cluster centre -
-                    // carveWaterDepressions will hollow out the ground below it.
-                    const waterSurfaceY = getTerrainHeight(cx, cz) - 2;
+                    // Place the water surface at the LOWEST terrain height anywhere under
+                    // the mesh footprint (minus a small margin), so the flat top plane never
+                    // pokes above surrounding ground. carveWaterDepressions then hollows the
+                    // ground beneath it. Sample on a grid spanning the full padded box.
+                    const halfW = width / 2, halfL = length / 2;
+                    let lowestH = Infinity;
+                    const SAMPLES = 6; // grid resolution per axis across the footprint
+                    for (let sx = 0; sx <= SAMPLES; sx++) {
+                        for (let sz = 0; sz <= SAMPLES; sz++) {
+                            const tx = cx - halfW + (width  * sx) / SAMPLES;
+                            const tz = cz - halfL + (length * sz) / SAMPLES;
+                            const h = getTerrainHeight(tx, tz);
+                            if (h < lowestH) lowestH = h;
+                        }
+                    }
+                    const waterSurfaceY = lowestH - 2;
+
+                    // Tag this cluster's drink points with the surface height so
+                    // carveWaterDepressions can carve a basin floor below the box bottom.
+                    for (const p of clusterPoints) p[2] = waterSurfaceY;
 
                     const w = new Water([cx, waterSurfaceY, cz], { width, length });
                     waters.push(w);
