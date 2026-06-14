@@ -769,7 +769,7 @@
             isDeviceTilt: window.DeviceOrientationEvent !== undefined,
             initialDeer: Math.trunc(Number(20 * scale)),
             initialWolves: Math.trunc(Number(5 * scale)),
-            initialPlants: Math.trunc(Number(30 * scale)),
+            initialPlants: Math.trunc(Number(300 * scale)),
             probSpawnPlant: 0.03,
             scale: scale,
             worldWidth: Math.trunc(Number(850 * scale)),
@@ -836,7 +836,7 @@
         function onReset() {
             CONFIG.initialDeer = Math.trunc(20 * pendingScale);
             CONFIG.initialWolves = Math.trunc(5 * pendingScale);
-            CONFIG.initialPlants = Math.trunc(30 * pendingScale);
+            CONFIG.initialPlants = Math.trunc(200 * pendingScale);
             CONFIG.worldWidth = Math.trunc(850 * pendingScale);
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
             WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
@@ -2286,51 +2286,14 @@
                 super(position, 'plant');
                 this.health = 10;
                 this.maxHealth = 10;
-                this.createMesh();
+                // Snap Y to terrain on construction so first render frame is correct
+                this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
             }
 
-            createMesh() {
-                const group = new THREE.Group();
-                const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
-                const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x228b22 });
-                
-                // Shared leaf geometry
-                const leafGeometry = new THREE.SphereGeometry(2, 4, 4);
-                
-                for (let i = 0; i < 4; i++) {
-                    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
-                    const angle = (i / 4) * Math.PI * 2;
-                    leaf.position.x = Math.cos(angle) * 4;
-                    leaf.position.z = Math.sin(angle) * 4;
-                    leaf.position.y = 5;
-                    leaf.castShadow = true;
-                    leaf.receiveShadow = true;
-                    group.add(leaf);
-                }
-
-                const stem = new THREE.Mesh(
-                    new THREE.CylinderGeometry(2, 2, 10, 8),
-                    stemMaterial
-                );
-                stem.castShadow = true;
-                stem.receiveShadow = true;
-                group.add(stem);
-
-                this.mesh = group;
-                this.mesh.position.copy(this.position);
-                scene.add(this.mesh);
-                this.updateScale();
-            }
-
-            updateScale() {
-                const healthRatio = this.health / this.maxHealth;
-                this.mesh.scale.set(healthRatio, healthRatio, healthRatio);
-            }
+            remove() { /* no individual mesh to remove */ }
 
             update() {
-                this.position.y = getTerrainHeight(this.position.x, this.position.z) + 3;
-                this.mesh.position.y = this.position.y;
-                this.updateScale();
+                this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
             }
         }
 
@@ -2474,6 +2437,101 @@
             }
         }
 
+        // ============================================================================
+        // PLANT INSTANCED MESH
+        // ============================================================================
+        const MAX_PLANT_INSTANCES = 15000;
+
+        // Shared plant geometries stem (cylinder) and leaves (4 spheres offset in XZ)
+        // HIGH: smooth segments; LOW: minimal segments
+        const PLANT_GEOMETRIES = {
+            stem:  new THREE.CylinderGeometry(1, 1, 5, 3),
+            leaf:  new THREE.SphereGeometry(1, 2, 2),
+        };
+        const PLANT_GEOMETRIES_LOW = {
+            stem:  new THREE.CylinderGeometry(1, 1, 5, 4),
+            leaf:  new THREE.SphereGeometry(1, 3, 3),
+        };
+
+        // Leaf XZ offsets relative to plant base (radius 4); Y is computed at runtime
+        const LEAF_OFFSETS_XZ = [0, 1, 2, 3].map(i => {
+            const angle = (i / 4) * Math.PI * 2;
+            return new THREE.Vector2(Math.cos(angle) * 2, Math.sin(angle) * 2);
+        });
+
+        const PLANT_MATERIAL = new THREE.MeshStandardMaterial({
+            color: 0x228b22,
+            roughness: 0.85,
+        });
+
+        // instancedPlantMeshes holds { stem, leaf0, leaf1, leaf2, leaf3 }
+        let instancedPlantMeshes = null;
+
+        function initInstancedPlantMeshes() {
+            // Remove old meshes if reinitialising (e.g. after reset)
+            if (instancedPlantMeshes) {
+                for (const mesh of Object.values(instancedPlantMeshes)) scene.remove(mesh);
+            }
+            const geos = graphicsMode === 'low' ? PLANT_GEOMETRIES_LOW : PLANT_GEOMETRIES;
+            instancedPlantMeshes = {
+                stem:  new THREE.InstancedMesh(geos.stem,  PLANT_MATERIAL, MAX_PLANT_INSTANCES),
+                leaf0: new THREE.InstancedMesh(geos.leaf,  PLANT_MATERIAL, MAX_PLANT_INSTANCES),
+                leaf1: new THREE.InstancedMesh(geos.leaf,  PLANT_MATERIAL, MAX_PLANT_INSTANCES),
+                leaf2: new THREE.InstancedMesh(geos.leaf,  PLANT_MATERIAL, MAX_PLANT_INSTANCES),
+                leaf3: new THREE.InstancedMesh(geos.leaf,  PLANT_MATERIAL, MAX_PLANT_INSTANCES),
+            };
+            for (const mesh of Object.values(instancedPlantMeshes)) {
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.frustumCulled = false;
+                scene.add(mesh);
+            }
+        }
+
+        // Scratch objects for plant matrix composition (no per-frame allocation)
+        const _plantPos   = new THREE.Vector3();
+        const _plantQuat  = new THREE.Quaternion(); // identity plants don't rotate
+        const _plantScale = new THREE.Vector3();
+        const _plantMat4  = new THREE.Matrix4();
+
+        function updateInstancedPlants(plants) {
+            if (!instancedPlantMeshes) return;
+            let idx = 0;
+            for (const p of plants) {
+                if (!p.alive) continue;
+                if (idx >= MAX_PLANT_INSTANCES) break;
+
+                const h = p.health / p.maxHealth;
+                const groundY = p.position.y; // terrainHeight + 3
+                _plantScale.setScalar(h);
+
+                // Stem: 10-unit cylinder, geometry centered at its own origin.
+                // At scale h the cylinder is 10h tall.
+                // To keep its BASE on the ground: center = groundY + 5h
+                _plantPos.set(p.position.x, groundY + 5 * h, p.position.z);
+                _plantMat4.compose(_plantPos, _plantQuat, _plantScale);
+                instancedPlantMeshes.stem.setMatrixAt(idx, _plantMat4);
+
+                // Leaves sit at the stem TOP: groundY + 10h, spread radius 4 in XZ.
+                // Sphere radius 2, scaled by h no extra position scaling needed.
+                const leafY = groundY + 7 * h;
+                for (let li = 0; li < 4; li++) {
+                    const off = LEAF_OFFSETS_XZ[li];
+                    _plantPos.set(p.position.x + off.x, leafY, p.position.z + off.y);
+                    _plantMat4.compose(_plantPos, _plantQuat, _plantScale);
+                    instancedPlantMeshes[`leaf${li}`].setMatrixAt(idx, _plantMat4);
+                }
+
+                idx++;
+            }
+
+            // Set count and mark dirty on all parts
+            for (const mesh of Object.values(instancedPlantMeshes)) {
+                mesh.count = idx;
+                mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
         function toggleGraphics() {
             graphicsMode = graphicsMode === 'high' ? 'low' : 'high';
             document.getElementById('graphicsState').textContent = graphicsMode === 'high' ? 'HIGH' : 'LOW';
@@ -2494,6 +2552,17 @@
                     if (!mesh) continue;
                     mesh.geometry = newGeom;
                     mesh.castShadow = shadowsOn;
+                }
+            }
+
+            // Swap plant geometries in-place
+            if (instancedPlantMeshes) {
+                const pgeos = graphicsMode === 'low' ? PLANT_GEOMETRIES_LOW : PLANT_GEOMETRIES;
+                instancedPlantMeshes.stem.geometry = pgeos.stem;
+                instancedPlantMeshes.stem.castShadow = shadowsOn;
+                for (let li = 0; li < 4; li++) {
+                    instancedPlantMeshes[`leaf${li}`].geometry = pgeos.leaf;
+                    instancedPlantMeshes[`leaf${li}`].castShadow = shadowsOn;
                 }
             }
         }
@@ -4056,7 +4125,7 @@
             _animate() {
                 this._raf = requestAnimationFrame(this._animate);
 
-                // Idle: no animal selected — skip all sizing, rotation, and rendering
+                // Idle: no animal selected skip all sizing, rotation, and rendering
                 if (!this.nn) return;
 
                 this._syncSize();
@@ -4358,6 +4427,7 @@
 
             // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
+            initInstancedPlantMeshes();
 
             // Add terrain
             initTerrainSeed();
@@ -4955,6 +5025,7 @@
 
             // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals, deltaTime);
+            updateInstancedPlants(plants);
             updateVisionRays(animals);
 
             // Update billboarded stat labels above each entity
