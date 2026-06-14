@@ -2464,6 +2464,114 @@
         // instancedPlantMeshes holds { stem, leaf0, leaf1, leaf2, leaf3 }
         let instancedPlantMeshes = null;
 
+        // ============================================================================
+        // PEBBLE INSTANCED MESH
+        // Pebbles are static decorations. Max size = half a sheep.
+        // Sheep body: 12w x 12h x 25d. Half-sheep radius ≈ 12 units.
+        // Pebbles range from radius 2 (tiny) to 12 (boulder-ish).
+        // ============================================================================
+        const MAX_PEBBLE_INSTANCES = 4000;
+
+        // Three pebble sizes: small, medium, large — each a slightly squashed sphere
+        // so they look like real rounded stones rather than perfect balls.
+        const PEBBLE_GEOMETRIES = [
+            new THREE.SphereGeometry(1, 6, 4),   // small (scaled 2–5)
+            new THREE.SphereGeometry(1, 8, 5),   // medium (scaled 4–9)
+            new THREE.SphereGeometry(1, 10, 6),  // large (scaled 7–12)
+        ];
+        const PEBBLE_GEOMETRIES_LOW = [
+            new THREE.SphereGeometry(1, 4, 3),
+            new THREE.SphereGeometry(1, 5, 3),
+            new THREE.SphereGeometry(1, 6, 4),
+        ];
+
+        const PEBBLE_MATERIALS = [
+            new THREE.MeshStandardMaterial({ color: 0x888070, roughness: 0.95, metalness: 0.0 }),
+            new THREE.MeshStandardMaterial({ color: 0x706858, roughness: 0.92, metalness: 0.0 }),
+            new THREE.MeshStandardMaterial({ color: 0x5a5248, roughness: 0.90, metalness: 0.05 }),
+        ];
+
+        // Each pebble record: { x, z, radius, squashY, rotY }
+        let pebbleData = [];
+        let instancedPebbleMeshes = null;
+
+        function initInstancedPebbleMeshes() {
+            if (instancedPebbleMeshes) {
+                for (const mesh of instancedPebbleMeshes) scene.remove(mesh);
+            }
+            const geos = graphicsMode === 'low' ? PEBBLE_GEOMETRIES_LOW : PEBBLE_GEOMETRIES;
+            instancedPebbleMeshes = geos.map((geo, i) => {
+                const mesh = new THREE.InstancedMesh(geo, PEBBLE_MATERIALS[i], MAX_PEBBLE_INSTANCES);
+                mesh.receiveShadow = true;
+                mesh.castShadow = true;
+                mesh.frustumCulled = false;
+                mesh.count = 0;
+                scene.add(mesh);
+                return mesh;
+            });
+        }
+
+        const _pebblePos   = new THREE.Vector3();
+        const _pebbleQuat  = new THREE.Quaternion();
+        const _pebbleScale = new THREE.Vector3();
+        const _pebbleMat4  = new THREE.Matrix4();
+
+        function placePebbles() {
+            pebbleData = [];
+            // Scatter pebbles across the world. Cluster a few together occasionally.
+            const count = Math.floor(60 * Math.log1p(CONFIG.scale));
+            for (let i = 0; i < count && pebbleData.length < MAX_PEBBLE_INSTANCES; i++) {
+                const cx = Math.random() * CONFIG.worldWidth;
+                const cz = Math.random() * CONFIG.worldHeight;
+                // Skip very steep terrain (rocks would float or clip)
+                const h = getTerrainHeight(cx, cz);
+
+                // Decide cluster size (1-5 pebbles near each other)
+                const clusterSize = Math.random() < 0.35 ? Math.floor(Math.random() * 4) + 2 : 1;
+                for (let j = 0; j < clusterSize && pebbleData.length < MAX_PEBBLE_INSTANCES; j++) {
+                    const spread = clusterSize > 1 ? 30 : 0;
+                    const px = cx + (Math.random() - 0.5) * spread;
+                    const pz = cz + (Math.random() - 0.5) * spread;
+                    // Radius: 2–12 (half sheep ≈ 12 units)
+                    const radius = 2 + Math.random() * 10;
+                    // Slightly flatten vertically so they look grounded
+                    const squashY = 0.5 + Math.random() * 0.5;
+                    const rotY = Math.random() * Math.PI * 2;
+                    pebbleData.push({ x: px, z: pz, radius, squashY, rotY });
+                }
+            }
+            updateInstancedPebbles();
+        }
+
+        function updateInstancedPebbles() {
+            if (!instancedPebbleMeshes) return;
+            // Distribute across 3 size tiers by radius
+            const counts = [0, 0, 0];
+            // Reset counts
+            for (const mesh of instancedPebbleMeshes) mesh.count = 0;
+
+            for (const p of pebbleData) {
+                // Assign tier by radius: 2–5 → 0, 5–9 → 1, 9–12 → 2
+                const tier = p.radius < 5 ? 0 : p.radius < 9 ? 1 : 2;
+                const idx = counts[tier];
+                if (idx >= MAX_PEBBLE_INSTANCES) continue;
+
+                const groundY = getTerrainHeight(p.x, p.z);
+                // Sit the pebble on the ground: center = groundY + radius * squashY * 0.5
+                _pebblePos.set(p.x, groundY + p.radius * p.squashY * 0.5, p.z);
+                _pebbleQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.rotY);
+                _pebbleScale.set(p.radius, p.radius * p.squashY, p.radius);
+                _pebbleMat4.compose(_pebblePos, _pebbleQuat, _pebbleScale);
+                instancedPebbleMeshes[tier].setMatrixAt(idx, _pebbleMat4);
+                counts[tier]++;
+            }
+
+            for (let i = 0; i < 3; i++) {
+                instancedPebbleMeshes[i].count = counts[i];
+                instancedPebbleMeshes[i].instanceMatrix.needsUpdate = true;
+            }
+        }
+
         function initInstancedPlantMeshes() {
             // Remove old meshes if reinitialising (e.g. after reset)
             if (instancedPlantMeshes) {
@@ -2569,6 +2677,15 @@
                 for (let li = 0; li < 4; li++) {
                     instancedPlantMeshes[`leaf${li}`].geometry = pgeos.leaf;
                     instancedPlantMeshes[`leaf${li}`].castShadow = shadowsOn;
+                }
+            }
+
+            // Swap pebble geometries in-place
+            if (instancedPebbleMeshes) {
+                const pgeos = graphicsMode === 'low' ? PEBBLE_GEOMETRIES_LOW : PEBBLE_GEOMETRIES;
+                for (let i = 0; i < 3; i++) {
+                    instancedPebbleMeshes[i].geometry = pgeos[i];
+                    instancedPebbleMeshes[i].castShadow = shadowsOn;
                 }
             }
         }
@@ -4424,6 +4541,7 @@
             // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
             initInstancedPlantMeshes();
+            initInstancedPebbleMeshes();
 
             // Add terrain
             initTerrainSeed();
@@ -4544,6 +4662,9 @@
 
             // Sink the ground beneath each water tile so the translucent cubes read as pools.
             carveWaterDepressions(terrain, waterLocations);
+
+            // Scatter pebbles across the terrain
+            placePebbles();
 
             // Add plants
             for (let i = 0; i < CONFIG.initialPlants; i++) {
