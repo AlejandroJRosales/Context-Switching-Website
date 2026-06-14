@@ -2555,6 +2555,15 @@
                 }
             }
 
+            // Rebuild terrain with updated mesh resolution
+            if (terrain) {
+                terrain.geometry.dispose();
+                scene.remove(terrain);
+                terrain = createTerrain();
+                scene.add(terrain);
+                carveWaterDepressions(terrain, waterLocations);
+            }
+
             // Swap plant geometries in-place
             if (instancedPlantMeshes) {
                 const pgeos = graphicsMode === 'low' ? PLANT_GEOMETRIES_LOW : PLANT_GEOMETRIES;
@@ -3179,7 +3188,9 @@
         }
 
         function createTerrain() {
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 175, 130);
+            const segX = graphicsMode === 'low' ? 175 : 350;
+            const segY = graphicsMode === 'low' ? 130 : 260;
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, segX, segY);
             const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
             const positionAttribute = geometry.getAttribute('position');
