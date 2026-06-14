@@ -1473,13 +1473,15 @@
 
         // ============================================================================
         // TWO-LOBE NETWORK
+        //
         // Topology (all sparse at LOBE_SPARSITY):
         //   Input maskIA ->  Lobe A (GRU nodes, hidden state h_A)
         //   Input maskIB ->  Lobe B (sigmoid nodes)
-        //   Lobe AmaskAB ->  Lobe B (directed; creates intentional cycle with B->A)
-        //   Lobe BmaskBA ->  Lobe A (feeds into GRU update of each A node)
-        //   Lobe AmaskAO ->  Output (softmax, 9 actions)
+        //   Lobe AmaskAB ->  Lobe B   (directed; creates intentional cycle with B->A)
+        //   Lobe BmaskBA ->  Lobe A   (feeds into GRU update of each A node)
+        //   Lobe AmaskAO ->  Output   (softmax, 9 actions)
         //   Lobe BmaskBO ->  Output
+        //
         // GRU cell (simplified - single gate + self-recurrence, no full reset/update gate):
         // ============================================================================
         const LOBE_SIZE_MIN = 4;    // minimum nodes per lobe (randomised at birth)
@@ -1554,6 +1556,7 @@
 
         class DenseNetwork {
             constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
+                // Public fields the rest of the codebase reads
                 this.inputDims    = inputDims;
                 this.outputDims   = 9;
                 this.learningRate = learningRate;
@@ -1566,7 +1569,7 @@
                 this.normCount    = 0;
                 this.EMA          = 0.001;
 
-                // Running normalisation for inputs
+                // Running normalisation for inputs (kept identical to old code)
                 this.runningMean   = new Float32Array(inputDims);
                 this.runningVar    = new Float32Array(inputDims).fill(1);
                 this._standardized = new Float32Array(inputDims);
@@ -1590,6 +1593,7 @@
                 const NB = this.lobeSizeB;
 
                 // Topology masks
+                // Accept inherited masks or generate fresh random ones
                 if (masks) {
                     this.maskIA = masks.maskIA; // Input   -> Lobe A  [I*NA]
                     this.maskIB = masks.maskIB; // Input   -> Lobe B  [I*NB]
@@ -1695,15 +1699,16 @@
                 const hA   = this.hA;
 
                 // Lobe A - Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
+                //
                 // Each node maintains a membrane potential V = hA[i] that:
                 //   1. Leaks toward rest (0) each step:  V <- V * lifLeak
                 //   2. Integrates synaptic current (bias + weighted inputs + B->A + self)
                 //   3. Fires (actA[i] = 1) and resets when V >= lifThresh
                 //   4. Is clamped to lifReset during the refractory period
-                // Output is now a discrete spike (1.0) or silence (0.0); the previous
-                // graded sub-threshold sigmoid has been removed for true LIF dynamics.
-                // Note: with no graded output, downstream layers receive signal only on
-                // actual spikes, so REINFORCE gradients are sparser than before.
+                //
+                // A continuous "sub-threshold" signal (sigmoid of V - threshold) is
+                // passed to downstream layers so gradient information propagates even
+                // when no discrete spike occurs, preserving trainability under REINFORCE.
                 const refracA  = this.refracA;
                 const lifLeak  = this.lifLeak;
                 const lifTh    = this.lifThresh;
@@ -1734,13 +1739,18 @@
                     // Clamp net current to prevent runaway integration
                     hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
 
-                    // fire-and-reset (discrete spike, no graded sub-threshold output)
+                    // fire-and-reset or soft sub-threshold output
                     if (hA[i] >= lifTh) {
                         actA[i] = 1.0;          // spike
                         hA[i]   = lifRst;       // hard reset
                         refracA[i] = refracPd;  // enter refractory period
                     } else {
-                        actA[i] = 0.0;          // silent below threshold
+                        // Soft sigmoid of (V - threshold): gives graded output below
+                        // threshold, smoothly approaching 1 as V -> lifTh.
+                        const vRel = hA[i] - lifTh;  // negative when sub-threshold
+                        actA[i] = vRel >= 0
+                            ? 1 / (1 + Math.exp(-vRel))
+                            : Math.exp(vRel) / (1 + Math.exp(vRel));
                     }
                 }
 
@@ -1776,13 +1786,16 @@
                     }
                     hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
 
-                    // fire-and-reset (discrete spike, no graded sub-threshold output)
+                    // fire-and-reset or soft sub-threshold output
                     if (hB[i] >= lifTh) {
                         actB[i] = 1.0;
                         hB[i]   = lifRst;
                         refracB[i] = refracPd;
                     } else {
-                        actB[i] = 0.0;          // silent below threshold
+                        const vRel = hB[i] - lifTh;
+                        actB[i] = vRel >= 0
+                            ? 1 / (1 + Math.exp(-vRel))
+                            : Math.exp(vRel) / (1 + Math.exp(vRel));
                     }
                 }
 
