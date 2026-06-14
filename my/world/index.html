@@ -1088,18 +1088,15 @@
                 }
             }
 
-            // F, toggle creative mode (single press, no repeat)
             if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
                 e.preventDefault();
                 toggleCreative();
             }
 
-            // Escape/M, toggle settings panel (single press, no repeat)
             if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !e.repeat) {
                 toggleSettings();
             }
 
-            // K, toggle keyboard/touch control mode (single press, no repeat)
             if ((e.key === 'k' || e.key === 'K') && !e.repeat) {
                 e.preventDefault();
                 document.getElementById('controlBtn').click();
@@ -1361,7 +1358,7 @@
             }
         }, { passive: false });
 
-        // Unified touchmove: handles joystick AND camera in one pass 
+        // Unified touchmove: handles joystick + camera in one pass 
         document.addEventListener('touchmove', (e) => {
             if (controls.controlMode !== 'touch') return;
             e.preventDefault();
@@ -3108,9 +3105,8 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
-        // Layered sine/cosine noise - no external library needed.
-        // Returns a height value for any world (wx, wz) coordinate.
-        // The seed offsets make each world feel unique on reset.
+        // Layered sine/cosine noise
+        // Returns a height value for any world (wx, wz) coordinate
         let _terrainSeed = { ox: 0, oz: 0, seed: 1337 };
         function initTerrainSeed() {
             _terrainSeed.ox = Math.random() * 1000;
@@ -3132,7 +3128,7 @@
         function _valueNoise(x, z) {
             const ix = Math.floor(x), iz = Math.floor(z);
             const fx = x - ix, fz = z - iz;
-            // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st AND 2nd derivative at
+            // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st + 2nd derivative at
             // cell edges, so no creasing/grain between noise cells.
             const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
             const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
@@ -3169,7 +3165,7 @@
             const base = _fbm(nx, nz, 4, 2.0, 0.42) - 0.5;
             h += base * 150;
 
-            // Gentle warble so slopes aren't uniform (kept low-frequency).
+            // Gentle warble so slopes aren't uniform
             h += (_fbm(nx * 2.2 + 11.3, nz * 2.2 - 7.1, 2, 2.0, 0.45) - 0.5) * 26;
 
             // Mountain mask: a low-frequency field that decides WHERE mountains
@@ -3217,9 +3213,7 @@
         }
 
         // Paint terrain vertices green (grass) on gentle ground and grey (rock) on
-        // steep faces, giving cliffs/mountainsides a rocky look. Steepness is read
-        // from each vertex normal: a normal pointing straight up (y≈1) is flat;
-        // as the surface tilts, normal.y drops toward 0.
+        // steep faces, giving cliffs/mountainsides a rocky look
         const _grassColor = new THREE.Color(0x2d5016);
         const _rockColor  = new THREE.Color(0x6e6e6e);
         function paintTerrainBySlope(geometry) {
@@ -3248,12 +3242,7 @@
             colorAttr.needsUpdate = true;
         }
 
-        // Push terrain vertices down where water sits, so each water cube rests in a
-        // real depression instead of having opaque ground fill its translucent volume.
-        // `locations` entries are [x, z] or [x, z, surfaceY]. When a surface height is
-        // present we carve the ground to an absolute basin floor sitting below that
-        // water box's bottom, so the opaque terrain never intrudes into the translucent
-        // volume even where the pool spans a slope.
+        // Push terrain vertices down where water sits, so each water cube rests in a real depression
         function carveWaterDepressions(terrainMesh, locations) {
             if (!terrainMesh || !locations.length) return;
             const geometry = terrainMesh.geometry;
@@ -3261,17 +3250,17 @@
             const positions = positionAttribute.array;
             const halfW = CONFIG.worldWidth / 2;
             const halfH = CONFIG.worldHeight / 2;
-            const tileHalf = 10 * (CONFIG.scale * 3);       // water tile is 20 wide; carve out to its edge
-            const blend = 14;          // extra falloff distance beyond the tile edge
+            const tileHalf = 10 * (CONFIG.scale * 3);  // carve out water tile edge
+            const blend = 14;  // extra falloff distance beyond the tile edge
             const reach = tileHalf + blend;
             const reachSq = reach * reach;
-            const carveDepth = 22 * CONFIG.scale;     // fallback depth when no surfaceY is given
+            const carveDepth = 22 * CONFIG.scale;  // fallback depth when no surfaceY is given
             // Water box bottom relative to its surface: depth(30)/2 + 20 in Water.createMesh.
             const boxBottomBelowSurface = (30 / 2 + 20) * CONFIG.scale;
             const floorClearance = 4 * CONFIG.scale;  // keep floor a touch under the box bottom
 
             for (let i = 0; i < positions.length; i += 3) {
-                // Terrain plane is rotated -90° about X, so local +Y maps to world -Z;
+                // Terrain plane is rotated -90 degrees about X, so local +Y maps to world -Z;
                 // local X maps to world X. Both are then offset by the mesh's half extents.
                 const worldX = positions[i]      + halfW;
                 const worldZ = -positions[i + 1] + halfH;
@@ -3586,15 +3575,11 @@
             }
             // raySin=dx/dist, rayCos=dz/dist in world space.
             // Subtract facingAngle to get direction relative to animal's own heading
-            // (0 = straight ahead, ±π = behind), then rotate SVG arrow accordingly.
             function setArrow(arrow, active, sin, cos) {
                 if (active) {
                     const worldAngle = Math.atan2(sin, cos);
                     const relAngle = worldAngle - a.facingAngle;
                     // Screen rotate() is clockwise and the arrow rests pointing "forward"
-                    // (+Z). A target on the animal's right sits at -X (relAngle < 0), which
-                    // must rotate the arrow clockwise on screen, so negate the world-space
-                    // relative angle when converting to a CSS rotation.
                     const deg = -relAngle * (180 / Math.PI);
                     arrow.querySelector('svg').style.transform = `rotate(${deg}deg)`;
                     arrow.classList.add('active');
@@ -4519,7 +4504,7 @@
                 }
 
                 // One filled pool covering the cluster's bounding box (padded to the
-                // tile edges so the surface reaches the outermost drink points).
+                // tile edges so the surface reaches the outermost drink points)
                 if (clusterPoints.length) {
                     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
                     for (const [px, pz] of clusterPoints) {
@@ -4533,10 +4518,7 @@
                     const length = (maxZ - minZ) + pad * 2;
                     const cx = (minX + maxX) / 2;
                     const cz = (minZ + maxZ) / 2;
-                    // Place the water surface at the LOWEST terrain height anywhere under
-                    // the mesh footprint (minus a small margin), so the flat top plane never
-                    // pokes above surrounding ground. carveWaterDepressions then hollows the
-                    // ground beneath it. Sample on a grid spanning the full padded box.
+                    // Place the water surface at the LOWEST terrain height
                     const halfW = width / 2, halfL = length / 2;
                     let lowestH = Infinity;
                     const SAMPLES = 6; // grid resolution per axis across the footprint
@@ -4550,8 +4532,7 @@
                     }
                     const waterSurfaceY = lowestH - 2;
 
-                    // Tag this cluster's drink points with the surface height so
-                    // carveWaterDepressions can carve a basin floor below the box bottom.
+                    // Tag this cluster's drink points with the surface height
                     for (const p of clusterPoints) p[2] = waterSurfaceY;
 
                     const w = new Water([cx, waterSurfaceY, cz], { width, length });
