@@ -40,6 +40,11 @@
     <button class="btn" id="qualityBtn">HIGH</button>
     <button class="btn" id="flyBtn">FLY: OFF</button>
     <button class="btn" id="resetBtn">RESET</button>
+    <span id="scaleWrap" style="display:inline-flex;align-items:center;gap:2px">
+      <button class="btn" id="scaleDown">&ndash;</button>
+      <span class="btn" id="scaleDisplay" style="pointer-events:none;min-width:2ch;text-align:center">5</span>
+      <button class="btn" id="scaleUp">+</button>
+    </span>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
   <div class="pad" id="jump"><span class="jlbl">JUMP</span></div>
@@ -55,23 +60,29 @@
 // the instancing pipeline. SNN + ecosystem layer on top in later sessions.
 //============================================================================
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // CONFIG  (world units kept proportional to the original Three.js build,
 // scaled down so the whole map fits comfortably on a phone GPU)
-//--------------------------------------------------------------------------
+// =========================================================================
+// World scale: visual integer 1-10, actual size = log(n) * BASE_WORLD_SIZE
+const BASE_WORLD_SIZE = 5000;   // world units at scale 10 (log10 ≈ 1.0 → full size)
+const SCALE_BASE = Math.log(10); // normalizer so scale 10 → exactly BASE_WORLD_SIZE
+function scaleToSize(n){ return Math.max(500, Math.round(BASE_WORLD_SIZE * Math.log(Math.max(n,1)) / SCALE_BASE)); }
+
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-  worldW:    5000,        // world spans -worldW/2 .. +worldW/2 on X
-  worldH:    5000,        // .. and on Z
-  waterLevel: 8,          // y height of the water plane
-  probSpawnPlant: 0.04,   // base plant regrowth probability per second
-  quality:   'high',      // 'high' | 'low'  (low = coarser terrain, no water normals)
+  worldScale: 5,           // visual scale 1-10; actual size is log(worldScale)
+  get worldW(){ return scaleToSize(this.worldScale); },
+  get worldH(){ return scaleToSize(this.worldScale); },
+  waterLevel: 8,           // y height of the water plane
+  probSpawnPlant: 0.04,    // base plant regrowth probability per second
+  quality:   'high',       // 'high' | 'low'  (low = coarser terrain, no water normals)
   seed:      1337,
 };
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // 1. WEBGL BOILERPLATE
-//--------------------------------------------------------------------------
+// =========================================================================
 const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' })
         || canvas.getContext('experimental-webgl');
@@ -93,7 +104,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// --- tiny shader helpers ---
+// tiny shader helpers
 function compile(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s);
@@ -115,9 +126,9 @@ function program(vsSrc, fsSrc) {
   return p;
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // minimal mat4 math (column-major, like WebGL expects)
-//--------------------------------------------------------------------------
+// =========================================================================
 const M4 = {
   create(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
   perspective(out, fovy, aspect, near, far){
@@ -154,16 +165,16 @@ const M4 = {
   }
 };
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // Seeded RNG (mulberry32); deterministic worlds from CONFIG.seed
-//--------------------------------------------------------------------------
+// =========================================================================
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 let RNG = mulberry32(CONFIG.seed);
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // 2. TERRAIN; value-noise fBm, generated on CPU, queryable from JS.
-//--------------------------------------------------------------------------
+// =========================================================================
 // Seeded value-noise: hash lattice points, cubic-smooth interpolate between.
 const NOISE_PERM = (() => {
   const p = new Uint8Array(512), base = new Uint8Array(256);
@@ -186,8 +197,8 @@ function valueNoise(x, z){
 // agree exactly with what's drawn).
 const TERRAIN = {
   amp: 220, featureSize: 360, octaves: 5,
-  // --- mountains ---
-  mtnAmp: 600,        // peak height added on top of the base terrain
+  // mountains
+  mtnAmp: 1000,        // peak height added on top of the base terrain
   mtnSize: 1800,      // size of a mountain range (larger = broader, fewer ranges)
   mtnOctaves: 4,      // detail folded into the ridges
   mtnThreshold: 0.45, // ridge value below this stays lowland; above it rises into peaks
@@ -202,7 +213,7 @@ function ridgedNoise(wx, wz){
     n *= n;                      // sharpen the crest
     h += n*amp; norm += amp; amp*=0.5; freq*=2.0;
   }
-  return h/norm;               // 0..1
+  return h/norm;                 // 0..1
 }
 function terrainHeight(wx, wz){
   // base rolling terrain
@@ -293,9 +304,9 @@ const terrainProg = program(`
   }
 `);
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // 3. SKY; fullscreen quad, procedural gradient + sun disc.
-//--------------------------------------------------------------------------
+// =========================================================================
 const quadBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
@@ -317,12 +328,14 @@ const skyProg = program(`
 `);
 
 // WATER; flat plane at waterLevel, procedural scrolling normals in shader.
+// Kept in a function so it can be re-uploaded when world size changes.
 const waterBuf = gl.createBuffer();
-(function(){
+function buildWater(){
   const W=CONFIG.worldW/2, H=CONFIG.worldH/2;
   gl.bindBuffer(gl.ARRAY_BUFFER, waterBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-W,-H, W,-H, -W,H, -W,H, W,-H, W,H]), gl.STATIC_DRAW);
-})();
+}
+buildWater();
 const waterProg = program(`
   attribute vec2 aXZ; uniform mat4 uVP; uniform float uLevel;
   varying vec3 vW;
@@ -349,7 +362,7 @@ const waterProg = program(`
   }
 `);
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // 4. CREATURES; real geometry (capsule body + sphere head) generated once
 //    in JS, drawn with instancing. State lives in parallel typed arrays (SoA)
 //    so the SNN (next session) can read/write fields with no object churn.
@@ -359,15 +372,15 @@ const waterProg = program(`
 //      [3]    scale
 //      [4..6] color r,g,b
 //      [7]    heading (yaw, radians); body faces movement direction
-//--------------------------------------------------------------------------
+// =========================================================================
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
 const INST_STRIDE = 9;                                  // floats per instance
 const MAX_CREATURES = CONFIG.isMobile ? 120 : 300;
 
-// --- GPU-facing interleaved instance buffer (rewritten each frame) ---
+// GPU-facing interleaved instance buffer (rewritten each frame)
 const instData = new Float32Array(MAX_CREATURES * INST_STRIDE);
 
-// --- CPU simulation state (Structure-of-Arrays) ---
+// CPU simulation state (Structure-of-Arrays)
 const C = {
   n: 0,                                   // live count
   x:   new Float32Array(MAX_CREATURES),
@@ -407,7 +420,7 @@ function buildCreatures(){
   const verts = [];   // x,y,z, nx,ny,nz  per vertex (already triangulated)
   function push(x,y,z,nx,ny,nz){ verts.push(x,y,z,nx,ny,nz); }
 
-  // --- UV sphere helper, centered at (cx,cy,cz), radius r, scaled on z (sz) ---
+  // UV sphere helper, centered at (cx,cy,cz), radius r, scaled on z (sz)
   function sphere(cx,cy,cz,r,sz, rings,segs){
     const grid=[];
     for(let i=0;i<=rings;i++){
@@ -415,7 +428,7 @@ function buildCreatures(){
       const rowA=[], rowB=[];
       for(let j=0;j<=segs;j++){
         const u=j/segs, th=u*Math.PI*2, st=Math.sin(th), ct=Math.cos(th);
-        const nx=sp*ct, ny=cp, nz=sp*st;          // unit normal
+        const nx=sp*ct, ny=cp, nz=sp*st;           // unit normal
         rowA.push([cx+nx*r, cy+ny*r, cz+nz*r*sz]); // position (z optionally stretched)
         rowB.push([nx, ny, nz/(sz||1)]);
       }
@@ -432,8 +445,8 @@ function buildCreatures(){
       }
     }
   }
-  // --- capsule body: cylinder along Z plus rounded caps approximated by the
-  //     spheres at each end; we draw the tube then two hemispherical-ish caps ---
+  // capsule body: cylinder along Z plus rounded caps approximated by the
+  // spheres at each end; we draw the tube then two hemispherical-ish caps
   function tube(r, halfLen, segs){
     for(let j=0;j<segs;j++){
       const u0=j/segs*Math.PI*2, u1=(j+1)/segs*Math.PI*2;
@@ -495,7 +508,7 @@ function buildCreatures(){
   `);
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // SENSORY + SPIKING NEURAL NETWORK
 //
 // Each creature has a two-lobe brain, all state in flat Float32Arrays indexed
@@ -513,7 +526,7 @@ function buildCreatures(){
 //           the hA->B readout track recent pre*post activity; weights nudge by
 //           reward*trace. Pruning zeroes tiny weights; neurogenesis occasionally
 //           reseeds a dead synapse (keeps the net plastic over a lifetime).
-//--------------------------------------------------------------------------
+// =========================================================================
 const N_RAYS = 5;                 // forward vision rays
 const RAY_FOV = Math.PI*0.55;     // total arc the rays span
 const RAY_LEN = 220;              // max ray distance (world units)
@@ -528,7 +541,7 @@ const MAX_A = 12;                 // max Lobe A hidden units
 const MAX_B = 10;                 // max Lobe B LIF neurons
 const N_MOTOR = 4;                // turn, move, eat, rest
 
-// --- Lobe A (GRU) weights, per creature ---
+// Lobe A (GRU) weights, per creature
 // GRU needs: for update(z), reset(r), candidate(h~): W (input->unit) + U (hidden->unit) + bias.
 // We pack three gates x {W[in], U[hidden], b} per unit.
 const A_W = new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3); // [gate-stacked] input weights
@@ -536,11 +549,11 @@ const A_U = new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);   // hidden weights
 const A_B = new Float32Array(MAX_CREATURES*MAX_A*3);         // biases
 const hA  = new Float32Array(MAX_CREATURES*MAX_A);           // hidden state (persists)
 
-// --- Lobe B (LIF) ---
+// Lobe B (LIF)
 const B_W = new Float32Array(MAX_CREATURES*MAX_B*MAX_A);     // A->B synapse weights
 const B_v = new Float32Array(MAX_CREATURES*MAX_B);           // membrane potentials
 const B_thr = 1.0, B_leak = 0.85, B_reset = 0.0;            // LIF params
-// --- readout B->motor + eligibility traces for REINFORCE ---
+// readout B->motor + eligibility traces for REINFORCE
 const R_W = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
 const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);   // eligibility trace
 const PRUNE_THR = 0.02, TRACE_DECAY = 0.92, LR = 0.04;
@@ -609,7 +622,7 @@ function brainInherit(child, parent, mut){
   for(let n=0;n<MAX_B;n++) B_v[child*MAX_B+n]=0;
 }
 
-// ---- VISION: cast N rays, fill sIn[] with sensory vector for creature i ----
+// VISION: cast N rays, fill sIn[] with sensory vector for creature i
 function senseCreature(i, timeOfDay){
   const x=C.x[i], z=C.z[i], h=C.head[i];
   const preyType = C.species[i] ? 1 : 0;   // predators want herbivores(1), herbivores want plants(0)
@@ -660,11 +673,11 @@ function senseCreature(i, timeOfDay){
 
 const sigmoid = x => 1/(1+Math.exp(-x));
 
-// ---- one brain tick for creature i: sIn must already be filled ----
+// one brain tick for creature i: sIn must already be filled
 function brainTick(i, dt){
   const a=C.szA[i], b=C.szB[i];
   const baseW=i*MAX_A*N_INPUT*3, baseU=i*MAX_A*MAX_A*3, baseB=i*MAX_A*3, hBase=i*MAX_A;
-  // --- Lobe A: GRU update ---
+  // Lobe A: GRU update
   for(let u=0;u<a;u++){
     let zPre=A_B[baseB+u*3+0], rPre=A_B[baseB+u*3+1], hPre=A_B[baseB+u*3+2];
     const wOff=(u*3)*N_INPUT;
@@ -687,7 +700,7 @@ function brainTick(i, dt){
   }
   for(let u=0;u<a;u++) hA[hBase+u]=sA[u];
 
-  // --- Lobe B: LIF ---
+  // Lobe B: LIF
   const baseBW=i*MAX_B*MAX_A, vBase=i*MAX_B;
   let spikes=0;
   for(let n=0;n<b;n++){
@@ -699,7 +712,7 @@ function brainTick(i, dt){
   }
   C.spikeRate[i]=b?spikes/b:0;
 
-  // --- readout B->motor (rate-ish: spikes weighted) + eligibility traces ---
+  // readout B->motor (rate-ish: spikes weighted) + eligibility traces
   const baseR=i*N_MOTOR*MAX_B;
   for(let m=0;m<N_MOTOR;m++){
     let acc=0; const off=m*MAX_B;
@@ -719,7 +732,7 @@ function brainTick(i, dt){
   C.mRest[i]=sigmoid(sMotor[3]);
 }
 
-// ---- REINFORCE update + pruning + neurogenesis (called after movement) ----
+// REINFORCE update + pruning + neurogenesis (called after movement)-
 function brainLearn(i){
   const b=C.szB[i], a=C.szA[i];
   // Reward = real energy delta (sparse, the true objective) plus a small dense
@@ -768,11 +781,11 @@ function spawnCreatures(){
   }
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // SPATIAL GRID; uniform bucket grid over the world for O(1) neighbor lookup.
 // Rebuilt each tick from creature positions. No per-frame allocation: a
 // head[] array (cell -> first creature index) plus a next[] linked list.
-//--------------------------------------------------------------------------
+// =========================================================================
 const GRID = {
   cell: 70,                 // world units per cell (~ a few body lengths)
   cols: 0, rows: 0,
@@ -799,7 +812,7 @@ function gridRebuild(){
     GRID.next[i]=GRID.head[c]; GRID.head[c]=i;
   }
 }
-// Visit every creature within `radius` of (x,z). cb(j) called per candidate
+// Visit every creature within radius of (x,z). cb(j) called per candidate
 // (candidates are within the 3x3 cell block; caller does the exact distance test).
 function gridQuery(x,z,radius,cb){
   const r = Math.max(1, Math.ceil(radius/GRID.cell));
@@ -814,11 +827,11 @@ function gridQuery(x,z,radius,cb){
   }
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // PLANTS; food for herbivores. Separate SoA state + its own bucket grid so
 // vision rays and grazing can find food in O(1). Lifecycle: probabilistic
 // spawn each tick (soft cap), die when eaten, regrow near a random survivor.
-//--------------------------------------------------------------------------
+// =========================================================================
 const MAX_PLANTS = CONFIG.isMobile ? 400 : 1200;
 const P = {
   n: 0,
@@ -885,7 +898,7 @@ function plantsGrow(dt){
   }
 }
 
-// --- plant rendering: instanced cross-quad billboard, procedural green ---
+// plant rendering: instanced cross-quad billboard, procedural green
 let plantProg=null, plantGeoBuf=null, plantGeoCount=0, plantInstBuf=null;
 const P_STRIDE=4; // x,y,z,sway
 const plantInst=new Float32Array(MAX_PLANTS*P_STRIDE);
@@ -935,7 +948,7 @@ function uploadPlants(){
   gl.bufferData(gl.ARRAY_BUFFER, plantInst.subarray(0,P.n*P_STRIDE), gl.DYNAMIC_DRAW);
 }
 // spent on movement and spiking (metabolic cost) and is the REINFORCE reward.
-//--------------------------------------------------------------------------
+// =========================================================================
 
 // Copy all per-creature SoA fields from slot src -> dst (used by swap-remove).
 function creatureCopy(dst, src){
@@ -1112,13 +1125,13 @@ function uploadCreatures(){
   gl.bufferData(gl.ARRAY_BUFFER, instData.subarray(0,C.n*INST_STRIDE), gl.DYNAMIC_DRAW);
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // CAMERA + INPUT  (virtual joystick to move, drag-pad to look)
-//--------------------------------------------------------------------------
+// =========================================================================
 const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
 const move = { x:0, y:0 };          // joystick vector (touch); WASD writes it on desktop
 const SPEED = 220;
-// --- walker physics ---
+// walker physics
 const GRAVITY = 320;                // downward accel (world units/s^2)
 const EYE_HEIGHT = 28;              // camera sits this far above the ground
 const JUMP_VELOCITY = 150;          // initial upward velocity on jump
@@ -1134,9 +1147,9 @@ function applyLook(dxPix, dyPix){
   cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch));
 }
 
-// --- Detect a real touchscreen. maxTouchPoints is the reliable signal across
+// Detect a real touchscreen. maxTouchPoints is the reliable signal across
 //     iOS/Android; 'ontouchstart' covers older browsers. We pick ONE control
-//     scheme up front so desktop and touch never fight over the same events. ---
+//     scheme up front so desktop and touch never fight over the same events.
 const HAS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
 
 const joyEl  = document.getElementById('joy');
@@ -1207,9 +1220,9 @@ if (HAS_TOUCH){
     applyLook(e.clientX-lastX, e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; });
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // UI buttons
-//--------------------------------------------------------------------------
+// =========================================================================
 document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
@@ -1226,9 +1239,22 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   rebuildWorld();
 });
 
-//--------------------------------------------------------------------------
+// === WORLD SCALE CONTROLS ===
+function applyWorldScale(n){
+  CONFIG.worldScale = Math.max(1, Math.min(10, n));
+  document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
+  // Grid and water plane depend on world size — rebuild them before the world
+  gridInit();
+  buildWater();
+  CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
+  rebuildWorld();
+}
+document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-1));
+document.getElementById('scaleUp').addEventListener('click',   ()=> applyWorldScale(CONFIG.worldScale+1));
+
+// =========================================================================
 // DAY/NIGHT; drives sun direction + light/sky colors
-//--------------------------------------------------------------------------
+// =========================================================================
 function sunState(t){
   const ang = t*0.05;                          // slow cycle
   const sunDir = [Math.cos(ang)*0.6, Math.sin(ang), 0.4];
@@ -1245,9 +1271,9 @@ function sunState(t){
   };
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // WORLD (RE)BUILD
-//--------------------------------------------------------------------------
+// =========================================================================
 function rebuildWorld(){
   // rebuild noise perm for new seed so terrain actually changes
   const p=new Uint8Array(512), base=new Uint8Array(256);
@@ -1260,9 +1286,9 @@ function rebuildWorld(){
   cam.vy=0; cam.onGround=true; cam.jumpsLeft=2;
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // RENDER LOOP
-//--------------------------------------------------------------------------
+// =========================================================================
 const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
@@ -1272,11 +1298,11 @@ let prevJumpKey = false;        // for edge-triggered jumps (so a held key fires
 function frame(now){
   let dt = (now-last)/1000; last=now;
   if (!(dt>0)) dt=0;            // guard against negative/NaN first-frame dt
-  if (dt>0.05) dt=0.05;        // clamp big stalls so nothing teleports
+  if (dt>0.05) dt=0.05;         // clamp big stalls so nothing teleports
   simTime += dt;
   fpsT+=dt; fpsN++; if (fpsT>=0.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
 
-  // --- camera update ---
+  // camera update
   // (look rotation is applied directly in the input handlers)
   // Horizontal movement relative to yaw. The player walks on the terrain;
   // gravity pulls them down each frame and the ground stops the fall.
@@ -1289,7 +1315,7 @@ function frame(now){
   const downKey = keys['shift']||keys['control']||keys['c'];
 
   if (cam.fly){
-    // --- CREATIVE FLIGHT: free movement, no gravity, no ground clamp ---
+    // CREATIVE FLIGHT: free movement, no gravity, no ground clamp
     const spd = FLY_SPEED;
     cam.x += (fwd[0]*mf + rgt[0]*ms)*spd*dt;
     cam.z += (fwd[2]*mf + rgt[2]*ms)*spd*dt;
@@ -1300,7 +1326,7 @@ function frame(now){
     cam.onGround = false;
     prevJumpKey = jumpKey;
   } else {
-    // --- WALKER: horizontal move + gravity + double jump ---
+    // WALKER: horizontal move + gravity + double jump
     cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
     cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
 
@@ -1333,18 +1359,18 @@ function frame(now){
     }
   }
 
-  // --- matrices ---
+  // matrices
   const aspect = VIEW_W/VIEW_H;
   M4.perspective(proj, 1.05, aspect, 1.0, Math.max(CONFIG.worldW,CONFIG.worldH)*1.4);
   const dir=[Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw)*Math.cos(cam.pitch)];
   M4.lookAt(viewM, [cam.x,cam.y,cam.z], [cam.x+dir[0],cam.y+dir[1],cam.z+dir[2]], [0,1,0]);
   M4.multiply(VP, proj, viewM);
 
-  // --- sun + time-of-day (needed by the SNN sensory input) ---
+  // sun + time-of-day (needed by the SNN sensory input)
   const S = sunState(simTime);
   currentTimeOfDay = S.up;        // 0 at night, 1 at noon; a clean day signal
 
-  // --- simulation step ---
+  // simulation step
   updateCreatures(dt);
   uploadCreatures();
   uploadPlants();
@@ -1356,7 +1382,7 @@ function frame(now){
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
 
-  // --- SKY (depth write off, behind everything) ---
+  // SKY (depth write off, behind everything)
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST);
   gl.useProgram(skyProg);
   // project sun to screen-ish uv for the disc
@@ -1372,7 +1398,7 @@ function frame(now){
   gl.drawArrays(gl.TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
 
-  // --- TERRAIN ---
+  // TERRAIN
   gl.useProgram(terrainProg);
   gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
   gl.enableVertexAttribArray(terrainProg.a('aPos'));
@@ -1390,7 +1416,7 @@ function frame(now){
   gl.uniform3fv(terrainProg.u('uEye'),eye);
   gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
 
-  // --- CREATURES (instanced) ---
+  // CREATURES (instanced)
   if (EXT_INSTANCE && C.n>0){
     const ST=INST_STRIDE*4; // bytes per instance
     gl.useProgram(creatureProg);
@@ -1417,7 +1443,7 @@ function frame(now){
     EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
   }
 
-  // --- PLANTS (instanced cross-quads) ---
+  // PLANTS (instanced cross-quads)
   if (EXT_INSTANCE && P.n>0){
     const ST=P_STRIDE*4;
     gl.useProgram(plantProg);
@@ -1437,7 +1463,7 @@ function frame(now){
     EXT_INSTANCE.vertexAttribDivisorANGLE(pip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,0);
   }
 
-  // --- WATER (translucent, drawn last) ---
+  // WATER (translucent, drawn last)
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
   gl.useProgram(waterProg);
   gl.bindBuffer(gl.ARRAY_BUFFER, waterBuf);
@@ -1471,9 +1497,9 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 
-//--------------------------------------------------------------------------
+// =========================================================================
 // BOOT
-//--------------------------------------------------------------------------
+// =========================================================================
 resize();
 gridInit();
 buildCreatures();
