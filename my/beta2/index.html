@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>AIEcosystemArena — Raw WebGL</title>
+<title>AIEcosystemArena; Raw WebGL</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   html,body { width:100%; height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; }
@@ -44,7 +44,7 @@
 <script>
 "use strict";
 //============================================================================
-// AIEcosystemArena — Raw WebGL 1.0 rewrite. Session 1 foundation.
+// AIEcosystemArena; Raw WebGL 1.0 rewrite. Session 1 foundation.
 // Build order covered here: (1) WebGL boilerplate (2) Terrain (3) Sky/lighting
 // + camera, day/night, height query, and an instanced-creature stub to prove
 // the instancing pipeline. SNN + ecosystem layer on top in later sessions.
@@ -75,7 +75,7 @@ if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:20px">WebGL n
 // Extensions we rely on. instanced_arrays is the important one for creatures.
 const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint'); // big terrain meshes
-if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing — creature instancing disabled');
+if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 
 let DPR = 1, VIEW_W = 1, VIEW_H = 1;
 function resize() {
@@ -150,14 +150,14 @@ const M4 = {
 };
 
 //--------------------------------------------------------------------------
-// Seeded RNG (mulberry32) — deterministic worlds from CONFIG.seed
+// Seeded RNG (mulberry32); deterministic worlds from CONFIG.seed
 //--------------------------------------------------------------------------
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 let RNG = mulberry32(CONFIG.seed);
 
 //--------------------------------------------------------------------------
-// 2. TERRAIN — value-noise fBm, generated on CPU, queryable from JS.
+// 2. TERRAIN; value-noise fBm, generated on CPU, queryable from JS.
 //--------------------------------------------------------------------------
 // Seeded value-noise: hash lattice points, cubic-smooth interpolate between.
 const NOISE_PERM = (() => {
@@ -262,7 +262,7 @@ const terrainProg = program(`
 `);
 
 //--------------------------------------------------------------------------
-// 3. SKY — fullscreen quad, procedural gradient + sun disc.
+// 3. SKY; fullscreen quad, procedural gradient + sun disc.
 //--------------------------------------------------------------------------
 const quadBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
@@ -284,7 +284,7 @@ const skyProg = program(`
   }
 `);
 
-// WATER — flat plane at waterLevel, procedural scrolling normals in shader.
+// WATER; flat plane at waterLevel, procedural scrolling normals in shader.
 const waterBuf = gl.createBuffer();
 (function(){
   const W=CONFIG.worldW/2, H=CONFIG.worldH/2;
@@ -318,7 +318,7 @@ const waterProg = program(`
 `);
 
 //--------------------------------------------------------------------------
-// 4. CREATURES — real geometry (capsule body + sphere head) generated once
+// 4. CREATURES; real geometry (capsule body + sphere head) generated once
 //    in JS, drawn with instancing. State lives in parallel typed arrays (SoA)
 //    so the SNN (next session) can read/write fields with no object churn.
 //
@@ -326,7 +326,7 @@ const waterProg = program(`
 //      [0..2] world pos x,y,z
 //      [3]    scale
 //      [4..6] color r,g,b
-//      [7]    heading (yaw, radians) — body faces movement direction
+//      [7]    heading (yaw, radians); body faces movement direction
 //--------------------------------------------------------------------------
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
 const INST_STRIDE = 9;                                  // floats per instance
@@ -513,7 +513,7 @@ const R_W = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
 const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);   // eligibility trace
 const PRUNE_THR = 0.02, TRACE_DECAY = 0.92, LR = 0.04;
 
-// scratch (reused every creature/tick — no per-tick allocation)
+// scratch (reused every creature/tick; no per-tick allocation)
 const sIn = new Float32Array(N_INPUT);
 const sA  = new Float32Array(MAX_A);
 const sSpike = new Float32Array(MAX_B);
@@ -737,7 +737,7 @@ function spawnCreatures(){
 }
 
 //--------------------------------------------------------------------------
-// SPATIAL GRID — uniform bucket grid over the world for O(1) neighbor lookup.
+// SPATIAL GRID; uniform bucket grid over the world for O(1) neighbor lookup.
 // Rebuilt each tick from creature positions. No per-frame allocation: a
 // head[] array (cell -> first creature index) plus a next[] linked list.
 //--------------------------------------------------------------------------
@@ -783,7 +783,7 @@ function gridQuery(x,z,radius,cb){
 }
 
 //--------------------------------------------------------------------------
-// PLANTS — food for herbivores. Separate SoA state + its own bucket grid so
+// PLANTS; food for herbivores. Separate SoA state + its own bucket grid so
 // vision rays and grazing can find food in O(1). Lifecycle: probabilistic
 // spawn each tick (soft cap), die when eaten, regrow near a random survivor.
 //--------------------------------------------------------------------------
@@ -970,11 +970,11 @@ function updateCreatures(dt){
   const timeOfDay = currentTimeOfDay;          // set by frame() from sun state
   for(let i=0;i<C.n;i++){
     C.prevEnergy[i]=C.energy[i];
-    // 1) SENSE — fill sIn[] via vision rays + global senses
+    // 1) SENSE; fill sIn[] via vision rays + global senses
     senseCreature(i, timeOfDay);
-    // 2) THINK — one brain tick, latches motor outputs
+    // 2) THINK; one brain tick, latches motor outputs
     brainTick(i, dt);
-    // 3) ACT — motors -> heading + speed
+    // 3) ACT; motors -> heading + speed
     const rest = C.mRest[i];                    // high rest dampens motion
     C.head[i] += C.mTurn[i]*2.2*dt*(1-0.7*rest);
     const maxSpd = C.species[i]?40:30;
@@ -993,7 +993,7 @@ function updateCreatures(dt){
     if(nz<-bz){nz=-bz; C.head[i]=-C.head[i];}        else if(nz>bz){nz=bz; C.head[i]=-C.head[i];}
     C.x[i]=nx; C.z[i]=nz;
     C.y[i]=Math.max(terrainHeight(nx,nz),CONFIG.waterLevel)+1.5;
-    // 4) ENERGY — metabolic costs. Movement + per-spike cost; resting saves.
+    // 4) ENERGY; metabolic costs. Movement + per-spike cost; resting saves.
     C.age[i]+=dt;
     const moveCost = Math.abs(C.spd[i])/maxSpd * 0.02;
     const spikeCost = C.spikeRate[i]*0.012;
@@ -1007,9 +1007,9 @@ function updateCreatures(dt){
     }
     C.energy[i] -= (moveCost + spikeCost + baseCost + ageCost)*dt*(1-0.5*rest);
 
-    // 5) EAT — feeding is a proximity reflex: if edible food is within reach,
+    // 5) EAT; feeding is a proximity reflex: if edible food is within reach,
     // the creature eats it. The eat motor MODULATES this rather than gating it
-    // entirely — a brain can learn to suppress eating (mEat near 0), but an
+    // entirely; a brain can learn to suppress eating (mEat near 0), but an
     // untrained brain still feeds by default. This breaks the bootstrap
     // deadlock where REINFORCE could never see an eating reward because the
     // eat motor never crossed a hard threshold to begin with.
@@ -1046,15 +1046,15 @@ function updateCreatures(dt){
     }
     if(C.energy[i]>1) C.energy[i]=1;
 
-    // 6) LEARN — REINFORCE on energy delta + prune + neurogenesis
+    // 6) LEARN; REINFORCE on energy delta + prune + neurogenesis
     brainLearn(i);
 
-    // 7) REPRODUCE — enough energy spawns a mutated child (queued for after loop)
+    // 7) REPRODUCE; enough energy spawns a mutated child (queued for after loop)
     if(C.energy[i]>0.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
       _births[_birthN++]=i;
     }
 
-    // 8) DEATH — energy gone: swap-remove and reprocess the swapped-in slot
+    // 8) DEATH; energy gone: swap-remove and reprocess the swapped-in slot
     if(C.energy[i]<=0){
       creatureRemove(i);
       i--;                          // process whatever got swapped into slot i
@@ -1111,7 +1111,7 @@ const nub    = joyEl.querySelector('.nub');
 
 if (HAS_TOUCH){
   //========================================================================
-  // TOUCH SCHEME — left joystick moves, dragging a finger anywhere else looks.
+  // TOUCH SCHEME; left joystick moves, dragging a finger anywhere else looks.
   //========================================================================
   // Joystick: reports finger offset from the pad center, normalized to a unit
   // vector that the frame loop turns into camera-relative movement.
@@ -1146,7 +1146,7 @@ if (HAS_TOUCH){
 
 } else {
   //========================================================================
-  // DESKTOP SCHEME — WASD moves, mouse-drag looks. Hide the on-screen pads.
+  // DESKTOP SCHEME; WASD moves, mouse-drag looks. Hide the on-screen pads.
   //========================================================================
   joyEl.style.display='none';
   lookEl.style.display='none';
@@ -1175,7 +1175,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 });
 
 //--------------------------------------------------------------------------
-// DAY/NIGHT — drives sun direction + light/sky colors
+// DAY/NIGHT; drives sun direction + light/sky colors
 //--------------------------------------------------------------------------
 function sunState(t){
   const ang = t*0.05;                          // slow cycle
@@ -1237,7 +1237,7 @@ function frame(now){
   // Jump: only when standing on the ground (space, or click-and-hold not needed).
   if ((keys[' ']||keys['spacebar']) && cam.onGround){ cam.vy = JUMP_VELOCITY; cam.onGround=false; }
 
-  // The "floor" at the player's current x,z — terrain, but never below water
+  // The "floor" at the player's current x,z; terrain, but never below water
   // surface so you stroll on top of lakes rather than sinking through them.
   const floorY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + EYE_HEIGHT;
 
@@ -1264,7 +1264,7 @@ function frame(now){
 
   // --- sun + time-of-day (needed by the SNN sensory input) ---
   const S = sunState(simTime);
-  currentTimeOfDay = S.up;        // 0 at night, 1 at noon — a clean day signal
+  currentTimeOfDay = S.up;        // 0 at night, 1 at noon; a clean day signal
 
   // --- simulation step ---
   updateCreatures(dt);
