@@ -761,7 +761,10 @@ function brainLearn(i){
 
 // Spawn creatures into the SoA state, placed on the terrain surface.
 function spawnCreatures(){
-  C.n = Math.min(MAX_CREATURES, CONFIG.isMobile?60:150);
+  // Scale spawn count logarithmically with world size (same curve as world dimensions)
+  const baseCreatures = CONFIG.isMobile ? 60 : 150;
+  const scaledCreatures = Math.round(baseCreatures * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10));
+  C.n = Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
   for (let i=0;i<C.n;i++){
     const x=(RNG()-0.5)*CONFIG.worldW*0.9;
     const z=(RNG()-0.5)*CONFIG.worldH*0.9;
@@ -840,7 +843,11 @@ const P = {
   z: new Float32Array(MAX_PLANTS),
   sway: new Float32Array(MAX_PLANTS),   // per-plant phase for shader wind
 };
-const TARGET_PLANTS = CONFIG.isMobile ? 300 : 900;
+// Target plant count scales logarithmically with world size
+function targetPlants(){
+  const base = CONFIG.isMobile ? 300 : 900;
+  return Math.min(MAX_PLANTS, Math.max(10, Math.round(base * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10))));
+}
 
 // Plant grid (parallel to creature GRID, same scheme)
 const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
@@ -874,7 +881,7 @@ function plantPlaceAt(idx, x, z){
 function spawnPlants(){
   P.n=0;
   let tries=0;
-  while(P.n<TARGET_PLANTS && tries<TARGET_PLANTS*4){
+  while(P.n<targetPlants() && tries<targetPlants()*4){
     tries++;
     const x=(RNG()-0.5)*CONFIG.worldW*0.96, z=(RNG()-0.5)*CONFIG.worldH*0.96;
     if(plantPlaceAt(P.n, x, z)) P.n++;
@@ -887,9 +894,9 @@ function plantRemove(i){
 }
 // grow new plants over time toward the target, near existing ones (clumping)
 function plantsGrow(dt){
-  if(P.n>=TARGET_PLANTS || P.n>=MAX_PLANTS) return;
+  if(P.n>=targetPlants() || P.n>=MAX_PLANTS) return;
   // expected spawns this tick
-  const rate = CONFIG.probSpawnPlant * (1 - P.n/TARGET_PLANTS);
+  const rate = CONFIG.probSpawnPlant * (1 - P.n/targetPlants());
   if(RNG() < rate*dt*60){
     let x,z;
     if(P.n>0 && RNG()<0.7){ const s=(RNG()*P.n)|0; x=P.x[s]+(RNG()-0.5)*120; z=P.z[s]+(RNG()-0.5)*120; }
