@@ -10,19 +10,21 @@
   * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   html,body { width:100%; height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; }
   #gl  { display:block; width:100%; height:100%; touch-action:none; }
-  #hud { position:absolute; top:0; left:0; pointer-events:none; }
+  #hud { position:absolute; inset:0; pointer-events:none; }
   /* On-screen controls */
+  /* Look surface: fills the screen so a finger-drag anywhere rotates the camera.
+     Sits at the bottom of the control stack; joystick and buttons sit above it. */
+  #look { position:absolute; inset:0; pointer-events:auto; z-index:1; }
+  #look .lbl { display:none; }
   .pad { position:absolute; bottom:24px; width:120px; height:120px; border-radius:50%;
-         background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); pointer-events:auto; }
+         background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25);
+         pointer-events:auto; z-index:3; }
   #joy  { left:24px; }
   #joy .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%;
               background:rgba(0,255,0,.35); border:1px solid rgba(0,255,0,.6); }
-  #look { right:24px; background:rgba(255,255,255,.04); }
-  #look .lbl { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-               color:rgba(255,255,255,.4); font-size:11px; }
   #info { position:absolute; top:8px; left:8px; color:#0f0; font-size:12px; line-height:1.5;
-          text-shadow:0 0 8px rgba(0,255,0,.4); pointer-events:none; white-space:pre; }
-  #btns { position:absolute; top:8px; right:8px; display:flex; gap:6px; }
+          text-shadow:0 0 8px rgba(0,255,0,.4); pointer-events:none; white-space:pre; z-index:4; }
+  #btns { position:absolute; top:8px; right:8px; display:flex; gap:6px; z-index:4; }
   .btn  { pointer-events:auto; background:rgba(0,0,0,.5); color:#0f0; border:1px solid rgba(0,255,0,.4);
           border-radius:4px; padding:6px 10px; font-family:inherit; font-size:12px; }
 </style>
@@ -36,7 +38,7 @@
     <button class="btn" id="resetBtn">RESET</button>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
-  <div class="pad" id="look"><div class="lbl">LOOK</div></div>
+  <div id="look"><div class="lbl">LOOK</div></div>
 </div>
 
 <script>
@@ -57,6 +59,7 @@ const CONFIG = {
   worldW:    1700,        // world spans -worldW/2 .. +worldW/2 on X
   worldH:    1200,        // .. and on Z
   waterLevel: 8,          // y height of the water plane
+  probSpawnPlant: 0.04,   // base plant regrowth probability per second
   quality:   'high',      // 'high' | 'low'  (low = coarser terrain, no water normals)
   seed:      1337,
 };
@@ -357,7 +360,13 @@ const C = {
   mEat: new Float32Array(MAX_CREATURES),  // eat trigger 0..1
   mRest:new Float32Array(MAX_CREATURES),  // rest trigger 0..1
   spikeRate:new Float32Array(MAX_CREATURES), // fraction of LIF neurons that spiked (metabolic + HUD)
+  age: new Float32Array(MAX_CREATURES),   // seconds lived (drives senescence + lifespan death)
+  gen: new Uint16Array(MAX_CREATURES),    // generation number (0 = founder), tracked for the HUD
 };
+// Soft lifespan: past this age, a small extra metabolic drain ramps in so
+// nothing is immortal even with abundant food. Keeps generations turning over.
+const LIFESPAN = 90;          // seconds before senescence cost starts
+const SENESCENCE = 0.02;      // peak extra energy drain/sec once well past LIFESPAN
 
 // Build the body geometry once: a capsule (cylinder + 2 hemispheres) for the
 // torso and a small sphere for the head, merged into one position+normal mesh.
@@ -509,6 +518,11 @@ const sIn = new Float32Array(N_INPUT);
 const sA  = new Float32Array(MAX_A);
 const sSpike = new Float32Array(MAX_B);
 const sMotor = new Float32Array(N_MOTOR);
+// Per-tick shaping signal: how strongly the creature is oriented toward edible
+// food on its current rays (0..1). Used as a small dense reward so REINFORCE
+// gets gradient before the rare moment of an actual successful bite, which is
+// the classic sparse-reward problem for foraging agents.
+let sFoodCue = 0;
 
 function gauss(){ // Box-Muller, small helper for weight init / mutation
   let u=0,v=0; while(u===0)u=RNG(); while(v===0)v=RNG();
@@ -566,12 +580,14 @@ function brainInherit(child, parent, mut){
 // ---- VISION: cast N rays, fill sIn[] with sensory vector for creature i ----
 function senseCreature(i, timeOfDay){
   const x=C.x[i], z=C.z[i], h=C.head[i];
+  const preyType = C.species[i] ? 1 : 0;   // predators want herbivores(1), herbivores want plants(0)
+  sFoodCue = 0;
   for(let r=0;r<N_RAYS;r++){
     const t = N_RAYS>1 ? r/(N_RAYS-1) - 0.5 : 0;
     const ang = h + t*RAY_FOV;
     const dx=Math.sin(ang), dz=Math.cos(ang);
     let hitDist=RAY_LEN, hitType=-1;
-    // march the ray, querying the grid for creatures near each sample point
+    // march the ray, querying both grids near each sample point
     for(let d=RAY_STEP; d<=RAY_LEN; d+=RAY_STEP){
       const px=x+dx*d, pz=z+dz*d;
       // water hit?
@@ -582,14 +598,27 @@ function senseCreature(i, timeOfDay){
         const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
         if(e2 < foundD*foundD){ foundD=Math.sqrt(e2); found = C.species[j]?2:1; }
       });
+      // plants (only relevant if no closer creature found at this step)
+      pgridQuery(px,pz,RAY_STEP,(j)=>{
+        const ex=P.x[j]-px, ez=P.z[j]-pz, e2=ex*ex+ez*ez;
+        if(e2 < foundD*foundD){ foundD=Math.sqrt(e2); found=0; } // 0 = plant
+      });
       if(found!==-1){ hitDist=d; hitType=found; break; }
     }
     const base=r*SENSE_PER_RAY;
     sIn[base]=hitDist/RAY_LEN;                         // normalized distance
-    sIn[base+1]=hitType===0?1:0;                       // plant (none yet)
+    sIn[base+1]=hitType===0?1:0;                       // plant
     sIn[base+2]=hitType===1?1:0;                       // herbivore
     sIn[base+3]=hitType===2?1:0;                       // predator
     sIn[base+4]=hitType===3?1:0;                       // water
+    // Shaping cue: a ray that sees this creature's prey, weighted by how close
+    // the hit is and how centered the ray is (forward rays matter most).
+    if(hitType===preyType){
+      const closeness=1-hitDist/RAY_LEN;               // 1 = right in front
+      const central=1-2*Math.abs(t);                   // 1 at center ray, ~0 at edges
+      const w=closeness*Math.max(0,central);
+      if(w>sFoodCue) sFoodCue=w;                       // keep the strongest cue
+    }
   }
   const g=N_RAYS*SENSE_PER_RAY;
   sIn[g]   = C.energy[i];                              // energy level
@@ -661,7 +690,12 @@ function brainTick(i, dt){
 // ---- REINFORCE update + pruning + neurogenesis (called after movement) ----
 function brainLearn(i){
   const b=C.szB[i], a=C.szA[i];
-  const reward=(C.energy[i]-C.prevEnergy[i]); // delta energy this tick
+  // Reward = real energy delta (sparse, the true objective) plus a small dense
+  // shaping term for moving toward visible prey. The shaping term is bounded
+  // well below a real bite so it guides exploration without overriding the
+  // actual energy signal that selection ultimately optimizes.
+  let reward=(C.energy[i]-C.prevEnergy[i]); // delta energy this tick
+  if(sFoodCue>0 && C.mMove[i]>0) reward += 0.0006*sFoodCue*C.mMove[i];
   if(reward!==0){
     const baseR=i*N_MOTOR*MAX_B;
     for(let m=0;m<N_MOTOR;m++){ const off=m*MAX_B;
@@ -693,6 +727,7 @@ function spawnCreatures(){
     C.size[i]=4 + RNG()*4;
     C.energy[i]=0.5+RNG()*0.5;
     C.prevEnergy[i]=C.energy[i];
+    C.age[i]=0; C.gen[i]=0;
     const predator = RNG()<0.2;
     C.species[i]= predator?1:0;
     if(predator){ C.cr[i]=0.7+0.3*RNG(); C.cg[i]=0.25*RNG(); C.cb[i]=0.15*RNG(); }
@@ -748,12 +783,190 @@ function gridQuery(x,z,radius,cb){
 }
 
 //--------------------------------------------------------------------------
-// CREATURE UPDATE — full sense -> think -> act -> learn loop. The SNN motor
-// outputs (latched in brainTick) drive turning and forward motion; energy is
+// PLANTS — food for herbivores. Separate SoA state + its own bucket grid so
+// vision rays and grazing can find food in O(1). Lifecycle: probabilistic
+// spawn each tick (soft cap), die when eaten, regrow near a random survivor.
+//--------------------------------------------------------------------------
+const MAX_PLANTS = CONFIG.isMobile ? 400 : 1200;
+const P = {
+  n: 0,
+  x: new Float32Array(MAX_PLANTS),
+  y: new Float32Array(MAX_PLANTS),
+  z: new Float32Array(MAX_PLANTS),
+  sway: new Float32Array(MAX_PLANTS),   // per-plant phase for shader wind
+};
+const TARGET_PLANTS = CONFIG.isMobile ? 300 : 900;
+
+// Plant grid (parallel to creature GRID, same scheme)
+const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
+function pgridRebuild(){
+  if(!PGRID.head) PGRID.head=new Int32Array(GRID.cols*GRID.rows);
+  PGRID.head.fill(-1);
+  for(let i=0;i<P.n;i++){
+    const c=gridCellOf(P.x[i],P.z[i]);
+    PGRID.next[i]=PGRID.head[c]; PGRID.head[c]=i;
+  }
+}
+function pgridQuery(x,z,radius,cb){
+  const r=Math.max(1,Math.ceil(radius/GRID.cell));
+  let cx=((x-GRID.ox)/GRID.cell)|0, cz=((z-GRID.oz)/GRID.cell)|0;
+  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
+    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
+      let j=PGRID.head[zz*GRID.cols+xx];
+      while(j!==-1){ if(cb(j)===true) return; j=PGRID.next[j]; }
+    }
+  }
+}
+// place a plant at a valid land spot (above water). Returns true if placed.
+function plantPlaceAt(idx, x, z){
+  const h=terrainHeight(x,z);
+  if(h < CONFIG.waterLevel+3) return false;     // not in/too near water
+  P.x[idx]=x; P.z[idx]=z; P.y[idx]=h; P.sway[idx]=RNG()*6.28;
+  return true;
+}
+function spawnPlants(){
+  P.n=0;
+  let tries=0;
+  while(P.n<TARGET_PLANTS && tries<TARGET_PLANTS*4){
+    tries++;
+    const x=(RNG()-0.5)*CONFIG.worldW*0.96, z=(RNG()-0.5)*CONFIG.worldH*0.96;
+    if(plantPlaceAt(P.n, x, z)) P.n++;
+  }
+}
+// remove plant i by swapping with the last (keeps array compact)
+function plantRemove(i){
+  const last=--P.n;
+  if(i!==last){ P.x[i]=P.x[last]; P.y[i]=P.y[last]; P.z[i]=P.z[last]; P.sway[i]=P.sway[last]; }
+}
+// grow new plants over time toward the target, near existing ones (clumping)
+function plantsGrow(dt){
+  if(P.n>=TARGET_PLANTS || P.n>=MAX_PLANTS) return;
+  // expected spawns this tick
+  const rate = CONFIG.probSpawnPlant * (1 - P.n/TARGET_PLANTS);
+  if(RNG() < rate*dt*60){
+    let x,z;
+    if(P.n>0 && RNG()<0.7){ const s=(RNG()*P.n)|0; x=P.x[s]+(RNG()-0.5)*120; z=P.z[s]+(RNG()-0.5)*120; }
+    else { x=(RNG()-0.5)*CONFIG.worldW*0.96; z=(RNG()-0.5)*CONFIG.worldH*0.96; }
+    x=Math.max(-CONFIG.worldW/2,Math.min(CONFIG.worldW/2,x));
+    z=Math.max(-CONFIG.worldH/2,Math.min(CONFIG.worldH/2,z));
+    if(P.n<MAX_PLANTS && plantPlaceAt(P.n,x,z)) P.n++;
+  }
+}
+
+// --- plant rendering: instanced cross-quad billboard, procedural green ---
+let plantProg=null, plantGeoBuf=null, plantGeoCount=0, plantInstBuf=null;
+const P_STRIDE=4; // x,y,z,sway
+const plantInst=new Float32Array(MAX_PLANTS*P_STRIDE);
+function buildPlants(){
+  // two crossed quads (cross-mesh) so the plant reads from any angle
+  const q=[];
+  function quad(ax,az){ // a vertical quad facing direction (ax,az)
+    const w=4, hgt=11;
+    const px=-az*w, pz=ax*w; // perpendicular in XZ
+    // 0..1 V coord packed in normal.x slot reuse -> use separate attr aV
+    q.push(-px,0,-pz, 0,  px,0,pz, 0,  px,hgt,pz, 1);
+    q.push(-px,0,-pz, 0,  px,hgt,pz, 1,  -px,hgt,-pz, 1);
+  }
+  quad(1,0); quad(0,1);
+  const arr=new Float32Array(q);
+  plantGeoBuf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, plantGeoBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  plantGeoCount=q.length/4;            // 4 floats per vertex (x,y,z,v)
+  plantInstBuf=gl.createBuffer();
+  plantProg=program(`
+    attribute vec3 aPos; attribute float aV;
+    attribute vec3 aInstPos; attribute float aSway;
+    uniform mat4 uVP; uniform float uTime;
+    varying float vV;
+    void main(){
+      vV=aV;
+      // wind sway grows toward the top (aV ~ height fraction)
+      float w = sin(uTime*1.5 + aSway)*1.6*aV;
+      vec3 world = aInstPos + aPos + vec3(w,0.0,w*0.5);
+      gl_Position = uVP*vec4(world,1.0);
+    }
+  `,`
+    precision mediump float; varying float vV;
+    uniform vec3 uSunColor; uniform vec3 uAmbient;
+    void main(){
+      vec3 base=mix(vec3(0.18,0.32,0.10), vec3(0.40,0.65,0.22), vV);
+      vec3 lit=base*(uAmbient+uSunColor*0.6);
+      gl_FragColor=vec4(lit,1.0);
+    }
+  `);
+}
+function uploadPlants(){
+  for(let i=0;i<P.n;i++){ const k=i*P_STRIDE;
+    plantInst[k]=P.x[i]; plantInst[k+1]=P.y[i]; plantInst[k+2]=P.z[i]; plantInst[k+3]=P.sway[i]; }
+  gl.bindBuffer(gl.ARRAY_BUFFER, plantInstBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, plantInst.subarray(0,P.n*P_STRIDE), gl.DYNAMIC_DRAW);
+}
 // spent on movement and spiking (metabolic cost) and is the REINFORCE reward.
 //--------------------------------------------------------------------------
+
+// Copy all per-creature SoA fields from slot src -> dst (used by swap-remove).
+function creatureCopy(dst, src){
+  C.x[dst]=C.x[src]; C.y[dst]=C.y[src]; C.z[dst]=C.z[src];
+  C.head[dst]=C.head[src]; C.face[dst]=C.face[src]; C.spd[dst]=C.spd[src];
+  C.size[dst]=C.size[src]; C.energy[dst]=C.energy[src]; C.prevEnergy[dst]=C.prevEnergy[src];
+  C.species[dst]=C.species[src]; C.cr[dst]=C.cr[src]; C.cg[dst]=C.cg[src]; C.cb[dst]=C.cb[src];
+  C.szA[dst]=C.szA[src]; C.szB[dst]=C.szB[src];
+  C.mTurn[dst]=C.mTurn[src]; C.mMove[dst]=C.mMove[src]; C.mEat[dst]=C.mEat[src];
+  C.mRest[dst]=C.mRest[src]; C.spikeRate[dst]=C.spikeRate[src];
+  C.age[dst]=C.age[src]; C.gen[dst]=C.gen[src];
+  // brain weight blocks
+  copyBrainSlot(dst, src);
+}
+function copyBrainSlot(dst, src){
+  A_W.copyWithin(dst*MAX_A*N_INPUT*3, src*MAX_A*N_INPUT*3, (src+1)*MAX_A*N_INPUT*3);
+  A_U.copyWithin(dst*MAX_A*MAX_A*3,   src*MAX_A*MAX_A*3,   (src+1)*MAX_A*MAX_A*3);
+  A_B.copyWithin(dst*MAX_A*3,         src*MAX_A*3,         (src+1)*MAX_A*3);
+  hA.copyWithin (dst*MAX_A,           src*MAX_A,           (src+1)*MAX_A);
+  B_W.copyWithin(dst*MAX_B*MAX_A,     src*MAX_B*MAX_A,     (src+1)*MAX_B*MAX_A);
+  B_v.copyWithin(dst*MAX_B,           src*MAX_B,           (src+1)*MAX_B);
+  R_W.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
+  R_e.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
+}
+// Remove creature i by swapping the last live creature into its slot.
+function creatureRemove(i){
+  const last=--C.n;
+  if(i!==last) creatureCopy(i, last);
+}
+// Spawn a child near a parent: inherit brain (mutated) + phenotype, split energy.
+function creatureBirth(parent){
+  if(C.n>=MAX_CREATURES) return;
+  if(parent>=C.n) return;                 // slot no longer valid
+  if(C.energy[parent]<=0.6) return;       // parent died/changed since queued
+  const c=C.n++;
+  const ang=RNG()*6.28, dist=8+RNG()*10;
+  let x=C.x[parent]+Math.cos(ang)*dist, z=C.z[parent]+Math.sin(ang)*dist;
+  const bx=CONFIG.worldW/2-20, bz=CONFIG.worldH/2-20;
+  x=Math.max(-bx,Math.min(bx,x)); z=Math.max(-bz,Math.min(bz,z));
+  C.x[c]=x; C.z[c]=z; C.y[c]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
+  C.head[c]=RNG()*6.28; C.face[c]=C.head[c]; C.spd[c]=0;
+  C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
+  C.species[c]=C.species[parent];
+  C.size[c]=C.size[parent]*(0.9+RNG()*0.2);
+  // phenotype inherits with slight color drift
+  C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-0.5)*0.1));
+  C.cg[c]=Math.min(1,Math.max(0,C.cg[parent]+(RNG()-0.5)*0.1));
+  C.cb[c]=Math.min(1,Math.max(0,C.cb[parent]+(RNG()-0.5)*0.1));
+  brainInherit(c, parent, 0.06);
+  // energy split: parent gives half to child
+  const give=C.energy[parent]*0.5;
+  C.energy[parent]-=give; C.energy[c]=give; C.prevEnergy[c]=give;
+}
+
+// queued births this tick (apply after the main loop so indices stay stable)
+const _births=new Int32Array(MAX_CREATURES);
+let _birthN=0;
+
 function updateCreatures(dt){
   gridRebuild();
+  pgridRebuild();
+  plantsGrow(dt);
+  _birthN=0;
   const timeOfDay = currentTimeOfDay;          // set by frame() from sun state
   for(let i=0;i<C.n;i++){
     C.prevEnergy[i]=C.energy[i];
@@ -781,22 +994,69 @@ function updateCreatures(dt){
     C.x[i]=nx; C.z[i]=nz;
     C.y[i]=Math.max(terrainHeight(nx,nz),CONFIG.waterLevel)+1.5;
     // 4) ENERGY — metabolic costs. Movement + per-spike cost; resting saves.
+    C.age[i]+=dt;
     const moveCost = Math.abs(C.spd[i])/maxSpd * 0.02;
     const spikeCost = C.spikeRate[i]*0.012;
-    const baseCost = 0.0025;
-    C.energy[i] -= (moveCost + spikeCost + baseCost)*dt*(1-0.5*rest);
-    // grazing reward (placeholder until plants exist): herbivores slowly regain
-    // energy while moving over grass (non-water, mid elevation); predators don't.
-    if(!C.species[i] && C.energy[i]<1){
-      const onGrass = terrainHeight(nx,nz) > CONFIG.waterLevel+4;
-      if(onGrass && C.mEat[i]>0.5) C.energy[i] += 0.03*dt;
+    const baseCost = 0.0035;
+    // Senescence: past LIFESPAN, an aging tax ramps in (saturating) so the
+    // population keeps turning over even when food is plentiful.
+    let ageCost = 0;
+    if(C.age[i]>LIFESPAN){
+      const over=(C.age[i]-LIFESPAN)/LIFESPAN;        // 0..  beyond lifespan
+      ageCost = SENESCENCE*(over/(1+over));           // saturates toward SENESCENCE
+    }
+    C.energy[i] -= (moveCost + spikeCost + baseCost + ageCost)*dt*(1-0.5*rest);
+
+    // 5) EAT — when the eat motor fires, consume nearby food via the grids.
+    const wantEat = C.mEat[i]>0.5;
+    if(wantEat){
+      if(!C.species[i]){
+        // herbivore: eat the nearest plant within reach
+        let best=-1, bestD=14*14;
+        pgridQuery(nx,nz,16,(j)=>{
+          const ex=P.x[j]-nx, ez=P.z[j]-nz, e2=ex*ex+ez*ez;
+          if(e2<bestD){ bestD=e2; best=j; }
+        });
+        if(best!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(best); pgridRebuild(); }
+      } else {
+        // predator: eat the nearest herbivore within reach
+        let best=-1, bestD=18*18;
+        gridQuery(nx,nz,20,(j)=>{
+          if(j===i||C.species[j]) return;
+          const ex=C.x[j]-nx, ez=C.z[j]-nz, e2=ex*ex+ez*ez;
+          if(e2<bestD){ bestD=e2; best=j; }
+        });
+        if(best!==-1){
+          C.energy[i]=Math.min(1,C.energy[i]+0.5);
+          // Swap-remove relocates the last live creature into `best`. If the
+          // eater itself was that last creature, it now lives in slot `best`,
+          // so retarget `i` there and finish this creature's tick in-place.
+          const last=C.n-1;
+          creatureRemove(best);
+          if(i===last) i=best;        // eater was relocated into `best`
+        }
+      }
     }
     if(C.energy[i]>1) C.energy[i]=1;
-    // 5) LEARN — REINFORCE on energy delta + prune + neurogenesis
+
+    // 6) LEARN — REINFORCE on energy delta + prune + neurogenesis
     brainLearn(i);
-    // death: clamp; (respawn handled in ecosystem session — for now, revive softly)
-    if(C.energy[i]<=0){ C.energy[i]=0.4; brainInit(i); /* fresh brain on "death" */ }
+
+    // 7) REPRODUCE — enough energy spawns a mutated child (queued for after loop)
+    if(C.energy[i]>0.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
+      _births[_birthN++]=i;
+    }
+
+    // 8) DEATH — energy gone: swap-remove and reprocess the swapped-in slot
+    if(C.energy[i]<=0){
+      creatureRemove(i);
+      i--;                          // process whatever got swapped into slot i
+      continue;
+    }
   }
+  // apply queued births (parent indices were valid at queue time; births only
+  // append, so earlier indices remain stable)
+  for(let b=0;b<_birthN;b++) creatureBirth(_births[b]);
 }
 
 // Pack SoA -> interleaved GPU buffer and upload.
@@ -817,9 +1077,10 @@ function uploadCreatures(){
 // CAMERA + INPUT  (virtual joystick to move, drag-pad to look)
 //--------------------------------------------------------------------------
 const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25 };
-const move = { x:0, y:0 };          // joystick vector (absolute offset from pad center)
+const move = { x:0, y:0 };          // joystick vector (touch); WASD writes it on desktop
 const SPEED = 220;
 const LOOK_SENS = 0.005;            // radians per pixel of drag
+const keys = {};
 
 function applyLook(dxPix, dyPix){
   cam.yaw   -= dxPix*LOOK_SENS;
@@ -827,47 +1088,66 @@ function applyLook(dxPix, dyPix){
   cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch));
 }
 
-// Absolute-offset pad (joystick): reports finger offset from pad center.
-function bindPad(el, onMove, onEnd){
-  let id=null, cx=0, cy=0;
-  const rect=()=>el.getBoundingClientRect();
-  el.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
-    const r=rect(); cx=r.left+r.width/2; cy=r.top+r.height/2; onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); }, {passive:false});
-  el.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
-    onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); } }, {passive:false});
-  const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id){ id=null; onEnd&&onEnd(); } };
-  el.addEventListener('touchend', end); el.addEventListener('touchcancel', end);
+// --- Detect a real touchscreen. maxTouchPoints is the reliable signal across
+//     iOS/Android; 'ontouchstart' covers older browsers. We pick ONE control
+//     scheme up front so desktop and touch never fight over the same events. ---
+const HAS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
+
+const joyEl  = document.getElementById('joy');
+const lookEl = document.getElementById('look');
+const nub    = joyEl.querySelector('.nub');
+
+if (HAS_TOUCH){
+  //========================================================================
+  // TOUCH SCHEME — left joystick moves, dragging a finger anywhere else looks.
+  //========================================================================
+  // Joystick: reports finger offset from the pad center, normalized to a unit
+  // vector that the frame loop turns into camera-relative movement.
+  (function(){
+    let id=null, cx=0, cy=0;
+    joyEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
+      const r=joyEl.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2;
+      onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); }, {passive:false});
+    joyEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
+      onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); } }, {passive:false});
+    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id){ id=null;
+      move.x=move.y=0; nub.style.transform=''; } };
+    joyEl.addEventListener('touchend', end); joyEl.addEventListener('touchcancel', end);
+    function onMove(dx,dy){ const m=Math.min(1,Math.hypot(dx,dy)/55), a=Math.atan2(dy,dx);
+      move.x=-Math.cos(a)*m; move.y=-Math.sin(a)*m;
+      nub.style.transform=`translate(${Math.cos(a)*m*35}px,${Math.sin(a)*m*35}px)`; }
+  })();
+
+  // Look: relative-drag with ANY finger that isn't the joystick's. Holding
+  // still = no rotation; any drag turns the camera. The #look element is sized
+  // by CSS to fill the screen (minus the joystick corner) so the whole view is
+  // a look surface, which feels more natural than a small pad.
+  (function(){
+    let id=null, px=0, py=0;
+    lookEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
+      px=t.clientX; py=t.clientY; e.preventDefault(); }, {passive:false});
+    lookEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
+      applyLook(t.clientX-px, t.clientY-py); px=t.clientX; py=t.clientY; e.preventDefault(); } }, {passive:false});
+    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id) id=null; };
+    lookEl.addEventListener('touchend', end); lookEl.addEventListener('touchcancel', end);
+  })();
+
+} else {
+  //========================================================================
+  // DESKTOP SCHEME — WASD moves, mouse-drag looks. Hide the on-screen pads.
+  //========================================================================
+  joyEl.style.display='none';
+  lookEl.style.display='none';
+
+  window.addEventListener('keydown', e=> keys[e.key.toLowerCase()]=true);
+  window.addEventListener('keyup',   e=> keys[e.key.toLowerCase()]=false);
+
+  let mouseDown=false, lastX=0, lastY=0;
+  canvas.addEventListener('mousedown', e=>{ mouseDown=true; lastX=e.clientX; lastY=e.clientY; });
+  window.addEventListener('mouseup', ()=> mouseDown=false);
+  window.addEventListener('mousemove', e=>{ if(!mouseDown) return;
+    applyLook(e.clientX-lastX, e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; });
 }
-const joyEl=document.getElementById('joy'), nub=joyEl.querySelector('.nub');
-bindPad(joyEl, (dx,dy)=>{ const m=Math.min(1,Math.hypot(dx,dy)/55); const a=Math.atan2(dy,dx);
-  move.x=Math.cos(a)*m; move.y=Math.sin(a)*m;
-  nub.style.transform=`translate(${Math.cos(a)*m*35}px,${Math.sin(a)*m*35}px)`; },
-  ()=>{ move.x=move.y=0; nub.style.transform=''; });
-
-// Relative-drag look pad: rotate by the delta between successive touch positions,
-// so holding still = no rotation and any drag (even near center) turns the camera.
-(function(){
-  const el=document.getElementById('look');
-  let id=null, px=0, py=0;
-  el.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
-    px=t.clientX; py=t.clientY; e.preventDefault(); }, {passive:false});
-  el.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
-    applyLook(t.clientX-px, t.clientY-py); px=t.clientX; py=t.clientY; e.preventDefault(); } }, {passive:false});
-  const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id) id=null; };
-  el.addEventListener('touchend', end); el.addEventListener('touchcancel', end);
-})();
-
-// Desktop mouse-look: drag anywhere on the canvas (or the look pad).
-let mouseDown=false, lastX=0, lastY=0;
-function startMouse(e){ mouseDown=true; lastX=e.clientX; lastY=e.clientY; }
-canvas.addEventListener('mousedown', startMouse);
-document.getElementById('look').addEventListener('mousedown', startMouse);
-window.addEventListener('mouseup', ()=> mouseDown=false);
-window.addEventListener('mousemove', e=>{ if(!mouseDown) return;
-  applyLook(e.clientX-lastX, e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; });
-const keys={};
-window.addEventListener('keydown', e=> keys[e.key.toLowerCase()]=true);
-window.addEventListener('keyup',   e=> keys[e.key.toLowerCase()]=false);
 
 //--------------------------------------------------------------------------
 // UI buttons
@@ -910,7 +1190,7 @@ function rebuildWorld(){
   for(let i=0;i<256;i++) base[i]=i;
   for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const t=base[i]; base[i]=base[j]; base[j]=t; }
   for(let i=0;i<512;i++) NOISE_PERM[i]=base[i&255];
-  buildTerrain(); spawnCreatures();
+  buildTerrain(); spawnCreatures(); spawnPlants();
   cam.x=0; cam.z=CONFIG.worldH*0.35; cam.y=terrainHeight(cam.x,cam.z)+90;
 }
 
@@ -923,18 +1203,21 @@ let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
 let currentTimeOfDay = 0.5;     // 0..1 day phase, updated each frame for the SNN
 
 function frame(now){
-  const dt = Math.min(0.05, (now-last)/1000); last=now; simTime += dt;
+  let dt = (now-last)/1000; last=now;
+  if (!(dt>0)) dt=0;            // guard against negative/NaN first-frame dt
+  if (dt>0.05) dt=0.05;        // clamp big stalls so nothing teleports
+  simTime += dt;
   fpsT+=dt; fpsN++; if (fpsT>=0.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
 
   // --- camera update ---
   // (look rotation is applied directly in the input handlers)
   // movement relative to yaw
   let mf=move.y, ms=move.x;
-  if (keys['w']) mf=-1; if (keys['s']) mf=1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
+  if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
   const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
-  cam.x += (fwd[0]*-mf + rgt[0]*ms)*SPEED*dt;
-  cam.z += (fwd[2]*-mf + rgt[2]*ms)*SPEED*dt;
+  cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
+  cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
   if (keys[' ']) cam.y += SPEED*dt;
   if (keys['shift']) cam.y -= SPEED*dt;
   // keep camera a bit above ground
@@ -955,6 +1238,7 @@ function frame(now){
   // --- simulation step ---
   updateCreatures(dt);
   uploadCreatures();
+  uploadPlants();
 
   const eye=[cam.x,cam.y,cam.z];
   const fogDist = Math.max(CONFIG.worldW,CONFIG.worldH)*0.9;
@@ -1024,6 +1308,26 @@ function frame(now){
     EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
   }
 
+  // --- PLANTS (instanced cross-quads) ---
+  if (EXT_INSTANCE && P.n>0){
+    const ST=P_STRIDE*4;
+    gl.useProgram(plantProg);
+    gl.bindBuffer(gl.ARRAY_BUFFER, plantGeoBuf);
+    const pp=plantProg.a('aPos'), pv=plantProg.a('aV');
+    gl.enableVertexAttribArray(pp); gl.vertexAttribPointer(pp,3,gl.FLOAT,false,16,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(pp,0);
+    gl.enableVertexAttribArray(pv); gl.vertexAttribPointer(pv,1,gl.FLOAT,false,16,12); EXT_INSTANCE.vertexAttribDivisorANGLE(pv,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, plantInstBuf);
+    const pip=plantProg.a('aInstPos'), psw=plantProg.a('aSway');
+    gl.enableVertexAttribArray(pip); gl.vertexAttribPointer(pip,3,gl.FLOAT,false,ST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(pip,1);
+    gl.enableVertexAttribArray(psw); gl.vertexAttribPointer(psw,1,gl.FLOAT,false,ST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,1);
+    gl.uniformMatrix4fv(plantProg.u('uVP'),false,VP);
+    gl.uniform1f(plantProg.u('uTime'),simTime);
+    gl.uniform3fv(plantProg.u('uSunColor'),S.sunColor);
+    gl.uniform3fv(plantProg.u('uAmbient'),S.ambient);
+    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,plantGeoCount,P.n);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(pip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,0);
+  }
+
   // --- WATER (translucent, drawn last) ---
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
   gl.useProgram(waterProg);
@@ -1042,13 +1346,18 @@ function frame(now){
   gl.drawArrays(gl.TRIANGLES,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
 
-  let herb=0, eSum=0, spkSum=0;
-  for(let i=0;i<C.n;i++){ if(!C.species[i]) herb++; eSum+=C.energy[i]; spkSum+=C.spikeRate[i]; }
+  let herb=0, eSum=0, spkSum=0, ageSum=0, maxGen=0;
+  for(let i=0;i<C.n;i++){
+    if(!C.species[i]) herb++;
+    eSum+=C.energy[i]; spkSum+=C.spikeRate[i]; ageSum+=C.age[i];
+    if(C.gen[i]>maxGen) maxGen=C.gen[i];
+  }
   info.textContent =
-    `FPS ${fps}   creatures ${C.n} (${herb}H/${C.n-herb}P)\n`+
+    `FPS ${fps}   creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
     `quality ${CONFIG.quality}   tris ${(terrainIdxCount/3)|0}\n`+
     `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-    `sun ${(S.up>0.05?'day':'night')}  seed ${CONFIG.seed}`;
+    `gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  seed ${CONFIG.seed}\n`+
+    `sun ${(S.up>0.05?'day':'night')}`;
 
   requestAnimationFrame(frame);
 }
@@ -1059,6 +1368,7 @@ function frame(now){
 resize();
 gridInit();
 buildCreatures();
+buildPlants();
 rebuildWorld();
 requestAnimationFrame(frame);
 </script>
