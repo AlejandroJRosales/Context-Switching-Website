@@ -20,6 +20,9 @@
          background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25);
          pointer-events:auto; z-index:3; }
   #joy  { left:24px; }
+  #jump { right:24px; width:90px; height:90px; bottom:39px; display:flex; align-items:center; justify-content:center; }
+  #jump .jlbl { color:rgba(0,255,0,.7); font-family:'Courier New',monospace; font-size:13px; }
+  #jump:active { background:rgba(0,255,0,.18); }
   #joy .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%;
               background:rgba(0,255,0,.35); border:1px solid rgba(0,255,0,.6); }
   #info { position:absolute; top:8px; left:8px; color:#0f0; font-size:12px; line-height:1.5;
@@ -35,9 +38,11 @@
   <div id="info"></div>
   <div id="btns">
     <button class="btn" id="qualityBtn">HIGH</button>
+    <button class="btn" id="flyBtn">FLY: OFF</button>
     <button class="btn" id="resetBtn">RESET</button>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
+  <div class="pad" id="jump"><span class="jlbl">JUMP</span></div>
   <div id="look"><div class="lbl">LOOK</div></div>
 </div>
 
@@ -179,8 +184,28 @@ function valueNoise(x, z){
 // fBm height field in WORLD coordinates -> world Y. This is the single source
 // of truth used by both mesh generation AND the JS height query (so physics/AI
 // agree exactly with what's drawn).
-const TERRAIN = { amp: 220, featureSize: 360, octaves: 5 };
+const TERRAIN = {
+  amp: 220, featureSize: 360, octaves: 5,
+  // --- mountains ---
+  mtnAmp: 600,        // peak height added on top of the base terrain
+  mtnSize: 1800,      // size of a mountain range (larger = broader, fewer ranges)
+  mtnOctaves: 4,      // detail folded into the ridges
+  mtnThreshold: 0.45, // ridge value below this stays lowland; above it rises into peaks
+};
+// Ridged fBm: folds noise around its midpoint so the high values form sharp
+// crests instead of rounded hills -> reads as mountain ridgelines.
+function ridgedNoise(wx, wz){
+  let h=0, freq=1/TERRAIN.mtnSize, amp=1, norm=0;
+  for (let o=0;o<TERRAIN.mtnOctaves;o++){
+    let n = valueNoise(wx*freq+o*31.4, wz*freq-o*17.1);
+    n = 1 - Math.abs(n*2 - 1);   // fold to a ridge
+    n *= n;                      // sharpen the crest
+    h += n*amp; norm += amp; amp*=0.5; freq*=2.0;
+  }
+  return h/norm;               // 0..1
+}
 function terrainHeight(wx, wz){
+  // base rolling terrain
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.octaves;o++){
     h += valueNoise(wx*freq+o*13.7, wz*freq-o*7.3) * amp;
@@ -188,7 +213,14 @@ function terrainHeight(wx, wz){
   }
   h /= norm;                 // 0..1
   h = Math.pow(h, 1.35);     // bias toward flatter lowlands
-  return h * TERRAIN.amp - TERRAIN.amp*0.35;
+  let y = h * TERRAIN.amp - TERRAIN.amp*0.35;
+
+  // mountains: only the part of the ridge field above the threshold lifts up,
+  // so ranges rise out of the lowlands rather than tilting the whole map.
+  const r = ridgedNoise(wx, wz);
+  const m = Math.max(0, r - TERRAIN.mtnThreshold) / (1 - TERRAIN.mtnThreshold);
+  y += m*m * TERRAIN.mtnAmp;
+  return y;
 }
 
 // Build the terrain mesh once. Grid of (segX+1)*(segZ+1) verts, indexed.
@@ -248,10 +280,10 @@ const terrainProg = program(`
     vec3 grass = vec3(0.26,0.52,0.24);
     vec3 rock  = vec3(0.42,0.40,0.38);
     vec3 snow  = vec3(0.92,0.94,0.97);
-    float hN = clamp((vH - uWaterLevel)/200.0, 0.0, 1.0);
-    vec3 col = mix(sand, grass, smoothstep(0.0,0.08,hN));
-    col = mix(col, rock, smoothstep(0.45,0.7,hN));
-    col = mix(col, snow, smoothstep(0.8,0.95,hN));
+    float hN = clamp((vH - uWaterLevel)/600.0, 0.0, 1.0);
+    vec3 col = mix(sand, grass, smoothstep(0.0,0.04,hN));
+    col = mix(col, rock, smoothstep(0.30,0.55,hN));
+    col = mix(col, snow, smoothstep(0.62,0.80,hN));
     col = mix(col, rock, smoothstep(0.45,0.85,slope)); // steep faces -> rock
     float diff = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 lit = col * (uAmbient + uSunColor*diff);
@@ -1083,13 +1115,15 @@ function uploadCreatures(){
 //--------------------------------------------------------------------------
 // CAMERA + INPUT  (virtual joystick to move, drag-pad to look)
 //--------------------------------------------------------------------------
-const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false };
+const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
 const move = { x:0, y:0 };          // joystick vector (touch); WASD writes it on desktop
 const SPEED = 220;
 // --- walker physics ---
 const GRAVITY = 320;                // downward accel (world units/s^2)
 const EYE_HEIGHT = 28;              // camera sits this far above the ground
 const JUMP_VELOCITY = 150;          // initial upward velocity on jump
+const FLY_SPEED = 400;              // horizontal speed while flying (creative)
+const FLY_LIFT = 280;              // vertical speed when ascending/descending in fly mode
 const STEP_GRIP = 8;                // max ledge the walker steps up without jumping
 const LOOK_SENS = 0.005;            // radians per pixel of drag
 const keys = {};
@@ -1144,12 +1178,24 @@ if (HAS_TOUCH){
     lookEl.addEventListener('touchend', end); lookEl.addEventListener('touchcancel', end);
   })();
 
+  // Jump button: feeds the same key state the frame loop reads, so a tap fires
+  // one (double-)jump via the edge trigger, and holding it ascends in fly mode.
+  (function(){
+    const jb=document.getElementById('jump');
+    const down=e=>{ keys[' ']=true;  e.preventDefault(); };
+    const up  =e=>{ keys[' ']=false; e.preventDefault(); };
+    jb.addEventListener('touchstart', down, {passive:false});
+    jb.addEventListener('touchend',   up,   {passive:false});
+    jb.addEventListener('touchcancel',up,   {passive:false});
+  })();
+
 } else {
   //========================================================================
   // DESKTOP SCHEME; WASD moves, mouse-drag looks. Hide the on-screen pads.
   //========================================================================
   joyEl.style.display='none';
   lookEl.style.display='none';
+  document.getElementById('jump').style.display='none';
 
   window.addEventListener('keydown', e=> keys[e.key.toLowerCase()]=true);
   window.addEventListener('keyup',   e=> keys[e.key.toLowerCase()]=false);
@@ -1168,6 +1214,12 @@ document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
   resize(); buildTerrain();
+});
+document.getElementById('flyBtn').addEventListener('click', function(){
+  cam.fly = !cam.fly;
+  this.textContent = 'FLY: ' + (cam.fly ? 'ON' : 'OFF');
+  cam.vy = 0;                       // cancel any fall when toggling
+  if (cam.fly) cam.onGround = false;
 });
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
@@ -1205,7 +1257,7 @@ function rebuildWorld(){
   buildTerrain(); spawnCreatures(); spawnPlants();
   cam.x=0; cam.z=CONFIG.worldH*0.35;
   cam.y=Math.max(terrainHeight(cam.x,cam.z),CONFIG.waterLevel)+EYE_HEIGHT;
-  cam.vy=0; cam.onGround=true;
+  cam.vy=0; cam.onGround=true; cam.jumpsLeft=2;
 }
 
 //--------------------------------------------------------------------------
@@ -1215,6 +1267,7 @@ const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
 let currentTimeOfDay = 0.5;     // 0..1 day phase, updated each frame for the SNN
+let prevJumpKey = false;        // for edge-triggered jumps (so a held key fires once)
 
 function frame(now){
   let dt = (now-last)/1000; last=now;
@@ -1231,28 +1284,53 @@ function frame(now){
   if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
   const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
-  cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
-  cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
 
-  // Jump: only when standing on the ground (space, or click-and-hold not needed).
-  if ((keys[' ']||keys['spacebar']) && cam.onGround){ cam.vy = JUMP_VELOCITY; cam.onGround=false; }
+  const jumpKey = keys[' ']||keys['spacebar'];
+  const downKey = keys['shift']||keys['control']||keys['c'];
 
-  // The "floor" at the player's current x,z; terrain, but never below water
-  // surface so you stroll on top of lakes rather than sinking through them.
-  const floorY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + EYE_HEIGHT;
-
-  // Integrate gravity.
-  cam.vy -= GRAVITY*dt;
-  cam.y  += cam.vy*dt;
-
-  // Ground contact: if we're at or below the floor while falling, snap up and
-  // stop. STEP_GRIP lets the walker climb small rises without it feeling sticky.
-  if (cam.y <= floorY + STEP_GRIP && cam.vy <= 0){
-    cam.y = floorY;
+  if (cam.fly){
+    // --- CREATIVE FLIGHT: free movement, no gravity, no ground clamp ---
+    const spd = FLY_SPEED;
+    cam.x += (fwd[0]*mf + rgt[0]*ms)*spd*dt;
+    cam.z += (fwd[2]*mf + rgt[2]*ms)*spd*dt;
+    // ascend / descend (Space up, Shift/Ctrl/C down)
+    let lift = (jumpKey?1:0) - (downKey?1:0);
+    cam.y += lift*FLY_LIFT*dt;
     cam.vy = 0;
-    cam.onGround = true;
-  } else {
     cam.onGround = false;
+    prevJumpKey = jumpKey;
+  } else {
+    // --- WALKER: horizontal move + gravity + double jump ---
+    cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
+    cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
+
+    // Double jump: each fresh press of the jump key spends one charge. Charges
+    // refill to 2 on landing. Edge-trigger so holding the key only jumps once.
+    if (jumpKey && !prevJumpKey && cam.jumpsLeft > 0){
+      cam.vy = JUMP_VELOCITY;
+      cam.onGround = false;
+      cam.jumpsLeft--;
+    }
+    prevJumpKey = jumpKey;
+
+    // The "floor" at the player's current x,z; terrain, but never below water
+    // surface so you stroll on top of lakes rather than sinking through them.
+    const floorY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + EYE_HEIGHT;
+
+    // Integrate gravity.
+    cam.vy -= GRAVITY*dt;
+    cam.y  += cam.vy*dt;
+
+    // Ground contact: if we're at or below the floor while falling, snap up and
+    // stop. STEP_GRIP lets the walker climb small rises without it feeling sticky.
+    if (cam.y <= floorY + STEP_GRIP && cam.vy <= 0){
+      cam.y = floorY;
+      cam.vy = 0;
+      cam.onGround = true;
+      cam.jumpsLeft = 2;     // refill both jumps on landing
+    } else {
+      cam.onGround = false;
+    }
   }
 
   // --- matrices ---
