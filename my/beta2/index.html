@@ -1007,21 +1007,28 @@ function updateCreatures(dt){
     }
     C.energy[i] -= (moveCost + spikeCost + baseCost + ageCost)*dt*(1-0.5*rest);
 
-    // 5) EAT — when the eat motor fires, consume nearby food via the grids.
-    const wantEat = C.mEat[i]>0.5;
-    if(wantEat){
+    // 5) EAT — feeding is a proximity reflex: if edible food is within reach,
+    // the creature eats it. The eat motor MODULATES this rather than gating it
+    // entirely — a brain can learn to suppress eating (mEat near 0), but an
+    // untrained brain still feeds by default. This breaks the bootstrap
+    // deadlock where REINFORCE could never see an eating reward because the
+    // eat motor never crossed a hard threshold to begin with.
+    const suppressEat = C.mEat[i] < 0.15;       // only a strongly-trained low output skips a meal
+    if(!suppressEat){
       if(!C.species[i]){
-        // herbivore: eat the nearest plant within reach
-        let best=-1, bestD=14*14;
-        pgridQuery(nx,nz,16,(j)=>{
+        // herbivore: eat the nearest plant within reach (reach scales with body size)
+        const reach = 16 + C.size[i];
+        let best=-1, bestD=reach*reach;
+        pgridQuery(nx,nz,reach,(j)=>{
           const ex=P.x[j]-nx, ez=P.z[j]-nz, e2=ex*ex+ez*ez;
           if(e2<bestD){ bestD=e2; best=j; }
         });
         if(best!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(best); pgridRebuild(); }
       } else {
         // predator: eat the nearest herbivore within reach
-        let best=-1, bestD=18*18;
-        gridQuery(nx,nz,20,(j)=>{
+        const reach = 20 + C.size[i];
+        let best=-1, bestD=reach*reach;
+        gridQuery(nx,nz,reach,(j)=>{
           if(j===i||C.species[j]) return;
           const ex=C.x[j]-nx, ez=C.z[j]-nz, e2=ex*ex+ez*ez;
           if(e2<bestD){ bestD=e2; best=j; }
@@ -1076,9 +1083,14 @@ function uploadCreatures(){
 //--------------------------------------------------------------------------
 // CAMERA + INPUT  (virtual joystick to move, drag-pad to look)
 //--------------------------------------------------------------------------
-const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25 };
+const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false };
 const move = { x:0, y:0 };          // joystick vector (touch); WASD writes it on desktop
 const SPEED = 220;
+// --- walker physics ---
+const GRAVITY = 320;                // downward accel (world units/s^2)
+const EYE_HEIGHT = 28;              // camera sits this far above the ground
+const JUMP_VELOCITY = 150;          // initial upward velocity on jump
+const STEP_GRIP = 8;                // max ledge the walker steps up without jumping
 const LOOK_SENS = 0.005;            // radians per pixel of drag
 const keys = {};
 
@@ -1191,7 +1203,9 @@ function rebuildWorld(){
   for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const t=base[i]; base[i]=base[j]; base[j]=t; }
   for(let i=0;i<512;i++) NOISE_PERM[i]=base[i&255];
   buildTerrain(); spawnCreatures(); spawnPlants();
-  cam.x=0; cam.z=CONFIG.worldH*0.35; cam.y=terrainHeight(cam.x,cam.z)+90;
+  cam.x=0; cam.z=CONFIG.worldH*0.35;
+  cam.y=Math.max(terrainHeight(cam.x,cam.z),CONFIG.waterLevel)+EYE_HEIGHT;
+  cam.vy=0; cam.onGround=true;
 }
 
 //--------------------------------------------------------------------------
@@ -1211,18 +1225,35 @@ function frame(now){
 
   // --- camera update ---
   // (look rotation is applied directly in the input handlers)
-  // movement relative to yaw
+  // Horizontal movement relative to yaw. The player walks on the terrain;
+  // gravity pulls them down each frame and the ground stops the fall.
   let mf=move.y, ms=move.x;
   if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
   const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
   cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
   cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
-  if (keys[' ']) cam.y += SPEED*dt;
-  if (keys['shift']) cam.y -= SPEED*dt;
-  // keep camera a bit above ground
-  const groundY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + 25;
-  if (cam.y < groundY) cam.y = groundY;
+
+  // Jump: only when standing on the ground (space, or click-and-hold not needed).
+  if ((keys[' ']||keys['spacebar']) && cam.onGround){ cam.vy = JUMP_VELOCITY; cam.onGround=false; }
+
+  // The "floor" at the player's current x,z — terrain, but never below water
+  // surface so you stroll on top of lakes rather than sinking through them.
+  const floorY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + EYE_HEIGHT;
+
+  // Integrate gravity.
+  cam.vy -= GRAVITY*dt;
+  cam.y  += cam.vy*dt;
+
+  // Ground contact: if we're at or below the floor while falling, snap up and
+  // stop. STEP_GRIP lets the walker climb small rises without it feeling sticky.
+  if (cam.y <= floorY + STEP_GRIP && cam.vy <= 0){
+    cam.y = floorY;
+    cam.vy = 0;
+    cam.onGround = true;
+  } else {
+    cam.onGround = false;
+  }
 
   // --- matrices ---
   const aspect = VIEW_W/VIEW_H;
