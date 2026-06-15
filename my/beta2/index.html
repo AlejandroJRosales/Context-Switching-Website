@@ -845,7 +845,9 @@ const TARGET_PLANTS = CONFIG.isMobile ? 300 : 900;
 // Plant grid (parallel to creature GRID, same scheme)
 const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
 function pgridRebuild(){
-  if(!PGRID.head) PGRID.head=new Int32Array(GRID.cols*GRID.rows);
+  // Resize whenever the grid dimensions have changed (e.g. after a world-scale change)
+  const needed = GRID.cols*GRID.rows;
+  if(!PGRID.head || PGRID.head.length !== needed) PGRID.head=new Int32Array(needed);
   PGRID.head.fill(-1);
   for(let i=0;i<P.n;i++){
     const c=gridCellOf(P.x[i],P.z[i]);
@@ -1243,11 +1245,14 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(1, Math.min(10, n));
   document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
-  // Grid and water plane depend on world size — rebuild them before the world
+  rebuilding = true;   // pause the render loop for this tick
+  // Grid and water plane depend on world size — rebuild before the world
   gridInit();
   buildWater();
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
   rebuildWorld();
+  last = performance.now(); // reset dt so first post-rebuild frame is clean
+  rebuilding = false;
 }
 document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-1));
 document.getElementById('scaleUp').addEventListener('click',   ()=> applyWorldScale(CONFIG.worldScale+1));
@@ -1292,10 +1297,12 @@ function rebuildWorld(){
 const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
+let rebuilding = false;   // true while rebuildWorld() is running; frame() skips that tick
 let currentTimeOfDay = 0.5;     // 0..1 day phase, updated each frame for the SNN
 let prevJumpKey = false;        // for edge-triggered jumps (so a held key fires once)
 
 function frame(now){
+  if (rebuilding){ last=now; requestAnimationFrame(frame); return; } // skip during world rebuild
   let dt = (now-last)/1000; last=now;
   if (!(dt>0)) dt=0;            // guard against negative/NaN first-frame dt
   if (dt>0.05) dt=0.05;         // clamp big stalls so nothing teleports
