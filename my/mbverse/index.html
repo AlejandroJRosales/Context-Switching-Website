@@ -5,15 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>AIEcosystemArena</title>
+<title>mbverse</title>
 <style>
-
   * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   html,body { width:100%; height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; }
   #gl  { display:block; width:100%; height:100%; touch-action:none; }
   #hud { position:absolute; inset:0; pointer-events:none; }
-
-  
   #look { position:absolute; inset:0; pointer-events:auto; z-index:1; }
   #look .lbl { display:none; }
   .pad { position:absolute; bottom:24px; width:120px; height:120px; border-radius:50%;
@@ -50,27 +47,31 @@
   <div class="pad" id="jump"><span class="jlbl">JUMP</span></div>
   <div id="look"><div class="lbl">LOOK</div></div>
 </div>
-
 <script>
 "use strict";
-const BASE_WORLD_SIZE = 5000;   
-const SCALE_BASE = Math.log(10); 
+const BASE_WORLD_SIZE = 5000;
+const SCALE_BASE = Math.log(10);
 function scaleToSize(n){ return Math.max(500, Math.round(BASE_WORLD_SIZE * Math.log(Math.max(n,1)) / SCALE_BASE)); }
-
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-  worldScale: 5,           
+  worldScale: 5,
   get worldW(){ return scaleToSize(this.worldScale); },
   get worldH(){ return scaleToSize(this.worldScale); },
   waterLevel: 8,           
-  probSpawnPlant: 0.04,    
-  quality:   'high',       
-  seed:      1337,
+  probSpawnPlant: 0.04,
+  quality: 'high',
+  seed: 1337,
+};
+const TERRAIN = {
+  amp: 220, featureSize: 360, octaves: 5,
+  mtnAmp: 600,
+  mtnSize: 2000,
+  mtnOctaves: 4,
+  mtnThreshold: 0.45,
 };
 
 const canvas = document.getElementById('gl');
-const gl = canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' })
-        || canvas.getContext('experimental-webgl');
+const gl = canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' }) || canvas.getContext('experimental-webgl');
 if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:20px">WebGL not supported.</p>'; throw new Error('no webgl'); }
 
 const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
@@ -78,16 +79,13 @@ const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint');
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 
 const SHADOW = {
-  size: 1024,            
-  depthExt: gl.getExtension('WEBGL_depth_texture')
-          || gl.getExtension('WEBKIT_WEBGL_depth_texture')
-          || gl.getExtension('MOZ_WEBGL_depth_texture'),
+  size: 1024,
+  depthExt: gl.getExtension('WEBGL_depth_texture') || gl.getExtension('WEBKIT_WEBGL_depth_texture') || gl.getExtension('MOZ_WEBGL_depth_texture'),
   fbo: null, tex: null, colorTex: null, depthRB: null,
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
   ready: false,
 };
 SHADOW.packed = !SHADOW.depthExt;   
-
 const SHADOW_GLSL = `
   uniform sampler2D uShadowMap;
   uniform mat4 uLightVP;
@@ -150,6 +148,7 @@ function compile(type, src) {
     throw new Error('shader compile: ' + gl.getShaderInfoLog(s) + '\n' + src);
   return s;
 }
+
 function program(vsSrc, fsSrc) {
   const p = gl.createProgram();
   gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
@@ -228,14 +227,6 @@ function valueNoise(x, z){
   return a*(1-ux)*(1-uz) + b*ux*(1-uz) + c*(1-ux)*uz + d*ux*uz;
 }
 
-const TERRAIN = {
-  amp: 220, featureSize: 360, octaves: 5,
-  mtnAmp: 600,        
-  mtnSize: 2000,      
-  mtnOctaves: 4,      
-  mtnThreshold: 0.45, 
-};
-
 function ridgedNoise(wx, wz){
   let h=0, freq=1/TERRAIN.mtnSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.mtnOctaves;o++){
@@ -244,16 +235,17 @@ function ridgedNoise(wx, wz){
     n *= n;                      
     h += n*amp; norm += amp; amp*=0.5; freq*=2.0;
   }
-  return h/norm;                 
+  return h/norm;
 }
+
 function terrainHeight(wx, wz){
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.octaves;o++){
     h += valueNoise(wx*freq+o*13.7, wz*freq-o*7.3) * amp;
     norm += amp; amp*=0.5; freq*=2.0;
   }
-  h /= norm;                 
-  h = Math.pow(h, 1.35);     
+  h /= norm;
+  h = Math.pow(h, 1.35);
   let y = h * TERRAIN.amp - TERRAIN.amp*0.35;
   const r = ridgedNoise(wx, wz);
   const m = Math.max(0, r - TERRAIN.mtnThreshold) / (1 - TERRAIN.mtnThreshold);
@@ -266,7 +258,7 @@ function buildTerrain(){
   const segX = CONFIG.quality==='high' ? 160 : 96;
   const segZ = CONFIG.quality==='high' ? 120 : 72;
   const W=CONFIG.worldW, H=CONFIG.worldH;
-  const verts = new Float32Array((segX+1)*(segZ+1)*6); 
+  const verts = new Float32Array((segX+1)*(segZ+1)*6);
   let vi=0;
   const hAt=(gx,gz)=> terrainHeight(-W/2 + gx/segX*W, -H/2 + gz/segZ*H);
   for (let gz=0; gz<=segZ; gz++){
@@ -383,42 +375,42 @@ const waterProg = program(`
 `);
 
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
-const INST_STRIDE = 9;                                  
+const INST_STRIDE = 9;
 const MAX_CREATURES = CONFIG.isMobile ? 120 : 300;
 const instData = new Float32Array(MAX_CREATURES * INST_STRIDE);
 const C = {
-  n: 0,                                   
+  n: 0,
   x:   new Float32Array(MAX_CREATURES),
   y:   new Float32Array(MAX_CREATURES),
   z:   new Float32Array(MAX_CREATURES),
-  head:new Float32Array(MAX_CREATURES),   
-  face:new Float32Array(MAX_CREATURES),   
-  spd: new Float32Array(MAX_CREATURES),   
+  head:new Float32Array(MAX_CREATURES),
+  face:new Float32Array(MAX_CREATURES),
+  spd: new Float32Array(MAX_CREATURES),
   size:new Float32Array(MAX_CREATURES),
-  energy:new Float32Array(MAX_CREATURES), 
-  prevEnergy:new Float32Array(MAX_CREATURES), 
-  species:new Uint8Array(MAX_CREATURES),  
-  cr:  new Float32Array(MAX_CREATURES),   
+  energy:new Float32Array(MAX_CREATURES),
+  prevEnergy:new Float32Array(MAX_CREATURES),
+  species:new Uint8Array(MAX_CREATURES),
+  cr:  new Float32Array(MAX_CREATURES),
   cg:  new Float32Array(MAX_CREATURES),
   cb:  new Float32Array(MAX_CREATURES),
 
-  szA: new Uint16Array(MAX_CREATURES),    
-  szB: new Uint16Array(MAX_CREATURES),    
+  szA: new Uint16Array(MAX_CREATURES),
+  szB: new Uint16Array(MAX_CREATURES),
 
-  mTurn:new Float32Array(MAX_CREATURES),  
-  mMove:new Float32Array(MAX_CREATURES),  
-  mEat: new Float32Array(MAX_CREATURES),  
-  mRest:new Float32Array(MAX_CREATURES),  
-  spikeRate:new Float32Array(MAX_CREATURES), 
-  age: new Float32Array(MAX_CREATURES),   
-  gen: new Uint16Array(MAX_CREATURES),    
+  mTurn:new Float32Array(MAX_CREATURES),
+  mMove:new Float32Array(MAX_CREATURES),
+  mEat: new Float32Array(MAX_CREATURES),
+  mRest:new Float32Array(MAX_CREATURES),
+  spikeRate:new Float32Array(MAX_CREATURES),
+  age: new Float32Array(MAX_CREATURES),
+  gen: new Uint16Array(MAX_CREATURES),
 };
 
-const LIFESPAN = 90;          
-const SENESCENCE = 0.02;      
+const LIFESPAN = 90;
+const SENESCENCE = 0.02;
 
 function buildCreatures(){
-  const verts = [];   
+  const verts = [];
   function push(x,y,z,nx,ny,nz){ verts.push(x,y,z,nx,ny,nz); }
   function sphere(cx,cy,cz,r,sz, rings,segs){
     const grid=[];
@@ -463,15 +455,12 @@ function buildCreatures(){
   sphere(0,0, bodyHalf, bodyR, 1, rings, segs);     
   sphere(0,0,-bodyHalf, bodyR, 1, rings, segs);     
   sphere(0,0.35, bodyHalf+0.55, 0.45, 1, rings, segs); 
-
   const tris = new Float32Array(verts);
   creatureGeoBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
   gl.bufferData(gl.ARRAY_BUFFER, tris, gl.STATIC_DRAW);
   creatureGeoCount = verts.length/6;
-
   instBuf = gl.createBuffer();
-
   creatureProg = program(`
     attribute vec3 aPos;          
     attribute vec3 aNormal;       
@@ -508,25 +497,25 @@ function buildCreatures(){
   `);
 }
 
-const N_RAYS = 5;                 
-const RAY_FOV = Math.PI*0.55;     
-const RAY_LEN = 220;              
-const RAY_STEP = 22;              
-const ENTITY_TYPES = 4;           
+const N_RAYS = 5;
+const RAY_FOV = Math.PI*0.55;
+const RAY_LEN = 220;
+const RAY_STEP = 22;
+const ENTITY_TYPES = 4;
 const SENSE_PER_RAY = 1 + ENTITY_TYPES;
 const N_INPUT = N_RAYS*SENSE_PER_RAY + 3;
-const MAX_A = 12;                 
-const MAX_B = 10;                 
-const N_MOTOR = 4;                
-const A_W = new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3); 
-const A_U = new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);   
-const A_B = new Float32Array(MAX_CREATURES*MAX_A*3);         
-const hA  = new Float32Array(MAX_CREATURES*MAX_A);           
-const B_W = new Float32Array(MAX_CREATURES*MAX_B*MAX_A);     
-const B_v = new Float32Array(MAX_CREATURES*MAX_B);           
-const B_thr = 1.0, B_leak = 0.85, B_reset = 0.0;            
+const MAX_A = 12;
+const MAX_B = 10;
+const N_MOTOR = 4;
+const A_W = new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3);
+const A_U = new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);
+const A_B = new Float32Array(MAX_CREATURES*MAX_A*3);
+const hA  = new Float32Array(MAX_CREATURES*MAX_A);
+const B_W = new Float32Array(MAX_CREATURES*MAX_B*MAX_A);
+const B_v = new Float32Array(MAX_CREATURES*MAX_B);
+const B_thr = 1.0, B_leak = 0.85, B_reset = 0.0;
 const R_W = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
-const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);   
+const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
 const PRUNE_THR = 0.02, TRACE_DECAY = 0.92, LR = 0.04;
 const sIn = new Float32Array(N_INPUT);
 const sA  = new Float32Array(MAX_A);
@@ -541,7 +530,7 @@ function gauss(){
 }
 
 function brainInit(i){
-  const a = 4 + (RNG()*(MAX_A-4)|0);   
+  const a = 4 + (RNG()*(MAX_A-4)|0);
   const b = 3 + (RNG()*(MAX_B-3)|0);
   C.szA[i]=a; C.szB[i]=b;
   const sa = 1/Math.sqrt(N_INPUT);
@@ -568,7 +557,6 @@ function brainInit(i){
 
 function brainInherit(child, parent, mut){
   const a=C.szA[parent], b=C.szB[parent];
-
   let ca=Math.max(4,Math.min(MAX_A, a + (RNG()<0.2?(RNG()<0.5?-1:1):0)));
   let cb=Math.max(3,Math.min(MAX_B, b + (RNG()<0.2?(RNG()<0.5?-1:1):0)));
   C.szA[child]=ca; C.szB[child]=cb;
@@ -595,37 +583,33 @@ function senseCreature(i, timeOfDay){
     const ang = h + t*RAY_FOV;
     const dx=Math.sin(ang), dz=Math.cos(ang);
     let hitDist=RAY_LEN, hitType=-1;
-
     for(let d=RAY_STEP; d<=RAY_LEN; d+=RAY_STEP){
       const px=x+dx*d, pz=z+dz*d;
-
       if(terrainHeight(px,pz) < CONFIG.waterLevel && hitType===-1){ hitDist=d; hitType=3; break; }
-
       gridScanVision(px,pz,RAY_STEP,i);
       let found=gqType, foundD=(gqType!==-1)?gqDist:RAY_STEP;
-      
       pgridScanNearest(px,pz,foundD);
       if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } } 
       if(found!==-1){ hitDist=d; hitType=found; break; }
     }
     const base=r*SENSE_PER_RAY;
-    sIn[base]=hitDist/RAY_LEN;                         
-    sIn[base+1]=hitType===0?1:0;                       
-    sIn[base+2]=hitType===1?1:0;                       
-    sIn[base+3]=hitType===2?1:0;                       
-    sIn[base+4]=hitType===3?1:0;                       
+    sIn[base]=hitDist/RAY_LEN;
+    sIn[base+1]=hitType===0?1:0;
+    sIn[base+2]=hitType===1?1:0;
+    sIn[base+3]=hitType===2?1:0;
+    sIn[base+4]=hitType===3?1:0;
     
     if(hitType===preyType){
-      const closeness=1-hitDist/RAY_LEN;               
-      const central=1-2*Math.abs(t);                   
+      const closeness=1-hitDist/RAY_LEN;
+      const central=1-2*Math.abs(t);
       const w=closeness*Math.max(0,central);
-      if(w>sFoodCue) sFoodCue=w;                       
+      if(w>sFoodCue) sFoodCue=w;
     }
   }
   const g=N_RAYS*SENSE_PER_RAY;
-  sIn[g]   = C.energy[i];                              
-  sIn[g+1] = C.spd[i]/40;                              
-  sIn[g+2] = timeOfDay;                                
+  sIn[g]   = C.energy[i];
+  sIn[g+1] = C.spd[i]/40;
+  sIn[g+2] = timeOfDay;
 }
 
 const sigmoid = x => 1/(1+Math.exp(-x));
@@ -691,7 +675,6 @@ function brainLearn(i){
     for(let m=0;m<N_MOTOR;m++){ const off=m*MAX_B;
       for(let n=0;n<b;n++){
         R_W[baseR+off+n]+=LR*reward*R_e[baseR+off+n];
-
         if(Math.abs(R_W[baseR+off+n])<PRUNE_THR) R_W[baseR+off+n]=0;
       }
     }
@@ -728,24 +711,29 @@ function spawnCreatures(){
 }
 
 const GRID = {
-  cell: 70,                 
+  cell: 70,
   cols: 0, rows: 0,
-  head: null,               
+  head: null,
   next: new Int32Array(MAX_CREATURES),
-  ox:0, oz:0,               
+  ox:0, oz:0,
 };
+let gqDist=0, gqType=-1;     
+let gqBest=-1, gqBestD2=0;   
+
 function gridInit(){
   GRID.ox = -CONFIG.worldW/2; GRID.oz = -CONFIG.worldH/2;
   GRID.cols = Math.ceil(CONFIG.worldW/GRID.cell)+1;
   GRID.rows = Math.ceil(CONFIG.worldH/GRID.cell)+1;
   GRID.head = new Int32Array(GRID.cols*GRID.rows);
 }
+
 function gridCellOf(x,z){
   let cx=((x-GRID.ox)/GRID.cell)|0, cz=((z-GRID.oz)/GRID.cell)|0;
   if(cx<0)cx=0; else if(cx>=GRID.cols)cx=GRID.cols-1;
   if(cz<0)cz=0; else if(cz>=GRID.rows)cz=GRID.rows-1;
   return cz*GRID.cols+cx;
 }
+
 function gridRebuild(){
   GRID.head.fill(-1);
   for(let i=0;i<C.n;i++){
@@ -753,9 +741,6 @@ function gridRebuild(){
     GRID.next[i]=GRID.head[c]; GRID.head[c]=i;
   }
 }
-
-let gqDist=0, gqType=-1;     
-let gqBest=-1, gqBestD2=0;   
 
 function gridScanVision(px,pz,maxD,self){
   gqDist=maxD; gqType=-1;
@@ -799,7 +784,7 @@ const P = {
   x: new Float32Array(MAX_PLANTS),
   y: new Float32Array(MAX_PLANTS),
   z: new Float32Array(MAX_PLANTS),
-  sway: new Float32Array(MAX_PLANTS),   
+  sway: new Float32Array(MAX_PLANTS),
 };
 
 function targetPlants(){
@@ -818,8 +803,7 @@ function pgridRebuild(){
   }
 }
 
-let pqBest=-1, pqBestD2=0;   
-
+let pqBest=-1, pqBestD2=0;
 function pgridScanNearest(px,pz,maxD){
   pqBest=-1; pqBestD2=maxD*maxD;
   const r=Math.max(1,Math.ceil(maxD/GRID.cell));
@@ -838,7 +822,7 @@ function pgridScanNearest(px,pz,maxD){
 
 function plantPlaceAt(idx, x, z){
   const h=terrainHeight(x,z);
-  if(h < CONFIG.waterLevel+3) return false;     
+  if(h < CONFIG.waterLevel+3) return false;
   P.x[idx]=x; P.z[idx]=z; P.y[idx]=h; P.sway[idx]=RNG()*6.28;
   return true;
 }
@@ -877,8 +861,7 @@ function buildPlants(){
   const q=[];
   function quad(ax,az){ 
     const w=4, hgt=11;
-    const px=-az*w, pz=ax*w; 
-
+    const px=-az*w, pz=ax*w;
     q.push(-px,0,-pz, 0,  px,0,pz, 0,  px,hgt,pz, 1);
     q.push(-px,0,-pz, 0,  px,hgt,pz, 1,  -px,hgt,-pz, 1);
   }
@@ -910,6 +893,7 @@ function buildPlants(){
     }
   `);
 }
+
 function uploadPlants(){
   for(let i=0;i<P.n;i++){ const k=i*P_STRIDE;
     plantInst[k]=P.x[i]; plantInst[k+1]=P.y[i]; plantInst[k+2]=P.z[i]; plantInst[k+3]=P.sway[i]; }
@@ -926,7 +910,6 @@ function creatureCopy(dst, src){
   C.mTurn[dst]=C.mTurn[src]; C.mMove[dst]=C.mMove[src]; C.mEat[dst]=C.mEat[src];
   C.mRest[dst]=C.mRest[src]; C.spikeRate[dst]=C.spikeRate[src];
   C.age[dst]=C.age[src]; C.gen[dst]=C.gen[src];
-
   copyBrainSlot(dst, src);
 }
 function copyBrainSlot(dst, src){
@@ -947,8 +930,8 @@ function creatureRemove(i){
 
 function creatureBirth(parent){
   if(C.n>=MAX_CREATURES) return;
-  if(parent>=C.n) return;                 
-  if(C.energy[parent]<=0.6) return;       
+  if(parent>=C.n) return;
+  if(C.energy[parent]<=0.6) return;
   const c=C.n++;
   const ang=RNG()*6.28, dist=8+RNG()*10;
   let x=C.x[parent]+Math.cos(ang)*dist, z=C.z[parent]+Math.sin(ang)*dist;
@@ -959,16 +942,13 @@ function creatureBirth(parent){
   C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
   C.species[c]=C.species[parent];
   C.size[c]=C.size[parent]*(0.9+RNG()*0.2);
-
   C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-0.5)*0.1));
   C.cg[c]=Math.min(1,Math.max(0,C.cg[parent]+(RNG()-0.5)*0.1));
   C.cb[c]=Math.min(1,Math.max(0,C.cb[parent]+(RNG()-0.5)*0.1));
   brainInherit(c, parent, 0.06);
-
   const give=C.energy[parent]*0.5;
   C.energy[parent]-=give; C.energy[c]=give; C.prevEnergy[c]=give;
 }
-
 const _births=new Int32Array(MAX_CREATURES);
 let _birthN=0;
 
@@ -1003,7 +983,7 @@ function updateCreatures(dt){
     const baseCost = 0.0035;
     let ageCost = 0;
     if(C.age[i]>LIFESPAN){
-      const over=(C.age[i]-LIFESPAN)/LIFESPAN;        
+      const over=(C.age[i]-LIFESPAN)/LIFESPAN; 
       ageCost = SENESCENCE*(over/(1+over));           
     }
     C.energy[i] -= (moveCost + spikeCost + baseCost + ageCost)*dt*(1-0.5*rest);
@@ -1011,11 +991,11 @@ function updateCreatures(dt){
     if(!suppressEat){
       if(!C.species[i]){
         const reach = 16 + C.size[i];
-        pgridScanNearest(nx,nz,reach);            
+        pgridScanNearest(nx,nz,reach);
         if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(pqBest); pgridRebuild(); }
       } else {
         const reach = 20 + C.size[i];
-        gridScanPrey(nx,nz,reach,i);              
+        gridScanPrey(nx,nz,reach,i);
         if(gqBest!==-1){
           C.energy[i]=Math.min(1,C.energy[i]+0.5);
           const last=C.n-1;
@@ -1031,7 +1011,7 @@ function updateCreatures(dt){
     }
     if(C.energy[i]<=0){
       creatureRemove(i);
-      i--;                          
+      i--;
       continue;
     }
   }
@@ -1073,7 +1053,6 @@ const HAS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 
 const joyEl  = document.getElementById('joy');
 const lookEl = document.getElementById('look');
 const nub    = joyEl.querySelector('.nub');
-
 if (HAS_TOUCH){
   (function(){
     let id=null, cx=0, cy=0;
@@ -1143,13 +1122,13 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(1, Math.min(10, n));
   document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
-  rebuilding = true;   
+  rebuilding = true;
 
   gridInit();
   buildWater();
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
   rebuildWorld();
-  last = performance.now(); 
+  last = performance.now();
   rebuilding = false;
 }
 document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-1));
@@ -1159,7 +1138,7 @@ function sunState(t){
   const ang = t*0.005;                         
   const sunDir = [Math.cos(ang)*0.6, Math.sin(ang), 0.4];
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
-  const up = Math.max(0, sunDir[1]);           
+  const up = Math.max(0, sunDir[1]);
   const day = Math.pow(up, 0.5);
   return {
     sunDir, up,
@@ -1243,7 +1222,7 @@ function initShadow(){
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
-const SHADOW_RADIUS = 350;   
+const SHADOW_RADIUS = 350;
 function updateLightVP(sunDir, focusX, focusZ){
   const half = SHADOW_RADIUS;
   const dist = Math.max(CONFIG.worldW, CONFIG.worldH); 
@@ -1325,10 +1304,9 @@ function rebuildWorld(){
 const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
-let rebuilding = false;   
-let currentTimeOfDay = 0.5;     
-let prevJumpKey = false;        
-
+let rebuilding = false;
+let currentTimeOfDay = 0.5;
+let prevJumpKey = false;
 function frame(now){
   if (rebuilding){ last=now; requestAnimationFrame(frame); return; } 
   let dt = (now-last)/1000; last=now;
