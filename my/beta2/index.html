@@ -7,13 +7,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>AIEcosystemArena</title>
 <style>
+
   * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   html,body { width:100%; height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; }
   #gl  { display:block; width:100%; height:100%; touch-action:none; }
   #hud { position:absolute; inset:0; pointer-events:none; }
-  /* On-screen controls */
-  /* Look surface: fills the screen so a finger-drag anywhere rotates the camera.
-     Sits at the bottom of the control stack; joystick and buttons sit above it. */
+
+  
   #look { position:absolute; inset:0; pointer-events:auto; z-index:1; }
   #look .lbl { display:none; }
   .pad { position:absolute; bottom:24px; width:120px; height:120px; border-radius:50%;
@@ -53,55 +53,32 @@
 
 <script>
 "use strict";
-//============================================================================
-// AIEcosystemArena; Raw WebGL 1.0 rewrite. Session 1 foundation.
-// Build order covered here: (1) WebGL boilerplate (2) Terrain (3) Sky/lighting
-// + camera, day/night, height query, and an instanced-creature stub to prove
-// the instancing pipeline. SNN + ecosystem layer on top in later sessions.
-//============================================================================
-
-// =========================================================================
-// CONFIG  (world units kept proportional to the original Three.js build,
-// scaled down so the whole map fits comfortably on a phone GPU)
-// =========================================================================
-// World scale: visual integer 1-10, actual size = log(n) * BASE_WORLD_SIZE
-const BASE_WORLD_SIZE = 5000;   // world units at scale 10 (log10 ≈ 1.0 → full size)
-const SCALE_BASE = Math.log(10); // normalizer so scale 10 → exactly BASE_WORLD_SIZE
+const BASE_WORLD_SIZE = 5000;   
+const SCALE_BASE = Math.log(10); 
 function scaleToSize(n){ return Math.max(500, Math.round(BASE_WORLD_SIZE * Math.log(Math.max(n,1)) / SCALE_BASE)); }
 
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-  worldScale: 5,           // visual scale 1-10; actual size is log(worldScale)
+  worldScale: 5,           
   get worldW(){ return scaleToSize(this.worldScale); },
   get worldH(){ return scaleToSize(this.worldScale); },
-  waterLevel: 8,           // y height of the water plane
-  probSpawnPlant: 0.04,    // base plant regrowth probability per second
-  quality:   'high',       // 'high' | 'low'  (low = coarser terrain, no water normals)
+  waterLevel: 8,           
+  probSpawnPlant: 0.04,    
+  quality:   'high',       
   seed:      1337,
 };
 
-// =========================================================================
-// 1. WEBGL BOILERPLATE
-// =========================================================================
 const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' })
         || canvas.getContext('experimental-webgl');
 if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:20px">WebGL not supported.</p>'; throw new Error('no webgl'); }
 
-// Extensions we rely on. instanced_arrays is the important one for creatures.
 const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
-const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint'); // big terrain meshes
+const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint'); 
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 
-// =========================================================================
-// SHADOW probe + shared GLSL (defined early so lighting shaders can splice it).
-// Directional shadow map rendered from the sun each frame, ALWAYS on (the
-// spec's "skip on mobile" is intentionally overridden). WebGL 1.0 has no
-// guaranteed depth texture, so we probe WEBGL_depth_texture and fall back to
-// encoding depth into a packed RGBA color texture when it's missing.
-// =========================================================================
 const SHADOW = {
-  size: 1024,            // shadow map resolution (constant across devices)
+  size: 1024,            
   depthExt: gl.getExtension('WEBGL_depth_texture')
           || gl.getExtension('WEBKIT_WEBGL_depth_texture')
           || gl.getExtension('MOZ_WEBGL_depth_texture'),
@@ -109,16 +86,13 @@ const SHADOW = {
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
   ready: false,
 };
-SHADOW.packed = !SHADOW.depthExt;   // true -> encode depth into RGBA color tex
+SHADOW.packed = !SHADOW.depthExt;   
 
-// Shared by every lighting shader: unpacks RGBA-encoded depth (fallback path)
-// and samples the shadow map with a 2x2 PCF kernel. uShadowMode is 1.0 when
-// depth is packed into RGBA, 0.0 when a real depth texture is bound.
 const SHADOW_GLSL = `
   uniform sampler2D uShadowMap;
   uniform mat4 uLightVP;
-  uniform float uShadowTexel;   // 1.0 / shadow map size
-  uniform float uShadowMode;    // 1.0 = packed RGBA depth, 0.0 = real depth tex
+  uniform float uShadowTexel;   
+  uniform float uShadowMode;    
   float unpackDepth(vec4 c){
     return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
   }
@@ -126,11 +100,11 @@ const SHADOW_GLSL = `
     vec4 c = texture2D(uShadowMap, uv);
     return mix(c.r, unpackDepth(c), uShadowMode);
   }
-  // returns 1.0 fully lit, down to 0.25 in shadow (never fully black)
+
   float shadowFactor(vec3 worldPos, float ndotl){
     vec4 lp = uLightVP * vec4(worldPos, 1.0);
     vec3 proj = lp.xyz / lp.w;
-    proj = proj * 0.5 + 0.5;                 // NDC -> [0,1]
+    proj = proj * 0.5 + 0.5;                 
     if (proj.x<0.0||proj.x>1.0||proj.y<0.0||proj.y>1.0||proj.z>1.0) return 1.0;
     float bias = clamp(0.0012 * (1.0 - ndotl), 0.0004, 0.0028);
     float lit = 0.0;
@@ -146,11 +120,9 @@ const SHADOW_GLSL = `
   }
 `;
 
-// Depth-write fragment shader: in packed mode encode gl_FragCoord.z into RGBA;
-// with a real depth texture the color output is unused.
 const DEPTH_FRAG = `
   precision highp float;
-  uniform float uShadowMode;    // 1.0 = pack into RGBA
+  uniform float uShadowMode;    
   vec4 packDepth(float d){
     vec4 c = fract(d * vec4(1.0, 255.0, 65025.0, 16581375.0));
     c -= c.yzww * vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, 0.0);
@@ -163,7 +135,6 @@ const DEPTH_FRAG = `
 
 let DPR = 1, VIEW_W = 1, VIEW_H = 1;
 function resize() {
-  // Cap DPR on mobile so we never render at full retina res (huge perf win).
   DPR = Math.min(window.devicePixelRatio || 1, CONFIG.quality === 'high' ? 2 : 1, CONFIG.isMobile ? 1.5 : 2);
   VIEW_W = Math.floor(canvas.clientWidth  * DPR);
   VIEW_H = Math.floor(canvas.clientHeight * DPR);
@@ -172,7 +143,6 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// tiny shader helpers
 function compile(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s);
@@ -187,16 +157,12 @@ function program(vsSrc, fsSrc) {
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS))
     throw new Error('link: ' + gl.getProgramInfoLog(p));
-  // cache attrib/uniform locations lazily
   p._a = {}; p._u = {};
   p.a = n => (p._a[n] !== undefined ? p._a[n] : (p._a[n] = gl.getAttribLocation(p, n)));
   p.u = n => (p._u[n] !== undefined ? p._u[n] : (p._u[n] = gl.getUniformLocation(p, n)));
   return p;
 }
 
-// =========================================================================
-// minimal mat4 math (column-major, like WebGL expects)
-// =========================================================================
 const M4 = {
   create(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
   perspective(out, fovy, aspect, near, far){
@@ -241,17 +207,10 @@ const M4 = {
   }
 };
 
-// =========================================================================
-// Seeded RNG (mulberry32); deterministic worlds from CONFIG.seed
-// =========================================================================
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 let RNG = mulberry32(CONFIG.seed);
 
-// =========================================================================
-// 2. TERRAIN; value-noise fBm, generated on CPU, queryable from JS.
-// =========================================================================
-// Seeded value-noise: hash lattice points, cubic-smooth interpolate between.
 const NOISE_PERM = (() => {
   const p = new Uint8Array(512), base = new Uint8Array(256);
   for (let i=0;i<256;i++) base[i]=i;
@@ -268,61 +227,51 @@ function valueNoise(x, z){
   const c=hash2(ix,iz+1), d=hash2(ix+1,iz+1);
   return a*(1-ux)*(1-uz) + b*ux*(1-uz) + c*(1-ux)*uz + d*ux*uz;
 }
-// fBm height field in WORLD coordinates -> world Y. This is the single source
-// of truth used by both mesh generation AND the JS height query (so physics/AI
-// agree exactly with what's drawn).
+
 const TERRAIN = {
   amp: 220, featureSize: 360, octaves: 5,
-  // mountains
-  mtnAmp: 600,        // peak height added on top of the base terrain
-  mtnSize: 2000,      // size of a mountain range (larger = broader, fewer ranges)
-  mtnOctaves: 4,      // detail folded into the ridges
-  mtnThreshold: 0.45, // ridge value below this stays lowland; above it rises into peaks
+  mtnAmp: 600,        
+  mtnSize: 2000,      
+  mtnOctaves: 4,      
+  mtnThreshold: 0.45, 
 };
-// Ridged fBm: folds noise around its midpoint so the high values form sharp
-// crests instead of rounded hills -> reads as mountain ridgelines.
+
 function ridgedNoise(wx, wz){
   let h=0, freq=1/TERRAIN.mtnSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.mtnOctaves;o++){
     let n = valueNoise(wx*freq+o*31.4, wz*freq-o*17.1);
-    n = 1 - Math.abs(n*2 - 1);   // fold to a ridge
-    n *= n;                      // sharpen the crest
+    n = 1 - Math.abs(n*2 - 1);   
+    n *= n;                      
     h += n*amp; norm += amp; amp*=0.5; freq*=2.0;
   }
-  return h/norm;                 // 0..1
+  return h/norm;                 
 }
 function terrainHeight(wx, wz){
-  // base rolling terrain
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.octaves;o++){
     h += valueNoise(wx*freq+o*13.7, wz*freq-o*7.3) * amp;
     norm += amp; amp*=0.5; freq*=2.0;
   }
-  h /= norm;                 // 0..1
-  h = Math.pow(h, 1.35);     // bias toward flatter lowlands
+  h /= norm;                 
+  h = Math.pow(h, 1.35);     
   let y = h * TERRAIN.amp - TERRAIN.amp*0.35;
-
-  // mountains: only the part of the ridge field above the threshold lifts up,
-  // so ranges rise out of the lowlands rather than tilting the whole map.
   const r = ridgedNoise(wx, wz);
   const m = Math.max(0, r - TERRAIN.mtnThreshold) / (1 - TERRAIN.mtnThreshold);
   y += m*m * TERRAIN.mtnAmp;
   return y;
 }
 
-// Build the terrain mesh once. Grid of (segX+1)*(segZ+1) verts, indexed.
 let terrainBuf=null, terrainIdxBuf=null, terrainIdxCount=0;
 function buildTerrain(){
   const segX = CONFIG.quality==='high' ? 160 : 96;
   const segZ = CONFIG.quality==='high' ? 120 : 72;
   const W=CONFIG.worldW, H=CONFIG.worldH;
-  const verts = new Float32Array((segX+1)*(segZ+1)*6); // pos(3)+normal(3)
+  const verts = new Float32Array((segX+1)*(segZ+1)*6); 
   let vi=0;
   const hAt=(gx,gz)=> terrainHeight(-W/2 + gx/segX*W, -H/2 + gz/segZ*H);
   for (let gz=0; gz<=segZ; gz++){
     for (let gx=0; gx<=segX; gx++){
       const wx=-W/2 + gx/segX*W, wz=-H/2 + gz/segZ*H, wy=hAt(gx,gz);
-      // central-difference normal from the height field
       const e=W/segX;
       const hl=terrainHeight(wx-e,wz), hr=terrainHeight(wx+e,wz);
       const hd=terrainHeight(wx,wz-e), hu=terrainHeight(wx,wz+e);
@@ -362,7 +311,6 @@ const terrainProg = program(`
   uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform vec3 uEye;
   ${SHADOW_GLSL}
   void main(){
-    // height + slope based biome coloring
     float slope = 1.0 - clamp(vN.y, 0.0, 1.0);
     vec3 sand  = vec3(0.76,0.70,0.50);
     vec3 grass = vec3(0.26,0.52,0.24);
@@ -372,9 +320,9 @@ const terrainProg = program(`
     vec3 col = mix(sand, grass, smoothstep(0.0,0.04,hN));
     col = mix(col, rock, smoothstep(0.30,0.55,hN));
     col = mix(col, snow, smoothstep(0.62,0.80,hN));
-    col = mix(col, rock, smoothstep(0.45,0.85,slope)); // steep faces -> rock
+    col = mix(col, rock, smoothstep(0.45,0.85,slope)); 
     float diff = max(dot(normalize(vN), uSunDir), 0.0);
-    float sh = shadowFactor(vW, diff);             // 1 lit .. 0.25 shadowed
+    float sh = shadowFactor(vW, diff);             
     vec3 lit = col * (uAmbient + uSunColor*diff*sh);
     float d = length(vW - uEye);
     float fog = clamp(d/uFogDist, 0.0, 1.0); fog*=fog;
@@ -382,9 +330,6 @@ const terrainProg = program(`
   }
 `);
 
-// =========================================================================
-// 3. SKY; fullscreen quad, procedural gradient + sun disc.
-// =========================================================================
 const quadBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
@@ -405,8 +350,6 @@ const skyProg = program(`
   }
 `);
 
-// WATER; flat plane at waterLevel, procedural scrolling normals in shader.
-// Kept in a function so it can be re-uploaded when world size changes.
 const waterBuf = gl.createBuffer();
 function buildWater(){
   const W=CONFIG.worldW/2, H=CONFIG.worldH/2;
@@ -423,7 +366,6 @@ const waterProg = program(`
   uniform vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
   uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
   void main(){
-    // cheap procedural normal from summed sine ripples (no textures)
     vec2 p = vW.xz*0.02;
     float n1 = sin(p.x*1.3 + uTime*0.8) + cos(p.y*1.7 - uTime*0.6);
     float n2 = sin((p.x+p.y)*2.1 + uTime*1.1);
@@ -440,65 +382,44 @@ const waterProg = program(`
   }
 `);
 
-// =========================================================================
-// 4. CREATURES; real geometry (capsule body + sphere head) generated once
-//    in JS, drawn with instancing. State lives in parallel typed arrays (SoA)
-//    so the SNN (next session) can read/write fields with no object churn.
-//
-//    Per-instance GPU buffer layout (8 floats / 32 bytes):
-//      [0..2] world pos x,y,z
-//      [3]    scale
-//      [4..6] color r,g,b
-//      [7]    heading (yaw, radians); body faces movement direction
-// =========================================================================
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
-const INST_STRIDE = 9;                                  // floats per instance
+const INST_STRIDE = 9;                                  
 const MAX_CREATURES = CONFIG.isMobile ? 120 : 300;
-
-// GPU-facing interleaved instance buffer (rewritten each frame)
 const instData = new Float32Array(MAX_CREATURES * INST_STRIDE);
-
-// CPU simulation state (Structure-of-Arrays)
 const C = {
-  n: 0,                                   // live count
+  n: 0,                                   
   x:   new Float32Array(MAX_CREATURES),
   y:   new Float32Array(MAX_CREATURES),
   z:   new Float32Array(MAX_CREATURES),
-  head:new Float32Array(MAX_CREATURES),   // heading yaw (intended forward)
-  face:new Float32Array(MAX_CREATURES),   // visual yaw = actual travel direction
-  spd: new Float32Array(MAX_CREATURES),   // current forward speed
+  head:new Float32Array(MAX_CREATURES),   
+  face:new Float32Array(MAX_CREATURES),   
+  spd: new Float32Array(MAX_CREATURES),   
   size:new Float32Array(MAX_CREATURES),
-  energy:new Float32Array(MAX_CREATURES), // 0..1, death at 0
-  prevEnergy:new Float32Array(MAX_CREATURES), // for REINFORCE reward delta
-  species:new Uint8Array(MAX_CREATURES),  // 0=herbivore 1=predator
-  cr:  new Float32Array(MAX_CREATURES),   // color
+  energy:new Float32Array(MAX_CREATURES), 
+  prevEnergy:new Float32Array(MAX_CREATURES), 
+  species:new Uint8Array(MAX_CREATURES),  
+  cr:  new Float32Array(MAX_CREATURES),   
   cg:  new Float32Array(MAX_CREATURES),
   cb:  new Float32Array(MAX_CREATURES),
-  // genome-encoded lobe sizes (randomized per creature)
-  szA: new Uint16Array(MAX_CREATURES),    // Lobe A (GRU) hidden units
-  szB: new Uint16Array(MAX_CREATURES),    // Lobe B (LIF) neurons
-  // motor outputs latched each tick (for movement + HUD/debug)
-  mTurn:new Float32Array(MAX_CREATURES),  // -1..1 turn
-  mMove:new Float32Array(MAX_CREATURES),  // -1..1 forward/back
-  mEat: new Float32Array(MAX_CREATURES),  // eat trigger 0..1
-  mRest:new Float32Array(MAX_CREATURES),  // rest trigger 0..1
-  spikeRate:new Float32Array(MAX_CREATURES), // fraction of LIF neurons that spiked (metabolic + HUD)
-  age: new Float32Array(MAX_CREATURES),   // seconds lived (drives senescence + lifespan death)
-  gen: new Uint16Array(MAX_CREATURES),    // generation number (0 = founder), tracked for the HUD
+
+  szA: new Uint16Array(MAX_CREATURES),    
+  szB: new Uint16Array(MAX_CREATURES),    
+
+  mTurn:new Float32Array(MAX_CREATURES),  
+  mMove:new Float32Array(MAX_CREATURES),  
+  mEat: new Float32Array(MAX_CREATURES),  
+  mRest:new Float32Array(MAX_CREATURES),  
+  spikeRate:new Float32Array(MAX_CREATURES), 
+  age: new Float32Array(MAX_CREATURES),   
+  gen: new Uint16Array(MAX_CREATURES),    
 };
-// Soft lifespan: past this age, a small extra metabolic drain ramps in so
-// nothing is immortal even with abundant food. Keeps generations turning over.
-const LIFESPAN = 90;          // seconds before senescence cost starts
-const SENESCENCE = 0.02;      // peak extra energy drain/sec once well past LIFESPAN
 
-// Build the body geometry once: a capsule (cylinder + 2 hemispheres) for the
-// torso and a small sphere for the head, merged into one position+normal mesh.
-// Local space: +Z is "forward" (nose), +Y up. Heading rotates around Y.
+const LIFESPAN = 90;          
+const SENESCENCE = 0.02;      
+
 function buildCreatures(){
-  const verts = [];   // x,y,z, nx,ny,nz  per vertex (already triangulated)
+  const verts = [];   
   function push(x,y,z,nx,ny,nz){ verts.push(x,y,z,nx,ny,nz); }
-
-  // UV sphere helper, centered at (cx,cy,cz), radius r, scaled on z (sz)
   function sphere(cx,cy,cz,r,sz, rings,segs){
     const grid=[];
     for(let i=0;i<=rings;i++){
@@ -506,8 +427,8 @@ function buildCreatures(){
       const rowA=[], rowB=[];
       for(let j=0;j<=segs;j++){
         const u=j/segs, th=u*Math.PI*2, st=Math.sin(th), ct=Math.cos(th);
-        const nx=sp*ct, ny=cp, nz=sp*st;           // unit normal
-        rowA.push([cx+nx*r, cy+ny*r, cz+nz*r*sz]); // position (z optionally stretched)
+        const nx=sp*ct, ny=cp, nz=sp*st;           
+        rowA.push([cx+nx*r, cy+ny*r, cz+nz*r*sz]); 
         rowB.push([nx, ny, nz/(sz||1)]);
       }
       grid.push([rowA,rowB]);
@@ -523,8 +444,7 @@ function buildCreatures(){
       }
     }
   }
-  // capsule body: cylinder along Z plus rounded caps approximated by the
-  // spheres at each end; we draw the tube then two hemispherical-ish caps
+ 
   function tube(r, halfLen, segs){
     for(let j=0;j<segs;j++){
       const u0=j/segs*Math.PI*2, u1=(j+1)/segs*Math.PI*2;
@@ -540,9 +460,9 @@ function buildCreatures(){
   const rings = lod? 8:6, segs = lod? 10:7;
   const bodyR=0.5, bodyHalf=0.9;
   tube(bodyR, bodyHalf, segs);
-  sphere(0,0, bodyHalf, bodyR, 1, rings, segs);     // rear cap
-  sphere(0,0,-bodyHalf, bodyR, 1, rings, segs);     // front cap (also nose-ish)
-  sphere(0,0.35, bodyHalf+0.55, 0.45, 1, rings, segs); // head sphere, slightly up & back
+  sphere(0,0, bodyHalf, bodyR, 1, rings, segs);     
+  sphere(0,0,-bodyHalf, bodyR, 1, rings, segs);     
+  sphere(0,0.35, bodyHalf+0.55, 0.45, 1, rings, segs); 
 
   const tris = new Float32Array(verts);
   creatureGeoBuf = gl.createBuffer();
@@ -553,24 +473,23 @@ function buildCreatures(){
   instBuf = gl.createBuffer();
 
   creatureProg = program(`
-    attribute vec3 aPos;          // body vertex (local)
-    attribute vec3 aNormal;       // body normal (local)
-    attribute vec3 aInstPos;      // instance world position
+    attribute vec3 aPos;          
+    attribute vec3 aNormal;       
+    attribute vec3 aInstPos;      
     attribute float aInstScale;
     attribute vec3 aInstColor;
-    attribute float aInstHeading; // yaw (radians)
-    attribute float aInstSpecies; // 0=herbivore 1=predator
+    attribute float aInstHeading; 
+    attribute float aInstSpecies; 
     uniform mat4 uVP;
     varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
     void main(){
-      // Predators: longer & leaner along forward(+Z), lower stance. Herbivores: rounder.
       vec3 lp = aPos;
       float pred = aInstSpecies;
-      lp.z *= mix(1.0, 1.6, pred);   // stretch body length
-      lp.x *= mix(1.0, 0.8, pred);   // narrower
-      lp.y *= mix(1.0, 0.85, pred);  // lower
+      lp.z *= mix(1.0, 1.6, pred);   
+      lp.x *= mix(1.0, 0.8, pred);   
+      lp.y *= mix(1.0, 0.85, pred);  
       float s = sin(aInstHeading), c = cos(aInstHeading);
-      mat3 rot = mat3( c,0.0,-s,  0.0,1.0,0.0,  s,0.0,c ); // rotate about Y
+      mat3 rot = mat3( c,0.0,-s,  0.0,1.0,0.0,  s,0.0,c ); 
       vec3 p = rot * (lp * aInstScale);
       vN = rot * aNormal;
       vColor = aInstColor;
@@ -589,79 +508,44 @@ function buildCreatures(){
   `);
 }
 
-// =========================================================================
-// SENSORY + SPIKING NEURAL NETWORK
-//
-// Each creature has a two-lobe brain, all state in flat Float32Arrays indexed
-// by creature i with a fixed max stride (genome picks how much of each lobe is
-// actually used, via szA[i]/szB[i]).
-//
-//   Sensory vector  -> Lobe A (GRU-style gated memory) -> Lobe B (LIF spikes)
-//                                                          -> motor outputs
-//
-//   Lobe A: a small GRU. Carries hidden state hA across ticks (working memory).
-//   Lobe B: leaky integrate-and-fire neurons. Membrane v leaks, integrates input
-//           from hA, fires a spike when v>threshold, then resets. Spikes drive
-//           motors and cost metabolic energy.
-//   Learning: REINFORCE. reward = energy delta this tick. Eligibility traces on
-//           the hA->B readout track recent pre*post activity; weights nudge by
-//           reward*trace. Pruning zeroes tiny weights; neurogenesis occasionally
-//           reseeds a dead synapse (keeps the net plastic over a lifetime).
-// =========================================================================
-const N_RAYS = 5;                 // forward vision rays
-const RAY_FOV = Math.PI*0.55;     // total arc the rays span
-const RAY_LEN = 220;              // max ray distance (world units)
-const RAY_STEP = 22;              // marching step along a ray
-const ENTITY_TYPES = 4;           // one-hot: plant, herbivore, predator, water
-// Sensory layout per ray: [normDist, plant, herb, pred, water] = 5 floats.
+const N_RAYS = 5;                 
+const RAY_FOV = Math.PI*0.55;     
+const RAY_LEN = 220;              
+const RAY_STEP = 22;              
+const ENTITY_TYPES = 4;           
 const SENSE_PER_RAY = 1 + ENTITY_TYPES;
-// Plus global senses: energy, speed, time-of-day  -> total input size.
 const N_INPUT = N_RAYS*SENSE_PER_RAY + 3;
-
-const MAX_A = 12;                 // max Lobe A hidden units
-const MAX_B = 10;                 // max Lobe B LIF neurons
-const N_MOTOR = 4;                // turn, move, eat, rest
-
-// Lobe A (GRU) weights, per creature
-// GRU needs: for update(z), reset(r), candidate(h~): W (input->unit) + U (hidden->unit) + bias.
-// We pack three gates x {W[in], U[hidden], b} per unit.
-const A_W = new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3); // [gate-stacked] input weights
-const A_U = new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);   // hidden weights
-const A_B = new Float32Array(MAX_CREATURES*MAX_A*3);         // biases
-const hA  = new Float32Array(MAX_CREATURES*MAX_A);           // hidden state (persists)
-
-// Lobe B (LIF)
-const B_W = new Float32Array(MAX_CREATURES*MAX_B*MAX_A);     // A->B synapse weights
-const B_v = new Float32Array(MAX_CREATURES*MAX_B);           // membrane potentials
-const B_thr = 1.0, B_leak = 0.85, B_reset = 0.0;            // LIF params
-// readout B->motor + eligibility traces for REINFORCE
+const MAX_A = 12;                 
+const MAX_B = 10;                 
+const N_MOTOR = 4;                
+const A_W = new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3); 
+const A_U = new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);   
+const A_B = new Float32Array(MAX_CREATURES*MAX_A*3);         
+const hA  = new Float32Array(MAX_CREATURES*MAX_A);           
+const B_W = new Float32Array(MAX_CREATURES*MAX_B*MAX_A);     
+const B_v = new Float32Array(MAX_CREATURES*MAX_B);           
+const B_thr = 1.0, B_leak = 0.85, B_reset = 0.0;            
 const R_W = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
-const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);   // eligibility trace
+const R_e = new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);   
 const PRUNE_THR = 0.02, TRACE_DECAY = 0.92, LR = 0.04;
-
-// scratch (reused every creature/tick; no per-tick allocation)
 const sIn = new Float32Array(N_INPUT);
 const sA  = new Float32Array(MAX_A);
 const sSpike = new Float32Array(MAX_B);
 const sMotor = new Float32Array(N_MOTOR);
-// Per-tick shaping signal: how strongly the creature is oriented toward edible
-// food on its current rays (0..1). Used as a small dense reward so REINFORCE
-// gets gradient before the rare moment of an actual successful bite, which is
-// the classic sparse-reward problem for foraging agents.
+
 let sFoodCue = 0;
 
-function gauss(){ // Box-Muller, small helper for weight init / mutation
+function gauss(){ 
   let u=0,v=0; while(u===0)u=RNG(); while(v===0)v=RNG();
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-// Initialize a fresh brain for creature i (random genome).
 function brainInit(i){
-  const a = 4 + (RNG()*(MAX_A-4)|0);   // genome-encoded lobe sizes
+  const a = 4 + (RNG()*(MAX_A-4)|0);   
   const b = 3 + (RNG()*(MAX_B-3)|0);
   C.szA[i]=a; C.szB[i]=b;
   const sa = 1/Math.sqrt(N_INPUT);
-  // Lobe A weights
+
   let baseW=i*MAX_A*N_INPUT*3, baseU=i*MAX_A*MAX_A*3, baseB=i*MAX_A*3;
   for(let u=0;u<a;u++){
     for(let g=0;g<3;g++){
@@ -671,21 +555,20 @@ function brainInit(i){
     }
     hA[i*MAX_A+u]=0;
   }
-  // Lobe B
+
   let baseBW=i*MAX_B*MAX_A;
   for(let n=0;n<b;n++){
     for(let k=0;k<a;k++) B_W[baseBW + n*MAX_A + k]=gauss()*0.6;
     B_v[i*MAX_B+n]=0;
   }
-  // readout
+
   let baseR=i*N_MOTOR*MAX_B;
   for(let m=0;m<N_MOTOR;m++) for(let n=0;n<b;n++){ R_W[baseR+m*MAX_B+n]=gauss()*0.4; R_e[baseR+m*MAX_B+n]=0; }
 }
 
-// Copy parent brain to child with Gaussian mutation (asexual reproduction).
 function brainInherit(child, parent, mut){
   const a=C.szA[parent], b=C.szB[parent];
-  // child may mutate lobe sizes by +-1
+
   let ca=Math.max(4,Math.min(MAX_A, a + (RNG()<0.2?(RNG()<0.5?-1:1):0)));
   let cb=Math.max(3,Math.min(MAX_B, b + (RNG()<0.2?(RNG()<0.5?-1:1):0)));
   C.szA[child]=ca; C.szB[child]=cb;
@@ -703,58 +586,53 @@ function brainInherit(child, parent, mut){
   for(let n=0;n<MAX_B;n++) B_v[child*MAX_B+n]=0;
 }
 
-// VISION: cast N rays, fill sIn[] with sensory vector for creature i
 function senseCreature(i, timeOfDay){
   const x=C.x[i], z=C.z[i], h=C.head[i];
-  const preyType = C.species[i] ? 1 : 0;   // predators want herbivores(1), herbivores want plants(0)
+  const preyType = C.species[i] ? 1 : 0;   
   sFoodCue = 0;
   for(let r=0;r<N_RAYS;r++){
     const t = N_RAYS>1 ? r/(N_RAYS-1) - 0.5 : 0;
     const ang = h + t*RAY_FOV;
     const dx=Math.sin(ang), dz=Math.cos(ang);
     let hitDist=RAY_LEN, hitType=-1;
-    // march the ray, querying both grids near each sample point
+
     for(let d=RAY_STEP; d<=RAY_LEN; d+=RAY_STEP){
       const px=x+dx*d, pz=z+dz*d;
-      // water hit?
+
       if(terrainHeight(px,pz) < CONFIG.waterLevel && hitType===-1){ hitDist=d; hitType=3; break; }
-      // creatures near this sample (closure-free; writes gqDist/gqType)
+
       gridScanVision(px,pz,RAY_STEP,i);
       let found=gqType, foundD=(gqType!==-1)?gqDist:RAY_STEP;
-      // plants only matter if closer than any creature found at this step.
-      // Bound the plant search by foundD so a plant wins only when strictly nearer.
+      
       pgridScanNearest(px,pz,foundD);
-      if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } } // 0 = plant
+      if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } } 
       if(found!==-1){ hitDist=d; hitType=found; break; }
     }
     const base=r*SENSE_PER_RAY;
-    sIn[base]=hitDist/RAY_LEN;                         // normalized distance
-    sIn[base+1]=hitType===0?1:0;                       // plant
-    sIn[base+2]=hitType===1?1:0;                       // herbivore
-    sIn[base+3]=hitType===2?1:0;                       // predator
-    sIn[base+4]=hitType===3?1:0;                       // water
-    // Shaping cue: a ray that sees this creature's prey, weighted by how close
-    // the hit is and how centered the ray is (forward rays matter most).
+    sIn[base]=hitDist/RAY_LEN;                         
+    sIn[base+1]=hitType===0?1:0;                       
+    sIn[base+2]=hitType===1?1:0;                       
+    sIn[base+3]=hitType===2?1:0;                       
+    sIn[base+4]=hitType===3?1:0;                       
+    
     if(hitType===preyType){
-      const closeness=1-hitDist/RAY_LEN;               // 1 = right in front
-      const central=1-2*Math.abs(t);                   // 1 at center ray, ~0 at edges
+      const closeness=1-hitDist/RAY_LEN;               
+      const central=1-2*Math.abs(t);                   
       const w=closeness*Math.max(0,central);
-      if(w>sFoodCue) sFoodCue=w;                       // keep the strongest cue
+      if(w>sFoodCue) sFoodCue=w;                       
     }
   }
   const g=N_RAYS*SENSE_PER_RAY;
-  sIn[g]   = C.energy[i];                              // energy level
-  sIn[g+1] = C.spd[i]/40;                              // normalized speed
-  sIn[g+2] = timeOfDay;                                // 0..1 day phase
+  sIn[g]   = C.energy[i];                              
+  sIn[g+1] = C.spd[i]/40;                              
+  sIn[g+2] = timeOfDay;                                
 }
 
 const sigmoid = x => 1/(1+Math.exp(-x));
 
-// one brain tick for creature i: sIn must already be filled
 function brainTick(i, dt){
   const a=C.szA[i], b=C.szB[i];
   const baseW=i*MAX_A*N_INPUT*3, baseU=i*MAX_A*MAX_A*3, baseB=i*MAX_A*3, hBase=i*MAX_A;
-  // Lobe A: GRU update
   for(let u=0;u<a;u++){
     let zPre=A_B[baseB+u*3+0], rPre=A_B[baseB+u*3+1], hPre=A_B[baseB+u*3+2];
     const wOff=(u*3)*N_INPUT;
@@ -769,66 +647,56 @@ function brainTick(i, dt){
       rPre+=A_U[baseU+uOff+1*MAX_A+k]*hk;
     }
     const z=sigmoid(zPre), rg=sigmoid(rPre);
-    // candidate uses reset-gated hidden
+
     let cand=hPre;
     for(let k=0;k<a;k++) cand+=A_U[baseU+uOff+2*MAX_A+k]*(rg*hA[hBase+k]);
     cand=Math.tanh(cand);
-    sA[u]=(1-z)*hA[hBase+u]+z*cand;   // new hidden (store after loop to avoid feedback within tick)
+    sA[u]=(1-z)*hA[hBase+u]+z*cand;   
   }
   for(let u=0;u<a;u++) hA[hBase+u]=sA[u];
 
-  // Lobe B: LIF
   const baseBW=i*MAX_B*MAX_A, vBase=i*MAX_B;
   let spikes=0;
   for(let n=0;n<b;n++){
     let inp=0; const wOff=n*MAX_A;
     for(let k=0;k<a;k++) inp+=B_W[baseBW+wOff+k]*sA[k];
-    let v=B_v[vBase+n]*B_leak + inp;     // leak + integrate
+    let v=B_v[vBase+n]*B_leak + inp;     
     if(v>=B_thr){ sSpike[n]=1; v=B_reset; spikes++; } else sSpike[n]=0;
     B_v[vBase+n]=v;
   }
   C.spikeRate[i]=b?spikes/b:0;
 
-  // readout B->motor (rate-ish: spikes weighted) + eligibility traces
   const baseR=i*N_MOTOR*MAX_B;
   for(let m=0;m<N_MOTOR;m++){
     let acc=0; const off=m*MAX_B;
     for(let n=0;n<b;n++){
       acc+=R_W[baseR+off+n]*sSpike[n];
-      // trace: decayed running pre(spike)*post(output sign) ~ accumulate spikes
+
       R_e[baseR+off+n]=R_e[baseR+off+n]*TRACE_DECAY + sSpike[n];
     }
     sMotor[m]=acc;
   }
   C.mTurn[i]=Math.tanh(sMotor[0]);
-  // Bias locomotion forward: neutral/zero readout -> gentle forward drift, while
-  // a strongly negative readout can still reverse. Keeps untrained brains from
-  // moonwalking and gives selection a sensible default to improve on.
   C.mMove[i]=Math.tanh(sMotor[1] + 0.6);
   C.mEat[i] =sigmoid(sMotor[2]);
   C.mRest[i]=sigmoid(sMotor[3]);
 }
 
-// REINFORCE update + pruning + neurogenesis (called after movement)-
 function brainLearn(i){
   const b=C.szB[i], a=C.szA[i];
-  // Reward = real energy delta (sparse, the true objective) plus a small dense
-  // shaping term for moving toward visible prey. The shaping term is bounded
-  // well below a real bite so it guides exploration without overriding the
-  // actual energy signal that selection ultimately optimizes.
-  let reward=(C.energy[i]-C.prevEnergy[i]); // delta energy this tick
+  let reward=(C.energy[i]-C.prevEnergy[i]); 
   if(sFoodCue>0 && C.mMove[i]>0) reward += 0.0006*sFoodCue*C.mMove[i];
   if(reward!==0){
     const baseR=i*N_MOTOR*MAX_B;
     for(let m=0;m<N_MOTOR;m++){ const off=m*MAX_B;
       for(let n=0;n<b;n++){
         R_W[baseR+off+n]+=LR*reward*R_e[baseR+off+n];
-        // pruning: tiny weights snap to zero
+
         if(Math.abs(R_W[baseR+off+n])<PRUNE_THR) R_W[baseR+off+n]=0;
       }
     }
   }
-  // neurogenesis: occasionally reseed one pruned synapse to keep plasticity
+
   if(RNG()<0.01){
     const baseR=i*N_MOTOR*MAX_B;
     const m=(RNG()*N_MOTOR)|0, n=(RNG()*b)|0;
@@ -836,9 +704,7 @@ function brainLearn(i){
   }
 }
 
-// Spawn creatures into the SoA state, placed on the terrain surface.
 function spawnCreatures(){
-  // Scale spawn count logarithmically with world size (same curve as world dimensions)
   const baseCreatures = CONFIG.isMobile ? 60 : 150;
   const scaledCreatures = Math.round(baseCreatures * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10));
   C.n = Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
@@ -861,17 +727,12 @@ function spawnCreatures(){
   }
 }
 
-// =========================================================================
-// SPATIAL GRID; uniform bucket grid over the world for O(1) neighbor lookup.
-// Rebuilt each tick from creature positions. No per-frame allocation: a
-// head[] array (cell -> first creature index) plus a next[] linked list.
-// =========================================================================
 const GRID = {
-  cell: 70,                 // world units per cell (~ a few body lengths)
+  cell: 70,                 
   cols: 0, rows: 0,
-  head: null,               // Int32Array(cols*rows), -1 = empty
+  head: null,               
   next: new Int32Array(MAX_CREATURES),
-  ox:0, oz:0,               // world-space origin (min corner)
+  ox:0, oz:0,               
 };
 function gridInit(){
   GRID.ox = -CONFIG.worldW/2; GRID.oz = -CONFIG.worldH/2;
@@ -892,21 +753,10 @@ function gridRebuild(){
     GRID.next[i]=GRID.head[c]; GRID.head[c]=i;
   }
 }
-// Neighbor lookups in the hot path use closure-free scanners (below) rather
-// than a generic callback form, so the per-tick agent loop allocates nothing.
-// Each scanner walks the 3x3-ish cell block and writes its result into shared
-// scratch (gqDist/gqType for vision, gqBest/gqBestD2 + pqBest/pqBestD2 for eat).
 
-// --- Closure-free hot-path scanners (no per-call allocation) ---
-// Shared scratch written by the scanners below. Read them right after the call.
-let gqDist=0, gqType=-1;     // vision: nearest candidate distance + species code
-let gqBest=-1, gqBestD2=0;   // eat: nearest creature index + squared distance
+let gqDist=0, gqType=-1;     
+let gqBest=-1, gqBestD2=0;   
 
-// VISION scan over creatures near (px,pz): find the nearest creature within
-// `maxD` of the sample point, excluding `self`. Writes gqDist + gqType
-// (1=herbivore, 2=predator); gqType stays -1 if none found. The running best
-// starts at maxD so only candidates closer than the current ray step register
-// — same semantics as the old vision callback.
 function gridScanVision(px,pz,maxD,self){
   gqDist=maxD; gqType=-1;
   const r=Math.max(1,Math.ceil(maxD/GRID.cell));
@@ -925,8 +775,6 @@ function gridScanVision(px,pz,maxD,self){
   }
 }
 
-// EAT scan over creatures near (px,pz): find the nearest HERBIVORE (species 0)
-// within `reach`, excluding `self`. Writes gqBest (index, -1 if none) + gqBestD2.
 function gridScanPrey(px,pz,reach,self){
   gqBest=-1; gqBestD2=reach*reach;
   const r=Math.max(1,Math.ceil(reach/GRID.cell));
@@ -945,29 +793,22 @@ function gridScanPrey(px,pz,reach,self){
   }
 }
 
-// =========================================================================
-// PLANTS; food for herbivores. Separate SoA state + its own bucket grid so
-// vision rays and grazing can find food in O(1). Lifecycle: probabilistic
-// spawn each tick (soft cap), die when eaten, regrow near a random survivor.
-// =========================================================================
 const MAX_PLANTS = CONFIG.isMobile ? 400 : 1200;
 const P = {
   n: 0,
   x: new Float32Array(MAX_PLANTS),
   y: new Float32Array(MAX_PLANTS),
   z: new Float32Array(MAX_PLANTS),
-  sway: new Float32Array(MAX_PLANTS),   // per-plant phase for shader wind
+  sway: new Float32Array(MAX_PLANTS),   
 };
-// Target plant count scales logarithmically with world size
+
 function targetPlants(){
   const base = CONFIG.isMobile ? 300 : 900;
   return Math.min(MAX_PLANTS, Math.max(10, Math.round(base * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10))));
 }
 
-// Plant grid (parallel to creature GRID, same scheme)
 const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
 function pgridRebuild(){
-  // Resize whenever the grid dimensions have changed (e.g. after a world-scale change)
   const needed = GRID.cols*GRID.rows;
   if(!PGRID.head || PGRID.head.length !== needed) PGRID.head=new Int32Array(needed);
   PGRID.head.fill(-1);
@@ -976,12 +817,9 @@ function pgridRebuild(){
     PGRID.next[i]=PGRID.head[c]; PGRID.head[c]=i;
   }
 }
-// --- Closure-free plant scanner (no per-call allocation) ---
-// Nearest-plant scratch, written by pgridScanNearest below.
-let pqBest=-1, pqBestD2=0;   // nearest plant index + squared distance
-// Find the nearest plant to (px,pz) within `maxD`. Writes pqBest (-1 if none)
-// and pqBestD2. Vision passes maxD = ray step (only register plants closer than
-// any creature already found); eat passes maxD = the creature's reach.
+
+let pqBest=-1, pqBestD2=0;   
+
 function pgridScanNearest(px,pz,maxD){
   pqBest=-1; pqBestD2=maxD*maxD;
   const r=Math.max(1,Math.ceil(maxD/GRID.cell));
@@ -997,10 +835,10 @@ function pgridScanNearest(px,pz,maxD){
     }
   }
 }
-// place a plant at a valid land spot (above water). Returns true if placed.
+
 function plantPlaceAt(idx, x, z){
   const h=terrainHeight(x,z);
-  if(h < CONFIG.waterLevel+3) return false;     // not in/too near water
+  if(h < CONFIG.waterLevel+3) return false;     
   P.x[idx]=x; P.z[idx]=z; P.y[idx]=h; P.sway[idx]=RNG()*6.28;
   return true;
 }
@@ -1013,15 +851,14 @@ function spawnPlants(){
     if(plantPlaceAt(P.n, x, z)) P.n++;
   }
 }
-// remove plant i by swapping with the last (keeps array compact)
+
 function plantRemove(i){
   const last=--P.n;
   if(i!==last){ P.x[i]=P.x[last]; P.y[i]=P.y[last]; P.z[i]=P.z[last]; P.sway[i]=P.sway[last]; }
 }
-// grow new plants over time toward the target, near existing ones (clumping)
+
 function plantsGrow(dt){
   if(P.n>=targetPlants() || P.n>=MAX_PLANTS) return;
-  // expected spawns this tick
   const rate = CONFIG.probSpawnPlant * (1 - P.n/targetPlants());
   if(RNG() < rate*dt*60){
     let x,z;
@@ -1033,17 +870,15 @@ function plantsGrow(dt){
   }
 }
 
-// plant rendering: instanced cross-quad billboard, procedural green
 let plantProg=null, plantGeoBuf=null, plantGeoCount=0, plantInstBuf=null;
-const P_STRIDE=4; // x,y,z,sway
+const P_STRIDE=4; 
 const plantInst=new Float32Array(MAX_PLANTS*P_STRIDE);
 function buildPlants(){
-  // two crossed quads (cross-mesh) so the plant reads from any angle
   const q=[];
-  function quad(ax,az){ // a vertical quad facing direction (ax,az)
+  function quad(ax,az){ 
     const w=4, hgt=11;
-    const px=-az*w, pz=ax*w; // perpendicular in XZ
-    // 0..1 V coord packed in normal.x slot reuse -> use separate attr aV
+    const px=-az*w, pz=ax*w; 
+
     q.push(-px,0,-pz, 0,  px,0,pz, 0,  px,hgt,pz, 1);
     q.push(-px,0,-pz, 0,  px,hgt,pz, 1,  -px,hgt,-pz, 1);
   }
@@ -1052,7 +887,7 @@ function buildPlants(){
   plantGeoBuf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, plantGeoBuf);
   gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
-  plantGeoCount=q.length/4;            // 4 floats per vertex (x,y,z,v)
+  plantGeoCount=q.length/4;            
   plantInstBuf=gl.createBuffer();
   plantProg=program(`
     attribute vec3 aPos; attribute float aV;
@@ -1061,7 +896,6 @@ function buildPlants(){
     varying float vV;
     void main(){
       vV=aV;
-      // wind sway grows toward the top (aV ~ height fraction)
       float w = sin(uTime*1.5 + aSway)*1.6*aV;
       vec3 world = aInstPos + aPos + vec3(w,0.0,w*0.5);
       gl_Position = uVP*vec4(world,1.0);
@@ -1082,10 +916,7 @@ function uploadPlants(){
   gl.bindBuffer(gl.ARRAY_BUFFER, plantInstBuf);
   gl.bufferData(gl.ARRAY_BUFFER, plantInst.subarray(0,P.n*P_STRIDE), gl.DYNAMIC_DRAW);
 }
-// spent on movement and spiking (metabolic cost) and is the REINFORCE reward.
-// =========================================================================
 
-// Copy all per-creature SoA fields from slot src -> dst (used by swap-remove).
 function creatureCopy(dst, src){
   C.x[dst]=C.x[src]; C.y[dst]=C.y[src]; C.z[dst]=C.z[src];
   C.head[dst]=C.head[src]; C.face[dst]=C.face[src]; C.spd[dst]=C.spd[src];
@@ -1095,7 +926,7 @@ function creatureCopy(dst, src){
   C.mTurn[dst]=C.mTurn[src]; C.mMove[dst]=C.mMove[src]; C.mEat[dst]=C.mEat[src];
   C.mRest[dst]=C.mRest[src]; C.spikeRate[dst]=C.spikeRate[src];
   C.age[dst]=C.age[src]; C.gen[dst]=C.gen[src];
-  // brain weight blocks
+
   copyBrainSlot(dst, src);
 }
 function copyBrainSlot(dst, src){
@@ -1108,16 +939,16 @@ function copyBrainSlot(dst, src){
   R_W.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
   R_e.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
 }
-// Remove creature i by swapping the last live creature into its slot.
+
 function creatureRemove(i){
   const last=--C.n;
   if(i!==last) creatureCopy(i, last);
 }
-// Spawn a child near a parent: inherit brain (mutated) + phenotype, split energy.
+
 function creatureBirth(parent){
   if(C.n>=MAX_CREATURES) return;
-  if(parent>=C.n) return;                 // slot no longer valid
-  if(C.energy[parent]<=0.6) return;       // parent died/changed since queued
+  if(parent>=C.n) return;                 
+  if(C.energy[parent]<=0.6) return;       
   const c=C.n++;
   const ang=RNG()*6.28, dist=8+RNG()*10;
   let x=C.x[parent]+Math.cos(ang)*dist, z=C.z[parent]+Math.sin(ang)*dist;
@@ -1128,17 +959,16 @@ function creatureBirth(parent){
   C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
   C.species[c]=C.species[parent];
   C.size[c]=C.size[parent]*(0.9+RNG()*0.2);
-  // phenotype inherits with slight color drift
+
   C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-0.5)*0.1));
   C.cg[c]=Math.min(1,Math.max(0,C.cg[parent]+(RNG()-0.5)*0.1));
   C.cb[c]=Math.min(1,Math.max(0,C.cb[parent]+(RNG()-0.5)*0.1));
   brainInherit(c, parent, 0.06);
-  // energy split: parent gives half to child
+
   const give=C.energy[parent]*0.5;
   C.energy[parent]-=give; C.energy[c]=give; C.prevEnergy[c]=give;
 }
 
-// queued births this tick (apply after the main loop so indices stay stable)
 const _births=new Int32Array(MAX_CREATURES);
 let _birthN=0;
 
@@ -1147,24 +977,18 @@ function updateCreatures(dt){
   pgridRebuild();
   plantsGrow(dt);
   _birthN=0;
-  const timeOfDay = currentTimeOfDay;          // set by frame() from sun state
+  const timeOfDay = currentTimeOfDay;          
   for(let i=0;i<C.n;i++){
     C.prevEnergy[i]=C.energy[i];
-    // 1) SENSE; fill sIn[] via vision rays + global senses
     senseCreature(i, timeOfDay);
-    // 2) THINK; one brain tick, latches motor outputs
     brainTick(i, dt);
-    // 3) ACT; motors -> heading + speed
-    const rest = C.mRest[i];                    // high rest dampens motion
+    const rest = C.mRest[i];                    
     C.head[i] += C.mTurn[i]*2.2*dt*(1-0.7*rest);
     const maxSpd = C.species[i]?40:30;
     const targetSpd = C.mMove[i]*maxSpd*(1-0.85*rest);
     C.spd[i] += (targetSpd - C.spd[i])*Math.min(1,dt*3);
     const xi=C.x[i], zi=C.z[i];
     const vx=Math.sin(C.head[i])*C.spd[i]*dt, vz=Math.cos(C.head[i])*C.spd[i]*dt;
-    // Visual facing = actual travel direction (so a creature never appears to
-    // walk backward when its move motor goes negative). Falls back to heading
-    // when nearly stationary.
     if(vx*vx+vz*vz > 1e-6) C.face[i]=Math.atan2(vx,vz);
     else C.face[i]=C.head[i];
     let nx=xi+vx, nz=zi+vz;
@@ -1173,71 +997,47 @@ function updateCreatures(dt){
     if(nz<-bz){nz=-bz; C.head[i]=-C.head[i];}        else if(nz>bz){nz=bz; C.head[i]=-C.head[i];}
     C.x[i]=nx; C.z[i]=nz;
     C.y[i]=Math.max(terrainHeight(nx,nz),CONFIG.waterLevel)+1.5;
-    // 4) ENERGY; metabolic costs. Movement + per-spike cost; resting saves.
     C.age[i]+=dt;
     const moveCost = Math.abs(C.spd[i])/maxSpd * 0.02;
     const spikeCost = C.spikeRate[i]*0.012;
     const baseCost = 0.0035;
-    // Senescence: past LIFESPAN, an aging tax ramps in (saturating) so the
-    // population keeps turning over even when food is plentiful.
     let ageCost = 0;
     if(C.age[i]>LIFESPAN){
-      const over=(C.age[i]-LIFESPAN)/LIFESPAN;        // 0..  beyond lifespan
-      ageCost = SENESCENCE*(over/(1+over));           // saturates toward SENESCENCE
+      const over=(C.age[i]-LIFESPAN)/LIFESPAN;        
+      ageCost = SENESCENCE*(over/(1+over));           
     }
     C.energy[i] -= (moveCost + spikeCost + baseCost + ageCost)*dt*(1-0.5*rest);
-
-    // 5) EAT; feeding is a proximity reflex: if edible food is within reach,
-    // the creature eats it. The eat motor MODULATES this rather than gating it
-    // entirely; a brain can learn to suppress eating (mEat near 0), but an
-    // untrained brain still feeds by default. This breaks the bootstrap
-    // deadlock where REINFORCE could never see an eating reward because the
-    // eat motor never crossed a hard threshold to begin with.
-    const suppressEat = C.mEat[i] < 0.15;       // only a strongly-trained low output skips a meal
+    const suppressEat = C.mEat[i] < 0.15;       
     if(!suppressEat){
       if(!C.species[i]){
-        // herbivore: eat the nearest plant within reach (reach scales with body size)
         const reach = 16 + C.size[i];
-        pgridScanNearest(nx,nz,reach);            // closure-free; writes pqBest
+        pgridScanNearest(nx,nz,reach);            
         if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(pqBest); pgridRebuild(); }
       } else {
-        // predator: eat the nearest herbivore within reach
         const reach = 20 + C.size[i];
-        gridScanPrey(nx,nz,reach,i);              // closure-free; writes gqBest
+        gridScanPrey(nx,nz,reach,i);              
         if(gqBest!==-1){
           C.energy[i]=Math.min(1,C.energy[i]+0.5);
-          // Swap-remove relocates the last live creature into `gqBest`. If the
-          // eater itself was that last creature, it now lives in slot `gqBest`,
-          // so retarget `i` there and finish this creature's tick in-place.
           const last=C.n-1;
           creatureRemove(gqBest);
-          if(i===last) i=gqBest;      // eater was relocated into gqBest
+          if(i===last) i=gqBest;      
         }
       }
     }
     if(C.energy[i]>1) C.energy[i]=1;
-
-    // 6) LEARN; REINFORCE on energy delta + prune + neurogenesis
     brainLearn(i);
-
-    // 7) REPRODUCE; enough energy spawns a mutated child (queued for after loop)
     if(C.energy[i]>0.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
       _births[_birthN++]=i;
     }
-
-    // 8) DEATH; energy gone: swap-remove and reprocess the swapped-in slot
     if(C.energy[i]<=0){
       creatureRemove(i);
-      i--;                          // process whatever got swapped into slot i
+      i--;                          
       continue;
     }
   }
-  // apply queued births (parent indices were valid at queue time; births only
-  // append, so earlier indices remain stable)
   for(let b=0;b<_birthN;b++) creatureBirth(_births[b]);
 }
 
-// Pack SoA -> interleaved GPU buffer and upload.
 function uploadCreatures(){
   for(let i=0;i<C.n;i++){
     const k=i*INST_STRIDE;
@@ -1251,20 +1051,16 @@ function uploadCreatures(){
   gl.bufferData(gl.ARRAY_BUFFER, instData.subarray(0,C.n*INST_STRIDE), gl.DYNAMIC_DRAW);
 }
 
-// =========================================================================
-// CAMERA + INPUT  (virtual joystick to move, drag-pad to look)
-// =========================================================================
 const cam = { x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
-const move = { x:0, y:0 };          // joystick vector (touch); WASD writes it on desktop
+const move = { x:0, y:0 };          
 const SPEED = 220;
-// walker physics
-const GRAVITY = 320;                // downward accel (world units/s^2)
-const EYE_HEIGHT = 28;              // camera sits this far above the ground
-const JUMP_VELOCITY = 150;          // initial upward velocity on jump
-const FLY_SPEED = 400;              // horizontal speed while flying (creative)
-const FLY_LIFT = 280;              // vertical speed when ascending/descending in fly mode
-const STEP_GRIP = 8;                // max ledge the walker steps up without jumping
-const LOOK_SENS = 0.005;            // radians per pixel of drag
+const GRAVITY = 320;                
+const EYE_HEIGHT = 28;              
+const JUMP_VELOCITY = 150;          
+const FLY_SPEED = 400;              
+const FLY_LIFT = 280;              
+const STEP_GRIP = 8;                
+const LOOK_SENS = 0.005;            
 const keys = {};
 
 function applyLook(dxPix, dyPix){
@@ -1273,21 +1069,12 @@ function applyLook(dxPix, dyPix){
   cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch));
 }
 
-// Detect a real touchscreen. maxTouchPoints is the reliable signal across
-//     iOS/Android; 'ontouchstart' covers older browsers. We pick ONE control
-//     scheme up front so desktop and touch never fight over the same events.
 const HAS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
-
 const joyEl  = document.getElementById('joy');
 const lookEl = document.getElementById('look');
 const nub    = joyEl.querySelector('.nub');
 
 if (HAS_TOUCH){
-  //========================================================================
-  // TOUCH SCHEME; left joystick moves, dragging a finger anywhere else looks.
-  //========================================================================
-  // Joystick: reports finger offset from the pad center, normalized to a unit
-  // vector that the frame loop turns into camera-relative movement.
   (function(){
     let id=null, cx=0, cy=0;
     joyEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
@@ -1303,10 +1090,6 @@ if (HAS_TOUCH){
       nub.style.transform=`translate(${Math.cos(a)*m*35}px,${Math.sin(a)*m*35}px)`; }
   })();
 
-  // Look: relative-drag with ANY finger that isn't the joystick's. Holding
-  // still = no rotation; any drag turns the camera. The #look element is sized
-  // by CSS to fill the screen (minus the joystick corner) so the whole view is
-  // a look surface, which feels more natural than a small pad.
   (function(){
     let id=null, px=0, py=0;
     lookEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
@@ -1317,8 +1100,6 @@ if (HAS_TOUCH){
     lookEl.addEventListener('touchend', end); lookEl.addEventListener('touchcancel', end);
   })();
 
-  // Jump button: feeds the same key state the frame loop reads, so a tap fires
-  // one (double-)jump via the edge trigger, and holding it ascends in fly mode.
   (function(){
     const jb=document.getElementById('jump');
     const down=e=>{ keys[' ']=true;  e.preventDefault(); };
@@ -1329,9 +1110,6 @@ if (HAS_TOUCH){
   })();
 
 } else {
-  //========================================================================
-  // DESKTOP SCHEME; WASD moves, mouse-drag looks. Hide the on-screen pads.
-  //========================================================================
   joyEl.style.display='none';
   lookEl.style.display='none';
   document.getElementById('jump').style.display='none';
@@ -1346,9 +1124,6 @@ if (HAS_TOUCH){
     applyLook(e.clientX-lastX, e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; });
 }
 
-// =========================================================================
-// UI buttons
-// =========================================================================
 document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
@@ -1357,7 +1132,7 @@ document.getElementById('qualityBtn').addEventListener('click', function(){
 document.getElementById('flyBtn').addEventListener('click', function(){
   cam.fly = !cam.fly;
   this.textContent = 'FLY: ' + (cam.fly ? 'ON' : 'OFF');
-  cam.vy = 0;                       // cancel any fall when toggling
+  cam.vy = 0;                       
   if (cam.fly) cam.onGround = false;
 });
 document.getElementById('resetBtn').addEventListener('click', ()=>{
@@ -1365,30 +1140,26 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   rebuildWorld();
 });
 
-// === WORLD SCALE CONTROLS ===
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(1, Math.min(10, n));
   document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
-  rebuilding = true;   // pause the render loop for this tick
-  // Grid and water plane depend on world size — rebuild before the world
+  rebuilding = true;   
+
   gridInit();
   buildWater();
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
   rebuildWorld();
-  last = performance.now(); // reset dt so first post-rebuild frame is clean
+  last = performance.now(); 
   rebuilding = false;
 }
 document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-1));
 document.getElementById('scaleUp').addEventListener('click',   ()=> applyWorldScale(CONFIG.worldScale+1));
 
-// =========================================================================
-// DAY/NIGHT; drives sun direction + light/sky colors
-// =========================================================================
 function sunState(t){
-  const ang = t*0.005;                         // slow cycle (10x longer days)
+  const ang = t*0.005;                         
   const sunDir = [Math.cos(ang)*0.6, Math.sin(ang), 0.4];
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
-  const up = Math.max(0, sunDir[1]);           // 0 at night, 1 at noon
+  const up = Math.max(0, sunDir[1]);           
   const day = Math.pow(up, 0.5);
   return {
     sunDir, up,
@@ -1400,22 +1171,12 @@ function sunState(t){
   };
 }
 
-// =========================================================================
-// SHADOW MAPPING; FBO + depth programs + light matrix (GLSL strings and the
-// SHADOW probe live up near WebGL boilerplate so the lighting shaders, which
-// are compiled earlier, can splice in SHADOW_GLSL).
-// =========================================================================
-
-// Depth program for static geometry (terrain, water) — just transforms by the
-// light's view-projection.
 const depthProg = program(`
   attribute vec3 aPos;
   uniform mat4 uLightVP;
   void main(){ gl_Position = uLightVP * vec4(aPos, 1.0); }
 `, DEPTH_FRAG);
 
-// Depth program for instanced creatures — mirrors the creature vertex transform
-// (heading rotation + species body squash) so their shadows match their shapes.
 const depthInstProg = program(`
   attribute vec3 aPos;
   attribute vec3 aInstPos;
@@ -1436,15 +1197,11 @@ const depthInstProg = program(`
   }
 `, DEPTH_FRAG);
 
-// Allocate the shadow framebuffer + texture(s). Called once at boot.
 function initShadow(){
   const sz = SHADOW.size;
   SHADOW.fbo = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
-
   if (!SHADOW.packed){
-    // Real depth texture path: depth tex as the depth attachment, a tiny color
-    // attachment so the FBO is complete on drivers that require one.
     SHADOW.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, sz, sz, 0,
@@ -1462,8 +1219,8 @@ function initShadow(){
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.colorTex, 0);
   } else {
-    // Packed fallback: RGBA color texture holds encoded depth; a renderbuffer
-    // supplies real depth testing during the shadow pass.
+
+    
     SHADOW.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz, sz, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -1486,20 +1243,12 @@ function initShadow(){
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
-// Build the light's view-projection. Rather than covering the whole world
-// (which spreads 1024 texels over thousands of units and yields blocky
-// shadows), the frustum hugs a fixed radius around the camera so texels are
-// small in world space. The frustum origin is snapped to whole-texel steps so
-// shadow edges don't crawl/shimmer as the camera walks.
-const SHADOW_RADIUS = 350;   // world units covered around the camera
+const SHADOW_RADIUS = 350;   
 function updateLightVP(sunDir, focusX, focusZ){
   const half = SHADOW_RADIUS;
-  const dist = Math.max(CONFIG.worldW, CONFIG.worldH); // keep the light high up
-  // Guard against a near-horizontal sun producing a degenerate up vector.
+  const dist = Math.max(CONFIG.worldW, CONFIG.worldH); 
   const sd = [sunDir[0], Math.max(sunDir[1], 0.15), sunDir[2]];
   const il = 1/Math.hypot(sd[0],sd[1],sd[2]); sd[0]*=il; sd[1]*=il; sd[2]*=il;
-  // Texel snapping: quantize the focus point to the shadow-map grid so the
-  // frustum only ever shifts by whole texels.
   const worldPerTexel = (2*half) / SHADOW.size;
   const fx = Math.round(focusX / worldPerTexel) * worldPerTexel;
   const fz = Math.round(focusZ / worldPerTexel) * worldPerTexel;
@@ -1507,25 +1256,19 @@ function updateLightVP(sunDir, focusX, focusZ){
   const eye = [fx + sd[0]*dist, focusY + sd[1]*dist, fz + sd[2]*dist];
   const lview = M4.create(), lproj = M4.create();
   M4.lookAt(lview, eye, [fx, focusY, fz], [0,1,0]);
-  // near/far span the full vertical reach so distant terrain still casts.
   M4.ortho(lproj, -half, half, -half, half, 1.0, dist*2.0);
   M4.multiply(SHADOW.lightVP, lproj, lview);
 }
 
-// Render the depth pass: terrain + creatures from the sun's POV into SHADOW.fbo.
 function renderShadowPass(){
   if (!SHADOW.ready) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
   gl.viewport(0, 0, SHADOW.size, SHADOW.size);
-  gl.clearColor(1,1,1,1);   // far depth in packed encoding = white
+  gl.clearColor(1,1,1,1);   
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
-  // Front-face culling during the depth pass pushes shadow-acne to back faces.
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
-
   const packMode = SHADOW.packed ? 1.0 : 0.0;
-
-  // terrain depth
   gl.useProgram(depthProg);
   gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
   gl.enableVertexAttribArray(depthProg.a('aPos'));
@@ -1534,8 +1277,6 @@ function renderShadowPass(){
   gl.uniformMatrix4fv(depthProg.u('uLightVP'),false,SHADOW.lightVP);
   gl.uniform1f(depthProg.u('uShadowMode'),packMode);
   gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
-
-  // creature depth (instanced)
   if (EXT_INSTANCE && C.n>0){
     const ST=INST_STRIDE*4;
     gl.useProgram(depthInstProg);
@@ -1555,15 +1296,11 @@ function renderShadowPass(){
     EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
     EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
   }
-
-  // restore default culling state for the main color pass
   gl.cullFace(gl.BACK); gl.disable(gl.CULL_FACE);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, VIEW_W, VIEW_H);
 }
 
-// Bind the shadow texture to unit 1 and set the shared shadow uniforms on a
-// lighting program. Call after gl.useProgram(prog) for terrain/creatures/water.
 function bindShadowUniforms(prog){
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
@@ -1574,11 +1311,7 @@ function bindShadowUniforms(prog){
   gl.activeTexture(gl.TEXTURE0);
 }
 
-// =========================================================================
-// WORLD (RE)BUILD
-// =========================================================================
 function rebuildWorld(){
-  // rebuild noise perm for new seed so terrain actually changes
   const p=new Uint8Array(512), base=new Uint8Array(256);
   for(let i=0;i<256;i++) base[i]=i;
   for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const t=base[i]; base[i]=base[j]; base[j]=t; }
@@ -1589,113 +1322,76 @@ function rebuildWorld(){
   cam.vy=0; cam.onGround=true; cam.jumpsLeft=2;
 }
 
-// =========================================================================
-// RENDER LOOP
-// =========================================================================
 const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
-let rebuilding = false;   // true while rebuildWorld() is running; frame() skips that tick
-let currentTimeOfDay = 0.5;     // 0..1 day phase, updated each frame for the SNN
-let prevJumpKey = false;        // for edge-triggered jumps (so a held key fires once)
+let rebuilding = false;   
+let currentTimeOfDay = 0.5;     
+let prevJumpKey = false;        
 
 function frame(now){
-  if (rebuilding){ last=now; requestAnimationFrame(frame); return; } // skip during world rebuild
+  if (rebuilding){ last=now; requestAnimationFrame(frame); return; } 
   let dt = (now-last)/1000; last=now;
-  if (!(dt>0)) dt=0;            // guard against negative/NaN first-frame dt
-  if (dt>0.05) dt=0.05;         // clamp big stalls so nothing teleports
+  if (!(dt>0)) dt=0;            
+  if (dt>0.05) dt=0.05;         
   simTime += dt;
   fpsT+=dt; fpsN++; if (fpsT>=0.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
-
-  // camera update
-  // (look rotation is applied directly in the input handlers)
-  // Horizontal movement relative to yaw. The player walks on the terrain;
-  // gravity pulls them down each frame and the ground stops the fall.
   let mf=move.y, ms=move.x;
   if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
   const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
-
   const jumpKey = keys[' ']||keys['spacebar'];
   const downKey = keys['shift']||keys['control']||keys['c'];
-
   if (cam.fly){
-    // CREATIVE FLIGHT: free movement, no gravity, no ground clamp
     const spd = FLY_SPEED;
     cam.x += (fwd[0]*mf + rgt[0]*ms)*spd*dt;
     cam.z += (fwd[2]*mf + rgt[2]*ms)*spd*dt;
-    // ascend / descend (Space up, Shift/Ctrl/C down)
     let lift = (jumpKey?1:0) - (downKey?1:0);
     cam.y += lift*FLY_LIFT*dt;
     cam.vy = 0;
     cam.onGround = false;
     prevJumpKey = jumpKey;
   } else {
-    // WALKER: horizontal move + gravity + double jump
     cam.x += (fwd[0]*mf + rgt[0]*ms)*SPEED*dt;
     cam.z += (fwd[2]*mf + rgt[2]*ms)*SPEED*dt;
-
-    // Double jump: each fresh press of the jump key spends one charge. Charges
-    // refill to 2 on landing. Edge-trigger so holding the key only jumps once.
     if (jumpKey && !prevJumpKey && cam.jumpsLeft > 0){
       cam.vy = JUMP_VELOCITY;
       cam.onGround = false;
       cam.jumpsLeft--;
     }
     prevJumpKey = jumpKey;
-
-    // The "floor" at the player's current x,z; terrain, but never below water
-    // surface so you stroll on top of lakes rather than sinking through them.
     const floorY = Math.max(terrainHeight(cam.x,cam.z), CONFIG.waterLevel) + EYE_HEIGHT;
-
-    // Integrate gravity.
     cam.vy -= GRAVITY*dt;
     cam.y  += cam.vy*dt;
-
-    // Ground contact: if we're at or below the floor while falling, snap up and
-    // stop. STEP_GRIP lets the walker climb small rises without it feeling sticky.
     if (cam.y <= floorY + STEP_GRIP && cam.vy <= 0){
       cam.y = floorY;
       cam.vy = 0;
       cam.onGround = true;
-      cam.jumpsLeft = 2;     // refill both jumps on landing
+      cam.jumpsLeft = 2;     
     } else {
       cam.onGround = false;
     }
   }
 
-  // matrices
   const aspect = VIEW_W/VIEW_H;
   M4.perspective(proj, 1.05, aspect, 1.0, Math.max(CONFIG.worldW,CONFIG.worldH)*1.4);
   const dir=[Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw)*Math.cos(cam.pitch)];
   M4.lookAt(viewM, [cam.x,cam.y,cam.z], [cam.x+dir[0],cam.y+dir[1],cam.z+dir[2]], [0,1,0]);
   M4.multiply(VP, proj, viewM);
-
-  // sun + time-of-day (needed by the SNN sensory input)
   const S = sunState(simTime);
-  currentTimeOfDay = S.up;        // 0 at night, 1 at noon; a clean day signal
-
-  // SHADOW PASS: build the light matrix around the camera, render scene depth
-  // from the sun into the shadow map, then return to the default framebuffer.
+  currentTimeOfDay = S.up;
   updateLightVP(S.sunDir, cam.x, cam.z);
   renderShadowPass();
-
-  // simulation step
   updateCreatures(dt);
   uploadCreatures();
   uploadPlants();
-
   const eye=[cam.x,cam.y,cam.z];
   const fogDist = Math.max(CONFIG.worldW,CONFIG.worldH)*0.9;
-
   gl.clearColor(S.skyBottom[0],S.skyBottom[1],S.skyBottom[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
-
-  // SKY (depth write off, behind everything)
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST);
   gl.useProgram(skyProg);
-  // project sun to screen-ish uv for the disc
   const sunW=[cam.x+S.sunDir[0]*1000, cam.y+S.sunDir[1]*1000, cam.z+S.sunDir[2]*1000];
   const cv=[0,0,0,0];
   (function(){ const v=sunW; for(let i=0;i<4;i++) cv[i]=VP[i]*v[0]+VP[i+4]*v[1]+VP[i+8]*v[2]+VP[i+12]; })();
@@ -1707,8 +1403,6 @@ function frame(now){
   gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); gl.uniform1f(skyProg.u('uSunUp'),S.up);
   gl.drawArrays(gl.TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
-
-  // TERRAIN
   gl.useProgram(terrainProg);
   gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
   gl.enableVertexAttribArray(terrainProg.a('aPos'));
@@ -1726,10 +1420,8 @@ function frame(now){
   gl.uniform3fv(terrainProg.u('uEye'),eye);
   bindShadowUniforms(terrainProg);
   gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
-
-  // CREATURES (instanced)
   if (EXT_INSTANCE && C.n>0){
-    const ST=INST_STRIDE*4; // bytes per instance
+    const ST=INST_STRIDE*4; 
     gl.useProgram(creatureProg);
     gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
     const ap=creatureProg.a('aPos'), an=creatureProg.a('aNormal');
@@ -1749,13 +1441,11 @@ function frame(now){
     gl.uniform3fv(creatureProg.u('uAmbient'),S.ambient);
     bindShadowUniforms(creatureProg);
     EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,creatureGeoCount,C.n);
-    // reset instance divisors so later (non-instanced) draws aren't affected
     EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
     EXT_INSTANCE.vertexAttribDivisorANGLE(ic,0); EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0);
     EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
   }
 
-  // PLANTS (instanced cross-quads)
   if (EXT_INSTANCE && P.n>0){
     const ST=P_STRIDE*4;
     gl.useProgram(plantProg);
@@ -1775,7 +1465,6 @@ function frame(now){
     EXT_INSTANCE.vertexAttribDivisorANGLE(pip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,0);
   }
 
-  // WATER (translucent, drawn last)
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
   gl.useProgram(waterProg);
   gl.bindBuffer(gl.ARRAY_BUFFER, waterBuf);
@@ -1809,9 +1498,6 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 
-// =========================================================================
-// BOOT
-// =========================================================================
 resize();
 initShadow();
 gridInit();
