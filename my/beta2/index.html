@@ -198,8 +198,8 @@ function valueNoise(x, z){
 const TERRAIN = {
   amp: 220, featureSize: 360, octaves: 5,
   // mountains
-  mtnAmp: 1000,        // peak height added on top of the base terrain
-  mtnSize: 1800,      // size of a mountain range (larger = broader, fewer ranges)
+  mtnAmp: 600,        // peak height added on top of the base terrain
+  mtnSize: 2000,      // size of a mountain range (larger = broader, fewer ranges)
   mtnOctaves: 4,      // detail folded into the ridges
   mtnThreshold: 0.45, // ridge value below this stays lowland; above it rises into peaks
 };
@@ -637,17 +637,13 @@ function senseCreature(i, timeOfDay){
       const px=x+dx*d, pz=z+dz*d;
       // water hit?
       if(terrainHeight(px,pz) < CONFIG.waterLevel && hitType===-1){ hitDist=d; hitType=3; break; }
-      let found=-1, foundD=RAY_STEP;
-      gridQuery(px,pz,RAY_STEP,(j)=>{
-        if(j===i) return;
-        const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
-        if(e2 < foundD*foundD){ foundD=Math.sqrt(e2); found = C.species[j]?2:1; }
-      });
-      // plants (only relevant if no closer creature found at this step)
-      pgridQuery(px,pz,RAY_STEP,(j)=>{
-        const ex=P.x[j]-px, ez=P.z[j]-pz, e2=ex*ex+ez*ez;
-        if(e2 < foundD*foundD){ foundD=Math.sqrt(e2); found=0; } // 0 = plant
-      });
+      // creatures near this sample (closure-free; writes gqDist/gqType)
+      gridScanVision(px,pz,RAY_STEP,i);
+      let found=gqType, foundD=(gqType!==-1)?gqDist:RAY_STEP;
+      // plants only matter if closer than any creature found at this step.
+      // Bound the plant search by foundD so a plant wins only when strictly nearer.
+      pgridScanNearest(px,pz,foundD);
+      if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } } // 0 = plant
       if(found!==-1){ hitDist=d; hitType=found; break; }
     }
     const base=r*SENSE_PER_RAY;
@@ -815,17 +811,55 @@ function gridRebuild(){
     GRID.next[i]=GRID.head[c]; GRID.head[c]=i;
   }
 }
-// Visit every creature within radius of (x,z). cb(j) called per candidate
-// (candidates are within the 3x3 cell block; caller does the exact distance test).
-function gridQuery(x,z,radius,cb){
-  const r = Math.max(1, Math.ceil(radius/GRID.cell));
-  let cx=((x-GRID.ox)/GRID.cell)|0, cz=((z-GRID.oz)/GRID.cell)|0;
-  for(let dz=-r;dz<=r;dz++){
-    const zz=cz+dz; if(zz<0||zz>=GRID.rows) continue;
-    for(let dx=-r;dx<=r;dx++){
-      const xx=cx+dx; if(xx<0||xx>=GRID.cols) continue;
+// Neighbor lookups in the hot path use closure-free scanners (below) rather
+// than a generic callback form, so the per-tick agent loop allocates nothing.
+// Each scanner walks the 3x3-ish cell block and writes its result into shared
+// scratch (gqDist/gqType for vision, gqBest/gqBestD2 + pqBest/pqBestD2 for eat).
+
+// --- Closure-free hot-path scanners (no per-call allocation) ---
+// Shared scratch written by the scanners below. Read them right after the call.
+let gqDist=0, gqType=-1;     // vision: nearest candidate distance + species code
+let gqBest=-1, gqBestD2=0;   // eat: nearest creature index + squared distance
+
+// VISION scan over creatures near (px,pz): find the nearest creature within
+// `maxD` of the sample point, excluding `self`. Writes gqDist + gqType
+// (1=herbivore, 2=predator); gqType stays -1 if none found. The running best
+// starts at maxD so only candidates closer than the current ray step register
+// — same semantics as the old vision callback.
+function gridScanVision(px,pz,maxD,self){
+  gqDist=maxD; gqType=-1;
+  const r=Math.max(1,Math.ceil(maxD/GRID.cell));
+  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
+  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
+    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
       let j=GRID.head[zz*GRID.cols+xx];
-      while(j!==-1){ cb(j); j=GRID.next[j]; }
+      while(j!==-1){
+        if(j!==self){
+          const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
+          if(e2<gqDist*gqDist){ gqDist=Math.sqrt(e2); gqType=C.species[j]?2:1; }
+        }
+        j=GRID.next[j];
+      }
+    }
+  }
+}
+
+// EAT scan over creatures near (px,pz): find the nearest HERBIVORE (species 0)
+// within `reach`, excluding `self`. Writes gqBest (index, -1 if none) + gqBestD2.
+function gridScanPrey(px,pz,reach,self){
+  gqBest=-1; gqBestD2=reach*reach;
+  const r=Math.max(1,Math.ceil(reach/GRID.cell));
+  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
+  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
+    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
+      let j=GRID.head[zz*GRID.cols+xx];
+      while(j!==-1){
+        if(j!==self && !C.species[j]){
+          const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
+          if(e2<gqBestD2){ gqBestD2=e2; gqBest=j; }
+        }
+        j=GRID.next[j];
+      }
     }
   }
 }
@@ -861,13 +895,24 @@ function pgridRebuild(){
     PGRID.next[i]=PGRID.head[c]; PGRID.head[c]=i;
   }
 }
-function pgridQuery(x,z,radius,cb){
-  const r=Math.max(1,Math.ceil(radius/GRID.cell));
-  let cx=((x-GRID.ox)/GRID.cell)|0, cz=((z-GRID.oz)/GRID.cell)|0;
+// --- Closure-free plant scanner (no per-call allocation) ---
+// Nearest-plant scratch, written by pgridScanNearest below.
+let pqBest=-1, pqBestD2=0;   // nearest plant index + squared distance
+// Find the nearest plant to (px,pz) within `maxD`. Writes pqBest (-1 if none)
+// and pqBestD2. Vision passes maxD = ray step (only register plants closer than
+// any creature already found); eat passes maxD = the creature's reach.
+function pgridScanNearest(px,pz,maxD){
+  pqBest=-1; pqBestD2=maxD*maxD;
+  const r=Math.max(1,Math.ceil(maxD/GRID.cell));
+  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
   for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
     for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
       let j=PGRID.head[zz*GRID.cols+xx];
-      while(j!==-1){ if(cb(j)===true) return; j=PGRID.next[j]; }
+      while(j!==-1){
+        const ex=P.x[j]-px, ez=P.z[j]-pz, e2=ex*ex+ez*ez;
+        if(e2<pqBestD2){ pqBestD2=e2; pqBest=j; }
+        j=PGRID.next[j];
+      }
     }
   }
 }
@@ -1072,29 +1117,20 @@ function updateCreatures(dt){
       if(!C.species[i]){
         // herbivore: eat the nearest plant within reach (reach scales with body size)
         const reach = 16 + C.size[i];
-        let best=-1, bestD=reach*reach;
-        pgridQuery(nx,nz,reach,(j)=>{
-          const ex=P.x[j]-nx, ez=P.z[j]-nz, e2=ex*ex+ez*ez;
-          if(e2<bestD){ bestD=e2; best=j; }
-        });
-        if(best!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(best); pgridRebuild(); }
+        pgridScanNearest(nx,nz,reach);            // closure-free; writes pqBest
+        if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(pqBest); pgridRebuild(); }
       } else {
         // predator: eat the nearest herbivore within reach
         const reach = 20 + C.size[i];
-        let best=-1, bestD=reach*reach;
-        gridQuery(nx,nz,reach,(j)=>{
-          if(j===i||C.species[j]) return;
-          const ex=C.x[j]-nx, ez=C.z[j]-nz, e2=ex*ex+ez*ez;
-          if(e2<bestD){ bestD=e2; best=j; }
-        });
-        if(best!==-1){
+        gridScanPrey(nx,nz,reach,i);              // closure-free; writes gqBest
+        if(gqBest!==-1){
           C.energy[i]=Math.min(1,C.energy[i]+0.5);
-          // Swap-remove relocates the last live creature into `best`. If the
-          // eater itself was that last creature, it now lives in slot `best`,
+          // Swap-remove relocates the last live creature into `gqBest`. If the
+          // eater itself was that last creature, it now lives in slot `gqBest`,
           // so retarget `i` there and finish this creature's tick in-place.
           const last=C.n-1;
-          creatureRemove(best);
-          if(i===last) i=best;        // eater was relocated into `best`
+          creatureRemove(gqBest);
+          if(i===last) i=gqBest;      // eater was relocated into gqBest
         }
       }
     }
