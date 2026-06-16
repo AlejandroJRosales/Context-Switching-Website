@@ -122,6 +122,32 @@ const DEPTH_FRAG = `
   }
 `;
 
+const INST_DEFORM_GLSL = `
+  attribute vec3 aPos;
+  attribute vec3 aInstPos;
+  attribute float aInstScale;
+  attribute float aInstHeading;
+  attribute float aInstSpecies;
+  mat3 instRot;
+  vec3 instDeform(){
+    vec3 lp = aPos;
+    float pred = aInstSpecies;
+    lp.z *= mix(1.0, 1.6, pred);
+    lp.x *= mix(1.0, 0.8, pred);
+    lp.y *= mix(1.0, 0.85, pred);
+    float s = sin(aInstHeading), c = cos(aInstHeading);
+    instRot = mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c);
+    return instRot * (lp * aInstScale);
+  }
+`;
+const FOG_GLSL = `
+  vec3 applyFog(vec3 col, vec3 wp){
+    float d = length(wp - uEye);
+    float fog = clamp(d/uFogDist, 0.0, 1.0); fog *= fog;
+    return mix(col, uFogColor, fog);
+  }
+`;
+
 let DPR = 1, VIEW_W = 1, VIEW_H = 1;
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, CONFIG.quality === 'high' ? 2 : 1, CONFIG.isMobile ? 1.5 : 2);
@@ -293,6 +319,7 @@ const terrainProg = program(`
   uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
   uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform vec3 uEye;
   ${SHADOW_GLSL}
+  ${FOG_GLSL}
   void main(){
     float slope = 1.0 - clamp(vN.y, 0.0, 1.0);
     vec3 sand  = vec3(0.76,0.70,0.50);
@@ -307,9 +334,7 @@ const terrainProg = program(`
     float diff = max(dot(normalize(vN), uSunDir), 0.0);
     float sh = shadowFactor(vW, diff);             
     vec3 lit = col * (uAmbient + uSunColor*diff*sh);
-    float d = length(vW - uEye);
-    float fog = clamp(d/uFogDist, 0.0, 1.0); fog*=fog;
-    gl_FragColor = vec4(mix(lit, uFogColor, fog), 1.0);
+    gl_FragColor = vec4(applyFog(lit, vW), 1.0);
   }
 `);
 
@@ -348,6 +373,7 @@ const waterProg = program(`
   precision mediump float; varying vec3 vW;
   uniform vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
   uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
+  ${FOG_GLSL}
   void main(){
     vec2 p = vW.xz*0.02;
     float n1 = sin(p.x*1.3 + uTime*0.8) + cos(p.y*1.7 - uTime*0.6);
@@ -360,8 +386,7 @@ const waterProg = program(`
     vec3 R = reflect(-uSunDir, N);
     float spec = pow(max(dot(R,V),0.0), 64.0);
     col += uSunColor*spec*0.8;
-    float d = length(vW-uEye); float fog=clamp(d/uFogDist,0.0,1.0); fog*=fog;
-    gl_FragColor = vec4(mix(col, uFogColor, fog), 0.82);
+    gl_FragColor = vec4(applyFog(col, vW), 0.82);
   }
 `);
 
@@ -453,25 +478,14 @@ function buildCreatures(){
   creatureGeoCount = verts.length/6;
   instBuf = gl.createBuffer();
   creatureProg = program(`
-    attribute vec3 aPos;          
-    attribute vec3 aNormal;       
-    attribute vec3 aInstPos;      
-    attribute float aInstScale;
+    attribute vec3 aNormal;
     attribute vec3 aInstColor;
-    attribute float aInstHeading; 
-    attribute float aInstSpecies; 
     uniform mat4 uVP;
+    ${INST_DEFORM_GLSL}
     varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
     void main(){
-      vec3 lp = aPos;
-      float pred = aInstSpecies;
-      lp.z *= mix(1.0, 1.6, pred);   
-      lp.x *= mix(1.0, 0.8, pred);   
-      lp.y *= mix(1.0, 0.85, pred);  
-      float s = sin(aInstHeading), c = cos(aInstHeading);
-      mat3 rot = mat3( c,0.0,-s,  0.0,1.0,0.0,  s,0.0,c ); 
-      vec3 p = rot * (lp * aInstScale);
-      vN = rot * aNormal;
+      vec3 p = instDeform();
+      vN = instRot * aNormal;
       vColor = aInstColor;
       vWorld = aInstPos + p;
       gl_Position = uVP * vec4(aInstPos + p, 1.0);
@@ -1089,7 +1103,7 @@ window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; });
 window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 
 (function(){
-  if (!window.matchMedia('(pointer:coarse)and(hover:none)').matches)
+  if (!window.matchMedia('(pointer:coarse) and (hover:none)').matches)
     document.getElementById('look').style.display='none';
   let locked=false;
   const lock=()=>(canvas.requestPointerLock||canvas.mozRequestPointerLock||canvas.webkitRequestPointerLock||function(){}).call(canvas);
@@ -1156,21 +1170,10 @@ const depthProg = program(`
 `, DEPTH_FRAG);
 
 const depthInstProg = program(`
-  attribute vec3 aPos;
-  attribute vec3 aInstPos;
-  attribute float aInstScale;
-  attribute float aInstHeading;
-  attribute float aInstSpecies;
   uniform mat4 uLightVP;
+  ${INST_DEFORM_GLSL}
   void main(){
-    vec3 lp = aPos;
-    float pred = aInstSpecies;
-    lp.z *= mix(1.0, 1.6, pred);
-    lp.x *= mix(1.0, 0.8, pred);
-    lp.y *= mix(1.0, 0.85, pred);
-    float s = sin(aInstHeading), c = cos(aInstHeading);
-    mat3 rot = mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c);
-    vec3 p = rot * (lp * aInstScale);
+    vec3 p = instDeform();
     gl_Position = uLightVP * vec4(aInstPos + p, 1.0);
   }
 `, DEPTH_FRAG);
