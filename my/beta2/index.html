@@ -93,6 +93,74 @@ const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint'); // big terrain meshes
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 
+// =========================================================================
+// SHADOW probe + shared GLSL (defined early so lighting shaders can splice it).
+// Directional shadow map rendered from the sun each frame, ALWAYS on (the
+// spec's "skip on mobile" is intentionally overridden). WebGL 1.0 has no
+// guaranteed depth texture, so we probe WEBGL_depth_texture and fall back to
+// encoding depth into a packed RGBA color texture when it's missing.
+// =========================================================================
+const SHADOW = {
+  size: 1024,            // shadow map resolution (constant across devices)
+  depthExt: gl.getExtension('WEBGL_depth_texture')
+          || gl.getExtension('WEBKIT_WEBGL_depth_texture')
+          || gl.getExtension('MOZ_WEBGL_depth_texture'),
+  fbo: null, tex: null, colorTex: null, depthRB: null,
+  lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+  ready: false,
+};
+SHADOW.packed = !SHADOW.depthExt;   // true -> encode depth into RGBA color tex
+
+// Shared by every lighting shader: unpacks RGBA-encoded depth (fallback path)
+// and samples the shadow map with a 2x2 PCF kernel. uShadowMode is 1.0 when
+// depth is packed into RGBA, 0.0 when a real depth texture is bound.
+const SHADOW_GLSL = `
+  uniform sampler2D uShadowMap;
+  uniform mat4 uLightVP;
+  uniform float uShadowTexel;   // 1.0 / shadow map size
+  uniform float uShadowMode;    // 1.0 = packed RGBA depth, 0.0 = real depth tex
+  float unpackDepth(vec4 c){
+    return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
+  }
+  float sampleShadowDepth(vec2 uv){
+    vec4 c = texture2D(uShadowMap, uv);
+    return mix(c.r, unpackDepth(c), uShadowMode);
+  }
+  // returns 1.0 fully lit, down to 0.25 in shadow (never fully black)
+  float shadowFactor(vec3 worldPos, float ndotl){
+    vec4 lp = uLightVP * vec4(worldPos, 1.0);
+    vec3 proj = lp.xyz / lp.w;
+    proj = proj * 0.5 + 0.5;                 // NDC -> [0,1]
+    if (proj.x<0.0||proj.x>1.0||proj.y<0.0||proj.y>1.0||proj.z>1.0) return 1.0;
+    float bias = clamp(0.0012 * (1.0 - ndotl), 0.0004, 0.0028);
+    float lit = 0.0;
+    for (int x=-1; x<=0; x++){
+      for (int y=-1; y<=0; y++){
+        vec2 o = vec2(float(x)+0.5, float(y)+0.5) * uShadowTexel;
+        float sd = sampleShadowDepth(proj.xy + o);
+        lit += (proj.z - bias <= sd) ? 1.0 : 0.0;
+      }
+    }
+    lit *= 0.25;
+    return mix(0.25, 1.0, lit);
+  }
+`;
+
+// Depth-write fragment shader: in packed mode encode gl_FragCoord.z into RGBA;
+// with a real depth texture the color output is unused.
+const DEPTH_FRAG = `
+  precision highp float;
+  uniform float uShadowMode;    // 1.0 = pack into RGBA
+  vec4 packDepth(float d){
+    vec4 c = fract(d * vec4(1.0, 255.0, 65025.0, 16581375.0));
+    c -= c.yzww * vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, 0.0);
+    return c;
+  }
+  void main(){
+    gl_FragColor = (uShadowMode > 0.5) ? packDepth(gl_FragCoord.z) : vec4(1.0);
+  }
+`;
+
 let DPR = 1, VIEW_W = 1, VIEW_H = 1;
 function resize() {
   // Cap DPR on mobile so we never render at full retina res (huge perf win).
@@ -137,6 +205,14 @@ const M4 = {
     out[4]=0; out[5]=f; out[6]=0; out[7]=0;
     out[8]=0; out[9]=0; out[10]=(far+near)*nf; out[11]=-1;
     out[12]=0; out[13]=0; out[14]=2*far*near*nf; out[15]=0;
+    return out;
+  },
+  ortho(out, l, r, b, t, near, far){
+    const lr=1/(l-r), bt=1/(b-t), nf=1/(near-far);
+    out[0]=-2*lr; out[1]=0; out[2]=0; out[3]=0;
+    out[4]=0; out[5]=-2*bt; out[6]=0; out[7]=0;
+    out[8]=0; out[9]=0; out[10]=2*nf; out[11]=0;
+    out[12]=(l+r)*lr; out[13]=(t+b)*bt; out[14]=(far+near)*nf; out[15]=1;
     return out;
   },
   lookAt(out, eye, ctr, up){
@@ -284,6 +360,7 @@ const terrainProg = program(`
   varying vec3 vN; varying float vH; varying vec3 vW;
   uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
   uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform vec3 uEye;
+  ${SHADOW_GLSL}
   void main(){
     // height + slope based biome coloring
     float slope = 1.0 - clamp(vN.y, 0.0, 1.0);
@@ -297,7 +374,8 @@ const terrainProg = program(`
     col = mix(col, snow, smoothstep(0.62,0.80,hN));
     col = mix(col, rock, smoothstep(0.45,0.85,slope)); // steep faces -> rock
     float diff = max(dot(normalize(vN), uSunDir), 0.0);
-    vec3 lit = col * (uAmbient + uSunColor*diff);
+    float sh = shadowFactor(vW, diff);             // 1 lit .. 0.25 shadowed
+    vec3 lit = col * (uAmbient + uSunColor*diff*sh);
     float d = length(vW - uEye);
     float fog = clamp(d/uFogDist, 0.0, 1.0); fog*=fog;
     gl_FragColor = vec4(mix(lit, uFogColor, fog), 1.0);
@@ -483,7 +561,7 @@ function buildCreatures(){
     attribute float aInstHeading; // yaw (radians)
     attribute float aInstSpecies; // 0=herbivore 1=predator
     uniform mat4 uVP;
-    varying vec3 vColor; varying vec3 vN;
+    varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
     void main(){
       // Predators: longer & leaner along forward(+Z), lower stance. Herbivores: rounder.
       vec3 lp = aPos;
@@ -496,14 +574,17 @@ function buildCreatures(){
       vec3 p = rot * (lp * aInstScale);
       vN = rot * aNormal;
       vColor = aInstColor;
+      vWorld = aInstPos + p;
       gl_Position = uVP * vec4(aInstPos + p, 1.0);
     }
   `, `
-    precision mediump float; varying vec3 vColor; varying vec3 vN;
+    precision mediump float; varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
     uniform vec3 uSunDir; uniform vec3 uAmbient;
+    ${SHADOW_GLSL}
     void main(){
       float d = max(dot(normalize(vN), uSunDir), 0.0);
-      gl_FragColor = vec4(vColor*(uAmbient + vec3(d)), 1.0);
+      float sh = shadowFactor(vWorld, d);
+      gl_FragColor = vec4(vColor*(uAmbient + vec3(d)*sh), 1.0);
     }
   `);
 }
@@ -1304,7 +1385,7 @@ document.getElementById('scaleUp').addEventListener('click',   ()=> applyWorldSc
 // DAY/NIGHT; drives sun direction + light/sky colors
 // =========================================================================
 function sunState(t){
-  const ang = t*0.05;                          // slow cycle
+  const ang = t*0.005;                         // slow cycle (10x longer days)
   const sunDir = [Math.cos(ang)*0.6, Math.sin(ang), 0.4];
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
   const up = Math.max(0, sunDir[1]);           // 0 at night, 1 at noon
@@ -1317,6 +1398,180 @@ function sunState(t){
     skyBottom:[0.55+0.30*day, 0.65+0.25*day, 0.80+0.15*day],
     fog:      [0.55+0.25*day, 0.65+0.22*day, 0.80+0.10*day],
   };
+}
+
+// =========================================================================
+// SHADOW MAPPING; FBO + depth programs + light matrix (GLSL strings and the
+// SHADOW probe live up near WebGL boilerplate so the lighting shaders, which
+// are compiled earlier, can splice in SHADOW_GLSL).
+// =========================================================================
+
+// Depth program for static geometry (terrain, water) — just transforms by the
+// light's view-projection.
+const depthProg = program(`
+  attribute vec3 aPos;
+  uniform mat4 uLightVP;
+  void main(){ gl_Position = uLightVP * vec4(aPos, 1.0); }
+`, DEPTH_FRAG);
+
+// Depth program for instanced creatures — mirrors the creature vertex transform
+// (heading rotation + species body squash) so their shadows match their shapes.
+const depthInstProg = program(`
+  attribute vec3 aPos;
+  attribute vec3 aInstPos;
+  attribute float aInstScale;
+  attribute float aInstHeading;
+  attribute float aInstSpecies;
+  uniform mat4 uLightVP;
+  void main(){
+    vec3 lp = aPos;
+    float pred = aInstSpecies;
+    lp.z *= mix(1.0, 1.6, pred);
+    lp.x *= mix(1.0, 0.8, pred);
+    lp.y *= mix(1.0, 0.85, pred);
+    float s = sin(aInstHeading), c = cos(aInstHeading);
+    mat3 rot = mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c);
+    vec3 p = rot * (lp * aInstScale);
+    gl_Position = uLightVP * vec4(aInstPos + p, 1.0);
+  }
+`, DEPTH_FRAG);
+
+// Allocate the shadow framebuffer + texture(s). Called once at boot.
+function initShadow(){
+  const sz = SHADOW.size;
+  SHADOW.fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+
+  if (!SHADOW.packed){
+    // Real depth texture path: depth tex as the depth attachment, a tiny color
+    // attachment so the FBO is complete on drivers that require one.
+    SHADOW.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, sz, sz, 0,
+                  gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, SHADOW.tex, 0);
+
+    SHADOW.colorTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, SHADOW.colorTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz, sz, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.colorTex, 0);
+  } else {
+    // Packed fallback: RGBA color texture holds encoded depth; a renderbuffer
+    // supplies real depth testing during the shadow pass.
+    SHADOW.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz, sz, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.tex, 0);
+
+    SHADOW.depthRB = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, SHADOW.depthRB);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sz, sz);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, SHADOW.depthRB);
+  }
+
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  SHADOW.ready = (status === gl.FRAMEBUFFER_COMPLETE);
+  if (!SHADOW.ready) console.warn('shadow FBO incomplete:', status, '— shadows disabled');
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+// Build the light's view-projection. Rather than covering the whole world
+// (which spreads 1024 texels over thousands of units and yields blocky
+// shadows), the frustum hugs a fixed radius around the camera so texels are
+// small in world space. The frustum origin is snapped to whole-texel steps so
+// shadow edges don't crawl/shimmer as the camera walks.
+const SHADOW_RADIUS = 350;   // world units covered around the camera
+function updateLightVP(sunDir, focusX, focusZ){
+  const half = SHADOW_RADIUS;
+  const dist = Math.max(CONFIG.worldW, CONFIG.worldH); // keep the light high up
+  // Guard against a near-horizontal sun producing a degenerate up vector.
+  const sd = [sunDir[0], Math.max(sunDir[1], 0.15), sunDir[2]];
+  const il = 1/Math.hypot(sd[0],sd[1],sd[2]); sd[0]*=il; sd[1]*=il; sd[2]*=il;
+  // Texel snapping: quantize the focus point to the shadow-map grid so the
+  // frustum only ever shifts by whole texels.
+  const worldPerTexel = (2*half) / SHADOW.size;
+  const fx = Math.round(focusX / worldPerTexel) * worldPerTexel;
+  const fz = Math.round(focusZ / worldPerTexel) * worldPerTexel;
+  const focusY = Math.max(terrainHeight(focusX, focusZ), CONFIG.waterLevel);
+  const eye = [fx + sd[0]*dist, focusY + sd[1]*dist, fz + sd[2]*dist];
+  const lview = M4.create(), lproj = M4.create();
+  M4.lookAt(lview, eye, [fx, focusY, fz], [0,1,0]);
+  // near/far span the full vertical reach so distant terrain still casts.
+  M4.ortho(lproj, -half, half, -half, half, 1.0, dist*2.0);
+  M4.multiply(SHADOW.lightVP, lproj, lview);
+}
+
+// Render the depth pass: terrain + creatures from the sun's POV into SHADOW.fbo.
+function renderShadowPass(){
+  if (!SHADOW.ready) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+  gl.viewport(0, 0, SHADOW.size, SHADOW.size);
+  gl.clearColor(1,1,1,1);   // far depth in packed encoding = white
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  // Front-face culling during the depth pass pushes shadow-acne to back faces.
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+
+  const packMode = SHADOW.packed ? 1.0 : 0.0;
+
+  // terrain depth
+  gl.useProgram(depthProg);
+  gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
+  gl.enableVertexAttribArray(depthProg.a('aPos'));
+  gl.vertexAttribPointer(depthProg.a('aPos'),3,gl.FLOAT,false,24,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
+  gl.uniformMatrix4fv(depthProg.u('uLightVP'),false,SHADOW.lightVP);
+  gl.uniform1f(depthProg.u('uShadowMode'),packMode);
+  gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
+
+  // creature depth (instanced)
+  if (EXT_INSTANCE && C.n>0){
+    const ST=INST_STRIDE*4;
+    gl.useProgram(depthInstProg);
+    gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
+    const ap=depthInstProg.a('aPos');
+    gl.enableVertexAttribArray(ap); gl.vertexAttribPointer(ap,3,gl.FLOAT,false,24,0); EXT_INSTANCE.vertexAttribDivisorANGLE(ap,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    const ip=depthInstProg.a('aInstPos'), is=depthInstProg.a('aInstScale'),
+          ih=depthInstProg.a('aInstHeading'), isp=depthInstProg.a('aInstSpecies');
+    gl.enableVertexAttribArray(ip);  gl.vertexAttribPointer(ip,3,gl.FLOAT,false,ST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(ip,1);
+    gl.enableVertexAttribArray(is);  gl.vertexAttribPointer(is,1,gl.FLOAT,false,ST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(is,1);
+    gl.enableVertexAttribArray(ih);  gl.vertexAttribPointer(ih,1,gl.FLOAT,false,ST,28); EXT_INSTANCE.vertexAttribDivisorANGLE(ih,1);
+    gl.enableVertexAttribArray(isp); gl.vertexAttribPointer(isp,1,gl.FLOAT,false,ST,32); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,1);
+    gl.uniformMatrix4fv(depthInstProg.u('uLightVP'),false,SHADOW.lightVP);
+    gl.uniform1f(depthInstProg.u('uShadowMode'),packMode);
+    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,creatureGeoCount,C.n);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
+  }
+
+  // restore default culling state for the main color pass
+  gl.cullFace(gl.BACK); gl.disable(gl.CULL_FACE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, VIEW_W, VIEW_H);
+}
+
+// Bind the shadow texture to unit 1 and set the shared shadow uniforms on a
+// lighting program. Call after gl.useProgram(prog) for terrain/creatures/water.
+function bindShadowUniforms(prog){
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
+  gl.uniform1i(prog.u('uShadowMap'), 1);
+  gl.uniformMatrix4fv(prog.u('uLightVP'), false, SHADOW.lightVP);
+  gl.uniform1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
+  gl.uniform1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
+  gl.activeTexture(gl.TEXTURE0);
 }
 
 // =========================================================================
@@ -1420,6 +1675,11 @@ function frame(now){
   const S = sunState(simTime);
   currentTimeOfDay = S.up;        // 0 at night, 1 at noon; a clean day signal
 
+  // SHADOW PASS: build the light matrix around the camera, render scene depth
+  // from the sun into the shadow map, then return to the default framebuffer.
+  updateLightVP(S.sunDir, cam.x, cam.z);
+  renderShadowPass();
+
   // simulation step
   updateCreatures(dt);
   uploadCreatures();
@@ -1464,6 +1724,7 @@ function frame(now){
   gl.uniform3fv(terrainProg.u('uFogColor'),S.fog);
   gl.uniform1f(terrainProg.u('uFogDist'),fogDist);
   gl.uniform3fv(terrainProg.u('uEye'),eye);
+  bindShadowUniforms(terrainProg);
   gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
 
   // CREATURES (instanced)
@@ -1486,6 +1747,7 @@ function frame(now){
     gl.uniformMatrix4fv(creatureProg.u('uVP'),false,VP);
     gl.uniform3fv(creatureProg.u('uSunDir'),S.sunDir);
     gl.uniform3fv(creatureProg.u('uAmbient'),S.ambient);
+    bindShadowUniforms(creatureProg);
     EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,creatureGeoCount,C.n);
     // reset instance divisors so later (non-instanced) draws aren't affected
     EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
@@ -1551,6 +1813,7 @@ function frame(now){
 // BOOT
 // =========================================================================
 resize();
+initShadow();
 gridInit();
 buildCreatures();
 buildPlants();
