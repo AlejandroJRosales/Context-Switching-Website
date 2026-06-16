@@ -1083,16 +1083,25 @@ if (HAS_TOUCH){
   joyEl.style.display='none';
   lookEl.style.display='none';
   document.getElementById('jump').style.display='none';
-
-  window.addEventListener('keydown', e=> keys[e.key.toLowerCase()]=true);
-  window.addEventListener('keyup',   e=> keys[e.key.toLowerCase()]=false);
-
-  let mouseDown=false, lastX=0, lastY=0;
-  canvas.addEventListener('mousedown', e=>{ mouseDown=true; lastX=e.clientX; lastY=e.clientY; });
-  window.addEventListener('mouseup', ()=> mouseDown=false);
-  window.addEventListener('mousemove', e=>{ if(!mouseDown) return;
-    applyLook(e.clientX-lastX, e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; });
 }
+
+// Keyboard — always active regardless of touch support
+window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; });
+window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
+
+(function(){
+  if (!window.matchMedia('(pointer:coarse)and(hover:none)').matches)
+    document.getElementById('look').style.display='none';
+  let locked=false;
+  const lock=()=>(canvas.requestPointerLock||canvas.mozRequestPointerLock||canvas.webkitRequestPointerLock||function(){}).call(canvas);
+  document.addEventListener('pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
+  canvas.addEventListener('click', lock);
+  document.addEventListener('mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
+  let drag=false,lx=0,ly=0;
+  document.addEventListener('mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
+  document.addEventListener('mouseup',()=>{ drag=false; });
+  document.addEventListener('mousemove',e=>{ if(!locked&&drag){applyLook(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;} });
+})();
 
 document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
@@ -1306,7 +1315,7 @@ function frame(now){
   simTime += dt;
   fpsT+=dt; fpsN++; if (fpsT>=0.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
   let mf=move.y, ms=move.x;
-  if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=-1; if (keys['d']) ms=1;
+  if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=1; if (keys['d']) ms=-1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
   const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
   const jumpKey = keys[' ']||keys['spacebar'];
@@ -1459,8 +1468,8 @@ function frame(now){
   }
   info.textContent =
     `FPS ${fps}   creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
-    `quality ${CONFIG.quality}   tris ${(terrainIdxCount/3)|0}\n`+
-    `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
+    `quality ${CONFIG.quality}   triangles ${terrainIdxCount/3}\n`+
+    `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} avg spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
     `gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  seed ${CONFIG.seed}\n`+
     `sun ${(S.up>0.05?'day':'night')}`;
 
