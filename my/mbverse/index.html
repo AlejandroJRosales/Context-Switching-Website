@@ -376,8 +376,6 @@ const waterProg = program(`
   uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
   ${FOG_GLSL}
   void main(){
-    // Fade the procedural normal detail with view distance so the
-    // high-frequency ripple can't undersample (alias) at high elevation.
     float d = length(uEye - vW);
     float detail = clamp(1.0 - d/uFogDist, 0.0, 1.0) * uHighQ;
     vec2 p = vW.xz*0.02;
@@ -389,8 +387,6 @@ const waterProg = program(`
     vec3 deep = vec3(0.05,0.18,0.30), shallow = vec3(0.10,0.35,0.45);
     vec3 col = mix(deep, shallow, fres);
     vec3 R = reflect(-uSunDir, N);
-    // Softer exponent + clamped contribution so a lone aliased fragment
-    // can't blow out to pure white.
     float spec = pow(max(dot(R,V),0.0), 20.0);
     col += uSunColor*min(spec,1.0)*0.4;
     gl_FragColor = vec4(applyFog(col, vW), 0.92);
@@ -1099,7 +1095,6 @@ if (HAS_TOUCH){
     jb.addEventListener('touchend',   up,   {passive:false});
     jb.addEventListener('touchcancel',up,   {passive:false});
   })();
-
 } else {
   joyEl.style.display='none';
   lookEl.style.display='none';
@@ -1110,12 +1105,10 @@ window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; });
 window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 
 (function(){
-  if (!window.matchMedia('(pointer:coarse) and (hover:none)').matches)
-    document.getElementById('look').style.display='none';
   let locked=false;
   const lock=()=>(canvas.requestPointerLock||canvas.mozRequestPointerLock||canvas.webkitRequestPointerLock||function(){}).call(canvas);
   document.addEventListener('pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
-  canvas.addEventListener('click', lock);
+  if (!HAS_TOUCH) canvas.addEventListener('click', lock);
   document.addEventListener('mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
   let drag=false,lx=0,ly=0;
   document.addEventListener('mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
