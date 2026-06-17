@@ -311,13 +311,13 @@ function buildTerrain(){
 const terrainProg = program(`
   attribute vec3 aPos; attribute vec3 aNormal;
   uniform mat4 uVP;
-  varying vec3 vN; varying float vH; varying vec3 vW;
+  varying vec3 vN; varying float vH; varying highp vec3 vW;
   void main(){ vN=aNormal; vH=aPos.y; vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }
 `, `
   precision mediump float;
-  varying vec3 vN; varying float vH; varying vec3 vW;
+  varying vec3 vN; varying float vH; varying highp vec3 vW;
   uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
-  uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform vec3 uEye;
+  uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform highp vec3 uEye;
   ${SHADOW_GLSL}
   ${FOG_GLSL}
   void main(){
@@ -366,12 +366,13 @@ function buildWater(){
 }
 buildWater();
 const waterProg = program(`
+  precision highp float;
   attribute vec2 aXZ; uniform mat4 uVP; uniform float uLevel;
-  varying vec3 vW;
+  varying highp vec3 vW;
   void main(){ vW=vec3(aXZ.x, uLevel, aXZ.y); gl_Position=uVP*vec4(vW,1.0); }
 `, `
-  precision mediump float; varying vec3 vW;
-  uniform vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
+  precision highp float; varying highp vec3 vW;
+  uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
   uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
   ${FOG_GLSL}
   void main(){
