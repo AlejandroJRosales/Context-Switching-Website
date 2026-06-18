@@ -46,13 +46,19 @@ function scaleToSize(n){ return Math.max(500, Math.round(5000 * Math.log(Math.ma
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 10,
-  get worldW(){ return scaleToSize(this.worldScale); },
-  get worldH(){ return scaleToSize(this.worldScale); },
+  worldW: 0,
+  worldH: 0,
   waterLevel: 8,           
   probSpawnPlant: 0.04,
   quality: 'high',
   seed: 1337,
 };
+function recomputeWorldSize(){
+  const s = scaleToSize(CONFIG.worldScale);
+  CONFIG.worldW = s;
+  CONFIG.worldH = s;
+}
+recomputeWorldSize();
 const TERRAIN = {
   amp: 220, featureSize: 360, octaves: 5,
   mtnAmp: 600,
@@ -69,8 +75,10 @@ const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint'); 
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 
+function shadowSizeFor(q){ return q==='high' ? 1024 : 512; }
 const SHADOW = {
-  size: 1024,
+  size: shadowSizeFor(CONFIG.quality),
+  refreshInterval: CONFIG.quality==='high' ? 10 : 30,
   depthExt: gl.getExtension('WEBGL_depth_texture') || gl.getExtension('WEBKIT_WEBGL_depth_texture') || gl.getExtension('MOZ_WEBGL_depth_texture'),
   fbo: null, tex: null, colorTex: null, depthRB: null,
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
@@ -150,7 +158,7 @@ const FOG_GLSL = `
 
 let DPR = 1, VIEW_W = 1, VIEW_H = 1;
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, CONFIG.quality === 'high' ? 2 : 1, CONFIG.isMobile ? 1.5 : 2);
+  DPR = 1;
   VIEW_W = Math.floor(canvas.clientWidth  * DPR);
   VIEW_H = Math.floor(canvas.clientHeight * DPR);
   canvas.width = VIEW_W; canvas.height = VIEW_H;
@@ -255,7 +263,7 @@ function ridgedNoise(wx, wz){
   return h/norm;
 }
 
-function terrainHeight(wx, wz){
+function terrainHeightExact(wx, wz){
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.octaves;o++){
     h += valueNoise(wx*freq+o*13.7, wz*freq-o*7.3) * amp;
@@ -270,6 +278,57 @@ function terrainHeight(wx, wz){
   return y;
 }
 
+const THCACHE = {
+  res: 0,           
+  cols: 0, rows: 0,
+  ox: 0, oz: 0,     
+  invStepX: 0, invStepZ: 0,
+  W: 0, H: 0,
+  data: null,       
+};
+
+function buildTerrainCache(){
+  const step = CONFIG.isMobile ? 12 : 8;       
+  const W = CONFIG.worldW, H = CONFIG.worldH;
+  const pad = step * 2;                         
+  const ox = -W/2 - pad, oz = -H/2 - pad;
+  const spanW = W + pad*2, spanH = H + pad*2;
+  const cols = Math.ceil(spanW/step) + 1;
+  const rows = Math.ceil(spanH/step) + 1;
+  const data = new Float32Array(cols*rows);
+  for (let r=0;r<rows;r++){
+    const wz = oz + r*step;
+    const base = r*cols;
+    for (let c=0;c<cols;c++){
+      data[base+c] = terrainHeightExact(ox + c*step, wz);
+    }
+  }
+  THCACHE.res = step;
+  THCACHE.cols = cols; THCACHE.rows = rows;
+  THCACHE.ox = ox; THCACHE.oz = oz;
+  THCACHE.invStepX = 1/step; THCACHE.invStepZ = 1/step;
+  THCACHE.data = data;
+}
+
+function terrainHeight(wx, wz){
+  const cache = THCACHE;
+  const data = cache.data;
+  if (!data) return terrainHeightExact(wx, wz);
+  const gx = (wx - cache.ox) * cache.invStepX;
+  const gz = (wz - cache.oz) * cache.invStepZ;
+  let ix = gx|0, iz = gz|0;
+  const cols = cache.cols, rows = cache.rows;
+  if (ix < 0 || iz < 0 || ix >= cols-1 || iz >= rows-1)
+    return terrainHeightExact(wx, wz);   
+  const fx = gx - ix, fz = gz - iz;
+  const i00 = iz*cols + ix;
+  const h00 = data[i00],     h10 = data[i00+1];
+  const h01 = data[i00+cols], h11 = data[i00+cols+1];
+  const a = h00 + (h10-h00)*fx;
+  const b = h01 + (h11-h01)*fx;
+  return a + (b-a)*fz;
+}
+
 let terrainBuf=null, terrainIdxBuf=null, terrainIdxCount=0;
 function buildTerrain(){
   const segX = CONFIG.quality==='high' ? 160 : 96;
@@ -277,13 +336,13 @@ function buildTerrain(){
   const W=CONFIG.worldW, H=CONFIG.worldH;
   const verts = new Float32Array((segX+1)*(segZ+1)*6);
   let vi=0;
-  const hAt=(gx,gz)=> terrainHeight(-W/2 + gx/segX*W, -H/2 + gz/segZ*H);
+  const hAt=(gx,gz)=> terrainHeightExact(-W/2 + gx/segX*W, -H/2 + gz/segZ*H);
   for (let gz=0; gz<=segZ; gz++){
     for (let gx=0; gx<=segX; gx++){
       const wx=-W/2 + gx/segX*W, wz=-H/2 + gz/segZ*H, wy=hAt(gx,gz);
       const e=W/segX;
-      const hl=terrainHeight(wx-e,wz), hr=terrainHeight(wx+e,wz);
-      const hd=terrainHeight(wx,wz-e), hu=terrainHeight(wx,wz+e);
+      const hl=terrainHeightExact(wx-e,wz), hr=terrainHeightExact(wx+e,wz);
+      const hd=terrainHeightExact(wx,wz-e), hu=terrainHeightExact(wx,wz+e);
       let nx=hl-hr, ny=2*e, nz=hd-hu;
       const il=1/Math.hypot(nx,ny,nz); nx*=il; ny*=il; nz*=il;
       verts[vi++]=wx; verts[vi++]=wy; verts[vi++]=wz;
@@ -1119,6 +1178,9 @@ window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
+  SHADOW.size = shadowSizeFor(CONFIG.quality);
+  initShadow();
+  shadowFrame = 0;
   resize(); buildTerrain();
 });
 document.getElementById('flyBtn').addEventListener('click', function(){
@@ -1134,6 +1196,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(0, Math.min(20, n));
+  recomputeWorldSize();
   document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
   rebuilding = true;
 
@@ -1179,6 +1242,10 @@ const depthInstProg = program(`
 `, DEPTH_FRAG);
 
 function initShadow(){
+  if (SHADOW.fbo){ gl.deleteFramebuffer(SHADOW.fbo); SHADOW.fbo=null; }
+  if (SHADOW.tex){ gl.deleteTexture(SHADOW.tex); SHADOW.tex=null; }
+  if (SHADOW.colorTex){ gl.deleteTexture(SHADOW.colorTex); SHADOW.colorTex=null; }
+  if (SHADOW.depthRB){ gl.deleteRenderbuffer(SHADOW.depthRB); SHADOW.depthRB=null; }
   const sz = SHADOW.size;
   SHADOW.fbo = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
@@ -1297,6 +1364,7 @@ function rebuildWorld(){
   for(let i=0;i<256;i++) base[i]=i;
   for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const t=base[i]; base[i]=base[j]; base[j]=t; }
   for(let i=0;i<512;i++) NOISE_PERM[i]=base[i&255];
+  buildTerrainCache();
   buildTerrain(); spawnCreatures(); spawnPlants();
   cam.x=0; cam.z=CONFIG.worldH*0.35;
   cam.y=Math.max(terrainHeight(cam.x,cam.z),CONFIG.waterLevel)+EYE_HEIGHT;
@@ -1306,6 +1374,7 @@ function rebuildWorld(){
 const VP = M4.create(), proj = M4.create(), viewM = M4.create();
 const info = document.getElementById('info');
 let last = performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
+let frameCount = 0, shadowFrame = 0;
 let rebuilding = false;
 let currentTimeOfDay = 0.5;
 let prevJumpKey = false;
@@ -1360,8 +1429,11 @@ function frame(now){
   M4.multiply(VP, proj, viewM);
   const S = sunState(simTime);
   currentTimeOfDay = S.up;
-  updateLightVP(S.sunDir, cam.x, cam.z);
-  renderShadowPass();
+  if (shadowFrame % SHADOW.refreshInterval === 0){
+    updateLightVP(S.sunDir, cam.x, cam.z);
+    renderShadowPass();
+  }
+  shadowFrame++;
   updateCreatures(dt);
   uploadCreatures();
   uploadPlants();
@@ -1462,18 +1534,21 @@ function frame(now){
   gl.drawArrays(gl.TRIANGLES,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
 
-  let herb=0, eSum=0, spkSum=0, ageSum=0, maxGen=0;
-  for(let i=0;i<C.n;i++){
-    if(!C.species[i]) herb++;
-    eSum+=C.energy[i]; spkSum+=C.spikeRate[i]; ageSum+=C.age[i];
-    if(C.gen[i]>maxGen) maxGen=C.gen[i];
+  if (frameCount % 60 === 0){
+    let herb=0, eSum=0, spkSum=0, ageSum=0, maxGen=0;
+    for(let i=0;i<C.n;i++){
+      if(!C.species[i]) herb++;
+      eSum+=C.energy[i]; spkSum+=C.spikeRate[i]; ageSum+=C.age[i];
+      if(C.gen[i]>maxGen) maxGen=C.gen[i];
+    }
+    info.textContent =
+      `V 4.0.0 FPS ${fps} seed ${CONFIG.seed}\n`+
+      `creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
+      `quality ${CONFIG.quality}  triangles ${terrainIdxCount/3}\n`+
+      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} avg spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
+      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  sun ${(S.up>0.05?'day':'night')}`;
   }
-  info.textContent =
-    `V 4.0.0 FPS ${fps} seed ${CONFIG.seed}\n`+
-    `creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
-    `quality ${CONFIG.quality}  triangles ${terrainIdxCount/3}\n`+
-    `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} avg spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-    `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  sun ${(S.up>0.05?'day':'night')}`;
+  frameCount++;
 
   requestAnimationFrame(frame);
 }
