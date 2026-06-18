@@ -73,9 +73,10 @@ const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint');
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
 function shadowSizeFor(q){ return q==='high' ? 1024 : 512; }
+function shadowRefreshFor(q){ return q==='high' ? 5 : 30; }
 const SHADOW = {
   size: shadowSizeFor(CONFIG.quality),
-  refreshInterval: CONFIG.quality==='high' ? 10 : 30,
+  refreshInterval: shadowRefreshFor(CONFIG.quality),
   depthExt: gl.getExtension('WEBGL_depth_texture') || gl.getExtension('WEBKIT_WEBGL_depth_texture') || gl.getExtension('MOZ_WEBGL_depth_texture'),
   fbo: null, tex: null, colorTex: null, depthRB: null,
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
@@ -431,7 +432,7 @@ const waterProg = program(`
 `);
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
 const INST_STRIDE = 9;
-const MAX_CREATURES = CONFIG.isMobile ? 120 : 300;
+const MAX_CREATURES = 1000;
 const instData = new Float32Array(MAX_CREATURES * INST_STRIDE);
 const C = {
   n: 0,
@@ -800,7 +801,7 @@ const P = {
   sway: new Float32Array(MAX_PLANTS),
 };
 function targetPlants(){
-  const base = CONFIG.isMobile ? 300 : 900;
+  const base = 10000;
   return Math.min(MAX_PLANTS, Math.max(10, Math.round(base * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10))));
 }
 const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
@@ -1104,6 +1105,7 @@ document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
   SHADOW.size = shadowSizeFor(CONFIG.quality);
+  SHADOW.refreshInterval = shadowRefreshFor(CONFIG.quality);
   initShadow();
   shadowFrame = 0;
   resize(); buildTerrain();
@@ -1450,7 +1452,7 @@ function frame(now){
     info.textContent =
       `V 4.0.0 FPS ${fps} seed ${CONFIG.seed}\n`+
       `creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
-      `quality ${CONFIG.quality}  triangles ${terrainIdxCount/3}\n`+
+      `triangles ${terrainIdxCount/3}  shadow: {refresh: ${SHADOW.refreshInterval}, size: ${SHADOW.size}}\n`+
       `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} avg spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
       `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  sun ${(S.up>0.05?'day':'night')}`;
   }
