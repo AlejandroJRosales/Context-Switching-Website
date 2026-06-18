@@ -42,7 +42,10 @@
 </div>
 <script>
 "use strict";
-function scaleToSize(n){ return Math.max(500, Math.round(5000 * Math.log(Math.max(n,1)) / Math.log(10))); }
+function scale(n){ return Math.max(500, Math.round(5000 * Math.log(Math.max(n,1)) / Math.log(10))); }
+function setShadowSize(q){ return q==='high' ? 1024 : 512; }
+function setShadowRefresh(q){ return q==='high' ? 5 : 30; }
+function setWorldSize(){const s = scale(CONFIG.worldScale);CONFIG.worldW = s;CONFIG.worldH = s;}
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 10,
@@ -53,12 +56,6 @@ const CONFIG = {
   quality: 'high',
   seed: 1337,
 };
-function recomputeWorldSize(){
-  const s = scaleToSize(CONFIG.worldScale);
-  CONFIG.worldW = s;
-  CONFIG.worldH = s;
-}
-recomputeWorldSize();
 const TERRAIN = {
   amp: 220, featureSize: 360, octaves: 5,
   mtnAmp: 600,
@@ -66,17 +63,16 @@ const TERRAIN = {
   mtnOctaves: 4,
   mtnThreshold: 0.45,
 };
+setWorldSize();
 const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' }) || canvas.getContext('experimental-webgl');
 if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:20px">WebGL not supported.</p>'; throw new Error('no webgl'); }
 const EXT_INSTANCE = gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT = gl.getExtension('OES_element_index_uint');
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
-function shadowSizeFor(q){ return q==='high' ? 1024 : 512; }
-function shadowRefreshFor(q){ return q==='high' ? 5 : 30; }
 const SHADOW = {
-  size: shadowSizeFor(CONFIG.quality),
-  refreshInterval: shadowRefreshFor(CONFIG.quality),
+  size: setShadowSize(CONFIG.quality),
+  refreshInterval: setShadowRefresh(CONFIG.quality),
   depthExt: gl.getExtension('WEBGL_depth_texture') || gl.getExtension('WEBKIT_WEBGL_depth_texture') || gl.getExtension('MOZ_WEBGL_depth_texture'),
   fbo: null, tex: null, colorTex: null, depthRB: null,
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
@@ -1104,8 +1100,8 @@ window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 document.getElementById('qualityBtn').addEventListener('click', function(){
   CONFIG.quality = CONFIG.quality==='high' ? 'low' : 'high';
   this.textContent = CONFIG.quality.toUpperCase();
-  SHADOW.size = shadowSizeFor(CONFIG.quality);
-  SHADOW.refreshInterval = shadowRefreshFor(CONFIG.quality);
+  SHADOW.size = setShadowSize(CONFIG.quality);
+  SHADOW.refreshInterval = setShadowRefresh(CONFIG.quality);
   initShadow();
   shadowFrame = 0;
   resize(); buildTerrain();
@@ -1122,7 +1118,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 });
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(0, Math.min(20, n));
-  recomputeWorldSize();
+  setWorldSize();
   document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
   rebuilding = true;
   gridInit();
