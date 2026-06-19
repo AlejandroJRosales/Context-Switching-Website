@@ -1201,49 +1201,45 @@ const depthInstProg = program(`
     gl_Position = uLightVP * vec4(aInstPos + p, 1.0);
   }
 `, DEPTH_FRAG);
-// rain: world-space instanced streaks recycled in a column that tracks the camera.
-// per-instance data is real world position (Float32Array, hot-loop friendly) so a later
-// pass can query terrain height per drop for splashes / puddle accumulation.
+// rain
 const RAIN = {
   count: CONFIG.isMobile ? 1400 : 3000,
-  radius: 700,        // horizontal half-extent of the spawn column around the camera
-  top: 0,             // ceiling height (set at build from world scale)
-  fall: 900,          // vertical fall span (top -> top-fall before recycle)
-  speed: 1300,        // units/sec downward
-  mode: 'auto',       // 'auto' | 'on' | 'off' — user setting
-  on: false,          // resolved render flag (auto sets this stochastically)
-  intensity: 0,       // 0..1, eased toward target for auto fade in/out
-  target: 0,          // auto target intensity (0 dry, 1 storm)
-  nextRoll: 0,        // simTime at which auto re-rolls the weather
+  radius: 700,
+  top: 0,
+  fall: 900,
+  speed: 1300,
+  mode: 'auto',
+  on: false,
+  intensity: 0,
+  target: 0,
+  nextRoll: 0,
   buf: null,
-  data: null,         // [x,y,z, seed] per drop, world space
+  data: null,
   STRIDE: 4,
 };
-// auto weather: every ~rollEvery seconds, stochastically decide dry vs raining,
-// then ease intensity toward the target so rain fades in/out instead of popping.
+// weather
 function rainAuto(dt, t){
   if (t >= RAIN.nextRoll){
-    RAIN.nextRoll = t + 20 + RNG()*40;          // re-roll every 20-60s
-    RAIN.target = RNG() < 0.35 ? (0.4 + RNG()*0.6) : 0;  // 35% chance of rain
+    RAIN.nextRoll = t + 20 + RNG()*40;
+    RAIN.target = RNG() < 0.35 ? (0.4 + RNG()*0.6) : 0;
   }
-  const k = Math.min(1, dt*0.4);                // ease constant (fade speed)
+  const k = Math.min(1, dt*0.4);
   RAIN.intensity += (RAIN.target - RAIN.intensity)*k;
   RAIN.on = RAIN.intensity > 0.02;
 }
 function rainResolve(dt, t){
-  if (RAIN.mode === 'on'){ RAIN.on = true;  RAIN.intensity = 1; }
-  else if (RAIN.mode === 'off'){ RAIN.on = false; RAIN.intensity = 0; }
+  if (RAIN.mode === 'on'){ RAIN.on = true;  RAIN.intensity += (1-RAIN.intensity)*Math.min(1,dt*0.6); }
+  else if (RAIN.mode === 'off'){ RAIN.on = false; RAIN.intensity += (0-RAIN.intensity)*Math.min(1,dt*0.6); RAIN.on = RAIN.intensity>0.02; }
   else rainAuto(dt, t);
 }
 const RAIN_MODES = ['auto','on','off'];
 function cycleRainMode(){
   const i = RAIN_MODES.indexOf(RAIN.mode);
   RAIN.mode = RAIN_MODES[(i+1)%RAIN_MODES.length];
-  if (RAIN.mode === 'auto'){ RAIN.nextRoll = 0; }   // force an immediate re-roll
+  if (RAIN.mode === 'auto') RAIN.nextRoll = 0;
   const btn = document.getElementById('rainBtn');
   if (btn) btn.textContent = 'RAIN: ' + RAIN.mode.toUpperCase();
 }
-// unit vertical streak quad (two tris), stretched in the shader. x=width, y=length, in [-1,1].
 const rainGeoBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, rainGeoBuf);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -1252,14 +1248,14 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 ]), gl.STATIC_DRAW);
 const rainGeoCount = 6;
 const rainProg = program(`
-  attribute vec2 aCorner;     // unit quad corner: x=width axis, y=length axis
-  attribute vec3 aInstPos;    // world-space drop position (recycled CPU-side)
-  attribute float aSeed;      // per-drop random; varies streak length and alpha
-  uniform mat4 uVP;           // view-projection
-  uniform vec3 uRight;        // camera right in world space (billboard width axis)
-  uniform float uWidth;       // streak half-width, world units
-  uniform float uLen;         // streak half-length (vertical), world units
-  varying float vT;           // 0 at top tail, 1 at bottom head
+  attribute vec2 aCorner;
+  attribute vec3 aInstPos;
+  attribute float aSeed;
+  uniform mat4 uVP;
+  uniform vec3 uRight;
+  uniform float uWidth;
+  uniform float uLen;
+  varying float vT;
   void main(){
     vT = aCorner.y*0.5+0.5;
     float len = uLen*(0.6+0.4*aSeed);
@@ -1270,11 +1266,11 @@ const rainProg = program(`
   }
 `,`
   precision mediump float;
-  uniform vec3 uColor;        // streak tint
-  uniform float uAlpha;       // global rain opacity
+  uniform vec3 uColor;
+  uniform float uAlpha;
   varying float vT;
   void main(){
-    float a = uAlpha*(0.15+0.85*vT);   // brighter toward the falling head
+    float a = uAlpha*(0.15+0.85*vT);
     gl_FragColor = vec4(uColor, a);
   }
 `);
@@ -1283,15 +1279,13 @@ function rainBuild(){
   RAIN.data = new Float32Array(RAIN.count*RAIN.STRIDE);
   for(let i=0;i<RAIN.count;i++){
     const o=i*RAIN.STRIDE;
-    RAIN.data[o]   = (RNG()*2-1)*RAIN.radius;     // x (cam offset; abs world set on first update)
-    RAIN.data[o+1] = RAIN.top - RNG()*RAIN.fall;  // y world
-    RAIN.data[o+2] = (RNG()*2-1)*RAIN.radius;     // z
-    RAIN.data[o+3] = RNG();                        // seed
+    RAIN.data[o]   = (RNG()*2-1)*RAIN.radius;
+    RAIN.data[o+1] = RAIN.top - RNG()*RAIN.fall;
+    RAIN.data[o+2] = (RNG()*2-1)*RAIN.radius;
+    RAIN.data[o+3] = RNG();
   }
   RAIN.buf = RAIN.buf || gl.createBuffer();
 }
-// advance drops in world space; recycle below the floor (or out of the camera column)
-// back to a fresh slot above the camera. constant wind drift for now.
 function rainUpdate(dt, camX, camZ){
   if (!RAIN.on || !RAIN.data) return;
   const d=RAIN.data, st=RAIN.STRIDE, n=RAIN.count;
@@ -1315,6 +1309,153 @@ function rainUpdate(dt, camX, camZ){
   gl.bindBuffer(gl.ARRAY_BUFFER, RAIN.buf);
   gl.bufferData(gl.ARRAY_BUFFER, d, gl.DYNAMIC_DRAW);
 }
+// puddle
+const PUDDLE = {
+  cell: 24,
+  cols: 0, rows: 0,
+  ox: 0, oz: 0,
+  wet: null,
+  pool: null,
+  baseY: null,
+  fillRate: 0.35,
+  dryRate: 0.025,
+  threshold: 0.18,
+  maxDepth: 2.2,
+  buf: null, idxBuf: null, idxCount: 0,
+  vertCap: 0, vbo: null,
+  rebuildEvery: 0.4,
+  sinceRebuild: 1e9,
+  dirty: true,
+  lastCamX: 1e9, lastCamZ: 1e9
+};
+function puddleBuildField(){
+  const W = CONFIG.worldW, H = CONFIG.worldH, c = PUDDLE.cell;
+  PUDDLE.cols = Math.ceil(W/c)+1;
+  PUDDLE.rows = Math.ceil(H/c)+1;
+  PUDDLE.ox = -W/2; PUDDLE.oz = -H/2;
+  const n = PUDDLE.cols*PUDDLE.rows;
+  PUDDLE.wet   = new Float32Array(n);
+  PUDDLE.pool  = new Float32Array(n);
+  PUDDLE.baseY = new Float32Array(n);
+  const wl = CONFIG.waterLevel;
+  for (let r=0;r<PUDDLE.rows;r++){
+    for (let cx=0;cx<PUDDLE.cols;cx++){
+      const wx = PUDDLE.ox + cx*c, wz = PUDDLE.oz + r*c;
+      const hC = terrainHeight(wx, wz);
+      const i = r*PUDDLE.cols + cx;
+      PUDDLE.baseY[i] = hC;
+      if (hC < wl + 0.5){ PUDDLE.pool[i] = 0; continue; }
+      const e = c*0.5;
+      const sx = terrainHeight(wx+e,wz) - terrainHeight(wx-e,wz);
+      const sz = terrainHeight(wx,wz+e) - terrainHeight(wx,wz-e);
+      const slope = Math.sqrt(sx*sx+sz*sz)/c;
+      const flat = Math.max(0, 1 - slope*6.0);
+      const low = 1 - Math.min(1, (hC - wl) / (CONFIG.waterLevel*6 + 60));
+      PUDDLE.pool[i] = flat*flat * (0.4 + 0.6*low);
+    }
+  }
+  PUDDLE.dirty = true;
+  PUDDLE.sinceRebuild = 1e9;
+}
+function puddleAccumulate(dt, intensity){
+  const wet = PUDDLE.wet, pool = PUDDLE.pool;
+  if (!wet) return;
+  const n = wet.length;
+  if (intensity > 0.01){
+    const add = PUDDLE.fillRate * intensity * dt;
+    for (let i=0;i<n;i++){
+      const p = pool[i];
+      if (p <= 0) continue;
+      const w = wet[i] + add*p;
+      wet[i] = w > 1 ? 1 : w;
+    }
+    PUDDLE.dirty = true;
+  } else {
+    const sub = PUDDLE.dryRate * dt;
+    let changed = false;
+    for (let i=0;i<n;i++){
+      if (wet[i] > 0){ const w = wet[i]-sub; wet[i] = w < 0 ? 0 : w; changed = true; }
+    }
+    if (changed) PUDDLE.dirty = true;
+  }
+  PUDDLE.sinceRebuild += dt;
+}
+const PUDDLE_MAX_CELLS = 8000;
+function puddleRebuildMesh(camX, camZ){
+  PUDDLE.sinceRebuild = 0; PUDDLE.dirty = false;
+  PUDDLE.lastCamX = camX; PUDDLE.lastCamZ = camZ;
+  const cols=PUDDLE.cols, rows=PUDDLE.rows, c=PUDDLE.cell;
+  const wet=PUDDLE.wet, baseY=PUDDLE.baseY, th=PUDDLE.threshold;
+  PUDDLE.idxCount = 0;
+  const radius = 900;
+  const rCells = Math.ceil(radius/c);
+  const ccx = Math.round((camX-PUDDLE.ox)/c);
+  const ccz = Math.round((camZ-PUDDLE.oz)/c);
+  const x0=Math.max(0,ccx-rCells), x1=Math.min(cols-1,ccx+rCells);
+  const z0=Math.max(0,ccz-rCells), z1=Math.min(rows-1,ccz+rCells);
+  const r2=radius*radius;
+  if (!PUDDLE.vboData){
+    PUDDLE.vboData = new Float32Array(PUDDLE_MAX_CELLS*4*4);
+    PUDDLE.idxData = new Uint16Array(PUDDLE_MAX_CELLS*6);
+  }
+  const V = PUDDLE.vboData, I = PUDDLE.idxData;
+  let vi=0, ii=0, vert=0, placed=0;
+  const half=c*0.5;
+  for (let r=z0;r<=z1 && placed<PUDDLE_MAX_CELLS;r++){
+    const wz=PUDDLE.oz+r*c, dz=wz-camZ;
+    for (let cx=x0;cx<=x1;cx++){
+      const idx=r*cols+cx, w=wet[idx];
+      if (w<th) continue;
+      const wx=PUDDLE.ox+cx*c, dx=wx-camX;
+      if (dx*dx+dz*dz > r2) continue;
+      const y=baseY[idx] + PUDDLE.maxDepth*w*0.5 + 0.15;
+      const b=vert;
+      V[vi++]=wx-half; V[vi++]=y; V[vi++]=wz-half; V[vi++]=w;
+      V[vi++]=wx+half; V[vi++]=y; V[vi++]=wz-half; V[vi++]=w;
+      V[vi++]=wx+half; V[vi++]=y; V[vi++]=wz+half; V[vi++]=w;
+      V[vi++]=wx-half; V[vi++]=y; V[vi++]=wz+half; V[vi++]=w;
+      I[ii++]=b; I[ii++]=b+1; I[ii++]=b+2;
+      I[ii++]=b; I[ii++]=b+2; I[ii++]=b+3;
+      vert+=4; placed++;
+      if (placed>=PUDDLE_MAX_CELLS) break;
+    }
+  }
+  PUDDLE.idxCount = ii;
+  if (ii===0) return;
+  PUDDLE.buf = PUDDLE.buf || gl.createBuffer();
+  PUDDLE.idxBuf = PUDDLE.idxBuf || gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, PUDDLE.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, V.subarray(0,vi), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, PUDDLE.idxBuf);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, I.subarray(0,ii), gl.DYNAMIC_DRAW);
+}
+const puddleProg = program(`
+  precision highp float;
+  attribute vec3 aPos;
+  attribute float aWet;
+  uniform mat4 uVP;
+  varying highp vec3 vW;
+  varying float vWet;
+  void main(){ vW=aPos; vWet=aWet; gl_Position=uVP*vec4(aPos,1.0); }
+`,`
+  precision highp float;
+  varying highp vec3 vW; varying float vWet;
+  uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor;
+  uniform float uTime; uniform vec3 uFogColor; uniform float uFogDist;
+  ${FOG_GLSL}
+  void main(){
+    vec2 p = vW.xz*0.08;
+    float n1 = sin(p.x*1.7 + uTime*1.4) + cos(p.y*2.1 - uTime*1.0);
+    vec3 N = normalize(vec3(n1*0.04, 1.0, n1*0.04));
+    vec3 V = normalize(uEye - vW);
+    float fres = pow(1.0 - max(dot(V,N),0.0), 3.0);
+    vec3 col = mix(vec3(0.08,0.12,0.14), vec3(0.30,0.40,0.46), fres);
+    vec3 R = reflect(-uSunDir, N);
+    col += uSunColor*pow(max(dot(R,V),0.0),32.0)*0.5;
+    float a = clamp((vWet-0.12)/0.25, 0.0, 1.0) * 0.85;
+    gl_FragColor = vec4(applyFog(col, vW), a);
+  }
+`);
 function initShadow(){
   if (SHADOW.fbo){ gl.deleteFramebuffer(SHADOW.fbo); SHADOW.fbo=null; }
   if (SHADOW.tex){ gl.deleteTexture(SHADOW.tex); SHADOW.tex=null; }
@@ -1433,6 +1574,7 @@ function rebuildWorld(){
   buildTerrainCache();
   buildTerrain(); spawnCreatures(); spawnPlants();
   rainBuild();
+  puddleBuildField();
   cam.x=0; cam.z=CONFIG.worldH*0.35;
   cam.y=Math.max(terrainHeight(cam.x,cam.z),CONFIG.waterLevel)+EYE_HEIGHT;
   cam.vy=0; cam.onGround=true; cam.jumpsLeft=2;
@@ -1444,6 +1586,44 @@ let frameCount = 0, shadowFrame = 0;
 let rebuilding = false;
 let currentTimeOfDay = 0.5;
 let prevJumpKey = false;
+let _curProg=null, _iAttribs=null;
+function bindGeom(prog, geoBuf, vAttribs, instBuf, iAttribs, idxBuf){
+  gl.useProgram(prog); _curProg=prog; _iAttribs=iAttribs||null;
+  gl.bindBuffer(gl.ARRAY_BUFFER, geoBuf);
+  for (let k=0;k<vAttribs.length;k++){
+    const s=vAttribs[k], loc=prog.a(s[0]);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, s[1], gl.FLOAT, false, s[2], s[3]);
+    if (EXT_INSTANCE) EXT_INSTANCE.vertexAttribDivisorANGLE(loc, 0);
+  }
+  if (instBuf && iAttribs && EXT_INSTANCE){
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    for (let k=0;k<iAttribs.length;k++){
+      const s=iAttribs[k], loc=prog.a(s[0]);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, s[1], gl.FLOAT, false, s[2], s[3]);
+      EXT_INSTANCE.vertexAttribDivisorANGLE(loc, 1);
+    }
+  }
+  if (idxBuf) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+}
+function _resetInst(){
+  if (_iAttribs && EXT_INSTANCE)
+    for (let k=0;k<_iAttribs.length;k++) EXT_INSTANCE.vertexAttribDivisorANGLE(_curProg.a(_iAttribs[k][0]), 0);
+}
+function drawArraysPass(mode, first, count){ gl.drawArrays(mode, first, count); _resetInst(); }
+function drawElementsPass(mode, count, idxType){ gl.drawElements(mode, count, idxType, 0); _resetInst(); }
+function drawInstancedPass(mode, geoCount, instCount){ EXT_INSTANCE.drawArraysInstancedANGLE(mode, 0, geoCount, instCount); _resetInst(); }
+const VA_SKY=[['aPos',2,0,0]];
+const VA_TERRAIN=[['aPos',3,24,0],['aNormal',3,24,12]];
+const VA_WATER=[['aXZ',2,0,0]];
+const VA_PUDDLE=[['aPos',3,16,0],['aWet',1,16,12]];
+const VA_CREAT_G=[['aPos',3,24,0],['aNormal',3,24,12]];
+const IA_CREAT=[['aInstPos',3,INST_STRIDE*4,0],['aInstScale',1,INST_STRIDE*4,12],['aInstColor',3,INST_STRIDE*4,16],['aInstHeading',1,INST_STRIDE*4,28],['aInstSpecies',1,INST_STRIDE*4,32]];
+const VA_PLANT_G=[['aPos',3,16,0],['aV',1,16,12]];
+const IA_PLANT=[['aInstPos',3,P_STRIDE*4,0],['aSway',1,P_STRIDE*4,12]];
+const VA_RAIN_G=[['aCorner',2,8,0]];
+const IA_RAIN=[['aInstPos',3,RAIN.STRIDE*4,0],['aSeed',1,RAIN.STRIDE*4,12]];
 function frame(now){
   if (rebuilding){ last=now; requestAnimationFrame(frame); return; }
   let dt = (now-last)/1000; last=now;
@@ -1504,31 +1684,26 @@ function frame(now){
   uploadPlants();
   rainResolve(dt, simTime);
   rainUpdate(dt, cam.x, cam.z);
+  puddleAccumulate(dt, RAIN.intensity);
+  { const mdx=cam.x-PUDDLE.lastCamX, mdz=cam.z-PUDDLE.lastCamZ;
+    if (mdx*mdx+mdz*mdz > PUDDLE.cell*PUDDLE.cell*4) PUDDLE.dirty = true; }
+  if (PUDDLE.dirty && PUDDLE.sinceRebuild >= PUDDLE.rebuildEvery) puddleRebuildMesh(cam.x, cam.z);
   const eye=[cam.x,cam.y,cam.z];
   const fogDist = Math.max(CONFIG.worldW,CONFIG.worldH)*0.9;
   gl.clearColor(S.skyBottom[0],S.skyBottom[1],S.skyBottom[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST);
-  gl.useProgram(skyProg);
   const sunW=[cam.x+S.sunDir[0]*1000, cam.y+S.sunDir[1]*1000, cam.z+S.sunDir[2]*1000];
   const cv=[0,0,0,0];
-  (function(){ const v=sunW; for(let i=0;i<4;i++) cv[i]=VP[i]*v[0]+VP[i+4]*v[1]+VP[i+8]*v[2]+VP[i+12]; })();
+  for(let i=0;i<4;i++) cv[i]=VP[i]*sunW[0]+VP[i+4]*sunW[1]+VP[i+8]*sunW[2]+VP[i+12];
   const sx = cv[3]>0 ? (cv[0]/cv[3])*0.5+0.5 : -1, sy = cv[3]>0 ? (cv[1]/cv[3])*0.5+0.5 : -1;
-  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-  gl.enableVertexAttribArray(skyProg.a('aPos'));
-  gl.vertexAttribPointer(skyProg.a('aPos'),2,gl.FLOAT,false,0,0);
+  bindGeom(skyProg, quadBuf, VA_SKY);
   gl.uniform3fv(skyProg.u('uTop'),S.skyTop); gl.uniform3fv(skyProg.u('uBottom'),S.skyBottom);
   gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); gl.uniform1f(skyProg.u('uSunUp'),S.up);
-  gl.drawArrays(gl.TRIANGLES,0,3);
+  drawArraysPass(gl.TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
-  gl.useProgram(terrainProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
-  gl.enableVertexAttribArray(terrainProg.a('aPos'));
-  gl.vertexAttribPointer(terrainProg.a('aPos'),3,gl.FLOAT,false,24,0);
-  gl.enableVertexAttribArray(terrainProg.a('aNormal'));
-  gl.vertexAttribPointer(terrainProg.a('aNormal'),3,gl.FLOAT,false,24,12);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
+  bindGeom(terrainProg, terrainBuf, VA_TERRAIN, null, null, terrainIdxBuf);
   gl.uniformMatrix4fv(terrainProg.u('uVP'),false,VP);
   gl.uniform3fv(terrainProg.u('uSunDir'),S.sunDir);
   gl.uniform3fv(terrainProg.u('uSunColor'),S.sunColor);
@@ -1538,57 +1713,42 @@ function frame(now){
   gl.uniform1f(terrainProg.u('uFogDist'),fogDist);
   gl.uniform3fv(terrainProg.u('uEye'),eye);
   bindShadowUniforms(terrainProg);
-  gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
+  drawElementsPass(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT);
   // creature rendering
   if (EXT_INSTANCE && C.n>0){
-    const ST=INST_STRIDE*4;
-    gl.useProgram(creatureProg);
-    gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
-    const ap=creatureProg.a('aPos'), an=creatureProg.a('aNormal');
-    gl.enableVertexAttribArray(ap); gl.vertexAttribPointer(ap,3,gl.FLOAT,false,24,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(ap,0);
-    gl.enableVertexAttribArray(an); gl.vertexAttribPointer(an,3,gl.FLOAT,false,24,12); EXT_INSTANCE.vertexAttribDivisorANGLE(an,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-    const ip=creatureProg.a('aInstPos'), is=creatureProg.a('aInstScale'),
-          ic=creatureProg.a('aInstColor'), ih=creatureProg.a('aInstHeading'),
-          isp=creatureProg.a('aInstSpecies');
-    gl.enableVertexAttribArray(ip); gl.vertexAttribPointer(ip,3,gl.FLOAT,false,ST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(ip,1);
-    gl.enableVertexAttribArray(is); gl.vertexAttribPointer(is,1,gl.FLOAT,false,ST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(is,1);
-    gl.enableVertexAttribArray(ic); gl.vertexAttribPointer(ic,3,gl.FLOAT,false,ST,16); EXT_INSTANCE.vertexAttribDivisorANGLE(ic,1);
-    gl.enableVertexAttribArray(ih); gl.vertexAttribPointer(ih,1,gl.FLOAT,false,ST,28); EXT_INSTANCE.vertexAttribDivisorANGLE(ih,1);
-    gl.enableVertexAttribArray(isp); gl.vertexAttribPointer(isp,1,gl.FLOAT,false,ST,32); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,1);
+    bindGeom(creatureProg, creatureGeoBuf, VA_CREAT_G, instBuf, IA_CREAT);
     gl.uniformMatrix4fv(creatureProg.u('uVP'),false,VP);
     gl.uniform3fv(creatureProg.u('uSunDir'),S.sunDir);
     gl.uniform3fv(creatureProg.u('uAmbient'),S.ambient);
     bindShadowUniforms(creatureProg);
-    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,creatureGeoCount,C.n);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(ic,0); EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
+    drawInstancedPass(gl.TRIANGLES,creatureGeoCount,C.n);
   }
   // plant rendering
   if (EXT_INSTANCE && P.n>0){
-    const ST=P_STRIDE*4;
-    gl.useProgram(plantProg);
-    gl.bindBuffer(gl.ARRAY_BUFFER, plantGeoBuf);
-    const pp=plantProg.a('aPos'), pv=plantProg.a('aV');
-    gl.enableVertexAttribArray(pp); gl.vertexAttribPointer(pp,3,gl.FLOAT,false,16,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(pp,0);
-    gl.enableVertexAttribArray(pv); gl.vertexAttribPointer(pv,1,gl.FLOAT,false,16,12); EXT_INSTANCE.vertexAttribDivisorANGLE(pv,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, plantInstBuf);
-    const pip=plantProg.a('aInstPos'), psw=plantProg.a('aSway');
-    gl.enableVertexAttribArray(pip); gl.vertexAttribPointer(pip,3,gl.FLOAT,false,ST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(pip,1);
-    gl.enableVertexAttribArray(psw); gl.vertexAttribPointer(psw,1,gl.FLOAT,false,ST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,1);
+    bindGeom(plantProg, plantGeoBuf, VA_PLANT_G, plantInstBuf, IA_PLANT);
     gl.uniformMatrix4fv(plantProg.u('uVP'),false,VP);
     gl.uniform1f(plantProg.u('uTime'),simTime);
     gl.uniform3fv(plantProg.u('uSunColor'),S.sunColor);
     gl.uniform3fv(plantProg.u('uAmbient'),S.ambient);
-    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,plantGeoCount,P.n);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(pip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(psw,0);
+    drawInstancedPass(gl.TRIANGLES,plantGeoCount,P.n);
+  }
+  // puddle pass
+  if (PUDDLE.idxCount > 0){
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
+    bindGeom(puddleProg, PUDDLE.buf, VA_PUDDLE, null, null, PUDDLE.idxBuf);
+    gl.uniformMatrix4fv(puddleProg.u('uVP'),false,VP);
+    gl.uniform3fv(puddleProg.u('uEye'),eye);
+    gl.uniform3fv(puddleProg.u('uSunDir'),S.sunDir);
+    gl.uniform3fv(puddleProg.u('uSunColor'),S.sunColor);
+    gl.uniform1f(puddleProg.u('uTime'),simTime);
+    gl.uniform3fv(puddleProg.u('uFogColor'),S.fog);
+    gl.uniform1f(puddleProg.u('uFogDist'),fogDist);
+    drawElementsPass(gl.TRIANGLES, PUDDLE.idxCount, gl.UNSIGNED_SHORT);
+    gl.depthMask(true); gl.disable(gl.BLEND);
   }
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
-  gl.useProgram(waterProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, waterBuf);
-  gl.enableVertexAttribArray(waterProg.a('aXZ'));
-  gl.vertexAttribPointer(waterProg.a('aXZ'),2,gl.FLOAT,false,0,0);
+  bindGeom(waterProg, waterBuf, VA_WATER);
   gl.uniformMatrix4fv(waterProg.u('uVP'),false,VP);
   gl.uniform1f(waterProg.u('uLevel'),CONFIG.waterLevel);
   gl.uniform3fv(waterProg.u('uEye'),eye);
@@ -1598,30 +1758,20 @@ function frame(now){
   gl.uniform3fv(waterProg.u('uFogColor'),S.fog);
   gl.uniform1f(waterProg.u('uFogDist'),fogDist);
   gl.uniform1f(waterProg.u('uHighQ'),CONFIG.quality==='high'?1.0:0.0);
-  gl.drawArrays(gl.TRIANGLES,0,6);
+  drawArraysPass(gl.TRIANGLES,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
-  // rain pass: world-space instanced streaks, depth-tested vs terrain, no depth write
+  // rain pass
   if (EXT_INSTANCE && RAIN.on && RAIN.data){
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
-    gl.useProgram(rainProg);
-    gl.bindBuffer(gl.ARRAY_BUFFER, rainGeoBuf);
-    const rc=rainProg.a('aCorner');
-    gl.enableVertexAttribArray(rc); gl.vertexAttribPointer(rc,2,gl.FLOAT,false,8,0);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(rc,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, RAIN.buf);
-    const RST=RAIN.STRIDE*4;
-    const rip=rainProg.a('aInstPos'), rsd=rainProg.a('aSeed');
-    gl.enableVertexAttribArray(rip); gl.vertexAttribPointer(rip,3,gl.FLOAT,false,RST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(rip,1);
-    gl.enableVertexAttribArray(rsd); gl.vertexAttribPointer(rsd,1,gl.FLOAT,false,RST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(rsd,1);
+    bindGeom(rainProg, rainGeoBuf, VA_RAIN_G, RAIN.buf, IA_RAIN);
     gl.uniformMatrix4fv(rainProg.u('uVP'),false,VP);
     gl.uniform3f(rainProg.u('uRight'), rgt[0], rgt[1], rgt[2]);
     gl.uniform1f(rainProg.u('uWidth'), 0.5);
     gl.uniform1f(rainProg.u('uLen'),   14.0);
     gl.uniform3f(rainProg.u('uColor'), 0.62*S.up+0.30, 0.68*S.up+0.34, 0.78*S.up+0.40);
     gl.uniform1f(rainProg.u('uAlpha'), 0.42*Math.max(0.15, RAIN.intensity));
-    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,rainGeoCount,RAIN.count);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(rip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(rsd,0);
+    drawInstancedPass(gl.TRIANGLES,rainGeoCount,RAIN.count);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
   if (frameCount % 60 === 0){
