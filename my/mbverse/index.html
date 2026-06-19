@@ -252,7 +252,8 @@ const TERRAIN = {
   mtnOctaves: 4,
   mtnThreshold: 0.45,
 };
-const THCACHE = {res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0, W: 0, H: 0, data: null};
+const THCACHE = {res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0, W: 0, H: 0, data: null,
+  wmRes: 0, wmCols: 0, wmRows: 0, wmOx: 0, wmOz: 0, wmInvStep: 0, waterMask: null};
 let terrainBuf=null, terrainIdxBuf=null, terrainIdxCount=0;
 function buildTerrainCache(){
   const step = CONFIG.isMobile ? 12 : 8;
@@ -275,6 +276,33 @@ function buildTerrainCache(){
   THCACHE.ox = ox; THCACHE.oz = oz;
   THCACHE.invStepX = 1/step; THCACHE.invStepZ = 1/step;
   THCACHE.data = data;
+  const wmStep = step * 2;
+  const wmOx = -W/2 - wmStep, wmOz = -H/2 - wmStep;
+  const wmSpanW = W + wmStep*2, wmSpanH = H + wmStep*2;
+  const wmCols = Math.ceil(wmSpanW/wmStep) + 1;
+  const wmRows = Math.ceil(wmSpanH/wmStep) + 1;
+  const mask = new Uint8Array(wmCols*wmRows);
+  const wl = CONFIG.waterLevel;
+  for (let r=0;r<wmRows;r++){
+    const wz = wmOz + r*wmStep;
+    const base = r*wmCols;
+    for (let c=0;c<wmCols;c++){
+      mask[base+c] = terrainHeightExact(wmOx + c*wmStep, wz) < wl ? 1 : 0;
+    }
+  }
+  THCACHE.wmRes = wmStep; THCACHE.wmCols = wmCols; THCACHE.wmRows = wmRows;
+  THCACHE.wmOx = wmOx; THCACHE.wmOz = wmOz; THCACHE.wmInvStep = 1/wmStep;
+  THCACHE.waterMask = mask;
+}
+function isWaterAt(wx, wz){
+  const cache = THCACHE;
+  const mask = cache.waterMask;
+  if (!mask) return terrainHeightExact(wx, wz) < CONFIG.waterLevel;
+  let ix = ((wx - cache.wmOx) * cache.wmInvStep)|0;
+  let iz = ((wz - cache.wmOz) * cache.wmInvStep)|0;
+  if (ix < 0 || iz < 0 || ix >= cache.wmCols || iz >= cache.wmRows)
+    return terrainHeightExact(wx, wz) < CONFIG.waterLevel;
+  return mask[iz*cache.wmCols + ix] === 1;
 }
 function terrainHeight(wx, wz){
   const cache = THCACHE;
@@ -538,6 +566,8 @@ const N_RAYS = 5;
 const RAY_FOV = Math.PI*0.55;
 const RAY_LEN = 220;
 const RAY_STEP = 22;
+const SENSE_SCAN_CAP = RAY_STEP;
+const SENSE_STEP_MARGIN = 2;
 const ENTITY_TYPES = 4;
 const SENSE_PER_RAY = 1 + ENTITY_TYPES;
 const N_INPUT = N_RAYS*SENSE_PER_RAY + 3;
@@ -612,14 +642,18 @@ function senseCreature(i, timeOfDay){
     const ang = h + t*RAY_FOV;
     const dx=Math.sin(ang), dz=Math.cos(ang);
     let hitDist=RAY_LEN, hitType=-1;
-    for(let d=RAY_STEP; d<=RAY_LEN; d+=RAY_STEP){
+    let d=RAY_STEP;
+    while(d<=RAY_LEN){
       const px=x+dx*d, pz=z+dz*d;
-      if(terrainHeight(px,pz) < CONFIG.waterLevel && hitType===-1){ hitDist=d; hitType=3; break; }
-      gridScanVision(px,pz,RAY_STEP,i);
-      let found=gqType, foundD=(gqType!==-1)?gqDist:RAY_STEP;
+      if(isWaterAt(px,pz) && hitType===-1){ hitDist=d; hitType=3; break; }
+      const scanD = RAY_STEP < SENSE_SCAN_CAP ? RAY_STEP : SENSE_SCAN_CAP;
+      gridScanVision(px,pz,scanD,i);
+      let found=gqType, foundD=(gqType!==-1)?gqDist:scanD;
       pgridScanNearest(px,pz,foundD);
       if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } }
       if(found!==-1){ hitDist=d; hitType=found; break; }
+      const advance = foundD - SENSE_STEP_MARGIN;
+      d += advance > RAY_STEP ? advance : RAY_STEP;
     }
     const base=r*SENSE_PER_RAY;
     sIn[base]=hitDist/RAY_LEN;
