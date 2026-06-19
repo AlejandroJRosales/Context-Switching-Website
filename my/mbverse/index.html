@@ -1320,7 +1320,7 @@ const PUDDLE = {
   fillRate: 0.35,
   dryRate: 0.025,
   threshold: 0.18,
-  maxDepth: 2.2,
+  lift: 0.25,
   buf: null, idxBuf: null, idxCount: 0,
   vertCap: 0, vbo: null,
   rebuildEvery: 0.4,
@@ -1338,13 +1338,19 @@ function puddleBuildField(){
   PUDDLE.pool  = new Float32Array(n);
   PUDDLE.baseY = new Float32Array(n);
   const wl = CONFIG.waterLevel;
+  const margin = 6;
   for (let r=0;r<PUDDLE.rows;r++){
     for (let cx=0;cx<PUDDLE.cols;cx++){
       const wx = PUDDLE.ox + cx*c, wz = PUDDLE.oz + r*c;
       const hC = terrainHeight(wx, wz);
       const i = r*PUDDLE.cols + cx;
       PUDDLE.baseY[i] = hC;
-      if (hC < wl + 0.5){ PUDDLE.pool[i] = 0; continue; }
+      if (hC < wl + margin ||
+          isWaterAt(wx,wz) ||
+          isWaterAt(wx+c,wz) || isWaterAt(wx-c,wz) ||
+          isWaterAt(wx,wz+c) || isWaterAt(wx,wz-c)){
+        PUDDLE.pool[i] = 0; continue;
+      }
       const e = c*0.5;
       const sx = terrainHeight(wx+e,wz) - terrainHeight(wx-e,wz);
       const sz = terrainHeight(wx,wz+e) - terrainHeight(wx,wz-e);
@@ -1408,7 +1414,7 @@ function puddleRebuildMesh(camX, camZ){
       if (w<th) continue;
       const wx=PUDDLE.ox+cx*c, dx=wx-camX;
       if (dx*dx+dz*dz > r2) continue;
-      const y=baseY[idx] + PUDDLE.maxDepth*w*0.5 + 0.15;
+      const y=baseY[idx] + PUDDLE.lift;
       const b=vert;
       V[vi++]=wx-half; V[vi++]=y; V[vi++]=wz-half; V[vi++]=w;
       V[vi++]=wx+half; V[vi++]=y; V[vi++]=wz-half; V[vi++]=w;
@@ -1441,7 +1447,7 @@ const puddleProg = program(`
   precision highp float;
   varying highp vec3 vW; varying float vWet;
   uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor;
-  uniform float uTime; uniform vec3 uFogColor; uniform float uFogDist;
+  uniform vec3 uSky; uniform float uTime; uniform vec3 uFogColor; uniform float uFogDist;
   ${FOG_GLSL}
   void main(){
     vec2 p = vW.xz*0.08;
@@ -1449,10 +1455,11 @@ const puddleProg = program(`
     vec3 N = normalize(vec3(n1*0.04, 1.0, n1*0.04));
     vec3 V = normalize(uEye - vW);
     float fres = pow(1.0 - max(dot(V,N),0.0), 3.0);
-    vec3 col = mix(vec3(0.08,0.12,0.14), vec3(0.30,0.40,0.46), fres);
+    vec3 base = vec3(0.20,0.30,0.34);
+    vec3 col = mix(base, uSky, clamp(fres,0.0,1.0));
     vec3 R = reflect(-uSunDir, N);
-    col += uSunColor*pow(max(dot(R,V),0.0),32.0)*0.5;
-    float a = clamp((vWet-0.12)/0.25, 0.0, 1.0) * 0.85;
+    col += uSunColor*pow(max(dot(R,V),0.0),48.0)*0.6;
+    float a = clamp((vWet-0.12)/0.30, 0.0, 1.0) * 0.7;
     gl_FragColor = vec4(applyFog(col, vW), a);
   }
 `);
@@ -1741,6 +1748,7 @@ function frame(now){
     gl.uniform3fv(puddleProg.u('uEye'),eye);
     gl.uniform3fv(puddleProg.u('uSunDir'),S.sunDir);
     gl.uniform3fv(puddleProg.u('uSunColor'),S.sunColor);
+    gl.uniform3fv(puddleProg.u('uSky'),S.skyTop);
     gl.uniform1f(puddleProg.u('uTime'),simTime);
     gl.uniform3fv(puddleProg.u('uFogColor'),S.fog);
     gl.uniform1f(puddleProg.u('uFogDist'),fogDist);
