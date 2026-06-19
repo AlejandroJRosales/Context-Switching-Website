@@ -29,6 +29,7 @@
   <div id="btns">
     <button class="btn" id="qualityBtn">HIGH</button>
     <button class="btn" id="flyBtn">FLY: OFF</button>
+    <button class="btn" id="rainBtn">RAIN: AUTO</button>
     <button class="btn" id="resetBtn">RESET</button>
     <span id="scaleWrap" style="display:inline-flex;align-items:center;gap:2px">
       <button class="btn" id="scaleDown">-</button>
@@ -1124,7 +1125,7 @@ if (HAS_TOUCH){
   lookEl.style.display='none';
   document.getElementById('jump').style.display='none';
 }
-window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; });
+window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; if(e.key.toLowerCase()==='r') cycleRainMode(); });
 window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 (function(){
   let locked=false;
@@ -1156,6 +1157,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
   rebuildWorld();
 });
+document.getElementById('rainBtn').addEventListener('click', cycleRainMode);
 // world build and loop
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(0, Math.min(20, n));
@@ -1199,6 +1201,120 @@ const depthInstProg = program(`
     gl_Position = uLightVP * vec4(aInstPos + p, 1.0);
   }
 `, DEPTH_FRAG);
+// rain: world-space instanced streaks recycled in a column that tracks the camera.
+// per-instance data is real world position (Float32Array, hot-loop friendly) so a later
+// pass can query terrain height per drop for splashes / puddle accumulation.
+const RAIN = {
+  count: CONFIG.isMobile ? 1400 : 3000,
+  radius: 700,        // horizontal half-extent of the spawn column around the camera
+  top: 0,             // ceiling height (set at build from world scale)
+  fall: 900,          // vertical fall span (top -> top-fall before recycle)
+  speed: 1300,        // units/sec downward
+  mode: 'auto',       // 'auto' | 'on' | 'off' — user setting
+  on: false,          // resolved render flag (auto sets this stochastically)
+  intensity: 0,       // 0..1, eased toward target for auto fade in/out
+  target: 0,          // auto target intensity (0 dry, 1 storm)
+  nextRoll: 0,        // simTime at which auto re-rolls the weather
+  buf: null,
+  data: null,         // [x,y,z, seed] per drop, world space
+  STRIDE: 4,
+};
+// auto weather: every ~rollEvery seconds, stochastically decide dry vs raining,
+// then ease intensity toward the target so rain fades in/out instead of popping.
+function rainAuto(dt, t){
+  if (t >= RAIN.nextRoll){
+    RAIN.nextRoll = t + 20 + RNG()*40;          // re-roll every 20-60s
+    RAIN.target = RNG() < 0.35 ? (0.4 + RNG()*0.6) : 0;  // 35% chance of rain
+  }
+  const k = Math.min(1, dt*0.4);                // ease constant (fade speed)
+  RAIN.intensity += (RAIN.target - RAIN.intensity)*k;
+  RAIN.on = RAIN.intensity > 0.02;
+}
+function rainResolve(dt, t){
+  if (RAIN.mode === 'on'){ RAIN.on = true;  RAIN.intensity = 1; }
+  else if (RAIN.mode === 'off'){ RAIN.on = false; RAIN.intensity = 0; }
+  else rainAuto(dt, t);
+}
+const RAIN_MODES = ['auto','on','off'];
+function cycleRainMode(){
+  const i = RAIN_MODES.indexOf(RAIN.mode);
+  RAIN.mode = RAIN_MODES[(i+1)%RAIN_MODES.length];
+  if (RAIN.mode === 'auto'){ RAIN.nextRoll = 0; }   // force an immediate re-roll
+  const btn = document.getElementById('rainBtn');
+  if (btn) btn.textContent = 'RAIN: ' + RAIN.mode.toUpperCase();
+}
+// unit vertical streak quad (two tris), stretched in the shader. x=width, y=length, in [-1,1].
+const rainGeoBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, rainGeoBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1,-1,  1,-1,  1,1,
+  -1,-1,  1,1,  -1,1,
+]), gl.STATIC_DRAW);
+const rainGeoCount = 6;
+const rainProg = program(`
+  attribute vec2 aCorner;     // unit quad corner: x=width axis, y=length axis
+  attribute vec3 aInstPos;    // world-space drop position (recycled CPU-side)
+  attribute float aSeed;      // per-drop random; varies streak length and alpha
+  uniform mat4 uVP;           // view-projection
+  uniform vec3 uRight;        // camera right in world space (billboard width axis)
+  uniform float uWidth;       // streak half-width, world units
+  uniform float uLen;         // streak half-length (vertical), world units
+  varying float vT;           // 0 at top tail, 1 at bottom head
+  void main(){
+    vT = aCorner.y*0.5+0.5;
+    float len = uLen*(0.6+0.4*aSeed);
+    vec3 world = aInstPos
+      + uRight * (aCorner.x*uWidth)
+      + vec3(0.0,1.0,0.0) * (aCorner.y*len);
+    gl_Position = uVP*vec4(world,1.0);
+  }
+`,`
+  precision mediump float;
+  uniform vec3 uColor;        // streak tint
+  uniform float uAlpha;       // global rain opacity
+  varying float vT;
+  void main(){
+    float a = uAlpha*(0.15+0.85*vT);   // brighter toward the falling head
+    gl_FragColor = vec4(uColor, a);
+  }
+`);
+function rainBuild(){
+  RAIN.top = Math.max(120, CONFIG.waterLevel + 600 + CONFIG.worldScale*8);
+  RAIN.data = new Float32Array(RAIN.count*RAIN.STRIDE);
+  for(let i=0;i<RAIN.count;i++){
+    const o=i*RAIN.STRIDE;
+    RAIN.data[o]   = (RNG()*2-1)*RAIN.radius;     // x (cam offset; abs world set on first update)
+    RAIN.data[o+1] = RAIN.top - RNG()*RAIN.fall;  // y world
+    RAIN.data[o+2] = (RNG()*2-1)*RAIN.radius;     // z
+    RAIN.data[o+3] = RNG();                        // seed
+  }
+  RAIN.buf = RAIN.buf || gl.createBuffer();
+}
+// advance drops in world space; recycle below the floor (or out of the camera column)
+// back to a fresh slot above the camera. constant wind drift for now.
+function rainUpdate(dt, camX, camZ){
+  if (!RAIN.on || !RAIN.data) return;
+  const d=RAIN.data, st=RAIN.STRIDE, n=RAIN.count;
+  const dy = RAIN.speed*dt;
+  const windX = 40*dt, windZ = 18*dt;
+  const floor = CONFIG.waterLevel - 20;
+  const top = RAIN.top, fall = RAIN.fall, R = RAIN.radius;
+  for(let i=0;i<n;i++){
+    const o=i*st;
+    d[o]   += windX;
+    d[o+2] += windZ;
+    d[o+1] -= dy;
+    const ddx = d[o]-camX, ddz = d[o+2]-camZ;
+    if (d[o+1] < floor || ddx*ddx+ddz*ddz > (R*R)*1.2){
+      d[o]   = camX + (RNG()*2-1)*R;
+      d[o+1] = top - RNG()*fall;
+      d[o+2] = camZ + (RNG()*2-1)*R;
+      d[o+3] = RNG();
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, RAIN.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, d, gl.DYNAMIC_DRAW);
+}
 function initShadow(){
   if (SHADOW.fbo){ gl.deleteFramebuffer(SHADOW.fbo); SHADOW.fbo=null; }
   if (SHADOW.tex){ gl.deleteTexture(SHADOW.tex); SHADOW.tex=null; }
@@ -1316,6 +1432,7 @@ function rebuildWorld(){
   for(let i=0;i<512;i++) NOISE_PERM[i]=base[i&255];
   buildTerrainCache();
   buildTerrain(); spawnCreatures(); spawnPlants();
+  rainBuild();
   cam.x=0; cam.z=CONFIG.worldH*0.35;
   cam.y=Math.max(terrainHeight(cam.x,cam.z),CONFIG.waterLevel)+EYE_HEIGHT;
   cam.vy=0; cam.onGround=true; cam.jumpsLeft=2;
@@ -1385,6 +1502,8 @@ function frame(now){
   updateCreatures(dt);
   uploadCreatures();
   uploadPlants();
+  rainResolve(dt, simTime);
+  rainUpdate(dt, cam.x, cam.z);
   const eye=[cam.x,cam.y,cam.z];
   const fogDist = Math.max(CONFIG.worldW,CONFIG.worldH)*0.9;
   gl.clearColor(S.skyBottom[0],S.skyBottom[1],S.skyBottom[2],1);
@@ -1481,6 +1600,30 @@ function frame(now){
   gl.uniform1f(waterProg.u('uHighQ'),CONFIG.quality==='high'?1.0:0.0);
   gl.drawArrays(gl.TRIANGLES,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
+  // rain pass: world-space instanced streaks, depth-tested vs terrain, no depth write
+  if (EXT_INSTANCE && RAIN.on && RAIN.data){
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(rainProg);
+    gl.bindBuffer(gl.ARRAY_BUFFER, rainGeoBuf);
+    const rc=rainProg.a('aCorner');
+    gl.enableVertexAttribArray(rc); gl.vertexAttribPointer(rc,2,gl.FLOAT,false,8,0);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(rc,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, RAIN.buf);
+    const RST=RAIN.STRIDE*4;
+    const rip=rainProg.a('aInstPos'), rsd=rainProg.a('aSeed');
+    gl.enableVertexAttribArray(rip); gl.vertexAttribPointer(rip,3,gl.FLOAT,false,RST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(rip,1);
+    gl.enableVertexAttribArray(rsd); gl.vertexAttribPointer(rsd,1,gl.FLOAT,false,RST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(rsd,1);
+    gl.uniformMatrix4fv(rainProg.u('uVP'),false,VP);
+    gl.uniform3f(rainProg.u('uRight'), rgt[0], rgt[1], rgt[2]);
+    gl.uniform1f(rainProg.u('uWidth'), 0.5);
+    gl.uniform1f(rainProg.u('uLen'),   14.0);
+    gl.uniform3f(rainProg.u('uColor'), 0.62*S.up+0.30, 0.68*S.up+0.34, 0.78*S.up+0.40);
+    gl.uniform1f(rainProg.u('uAlpha'), 0.42*Math.max(0.15, RAIN.intensity));
+    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,rainGeoCount,RAIN.count);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(rip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(rsd,0);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
   if (frameCount % 60 === 0){
     let herb=0, eSum=0, spkSum=0, ageSum=0, maxGen=0;
     for(let i=0;i<C.n;i++){
