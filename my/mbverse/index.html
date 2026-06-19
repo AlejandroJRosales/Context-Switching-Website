@@ -18,7 +18,10 @@
   #jump { right:24px; width:90px; height:90px; bottom:39px; display:flex; align-items:center; justify-content:center; }
   #joy .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.25); }
   #info { position:absolute; top:8px; left:8px; color:#fff;line-height:1.5; pointer-events:none; white-space:pre; z-index:4; }
-  #btns { position:absolute; top:8px; right:8px; display:flex; gap:6px; z-index:4; }
+  #gear { position:absolute; top:8px; right:8px; z-index:5; pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; border-radius:4px; padding:6px 10px; font-family:inherit; font-size:16px; line-height:1; }
+  #btns { position:absolute; top:44px; right:8px; display:none; flex-direction:column; align-items:stretch; gap:6px; z-index:4; background:rgba(0,0,0,.55); padding:8px; border-radius:6px; }
+  #btns.open { display:flex; }
+  #scaleWrap { display:flex; align-items:center; justify-content:center; gap:2px; }
   .btn  { pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; border-radius:4px; padding:6px 10px; font-family:inherit; }
 </style>
 </head>
@@ -26,12 +29,13 @@
 <canvas id="gl"></canvas>
 <div id="hud">
   <div id="info"></div>
+  <button id="gear">⚙</button>
   <div id="btns">
     <button class="btn" id="qualityBtn">HIGH</button>
     <button class="btn" id="flyBtn">FLY: OFF</button>
     <button class="btn" id="rainBtn">RAIN: AUTO</button>
     <button class="btn" id="resetBtn">RESET</button>
-    <span id="scaleWrap" style="display:inline-flex;align-items:center;gap:2px">
+    <span id="scaleWrap">
       <button class="btn" id="scaleDown">-</button>
       <button class="btn" id="scaleDisplay">10</button>
       <button class="btn" id="scaleUp">+</button>
@@ -1158,6 +1162,9 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   rebuildWorld();
 });
 document.getElementById('rainBtn').addEventListener('click', cycleRainMode);
+document.getElementById('gear').addEventListener('click', ()=>{
+  document.getElementById('btns').classList.toggle('open');
+});
 // world build and loop
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(0, Math.min(20, n));
