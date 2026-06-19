@@ -44,9 +44,9 @@
 "use strict";
 // config and utilities
 function scale(n){ return Math.max(500, Math.round(5000 * Math.log(Math.max(n,1)) / Math.log(10))); }
+function setWorldSize(){const s = scale(CONFIG.worldScale);CONFIG.worldW = s;CONFIG.worldH = s;}
 function setShadowSize(q){ return q==='high' ? 1024 : 512; }
-function setShadowRefresh(q){ return q==='high' ? 5 : 30; }
-function setWorldSize(){const s = scale(CONFIG.worldScale);CONFIG.worldW = s;CONFIG.worldH = s;} 
+function setShadowRefresh(q){ return q==='high' ? 5 : 30; } 
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 10,
@@ -58,6 +58,7 @@ const CONFIG = {
   seed: 1337,
 };
 setWorldSize();
+// shader program
 function compile(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s);
@@ -65,7 +66,6 @@ function compile(type, src) {
     throw new Error('shader compile: ' + gl.getShaderInfoLog(s) + '\n' + src);
   return s;
 }
-// shader program
 function program(vsSrc, fsSrc) {
   const p = gl.createProgram();
   gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
