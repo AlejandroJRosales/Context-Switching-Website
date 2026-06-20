@@ -6,7 +6,7 @@ $(function() {
         'id': 0,
         'name': 'Epigenetics and Inheritance',
         'preview': 'In biology, epigenetics is the study of mitotically and/or meiotically heritable changes in gene function that cannot be explained by changes to the DNA sequence. Epigenetics normally involves change that is not erased by cell division and that also affects the regulation of gene expression. Epigenetics reflects our understanding',
-        'url': '/misc/epigeneticsandinheritance',
+        'url': '/general/epigeneticsandinheritance',
       },
       {
         'id': 1,
@@ -21,7 +21,7 @@ $(function() {
         product of \((n+1)\)-dimensional Anti-de Sitter space with a compact manifold is capable of describing large \(N\)
         limits of conformal field theories in \(d\)-dimensions. Correlation functions in CFT are dependent on the
         supergravity action of asymptotic behavior at`,
-        'url': '/misc/qfandadsmaldacenaconjecture'
+        'url': '/general/qfandadsmaldacenaconjecture'
       },
     ]
     $table.bootstrapTable({data: data})

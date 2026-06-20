@@ -116,7 +116,7 @@ function localCommand(query) {
   }
 
   else if (queryLowered.indexOf("misc") >= 0 && queryLowered.indexOf("page") >= 0) {
-    window.location.href = "/misc";
+    window.location.href = "/general";
     return true;
   }
 
