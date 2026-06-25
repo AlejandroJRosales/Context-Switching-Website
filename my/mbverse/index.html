@@ -52,16 +52,21 @@ function scale(n){ return Math.max(500, Math.round(5000 * Math.max(n,1) / 10)); 
 function setWorldSize(){const s = scale(CONFIG.worldScale);CONFIG.worldW = s;CONFIG.worldH = s;}
 function setShadowSize(q){ return q==='high' ? 1024 : 512; }
 function setShadowRefresh(q){ return q==='high' ? 5 : 30; } 
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 const CONFIG = {
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 10,
   worldW: 0,
   worldH: 0,
-  waterLevel: 8,
+  waterLevel: 1,
   probSpawnPlant: 0.04,
   quality: 'high',
-  seed: 1337,
+  seed: 1234,
 };
+let RNG = mulberry32(CONFIG.seed);
+CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
+CONFIG.waterLevel = Math.round(RNG()*10);
 setWorldSize();
 // shader program
 function compile(type, src) {
@@ -127,9 +132,6 @@ const M4 = {
   }
 };
 // noise
-function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
-  let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
-let RNG = mulberry32(CONFIG.seed);
 const NOISE_PERM = (() => {
   const p = new Uint8Array(512), base = new Uint8Array(256);
   for (let i=0;i<256;i++) base[i]=i;
@@ -1159,6 +1161,7 @@ document.getElementById('flyBtn').addEventListener('click', function(){
 });
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
+  CONFIG.waterLevel = Math.round(RNG()*10);
   rebuildWorld();
 });
 document.getElementById('rainBtn').addEventListener('click', cycleRainMode);
@@ -1169,14 +1172,13 @@ document.getElementById('gear').addEventListener('click', ()=>{
 function applyWorldScale(n){
   CONFIG.worldScale = Math.max(0, Math.min(20, n));
   setWorldSize();
-  document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
   rebuilding = true;
   gridInit();
   buildWater();
-  CONFIG.seed = (Math.random()*1e9)|0; RNG=mulberry32(CONFIG.seed);
   rebuildWorld();
   last = performance.now();
   rebuilding = false;
+  document.getElementById('scaleDisplay').textContent = CONFIG.worldScale;
 }
 document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-2));
 document.getElementById('scaleUp').addEventListener('click',   ()=> applyWorldScale(CONFIG.worldScale+2));
@@ -1210,10 +1212,10 @@ const depthInstProg = program(`
 `, DEPTH_FRAG);
 // rain
 const RAIN = {
-  count: CONFIG.isMobile ? 1400 : 3000,
+  count: 3000,
   radius: 700,
   top: 0,
-  fall: 900,
+  fall: 1000,
   speed: 1300,
   mode: 'auto',
   on: false,
@@ -1326,8 +1328,8 @@ const PUDDLE = {
   baseY: null,
   fillRate: 0.15,
   dryRate: 0.025,
-  threshold: 0.18,
-  lift: 0.25,
+  threshold: 0.5,
+  lift: 0.2,
   buf: null, idxBuf: null, idxCount: 0,
   vertCap: 0, vbo: null,
   rebuildEvery: 0.4,
@@ -1798,10 +1800,10 @@ function frame(now){
     }
     info.textContent =
       `4.0.1  seed ${CONFIG.seed}  FPS ${fps}\n`+
-      `triangles ${terrainIdxCount/3}  shadowRef ${SHADOW.refreshInterval}  shadowSize ${SHADOW.size}\n`+
-      `creatures ${C.n} (${herb}H/${C.n-herb}P)  plants ${P.n}\n`+
-      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  avg spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s  sun ${(S.up>0.05?'day':'night')}`;
+      `tri ${terrainIdxCount/3}  shadowRef ${SHADOW.refreshInterval}  shadowSize ${SHADOW.size}\n`+
+      `creatures ${C.n}  ${herb}H/${C.n-herb}R/${P.n}P waterLevel ${(CONFIG.waterLevel)}\n`+
+      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
+      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s `;
   }
   frameCount++;
   requestAnimationFrame(frame);
