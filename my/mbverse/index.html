@@ -48,7 +48,7 @@
 <script>
 "use strict";
 // config and utilities
-function scale(n){ return Math.max(500, Math.round(5000 * Math.log(Math.max(n,1)) / Math.log(10))); }
+function scale(n){ return Math.max(500, Math.round(5000 * Math.max(n,1) / 10)); }
 function setWorldSize(){const s = scale(CONFIG.worldScale);CONFIG.worldW = s;CONFIG.worldH = s;}
 function setShadowSize(q){ return q==='high' ? 1024 : 512; }
 function setShadowRefresh(q){ return q==='high' ? 5 : 30; } 
@@ -746,8 +746,8 @@ function brainLearn(i){
   }
 }
 function spawnCreatures(){
-  const baseCreatures = 150;
-  const scaledCreatures = Math.round(baseCreatures * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10));
+  const baseCreatures = 50;
+  const scaledCreatures = Math.round(baseCreatures * Math.max(CONFIG.worldScale,1) / 10);
   C.n = Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
   for (let i=0;i<C.n;i++){
     const x=(RNG()-0.5)*CONFIG.worldW*0.9;
@@ -830,7 +830,7 @@ function gridScanPrey(px,pz,reach,self){
     }
   }
 }
-const MAX_PLANTS = 1200;
+const MAX_PLANTS = 12000;
 const P = {
   n: 0,
   x: new Float32Array(MAX_PLANTS),
@@ -839,8 +839,8 @@ const P = {
   sway: new Float32Array(MAX_PLANTS),
 };
 function targetPlants(){
-  const base = 10000;
-  return Math.min(MAX_PLANTS, Math.max(10, Math.round(base * Math.log(Math.max(CONFIG.worldScale,1)) / Math.log(10))));
+  const base = 800;
+  return Math.min(MAX_PLANTS, Math.max(10, Math.round(base * Math.max(CONFIG.worldScale,1) / 10)));
 }
 const PGRID = { head:null, next:new Int32Array(MAX_PLANTS) };
 function pgridRebuild(){
