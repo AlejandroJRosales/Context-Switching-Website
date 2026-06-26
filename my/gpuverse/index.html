@@ -42,20 +42,22 @@ const ctx = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode:"opaque" });
 
-// ---- world config (base values; actual N/world scale with the +/- control) ----
+// ---- world config (base values; actual N/world/amplitude scale with the +/- control) ----
 const BASE_N = 100000;                      // creature count at scale 1.0
 const BASE_WORLD = [10000, 10000];          // world X/Z extent at scale 1.0
+const BASE_AMPLITUDE = 1200;                // terrain height at scale 1.0
 const worldMin = [0,0,0];
-const amplitude = 1200, seed = 7;
+const seed = 7;
 
 const SCALE_STEPS = [0.125,0.25,0.5,0.75,1,1.5,2,3,4,6,8,10];
 let scaleIdx = SCALE_STEPS.indexOf(1);
 
-let N, worldMax, positions, moveParams, moveBGL, moveBG, movePipe, renderer;
+let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer;
 
 function buildWorld(scale){
   N = Math.max(1, Math.round(BASE_N * scale));
   worldMax = [BASE_WORLD[0]*scale, 0, BASE_WORLD[1]*scale];
+  amplitude = BASE_AMPLITUDE * scale;
 
   // ---- positions buffer (the one the renderer reads as instance data) ----
   positions = device.createBuffer({
