@@ -1346,6 +1346,7 @@ const PUDDLE = {
   rebuildEvery: 0.4,
   sinceRebuild: 1e9,
   dirty: true,
+  anyWet: false,
   lastCamX: 1e9, lastCamZ: 1e9
 };
 function puddleBuildField(){
@@ -1381,6 +1382,7 @@ function puddleBuildField(){
     }
   }
   PUDDLE.dirty = true;
+  PUDDLE.anyWet = false;
   PUDDLE.sinceRebuild = 1e9;
 }
 function puddleAccumulate(dt, intensity){
@@ -1395,14 +1397,16 @@ function puddleAccumulate(dt, intensity){
       const w = wet[i] + add*p;
       wet[i] = w > 1 ? 1 : w;
     }
+    PUDDLE.anyWet = true;
     PUDDLE.dirty = true;
-  } else {
+  } else if (PUDDLE.anyWet){
     const sub = PUDDLE.dryRate * dt;
-    let changed = false;
+    let changed = false, remaining = false;
     for (let i=0;i<n;i++){
-      if (wet[i] > 0){ const w = wet[i]-sub; wet[i] = w < 0 ? 0 : w; changed = true; }
+      if (wet[i] > 0){ const w = wet[i]-sub; wet[i] = w < 0 ? 0 : w; changed = true; if (wet[i] > 0) remaining = true; }
     }
     if (changed) PUDDLE.dirty = true;
+    PUDDLE.anyWet = remaining;
   }
   PUDDLE.sinceRebuild += dt;
 }
