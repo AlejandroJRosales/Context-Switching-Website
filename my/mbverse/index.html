@@ -484,9 +484,13 @@ const C = {
   spikeRate:new Float32Array(MAX_CREATURES),
   age: new Float32Array(MAX_CREATURES),
   gen: new Uint16Array(MAX_CREATURES),
+  sgroup: new Uint8Array(MAX_CREATURES),
+  rewardAcc: new Float32Array(MAX_CREATURES),
 };
 const LIFESPAN = 100;
 const SENESCENCE = 0.02;
+let STAGGER_N = 3;
+let staggerFrame = 0;
 // creature geometry
 function buildCreatures(){
   const verts = [];
@@ -723,10 +727,8 @@ function brainTick(i, dt){
   C.mEat[i] =sigmoid(sMotor[2]);
   C.mRest[i]=sigmoid(sMotor[3]);
 }
-function brainLearn(i){
+function brainLearn(i, reward){
   const b=C.szB[i], a=C.szA[i];
-  let reward=(C.energy[i]-C.prevEnergy[i]);
-  if(sFoodCue>0 && C.mMove[i]>0) reward += 0.0006*sFoodCue*C.mMove[i];
   if(reward!==0){
     const baseR=i*N_MOTOR*MAX_B;
     for(let m=0;m<N_MOTOR;m++){ const off=m*MAX_B;
@@ -757,6 +759,7 @@ function spawnCreatures(){
     C.energy[i]=0.5+RNG()*0.5;
     C.prevEnergy[i]=C.energy[i];
     C.age[i]=0; C.gen[i]=0;
+    C.sgroup[i]=i%STAGGER_N; C.rewardAcc[i]=0;
     const predator = RNG()<0.2;
     C.species[i]= predator?1:0;
     if(predator){ C.cr[i]=0.7+0.3*RNG(); C.cg[i]=0.25*RNG(); C.cb[i]=0.15*RNG(); }
@@ -952,6 +955,7 @@ function creatureCopy(dst, src){
   C.mTurn[dst]=C.mTurn[src]; C.mMove[dst]=C.mMove[src]; C.mEat[dst]=C.mEat[src];
   C.mRest[dst]=C.mRest[src]; C.spikeRate[dst]=C.spikeRate[src];
   C.age[dst]=C.age[src]; C.gen[dst]=C.gen[src];
+  C.sgroup[dst]=C.sgroup[src]; C.rewardAcc[dst]=C.rewardAcc[src];
   copyBrainSlot(dst, src);
 }
 function copyBrainSlot(dst, src){
@@ -980,6 +984,7 @@ function creatureBirth(parent){
   C.x[c]=x; C.z[c]=z; C.y[c]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
   C.head[c]=RNG()*6.28; C.face[c]=C.head[c]; C.spd[c]=0;
   C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
+  C.sgroup[c]=c%STAGGER_N; C.rewardAcc[c]=0;
   C.species[c]=C.species[parent];
   C.size[c]=C.size[parent]*(0.9+RNG()*0.2);
   C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-0.5)*0.1));
@@ -996,11 +1001,15 @@ function updateCreatures(dt){
   pgridRebuild();
   plantsGrow(dt);
   _birthN=0;
+  staggerFrame=(staggerFrame+1)%STAGGER_N;
   const timeOfDay = currentTimeOfDay;
   for(let i=0;i<C.n;i++){
     C.prevEnergy[i]=C.energy[i];
-    senseCreature(i, timeOfDay);
-    brainTick(i, dt);
+    const doTick = C.sgroup[i]===staggerFrame;
+    if(doTick){
+      senseCreature(i, timeOfDay);
+      brainTick(i, dt);
+    }
     const rest = C.mRest[i];
     C.head[i] += C.mTurn[i]*2.2*dt*(1-0.7*rest);
     const maxSpd = C.species[i]?40:30;
@@ -1044,7 +1053,13 @@ function updateCreatures(dt){
       }
     }
     if(C.energy[i]>1) C.energy[i]=1;
-    brainLearn(i);
+    C.rewardAcc[i] += (C.energy[i]-C.prevEnergy[i]);
+    if(doTick){
+      let r=C.rewardAcc[i];
+      if(sFoodCue>0 && C.mMove[i]>0) r += 0.0006*sFoodCue*C.mMove[i];
+      brainLearn(i, r);
+      C.rewardAcc[i]=0;
+    }
     if(C.energy[i]>0.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
       _births[_birthN++]=i;
     }
