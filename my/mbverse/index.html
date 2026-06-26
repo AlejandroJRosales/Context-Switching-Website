@@ -318,7 +318,7 @@ function terrainHeight(wx, wz){
     return terrainHeightExact(wx, wz);
   const fx = gx - ix, fz = gz - iz;
   const i00 = iz*cols + ix;
-  const h00 = data[i00],     h10 = data[i00+1];
+  const h00 = data[i00], h10 = data[i00+1];
   const h01 = data[i00+cols], h11 = data[i00+cols+1];
   const a = h00 + (h10-h00)*fx;
   const b = h01 + (h11-h01)*fx;
@@ -462,9 +462,9 @@ const MAX_CREATURES = 1000;
 const instData = new Float32Array(MAX_CREATURES * INST_STRIDE);
 const C = {
   n: 0,
-  x:   new Float32Array(MAX_CREATURES),
-  y:   new Float32Array(MAX_CREATURES),
-  z:   new Float32Array(MAX_CREATURES),
+  x: new Float32Array(MAX_CREATURES),
+  y: new Float32Array(MAX_CREATURES),
+  z: new Float32Array(MAX_CREATURES),
   head:new Float32Array(MAX_CREATURES),
   face:new Float32Array(MAX_CREATURES),
   spd: new Float32Array(MAX_CREATURES),
@@ -472,9 +472,9 @@ const C = {
   energy:new Float32Array(MAX_CREATURES),
   prevEnergy:new Float32Array(MAX_CREATURES),
   species:new Uint8Array(MAX_CREATURES),
-  cr:  new Float32Array(MAX_CREATURES),
-  cg:  new Float32Array(MAX_CREATURES),
-  cb:  new Float32Array(MAX_CREATURES),
+  cr: new Float32Array(MAX_CREATURES),
+  cg: new Float32Array(MAX_CREATURES),
+  cb: new Float32Array(MAX_CREATURES),
   szA: new Uint16Array(MAX_CREATURES),
   szB: new Uint16Array(MAX_CREATURES),
   mTurn:new Float32Array(MAX_CREATURES),
@@ -604,7 +604,7 @@ function brainInit(i){
   for(let u=0;u<a;u++){
     for(let g=0;g<3;g++){
       for(let k=0;k<N_INPUT;k++) A_W[baseW + (u*3+g)*N_INPUT + k]=gauss()*sa;
-      for(let k=0;k<a;k++)       A_U[baseU + (u*3+g)*MAX_A   + k]=gauss()*sa*0.5;
+      for(let k=0;k<a;k++) A_U[baseU + (u*3+g)*MAX_A   + k]=gauss()*sa*0.5;
       A_B[baseB + u*3+g] = 0;
     }
     hA[i*MAX_A+u]=0;
@@ -760,7 +760,7 @@ function spawnCreatures(){
     const predator = RNG()<0.2;
     C.species[i]= predator?1:0;
     if(predator){ C.cr[i]=0.7+0.3*RNG(); C.cg[i]=0.25*RNG(); C.cb[i]=0.15*RNG(); }
-    else        { const h=RNG(); C.cr[i]=0.2+0.3*h; C.cg[i]=0.55+0.35*RNG(); C.cb[i]=0.3+0.4*(1-h); }
+    else { const h=RNG(); C.cr[i]=0.2+0.3*h; C.cg[i]=0.55+0.35*RNG(); C.cb[i]=0.3+0.4*(1-h); }
     brainInit(i);
   }
 }
@@ -906,8 +906,8 @@ function buildPlants(){
   function quad(ax,az){
     const w=4, hgt=11;
     const px=-az*w, pz=ax*w;
-    q.push(-px,0,-pz, 0,  px,0,pz, 0,  px,hgt,pz, 1);
-    q.push(-px,0,-pz, 0,  px,hgt,pz, 1,  -px,hgt,-pz, 1);
+    q.push(-px,0,-pz, 0, px,0,pz, 0, px,hgt,pz, 1);
+    q.push(-px,0,-pz, 0, px,hgt,pz, 1, -px,hgt,-pz, 1);
   }
   quad(1,0); quad(0,1);
   const arr=new Float32Array(q);
@@ -956,13 +956,13 @@ function creatureCopy(dst, src){
 }
 function copyBrainSlot(dst, src){
   A_W.copyWithin(dst*MAX_A*N_INPUT*3, src*MAX_A*N_INPUT*3, (src+1)*MAX_A*N_INPUT*3);
-  A_U.copyWithin(dst*MAX_A*MAX_A*3,   src*MAX_A*MAX_A*3,   (src+1)*MAX_A*MAX_A*3);
-  A_B.copyWithin(dst*MAX_A*3,         src*MAX_A*3,         (src+1)*MAX_A*3);
-  hA.copyWithin (dst*MAX_A,           src*MAX_A,           (src+1)*MAX_A);
-  B_W.copyWithin(dst*MAX_B*MAX_A,     src*MAX_B*MAX_A,     (src+1)*MAX_B*MAX_A);
-  B_v.copyWithin(dst*MAX_B,           src*MAX_B,           (src+1)*MAX_B);
-  R_W.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
-  R_e.copyWithin(dst*N_MOTOR*MAX_B,   src*N_MOTOR*MAX_B,   (src+1)*N_MOTOR*MAX_B);
+  A_U.copyWithin(dst*MAX_A*MAX_A*3, src*MAX_A*MAX_A*3, (src+1)*MAX_A*MAX_A*3);
+  A_B.copyWithin(dst*MAX_A*3, src*MAX_A*3, (src+1)*MAX_A*3);
+  hA.copyWithin (dst*MAX_A, src*MAX_A, (src+1)*MAX_A);
+  B_W.copyWithin(dst*MAX_B*MAX_A, src*MAX_B*MAX_A, (src+1)*MAX_B*MAX_A);
+  B_v.copyWithin(dst*MAX_B, src*MAX_B, (src+1)*MAX_B);
+  R_W.copyWithin(dst*N_MOTOR*MAX_B, src*N_MOTOR*MAX_B, (src+1)*N_MOTOR*MAX_B);
+  R_e.copyWithin(dst*N_MOTOR*MAX_B, src*N_MOTOR*MAX_B, (src+1)*N_MOTOR*MAX_B);
 }
 function creatureRemove(i){
   const last=--C.n;
@@ -1081,14 +1081,14 @@ const STEP_GRIP = 8;
 const LOOK_SENS = 0.005;
 const keys = {};
 function applyLook(dxPix, dyPix){
-  cam.yaw   -= dxPix*LOOK_SENS;
+  cam.yaw -= dxPix*LOOK_SENS;
   cam.pitch -= dyPix*LOOK_SENS;
   cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch));
 }
 const HAS_TOUCH = (('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
-const joyEl  = document.getElementById('joy');
+const joyEl = document.getElementById('joy');
 const lookEl = document.getElementById('look');
-const nub    = joyEl.querySelector('.nub');
+const nub = joyEl.querySelector('.nub');
 if (HAS_TOUCH){
   (function(){
     let id=null, cx=0, cy=0;
@@ -1118,8 +1118,8 @@ if (HAS_TOUCH){
     const down=e=>{ keys[' ']=true;  e.preventDefault(); };
     const up  =e=>{ keys[' ']=false; e.preventDefault(); };
     jb.addEventListener('touchstart', down, {passive:false});
-    jb.addEventListener('touchend',   up,   {passive:false});
-    jb.addEventListener('touchcancel',up,   {passive:false});
+    jb.addEventListener('touchend',   up, {passive:false});
+    jb.addEventListener('touchcancel',up, {passive:false});
   })();
 } else {
   joyEl.style.display='none';
@@ -1187,10 +1187,10 @@ function sunState(t){
   return {
     sunDir, up,
     sunColor: [1.0*day, 0.92*day, 0.78*day],
-    ambient:  [0.18+0.32*day, 0.20+0.34*day, 0.28+0.34*day],
-    skyTop:   [0.30+0.20*day, 0.45+0.30*day, 0.70+0.25*day],
+    ambient: [0.18+0.32*day, 0.20+0.34*day, 0.28+0.34*day],
+    skyTop: [0.30+0.20*day, 0.45+0.30*day, 0.70+0.25*day],
     skyBottom:[0.55+0.30*day, 0.65+0.25*day, 0.80+0.15*day],
-    fog:      [0.55+0.25*day, 0.65+0.22*day, 0.80+0.10*day],
+    fog: [0.55+0.25*day, 0.65+0.22*day, 0.80+0.10*day],
   };
 }
 const depthProg = program(`
