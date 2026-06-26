@@ -175,6 +175,7 @@ const SHADOW_GLSL=`
   uniform mat4 uLightVP;
   uniform float uShadowTexel;
   uniform float uShadowMode;
+  uniform float uShadowEnabled;
   float unpackDepth(vec4 c){
     return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
   }
@@ -183,6 +184,7 @@ const SHADOW_GLSL=`
     return mix(c.r, unpackDepth(c), uShadowMode);
   }
   float shadowFactor(vec3 worldPos, float ndotl){
+    if (uShadowEnabled < 0.5) return 1.0;
     vec4 lp=uLightVP*vec4(worldPos, 1.0);
     vec3 proj=lp.xyz/lp.w;
     proj=proj*0.5+0.5;
@@ -1192,6 +1194,7 @@ document.getElementById('gear').addEventListener('click', ()=>{
 function applyWorldScale(n){
   CONFIG.worldScale=Math.max(0, Math.min(40, n));
   setWorldSize();
+  SHADOW_RADIUS=setShadowRadius();
   rebuilding=true;
   gridInit();
   buildWater();
@@ -1548,7 +1551,9 @@ function initShadow(){
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
-const SHADOW_RADIUS=350;
+function setShadowRadius(){ return Math.max(CONFIG.worldW, CONFIG.worldH)/2; }
+let SHADOW_RADIUS=setShadowRadius();
+function shadowsEnabled(){ return CONFIG.quality==='HIGH'; }
 function updateLightVP(sunDir, focusX, focusZ){
   const half=SHADOW_RADIUS;
   const dist=Math.max(CONFIG.worldW, CONFIG.worldH);
@@ -1565,7 +1570,7 @@ function updateLightVP(sunDir, focusX, focusZ){
   M4.multiply(SHADOW.lightVP, lproj, lview);
 }
 function renderShadowPass(){
-  if (!SHADOW.ready) return;
+  if (!SHADOW.ready || !shadowsEnabled()) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
   gl.viewport(0, 0, SHADOW.size, SHADOW.size);
   gl.clearColor(1,1,1,1);
@@ -1611,6 +1616,7 @@ function bindShadowUniforms(prog){
   gl.uniformMatrix4fv(prog.u('uLightVP'), false, SHADOW.lightVP);
   gl.uniform1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
   gl.uniform1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
+  gl.uniform1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : 0.0);
   gl.activeTexture(gl.TEXTURE0);
 }
 function rebuildWorld(){
