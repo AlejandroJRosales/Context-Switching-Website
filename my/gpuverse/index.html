@@ -9,11 +9,21 @@
   #c{display:block;width:100vw;height:100vh;touch-action:none}
   #hud{position:fixed;top:8px;left:10px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000}
   #err{position:fixed;inset:0;display:none;place-items:center;color:#f38ba8;padding:24px;text-align:center}
+  #scale{position:fixed;top:8px;right:10px;display:flex;align-items:center;gap:6px;pointer-events:auto}
+  #scale button{width:28px;height:28px;background:#11161d;color:#9aa5b1;border:1px solid #2a3340;
+    border-radius:4px;font:14px/1 'Courier New',monospace;cursor:pointer}
+  #scale button:hover{background:#1a212b;color:#fff}
+  #scale span{min-width:46px;text-align:center;text-shadow:0 1px 2px #000}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud"></div>
+<div id="scale">
+  <button id="scaleDown" title="Scale down (-)">−</button>
+  <span id="scaleLabel">1.0×</span>
+  <button id="scaleUp" title="Scale up (+)">+</button>
+</div>
 <div id="err"></div>
 <script type="module">
 import { createRenderer } from "./renderer.js";
@@ -32,47 +42,78 @@ const ctx = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode:"opaque" });
 
-// ---- world config ----
-const N = 8000;                           // creature count (bump toward 1e6 once happy)
-const worldMin=[0,0,0], worldMax=[800,0,800];
-const amplitude=120, seed=7;
+// ---- world config (base values; actual N/world scale with the +/- control) ----
+const BASE_N = 100000;                      // creature count at scale 1.0
+const BASE_WORLD = [10000, 10000];          // world X/Z extent at scale 1.0
+const worldMin = [0,0,0];
+const amplitude = 1200, seed = 7;
 
-// ---- positions buffer (the one the renderer reads as instance data) ----
-const positions = device.createBuffer({
-  size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
-{
-  const init = new Float32Array(N*4);
-  for(let i=0;i<N;i++){
-    init[i*4]   = worldMin[0]+Math.random()*(worldMax[0]-worldMin[0]);
-    init[i*4+2] = worldMin[2]+Math.random()*(worldMax[2]-worldMin[2]);
-    init[i*4+1] = amplitude; // will be snapped to ground on first move step
+const SCALE_STEPS = [0.125,0.25,0.5,0.75,1,1.5,2,3,4,6,8,10];
+let scaleIdx = SCALE_STEPS.indexOf(1);
+
+let N, worldMax, positions, moveParams, moveBGL, moveBG, movePipe, renderer;
+
+function buildWorld(scale){
+  N = Math.max(1, Math.round(BASE_N * scale));
+  worldMax = [BASE_WORLD[0]*scale, 0, BASE_WORLD[1]*scale];
+
+  // ---- positions buffer (the one the renderer reads as instance data) ----
+  positions = device.createBuffer({
+    size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+  {
+    const init = new Float32Array(N*4);
+    for(let i=0;i<N;i++){
+      init[i*4]   = worldMin[0]+Math.random()*(worldMax[0]-worldMin[0]);
+      init[i*4+2] = worldMin[2]+Math.random()*(worldMax[2]-worldMin[2]);
+      init[i*4+1] = amplitude; // will be snapped to ground on first move step
+    }
+    device.queue.writeBuffer(positions,0,init);
   }
-  device.queue.writeBuffer(positions,0,init);
+
+  renderer = createRenderer(device, ctx, format, {
+    worldMin, worldMax, gridN:256, amplitude, seed, creatureRadius:3.0 });
+
+  // ---- movement pipeline (shares terrainParams so heights match exactly) ----
+  moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+  moveBGL = device.createBindGroupLayout({entries:[
+    {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+    {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+    {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+  ]});
+  moveBG = device.createBindGroup({layout:moveBGL,entries:[
+    {binding:0,resource:{buffer:moveParams}},
+    {binding:1,resource:{buffer:renderer.terrainParams}},
+    {binding:2,resource:{buffer:positions}},
+  ]});
+  movePipe = device.createComputePipeline({
+    layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
+    compute:{module:device.createShaderModule({code:MOVE}),entryPoint:"main"},
+  });
 }
 
-const renderer = createRenderer(device, ctx, format, {
-  worldMin, worldMax, gridN:256, amplitude, seed, creatureRadius:3.0 });
+buildWorld(SCALE_STEPS[scaleIdx]);
 
-// ---- movement pipeline (shares terrainParams so heights match exactly) ----
-const moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
-const moveBGL = device.createBindGroupLayout({entries:[
-  {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
-  {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
-  {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
-]});
-const moveBG = device.createBindGroup({layout:moveBGL,entries:[
-  {binding:0,resource:{buffer:moveParams}},
-  {binding:1,resource:{buffer:renderer.terrainParams}},
-  {binding:2,resource:{buffer:positions}},
-]});
-const movePipe = device.createComputePipeline({
-  layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
-  compute:{module:device.createShaderModule({code:MOVE}),entryPoint:"main"},
+const scaleLabel = document.getElementById("scaleLabel");
+function updateScaleLabel(){ scaleLabel.textContent = `${SCALE_STEPS[scaleIdx]}×`; }
+updateScaleLabel();
+
+function setScale(newIdx){
+  newIdx = Math.max(0, Math.min(SCALE_STEPS.length-1, newIdx));
+  if(newIdx === scaleIdx) return;
+  scaleIdx = newIdx;
+  updateScaleLabel();
+  buildWorld(SCALE_STEPS[scaleIdx]);
+}
+document.getElementById("scaleUp").addEventListener("click", ()=>setScale(scaleIdx+1));
+document.getElementById("scaleDown").addEventListener("click", ()=>setScale(scaleIdx-1));
+addEventListener("keydown", e=>{
+  if(e.key==="+"||e.key==="=") setScale(scaleIdx+1);
+  if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
 });
 
 // ---- orbit camera (drag to rotate, wheel/pinch to zoom) ----
 let yaw=0.6, pitch=0.5, dist=700;
-const center=[(worldMax[0])/2, amplitude*0.5, (worldMax[2])/2];
+function getCenter(){ return [worldMax[0]/2, amplitude*0.5, worldMax[2]/2]; }
 let dragging=false, lx=0, ly=0;
 canvas.addEventListener("pointerdown",e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
 canvas.addEventListener("pointermove",e=>{ if(!dragging)return;
@@ -95,6 +136,7 @@ function frame(now){
   device.queue.writeBuffer(moveParams,0,new Float32Array([time,dt,18.0,0]));
   device.queue.writeBuffer(moveParams,12,new Uint32Array([N])); // N at offset 12
 
+  const center = getCenter();
   const eye=[
     center[0]+Math.cos(yaw)*Math.cos(pitch)*dist,
     center[1]+Math.sin(pitch)*dist,
@@ -110,7 +152,7 @@ function frame(now){
 
   facc+=dt; frames++;
   if(facc>=0.5){ fps=Math.round(frames/facc); frames=0; facc=0; }
-  hud.textContent=`gpuverse\nentities ${N.toLocaleString()}\nfps ${fps}\ndrag rotate · wheel zoom`;
+  hud.textContent=`gpuverse\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}×${Math.round(worldMax[2])}\nfps ${fps}\ndrag rotate · wheel zoom · +/- scale`;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
