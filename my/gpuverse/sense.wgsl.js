@@ -1,8 +1,8 @@
-// sense.wgsl.js — a real sensing pass that consumes the uniform grid.
+// sense.wgsl.js: a real sensing pass that consumes the uniform grid.
 // Per entity it computes: neighbor count within senseRadius, nearest neighbor index,
 // and nearest distance squared. Demonstrates the correct cell-radius / euclidean-radius split.
 //
-// Bindings (group 0) — a layout distinct from the grid passes:
+// Bindings (group 0): a layout distinct from the grid passes:
 //   0 uniform Params         (same struct/buffer as the grid)
 //   1 uniform SenseParams    (senseRadius)
 //   2 read positions

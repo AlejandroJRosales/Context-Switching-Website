@@ -1,4 +1,4 @@
-// terrain.wgsl.js — procedural heightfield, generated on GPU, shared with the sim.
+// terrain.wgsl.js: procedural heightfield, generated on GPU, shared with the sim.
 // The same heightAt() function is exported as a string so the simulation can place
 // creatures on the ground without any CPU round-trip or duplicated logic.
 

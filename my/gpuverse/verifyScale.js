@@ -1,4 +1,4 @@
-// verifyScale.js — parameterized grid correctness across the cases the N=1000 test
+// verifyScale.js: parameterized grid correctness across the cases the N=1000 test
 // doesn't reach: multi-block scan, dense cells, near-ceiling cell count, flat 2D.
 // Linear CPU reference (no O(N^2)), so 100k+ entities verify fast. NOT hot-path.
 import { createGrid } from "./grid.js";

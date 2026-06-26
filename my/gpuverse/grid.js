@@ -1,4 +1,4 @@
-// grid.js — host-side orchestration for the GPU uniform-grid neighbor search.
+// grid.js: host-side orchestration for the GPU uniform-grid neighbor search.
 // No host readback in the hot path: buildFrame() only records dispatches.
 import {
   WG, SCAN_BLOCK, SCAN_WG,

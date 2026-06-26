@@ -1,4 +1,4 @@
-// creature.wgsl.js — instanced creatures. Each instance reads one entry from the
+// creature.wgsl.js: instanced creatures. Each instance reads one entry from the
 // positions buffer (the SAME buffer the compute passes write) via an instance-step
 // vertex buffer. No CPU per-entity work. Bodies are simple billboarded/extruded quads
 // kept cheap so 1M instances stay affordable; swap the base mesh for real geometry later.

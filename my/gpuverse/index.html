@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>gpuverse — world</title>
+<title>gpuverse</title>
 <style>
   html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font:13px 'Courier New',monospace;color:#9aa5b1}
   #c{display:block;width:100vw;height:100vh;touch-action:none}
@@ -20,13 +20,14 @@
 <canvas id="c"></canvas>
 <div id="hud"></div>
 <div id="scale">
-  <button id="scaleDown" title="Scale down (-)">−</button>
-  <span id="scaleLabel">1.0×</span>
+  <button id="scaleDown" title="Scale down (-)">-</button>
+  <span id="scaleLabel">1.0x</span>
   <button id="scaleUp" title="Scale up (+)">+</button>
 </div>
 <div id="err"></div>
 <script type="module">
 import { createRenderer } from "./renderer.js";
+import { createPlayer } from "./player.js";
 import { MOVE } from "./move.wgsl.js";
 
 const canvas = document.getElementById("c");
@@ -36,7 +37,7 @@ const fail = (m)=>{errEl.style.display="grid";errEl.textContent=m;throw new Erro
 
 const adapter = await navigator.gpu?.requestAdapter();
 const device  = await adapter?.requestDevice();
-if(!device) fail("WebGPU unavailable — use Chrome/Edge 113+ or Safari 18+ over https/localhost.");
+if(!device) fail("WebGPU unavailable: use Chrome/Edge 113+ or Safari 18+ over https/localhost.");
 
 const ctx = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
@@ -52,7 +53,7 @@ const seed = 7;
 const SCALE_STEPS = [0.125,0.25,0.5,0.75,1,1.5,2,3,4,6,8,10];
 let scaleIdx = SCALE_STEPS.indexOf(1);
 
-let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer;
+let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
 
 function buildWorld(scale){
   N = Math.max(1, Math.round(BASE_N * scale));
@@ -75,6 +76,14 @@ function buildWorld(scale){
   renderer = createRenderer(device, ctx, format, {
     worldMin, worldMax, gridN:256, amplitude, seed, creatureRadius:3.0 });
 
+  // player walks the SAME baked heightfield the renderer draws. Read it back once
+  // (async) and hand it to the player; this matches the rendered ground exactly,
+  // unlike recomputing fp32 GPU noise on the fp64 CPU.
+  if (player) renderer.readHeights().then(({data, gridN})=>{
+    player.setTerrain({ heights:data, gridN,
+      worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] });
+  });
+
   // ---- movement pipeline (shares terrainParams so heights match exactly) ----
   moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   moveBGL = device.createBindGroupLayout({entries:[
@@ -93,10 +102,17 @@ function buildWorld(scale){
   });
 }
 
+// ---- player: WASD+space (keyboard) and on-screen joystick+jump (touch), both always on ----
+// Created before the first buildWorld so the first heightfield readback finds it.
+// Terrain (the baked heightfield) is supplied asynchronously by buildWorld via setTerrain.
+player = createPlayer(canvas, {
+  eyeHeight: 6, moveSpeed: 140, jumpSpeed: 95, gravity: 280,
+});
+
 buildWorld(SCALE_STEPS[scaleIdx]);
 
 const scaleLabel = document.getElementById("scaleLabel");
-function updateScaleLabel(){ scaleLabel.textContent = `${SCALE_STEPS[scaleIdx]}×`; }
+function updateScaleLabel(){ scaleLabel.textContent = `${SCALE_STEPS[scaleIdx]}x`; }
 updateScaleLabel();
 
 function setScale(newIdx){
@@ -113,16 +129,7 @@ addEventListener("keydown", e=>{
   if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
 });
 
-// ---- orbit camera (drag to rotate, wheel/pinch to zoom) ----
-let yaw=0.6, pitch=0.5, dist=700;
-function getCenter(){ return [worldMax[0]/2, amplitude*0.5, worldMax[2]/2]; }
-let dragging=false, lx=0, ly=0;
-canvas.addEventListener("pointerdown",e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
-canvas.addEventListener("pointermove",e=>{ if(!dragging)return;
-  yaw-=(e.clientX-lx)*0.005; pitch=Math.max(0.05,Math.min(1.4,pitch-(e.clientY-ly)*0.005));
-  lx=e.clientX; ly=e.clientY; });
-canvas.addEventListener("pointerup",()=>dragging=false);
-canvas.addEventListener("wheel",e=>{dist=Math.max(120,Math.min(2500,dist*(1+Math.sign(e.deltaY)*0.08)));e.preventDefault();},{passive:false});
+// ---- camera is driven by the player (player.js): drag to look, WASD/joystick to move ----
 
 function resize(){
   const dpr=Math.min(devicePixelRatio||1, 2);
@@ -138,13 +145,8 @@ function frame(now){
   device.queue.writeBuffer(moveParams,0,new Float32Array([time,dt,18.0,0]));
   device.queue.writeBuffer(moveParams,12,new Uint32Array([N])); // N at offset 12
 
-  const center = getCenter();
-  const eye=[
-    center[0]+Math.cos(yaw)*Math.cos(pitch)*dist,
-    center[1]+Math.sin(pitch)*dist,
-    center[2]+Math.sin(yaw)*Math.cos(pitch)*dist,
-  ];
-  renderer.setCamera({eye, target:center, aspect:canvas.width/canvas.height});
+  player.update(dt);
+  renderer.setCamera(player.getCamera(canvas.width/canvas.height));
 
   const enc=device.createCommandEncoder();
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
@@ -154,7 +156,7 @@ function frame(now){
 
   facc+=dt; frames++;
   if(facc>=0.5){ fps=Math.round(frames/facc); frames=0; facc=0; }
-  hud.textContent=`gpuverse\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}×${Math.round(worldMax[2])}\nfps ${fps}\ndrag rotate · wheel zoom · +/- scale`;
+  hud.textContent=`entities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\nfps ${fps}${player.flying?"  [FLYING]":""}`;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -1,4 +1,4 @@
-// verify.js — correctness check. NOT part of the hot path. Reads grid buffers back
+// verify.js: correctness check. NOT part of the hot path. Reads grid buffers back
 // once for a small N and compares against a CPU reference. Run in a WebGPU page.
 import { createGrid } from "./grid.js";
 

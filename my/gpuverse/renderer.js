@@ -1,4 +1,4 @@
-// renderer.js — WebGPU render system. Reads the positions GPUBuffer directly as
+// renderer.js: WebGPU render system. Reads the positions GPUBuffer directly as
 // instance data; no CPU round-trip. Bakes a heightfield once on GPU, draws terrain
 // as an indexed grid mesh, draws creatures as instanced camera-facing quads.
 import { TERRAIN_BAKE, TERRAIN_RENDER } from "./terrain.wgsl.js";
@@ -25,7 +25,7 @@ export function createRenderer(device, context, format, {
   }
 
   // ---- height buffer + bake pipeline ----
-  const heights = device.createBuffer({ size: gridN*gridN*4, usage: GPUBufferUsage.STORAGE });
+  const heights = device.createBuffer({ size: gridN*gridN*4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const bakeBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
@@ -152,5 +152,22 @@ export function createRenderer(device, context, format, {
     pass.end();
   }
 
-  return { render, setCamera, heights, terrainParams:tpBuf, gridN, amplitude };
+  // Read the baked heightfield back to the CPU (once per world build, not per frame).
+  // Returns { data:Float32Array(gridN*gridN), gridN } laid out row-major as
+  // heights[z*gridN + x], matching the bake shader. The player samples THIS so it
+  // walks the exact terrain the renderer draws: no CPU noise recompute, no fp drift.
+  async function readHeights(){
+    const bytes = gridN*gridN*4;
+    const rb = device.createBuffer({ size: bytes,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const enc = device.createCommandEncoder();
+    enc.copyBufferToBuffer(heights, 0, rb, 0, bytes);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(rb.getMappedRange().slice(0));
+    rb.unmap(); rb.destroy?.();
+    return { data, gridN };
+  }
+
+  return { render, setCamera, heights, readHeights, terrainParams:tpBuf, gridN, amplitude };
 }

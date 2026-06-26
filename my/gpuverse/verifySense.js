@@ -1,4 +1,4 @@
-// verifySense.js — checks sensing output (count, nearest, nearestD2) against an
+// verifySense.js: checks sensing output (count, nearest, nearestD2) against an
 // O(N^2) CPU reference. NOT hot-path. Run on small N in a WebGPU page.
 import { createGrid } from "./grid.js";
 import { createSense } from "./sense.js";

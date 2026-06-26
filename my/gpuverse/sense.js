@@ -1,4 +1,4 @@
-// sense.js — builds the sensing pipeline on top of an existing grid.
+// sense.js: builds the sensing pipeline on top of an existing grid.
 import { WG } from "./grid.wgsl.js";
 import { SENSE } from "./sense.wgsl.js";
 
