@@ -1348,6 +1348,7 @@ const PUDDLE={
   sinceRebuild: 1e9,
   dirty: true,
   anyWet: false,
+  warpStrength: 0.6,
   lastCamX: 1e9, lastCamZ: 1e9
 };
 function puddleBuildField(){
@@ -1479,11 +1480,15 @@ const puddleProg=program(`
   varying highp vec3 vW; varying float vWet;
   uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor;
   uniform vec3 uSky; uniform float uTime; uniform vec3 uFogColor; uniform float uFogDist;
+  uniform float uWarpStrength;
   ${FOG_GLSL}
   void main(){
     vec2 p=vW.xz*0.08;
-    float n1=sin(p.x*1.7+uTime*1.4)+cos(p.y*2.1-uTime*1.0);
-    vec3 N=normalize(vec3(n1*0.04, 1.0, n1*0.04));
+    vec2 w=vec2(sin(p.y*1.3-uTime*0.7), cos(p.x*1.1+uTime*0.5));
+    p+=uWarpStrength*w;
+    float nx=sin(p.x*1.7+uTime*1.4)+cos(p.y*2.1-uTime*1.0);
+    float nz=cos(p.x*1.9-uTime*1.1)+sin(p.y*1.6+uTime*0.9);
+    vec3 N=normalize(vec3(nx*0.04, 1.0, nz*0.04));
     vec3 V=normalize(uEye-vW);
     float fres=pow(1.0-max(dot(V,N),0.0), 3.0);
     vec3 base=vec3(0.20,0.30,0.34);
@@ -1778,6 +1783,7 @@ function frame(now){
     gl.uniform3fv(puddleProg.u('uSunColor'),S.sunColor);
     gl.uniform3fv(puddleProg.u('uSky'),S.skyTop);
     gl.uniform1f(puddleProg.u('uTime'),simTime);
+    gl.uniform1f(puddleProg.u('uWarpStrength'),PUDDLE.warpStrength);
     gl.uniform3fv(puddleProg.u('uFogColor'),S.fog);
     gl.uniform1f(puddleProg.u('uFogDist'),fogDist);
     drawElementsPass(gl.TRIANGLES, PUDDLE.idxCount, gl.UNSIGNED_SHORT);
