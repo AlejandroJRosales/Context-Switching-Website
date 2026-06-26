@@ -253,6 +253,9 @@ const TERRAIN={
   mtnSize: 2000,
   mtnOctaves: 4,
   mtnThreshold: 0.45,
+  biomeSize: 4200,
+  biomeLo: 0.42, biomeHi: 0.60,
+  plainsAmp: 0.35,
 };
 const THCACHE={res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0, W: 0, H: 0, data: null,
   wmRes: 0, wmCols: 0, wmRows: 0, wmOx: 0, wmOz: 0, wmInvStep: 0, waterMask: null};
@@ -332,10 +335,16 @@ function terrainHeightExact(wx, wz){
   }
   h/=norm;
   h=Math.pow(h, 1.35);
-  let y=h*TERRAIN.amp-TERRAIN.amp*0.35;
+  let bf=1/TERRAIN.biomeSize;
+  let b=valueNoise(wx*bf+101.7, wz*bf-58.3);
+  let t=(b-TERRAIN.biomeLo)/(TERRAIN.biomeHi-TERRAIN.biomeLo);
+  t=Math.max(0, Math.min(1, t));
+  let mtn=t*t*(3-2*t);
+  let relief=TERRAIN.plainsAmp+(1-TERRAIN.plainsAmp)*mtn;
+  let y=h*TERRAIN.amp*relief-TERRAIN.amp*0.15;
   const r=ridgedNoise(wx, wz);
   const m=Math.max(0, r-TERRAIN.mtnThreshold)/(1-TERRAIN.mtnThreshold);
-  y+=m*m*TERRAIN.mtnAmp;
+  y+=m*m*TERRAIN.mtnAmp*mtn;
   return y;
 }
 function buildTerrain(){
@@ -1348,7 +1357,6 @@ const PUDDLE={
   sinceRebuild: 1e9,
   dirty: true,
   anyWet: false,
-  warpStrength: 0.6,
   lastCamX: 1e9, lastCamZ: 1e9
 };
 function puddleBuildField(){
@@ -1480,15 +1488,11 @@ const puddleProg=program(`
   varying highp vec3 vW; varying float vWet;
   uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor;
   uniform vec3 uSky; uniform float uTime; uniform vec3 uFogColor; uniform float uFogDist;
-  uniform float uWarpStrength;
   ${FOG_GLSL}
   void main(){
     vec2 p=vW.xz*0.08;
-    vec2 w=vec2(sin(p.y*1.3-uTime*0.7), cos(p.x*1.1+uTime*0.5));
-    p+=uWarpStrength*w;
-    float nx=sin(p.x*1.7+uTime*1.4)+cos(p.y*2.1-uTime*1.0);
-    float nz=cos(p.x*1.9-uTime*1.1)+sin(p.y*1.6+uTime*0.9);
-    vec3 N=normalize(vec3(nx*0.04, 1.0, nz*0.04));
+    float n1=sin(p.x*1.7+uTime*1.4)+cos(p.y*2.1-uTime*1.0);
+    vec3 N=normalize(vec3(n1*0.04, 1.0, n1*0.04));
     vec3 V=normalize(uEye-vW);
     float fres=pow(1.0-max(dot(V,N),0.0), 3.0);
     vec3 base=vec3(0.20,0.30,0.34);
@@ -1783,7 +1787,6 @@ function frame(now){
     gl.uniform3fv(puddleProg.u('uSunColor'),S.sunColor);
     gl.uniform3fv(puddleProg.u('uSky'),S.skyTop);
     gl.uniform1f(puddleProg.u('uTime'),simTime);
-    gl.uniform1f(puddleProg.u('uWarpStrength'),PUDDLE.warpStrength);
     gl.uniform3fv(puddleProg.u('uFogColor'),S.fog);
     gl.uniform1f(puddleProg.u('uFogDist'),fogDist);
     drawElementsPass(gl.TRIANGLES, PUDDLE.idxCount, gl.UNSIGNED_SHORT);
