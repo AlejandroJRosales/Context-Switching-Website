@@ -1,21 +1,12 @@
-// grid.wgsl.js
-// All WGSL source for the GPU-resident uniform-grid neighbor search.
-// Exported as template strings so the JS orchestrator can build pipelines.
-//
-// Pipeline per frame:  clear -> count -> scan(local) -> scan(blockSums) -> scan(addOffsets) -> scatter
-// Downstream:          a sensing shader includes GRID_HELPERS + reads cellStart/cellCount/sortedEntityIndices.
-//
-// Conventions:
-//   WG = 64 (per-entity passes), SCAN_WG = 256 (per-cell scan; 1 element per thread, block size 512 via 2 loads).
-//   gridDims is derived on the JS side and passed in uniforms. For a flat 2D world set gridDims.y = 1.
+// grid_wgsl.js: WGSL for the GPU-resident uniform-grid neighbor search.
+// Per frame: clear -> count -> scan(local) -> scan(blockSums) -> scan(addOffsets) -> scatter.
+// WG=64 (per-entity), SCAN_WG=256 (per-cell, block size 512 via 2 loads). flat 2D: gridDims.y=1.
 
 export const WG = 64;
 export const SCAN_BLOCK = 512;   // elements processed per scan workgroup (256 threads * 2)
 export const SCAN_WG = 256;
 
-// ---------------------------------------------------------------------------
 // Shared declarations injected at the top of grid compute shaders.
-// ---------------------------------------------------------------------------
 export const COMMON = /* wgsl */`
 struct Params {
   worldMin : vec3<f32>,
@@ -33,10 +24,8 @@ struct Params {
 @group(0) @binding(4) var<storage, read_write>  sortedEntityIndices : array<u32>;
 @group(0) @binding(5) var<storage, read_write>  localCounter : array<atomic<u32>>; // scatter cursor, length=totalCells
 
-// Map a world position to a clamped 3D cell coordinate.
-// Handles: entity exactly on worldMax (would land at gridDims, clamp down),
-//          NaN (NaN comparisons are false, so we steer NaN -> cell 0 explicitly),
-//          cellSize not dividing span evenly (floor + clamp absorbs the remainder edge cells).
+// World position -> clamped 3D cell. Handles on-worldMax (clamp down), NaN (steer to
+// cell 0), and non-dividing cellSize (floor+clamp absorbs the remainder edge cells).
 fn cellCoord(posIn : vec3<f32>) -> vec3<u32> {
   var p = posIn;
   // NaN scrub: (p == p) is false for NaN. Replace any NaN component with worldMin (-> edge cell 0).
@@ -61,9 +50,7 @@ fn cellIndex(c : vec3<u32>) -> u32 {
 }
 `;
 
-// ---------------------------------------------------------------------------
 // Pass 1: clear cellCount and localCounter to zero. One thread per cell.
-// ---------------------------------------------------------------------------
 export const CLEAR = COMMON + /* wgsl */`
 @compute @workgroup_size(${WG})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
@@ -74,9 +61,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 }
 `;
 
-// ---------------------------------------------------------------------------
-// Pass 2: count. One thread per entity. Atomically bump its cell's count.
-// ---------------------------------------------------------------------------
+// Pass 2: count. One thread per entity; atomically bump its cell's count.
 export const COUNT = COMMON + /* wgsl */`
 @compute @workgroup_size(${WG})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
@@ -89,18 +74,13 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 fn i_clamp(c : u32) -> u32 { return min(c, P.totalCells - 1u); }
 `;
 
-// ---------------------------------------------------------------------------
-// Pass 3: work-efficient exclusive scan over cellCount -> cellStart.
-// Blelloch scan, blocked. Each workgroup scans SCAN_BLOCK (=512) elements in shared
-// memory, writes the block's total to blockSums. A second level scans blockSums; a
-// third pass adds each block's exclusive offset back. Three dispatches => scales to
-// totalCells up to SCAN_BLOCK^2 (=262144) with a single block-sum level; the helper
-// reports if more levels are needed.
+// Pass 3: work-efficient exclusive (Blelloch) scan, blocked. Each workgroup scans
+// SCAN_BLOCK=512 elems in shared memory; a second level scans blockSums; a third adds
+// offsets back. Scales to totalCells <= SCAN_BLOCK^2 with one block-sum level.
 //
-// IMPORTANT: this scan reads cellCount as plain u32 (not atomic). atomic<u32> and u32
-// share layout, but WGSL forbids aliasing one buffer as both. We therefore bind the
-// SAME GPUBuffer under a non-atomic view for the scan passes (see JS: countView).
-// ---------------------------------------------------------------------------
+// IMPORTANT: scan reads cellCount as plain u32, not atomic. WGSL forbids aliasing one
+// buffer as both atomic and non-atomic, so the JS binds the same buffer under a
+// non-atomic view for these passes.
 export const SCAN_LOCAL = /* wgsl */`
 struct ScanParams { totalCells : u32, numBlocks : u32, _pad0 : u32, _pad1 : u32 };
 @group(0) @binding(0) var<uniform> SP : ScanParams;
@@ -232,9 +212,7 @@ fn main(@builtin(workgroup_id) wid : vec3<u32>,
 }
 `;
 
-// ---------------------------------------------------------------------------
 // Pass 4: scatter. Each entity writes its index at cellStart[cell] + localCounter++.
-// ---------------------------------------------------------------------------
 export const SCATTER = COMMON + /* wgsl */`
 @compute @workgroup_size(${WG})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
@@ -246,11 +224,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 }
 `;
 
-// ---------------------------------------------------------------------------
-// Reusable neighbor helpers for a downstream sensing shader.
-// Include this text + your own bindings for cellStart/cellCount(non-atomic)/sortedEntityIndices.
-// radiusCells controls the neighborhood (1 => 3x3x3, or 3x3 when gridDims.y==1).
-// ---------------------------------------------------------------------------
+// Reusable neighbor helpers for a downstream sensing shader. Include this + bindings for
+// cellStart/cellCount(non-atomic)/sortedEntityIndices. R=1 => 3x3x3 (or 3x3 if gridDims.y==1).
 export const GRID_HELPERS = /* wgsl */`
 // Expects in scope: P (Params), cellStart, cellCountRO (array<u32>, non-atomic view),
 // sortedEntityIndices, and a user callback inlined where marked.

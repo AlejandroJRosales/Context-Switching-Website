@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>gpuverse</title>
+<title>gpuverse — world</title>
 <style>
-  html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font:13px 'Courier New',monospace;color:#9aa5b1}
+  html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font:13px 'Courier New',monospace;color:#9aa5b1;
+    touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
   #c{display:block;width:100vw;height:100vh;touch-action:none}
   #hud{position:fixed;top:8px;left:10px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000}
   #err{position:fixed;inset:0;display:none;place-items:center;color:#f38ba8;padding:24px;text-align:center}
@@ -14,21 +15,24 @@
     border-radius:4px;font:14px/1 'Courier New',monospace;cursor:pointer}
   #scale button:hover{background:#1a212b;color:#fff}
   #scale span{min-width:46px;text-align:center;text-shadow:0 1px 2px #000}
+  #resetSeed{width:auto;padding:0 10px;margin-left:6px}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud"></div>
 <div id="scale">
-  <button id="scaleDown" title="Scale down (-)">-</button>
-  <span id="scaleLabel">1.0x</span>
+  <button id="scaleDown" title="Scale down (-)">−</button>
+  <span id="scaleLabel">1.0×</span>
   <button id="scaleUp" title="Scale up (+)">+</button>
+  <button id="resetSeed" title="Roll a new seed and rebuild the world">⟳ RESET</button>
 </div>
 <div id="err"></div>
 <script type="module">
 import { createRenderer } from "./renderer.js";
 import { createPlayer } from "./player.js";
-import { MOVE } from "./move.wgsl.js";
+import { createSky } from "./sky.js";
+import { MOVE } from "./move_wgsl.js";
 
 const canvas = document.getElementById("c");
 const hud = document.getElementById("hud");
@@ -37,21 +41,49 @@ const fail = (m)=>{errEl.style.display="grid";errEl.textContent=m;throw new Erro
 
 const adapter = await navigator.gpu?.requestAdapter();
 const device  = await adapter?.requestDevice();
-if(!device) fail("WebGPU unavailable: use Chrome/Edge 113+ or Safari 18+ over https/localhost.");
+if(!device) fail("WebGPU unavailable — use Chrome/Edge 113+ or Safari 18+ over https/localhost.");
 
 const ctx = canvas.getContext("webgpu");
 const format = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode:"opaque" });
+
+// ---- Tier 1.4: deterministic seeding ----
+// mulberry32: tiny deterministic PRNG. Same seed -> same float stream -> reproducible
+// world (entity init here; terrain/biomes seed through TerrainParams.seed on the GPU).
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Seeds are plain ints (HUD/URL readable), hashed into 32-bit state so sequential
+// seeds still decorrelate.
+function seedToState(seed) {
+  let h = 1779033703 ^ seed;
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return (h ^= h >>> 16) >>> 0;
+}
+
+const params = new URLSearchParams(location.search);
+let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
 
 // ---- world config (base values; actual N/world/amplitude scale with the +/- control) ----
 const BASE_N = 100000;                      // creature count at scale 1.0
 const BASE_WORLD = [10000, 10000];          // world X/Z extent at scale 1.0
 const BASE_AMPLITUDE = 1200;                // terrain height at scale 1.0
 const worldMin = [0,0,0];
-const seed = 7;
 
 const SCALE_STEPS = [0.125,0.25,0.5,0.75,1,1.5,2,3,4,6,8,10];
 let scaleIdx = SCALE_STEPS.indexOf(1);
+
+// ---- Tier 1.1: day/night cycle ----
+const DAY_LENGTH = 180;
+// Start the sky clock at midday: timeOfDay 0=midnight, 0.5=noon, so offset half a day.
+const SKY_TIME_OFFSET = DAY_LENGTH * 0.5;
+const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
 
@@ -61,13 +93,15 @@ function buildWorld(scale){
   amplitude = BASE_AMPLITUDE * scale;
 
   // ---- positions buffer (the one the renderer reads as instance data) ----
+  // Seeded RNG (1.4): same seed -> same initial scatter of entities, every run.
+  const rng = mulberry32(seedToState(seed));
   positions = device.createBuffer({
     size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
   {
     const init = new Float32Array(N*4);
     for(let i=0;i<N;i++){
-      init[i*4]   = worldMin[0]+Math.random()*(worldMax[0]-worldMin[0]);
-      init[i*4+2] = worldMin[2]+Math.random()*(worldMax[2]-worldMin[2]);
+      init[i*4]   = worldMin[0]+rng()*(worldMax[0]-worldMin[0]);
+      init[i*4+2] = worldMin[2]+rng()*(worldMax[2]-worldMin[2]);
       init[i*4+1] = amplitude; // will be snapped to ground on first move step
     }
     device.queue.writeBuffer(positions,0,init);
@@ -112,7 +146,7 @@ player = createPlayer(canvas, {
 buildWorld(SCALE_STEPS[scaleIdx]);
 
 const scaleLabel = document.getElementById("scaleLabel");
-function updateScaleLabel(){ scaleLabel.textContent = `${SCALE_STEPS[scaleIdx]}x`; }
+function updateScaleLabel(){ scaleLabel.textContent = `${SCALE_STEPS[scaleIdx]}×`; }
 updateScaleLabel();
 
 function setScale(newIdx){
@@ -129,6 +163,15 @@ addEventListener("keydown", e=>{
   if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
 });
 
+// RESET: roll a new seed and rebuild (terrain, biomes, scatter, water all re-derive).
+document.getElementById("resetSeed").addEventListener("click", ()=>{
+  seed = Math.floor(Math.random()*1e9);
+  const url = new URL(location.href);
+  url.searchParams.set("seed", seed);
+  history.replaceState(null, "", url);
+  buildWorld(SCALE_STEPS[scaleIdx]);
+});
+
 // ---- camera is driven by the player (player.js): drag to look, WASD/joystick to move ----
 
 function resize(){
@@ -138,25 +181,43 @@ function resize(){
 addEventListener("resize",resize); resize();
 
 // ---- loop ----
-let t0=performance.now(), last=t0, frames=0, fps=0, facc=0;
+// Reused per-frame scratch (avoids per-frame typed-array allocation). Float fields and the
+// u32 N share one ArrayBuffer so the 16-byte MoveParams uploads in one writeBuffer.
+const moveScratch = new Float32Array(4);          // [time, dt, speed, _]
+const moveScratchU = new Uint32Array(moveScratch.buffer); // same 16 bytes, u32 view for N at index 3
+let t0=performance.now(), last=t0, frames=0, fps=0, facc=0, frameCount=0;
+let lastHud="";
+const HUD_EVERY=60;   // refresh HUD text once every 60 frames (room for more info later)
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now; const time=(now-t0)/1000;
 
-  device.queue.writeBuffer(moveParams,0,new Float32Array([time,dt,18.0,0]));
-  device.queue.writeBuffer(moveParams,12,new Uint32Array([N])); // N at offset 12
+  moveScratch[0]=time; moveScratch[1]=dt; moveScratch[2]=18.0; moveScratchU[3]=N;
+  device.queue.writeBuffer(moveParams,0,moveScratch);
 
   player.update(dt);
   renderer.setCamera(player.getCamera(canvas.width/canvas.height));
 
+  // day/night + fog, recomputed on CPU per frame. fogDist scales with world size.
+  const skyState = sky.update(time + SKY_TIME_OFFSET);
+  renderer.setSky(skyState);
+  const fogDist = Math.max(worldMax[0], worldMax[2]) * 0.55;
+  renderer.setFog(skyState.fogColor, fogDist);
+
   const enc=device.createCommandEncoder();
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
-  renderer.render(enc, positions, N, canvas.width, canvas.height);
+  renderer.render(enc, positions, N, canvas.width, canvas.height, time);
   device.queue.submit([enc.finish()]);
 
-  facc+=dt; frames++;
+  facc+=dt; frames++; frameCount++;
   if(facc>=0.5){ fps=Math.round(frames/facc); frames=0; facc=0; }
-  hud.textContent=`entities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\nfps ${fps}${player.flying?"  [FLYING]":""}`;
+  // Touch the DOM only every HUD_EVERY frames and only when text changed (avoids
+  // per-frame layout/paint).
+  if(frameCount%HUD_EVERY===0){
+    const tod = (skyState.timeOfDay*24).toFixed(1); // already offset via sky.update
+    const hudText=`gpuverse\nseed ${seed}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}×${Math.round(worldMax[2])}\ntime ${tod}h  fps ${fps}${player.flying?"  [FLYING]":""}\n`;
+    if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

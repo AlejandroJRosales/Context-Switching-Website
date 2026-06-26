@@ -4,7 +4,7 @@ import {
   WG, SCAN_BLOCK, SCAN_WG,
   CLEAR, COUNT, SCATTER,
   SCAN_LOCAL, SCAN_BLOCKSUMS, SCAN_ADD,
-} from "./grid.wgsl.js";
+} from "./grid_wgsl.js";
 
 const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
 

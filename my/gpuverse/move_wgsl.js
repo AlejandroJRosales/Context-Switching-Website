@@ -1,8 +1,6 @@
-// move.wgsl.js: minimal movement so the scene is alive. Random-walk in XZ, then
-// snap Y to terrain height using the SHARED heightAt() (same noise as the renderer).
-// This is a placeholder for your real SNN/behavior step; it proves positions can be
-// driven on-GPU and stay on the ground with zero CPU involvement.
-import { HEIGHT_FN } from "./terrain.wgsl.js";
+// move_wgsl.js: placeholder movement. Random-walk in XZ, then snap Y via the shared
+// heightAt() (same noise as the renderer). Proves on-GPU position updates with no CPU.
+import { HEIGHT_FN } from "./terrain_wgsl.js";
 
 export const MOVE = HEIGHT_FN + /* wgsl */`
 struct MoveParams { time : f32, dt : f32, speed : f32, N : u32 };

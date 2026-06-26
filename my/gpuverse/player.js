@@ -1,4 +1,4 @@
-// player.js: first-person walker driven by TWO input sources at once:
+// player.js — first-person walker driven by TWO input sources at once:
 //   keyboard: W/A/S/D to move, Space to jump, mouse-drag to look
 //   touch:    on-screen joystick to move, on-screen JUMP button, drag-to-look
 // Both modes are always live regardless of device; their movement intents are summed,
@@ -7,7 +7,7 @@
 // The player owns its own position + look angles and produces an {eye,target} camera
 // each frame. Ground height is read from the SAME baked heightfield the renderer draws
 // (passed in via setTerrain as {heights, gridN, worldMin, worldMax}), then bilinearly
-// sampled: so the walker stands exactly on the rendered terrain. We do NOT recompute
+// sampled — so the walker stands exactly on the rendered terrain. We do NOT recompute
 // the noise on the CPU: WGSL's fp32 sin-hash and JS's fp64 Math.sin diverge badly as
 // world coords grow, which is what previously buried the player when walking out.
 
@@ -52,7 +52,7 @@ function sampleHeight(tp, wx, wz) {
 //   flySpeed  : vertical units/sec while flying               (default 160)
 //   start     : [x,z] spawn (defaults to world center)
 //
-// Controls: both input modes always live:
+// Controls — both input modes always live:
 //   move : W/A/S/D or arrows, or the joystick
 //   jump : Space or the JUMP button (only while walking; independent of moving)
 //   look : drag anywhere on the canvas
@@ -106,7 +106,12 @@ export function createPlayer(canvas, opts = {}) {
 
   // ===== LOOK (drag anywhere on canvas that isn't a touch control) =====
   // Shared by mouse and touch-drag. Joystick/jump swallow their own pointers.
+  // pointermove can fire many times per frame; rather than mutate yaw/pitch in the
+  // handler (which also competes with rendering), we ACCUMULATE the raw pixel delta
+  // here and apply it exactly once per frame in update(). preventDefault() on the
+  // move stops the browser from treating the drag as a scroll/pinch gesture.
   let looking = false, lookId = -1, lx = 0, ly = 0;
+  let pendingDX = 0, pendingDY = 0;   // accumulated, consumed each frame
   const LOOK_SENS = 0.0042;
   const onPointerDown = (e) => {
     if (e.target.closest && e.target.closest("#playerControls")) return; // joystick/jump own it
@@ -115,15 +120,16 @@ export function createPlayer(canvas, opts = {}) {
   };
   const onPointerMove = (e) => {
     if (!looking || e.pointerId !== lookId) return;
-    yaw   += (e.clientX - lx) * LOOK_SENS;
-    pitch  = clamp(pitch - (e.clientY - ly) * LOOK_SENS, -1.45, 1.45);
+    pendingDX += e.clientX - lx;
+    pendingDY += e.clientY - ly;
     lx = e.clientX; ly = e.clientY;
+    if (e.cancelable) e.preventDefault();   // suppress scroll/pinch gesture recognition
   };
   const onPointerUp = (e) => {
     if (e.pointerId === lookId) { looking = false; lookId = -1; }
   };
   canvas.addEventListener("pointerdown", onPointerDown);
-  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointermove", onPointerMove, { passive: false });
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerUp);
 
@@ -143,6 +149,13 @@ export function createPlayer(canvas, opts = {}) {
 
   // ---- per-frame update ----
   function update(dt) {
+    // apply look accumulated from pointermove since last frame (coalesced to one update)
+    if (pendingDX !== 0 || pendingDY !== 0) {
+      yaw   += pendingDX * LOOK_SENS;
+      pitch  = clamp(pitch - pendingDY * LOOK_SENS, -1.45, 1.45);
+      pendingDX = 0; pendingDY = 0;
+    }
+
     // forward/right basis on the XZ plane from yaw (ignore pitch for walking)
     const fx = Math.cos(yaw), fz = Math.sin(yaw);     // forward
     const rx = Math.cos(yaw + Math.PI / 2), rz = Math.sin(yaw + Math.PI / 2); // right

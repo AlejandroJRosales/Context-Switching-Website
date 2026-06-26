@@ -1,16 +1,8 @@
-// sense.wgsl.js: a real sensing pass that consumes the uniform grid.
-// Per entity it computes: neighbor count within senseRadius, nearest neighbor index,
-// and nearest distance squared. Demonstrates the correct cell-radius / euclidean-radius split.
-//
-// Bindings (group 0): a layout distinct from the grid passes:
-//   0 uniform Params         (same struct/buffer as the grid)
-//   1 uniform SenseParams    (senseRadius)
-//   2 read positions
-//   3 read cellStart
-//   4 read cellCountRO       (NON-atomic view of cellCount, same buffer)
-//   5 read sortedEntityIndices
-//   6 read_write senseOut    (array<SenseResult>)
-import { WG } from "./grid.wgsl.js";
+// sense_wgsl.js: sensing pass over the uniform grid. Per entity: neighbor count within
+// senseRadius, nearest index, nearest distance squared. Shows the cell-radius vs
+// euclidean-radius split. Bindings: 0 Params, 1 SenseParams, 2 positions, 3 cellStart,
+// 4 cellCountRO (non-atomic view), 5 sortedEntityIndices, 6 senseOut.
+import { WG } from "./grid_wgsl.js";
 
 export const SENSE = /* wgsl */`
 struct Params {
@@ -54,8 +46,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let myPos = positions[i].xyz;
   let c = cellCoord(myPos);
 
-  // Decouple euclidean cutoff from the cell scan: scan enough cells to fully cover
-  // a sphere of radius senseRadius, then filter by exact distance. R must round UP.
+  // scan enough cells to cover a sphere of radius senseRadius (R rounds UP), then
+  // filter by exact euclidean distance.
   let R = max(1u, u32(ceil(SP.senseRadius / P.cellSize)));
   let r2 = SP.senseRadius * SP.senseRadius;
 
