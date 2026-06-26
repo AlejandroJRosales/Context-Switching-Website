@@ -1337,6 +1337,7 @@ const PUDDLE = {
   wet: null,
   pool: null,
   baseY: null,
+  active: null, activeCount: 0,
   fillRate: 0.15,
   dryRate: 0.025,
   threshold: 0.5,
@@ -1381,6 +1382,12 @@ function puddleBuildField(){
       PUDDLE.pool[i] = flat*flat * (0.4 + 0.6*low);
     }
   }
+  let na = 0;
+  for (let i=0;i<n;i++){ if (PUDDLE.pool[i] > 0) na++; }
+  PUDDLE.active = new Int32Array(na);
+  let ai = 0;
+  for (let i=0;i<n;i++){ if (PUDDLE.pool[i] > 0) PUDDLE.active[ai++] = i; }
+  PUDDLE.activeCount = na;
   PUDDLE.dirty = true;
   PUDDLE.anyWet = false;
   PUDDLE.sinceRebuild = 1e9;
@@ -1388,13 +1395,12 @@ function puddleBuildField(){
 function puddleAccumulate(dt, intensity){
   const wet = PUDDLE.wet, pool = PUDDLE.pool;
   if (!wet) return;
-  const n = wet.length;
+  const act = PUDDLE.active, na = PUDDLE.activeCount;
   if (intensity > 0.01){
     const add = PUDDLE.fillRate * intensity * dt;
-    for (let i=0;i<n;i++){
-      const p = pool[i];
-      if (p <= 0) continue;
-      const w = wet[i] + add*p;
+    for (let k=0;k<na;k++){
+      const i = act[k];
+      const w = wet[i] + add*pool[i];
       wet[i] = w > 1 ? 1 : w;
     }
     PUDDLE.anyWet = true;
@@ -1402,7 +1408,8 @@ function puddleAccumulate(dt, intensity){
   } else if (PUDDLE.anyWet){
     const sub = PUDDLE.dryRate * dt;
     let changed = false, remaining = false;
-    for (let i=0;i<n;i++){
+    for (let k=0;k<na;k++){
+      const i = act[k];
       if (wet[i] > 0){ const w = wet[i]-sub; wet[i] = w < 0 ? 0 : w; changed = true; if (wet[i] > 0) remaining = true; }
     }
     if (changed) PUDDLE.dirty = true;
