@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>gpuverse — world</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070a;overflow:hidden;font:13px 'Courier New',monospace;color:#9aa5b1}
+  #c{display:block;width:100vw;height:100vh;touch-action:none}
+  #hud{position:fixed;top:8px;left:10px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000}
+  #err{position:fixed;inset:0;display:none;place-items:center;color:#f38ba8;padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="err"></div>
+<script type="module">
+import { createRenderer } from "./renderer.js";
+import { MOVE } from "./move.wgsl.js";
+
+const canvas = document.getElementById("c");
+const hud = document.getElementById("hud");
+const errEl = document.getElementById("err");
+const fail = (m)=>{errEl.style.display="grid";errEl.textContent=m;throw new Error(m);};
+
+const adapter = await navigator.gpu?.requestAdapter();
+const device  = await adapter?.requestDevice();
+if(!device) fail("WebGPU unavailable — use Chrome/Edge 113+ or Safari 18+ over https/localhost.");
+
+const ctx = canvas.getContext("webgpu");
+const format = navigator.gpu.getPreferredCanvasFormat();
+ctx.configure({ device, format, alphaMode:"opaque" });
+
+// ---- world config ----
+const N = 8000;                           // creature count (bump toward 1e6 once happy)
+const worldMin=[0,0,0], worldMax=[800,0,800];
+const amplitude=120, seed=7;
+
+// ---- positions buffer (the one the renderer reads as instance data) ----
+const positions = device.createBuffer({
+  size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+{
+  const init = new Float32Array(N*4);
+  for(let i=0;i<N;i++){
+    init[i*4]   = worldMin[0]+Math.random()*(worldMax[0]-worldMin[0]);
+    init[i*4+2] = worldMin[2]+Math.random()*(worldMax[2]-worldMin[2]);
+    init[i*4+1] = amplitude; // will be snapped to ground on first move step
+  }
+  device.queue.writeBuffer(positions,0,init);
+}
+
+const renderer = createRenderer(device, ctx, format, {
+  worldMin, worldMax, gridN:256, amplitude, seed, creatureRadius:3.0 });
+
+// ---- movement pipeline (shares terrainParams so heights match exactly) ----
+const moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+const moveBGL = device.createBindGroupLayout({entries:[
+  {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+  {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+  {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+]});
+const moveBG = device.createBindGroup({layout:moveBGL,entries:[
+  {binding:0,resource:{buffer:moveParams}},
+  {binding:1,resource:{buffer:renderer.terrainParams}},
+  {binding:2,resource:{buffer:positions}},
+]});
+const movePipe = device.createComputePipeline({
+  layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
+  compute:{module:device.createShaderModule({code:MOVE}),entryPoint:"main"},
+});
+
+// ---- orbit camera (drag to rotate, wheel/pinch to zoom) ----
+let yaw=0.6, pitch=0.5, dist=700;
+const center=[(worldMax[0])/2, amplitude*0.5, (worldMax[2])/2];
+let dragging=false, lx=0, ly=0;
+canvas.addEventListener("pointerdown",e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener("pointermove",e=>{ if(!dragging)return;
+  yaw-=(e.clientX-lx)*0.005; pitch=Math.max(0.05,Math.min(1.4,pitch-(e.clientY-ly)*0.005));
+  lx=e.clientX; ly=e.clientY; });
+canvas.addEventListener("pointerup",()=>dragging=false);
+canvas.addEventListener("wheel",e=>{dist=Math.max(120,Math.min(2500,dist*(1+Math.sign(e.deltaY)*0.08)));e.preventDefault();},{passive:false});
+
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1, 2);
+  canvas.width=Math.floor(innerWidth*dpr); canvas.height=Math.floor(innerHeight*dpr);
+}
+addEventListener("resize",resize); resize();
+
+// ---- loop ----
+let t0=performance.now(), last=t0, frames=0, fps=0, facc=0;
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now; const time=(now-t0)/1000;
+
+  device.queue.writeBuffer(moveParams,0,new Float32Array([time,dt,18.0,0]));
+  device.queue.writeBuffer(moveParams,12,new Uint32Array([N])); // N at offset 12
+
+  const eye=[
+    center[0]+Math.cos(yaw)*Math.cos(pitch)*dist,
+    center[1]+Math.sin(pitch)*dist,
+    center[2]+Math.sin(yaw)*Math.cos(pitch)*dist,
+  ];
+  renderer.setCamera({eye, target:center, aspect:canvas.width/canvas.height});
+
+  const enc=device.createCommandEncoder();
+  { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
+    p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
+  renderer.render(enc, positions, N, canvas.width, canvas.height);
+  device.queue.submit([enc.finish()]);
+
+  facc+=dt; frames++;
+  if(facc>=0.5){ fps=Math.round(frames/facc); frames=0; facc=0; }
+  hud.textContent=`gpuverse\nentities ${N.toLocaleString()}\nfps ${fps}\ndrag rotate · wheel zoom`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
