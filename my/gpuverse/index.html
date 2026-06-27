@@ -71,16 +71,16 @@ const params = new URLSearchParams(location.search);
 let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
 
 // world config (base values; actual N/world/amplitude scale with the +/- control)
-const BASE_N = 100000;                      // creature count at scale 1.0
+const BASE_N = 1000;                        // creature count at scale 1.0
 const BASE_WORLD = [10000, 10000];          // world X/Z extent at scale 1.0
-const BASE_AMPLITUDE = 1200;                // terrain height at scale 1.0
+const BASE_AMPLITUDE = 500;                 // terrain height at scale 1.0
 const worldMin = [0,0,0];
 
 const SCALE_STEPS = [0.125,0.25,0.5,0.75,1,1.5,2,3,4,6,8,10];
 let scaleIdx = SCALE_STEPS.indexOf(1);
 
 // day/night cycle
-const DAY_LENGTH = 180;
+const DAY_LENGTH = 500;
 // Start the sky clock at midday: timeOfDay 0=midnight, 0.5=noon, so offset half a day.
 const SKY_TIME_OFFSET = DAY_LENGTH * 0.5;
 const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
@@ -140,7 +140,7 @@ function buildWorld(scale){
 // Created before the first buildWorld so the first heightfield readback finds it.
 // Terrain (the baked heightfield) is supplied asynchronously by buildWorld via setTerrain.
 player = createPlayer(canvas, {
-  eyeHeight: 6, moveSpeed: 140, jumpSpeed: 95, gravity: 280,
+  eyeHeight: 5, moveSpeed: 150, jumpSpeed: 125, gravity: 300,
 });
 
 buildWorld(SCALE_STEPS[scaleIdx]);
@@ -173,30 +173,13 @@ document.getElementById("resetSeed").addEventListener("click", ()=>{
 });
 
 // camera is driven by the player (player.js): drag to look, WASD/joystick to move
-
 function resize(){
   const dpr=Math.min(devicePixelRatio||1, 2);
   canvas.width=Math.floor(innerWidth*dpr); canvas.height=Math.floor(innerHeight*dpr);
 }
 addEventListener("resize",resize); resize();
 
-// loop
-// Reused per-frame scratch (avoids per-frame typed-array allocation). Float fields and the
-// u32 N share one ArrayBuffer so the 16-byte MoveParams uploads in one writeBuffer.
-const moveScratch = new Float32Array(4);          // [time, dt, speed, _]
-const moveScratchU = new Uint32Array(moveScratch.buffer); // same 16 bytes, u32 view for N at index 3
-let t0=performance.now(), last=t0, frames=0, fps=0, facc=0, frameCount=0;
-let lastHud="";
-const HUD_EVERY=60;   // refresh HUD text once every 60 frames (room for more info later)
-function frame(now){
-  const dt=Math.min(0.05,(now-last)/1000); last=now; const time=(now-t0)/1000;
-
-  moveScratch[0]=time; moveScratch[1]=dt; moveScratch[2]=18.0; moveScratchU[3]=N;
-  device.queue.writeBuffer(moveParams,0,moveScratch);
-
-  player.update(dt);
-  renderer.setCamera(player.getCamera(canvas.width/canvas.height));
-
+function handleHud(time, dt, lastHud) {
   // day/night + fog, recomputed on CPU per frame. fogDist scales with world size.
   const skyState = sky.update(time + SKY_TIME_OFFSET);
   renderer.setSky(skyState);
@@ -211,13 +194,36 @@ function frame(now){
 
   facc+=dt; frames++; frameCount++;
   if(facc>=0.5){ fps=Math.round(frames/facc); frames=0; facc=0; }
+
   // Touch the DOM only every HUD_EVERY frames and only when text changed (avoids
   // per-frame layout/paint).
   if(frameCount%HUD_EVERY===0){
     const tod = (skyState.timeOfDay*24).toFixed(1); // already offset via sky.update
-    const hudText=`gpuverse\nseed ${seed}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  fps ${fps}${player.flying?"  [FLYING]":""}\n`;
+    const hudText=`3.0.0\nseed ${seed}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  fps ${fps}${player.flying?"  [FLYING]":""}\n`;
     if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
   }
+}
+
+// loop
+// Reused per-frame scratch (avoids per-frame typed-array allocation). Float fields and the
+// u32 N share one ArrayBuffer so the 16-byte MoveParams uploads in one writeBuffer.
+const moveScratch = new Float32Array(4);          // [time, dt, speed, _]
+const moveScratchU = new Uint32Array(moveScratch.buffer); // same 16 bytes, u32 view for N at index 3
+let t0 = performance.now(), last = t0, frames = 0, fps = 0, facc = 0, frameCount = 0;
+let lastHud = "";
+const HUD_EVERY = 60;   // refresh HUD text once every 60 frames
+function frame(now){
+  const dt = Math.min(0.05,(now-last)/1000); 
+  last = now; 
+  const time = (now-t0)/1000;
+
+  moveScratch[0]=time; moveScratch[1]=dt; moveScratch[2]=18.0; moveScratchU[3]=N;
+  device.queue.writeBuffer(moveParams,0,moveScratch);
+
+  player.update(dt);
+  renderer.setCamera(player.getCamera(canvas.width/canvas.height));
+
+  lastHud = handleHud(time, dt, lastHud);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
