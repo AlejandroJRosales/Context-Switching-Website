@@ -80,7 +80,7 @@ fn biomeMask(uv : vec2<f32>, seed : f32) -> f32 {
 fn heightAt(tp : TerrainParams, worldXZ : vec2<f32>) -> f32 {
   let span = tp.worldMax - tp.worldMin;
   let uv = (worldXZ - tp.worldMin) / span;   // 0..1 across world
-  let basePos = uv * 6.0 + vec2<f32>(tp.seed, tp.seed * 1.7);
+  let basePos = uv * 2.0 + vec2<f32>(tp.seed, tp.seed * 1.7);
 
   let plains = fractalNoise(basePos);                 // 0..1, gentle rolling base
   let ridged = ridgedNoise(basePos * 1.6 + vec2<f32>(11.0, -7.0));
