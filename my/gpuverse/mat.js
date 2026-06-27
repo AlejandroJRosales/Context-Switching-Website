@@ -16,6 +16,20 @@ export function perspective(fovy, aspect, near, far) {
   ];
 }
 
+// Orthographic projection, column-major, WebGPU/D3D convention: clip-space Z in [0,1]
+// (NOT GL's [-1,1]). This matters for the shadow pass: the bake writes clip Z straight
+// into a depth24plus target (which stores [0,1]), and the terrain sampler compares against
+// that same [0,1] depth — so the projection must already be [0,1] with no remap.
+export function ortho(left, right, bottom, top, near, far) {
+  const lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
+  return [
+    -2 * lr, 0, 0, 0,
+    0, -2 * bt, 0, 0,
+    0, 0, nf, 0,                                  // z scale: 1/(near-far) maps near->0, far->1
+    (left + right) * lr, (top + bottom) * bt, near * nf, 1,
+  ];
+}
+
 export function lookAt(eye, center, up) {
   const z = v3.norm(v3.sub(eye, center));
   const x = v3.norm(v3.cross(up, z));

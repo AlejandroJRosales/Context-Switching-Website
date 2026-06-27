@@ -104,6 +104,88 @@ fn heightAt(tp : TerrainParams, worldXZ : vec2<f32>) -> f32 {
 }
 `;
 
+// ---------------------------------------------------------------------------
+// Shadows: a sun-view depth pass (the "bake") writes terrain depth from the light's
+// orthographic frustum; the terrain main pass samples it with hardware-PCF comparison.
+// ShadowParams carries the light viewProj + a few tunables; SHADOW_FN is the sampling
+// helper mixed into the terrain fragment shader. Texel-snapping of the frustum happens
+// host-side (renderer.js) so shadow edges don't crawl as the camera walks.
+// ---------------------------------------------------------------------------
+export const SHADOW_PARAMS_STRUCT = /* wgsl */`
+struct ShadowParams {
+  lightViewProj : mat4x4<f32>,
+  texel    : f32,   // 1.0 / shadowResolution (for PCF tap spacing in [0,1] UV)
+  bias     : f32,   // constant depth bias to fight acne
+  pcfRadius: f32,   // tap radius in texels (2.0 => 5x5 kernel)
+  strength : f32,   // 0..1 how dark a fully-shadowed fragment gets
+};
+`;
+
+// Sampling helper. Expects in scope: SHADOW (ShadowParams), shadowTex (texture_depth_2d),
+// shadowSamp (sampler_comparison). Returns visibility in [0,1] (1 = fully lit).
+// PCF kernel size is driven by pcfRadius: radius 2 -> 5x5 (25 taps), radius 1 -> 3x3.
+export const SHADOW_FN = /* wgsl */`
+fn sampleShadow(worldPos : vec3<f32>, ndl : f32) -> f32 {
+  let lp = SHADOW.lightViewProj * vec4<f32>(worldPos, 1.0);
+  // ortho() has w==1, but divide anyway to stay correct if a perspective light is used later
+  let proj = lp.xyz / lp.w;
+  // XY: clip [-1,1] -> [0,1] UV, flip Y for texture space.
+  let uvRaw = proj.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5);
+  // Z: ortho() already emits WebGPU-convention depth in [0,1], so compare directly (no remap).
+  let depthRef = proj.z;
+
+  // Whether this fragment falls inside the light frustum. We must NOT branch the
+  // texture sample on this (textureSampleCompare requires uniform control flow), so
+  // instead we clamp the UV so the sample is always valid, run PCF unconditionally,
+  // then blend the result toward "fully lit" by this 0/1 mask afterward.
+  let inside = f32(uvRaw.x >= 0.0 && uvRaw.x <= 1.0 &&
+                   uvRaw.y >= 0.0 && uvRaw.y <= 1.0 && depthRef <= 1.0);
+  let uv = clamp(uvRaw, vec2<f32>(0.0), vec2<f32>(1.0));
+
+  // slope-scaled bias: steeper grazing angle (small ndl) needs more bias
+  let slopeBias = SHADOW.bias * (1.0 + (1.0 - ndl) * 3.0);
+  let cmp = depthRef - slopeBias;
+
+  // PCF box kernel of half-width pcfRadius, in texels. Use ...CompareLevel (samples at
+  // mip 0, no implicit derivatives) so there's no uniform-control-flow requirement at
+  // all — the correct, portable choice for shadow PCF.
+  let r = i32(SHADOW.pcfRadius);
+  var sum = 0.0;
+  var taps = 0.0;
+  for (var dy = -r; dy <= r; dy = dy + 1) {
+    for (var dx = -r; dx <= r; dx = dx + 1) {
+      let off = vec2<f32>(f32(dx), f32(dy)) * SHADOW.texel;
+      sum = sum + textureSampleCompareLevel(shadowTex, shadowSamp, uv + off, cmp);
+      taps = taps + 1.0;
+    }
+  }
+  let vis = sum / taps;          // 1 = lit, 0 = in shadow
+  // outside the frustum there's no shadow data -> treat as fully lit
+  return mix(1.0, vis, inside);
+}
+`;
+
+// Shadow bake: depth-only pass. Same vertex math as TERRAIN_RENDER.vs but from the
+// light's viewProj. No fragment entry (depth is written automatically); no color target.
+export const SHADOW_BAKE = HEIGHT_FN + SHADOW_PARAMS_STRUCT + /* wgsl */`
+@group(0) @binding(0) var<uniform> SHADOW : ShadowParams;
+@group(0) @binding(1) var<uniform> TP : TerrainParams;
+@group(0) @binding(2) var<storage, read> heights : array<f32>;
+
+@vertex
+fn vs(@builtin(vertex_index) vid : u32) -> @builtin(position) vec4<f32> {
+  let n = TP.gridN;
+  let ix = i32(vid % n);
+  let iz = i32(vid / n);
+  let span = TP.worldMax - TP.worldMin;
+  let u = vec2<f32>(f32(ix), f32(iz)) / f32(n - 1u);
+  let worldXZ = TP.worldMin + u * span;
+  let y = heights[u32(iz) * n + u32(ix)];
+  let worldPos = vec3<f32>(worldXZ.x, y, worldXZ.y);
+  return SHADOW.lightViewProj * vec4<f32>(worldPos, 1.0);
+}
+`;
+
 // Compute pass: fill a gridN*gridN f32 height buffer at vertex grid points (baked once).
 export const TERRAIN_BAKE = HEIGHT_FN + /* wgsl */`
 @group(0) @binding(0) var<uniform> TP : TerrainParams;
@@ -121,13 +203,16 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
 // Terrain render: each vertex pulls its height from the buffer by vertex_index (indices
 // generated host-side); normal from neighbors; fragment shaded by SkyParams + FogParams.
-export const TERRAIN_RENDER = HEIGHT_FN + SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
+export const TERRAIN_RENDER = HEIGHT_FN + SKY_PARAMS_STRUCT + FOG_FN + SHADOW_PARAMS_STRUCT + SHADOW_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 @group(0) @binding(0) var<uniform> CAM : Camera;
 @group(0) @binding(1) var<uniform> TP  : TerrainParams;
 @group(0) @binding(2) var<storage, read> heights : array<f32>;
 @group(0) @binding(3) var<uniform> SKY : SkyParams;
 @group(0) @binding(4) var<uniform> FOG : FogParams;
+@group(0) @binding(5) var<uniform> SHADOW : ShadowParams;
+@group(0) @binding(6) var shadowTex  : texture_depth_2d;
+@group(0) @binding(7) var shadowSamp : sampler_comparison;
 
 struct VsOut {
   @builtin(position) clip : vec4<f32>,
@@ -176,23 +261,28 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let high = vec3<f32>(0.55, 0.54, 0.48);
   var albedo = mix(low, mid, smoothstep(0.0, 0.5, t));
   albedo = mix(albedo, high, smoothstep(0.5, 1.0, t));
-  let lit = albedo * (SKY.ambient + SKY.sunColor * ndl);
+  // shadow attenuates ONLY the direct sun term; ambient (skylight) stays.
+  // strength lets a fully-shadowed fragment keep a little sun rather than going flat.
+  let vis = sampleShadow(in.worldPos, ndl);
+  let sunVis = mix(1.0 - SHADOW.strength, 1.0, vis);
+  let lit = albedo * (SKY.ambient + SKY.sunColor * ndl * sunVis);
   let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
   return vec4<f32>(foggy, 1.0);
 }
 `;
 
 // ---------------------------------------------------------------------------
-// Creatures: instanced. Each instance reads one entry from the positions buffer
-// (the same buffer compute writes) via an instance-step vertex buffer; no CPU
-// per-entity work. Bodies are cheap camera-facing quads. Shading reads SkyParams
-// + fog.
+// Creatures: instanced REAL mesh. Vertex buffer 0 = canonical quadruped (pos+normal,
+// per-vertex). Buffer 1 = instance position (xyz + w unused), per-instance. Buffer 2 =
+// instance (species, heading), per-instance. The canonical mesh is deformed per-species
+// in the VS (deer: tall/slender/upright; wolf: low/long/level), rotated to face heading,
+// scaled by SIZE.x, and placed at the instance position. Smooth normals -> smooth shading.
 // ---------------------------------------------------------------------------
 
 export const CREATURE_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 @group(0) @binding(0) var<uniform> CAM : Camera;
-@group(0) @binding(1) var<uniform> SIZE : vec4<f32>; // x = creature radius
+@group(0) @binding(1) var<uniform> SIZE : vec4<f32>; // x = overall creature scale
 @group(0) @binding(2) var<uniform> SKY : SkyParams;
 @group(0) @binding(3) var<uniform> FOG : FogParams;
 
@@ -200,60 +290,88 @@ struct VsOut {
   @builtin(position) clip : vec4<f32>,
   @location(0) nrm : vec3<f32>,
   @location(1) tint : vec3<f32>,
-  @location(2) uv : vec2<f32>,
-  @location(3) worldPos : vec3<f32>,
+  @location(2) worldPos : vec3<f32>,
 };
 
-// Camera-facing quad (2 tris), corner index 0..5, expanded around the instance center.
-fn cornerOffset(i : u32) -> vec2<f32> {
-  var c = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
-    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0,  1.0), vec2<f32>(-1.0,  1.0),
-  );
-  return c[i];
+// Per-species deformation of a canonical-space vertex (local mesh coords, +X fwd, +Y up,
+// +Z right). species: 0 = deer, 1 = wolf. Returns the deformed local position. We scale
+// the three axes differently and lift/lower the neck+head region (high X) to change the
+// silhouette without touching topology. Normals are deformed by the same diagonal scale
+// (inverse-transpose of a pure non-uniform scale = reciprocal scale), then renormalized.
+fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
+  // axis scales: deer is taller (Y) and a touch shorter (X); wolf is longer (X) and lower (Y).
+  let deerS = vec3<f32>(0.95, 1.25, 0.85);
+  let wolfS = vec3<f32>(1.20, 0.80, 0.95);
+  let s = mix(deerS, wolfS, species);
+  var p = localPos * s;
+
+  // neck/head live at high local X (>~0.42). Deer carry the head high & upright; wolves
+  // hold it low and forward. Shift the upper body's Y by how far forward it is.
+  let headRegion = smoothstep(0.40, 0.62, localPos.x);
+  let deerLift =  0.18;   // deer: raise head
+  let wolfDrop = -0.16;   // wolf: drop head toward the ground line
+  p.y = p.y + headRegion * mix(deerLift, wolfDrop, species);
+  // wolves push the muzzle further forward (predatory), deer less so
+  p.x = p.x + headRegion * mix(0.02, 0.10, species);
+  return p;
+}
+
+// matching normal deform: for a diagonal scale S, correct normal transform is N/S then
+// renormalize. The head-region Y/X shears are small and ignored for the normal (visually
+// negligible vs the cost of a full Jacobian).
+fn deformNormal(localN : vec3<f32>, species : f32) -> vec3<f32> {
+  let deerS = vec3<f32>(0.95, 1.25, 0.85);
+  let wolfS = vec3<f32>(1.20, 0.80, 0.95);
+  let s = mix(deerS, wolfS, species);
+  return normalize(localN / s);
 }
 
 @vertex
-fn vs(@builtin(vertex_index) vid : u32,
-      @location(0) instPos : vec4<f32>) -> VsOut {
-  let center = instPos.xyz;
-  let r = SIZE.x;
+fn vs(@location(0) vPos : vec3<f32>,
+      @location(1) vNrm : vec3<f32>,
+      @location(2) instPos : vec4<f32>,
+      @location(3) instSH  : vec2<f32>) -> VsOut {
+  let species = instSH.x;          // 0 deer, 1 wolf
+  let heading = instSH.y;          // radians, facing in XZ
 
-  // camera-facing basis
-  let fwd   = normalize(CAM.eye - center);
-  let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), fwd));
-  let up    = cross(fwd, right);
+  // deform in canonical space
+  let dl = deform(vPos, species);
+  let dn = deformNormal(vNrm, species);
 
-  let off = cornerOffset(vid);
-  let worldPos = center + (right * off.x + up * off.y) * r;
+  // rotate about Y by heading so +X (nose) points along travel direction
+  let ch = cos(heading); let sh = sin(heading);
+  // rotate (x,z): x' = x*ch + z*sh ; z' = -x*sh + z*ch  (so heading 0 faces +X)
+  let rl = vec3<f32>(dl.x*ch + dl.z*sh, dl.y, -dl.x*sh + dl.z*ch);
+  let rn = vec3<f32>(dn.x*ch + dn.z*sh, dn.y, -dn.x*sh + dn.z*ch);
+
+  // scale to world size and place at the instance ground position. instPos.y already
+  // sits ~1.5 above ground (move pass); the mesh's own feet are at local y=0, so we
+  // drop the placement down by that offset so feet meet the ground rather than float.
+  let scale = SIZE.x;
+  let foot = instPos.xyz - vec3<f32>(0.0, 1.5, 0.0);   // undo the move-pass body lift
+  let worldPos = foot + rl * scale;
 
   var out : VsOut;
-  out.clip = CAM.viewProj * vec4<f32>(worldPos, 1.0);
   out.worldPos = worldPos;
-  out.nrm = fwd;
-  out.uv = off;   // [-1,1] quad coords for the fragment radial fade
-  // tint by a hash of instance position so the field reads as many individuals
-  let h = fract(sin(dot(center.xz, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-  out.tint = mix(vec3<f32>(0.9, 0.5, 0.2), vec3<f32>(0.95, 0.85, 0.3), h);
+  out.clip = CAM.viewProj * vec4<f32>(worldPos, 1.0);
+  out.nrm = rn;
+  // tint: species base color + slight per-individual variation from the instance position
+  let h = fract(sin(dot(instPos.xz, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+  let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h); // warm brown
+  let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h); // grey
+  out.tint = mix(deerCol, wolfCol, species);
   return out;
 }
 
 @fragment
 fn fs(in : VsOut) -> @location(0) vec4<f32> {
-  // round the quad into a disc; drop the corners entirely
-  let d = length(in.uv);
-  if (d > 1.0) { discard; }
-
-  // reconstruct a hemisphere normal from disc coords for a little shaded roundness.
-  let z = sqrt(max(0.0, 1.0 - d * d));
-  let sphereN = normalize(in.nrm * z + vec3<f32>(in.uv.x, in.uv.y, 0.0));
+  let nrm = normalize(in.nrm);
   let lightDir = normalize(SKY.sunDir);
-  let ndl = max(dot(sphereN, lightDir), 0.0);
-
-  let lit = in.tint * (SKY.ambient + SKY.sunColor * ndl);
+  let ndl = max(dot(nrm, lightDir), 0.0);
+  // a touch of wrap lighting so the shadowed side isn't pure ambient-flat
+  let wrap = ndl * 0.85 + 0.15;
+  let lit = in.tint * (SKY.ambient + SKY.sunColor * wrap);
   let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
-
-  // opaque output (alpha-blending many overlapping sprites would need sorting we skip).
   return vec4<f32>(foggy, 1.0);
 }
 `;
@@ -349,6 +467,7 @@ struct MoveParams { time : f32, dt : f32, speed : f32, N : u32 };
 @group(0) @binding(0) var<uniform> MP : MoveParams;
 @group(0) @binding(1) var<uniform> TP : TerrainParams;
 @group(0) @binding(2) var<storage, read_write> positions : array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read_write> speciesHeading : array<vec2<f32>>;
 
 fn hash11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
 
@@ -362,8 +481,10 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let ph = hash11(f32(i)) * 6.2831853;
   let ang = ph + MP.time * 0.3 * (0.5 + hash11(f32(i) + 1.0));
   let step = MP.speed * MP.dt;
-  p.x = p.x + cos(ang) * step;
-  p.z = p.z + sin(ang) * step;
+  let dx = cos(ang) * step;
+  let dz = sin(ang) * step;
+  p.x = p.x + dx;
+  p.z = p.z + dz;
 
   // keep inside world XZ bounds (reflect)
   p.x = clamp(p.x, TP.worldMin.x, TP.worldMax.x);
@@ -373,5 +494,12 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   p.y = heightAt(TP, vec2<f32>(p.x, p.z)) + 1.5;
 
   positions[i] = p;
+
+  // facing: heading is the XZ travel direction. The mesh's +X axis is the nose, and the
+  // render rotates +X toward this angle, so atan2(dz, dx) makes it walk nose-first.
+  // species (.x) is set once at init and never touched here.
+  var sh = speciesHeading[i];
+  sh.y = atan2(dz, dx);
+  speciesHeading[i] = sh;
 }
 `;

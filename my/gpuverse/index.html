@@ -33,6 +33,7 @@ import { createRenderer } from "./renderer.js";
 import { createPlayer } from "./player.js";
 import { createSky } from "./sky.js";
 import { MOVE } from "./world_wgsl.js";
+import { ortho, lookAt, mul } from "./mat.js";
 
 const canvas = document.getElementById("c");
 const hud = document.getElementById("hud");
@@ -66,6 +67,17 @@ function seedToState(seed) {
   h = Math.imul(h ^ (h >>> 13), 3266489909);
   return (h ^= h >>> 16) >>> 0;
 }
+// The GPU stores the seed in an f32 (TerrainParams.seed), which only holds
+// integers up to ~2^24 exactly. A large user seed (e.g. RESET picks up to 1e9)
+// would round, and worse, dominate the noise coordinates (uv*6 + seed) so badly
+// that every vertex samples the same point -> flat terrain + drifting water level.
+// Map any seed through the 32-bit hash into a small, well-distributed float
+// (0..1000 with a fractional part) that f32 represents exactly. The HUD/URL seed
+// stays the big readable int; only this GPU-facing value is bounded.
+function seedToGpuFloat(seed) {
+  const s = seedToState(seed);                 // decorrelated 32-bit
+  return (s >>> 8) / 16777216 * 1000;          // 0..1000, ~16 fractional bits
+}
 
 const params = new URLSearchParams(location.search);
 let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
@@ -86,6 +98,8 @@ const SKY_TIME_OFFSET = DAY_LENGTH * 0.5;
 const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
+let speciesHeading;   // per-instance (species:0|1, heading:radians) buffer, vec2 stride 8
+let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
   N = Math.max(1, Math.round(BASE_N * scale));
@@ -107,8 +121,28 @@ function buildWorld(scale){
     device.queue.writeBuffer(positions,0,init);
   }
 
+  // Per-instance (species, heading). Species assigned once here (~55% deer / 45% wolf via
+  // the same seeded RNG so it's reproducible); heading is seeded random and then driven by
+  // the move pass each frame. vec2 per instance -> stride 8 bytes.
+  speciesHeading = device.createBuffer({
+    size: N*8, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+  {
+    const sh = new Float32Array(N*2);
+    for(let i=0;i<N;i++){
+      sh[i*2]   = rng() < 0.55 ? 0 : 1;         // 0 deer, 1 wolf
+      sh[i*2+1] = rng() * Math.PI * 2;          // initial heading
+    }
+    device.queue.writeBuffer(speciesHeading,0,sh);
+  }
+
+  // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
+  // visible region would just blur, so trade resolution for coverage at high scale.
+  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 1024 : 512;
+  curShadowRes = shadowRes;
+
   renderer = createRenderer(device, ctx, format, {
-    worldMin, worldMax, gridN:256, amplitude, seed, creatureRadius:3.0 });
+    worldMin, worldMax, gridN:256, amplitude, seed:seedToGpuFloat(seed), creatureRadius:8.0,
+    shadowResolution: shadowRes });
 
   // player walks the SAME baked heightfield the renderer draws. Read it back once
   // (async) and hand it to the player; this matches the rendered ground exactly,
@@ -124,11 +158,13 @@ function buildWorld(scale){
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
   ]});
   moveBG = device.createBindGroup({layout:moveBGL,entries:[
     {binding:0,resource:{buffer:moveParams}},
     {binding:1,resource:{buffer:renderer.terrainParams}},
     {binding:2,resource:{buffer:positions}},
+    {binding:3,resource:{buffer:speciesHeading}},
   ]});
   movePipe = device.createComputePipeline({
     layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
@@ -172,6 +208,58 @@ document.getElementById("resetSeed").addEventListener("click", ()=>{
   buildWorld(SCALE_STEPS[scaleIdx]);
 });
 
+// --- Shadow light fit ------------------------------------------------------
+// Build a sun-view orthographic viewProj that tightly covers the region the player
+// can see, then texel-snap it so shadow edges don't crawl while walking.
+//
+// Strategy: take a sphere of radius `coverage` centered a bit ahead of the camera.
+// A sphere bound makes the ortho extents rotation-invariant, so as you turn, the box
+// size is constant and ONLY its center moves -> texel-snapping fully kills shimmer.
+const SHADOW_UP_FALLBACK = [0, 0, 1];   // if sun is near-vertical, lookAt up must not be parallel
+function fitLightMatrix(sunDir, camEye, camForward, coverage, depthRange) {
+  // center the cover sphere slightly ahead of the eye along the ground-projected forward
+  const fwd = [camForward[0], 0, camForward[2]];
+  const fl = Math.hypot(fwd[0], fwd[2]) || 1;
+  const center = [
+    camEye[0] + fwd[0] / fl * coverage * 0.5,
+    camEye[1],
+    camEye[2] + fwd[2] / fl * coverage * 0.5,
+  ];
+
+  // light "position": back off from center along the sun direction far enough to
+  // bound all terrain depth within [near,far].
+  const D = depthRange;
+  const lightPos = [
+    center[0] + sunDir[0] * D,
+    center[1] + sunDir[1] * D,
+    center[2] + sunDir[2] * D,
+  ];
+  // pick an up vector not parallel to the light direction
+  const up = Math.abs(sunDir[1]) > 0.99 ? SHADOW_UP_FALLBACK : [0, 1, 0];
+  const lightView = lookAt(lightPos, center, up);
+
+  // ortho half-extent is the cover radius; symmetric box. near/far span 2*D so terrain
+  // in front of and behind center is captured.
+  const r = coverage;
+  // texel-snap: quantize the center in light space to whole-texel steps.
+  // transform center into light space, round its xy to texel grid, transform back via
+  // the inverse — but since the box is axis-aligned in light space, we can snap the
+  // projection offset directly. texelWorld = (2*r) / shadowRes.
+  const lp = [
+    lightView[0]*center[0] + lightView[4]*center[1] + lightView[8]*center[2]  + lightView[12],
+    lightView[1]*center[0] + lightView[5]*center[1] + lightView[9]*center[2]  + lightView[13],
+  ];
+  const texelWorld = (2 * r) / curShadowRes;
+  const snappedX = Math.round(lp[0] / texelWorld) * texelWorld;
+  const snappedY = Math.round(lp[1] / texelWorld) * texelWorld;
+  // shift the ortho bounds by the snap delta so the frozen grid aligns to texels
+  const dx = lp[0] - snappedX, dy = lp[1] - snappedY;
+
+  const proj = ortho(-r + dx, r + dx, -r + dy, r + dy, 0.1, 2 * D);
+  return mul(proj, lightView);
+}
+// --- end Shadow light fit --------------------------------------------------
+
 // camera is driven by the player (player.js): drag to look, WASD/joystick to move
 function resize(){
   const dpr = Math.min(devicePixelRatio||1, 2);
@@ -189,7 +277,23 @@ function handleHud(time, dt, lastHud) {
   const enc=device.createCommandEncoder();
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
-  renderer.render(enc, positions, N, canvas.width, canvas.height, time);
+
+  // Fit + upload the sun-view light frustum, then bake the shadow depth map. The
+  // coverage radius is tied to fog distance (no point shadowing past the fog wall),
+  // clamped so it never tries to cover the whole giant world at high scale.
+  // 5x5 PCF (radius 2) at scale 1.0 per the chosen default.
+  {
+    const cam = player.getCamera(canvas.width/canvas.height);
+    const fwd = [cam.target[0]-cam.eye[0], cam.target[1]-cam.eye[1], cam.target[2]-cam.eye[2]];
+    const coverage = Math.min(fogDist * 0.6, Math.max(worldMax[0], worldMax[2]) * 0.5);
+    // depth range must clear the tallest terrain the box can contain
+    const depthRange = coverage + amplitude * 2;
+    const lightVP = fitLightMatrix(skyState.sunDir, cam.eye, fwd, coverage, depthRange);
+    renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.0015, strength: 0.85 });
+  }
+  renderer.bakeShadow(enc);
+
+  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time);
   device.queue.submit([enc.finish()]);
 
   facc+=dt; frames++; frameCount++;
