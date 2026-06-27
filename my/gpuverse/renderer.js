@@ -28,7 +28,7 @@ export function createRenderer(device, context, format, {
   }
   const resolvedWaterLevel = waterLevel ?? (amplitude * (0.08 + 0.10 * hashSeedTo01(seed + 0.37)));
 
-  // ---- TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes) ----
+  // TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes)
   const tpBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   {
     const f = new Float32Array(8), u = new Uint32Array(f.buffer);
@@ -37,7 +37,7 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(tpBuf, 0, f);
   }
 
-  // ---- SkyParams uniform (80 bytes: 5x vec4-aligned slots) ----
+  // SkyParams uniform (80 bytes: 5x vec4-aligned slots)
   const skyBuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const skyScratch = new Float32Array(16);
   function setSky(sky) {
@@ -49,13 +49,13 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(skyBuf, 64, new Float32Array([sky.ambient[0], sky.ambient[1], sky.ambient[2], 0]));
   }
 
-  // ---- FogParams uniform (16 bytes: vec3 + f32) ----
+  // FogParams uniform (16 bytes: vec3 + f32)
   const fogBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   function setFog(fogColor, fogDist) {
     device.queue.writeBuffer(fogBuf, 0, new Float32Array([fogColor[0], fogColor[1], fogColor[2], fogDist]));
   }
 
-  // ---- height buffer + bake pipeline ----
+  // height buffer + bake pipeline
   const heights = device.createBuffer({ size: gridN*gridN*4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const bakeBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
@@ -80,7 +80,7 @@ export function createRenderer(device, context, format, {
     device.queue.submit([enc.finish()]);
   }
 
-  // ---- terrain index buffer (triangle list over the vertex grid) ----
+  // terrain index buffer (triangle list over the vertex grid)
   const quads = (gridN-1)*(gridN-1);
   const terrIndexCount = quads*6;
   const idx = new Uint32Array(terrIndexCount);
@@ -94,10 +94,10 @@ export function createRenderer(device, context, format, {
     usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(terrIndexBuf, 0, idx);
 
-  // ---- camera uniform: mat4 viewProj (64) + vec3 eye + pad (16) + mat4 invViewProj (64) = 144 ----
+  // camera uniform: mat4 viewProj (64) + vec3 eye + pad (16) + mat4 invViewProj (64) = 144
   const camBuf = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-  // ---- sky render pipeline (drawn first, no depth test/write) ----
+  // sky render pipeline (drawn first, no depth test/write)
   const skyBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
@@ -117,7 +117,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:false,depthCompare:"always"},
   });
 
-  // ---- terrain render pipeline ----
+  // terrain render pipeline
   const terrBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
@@ -141,7 +141,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // ---- creature render pipeline (instanced; positions buffer is instance-step) ----
+  // creature render pipeline (instanced; positions buffer is instance-step)
   const sizeBuf = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(sizeBuf,0,new Float32Array([creatureRadius,0,0,0]));
   const creBGL = device.createBindGroupLayout({ entries:[
@@ -167,7 +167,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // ---- water render pipeline (alpha-blended, drawn after opaque geometry) ----
+  // water render pipeline (alpha-blended, drawn after opaque geometry)
   const waterBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   let currentWaterLevel = resolvedWaterLevel;
   function writeWaterParams(time) {
@@ -203,7 +203,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:false,depthCompare:"less"},
   });
 
-  // ---- depth texture (recreated on resize) ----
+  // depth texture (recreated on resize)
   let depth = null, dw=0, dh=0;
   function ensureDepth(width,height){
     if(depth && dw===width && dh===height) return;
@@ -213,7 +213,7 @@ export function createRenderer(device, context, format, {
     dw=width; dh=height;
   }
 
-  // ---- camera update from orbit params ----
+  // camera update from orbit params
   // camScratch reused every frame (viewProj 16 + eye+pad 4 + invViewProj 16 = 36 floats).
   const camScratch = new Float32Array(36);
   function setCamera({eye, target, up=[0,1,0], fovy=Math.PI/3, aspect, near=0.5, far=5000}){
@@ -227,7 +227,7 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(camBuf, 0, camScratch);
   }
 
-  // ---- per-frame draw. positions = the compute positions buffer, N = entity count ----
+  // per-frame draw. positions = the compute positions buffer, N = entity count
   // `time` drives the water animation; pass simTime from the host loop.
   function render(encoder, positions, N, width, height, time = 0){
     ensureDepth(width,height);

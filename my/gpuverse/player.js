@@ -37,7 +37,6 @@ function sampleHeight(tp, wx, wz) {
   return mixf(mixf(h00, h10, tx), mixf(h01, h11, tx), tz);
 }
 
-// ---------------------------------------------------------------------------
 // createPlayer(canvas, opts) -> { update(dt), getCamera(aspect), setTerrain(tp),
 //                                 position, destroy() }
 //
@@ -58,7 +57,6 @@ function sampleHeight(tp, wx, wz) {
 //   look : drag anywhere on the canvas
 //   fly  : F or the FLY button toggles. While flying: Space/JUMP/▲ ascend,
 //          Shift or C or ▼ descend; gravity is off and you can't sink below ground.
-// ---------------------------------------------------------------------------
 export function createPlayer(canvas, opts = {}) {
   let terrain   = opts.terrain || null;
   const eyeH    = opts.eyeHeight ?? 6;
@@ -66,7 +64,7 @@ export function createPlayer(canvas, opts = {}) {
   const jumpSpd = opts.jumpSpeed ?? 90;
   const gravity = opts.gravity   ?? 260;
 
-  // ---- player state ----
+  // player state
   const center = terrain
     ? [(terrain.worldMin[0] + terrain.worldMax[0]) / 2, (terrain.worldMin[1] + terrain.worldMax[1]) / 2]
     : [0, 0];
@@ -85,7 +83,7 @@ export function createPlayer(canvas, opts = {}) {
   // start grounded
   pos.y = groundY(pos.x, pos.z) + eyeH;
 
-  // ===== KEYBOARD =====
+  // KEYBOARD
   const keys = Object.create(null);
   let toggleFly = () => {};   // assigned once the touch UI exists (keeps button + state in sync)
   const onKeyDown = (e) => {
@@ -104,7 +102,7 @@ export function createPlayer(canvas, opts = {}) {
   addEventListener("keydown", onKeyDown);
   addEventListener("keyup", onKeyUp);
 
-  // ===== LOOK (drag anywhere on canvas that isn't a touch control) =====
+  // LOOK (drag anywhere on canvas that isn't a touch control)
   // Shared by mouse and touch-drag. Joystick/jump swallow their own pointers.
   // pointermove can fire many times per frame; rather than mutate yaw/pitch in the
   // handler (which also competes with rendering), we ACCUMULATE the raw pixel delta
@@ -133,7 +131,7 @@ export function createPlayer(canvas, opts = {}) {
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerUp);
 
-  // ===== TOUCH CONTROLS (joystick + jump + fly), always on screen =====
+  // TOUCH CONTROLS (joystick + jump + fly), always on screen
   const ui = buildTouchUI();
   const joy = ui.joystick; // {x,y} in [-1,1], updated by its own pointer handlers
   let touchJumpQueued = false;
@@ -147,7 +145,7 @@ export function createPlayer(canvas, opts = {}) {
   };
   ui.onFlyToggle = toggleFly;
 
-  // ---- per-frame update ----
+  // per-frame update
   function update(dt) {
     // apply look accumulated from pointermove since last frame (coalesced to one update)
     if (pendingDX !== 0 || pendingDY !== 0) {
@@ -160,7 +158,7 @@ export function createPlayer(canvas, opts = {}) {
     const fx = Math.cos(yaw), fz = Math.sin(yaw);     // forward
     const rx = Math.cos(yaw + Math.PI / 2), rz = Math.sin(yaw + Math.PI / 2); // right
 
-    // --- gather movement intent from BOTH sources, then clamp magnitude ---
+    //  gather movement intent from BOTH sources, then clamp magnitude 
     let mf = 0, mr = 0; // forward, right in [-1,1]ish
     if (keys["w"] || keys["arrowup"])    mf += 1;
     if (keys["s"] || keys["arrowdown"])  mf -= 1;
@@ -183,7 +181,7 @@ export function createPlayer(canvas, opts = {}) {
       pos.z = clamp(pos.z, terrain.worldMin[1], terrain.worldMax[1]);
     }
 
-    // --- vertical ---
+    //  vertical 
     const floor = groundY(pos.x, pos.z) + eyeH;  // never go below ground, in either mode
     const jumpTapped = keys[" "] || touchJumpQueued;
     touchJumpQueued = false;   // consume the one-shot latch regardless of mode
@@ -210,7 +208,7 @@ export function createPlayer(canvas, opts = {}) {
     }
   }
 
-  // ---- produce {eye,target} for renderer.setCamera ----
+  // produce {eye,target} for renderer.setCamera
   function getCamera(aspect) {
     const cp = Math.cos(pitch);
     const dir = [Math.cos(yaw) * cp, Math.sin(pitch), Math.sin(yaw) * cp];
@@ -254,14 +252,12 @@ export function createPlayer(canvas, opts = {}) {
            get yaw(){return yaw;}, get pitch(){return pitch;} };
 }
 
-// ---------------------------------------------------------------------------
 // On-screen touch controls: a draggable joystick (bottom-left) and a right-side
 // button cluster (bottom-right): FLY toggle on top, then JUMP/UP, and a DOWN
 // button shown only while flying. Built in JS so player.js is drop-in.
 // joystick.{x,y} live in [-1,1]; (0,0) at rest.
 // API: { joystick, onJump(), flyUp, flyDown, onFlyToggle(), setFlying(bool), destroy() }
 //   flyUp/flyDown are HELD booleans (true while the button is pressed).
-// ---------------------------------------------------------------------------
 function buildTouchUI() {
   const root = document.createElement("div");
   root.id = "playerControls";

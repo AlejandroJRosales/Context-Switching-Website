@@ -17,13 +17,13 @@ export function createGrid(device, opts) {
     flat2D = false,            // if true, gridDims.y forced to 1
   } = opts;
 
-  // ---- limit checks ----
+  // limit checks
   const lim = device.limits;
   if (lim.maxStorageBuffersPerShaderStage < 6) {
     console.warn(`maxStorageBuffersPerShaderStage=${lim.maxStorageBuffersPerShaderStage} (<6); grid binds 5 storage buffers per pass.`);
   }
 
-  // ---- grid dims ----
+  // grid dims
   const span = [worldMax[0]-worldMin[0], worldMax[1]-worldMin[1], worldMax[2]-worldMin[2]];
   const gx = Math.max(1, Math.ceil(span[0] / cellSize));
   const gy = flat2D ? 1 : Math.max(1, Math.ceil(span[1] / cellSize));
@@ -38,7 +38,7 @@ export function createGrid(device, opts) {
       `add a recursive block-sum level or increase cellSize.`);
   }
 
-  // ---- memory cost report ----
+  // memory cost report
   const gridBytes = totalCells * 4 * 3; // cellCount + cellStart + localCounter, u32 each
   console.info(`grid: ${gx}x${gy}x${gz}=${totalCells} cells, ` +
     `${(gridBytes/1e6).toFixed(1)} MB for cell arrays; ` +
@@ -48,7 +48,7 @@ export function createGrid(device, opts) {
     console.warn(`per-cell buffer (${totalCells*4} B) exceeds maxStorageBufferBindingSize=${lim.maxStorageBufferBindingSize}.`);
   }
 
-  // ---- buffers ----
+  // buffers
   // allowReadback adds COPY_SRC to the buffers verify.js reads back. Off in production.
   const S = GPUBufferUsage.STORAGE;
   const SRC = opts.allowReadback ? GPUBufferUsage.COPY_SRC : 0;
@@ -71,7 +71,7 @@ export function createGrid(device, opts) {
   const scanParamsBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(scanParamsBuf, 0, new Uint32Array([totalCells, numBlocks, 0, 0]));
 
-  // ---- bind group layout for grid passes (clear/count/scatter share it) ----
+  // bind group layout for grid passes (clear/count/scatter share it)
   const gridBGL = device.createBindGroupLayout({ entries: [
     { binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"} },
     { binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"} },
@@ -89,7 +89,7 @@ export function createGrid(device, opts) {
     {binding:5, resource:{buffer:localCounter}},
   ]});
 
-  // ---- scan bind group layout. cellCount is read here as a NON-atomic view (same buffer). ----
+  // scan bind group layout. cellCount is read here as a NON-atomic view (same buffer).
   const scanBGL = device.createBindGroupLayout({ entries:[
     { binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"} },
     { binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"} }, // countIn

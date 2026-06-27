@@ -15,7 +15,7 @@ export function createRenderer(device, context, format, {
   const wXZmin = [worldMin[0], worldMin[2]];
   const wXZmax = [worldMax[0], worldMax[2]];
 
-  // ---- TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes) ----
+  // TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes)
   const tpBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   {
     const f = new Float32Array(8), u = new Uint32Array(f.buffer);
@@ -24,7 +24,7 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(tpBuf, 0, f);
   }
 
-  // ---- height buffer + bake pipeline ----
+  // height buffer + bake pipeline
   const heights = device.createBuffer({ size: gridN*gridN*4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const bakeBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
@@ -49,7 +49,7 @@ export function createRenderer(device, context, format, {
     device.queue.submit([enc.finish()]);
   }
 
-  // ---- terrain index buffer (triangle list over the vertex grid) ----
+  // terrain index buffer (triangle list over the vertex grid)
   const quads = (gridN-1)*(gridN-1);
   const terrIndexCount = quads*6;
   const idx = new Uint32Array(terrIndexCount);
@@ -63,10 +63,10 @@ export function createRenderer(device, context, format, {
     usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(terrIndexBuf, 0, idx);
 
-  // ---- camera uniform: mat4 viewProj (64) + vec3 eye + pad (16) = 80 ----
+  // camera uniform: mat4 viewProj (64) + vec3 eye + pad (16) = 80
   const camBuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-  // ---- terrain render pipeline ----
+  // terrain render pipeline
   const terrBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
@@ -86,7 +86,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // ---- creature render pipeline (instanced; positions buffer is instance-step) ----
+  // creature render pipeline (instanced; positions buffer is instance-step)
   const sizeBuf = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(sizeBuf,0,new Float32Array([creatureRadius,0,0,0]));
   const creBGL = device.createBindGroupLayout({ entries:[
@@ -108,7 +108,7 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // ---- depth texture (recreated on resize) ----
+  // depth texture (recreated on resize)
   let depth = null, dw=0, dh=0;
   function ensureDepth(width,height){
     if(depth && dw===width && dh===height) return;
@@ -118,7 +118,7 @@ export function createRenderer(device, context, format, {
     dw=width; dh=height;
   }
 
-  // ---- camera update from orbit params ----
+  // camera update from orbit params
   // camScratch is reused every frame (mat4 viewProj + vec3 eye + pad = 20 floats) so
   // setCamera doesn't allocate a fresh typed array 60x/sec.
   const camScratch = new Float32Array(20);
@@ -131,7 +131,7 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(camBuf, 0, camScratch);
   }
 
-  // ---- per-frame draw. positions = the compute positions buffer, N = entity count ----
+  // per-frame draw. positions = the compute positions buffer, N = entity count
   function render(encoder, positions, N, width, height){
     ensureDepth(width,height);
     const pass = encoder.beginRenderPass({
