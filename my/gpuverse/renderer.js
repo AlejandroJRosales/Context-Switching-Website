@@ -1,10 +1,8 @@
 // renderer.js: WebGPU render system. Reads the positions GPUBuffer directly as
 // instance data (no CPU round-trip). Bakes a heightfield once on GPU; draws sky,
 // terrain (indexed grid), instanced creatures, and a blended water plane.
-import { TERRAIN_BAKE, TERRAIN_RENDER } from "./terrain_wgsl.js";
-import { CREATURE_RENDER } from "./creature_wgsl.js";
-import { SKY_RENDER } from "./sky_wgsl.js";
-import { WATER_RENDER } from "./water_wgsl.js";
+import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, WATER_RENDER } from "./world_wgsl.js";
+import { SKY_RENDER } from "./sky.js";
 import { perspective, lookAt, mul, invertMat4 } from "./mat.js";
 
 export function createRenderer(device, context, format, {
