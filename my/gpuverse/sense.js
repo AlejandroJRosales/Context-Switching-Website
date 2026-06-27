@@ -1,4 +1,4 @@
-// renderer.js — WebGPU render system. Reads the positions GPUBuffer directly as
+// renderer.js: WebGPU render system. Reads the positions GPUBuffer directly as
 // instance data; no CPU round-trip. Bakes a heightfield once on GPU, draws terrain
 // as an indexed grid mesh, draws creatures as instanced camera-facing quads.
 import { TERRAIN_BAKE, TERRAIN_RENDER } from "./terrain_wgsl.js";
@@ -157,7 +157,7 @@ export function createRenderer(device, context, format, {
   // Read the baked heightfield back to the CPU (once per world build, not per frame).
   // Returns { data:Float32Array(gridN*gridN), gridN } laid out row-major as
   // heights[z*gridN + x], matching the bake shader. The player samples THIS so it
-  // walks the exact terrain the renderer draws — no CPU noise recompute, no fp drift.
+  // walks the exact terrain the renderer draws: no CPU noise recompute, no fp drift.
   async function readHeights(){
     const bytes = gridN*gridN*4;
     const rb = device.createBuffer({ size: bytes,

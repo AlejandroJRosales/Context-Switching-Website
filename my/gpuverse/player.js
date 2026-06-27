@@ -1,4 +1,4 @@
-// player.js — first-person walker driven by TWO input sources at once:
+// player.js: first-person walker driven by TWO input sources at once:
 //   keyboard: W/A/S/D to move, Space to jump, mouse-drag to look
 //   touch:    on-screen joystick to move, on-screen JUMP button, drag-to-look
 // Both modes are always live regardless of device; their movement intents are summed,
@@ -7,7 +7,7 @@
 // The player owns its own position + look angles and produces an {eye,target} camera
 // each frame. Ground height is read from the SAME baked heightfield the renderer draws
 // (passed in via setTerrain as {heights, gridN, worldMin, worldMax}), then bilinearly
-// sampled — so the walker stands exactly on the rendered terrain. We do NOT recompute
+// sampled: so the walker stands exactly on the rendered terrain. We do NOT recompute
 // the noise on the CPU: WGSL's fp32 sin-hash and JS's fp64 Math.sin diverge badly as
 // world coords grow, which is what previously buried the player when walking out.
 
@@ -51,7 +51,7 @@ function sampleHeight(tp, wx, wz) {
 //   flySpeed  : vertical units/sec while flying               (default 160)
 //   start     : [x,z] spawn (defaults to world center)
 //
-// Controls — both input modes always live:
+// Controls: both input modes always live:
 //   move : W/A/S/D or arrows, or the joystick
 //   jump : Space or the JUMP button (only while walking; independent of moving)
 //   look : drag anywhere on the canvas

@@ -1,4 +1,4 @@
-// sky.js: day/night cycle. Pure CPU — computes sun dir/color, ambient, sky gradient,
+// sky.js: day/night cycle. Pure CPU: computes sun dir/color, ambient, sky gradient,
 // and fog color from simTime, returned as a flat object for uniform upload.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -52,7 +52,7 @@ export function createSky(opts = {}) {
   let state = null;
 
   function update(simTime) {
-    const timeOfDay = (simTime / dayLen) % 1; // 0..1, 0=midnight
+    const timeOfDay = (simTime / dayLen) % 1;     // 0..1, 0=midnight
     const ang = timeOfDay * Math.PI * 2 - Math.PI / 2; // sun rises ~0.25, sets ~0.75
     const sunHeight = Math.sin(ang);              // -1..1
     const sunAz = Math.cos(ang);
