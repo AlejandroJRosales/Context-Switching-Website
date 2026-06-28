@@ -265,7 +265,10 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   // strength lets a fully-shadowed fragment keep a little sun rather than going flat.
   let vis = sampleShadow(in.worldPos, ndl);
   let sunVis = mix(1.0 - SHADOW.strength, 1.0, vis);
-  let lit = albedo * (SKY.ambient + SKY.sunColor * ndl * sunVis);
+  // moon: a dim, unshadowed diffuse fill, only meaningful at night via moonVisible.
+  let mdl = max(dot(in.normal, normalize(SKY.moonDir)), 0.0);
+  let moon = SKY.moonColor * mdl * SKY.moonVisible * 0.12;
+  let lit = albedo * (SKY.ambient + SKY.sunColor * ndl * sunVis + moon);
   let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
   return vec4<f32>(foggy, 1.0);
 }
@@ -370,7 +373,10 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let ndl = max(dot(nrm, lightDir), 0.0);
   // a touch of wrap lighting so the shadowed side isn't pure ambient-flat
   let wrap = ndl * 0.85 + 0.15;
-  let lit = in.tint * (SKY.ambient + SKY.sunColor * wrap);
+  // dim moon fill, wrapped the same way, only meaningful at night
+  let mdl = max(dot(nrm, normalize(SKY.moonDir)), 0.0);
+  let moon = SKY.moonColor * (mdl * 0.85 + 0.15) * SKY.moonVisible * 0.12;
+  let lit = in.tint * (SKY.ambient + SKY.sunColor * wrap + moon);
   let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
   return vec4<f32>(foggy, 1.0);
 }

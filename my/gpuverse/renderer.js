@@ -39,8 +39,8 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(tpBuf, 0, f);
   }
 
-  // SkyParams uniform (80 bytes: 5x vec4-aligned slots)
-  const skyBuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  // SkyParams uniform (112 bytes: 7x vec4-aligned slots)
+  const skyBuf = device.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const skyScratch = new Float32Array(16);
   function setSky(sky) {
     skyScratch[0]=sky.sunDir[0];    skyScratch[1]=sky.sunDir[1];    skyScratch[2]=sky.sunDir[2];    skyScratch[3]=0;
@@ -48,7 +48,12 @@ export function createRenderer(device, context, format, {
     skyScratch[8]=sky.skyTop[0];    skyScratch[9]=sky.skyTop[1];    skyScratch[10]=sky.skyTop[2];   skyScratch[11]=0;
     skyScratch[12]=sky.skyBottom[0];skyScratch[13]=sky.skyBottom[1];skyScratch[14]=sky.skyBottom[2];skyScratch[15]=sky.sunVisible;
     device.queue.writeBuffer(skyBuf, 0, skyScratch);
-    device.queue.writeBuffer(skyBuf, 64, new Float32Array([sky.ambient[0], sky.ambient[1], sky.ambient[2], 0]));
+    // ambient (slot 4) + moonDir/moonVisible (slot 5) + moonColor (slot 6) = 48 bytes from offset 64
+    device.queue.writeBuffer(skyBuf, 64, new Float32Array([
+      sky.ambient[0], sky.ambient[1], sky.ambient[2], 0,
+      sky.moonDir[0], sky.moonDir[1], sky.moonDir[2], sky.moonVisible,
+      sky.moonColor[0], sky.moonColor[1], sky.moonColor[2], 0,
+    ]));
   }
 
   // FogParams uniform (16 bytes: vec3 + f32)

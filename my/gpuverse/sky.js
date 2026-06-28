@@ -25,6 +25,11 @@ const STOPS = [
   { h: 1.00, top: [0.22, 0.47, 0.88], bot: [0.62, 0.75, 0.93], sun: [1.0, 0.95, 0.85], amb: [0.38, 0.41, 0.46], fog: [0.60, 0.70, 0.82] },
 ];
 
+// Moonlight: a cool, dim, fixed-color fill. Real moonlight is ~1/400,000 of sunlight and
+// slightly blue-shifted to the eye; we don't go that dark (the scene would be unreadable),
+// just dim enough to read as "night light" rather than a second sun.
+const MOON_COLOR = [0.45, 0.52, 0.72];
+
 // sunset/dusk mirror sunrise/pre-dawn via the same stop table (symmetric enough by height).
 function sampleStops(h) {
   for (let i = 0; i < STOPS.length - 1; i++) {
@@ -71,6 +76,19 @@ export function createSky(opts = {}) {
     // sun visual intensity fades out below the horizon (no point lighting a disc you can't see)
     const sunVisible = smoothstep(-0.15, 0.05, sunHeight);
 
+    // Moon: roughly opposite the sun across the sky, on its own slightly different tilt so
+    // it doesn't trace the exact same arc. moonHeight is just the negated sun arc here, so
+    // the moon is up whenever the sun is down. Its light/disc fades in as the sun sets.
+    const moonDir = [
+      -sunAz,
+      -sunHeight * Math.cos(tilt) + 0.10,
+      -Math.sin(tilt) * 0.6,
+    ];
+    const mlen = Math.hypot(moonDir[0], moonDir[1], moonDir[2]) || 1;
+    moonDir[0] /= mlen; moonDir[1] /= mlen; moonDir[2] /= mlen;
+    // visible when the sun is below the horizon AND the moon is above it
+    const moonVisible = (1 - smoothstep(-0.05, 0.15, sunHeight)) * smoothstep(-0.05, 0.10, moonDir[1]);
+
     state = {
       sunDir,
       sunColor: c.sun,
@@ -78,6 +96,9 @@ export function createSky(opts = {}) {
       skyTop: c.top,
       skyBottom: c.bot,
       fogColor: c.fog,
+      moonDir,
+      moonColor: MOON_COLOR,
+      moonVisible,
       timeOfDay,
       sunHeight,
       sunVisible,
@@ -101,6 +122,8 @@ struct SkyParams {
   skyTop    : vec3<f32>, _p2 : f32,
   skyBottom : vec3<f32>, sunVisible : f32,
   ambient   : vec3<f32>, _p3 : f32,
+  moonDir   : vec3<f32>, moonVisible : f32,
+  moonColor : vec3<f32>, _p4 : f32,
 };
 `;
 
@@ -163,6 +186,13 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let disc = smoothstep(0.9995, 0.9998, cosA);             // tight bright disc
   let glow = pow(max(cosA, 0.0), 64.0) * 0.6;               // soft halo
   col = col + SKY.sunColor * (disc * 3.0 + glow) * SKY.sunVisible;
+
+  // moon disc + faint glow, on the opposite side of the sky. Slightly larger/softer disc
+  // than the sun and a much weaker halo, gated by moonVisible so it only shows at night.
+  let cosM = dot(dir, normalize(SKY.moonDir));
+  let mdisc = smoothstep(0.9990, 0.9995, cosM);
+  let mglow = pow(max(cosM, 0.0), 200.0) * 0.25;
+  col = col + SKY.moonColor * (mdisc * 1.4 + mglow) * SKY.moonVisible;
 
   return vec4<f32>(col, 1.0);
 }
