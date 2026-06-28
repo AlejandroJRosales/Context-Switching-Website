@@ -341,11 +341,13 @@ fn vs(@location(0) vPos : vec3<f32>,
   let dl = deform(vPos, species);
   let dn = deformNormal(vNrm, species);
 
-  // rotate about Y by heading so +X (nose) points along travel direction
+  // rotate about Y by heading so +X (nose) points along travel direction.
+  // MOVE travels by (dx,dz) = (cos(heading), sin(heading)) in world XZ, so the nose
+  // (local +X) must map to that same (cos,sin). That requires:
+  //   x' = x*ch - z*sh ;  z' = x*sh + z*ch
   let ch = cos(heading); let sh = sin(heading);
-  // rotate (x,z): x' = x*ch + z*sh ; z' = -x*sh + z*ch  (so heading 0 faces +X)
-  let rl = vec3<f32>(dl.x*ch + dl.z*sh, dl.y, -dl.x*sh + dl.z*ch);
-  let rn = vec3<f32>(dn.x*ch + dn.z*sh, dn.y, -dn.x*sh + dn.z*ch);
+  let rl = vec3<f32>(dl.x*ch - dl.z*sh, dl.y, dl.x*sh + dl.z*ch);
+  let rn = vec3<f32>(dn.x*ch - dn.z*sh, dn.y, dn.x*sh + dn.z*ch);
 
   // scale to world size and place at the instance ground position. instPos.y already
   // sits ~1.5 above ground (move pass); the mesh's own feet are at local y=0, so we
@@ -476,6 +478,8 @@ struct MoveParams { time : f32, dt : f32, speed : f32, N : u32 };
 @group(0) @binding(3) var<storage, read_write> speciesHeading : array<vec2<f32>>;
 
 fn hash11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
+// two-input hash: stable random in [0,1) for a given (entity, epoch) pair.
+fn hash21(a : f32, b : f32) -> f32 { return fract(sin(a * 91.345 + b * 47.853) * 47453.21); }
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
@@ -483,9 +487,13 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   if (i >= MP.N) { return; }
   var p = positions[i];
 
-  // wander: per-entity phase drives a smoothly turning heading
-  let ph = hash11(f32(i)) * 6.2831853;
-  let ang = ph + MP.time * 0.3 * (0.5 + hash11(f32(i) + 1.0));
+  // Random walk: each entity picks a random heading in [0, 2pi) and holds it for
+  // WANDER_SECS, then picks a new one. The "epoch" index = floor(time / WANDER_SECS)
+  // is constant for 10s at a time, so hashing (entity, epoch) gives a heading that's
+  // fixed within the window and jumps to a fresh random direction each new window.
+  let WANDER_SECS = 10.0;
+  let epoch = floor(MP.time / WANDER_SECS);
+  let ang = hash21(f32(i) + 1.0, epoch) * 6.2831853;
   let step = MP.speed * MP.dt;
   let dx = cos(ang) * step;
   let dz = sin(ang) * step;
@@ -501,11 +509,13 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
   positions[i] = p;
 
-  // facing: heading is the XZ travel direction. The mesh's +X axis is the nose, and the
-  // render rotates +X toward this angle, so atan2(dz, dx) makes it walk nose-first.
+  // facing: heading is the chosen travel direction. The mesh's +X axis is the nose, and
+  // the render rotates +X toward this angle, so the creature walks nose-first. Written from
+  // ang directly (not atan2 of the step) so facing stays correct even when clamped at a
+  // world edge where dx/dz would otherwise be cancelled.
   // species (.x) is set once at init and never touched here.
   var sh = speciesHeading[i];
-  sh.y = atan2(dz, dx);
+  sh.y = ang;
   speciesHeading[i] = sh;
 }
 `;
