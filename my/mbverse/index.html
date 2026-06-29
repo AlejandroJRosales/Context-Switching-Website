@@ -423,13 +423,18 @@ const skyProg=program(`
 `, `
   precision mediump float; varying vec2 vUv;
   uniform vec3 uTop; uniform vec3 uBottom; uniform vec2 uSunScreen; uniform float uSunUp;
+  uniform vec2 uMoonScreen; uniform float uMoonUp;
   void main(){
     vec3 sky=mix(uBottom, uTop, pow(vUv.y, 0.7));
     float d=distance(vUv, uSunScreen);
     float disc=smoothstep(0.06, 0.02, d)*uSunUp;
     float glow=smoothstep(0.5, 0.0, d)*0.35*uSunUp;
     vec3 sun=vec3(1.0,0.95,0.8);
-    gl_FragColor=vec4(sky+sun*(disc+glow), 1.0);
+    float md=distance(vUv, uMoonScreen);
+    float mdisc=smoothstep(0.045, 0.03, md)*uMoonUp;
+    float mglow=smoothstep(0.28, 0.0, md)*0.18*uMoonUp;
+    vec3 moon=vec3(0.85,0.88,1.0);
+    gl_FragColor=vec4(sky+sun*(disc+glow)+moon*(mdisc+mglow), 1.0);
   }
 `);
 const waterBuf=gl.createBuffer();
@@ -1211,10 +1216,16 @@ function sunState(t){
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
   const up=Math.max(0, sunDir[1]);
   const day=Math.pow(up, 0.5);
+  const moonDir=[-sunDir[0], -sunDir[1], -sunDir[2]];
+  const moonUp=Math.max(0, moonDir[1]);
+  const night=Math.pow(moonUp, 0.5);
+  const moonColor=[0.10*night, 0.11*night, 0.16*night];
   return {
     sunDir, up,
+    moonDir, moonUp,
+    moonColor,
     sunColor: [1.0*day, 0.92*day, 0.78*day],
-    ambient: [0.18+0.32*day, 0.20+0.34*day, 0.28+0.34*day],
+    ambient: [0.18+0.32*day+0.05*night, 0.20+0.34*day+0.05*night, 0.28+0.34*day+0.07*night],
     skyTop: [0.30+0.20*day, 0.45+0.30*day, 0.70+0.25*day],
     skyBottom:[0.55+0.30*day, 0.65+0.25*day, 0.80+0.15*day],
     fog: [0.55+0.25*day, 0.65+0.22*day, 0.80+0.10*day],
@@ -1748,9 +1759,14 @@ function frame(now){
   const cv=[0,0,0,0];
   for(let i=0;i<4;i++) cv[i]=VP[i]*sunW[0]+VP[i+4]*sunW[1]+VP[i+8]*sunW[2]+VP[i+12];
   const sx=cv[3]>0 ? (cv[0]/cv[3])*0.5+0.5 : -1, sy=cv[3]>0 ? (cv[1]/cv[3])*0.5+0.5 : -1;
+  const moonW=[cam.x+S.moonDir[0]*1000, cam.y+S.moonDir[1]*1000, cam.z+S.moonDir[2]*1000];
+  const mv=[0,0,0,0];
+  for(let i=0;i<4;i++) mv[i]=VP[i]*moonW[0]+VP[i+4]*moonW[1]+VP[i+8]*moonW[2]+VP[i+12];
+  const mx=mv[3]>0 ? (mv[0]/mv[3])*0.5+0.5 : -1, my=mv[3]>0 ? (mv[1]/mv[3])*0.5+0.5 : -1;
   bindGeom(skyProg, quadBuf, VA_SKY);
   gl.uniform3fv(skyProg.u('uTop'),S.skyTop); gl.uniform3fv(skyProg.u('uBottom'),S.skyBottom);
   gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); gl.uniform1f(skyProg.u('uSunUp'),S.up);
+  gl.uniform2f(skyProg.u('uMoonScreen'),mx,my); gl.uniform1f(skyProg.u('uMoonUp'),S.moonUp);
   drawArraysPass(gl.TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   bindGeom(terrainProg, terrainBuf, VA_TERRAIN, null, null, terrainIdxBuf);
