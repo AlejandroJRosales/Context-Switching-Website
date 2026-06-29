@@ -65,8 +65,6 @@ CONFIG.waterLevel=Math.round(RNG()*10);
 function compile(type, src) {
   const s=gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
-    throw new Error('shader compile: '+gl.getShaderInfoLog(s)+'\n'+src);
   return s;
 }
 function program(vsSrc, fsSrc) {
@@ -74,8 +72,6 @@ function program(vsSrc, fsSrc) {
   gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
   gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
-    throw new Error('link: '+gl.getProgramInfoLog(p));
   p._a={}; p._u={};
   p.a=n => (p._a[n] !== undefined ? p._a[n] : (p._a[n]=gl.getAttribLocation(p, n)));
   p.u=n => (p._u[n] !== undefined ? p._u[n] : (p._u[n]=gl.getUniformLocation(p, n)));
@@ -154,7 +150,6 @@ function ridgedNoise(wx, wz){
 // WebGL setup
 const canvas=document.getElementById('gl');
 const gl=canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' }) || canvas.getContext('experimental-webgl');
-if (!gl) { document.body.innerHTML='<p style="color:#fff;padding:20px">WebGL not supported.</p>'; throw new Error('no webgl'); }
 const EXT_INSTANCE=gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT=gl.getExtension('OES_element_index_uint');
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
