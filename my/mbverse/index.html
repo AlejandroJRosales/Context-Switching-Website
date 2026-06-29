@@ -153,6 +153,26 @@ const gl=canvas.getContext('webgl', { antialias:true, alpha:false, powerPreferen
 const EXT_INSTANCE=gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT=gl.getExtension('OES_element_index_uint');
 if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
+const GLAB  = gl.ARRAY_BUFFER;
+const GLEAB = gl.ELEMENT_ARRAY_BUFFER;
+const GLDYN = gl.DYNAMIC_DRAW;
+const GLSTA = gl.STATIC_DRAW;
+const GLTRI = gl.TRIANGLES;
+const bindBuf = (t,b) => gl.bindBuffer(t,b);
+const bufData = (t,d,u) => gl.bufferData(t,d,u);
+const uMat4 = (l,v) => gl.uniformMatrix4fv(l,false,v);
+const u3f = (l,v) => gl.uniform3fv(l,v);
+const u1f = (l,v) => gl.uniform1f(l,v);
+const u1i = (l,v) => gl.uniform1i(l,v);
+function setAttr(loc, size, stride, offset, divisor){
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
+  if (EXT_INSTANCE && divisor !== undefined) EXT_INSTANCE.vertexAttribDivisorANGLE(loc, divisor);
+}
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const byId = (id) => document.getElementById(id);
+const on = (el,ev,fn,o) => el.addEventListener(ev,fn,o);
 // shadows
 function setShadowSize(){ return CONFIG.quality==='HIGH' ? 1024 : 256; }
 function setShadowRefresh(){ return CONFIG.quality==='HIGH' ? 5 : 30; } 
@@ -242,7 +262,7 @@ function resize() {
   canvas.width=VIEW_W; canvas.height=VIEW_H;
   gl.viewport(0, 0, VIEW_W, VIEW_H);
 }
-window.addEventListener('resize', resize);
+on(window, 'resize', resize);
 // terrain
 const TERRAIN={
   amp: 220, featureSize: 360, octaves: 5,
@@ -373,11 +393,11 @@ function buildTerrain(){
     }
   }
   terrainBuf=terrainBuf || gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+  bindBuf(GLAB, terrainBuf);
+  bufData(GLAB, verts, GLSTA);
   terrainIdxBuf=terrainIdxBuf || gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  bindBuf(GLEAB, terrainIdxBuf);
+  bufData(GLEAB, idx, GLSTA);
   terrainIdxCount=idx.length;
 }
 const terrainProg=program(`
@@ -410,8 +430,8 @@ const terrainProg=program(`
   }
 `);
 const quadBuf=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+bindBuf(GLAB, quadBuf);
+bufData(GLAB, new Float32Array([-1,-1, 3,-1, -1,3]), GLSTA);
 const skyProg=program(`
   attribute vec2 aPos; varying vec2 vUv;
   void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }
@@ -435,8 +455,8 @@ const skyProg=program(`
 const waterBuf=gl.createBuffer();
 function buildWater(){
   const W=CONFIG.worldW/2, H=CONFIG.worldH/2;
-  gl.bindBuffer(gl.ARRAY_BUFFER, waterBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-W,-H, W,-H, -W,H, -W,H, W,-H, W,H]), gl.STATIC_DRAW);
+  bindBuf(GLAB, waterBuf);
+  bufData(GLAB, new Float32Array([-W,-H, W,-H, -W,H, -W,H, W,-H, W,H]), GLSTA);
 }
 buildWater();
 const waterProg=program(`
@@ -550,8 +570,8 @@ function buildCreatures(){
   sphere(0,0.35, bodyHalf+0.55, 0.45, 1, rings, segs);
   const tris=new Float32Array(verts);
   creatureGeoBuf=gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, tris, gl.STATIC_DRAW);
+  bindBuf(GLAB, creatureGeoBuf);
+  bufData(GLAB, tris, GLSTA);
   creatureGeoCount=verts.length/6;
   instBuf=gl.createBuffer();
   creatureProg=program(`
@@ -926,8 +946,8 @@ function buildPlants(){
   quad(1,0); quad(0,1);
   const arr=new Float32Array(q);
   plantGeoBuf=gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, plantGeoBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+  bindBuf(GLAB, plantGeoBuf);
+  bufData(GLAB, arr, GLSTA);
   plantGeoCount=q.length/4;
   plantInstBuf=gl.createBuffer();
   plantProg=program(`
@@ -954,8 +974,8 @@ function buildPlants(){
 function uploadPlants(){
   for(let i=0;i<P.n;i++){ const k=i*P_STRIDE;
     plantInst[k]=P.x[i]; plantInst[k+1]=P.y[i]; plantInst[k+2]=P.z[i]; plantInst[k+3]=P.sway[i]; }
-  gl.bindBuffer(gl.ARRAY_BUFFER, plantInstBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, plantInst.subarray(0,P.n*P_STRIDE), gl.DYNAMIC_DRAW);
+  bindBuf(GLAB, plantInstBuf);
+  bufData(GLAB, plantInst.subarray(0,P.n*P_STRIDE), GLDYN);
 }
 function creatureCopy(dst, src){
   C.x[dst]=C.x[src]; C.y[dst]=C.y[src]; C.z[dst]=C.z[src];
@@ -1091,8 +1111,8 @@ function uploadCreatures(){
     instData[k+7]=C.face[i];
     instData[k+8]=C.species[i];
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, instData.subarray(0,C.n*INST_STRIDE), gl.DYNAMIC_DRAW);
+  bindBuf(GLAB, instBuf);
+  bufData(GLAB, instData.subarray(0,C.n*INST_STRIDE), GLDYN);
 }
 // player
 const cam={ x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
@@ -1112,8 +1132,8 @@ function applyLook(dxPix, dyPix){
   cam.pitch=Math.max(-1.4, Math.min(1.4, cam.pitch));
 }
 const HAS_TOUCH=(('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
-const joyEl=document.getElementById('joy');
-const lookEl=document.getElementById('look');
+const joyEl=byId('joy');
+const lookEl=byId('look');
 const nub=joyEl.querySelector('.nub');
 if (HAS_TOUCH){
   (function(){
@@ -1140,7 +1160,7 @@ if (HAS_TOUCH){
     lookEl.addEventListener('touchend', end); lookEl.addEventListener('touchcancel', end);
   })();
   (function(){
-    const jb=document.getElementById('jump');
+    const jb=byId('jump');
     const down=e=>{ keys[' ']=true;  e.preventDefault(); };
     const up =e=>{ keys[' ']=false; e.preventDefault(); };
     jb.addEventListener('touchstart', down, {passive:false});
@@ -1150,22 +1170,22 @@ if (HAS_TOUCH){
 } else {
   joyEl.style.display='none';
   lookEl.style.display='none';
-  document.getElementById('jump').style.display='none';
+  byId('jump').style.display='none';
 }
-window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; if(e.key.toLowerCase()==='r') cycleRainMode(); });
-window.addEventListener('keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
+on(window, 'keydown', e=>{ keys[e.key.toLowerCase()]=true; if(e.key.toLowerCase()==='r') cycleRainMode(); });
+on(window, 'keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
 (function(){
   let locked=false;
   const lock=()=>(canvas.requestPointerLock||canvas.mozRequestPointerLock||canvas.webkitRequestPointerLock||function(){}).call(canvas);
-  document.addEventListener('pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
+  on(document, 'pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
   if (!HAS_TOUCH) canvas.addEventListener('click', lock);
-  document.addEventListener('mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
+  on(document, 'mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
   let drag=false,lx=0,ly=0;
-  document.addEventListener('mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
-  document.addEventListener('mouseup',()=>{ drag=false; });
-  document.addEventListener('mousemove',e=>{ if(!locked&&drag){applyLook(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;} });
+  on(document, 'mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
+  on(document, 'mouseup',()=>{ drag=false; });
+  on(document, 'mousemove',e=>{ if(!locked&&drag){applyLook(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;} });
 })();
-document.getElementById('qualityBtn').addEventListener('click', function(){
+byId('qualityBtn').addEventListener('click', function(){
   CONFIG.quality=CONFIG.quality==='HIGH' ? 'LOW' : 'HIGH';
   this.textContent='GRAPH: '+CONFIG.quality;
   SHADOW.size=setShadowSize(CONFIG.quality);
@@ -1174,21 +1194,21 @@ document.getElementById('qualityBtn').addEventListener('click', function(){
   shadowFrame=0;
   resize(); buildTerrain();
 });
-document.getElementById('flyBtn').addEventListener('click', function(){
+byId('flyBtn').addEventListener('click', function(){
   cam.fly=!cam.fly;
   this.textContent='FLY: '+(cam.fly ? 'ON' : 'OFF');
   cam.vy=0;
   if (cam.fly) cam.onGround=false;
 });
-document.getElementById('resetBtn').addEventListener('click', ()=>{
+byId('resetBtn').addEventListener('click', ()=>{
   CONFIG.seed=(Math.random()*1e9)|0;
   RNG=mulberry32(CONFIG.seed);
   CONFIG.waterLevel=Math.round(RNG()*10);
   rebuildWorld();
 });
-document.getElementById('rainBtn').addEventListener('click', cycleRainMode);
-document.getElementById('gear').addEventListener('click', ()=>{
-  document.getElementById('btns').classList.toggle('open');
+on(byId('rainBtn'), 'click', cycleRainMode);
+byId('gear').addEventListener('click', ()=>{
+  byId('btns').classList.toggle('open');
 });
 // world build and loop
 function applyWorldScale(n){
@@ -1201,10 +1221,10 @@ function applyWorldScale(n){
   rebuildWorld();
   last=performance.now();
   rebuilding=false;
-  document.getElementById('scaleDisplay').textContent=CONFIG.worldScale;
+  byId('scaleDisplay').textContent=CONFIG.worldScale;
 }
-document.getElementById('scaleDown').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale-5));
-document.getElementById('scaleUp').addEventListener('click', ()=> applyWorldScale(CONFIG.worldScale+5));
+on(byId('scaleDown'), 'click', ()=> applyWorldScale(CONFIG.worldScale-5));
+on(byId('scaleUp'), 'click', ()=> applyWorldScale(CONFIG.worldScale+5));
 function sunState(t){
   const ang=t*0.005;
   const sunDir=[Math.cos(ang)*0.6, Math.sin(ang), 0.4];
@@ -1275,15 +1295,15 @@ function cycleRainMode(){
   const i=RAIN_MODES.indexOf(RAIN.mode);
   RAIN.mode=RAIN_MODES[(i+1)%RAIN_MODES.length];
   if (RAIN.mode=== 'auto') RAIN.nextRoll=0;
-  const btn=document.getElementById('rainBtn');
+  const btn=byId('rainBtn');
   if (btn) btn.textContent='RAIN: '+RAIN.mode.toUpperCase();
 }
 const rainGeoBuf=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, rainGeoBuf);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+bindBuf(GLAB, rainGeoBuf);
+bufData(GLAB, new Float32Array([
   -1,-1,  1,-1,  1,1,
   -1,-1,  1,1,  -1,1,
-]), gl.STATIC_DRAW);
+]), GLSTA);
 const rainGeoCount=6;
 const rainProg=program(`
   attribute vec2 aCorner;
@@ -1344,8 +1364,8 @@ function rainUpdate(dt, camX, camZ){
       d[o+3]=RNG();
     }
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, RAIN.buf);
-  gl.bufferData(gl.ARRAY_BUFFER, d, gl.DYNAMIC_DRAW);
+  bindBuf(GLAB, RAIN.buf);
+  bufData(GLAB, d, GLDYN);
 }
 function initShadow(){
   if (SHADOW.fbo){ gl.deleteFramebuffer(SHADOW.fbo); SHADOW.fbo=null; }
@@ -1418,29 +1438,28 @@ function renderShadowPass(){
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
   const packMode=SHADOW.packed ? 1.0 : 0.0;
   gl.useProgram(depthProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuf);
-  gl.enableVertexAttribArray(depthProg.a('aPos'));
-  gl.vertexAttribPointer(depthProg.a('aPos'),3,gl.FLOAT,false,24,0);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
-  gl.uniformMatrix4fv(depthProg.u('uLightVP'),false,SHADOW.lightVP);
-  gl.uniform1f(depthProg.u('uShadowMode'),packMode);
-  gl.drawElements(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
+  bindBuf(GLAB, terrainBuf);
+  setAttr(depthProg.a('aPos'),3,24,0);
+  bindBuf(GLEAB, terrainIdxBuf);
+  uMat4(depthProg.u('uLightVP'), SHADOW.lightVP);
+  u1f(depthProg.u('uShadowMode'),packMode);
+  gl.drawElements(GLTRI, terrainIdxCount, gl.UNSIGNED_INT, 0);
   if (EXT_INSTANCE && C.n>0){
     const ST=INST_STRIDE*4;
     gl.useProgram(depthInstProg);
-    gl.bindBuffer(gl.ARRAY_BUFFER, creatureGeoBuf);
+    bindBuf(GLAB, creatureGeoBuf);
     const ap=depthInstProg.a('aPos');
-    gl.enableVertexAttribArray(ap); gl.vertexAttribPointer(ap,3,gl.FLOAT,false,24,0); EXT_INSTANCE.vertexAttribDivisorANGLE(ap,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    setAttr(ap,3,24,0,0);
+    bindBuf(GLAB, instBuf);
     const ip=depthInstProg.a('aInstPos'), is=depthInstProg.a('aInstScale'),
           ih=depthInstProg.a('aInstHeading'), isp=depthInstProg.a('aInstSpecies');
-    gl.enableVertexAttribArray(ip);  gl.vertexAttribPointer(ip,3,gl.FLOAT,false,ST,0);  EXT_INSTANCE.vertexAttribDivisorANGLE(ip,1);
-    gl.enableVertexAttribArray(is);  gl.vertexAttribPointer(is,1,gl.FLOAT,false,ST,12); EXT_INSTANCE.vertexAttribDivisorANGLE(is,1);
-    gl.enableVertexAttribArray(ih);  gl.vertexAttribPointer(ih,1,gl.FLOAT,false,ST,28); EXT_INSTANCE.vertexAttribDivisorANGLE(ih,1);
-    gl.enableVertexAttribArray(isp); gl.vertexAttribPointer(isp,1,gl.FLOAT,false,ST,32); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,1);
-    gl.uniformMatrix4fv(depthInstProg.u('uLightVP'),false,SHADOW.lightVP);
-    gl.uniform1f(depthInstProg.u('uShadowMode'),packMode);
-    EXT_INSTANCE.drawArraysInstancedANGLE(gl.TRIANGLES,0,creatureGeoCount,C.n);
+    setAttr(ip,3,ST,0,1);
+    setAttr(is,1,ST,12,1);
+    setAttr(ih,1,ST,28,1);
+    setAttr(isp,1,ST,32,1);
+    uMat4(depthInstProg.u('uLightVP'), SHADOW.lightVP);
+    u1f(depthInstProg.u('uShadowMode'),packMode);
+    EXT_INSTANCE.drawArraysInstancedANGLE(GLTRI,0,creatureGeoCount,C.n);
     EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
     EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
   }
@@ -1451,11 +1470,11 @@ function renderShadowPass(){
 function bindShadowUniforms(prog){
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
-  gl.uniform1i(prog.u('uShadowMap'), 1);
-  gl.uniformMatrix4fv(prog.u('uLightVP'), false, SHADOW.lightVP);
-  gl.uniform1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
-  gl.uniform1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
-  gl.uniform1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : 0.0);
+  u1i(prog.u('uShadowMap'), 1);
+  uMat4(prog.u('uLightVP'), SHADOW.lightVP);
+  u1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
+  u1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
+  u1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : 0.0);
   gl.activeTexture(gl.TEXTURE0);
 }
 function rebuildWorld(){
@@ -1468,7 +1487,7 @@ function rebuildWorld(){
   rainBuild();
 }
 const VP=M4.create(), proj=M4.create(), viewM=M4.create();
-const info=document.getElementById('info');
+const info=byId('info');
 let last=performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
 let frameCount=0, shadowFrame=0;
 let rebuilding=false;
@@ -1477,23 +1496,19 @@ let prevJumpKey=false;
 let _curProg=null, _iAttribs=null;
 function bindGeom(prog, geoBuf, vAttribs, instBuf, iAttribs, idxBuf){
   gl.useProgram(prog); _curProg=prog; _iAttribs=iAttribs||null;
-  gl.bindBuffer(gl.ARRAY_BUFFER, geoBuf);
+  bindBuf(GLAB, geoBuf);
   for (let k=0;k<vAttribs.length;k++){
     const s=vAttribs[k], loc=prog.a(s[0]);
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, s[1], gl.FLOAT, false, s[2], s[3]);
-    if (EXT_INSTANCE) EXT_INSTANCE.vertexAttribDivisorANGLE(loc, 0);
+    setAttr(loc, s[1], s[2], s[3], 0);
   }
   if (instBuf && iAttribs && EXT_INSTANCE){
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    bindBuf(GLAB, instBuf);
     for (let k=0;k<iAttribs.length;k++){
       const s=iAttribs[k], loc=prog.a(s[0]);
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, s[1], gl.FLOAT, false, s[2], s[3]);
-      EXT_INSTANCE.vertexAttribDivisorANGLE(loc, 1);
+      setAttr(loc, s[1], s[2], s[3], 1);
     }
   }
-  if (idxBuf) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+  if (idxBuf) bindBuf(GLEAB, idxBuf);
 }
 function _resetInst(){
   if (_iAttribs && EXT_INSTANCE)
@@ -1586,65 +1601,65 @@ function frame(now){
   for(let i=0;i<4;i++) mv[i]=VP[i]*moonW[0]+VP[i+4]*moonW[1]+VP[i+8]*moonW[2]+VP[i+12];
   const mx=mv[3]>0 ? (mv[0]/mv[3])*0.5+0.5 : -1, my=mv[3]>0 ? (mv[1]/mv[3])*0.5+0.5 : -1;
   bindGeom(skyProg, quadBuf, VA_SKY);
-  gl.uniform3fv(skyProg.u('uTop'),S.skyTop); gl.uniform3fv(skyProg.u('uBottom'),S.skyBottom);
-  gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); gl.uniform1f(skyProg.u('uSunUp'),S.up);
-  gl.uniform2f(skyProg.u('uMoonScreen'),mx,my); gl.uniform1f(skyProg.u('uMoonUp'),S.moonUp);
-  drawArraysPass(gl.TRIANGLES,0,3);
+  u3f(skyProg.u('uTop'),S.skyTop); u3f(skyProg.u('uBottom'),S.skyBottom);
+  gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); u1f(skyProg.u('uSunUp'),S.up);
+  gl.uniform2f(skyProg.u('uMoonScreen'),mx,my); u1f(skyProg.u('uMoonUp'),S.moonUp);
+  drawArraysPass(GLTRI,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   bindGeom(terrainProg, terrainBuf, VA_TERRAIN, null, null, terrainIdxBuf);
-  gl.uniformMatrix4fv(terrainProg.u('uVP'),false,VP);
-  gl.uniform3fv(terrainProg.u('uSunDir'),S.sunDir);
-  gl.uniform3fv(terrainProg.u('uSunColor'),S.sunColor);
-  gl.uniform3fv(terrainProg.u('uAmbient'),S.ambient);
-  gl.uniform1f(terrainProg.u('uWaterLevel'),CONFIG.waterLevel);
-  gl.uniform3fv(terrainProg.u('uFogColor'),S.fog);
-  gl.uniform1f(terrainProg.u('uFogDist'),fogDist);
-  gl.uniform3fv(terrainProg.u('uEye'),eye);
+  uMat4(terrainProg.u('uVP'), VP);
+  u3f(terrainProg.u('uSunDir'),S.sunDir);
+  u3f(terrainProg.u('uSunColor'),S.sunColor);
+  u3f(terrainProg.u('uAmbient'),S.ambient);
+  u1f(terrainProg.u('uWaterLevel'),CONFIG.waterLevel);
+  u3f(terrainProg.u('uFogColor'),S.fog);
+  u1f(terrainProg.u('uFogDist'),fogDist);
+  u3f(terrainProg.u('uEye'),eye);
   bindShadowUniforms(terrainProg);
-  drawElementsPass(gl.TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT);
+  drawElementsPass(GLTRI, terrainIdxCount, gl.UNSIGNED_INT);
   // creature rendering
   if (EXT_INSTANCE && C.n>0){
     bindGeom(creatureProg, creatureGeoBuf, VA_CREAT_G, instBuf, IA_CREAT);
-    gl.uniformMatrix4fv(creatureProg.u('uVP'),false,VP);
-    gl.uniform3fv(creatureProg.u('uSunDir'),S.sunDir);
-    gl.uniform3fv(creatureProg.u('uAmbient'),S.ambient);
+    uMat4(creatureProg.u('uVP'), VP);
+    u3f(creatureProg.u('uSunDir'),S.sunDir);
+    u3f(creatureProg.u('uAmbient'),S.ambient);
     bindShadowUniforms(creatureProg);
-    drawInstancedPass(gl.TRIANGLES,creatureGeoCount,C.n);
+    drawInstancedPass(GLTRI,creatureGeoCount,C.n);
   }
   // plant rendering
   if (EXT_INSTANCE && P.n>0){
     bindGeom(plantProg, plantGeoBuf, VA_PLANT_G, plantInstBuf, IA_PLANT);
-    gl.uniformMatrix4fv(plantProg.u('uVP'),false,VP);
-    gl.uniform1f(plantProg.u('uTime'),simTime);
-    gl.uniform3fv(plantProg.u('uSunColor'),S.sunColor);
-    gl.uniform3fv(plantProg.u('uAmbient'),S.ambient);
-    drawInstancedPass(gl.TRIANGLES,plantGeoCount,P.n);
+    uMat4(plantProg.u('uVP'), VP);
+    u1f(plantProg.u('uTime'),simTime);
+    u3f(plantProg.u('uSunColor'),S.sunColor);
+    u3f(plantProg.u('uAmbient'),S.ambient);
+    drawInstancedPass(GLTRI,plantGeoCount,P.n);
   }
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
   bindGeom(waterProg, waterBuf, VA_WATER);
-  gl.uniformMatrix4fv(waterProg.u('uVP'),false,VP);
-  gl.uniform1f(waterProg.u('uLevel'),CONFIG.waterLevel);
-  gl.uniform3fv(waterProg.u('uEye'),eye);
-  gl.uniform3fv(waterProg.u('uSunDir'),S.sunDir);
-  gl.uniform3fv(waterProg.u('uSunColor'),S.sunColor);
-  gl.uniform1f(waterProg.u('uTime'),simTime);
-  gl.uniform3fv(waterProg.u('uFogColor'),S.fog);
-  gl.uniform1f(waterProg.u('uFogDist'),fogDist);
-  gl.uniform1f(waterProg.u('uHighQ'),CONFIG.quality==='HIGH'?1.0:0.0);
-  drawArraysPass(gl.TRIANGLES,0,6);
+  uMat4(waterProg.u('uVP'), VP);
+  u1f(waterProg.u('uLevel'),CONFIG.waterLevel);
+  u3f(waterProg.u('uEye'),eye);
+  u3f(waterProg.u('uSunDir'),S.sunDir);
+  u3f(waterProg.u('uSunColor'),S.sunColor);
+  u1f(waterProg.u('uTime'),simTime);
+  u3f(waterProg.u('uFogColor'),S.fog);
+  u1f(waterProg.u('uFogDist'),fogDist);
+  u1f(waterProg.u('uHighQ'),CONFIG.quality==='HIGH'?1.0:0.0);
+  drawArraysPass(GLTRI,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
   // rain pass
   if (EXT_INSTANCE && RAIN.on && RAIN.data){
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
     bindGeom(rainProg, rainGeoBuf, VA_RAIN_G, RAIN.buf, IA_RAIN);
-    gl.uniformMatrix4fv(rainProg.u('uVP'),false,VP);
+    uMat4(rainProg.u('uVP'), VP);
     gl.uniform3f(rainProg.u('uRight'), rgt[0], rgt[1], rgt[2]);
-    gl.uniform1f(rainProg.u('uWidth'), 0.5);
-    gl.uniform1f(rainProg.u('uLen'), 14.0);
+    u1f(rainProg.u('uWidth'), 0.5);
+    u1f(rainProg.u('uLen'), 14.0);
     gl.uniform3f(rainProg.u('uColor'), 0.62*S.up+0.30, 0.68*S.up+0.34, 0.78*S.up+0.40);
-    gl.uniform1f(rainProg.u('uAlpha'), 0.42*Math.max(0.15, RAIN.intensity));
-    drawInstancedPass(gl.TRIANGLES,rainGeoCount,RAIN.count);
+    u1f(rainProg.u('uAlpha'), 0.42*Math.max(0.15, RAIN.intensity));
+    drawInstancedPass(GLTRI,rainGeoCount,RAIN.count);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
   if (frameCount % 60=== 0){
