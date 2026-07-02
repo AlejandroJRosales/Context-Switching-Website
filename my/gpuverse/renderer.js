@@ -28,7 +28,7 @@ export function createRenderer(device, context, format, {
     h = Math.imul(h ^ (h >>> 15), 2246822519);
     return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
   }
-  const resolvedWaterLevel = waterLevel ?? (amplitude * (0.08 + 0.10 * hashSeedTo01(seed + 0.37)));
+  const resolvedWaterLevel = waterLevel ?? (amplitude * (0.08 + 0.50 * hashSeedTo01(seed + 0.37)));
 
   // TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes)
   const tpBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
