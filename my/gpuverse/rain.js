@@ -17,9 +17,9 @@ export function createRain(device, format, {
   top = 400,                 // world Y where drops spawn
   fall = 300,                // vertical spawn-band height
   floorY = -20,              // recycle when a drop falls below this
-  fallSpeed = 1000,          // downward world units / second
+  fallSpeed = 1300,          // downward world units / second
   wind = [40, 0, 18],        // constant drift (world units / second)
-  width = 0.5,               // streak half-width
+  width = 0.0035,            // streak half-width in NDC (screen fraction), ~a few px wide
   len = 14.0,                // base streak length
   seed = 1,
 }) {
@@ -64,9 +64,10 @@ export function createRain(device, format, {
   const rdBuf = device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const rdScratch = new Float32Array(16);
   rdScratch[3]=width; rdScratch[4]=len;   // .width at [3], .len at [4] (static)
-  function writeDraw(color, alpha) {
+  function writeDraw(color, alpha, aspect) {
     rdScratch[0]=color[0]; rdScratch[1]=color[1]; rdScratch[2]=color[2]; // .width at [3] static
     rdScratch[5]=alpha;                                                  // .len at [4] static
+    rdScratch[6]=aspect;                                                 // viewport w/h, for screen-space width
     device.queue.writeBuffer(rdBuf, 0, rdScratch);
   }
 
@@ -160,15 +161,16 @@ export function createRain(device, format, {
   }
 
   // record the draw into the caller's already-open render pass (after water).
-  // `sky` = current sky state (for a day/night tint). Billboarding is now per-drop in
-  // the VS (uses CAM.eye), so no camera-right needs to come from the host.
-  function draw(pass, sky) {
+  // `sky` = current sky state (day/night tint). `aspect` = viewport w/h, used by the VS
+  // for screen-space streak width. Streaks are oriented in clip space, no camera-right needed.
+  function draw(pass, sky, aspect) {
     if (!state.on) return;
     const up = sky?.sunVisible ?? 1;
     // bluish, brighter by day; alpha scales with intensity (floored so light rain still reads)
     writeDraw(
       [0.30 + 0.62*up, 0.34 + 0.68*up, 0.40 + 0.78*up],
-      0.42 * Math.max(0.15, state.intensity));
+      0.42 * Math.max(0.15, state.intensity),
+      aspect || 1);
     pass.setPipeline(drawPipe);
     pass.setBindGroup(0, drawBG);
     pass.setVertexBuffer(0, rainBuf);

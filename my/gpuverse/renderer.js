@@ -367,7 +367,7 @@ export function createRenderer(device, context, format, {
     // rain after water: also alpha-blended + depth-tested/no-write. No-ops when it isn't
     // raining. Records into this same pass so it shares the depth buffer (drops occlude
     // behind terrain). Billboarding is per-drop in the VS, so no camera-right needed here.
-    if (rain) rain.draw(pass, skyState);
+    if (rain) rain.draw(pass, skyState, width / height);
 
     pass.end();
   }

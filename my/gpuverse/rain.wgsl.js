@@ -73,14 +73,15 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
 // ---------------------------------------------------------------------------
 // Render: instanced billboard streaks. A 6-vertex quad in [-1,1] is expanded in the
-// VS: width along the camera-right axis (passed as a uniform), length straight down
-// world-up so drops always read as vertical, per-drop length from the .w seed.
+// VS: length along world-up (applied before projection, so streaks stay vertical and
+// foreshorten), width applied in clip space as a screen-horizontal offset. Per-drop
+// length from the .w seed.
 // ---------------------------------------------------------------------------
 export const RAIN_RENDER = SKY_PARAMS_STRUCT + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 struct RainDraw {
-  color : vec3<f32>, width : f32,   // tint, streak half-width
-  len   : f32, alpha : f32, _p1 : f32, _p2 : f32,
+  color : vec3<f32>, width : f32,   // tint, streak half-width (NDC / screen fraction)
+  len   : f32, alpha : f32, aspect : f32, _p2 : f32,
 };
 
 @group(0) @binding(0) var<uniform> CAM : Camera;
@@ -104,25 +105,24 @@ fn vs(@builtin(vertex_index) vid : u32,
   let seed = inst.w;
   let len = RD.len * (0.6 + 0.4 * seed);
 
-  // PER-DROP billboard: width axis = horizontal vector perpendicular to the line from
-  // this drop to the camera, so every drop turns to face the viewer individually. A
-  // single global camera-right made the drop straight ahead present edge-on, stacking
-  // all the down-the-view-axis drops into one fat central seam when standing still.
-  // right = normalize(cross(worldUp, toCam)); flattening toCam to XZ keeps streaks vertical.
-  let toCam = CAM.eye - inst.xyz;
-  var flat = vec3<f32>(toCam.x, 0.0, toCam.z);
-  let fl = length(flat);
-  // degenerate only if the camera is directly above/below the drop; fall back to +X.
-  var right = select(vec3<f32>(1.0, 0.0, 0.0),
-                     normalize(vec3<f32>(-flat.z, 0.0, flat.x)),
-                     fl > 1e-4);
+  // Length is applied in WORLD space along world-up, then projected, so streaks stay
+  // vertical and foreshorten correctly with distance.
+  let world = inst.xyz + vec3<f32>(0.0, 1.0, 0.0) * (c.y * len);
+  var clip = CAM.viewProj * vec4<f32>(world, 1.0);
 
-  let world = inst.xyz
-    + right * (c.x * RD.width)
-    + vec3<f32>(0.0, 1.0, 0.0) * (c.y * len);
+  // Width is applied in CLIP space as a purely horizontal screen offset. This removes
+  // the old world-space "right" billboard entirely: that axis was derived from the
+  // drop->camera vector projected to XZ, which becomes parallel to the view direction
+  // for drops straight ahead. When standing still, the stable column of near-view-axis
+  // drops all oriented the same way and stacked into one fat vertical bar. A screen-space
+  // horizontal offset can't degenerate no matter where the drop sits relative to the eye.
+  // Multiply by clip.w so the perspective divide leaves a constant NDC width (same on-screen
+  // pixel width near and far). Divide by aspect (viewport w/h, passed from the host) so the
+  // horizontal offset isn't stretched by the viewport ratio.
+  clip.x = clip.x + c.x * RD.width * clip.w / RD.aspect;
 
   var out : VsOut;
-  out.clip = CAM.viewProj * vec4<f32>(world, 1.0);
+  out.clip = clip;
   out.t = c.y * 0.5 + 0.5;
   return out;
 }
