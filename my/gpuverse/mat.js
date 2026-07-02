@@ -1,4 +1,3 @@
-// mat.js: tiny column-major mat4 helpers (WebGPU expects column-major).
 export const v3 = {
   sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
   cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
@@ -16,16 +15,15 @@ export function perspective(fovy, aspect, near, far) {
   ];
 }
 
-// Orthographic projection, column-major, WebGPU/D3D convention: clip-space Z in [0,1]
-// (NOT GL's [-1,1]). This matters for the shadow pass: the bake writes clip Z straight
-// into a depth24plus target (which stores [0,1]), and the terrain sampler compares against
-// that same [0,1] depth — so the projection must already be [0,1] with no remap.
+// Clip-space Z in [0,1] (WebGPU/D3D), NOT GL's [-1,1]. The shadow bake writes clip Z
+// straight into a depth24plus target and the terrain sampler compares against that same
+// [0,1] depth, so the projection must already be [0,1] with no remap.
 export function ortho(left, right, bottom, top, near, far) {
   const lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
   return [
     -2 * lr, 0, 0, 0,
     0, -2 * bt, 0, 0,
-    0, 0, nf, 0,                                  // z scale: 1/(near-far) maps near->0, far->1
+    0, 0, nf, 0,
     (left + right) * lr, (top + bottom) * bt, near * nf, 1,
   ];
 }
@@ -50,10 +48,6 @@ export function mul(a,b){ // a*b, column-major
   return o;
 }
 
-// General 4x4 inverse via cofactor expansion (column-major in, column-major out).
-// Used by the sky pass to turn screen-space NDC back into world-space view rays
-// from the camera's combined viewProj matrix. Only computed once per setCamera()
-// call (not per-pixel), so the O(1) cost here is negligible.
 export function invertMat4(m) {
   const inv = new Array(16);
   const a00=m[0],a01=m[1],a02=m[2],a03=m[3];
@@ -68,7 +62,7 @@ export function invertMat4(m) {
 
   let det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
   if (Math.abs(det) < 1e-12) {
-    // degenerate (shouldn't happen for a real camera); return identity rather than NaN-poison the GPU.
+    // degenerate: return identity rather than NaN-poison the GPU.
     return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
   }
   det = 1.0 / det;

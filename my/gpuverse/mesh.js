@@ -1,22 +1,8 @@
-// mesh.js: bakes ONE canonical quadruped mesh on the host (torso tube + 4 legs +
-// neck + head), interleaved position+normal, plus a u32 index buffer. The mesh lives
-// in a canonical, roughly unit-ish local space oriented +X = forward (nose), +Y = up,
-// +Z = right. Per-species proportions (deer vs wolf) are applied as deformation in the
-// vertex shader, so this single mesh serves every creature — no per-species buffers.
-//
-// Smooth normals: accumulated per-vertex from face normals, then normalized. The body
-// is built from a handful of generalized cylinders ("limbs"); each ring shares vertices
-// along its length so lighting is smooth.
-//
-// Layout per vertex: [px,py,pz, nx,ny,nz] -> arrayStride 24 bytes, two float32x3 attrs.
-
 const cross = (a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const norm = (a)=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];};
 
-// Build a generalized cylinder/tube along a centerline of `rings` cross-sections.
-// centerFn(t) -> [x,y,z] center for t in [0,1]; radiusFn(t) -> radius.
-// segs = radial subdivisions. Appends into pos[] (flat) and tris[] (index triples),
-// using the running vertex base. Returns the new vertex count.
+// Build a generalized cylinder along a centerline: centerFn(t)->[x,y,z], radiusFn(t)->r,
+// segs radial subdivisions. Appends into pos[]/tris[] from vbase; returns new vertex count.
 function addTube(pos, tris, vbase, { rings, segs, centerFn, radiusFn }) {
   for (let r = 0; r < rings; r++) {
     const t = rings === 1 ? 0 : r / (rings - 1);
@@ -52,8 +38,10 @@ function addTube(pos, tris, vbase, { rings, segs, centerFn, radiusFn }) {
   return vbase + rings * segs;
 }
 
-// Build the full canonical creature. Returns { vertexData:Float32Array(interleaved pos+nrm),
-// indexData:Uint32Array, vertexCount, indexCount }.
+// Bakes one canonical quadruped (torso + 4 legs + neck + head) in local space oriented
+// +X = forward (nose), +Y = up, +Z = right. Per-species proportions are applied as VS
+// deformation, so this single mesh serves every creature. Interleaved pos+normal, u32 index.
+// Returns { vertexData:Float32Array, indexData:Uint32Array, vertexCount, indexCount }.
 export function buildCreatureMesh() {
   const pos = [];     // flat xyz
   const tris = [];    // flat index triples
@@ -61,43 +49,40 @@ export function buildCreatureMesh() {
 
   const SEG = 8;      // radial segments per tube (low-poly but rounded)
 
-  // --- Torso: runs along X from tail (x=-0.5) to chest (x=+0.45). Belly dips, fattest
-  //     mid-body. Radius tapers toward both ends.
+  // Torso: runs along X from tail (x=-0.5) to chest (x=+0.45), fattest mid-body.
   vb = addTube(pos, tris, vb, {
     rings: 9, segs: SEG,
     centerFn: (t) => {
       const x = -0.5 + t * 0.95;
-      // slight belly sag and a small rise toward the shoulders
       const y = 0.55 + Math.sin(t * Math.PI) * 0.05;
       return [x, y, 0];
     },
-    radiusFn: (t) => 0.10 + Math.sin(t * Math.PI) * 0.12, // fat middle, slim ends
+    radiusFn: (t) => 0.10 + Math.sin(t * Math.PI) * 0.12,
   });
 
-  // --- Neck: from chest up toward where the head sits. Forward (+X) and up (+Y).
+  // Neck: from chest forward (+X) and up (+Y).
   vb = addTube(pos, tris, vb, {
     rings: 6, segs: SEG,
     centerFn: (t) => {
       const x = 0.42 + t * 0.22;
-      const y = 0.60 + t * 0.30;     // rises
+      const y = 0.60 + t * 0.30;
       return [x, y, 0];
     },
     radiusFn: (t) => 0.10 - t * 0.04,
   });
 
-  // --- Head: short tube ending in the nose, tip at +X.
+  // Head: short tube ending in the nose, tip at +X.
   vb = addTube(pos, tris, vb, {
     rings: 5, segs: SEG,
     centerFn: (t) => {
       const x = 0.64 + t * 0.22;
-      const y = 0.90 - t * 0.06;     // muzzle dips slightly
+      const y = 0.90 - t * 0.06;
       return [x, y, 0];
     },
     radiusFn: (t) => 0.085 * (1 - t * 0.55),
   });
 
-  // --- Legs: 4 thin tubes hanging down (-Y) from the torso underside. Positioned at
-  //     front/back x and left/right z. Built straight; the VS can bend them later.
+  // Legs: 4 thin tubes hanging down (-Y) at front/back x and left/right z.
   const legDefs = [
     [ 0.34,  0.16], [ 0.34, -0.16],   // front R / L
     [-0.34,  0.16], [-0.34, -0.16],   // rear  R / L
@@ -105,12 +90,12 @@ export function buildCreatureMesh() {
   for (const [lx, lz] of legDefs) {
     vb = addTube(pos, tris, vb, {
       rings: 4, segs: 6,
-      centerFn: (t) => [lx, 0.48 - t * 0.48, lz],  // from belly (y~0.48) to ground (y~0)
+      centerFn: (t) => [lx, 0.48 - t * 0.48, lz],
       radiusFn: (t) => 0.045 * (1 - t * 0.3),
     });
   }
 
-  // --- smooth normals: accumulate face normals per vertex, normalize ---
+  // smooth normals: accumulate face normals per vertex, normalize
   const vCount = pos.length / 3;
   const nrm = new Float32Array(pos.length);
   for (let i = 0; i < tris.length; i += 3) {

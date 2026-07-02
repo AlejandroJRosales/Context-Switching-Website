@@ -1,20 +1,20 @@
-// renderer.js: WebGPU render system. Reads the positions GPUBuffer directly as
-// instance data (no CPU round-trip). Bakes a heightfield once on GPU; draws sky,
-// terrain (indexed grid), instanced creatures, and a blended water plane.
 import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, WATER_RENDER, SHADOW_BAKE } from "./world_wgsl.js";
 import { SKY_RENDER } from "./sky.js";
 import { perspective, lookAt, mul, invertMat4 } from "./mat.js";
 import { buildCreatureMesh } from "./mesh.js";
 
 export function createRenderer(device, context, format, {
-  worldMin, worldMax,            // [x,y,z]
-  gridN = 256,                   // terrain resolution per side
-  amplitude = 40,                // max terrain height
+  worldMin, worldMax,
+  gridN = 256,
+  amplitude = 40,
   seed = 7,
   creatureRadius = 1.5,
   mountainThreshold = 0.55,      // biome-mask cutoff (0..1) above which mountains blend in
   waterLevel = null,             // world Y of the water plane; null = derive from seed
-  shadowResolution = 2048,       // sun-view depth map size per side (quality-scaled by host)
+  shadowResolution = 1024,       // sun-view depth map size per side (quality-scaled by host).
+                                 // Dropped 2048->1024: 4x fewer depth texels to bake and a
+                                 // 4x-smaller texture for the terrain PCF taps to sample.
+
 }) {
   const wXZmin = [worldMin[0], worldMin[2]];
   const wXZmax = [worldMax[0], worldMax[2]];
@@ -62,7 +62,6 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(fogBuf, 0, new Float32Array([fogColor[0], fogColor[1], fogColor[2], fogDist]));
   }
 
-  // height buffer + bake pipeline
   const heights = device.createBuffer({ size: gridN*gridN*4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const bakeBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
@@ -76,7 +75,6 @@ export function createRenderer(device, context, format, {
     compute:{module:device.createShaderModule({code:TERRAIN_BAKE}),entryPoint:"main"},
   });
 
-  // bake once now
   {
     const enc = device.createCommandEncoder();
     const p = enc.beginComputePass();
@@ -87,7 +85,6 @@ export function createRenderer(device, context, format, {
     device.queue.submit([enc.finish()]);
   }
 
-  // terrain index buffer (triangle list over the vertex grid)
   const quads = (gridN-1)*(gridN-1);
   const terrIndexCount = quads*6;
   const idx = new Uint32Array(terrIndexCount);
@@ -104,7 +101,6 @@ export function createRenderer(device, context, format, {
   // camera uniform: mat4 viewProj (64) + vec3 eye + pad (16) + mat4 invViewProj (64) = 144
   const camBuf = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-  // --- Shadows ---------------------------------------------------------------
   // Depth map rendered from the sun's orthographic frustum; terrain samples it with
   // hardware PCF. Resolution is host-tunable (quality scale). Texel-snapping of the
   // light frustum is done host-side and uploaded via setShadow().
@@ -113,14 +109,12 @@ export function createRenderer(device, context, format, {
     size: [shadowRes, shadowRes], format: "depth24plus",
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
   let shadowView = shadowTex.createView();
-  // comparison sampler for textureSampleCompare (hardware PCF, linear between texels)
   const shadowSamp = device.createSampler({
     compare: "less", magFilter: "linear", minFilter: "linear" });
 
-  // ShadowParams: mat4 lightViewProj (64) + 4 f32 (texel,bias,pcfRadius,strength) -> 80 bytes
   const shadowBuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const shadowScratch = new Float32Array(20);
-  // defaults: 5x5 PCF (radius 2) at scale 1.0; host overrides per-frame via setShadow().
+  // host overrides these per-frame via setShadow().
   let shadowTunables = { bias: 0.0015, pcfRadius: 2.0, strength: 0.85 };
   // Identity light matrix until the host fits one (avoids sampling garbage on frame 0).
   shadowScratch.set([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1], 0);
@@ -130,7 +124,6 @@ export function createRenderer(device, context, format, {
   shadowScratch[19] = shadowTunables.strength;
   device.queue.writeBuffer(shadowBuf, 0, shadowScratch);
 
-  // Upload a freshly-fitted light viewProj (column-major 16) + optional tunables.
   function setShadow(lightViewProj, tunables) {
     if (tunables) shadowTunables = { ...shadowTunables, ...tunables };
     shadowScratch.set(lightViewProj, 0);
@@ -141,7 +134,6 @@ export function createRenderer(device, context, format, {
     device.queue.writeBuffer(shadowBuf, 0, shadowScratch);
   }
 
-  // Resize the shadow map (quality scaling). Recreates texture + view.
   function setShadowResolution(res) {
     if (res === shadowRes) return;
     shadowRes = res;
@@ -153,11 +145,10 @@ export function createRenderer(device, context, format, {
     rebuildTerrainBG();   // bind group references the old view; rebuild it
   }
 
-  // shadow bake pipeline: depth-only, same vertex math as terrain from the light matrix
   const shadowBakeBGL = device.createBindGroupLayout({ entries:[
-    {binding:0,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}},            // ShadowParams
-    {binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}},            // TerrainParams
-    {binding:2,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}}, // heights
+    {binding:0,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}},
+    {binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}},
+    {binding:2,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}},
   ]});
   const shadowBakeBG = device.createBindGroup({layout:shadowBakeBGL,entries:[
     {binding:0,resource:{buffer:shadowBuf}},
@@ -168,13 +159,10 @@ export function createRenderer(device, context, format, {
   const shadowPipe = device.createRenderPipeline({
     layout: device.createPipelineLayout({bindGroupLayouts:[shadowBakeBGL]}),
     vertex:{module:shadowMod,entryPoint:"vs"},
-    // no fragment stage: depth-only pass
     primitive:{topology:"triangle-list",cullMode:"none"},
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
-  // --- end Shadows -----------------------------------------------------------
 
-  // sky render pipeline (drawn first, no depth test/write)
   const skyBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
@@ -194,16 +182,15 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:false,depthCompare:"always"},
   });
 
-  // terrain render pipeline
   const terrBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:2,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}},
     {binding:3,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:4,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
-    {binding:5,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},                       // ShadowParams
-    {binding:6,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:"depth"}},                  // shadowTex
-    {binding:7,visibility:GPUShaderStage.FRAGMENT,sampler:{type:"comparison"}},                   // shadowSamp
+    {binding:5,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
+    {binding:6,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:"depth"}},
+    {binding:7,visibility:GPUShaderStage.FRAGMENT,sampler:{type:"comparison"}},
   ]});
   let terrBG;
   function rebuildTerrainBG(){
@@ -228,12 +215,9 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // creature render pipeline (instanced REAL mesh)
-  // SIZE.x is now overall mesh scale (world units). creatureRadius doubles as that scale.
   const sizeBuf = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(sizeBuf,0,new Float32Array([creatureRadius,0,0,0]));
 
-  // bake the canonical quadruped mesh into GPU vertex/index buffers (once).
   const mesh = buildCreatureMesh();
   const creVtxBuf = device.createBuffer({ size: mesh.vertexData.byteLength,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -257,18 +241,15 @@ export function createRenderer(device, context, format, {
   const crePipe = device.createRenderPipeline({
     layout: device.createPipelineLayout({bindGroupLayouts:[creBGL]}),
     vertex:{module:creMod,entryPoint:"vs", buffers:[
-      // 0: per-vertex mesh: position(3) + normal(3), stride 24
       { arrayStride:24, stepMode:"vertex", attributes:[
-        {shaderLocation:0,offset:0,  format:"float32x3"},   // vPos
-        {shaderLocation:1,offset:12, format:"float32x3"},   // vNrm
+        {shaderLocation:0,offset:0,  format:"float32x3"},
+        {shaderLocation:1,offset:12, format:"float32x3"},
       ]},
-      // 1: per-instance position (xyz + w), stride 16
       { arrayStride:16, stepMode:"instance", attributes:[
-        {shaderLocation:2,offset:0, format:"float32x4"},    // instPos
+        {shaderLocation:2,offset:0, format:"float32x4"},
       ]},
-      // 2: per-instance (species, heading), stride 8
       { arrayStride:8, stepMode:"instance", attributes:[
-        {shaderLocation:3,offset:0, format:"float32x2"},    // instSH
+        {shaderLocation:3,offset:0, format:"float32x2"},
       ]},
     ]},
     fragment:{module:creMod,entryPoint:"fs",targets:[{format}]},
@@ -276,7 +257,6 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
 
-  // water render pipeline (alpha-blended, drawn after opaque geometry)
   const waterBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   let currentWaterLevel = resolvedWaterLevel;
   function writeWaterParams(time) {
@@ -312,7 +292,6 @@ export function createRenderer(device, context, format, {
     depthStencil:{format:"depth24plus",depthWriteEnabled:false,depthCompare:"less"},
   });
 
-  // depth texture (recreated on resize)
   let depth = null, dw=0, dh=0;
   function ensureDepth(width,height){
     if(depth && dw===width && dh===height) return;
@@ -322,7 +301,6 @@ export function createRenderer(device, context, format, {
     dw=width; dh=height;
   }
 
-  // camera update from orbit params
   // camScratch reused every frame (viewProj 16 + eye+pad 4 + invViewProj 16 = 36 floats).
   const camScratch = new Float32Array(36);
   function setCamera({eye, target, up=[0,1,0], fovy=Math.PI/3, aspect, near=0.5, far=5000}){
@@ -353,7 +331,7 @@ export function createRenderer(device, context, format, {
 
   // per-frame draw. positions = the compute positions buffer (instance pos), N = count,
   // speciesHeading = per-instance (species, heading) buffer. `time` drives water.
-  function render(encoder, positions, N, speciesHeading, width, height, time = 0){
+  function render(encoder, positions, N, speciesHeading, width, height, time = 0, rain = null, skyState = null){
     ensureDepth(width,height);
     writeWaterParams(time);
 
@@ -364,7 +342,6 @@ export function createRenderer(device, context, format, {
         depthClearValue:1.0, depthLoadOp:"clear", depthStoreOp:"store" },
     });
 
-    // sky first: full-screen backdrop, no depth test/write
     pass.setPipeline(skyPipe);
     pass.setBindGroup(0, skyBG);
     pass.draw(3);
@@ -374,8 +351,6 @@ export function createRenderer(device, context, format, {
     pass.setIndexBuffer(terrIndexBuf, "uint32");
     pass.drawIndexed(terrIndexCount);
 
-    // creatures: real mesh, indexed, instanced. buffer0=mesh, buffer1=positions,
-    // buffer2=species/heading. drawIndexed(indexCount, N instances).
     pass.setPipeline(crePipe);
     pass.setBindGroup(0, creBG);
     pass.setVertexBuffer(0, creVtxBuf);
@@ -388,6 +363,11 @@ export function createRenderer(device, context, format, {
     pass.setPipeline(waterPipe);
     pass.setBindGroup(0, waterBG);
     pass.draw(6);
+
+    // rain after water: also alpha-blended + depth-tested/no-write. No-ops when it isn't
+    // raining. Records into this same pass so it shares the depth buffer (drops occlude
+    // behind terrain). Billboarding is per-drop in the VS, so no camera-right needed here.
+    if (rain) rain.draw(pass, skyState);
 
     pass.end();
   }
@@ -414,5 +394,7 @@ export function createRenderer(device, context, format, {
     bakeShadow, setShadow, setShadowResolution,
     heights, readHeights, terrainParams:tpBuf, gridN, amplitude,
     waterLevel: resolvedWaterLevel,
+    // exposed so weather (rain) can bind the same Camera + Sky uniforms read-only.
+    camBuf, skyBuf,
   };
 }

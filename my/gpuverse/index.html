@@ -16,6 +16,7 @@
   #scale button:hover{background:#1a212b;color:#fff}
   #scale span{min-width:46px;text-align:center;text-shadow:0 1px 2px #000}
   #resetSeed{width:auto;padding:0 10px;margin-left:6px}
+  #rainBtn{width:auto;padding:0 10px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -25,6 +26,7 @@
   <button id="scaleDown" title="Scale down (-)">-</button>
   <span id="scaleLabel">1.0</span>
   <button id="scaleUp" title="Scale up (+)">+</button>
+  <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
   <button id="resetSeed" title="Roll a new seed and rebuild the world">RESET</button>
 </div>
 <div id="err"></div>
@@ -32,6 +34,7 @@
 import { createRenderer } from "./renderer.js";
 import { createPlayer } from "./player.js";
 import { createSky } from "./sky.js";
+import { createRain } from "./rain.js";
 import { MOVE } from "./world_wgsl.js";
 import { ortho, lookAt, mul } from "./mat.js";
 
@@ -75,17 +78,17 @@ function seedToState(seed) {
 // (0..1000 with a fractional part) that f32 represents exactly. The HUD/URL seed
 // stays the big readable int; only this GPU-facing value is bounded.
 function seedToGpuFloat(seed) {
-  const s = seedToState(seed);                 // decorrelated 32-bit
-  return (s >>> 8) / 16777216 * 1000;          // 0..1000, ~16 fractional bits
+  const s = seedToState(seed);
+  return (s >>> 8) / 16777216 * 1000;
 }
 
 const params = new URLSearchParams(location.search);
 let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
 
 // world config (base values; actual N/world/amplitude scale with the +/- control)
-const BASE_N = 1000;                        // creature count at scale 1.0
-const BASE_WORLD = [10000, 10000];          // world X/Z extent at scale 1.0
-const BASE_AMPLITUDE = 500;                 // terrain height at scale 1.0
+const BASE_N = 1000;
+const BASE_WORLD = [10000, 10000];
+const BASE_AMPLITUDE = 500;
 const worldMin = [0,0,0];
 
 const SCALE_STEPS = [0.5,1,2,3,3.5];
@@ -98,15 +101,15 @@ const SKY_TIME_OFFSET = DAY_LENGTH * 0.5;
 const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
-let speciesHeading;   // per-instance (species:0|1, heading:radians) buffer, vec2 stride 8
-let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
+let speciesHeading;
+let rain;
+let curShadowRes = 1024;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
   N = Math.max(1, Math.round(BASE_N * scale));
   worldMax = [BASE_WORLD[0]*scale, 0, BASE_WORLD[1]*scale];
   amplitude = BASE_AMPLITUDE * scale;
 
-  // positions buffer (the one the renderer reads as instance data)
   // Seeded RNG (1.4): same seed -> same initial scatter of entities, every run.
   const rng = mulberry32(seedToState(seed));
   positions = device.createBuffer({
@@ -116,7 +119,7 @@ function buildWorld(scale){
     for(let i=0;i<N;i++){
       init[i*4]   = worldMin[0]+rng()*(worldMax[0]-worldMin[0]);
       init[i*4+2] = worldMin[2]+rng()*(worldMax[2]-worldMin[2]);
-      init[i*4+1] = amplitude; // will be snapped to ground on first move step
+      init[i*4+1] = amplitude;
     }
     device.queue.writeBuffer(positions,0,init);
   }
@@ -129,20 +132,37 @@ function buildWorld(scale){
   {
     const sh = new Float32Array(N*2);
     for(let i=0;i<N;i++){
-      sh[i*2]   = rng() < 0.55 ? 0 : 1;         // 0 deer, 1 wolf
-      sh[i*2+1] = rng() * Math.PI * 2;          // initial heading
+      sh[i*2]   = rng() < 0.55 ? 0 : 1;
+      sh[i*2+1] = rng() * Math.PI * 2;
     }
     device.queue.writeBuffer(speciesHeading,0,sh);
   }
 
   // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
   // visible region would just blur, so trade resolution for coverage at high scale.
-  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 1024 : 512;
+  // Scale-1 dropped 2048->1024 for fill-rate (cheaper bake + cheaper PCF taps).
+  const shadowRes = scale <= 1 ? 1024 : scale <= 3 ? 512 : 512;
   curShadowRes = shadowRes;
 
   renderer = createRenderer(device, ctx, format, {
     worldMin, worldMax, gridN:256, amplitude, seed:seedToGpuFloat(seed), creatureRadius:8.0,
     shadowResolution: shadowRes });
+
+  // Weather. The particle column tracks world scale: spawn band well above the tallest
+  // terrain, floor at the water level, radius a fraction of the world so a fixed pool
+  // stays dense around the player. Reuses the renderer's Camera + Sky uniforms read-only.
+  rain = createRain(device, format, {
+    camBuf: renderer.camBuf, skyBuf: renderer.skyBuf,
+    count: 8192,
+    radius: Math.max(300, Math.min(worldMax[0], worldMax[2]) * 0.06),
+    top: amplitude * 2.2,
+    fall: amplitude * 1.2,
+    floorY: renderer.waterLevel - 20,
+    fallSpeed: Math.max(400, amplitude * 2.5),
+    wind: [amplitude * 0.08, 0, amplitude * 0.04],
+    width: 0.6, len: amplitude * 0.03 + 6,
+    seed,
+  });
 
   // player walks the SAME baked heightfield the renderer draws. Read it back once
   // (async) and hand it to the player; this matches the rendered ground exactly,
@@ -152,7 +172,6 @@ function buildWorld(scale){
       worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] });
   });
 
-  // movement pipeline (shares terrainParams so heights match exactly)
   moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   moveBGL = device.createBindGroupLayout({entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
@@ -170,13 +189,18 @@ function buildWorld(scale){
     layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
     compute:{module:device.createShaderModule({code:MOVE}),entryPoint:"main"},
   });
+
+  // buildWorld makes a fresh rain (mode resets to auto); resync the button label if it
+  // exists yet (it doesn't on the very first buildWorld, which runs before the wiring).
+  const rb = document.getElementById("rainBtn");
+  if (rb) rb.textContent = "RAIN: " + rain.state.mode.toUpperCase();
 }
 
 // player: WASD+space (keyboard) and on-screen joystick+jump (touch), both always on
 // Created before the first buildWorld so the first heightfield readback finds it.
 // Terrain (the baked heightfield) is supplied asynchronously by buildWorld via setTerrain.
 player = createPlayer(canvas, {
-  eyeHeight: 5, moveSpeed: 150, jumpSpeed: 125, gravity: 300,
+  eyeHeight: 5, moveSpeed: 300, jumpSpeed: 125, gravity: 300, flySpeed: 300
 });
 
 buildWorld(SCALE_STEPS[scaleIdx]);
@@ -194,9 +218,19 @@ function setScale(newIdx){
 }
 document.getElementById("scaleUp").addEventListener("click", ()=>setScale(scaleIdx+1));
 document.getElementById("scaleDown").addEventListener("click", ()=>setScale(scaleIdx-1));
+
+// rain mode toggle: button + R key both route through here so the label stays in sync.
+const rainBtn = document.getElementById("rainBtn");
+function cycleRain(){
+  const mode = rain.cycleMode();
+  rainBtn.textContent = "RAIN: " + mode.toUpperCase();
+}
+rainBtn.addEventListener("click", cycleRain);
+
 addEventListener("keydown", e=>{
   if(e.key==="+"||e.key==="=") setScale(scaleIdx+1);
   if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
+  if(e.key==="r"||e.key==="R") cycleRain();
 });
 
 // new seed and rebuild (terrain, biomes, scatter, water all re-derive).
@@ -217,7 +251,6 @@ document.getElementById("resetSeed").addEventListener("click", ()=>{
 // size is constant and ONLY its center moves -> texel-snapping fully kills shimmer.
 const SHADOW_UP_FALLBACK = [0, 0, 1];   // if sun is near-vertical, lookAt up must not be parallel
 function fitLightMatrix(sunDir, camEye, camForward, coverage, depthRange) {
-  // center the cover sphere slightly ahead of the eye along the ground-projected forward
   const fwd = [camForward[0], 0, camForward[2]];
   const fl = Math.hypot(fwd[0], fwd[2]) || 1;
   const center = [
@@ -234,7 +267,6 @@ function fitLightMatrix(sunDir, camEye, camForward, coverage, depthRange) {
     center[1] + sunDir[1] * D,
     center[2] + sunDir[2] * D,
   ];
-  // pick an up vector not parallel to the light direction
   const up = Math.abs(sunDir[1]) > 0.99 ? SHADOW_UP_FALLBACK : [0, 1, 0];
   const lightView = lookAt(lightPos, center, up);
 
@@ -268,32 +300,37 @@ function resize(){
 addEventListener("resize",resize); resize();
 
 function handleHud(time, dt, lastHud) {
-  // day/night + fog, recomputed on CPU per frame. fogDist scales with world size.
   const skyState = sky.update(time + SKY_TIME_OFFSET);
   renderer.setSky(skyState);
   const fogDist = Math.max(worldMax[0], worldMax[2]) * 0.55;
   renderer.setFog(skyState.fogColor, fogDist);
 
+  const cam0 = player.getCamera(canvas.width/canvas.height);
+
+  // weather: ease intensity / roll auto, then advance particles on the GPU (no-op when clear).
+  rain.resolve(dt, time);
+
   const enc=device.createCommandEncoder();
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
+  rain.buildFrame(enc, cam0.eye, dt);
 
   // Fit + upload the sun-view light frustum, then bake the shadow depth map. The
   // coverage radius is tied to fog distance (no point shadowing past the fog wall),
   // clamped so it never tries to cover the whole giant world at high scale.
-  // 5x5 PCF (radius 2) at scale 1.0 per the chosen default.
+  // PCF radius 1.0 (3x3 kernel). The SHADOW_FN loop is bounded by this uniform,
+  // so radius 1 vs 2 genuinely trades tap count (9 vs 25), not just spacing.
   {
     const cam = player.getCamera(canvas.width/canvas.height);
     const fwd = [cam.target[0]-cam.eye[0], cam.target[1]-cam.eye[1], cam.target[2]-cam.eye[2]];
     const coverage = Math.min(fogDist * 0.6, Math.max(worldMax[0], worldMax[2]) * 0.5);
-    // depth range must clear the tallest terrain the box can contain
     const depthRange = coverage + amplitude * 2;
     const lightVP = fitLightMatrix(skyState.sunDir, cam.eye, fwd, coverage, depthRange);
-    renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.0015, strength: 0.85 });
+    renderer.setShadow(lightVP, { pcfRadius: 1.0, bias: 0.0015, strength: 0.85 });
   }
   renderer.bakeShadow(enc);
 
-  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time);
+  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time, rain, skyState);
   device.queue.submit([enc.finish()]);
 
   facc+=dt; frames++; frameCount++;
@@ -302,31 +339,57 @@ function handleHud(time, dt, lastHud) {
   // Touch the DOM only every HUD_EVERY frames and only when text changed (avoids
   // per-frame layout/paint).
   if(frameCount%HUD_EVERY===0){
-    const tod = (skyState.timeOfDay*24).toFixed(1); // already offset via sky.update
-    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  ${player.flying?"  [FLYING]":""}\n`;
+    const tod = (skyState.timeOfDay*24).toFixed(1);
+    const rainStr = rain.state.mode.toUpperCase() + (rain.state.on ? ` ${(rain.state.intensity*100)|0}%` : "");
+    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  ${player.flying?"  [FLYING]":""}\nrain ${rainStr}  [R]\n`;
     if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
   }
+  return lastHud;
 }
 
 // Reused per-frame scratch (avoids per-frame typed-array allocation). Float fields and the
 // u32 N share one ArrayBuffer so the 16-byte MoveParams uploads in one writeBuffer.
-const moveScratch = new Float32Array(4);          // [time, dt, speed, _]
-const moveScratchU = new Uint32Array(moveScratch.buffer); // same 16 bytes, u32 view for N at index 3
+const moveScratch = new Float32Array(4);
+const moveScratchU = new Uint32Array(moveScratch.buffer);
 let t0 = performance.now(), last = t0, frames = 0, fps = 0, facc = 0, frameCount = 0;
 let lastHud = "";
-const HUD_EVERY = 60;   // refresh HUD text once every 60 frames
+const HUD_EVERY = 60;
+
+// Render is capped to ~30fps: on this device class a full 60Hz frame can't finish
+// compositing within one vsync, so half the frames came back PRESENTED_PARTIAL
+// (checkerboarded). We keep the SIM stepping every rAF tick (~60Hz) so movement
+// and physics stay smooth, but only run the GPU render path every RENDER_PERIOD ms.
+// dtRenderAcc accumulates the sim dt consumed since the last render, so the compute
+// pass and shadow fit see the true elapsed time for the frame they actually draw.
+const RENDER_FPS = 30;
+const RENDER_PERIOD = 1000 / RENDER_FPS;
+let renderAcc = 0;
+let dtRenderAcc = 0;
+
 function frame(now){
-  const dt = Math.min(0.05,(now-last)/1000); 
-  last = now; 
+  const dtMs = now - last;
+  const dt = Math.min(0.05, dtMs/1000);
+  last = now;
   const time = (now-t0)/1000;
 
-  moveScratch[0]=time; moveScratch[1]=dt; moveScratch[2]=18.0; moveScratchU[3]=N;
-  device.queue.writeBuffer(moveParams,0,moveScratch);
-
   player.update(dt);
-  renderer.setCamera(player.getCamera(canvas.width/canvas.height));
+  dtRenderAcc += dt;
 
-  lastHud = handleHud(time, dt, lastHud);
+  renderAcc += dtMs;
+  if(renderAcc >= RENDER_PERIOD){
+    // Guard against spiral-of-death after a tab stall: cap catch-up to one frame.
+    renderAcc = renderAcc % RENDER_PERIOD;
+
+    // Feed the move compute pass the accumulated sim time so entities advance the
+    // full 1/30s (not just the last 1/60s tick) on the frame we render.
+    moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=18.0; moveScratchU[3]=N;
+    device.queue.writeBuffer(moveParams,0,moveScratch);
+    dtRenderAcc = 0;
+
+    renderer.setCamera(player.getCamera(canvas.width/canvas.height));
+    lastHud = handleHud(time, dt, lastHud);
+  }
+
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

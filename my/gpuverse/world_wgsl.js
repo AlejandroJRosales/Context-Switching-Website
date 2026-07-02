@@ -1,31 +1,16 @@
-// world_wgsl.js: GPU world shaders — terrain heightfield + bake + render, instanced
-// creature billboards, animated water plane, and the placeholder movement compute
-// pass. Grouped because they all share TerrainParams/heightAt() and SkyParams/fog.
 import { SKY_PARAMS_STRUCT, FOG_FN } from "./sky.js";
 
-// ---------------------------------------------------------------------------
-// Terrain: procedural heightfield generated on GPU, shared with the sim via the
-// exported heightAt() string (creatures snap to ground with no CPU round-trip).
-// heightAt() blends a smooth-plains fractal with a ridged-mountain layer, mixed
-// by a low-frequency biome mask. Signature (TerrainParams, worldXZ)->f32 is
-// unchanged, so the baked-buffer consumers (render + player.js sampler) stay
-// correct automatically.
-// ---------------------------------------------------------------------------
-
-// Shared noise + height function. Include this string in any shader that needs ground height.
-// Domain: world XZ. Returns world Y. Deterministic from a seed in TerrainParams.
 export const HEIGHT_FN = /* wgsl */`
 struct TerrainParams {
-  worldMin : vec2<f32>,   // xz min
-  worldMax : vec2<f32>,   // xz max
-  gridN    : u32,         // heightfield resolution per side (gridN x gridN verts)
-  amplitude: f32,         // max height
+  worldMin : vec2<f32>,
+  worldMax : vec2<f32>,
+  gridN    : u32,
+  amplitude: f32,
   seed     : f32,
-  mountainThreshold : f32, // biome-mask value above which ridged mountains blend in (0..1)
+  mountainThreshold : f32,
 };
 
 fn hash2(p : vec2<f32>) -> f32 {
-  // cheap deterministic hash -> [0,1)
   let h = dot(p, vec2<f32>(127.1, 311.7));
   return fract(sin(h) * 43758.5453123);
 }
@@ -33,7 +18,7 @@ fn hash2(p : vec2<f32>) -> f32 {
 fn valueNoise(p : vec2<f32>) -> f32 {
   let i = floor(p);
   let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);          // smoothstep
+  let u = f * f * (3.0 - 2.0 * f);
   let a = hash2(i + vec2<f32>(0.0, 0.0));
   let b = hash2(i + vec2<f32>(1.0, 0.0));
   let c = hash2(i + vec2<f32>(0.0, 1.0));
@@ -53,7 +38,7 @@ fn fractalNoise(p0 : vec2<f32>) -> f32 {
     p = p * 2.03;
     amp = amp * 0.5;
   }
-  return sum / norm; // 0..1
+  return sum / norm;
 }
 
 // Ridged noise: fold value-noise through 1-|2x-1| so valleys pinch into sharp ridges
@@ -65,13 +50,13 @@ fn ridgedNoise(p0 : vec2<f32>) -> f32 {
   var norm = 0.0;
   for (var o = 0u; o < 5u; o = o + 1u) {
     let n = valueNoise(p);
-    let ridge = 1.0 - abs(n * 2.0 - 1.0);   // fold into a ridge
-    sum = sum + ridge * ridge * amp;         // square it: sharpens peaks further
+    let ridge = 1.0 - abs(n * 2.0 - 1.0);
+    sum = sum + ridge * ridge * amp;
     norm = norm + amp;
     p = p * 2.13;
     amp = amp * 0.5;
   }
-  return sum / norm; // 0..1
+  return sum / norm;
 }
 
 // Low-frequency mask deciding plains (0) vs mountains (1) across the world. Sampled
@@ -86,38 +71,31 @@ fn biomeMask(uv : vec2<f32>, seed : f32) -> f32 {
 // noise fades in and lifts the base height so peaks read as mountains.
 fn heightAt(tp : TerrainParams, worldXZ : vec2<f32>) -> f32 {
   let span = tp.worldMax - tp.worldMin;
-  let uv = (worldXZ - tp.worldMin) / span;   // 0..1 across world
+  let uv = (worldXZ - tp.worldMin) / span;
   let basePos = uv * 6.0 + vec2<f32>(tp.seed, tp.seed * 1.7);
 
-  let plains = fractalNoise(basePos);                 // 0..1, gentle rolling base
+  let plains = fractalNoise(basePos);
   let ridged = ridgedNoise(basePos * 1.6 + vec2<f32>(11.0, -7.0));
 
-  let mask = biomeMask(uv, tp.seed);                  // 0..1, plains->mountains
+  let mask = biomeMask(uv, tp.seed);
   let mtnBlend = smoothstep(tp.mountainThreshold, tp.mountainThreshold + 0.15, mask);
 
   // mountains both blend in ridged detail AND push the base height up, so the
   // transition reads as rising terrain rather than just a texture change.
   let h01 = mix(plains, max(plains, ridged), mtnBlend);
-  let lift = mtnBlend * 0.6; // extra height fraction added in mountain regions
+  let lift = mtnBlend * 0.6;
 
   return h01 * tp.amplitude * (1.0 + lift);
 }
 `;
 
-// ---------------------------------------------------------------------------
-// Shadows: a sun-view depth pass (the "bake") writes terrain depth from the light's
-// orthographic frustum; the terrain main pass samples it with hardware-PCF comparison.
-// ShadowParams carries the light viewProj + a few tunables; SHADOW_FN is the sampling
-// helper mixed into the terrain fragment shader. Texel-snapping of the frustum happens
-// host-side (renderer.js) so shadow edges don't crawl as the camera walks.
-// ---------------------------------------------------------------------------
 export const SHADOW_PARAMS_STRUCT = /* wgsl */`
 struct ShadowParams {
   lightViewProj : mat4x4<f32>,
-  texel    : f32,   // 1.0 / shadowResolution (for PCF tap spacing in [0,1] UV)
-  bias     : f32,   // constant depth bias to fight acne
-  pcfRadius: f32,   // tap radius in texels (2.0 => 5x5 kernel)
-  strength : f32,   // 0..1 how dark a fully-shadowed fragment gets
+  texel    : f32,
+  bias     : f32,
+  pcfRadius: f32,   // tap radius in texels (1.0 => 3x3 kernel, 2.0 => 5x5)
+  strength : f32,
 };
 `;
 
@@ -150,23 +128,21 @@ fn sampleShadow(worldPos : vec3<f32>, ndl : f32) -> f32 {
   // mip 0, no implicit derivatives) so there's no uniform-control-flow requirement at
   // all — the correct, portable choice for shadow PCF.
   let r = i32(SHADOW.pcfRadius);
+  let side = f32(2 * r + 1);
+  let invTaps = 1.0 / (side * side);   // fixed per frame; avoids a per-fragment running counter
   var sum = 0.0;
-  var taps = 0.0;
   for (var dy = -r; dy <= r; dy = dy + 1) {
     for (var dx = -r; dx <= r; dx = dx + 1) {
       let off = vec2<f32>(f32(dx), f32(dy)) * SHADOW.texel;
       sum = sum + textureSampleCompareLevel(shadowTex, shadowSamp, uv + off, cmp);
-      taps = taps + 1.0;
     }
   }
-  let vis = sum / taps;          // 1 = lit, 0 = in shadow
+  let vis = sum * invTaps;
   // outside the frustum there's no shadow data -> treat as fully lit
   return mix(1.0, vis, inside);
 }
 `;
 
-// Shadow bake: depth-only pass. Same vertex math as TERRAIN_RENDER.vs but from the
-// light's viewProj. No fragment entry (depth is written automatically); no color target.
 export const SHADOW_BAKE = HEIGHT_FN + SHADOW_PARAMS_STRUCT + /* wgsl */`
 @group(0) @binding(0) var<uniform> SHADOW : ShadowParams;
 @group(0) @binding(1) var<uniform> TP : TerrainParams;
@@ -186,7 +162,6 @@ fn vs(@builtin(vertex_index) vid : u32) -> @builtin(position) vec4<f32> {
 }
 `;
 
-// Compute pass: fill a gridN*gridN f32 height buffer at vertex grid points (baked once).
 export const TERRAIN_BAKE = HEIGHT_FN + /* wgsl */`
 @group(0) @binding(0) var<uniform> TP : TerrainParams;
 @group(0) @binding(1) var<storage, read_write> heights : array<f32>;
@@ -201,8 +176,6 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 }
 `;
 
-// Terrain render: each vertex pulls its height from the buffer by vertex_index (indices
-// generated host-side); normal from neighbors; fragment shaded by SkyParams + FogParams.
 export const TERRAIN_RENDER = HEIGHT_FN + SKY_PARAMS_STRUCT + FOG_FN + SHADOW_PARAMS_STRUCT + SHADOW_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 @group(0) @binding(0) var<uniform> CAM : Camera;
@@ -237,7 +210,6 @@ fn vs(@builtin(vertex_index) vid : u32) -> VsOut {
   let worldXZ = TP.worldMin + u * span;
   let y = heights[u32(iz) * n + u32(ix)];
 
-  // central-difference normal from neighboring heights
   let cell = span / f32(n - 1u);
   let dx = hAt(ix + 1, iz) - hAt(ix - 1, iz);
   let dz = hAt(ix, iz + 1) - hAt(ix, iz - 1);
@@ -254,7 +226,6 @@ fn vs(@builtin(vertex_index) vid : u32) -> VsOut {
 fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let lightDir = normalize(SKY.sunDir);
   let ndl = max(dot(in.normal, lightDir), 0.0);
-  // height-banded ground color: low = wet earth, high = pale rock
   let t = clamp(in.worldPos.y / TP.amplitude, 0.0, 1.0);
   let low  = vec3<f32>(0.18, 0.22, 0.16);
   let mid  = vec3<f32>(0.30, 0.34, 0.22);
@@ -274,18 +245,10 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 }
 `;
 
-// ---------------------------------------------------------------------------
-// Creatures: instanced REAL mesh. Vertex buffer 0 = canonical quadruped (pos+normal,
-// per-vertex). Buffer 1 = instance position (xyz + w unused), per-instance. Buffer 2 =
-// instance (species, heading), per-instance. The canonical mesh is deformed per-species
-// in the VS (deer: tall/slender/upright; wolf: low/long/level), rotated to face heading,
-// scaled by SIZE.x, and placed at the instance position. Smooth normals -> smooth shading.
-// ---------------------------------------------------------------------------
-
 export const CREATURE_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 @group(0) @binding(0) var<uniform> CAM : Camera;
-@group(0) @binding(1) var<uniform> SIZE : vec4<f32>; // x = overall creature scale
+@group(0) @binding(1) var<uniform> SIZE : vec4<f32>;
 @group(0) @binding(2) var<uniform> SKY : SkyParams;
 @group(0) @binding(3) var<uniform> FOG : FogParams;
 
@@ -311,8 +274,8 @@ fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
   // neck/head live at high local X (>~0.42). Deer carry the head high & upright; wolves
   // hold it low and forward. Shift the upper body's Y by how far forward it is.
   let headRegion = smoothstep(0.40, 0.62, localPos.x);
-  let deerLift =  0.18;   // deer: raise head
-  let wolfDrop = -0.16;   // wolf: drop head toward the ground line
+  let deerLift =  0.18;
+  let wolfDrop = -0.16;
   p.y = p.y + headRegion * mix(deerLift, wolfDrop, species);
   // wolves push the muzzle further forward (predatory), deer less so
   p.x = p.x + headRegion * mix(0.02, 0.10, species);
@@ -334,10 +297,9 @@ fn vs(@location(0) vPos : vec3<f32>,
       @location(1) vNrm : vec3<f32>,
       @location(2) instPos : vec4<f32>,
       @location(3) instSH  : vec2<f32>) -> VsOut {
-  let species = instSH.x;          // 0 deer, 1 wolf
-  let heading = instSH.y;          // radians, facing in XZ
+  let species = instSH.x;
+  let heading = instSH.y;
 
-  // deform in canonical space
   let dl = deform(vPos, species);
   let dn = deformNormal(vNrm, species);
 
@@ -362,8 +324,8 @@ fn vs(@location(0) vPos : vec3<f32>,
   out.nrm = rn;
   // tint: species base color + slight per-individual variation from the instance position
   let h = fract(sin(dot(instPos.xz, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-  let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h); // warm brown
-  let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h); // grey
+  let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h);
+  let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h);
   out.tint = mix(deerCol, wolfCol, species);
   return out;
 }
@@ -383,13 +345,6 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   return vec4<f32>(foggy, 1.0);
 }
 `;
-
-// ---------------------------------------------------------------------------
-// Water: one large quad at fixed Y (waterLevel), alpha-blended after opaque
-// geometry. Animated normal from two scrolling noise layers, Fresnel mix between
-// deep-water tint and sky reflection, plus a specular sun glint. One static quad,
-// one draw.
-// ---------------------------------------------------------------------------
 
 export const WATER_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
@@ -454,9 +409,10 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let skyReflect = mix(SKY.skyBottom, SKY.skyTop, 0.5);
   var col = mix(deepColor, skyReflect, clamp(fresnel, 0.0, 0.85));
 
-  // specular sun glint
+  // specular sun glint (exponent 64: near-indistinguishable from 120 on water,
+  // cheaper pow evaluation per fragment)
   let halfV = normalize(normalize(SKY.sunDir) + viewDir);
-  let spec = pow(max(dot(nrm, halfV), 0.0), 120.0) * SKY.sunVisible;
+  let spec = pow(max(dot(nrm, halfV), 0.0), 64.0) * SKY.sunVisible;
   col = col + SKY.sunColor * spec * 1.5;
 
   col = applyFog(col, in.worldPos, CAM.eye, FOG);
@@ -464,11 +420,9 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 }
 `;
 
-// ---------------------------------------------------------------------------
 // Move: placeholder movement. Random-walk in XZ, then snap Y via the shared
 // heightAt() (same noise as the renderer). Proves on-GPU position updates with
 // no CPU.
-// ---------------------------------------------------------------------------
 
 export const MOVE = HEIGHT_FN + /* wgsl */`
 struct MoveParams { time : f32, dt : f32, speed : f32, N : u32 };
