@@ -11,9 +11,7 @@ export function createRenderer(device, context, format, {
   creatureRadius = 1.5,
   mountainThreshold = 0.55,      // biome-mask cutoff (0..1) above which mountains blend in
   waterLevel = null,             // world Y of the water plane; null = derive from seed
-  shadowResolution = 1024,       // sun-view depth map size per side (quality-scaled by host).
-                                 // Dropped 2048->1024: 4x fewer depth texels to bake and a
-                                 // 4x-smaller texture for the terrain PCF taps to sample.
+  shadowResolution = 2048,       // sun-view depth map size per side (quality-scaled by host)
 
 }) {
   const wXZmin = [worldMin[0], worldMin[2]];

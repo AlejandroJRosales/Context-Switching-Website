@@ -94,7 +94,7 @@ struct ShadowParams {
   lightViewProj : mat4x4<f32>,
   texel    : f32,
   bias     : f32,
-  pcfRadius: f32,   // tap radius in texels (1.0 => 3x3 kernel, 2.0 => 5x5)
+  pcfRadius: f32,   // tap radius in texels (2.0 => 5x5 kernel)
   strength : f32,
 };
 `;
@@ -128,16 +128,16 @@ fn sampleShadow(worldPos : vec3<f32>, ndl : f32) -> f32 {
   // mip 0, no implicit derivatives) so there's no uniform-control-flow requirement at
   // all — the correct, portable choice for shadow PCF.
   let r = i32(SHADOW.pcfRadius);
-  let side = f32(2 * r + 1);
-  let invTaps = 1.0 / (side * side);   // fixed per frame; avoids a per-fragment running counter
   var sum = 0.0;
+  var taps = 0.0;
   for (var dy = -r; dy <= r; dy = dy + 1) {
     for (var dx = -r; dx <= r; dx = dx + 1) {
       let off = vec2<f32>(f32(dx), f32(dy)) * SHADOW.texel;
       sum = sum + textureSampleCompareLevel(shadowTex, shadowSamp, uv + off, cmp);
+      taps = taps + 1.0;
     }
   }
-  let vis = sum * invTaps;
+  let vis = sum / taps;          // 1 = lit, 0 = in shadow
   // outside the frustum there's no shadow data -> treat as fully lit
   return mix(1.0, vis, inside);
 }

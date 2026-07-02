@@ -140,11 +140,7 @@ function buildWorld(scale){
 
   // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
   // visible region would just blur, so trade resolution for coverage at high scale.
-  // Sized so texelWorld = 2*coverage/shadowRes stays small enough to avoid acne on
-  // sloped terrain. Scale 1 uses 2048 (coverage is small there); mid scales need 2048
-  // too because coverage grows ~linearly with scale. Dropping these to 512/1024 made
-  // each texel span ~26 world units at scale 2 and produced a rippling self-shadow moire.
-  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 2048 : 1024;
+  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 1024 : 512;
   curShadowRes = shadowRes;
 
   renderer = createRenderer(device, ctx, format, {
@@ -157,11 +153,11 @@ function buildWorld(scale){
   rain = createRain(device, format, {
     camBuf: renderer.camBuf, skyBuf: renderer.skyBuf,
     count: 8192,
-    radius: Math.max(100, Math.min(worldMax[0], worldMax[2]) * 0.06),
+    radius: Math.max(300, Math.min(worldMax[0], worldMax[2]) * 0.06),
     top: amplitude * 2.2,
     fall: amplitude * 1.2,
     floorY: renderer.waterLevel - 20,
-    fallSpeed: Math.max(100, amplitude * 2.5),
+    fallSpeed: Math.max(400, amplitude * 2.5),
     wind: [amplitude * 0.08, 0, amplitude * 0.04],
     width: 0.003, len: amplitude * 0.03 + 6,
     seed,
@@ -321,15 +317,14 @@ function handleHud(time, dt, lastHud) {
   // Fit + upload the sun-view light frustum, then bake the shadow depth map. The
   // coverage radius is tied to fog distance (no point shadowing past the fog wall),
   // clamped so it never tries to cover the whole giant world at high scale.
-  // PCF radius 1.0 (3x3 kernel). The SHADOW_FN loop is bounded by this uniform,
-  // so radius 1 vs 2 genuinely trades tap count (9 vs 25), not just spacing.
+  // 5x5 PCF (radius 2) at scale 1.0.
   {
     const cam = player.getCamera(canvas.width/canvas.height);
     const fwd = [cam.target[0]-cam.eye[0], cam.target[1]-cam.eye[1], cam.target[2]-cam.eye[2]];
     const coverage = Math.min(fogDist * 0.6, Math.max(worldMax[0], worldMax[2]) * 0.5);
     const depthRange = coverage + amplitude * 2;
     const lightVP = fitLightMatrix(skyState.sunDir, cam.eye, fwd, coverage, depthRange);
-    renderer.setShadow(lightVP, { pcfRadius: 1.0, bias: 0.0015, strength: 0.85 });
+    renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.0015, strength: 0.85 });
   }
   renderer.bakeShadow(enc);
 
