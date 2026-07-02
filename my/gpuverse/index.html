@@ -103,7 +103,7 @@ const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
 let speciesHeading;
 let rain;
-let curShadowRes = 1024;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
+let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
   N = Math.max(1, Math.round(BASE_N * scale));
@@ -140,8 +140,11 @@ function buildWorld(scale){
 
   // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
   // visible region would just blur, so trade resolution for coverage at high scale.
-  // Scale-1 dropped 2048->1024 for fill-rate (cheaper bake + cheaper PCF taps).
-  const shadowRes = scale <= 1 ? 1024 : scale <= 3 ? 512 : 512;
+  // Sized so texelWorld = 2*coverage/shadowRes stays small enough to avoid acne on
+  // sloped terrain. Scale 1 uses 2048 (coverage is small there); mid scales need 2048
+  // too because coverage grows ~linearly with scale. Dropping these to 512/1024 made
+  // each texel span ~26 world units at scale 2 and produced a rippling self-shadow moire.
+  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 2048 : 1024;
   curShadowRes = shadowRes;
 
   renderer = createRenderer(device, ctx, format, {
@@ -154,13 +157,13 @@ function buildWorld(scale){
   rain = createRain(device, format, {
     camBuf: renderer.camBuf, skyBuf: renderer.skyBuf,
     count: 8192,
-    radius: Math.max(300, Math.min(worldMax[0], worldMax[2]) * 0.06),
+    radius: Math.max(100, Math.min(worldMax[0], worldMax[2]) * 0.06),
     top: amplitude * 2.2,
     fall: amplitude * 1.2,
     floorY: renderer.waterLevel - 20,
-    fallSpeed: Math.max(400, amplitude * 2.5),
+    fallSpeed: Math.max(100, amplitude * 2.5),
     wind: [amplitude * 0.08, 0, amplitude * 0.04],
-    width: 0.6, len: amplitude * 0.03 + 6,
+    width: 0.3, len: amplitude * 0.03 + 6,
     seed,
   });
 

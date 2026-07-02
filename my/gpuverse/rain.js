@@ -17,7 +17,7 @@ export function createRain(device, format, {
   top = 400,                 // world Y where drops spawn
   fall = 300,                // vertical spawn-band height
   floorY = -20,              // recycle when a drop falls below this
-  fallSpeed = 1300,          // downward world units / second
+  fallSpeed = 1000,          // downward world units / second
   wind = [40, 0, 18],        // constant drift (world units / second)
   width = 0.5,               // streak half-width
   len = 14.0,                // base streak length
