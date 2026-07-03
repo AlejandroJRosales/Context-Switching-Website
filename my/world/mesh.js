@@ -138,3 +138,155 @@ export function buildCreatureMesh() {
 
   return { vertexData, indexData, vertexCount: vCount, indexCount: tris.length };
 }
+
+// A UV sphere centered at ctr with per-axis scale (sx,sy,sz). Appends into pos[]/tris[]
+// from vbase; returns new vertex count. (Used by the cat mesh for head/eyes/nose.)
+function addSphere(pos, tris, vbase, ctr, rad, scl = [1, 1, 1], stacks = 8, slices = 10) {
+  const start = vbase;
+  for (let i = 0; i <= stacks; i++) {
+    const v = i / stacks, phi = v * Math.PI;
+    const sy = Math.cos(phi), sr = Math.sin(phi);
+    for (let j = 0; j <= slices; j++) {
+      const u = j / slices, th = u * Math.PI * 2;
+      pos.push(
+        ctr[0] + Math.cos(th) * sr * rad * scl[0],
+        ctr[1] + sy * rad * scl[1],
+        ctr[2] + Math.sin(th) * sr * rad * scl[2],
+      );
+      vbase++;
+    }
+  }
+  const rowV = slices + 1;
+  for (let i = 0; i < stacks; i++) {
+    for (let j = 0; j < slices; j++) {
+      const a = start + i*rowV + j,     b = a + 1;
+      const c = start + (i+1)*rowV + j, d = c + 1;
+      tris.push(a, c, b,  b, c, d);
+    }
+  }
+  return vbase;
+}
+
+// A cone (for ears): apex up, base ring at ctr. Appends; returns new vertex count.
+function addCone(pos, tris, vbase, ctr, rad, height, segs = 6) {
+  const apexIdx = vbase;
+  pos.push(ctr[0], ctr[1] + height, ctr[2]); vbase++;
+  const ringStart = vbase;
+  for (let s = 0; s < segs; s++) {
+    const ang = (s / segs) * Math.PI * 2;
+    pos.push(ctr[0] + Math.cos(ang) * rad, ctr[1], ctr[2] + Math.sin(ang) * rad);
+    vbase++;
+  }
+  for (let s = 0; s < segs; s++) {
+    const s1 = (s + 1) % segs;
+    tris.push(apexIdx, ringStart + s, ringStart + s1);
+  }
+  return vbase;
+}
+
+// Bakes the single first-person COMPANION cat ("Nibbler") in local space:
+//   +X = forward (nose), +Y = up, +Z = right. Feet at local y=0 so placement at the
+// terrain height puts paws on the ground with no fudge factor. Ported proportions from
+// the Three.js createCatMesh: long low body, cone ears, glowing eye tint (baked as vertex
+// tint, not a light), legs, tail. Returns interleaved pos+nrm (float32x6) + u32 index + a
+// per-vertex tint stream (float32x3) so eyes/nose glow without a separate light. The cat
+// pipeline has its own layout, so the tint stream doesn't need to match the creature streams.
+export function buildCatMesh() {
+  const pos = [];   // flat xyz
+  const tris = [];  // flat index triples
+  // vertex ranges tagged with a tint so eyes/nose read as emissive-ish without a real light.
+  const tintRanges = []; // {start,end,color}
+  let vb = 0;
+  const SEG = 10;
+
+  const black = [0.07, 0.07, 0.08];
+  const eyeGlow = [0.55, 0.95, 0.05]; // yellow-green, matches the Three.js eye emissive
+  const pink = [0.95, 0.55, 0.55];
+
+  const tag = (start, end, color) => tintRanges.push({ start, end, color });
+
+  // Body: long low tube along X (tail x=-9 .. chest x=+9), fattest mid-body. Local units
+  // roughly follow the Three.js proportions (which used ~5-unit sphere radii at 0.85 scale);
+  // here we keep them in the same ballpark so the world scale param lands similarly.
+  let s0 = vb;
+  vb = addTube(pos, tris, vb, {
+    rings: 11, segs: SEG,
+    centerFn: (t) => [-9 + t * 18, 5 + Math.sin(t * Math.PI) * 0.6, 0],
+    radiusFn: (t) => 3.0 + Math.sin(t * Math.PI) * 1.4,
+  });
+  tag(s0, vb, black);
+
+  // Head: sphere forward and up from the chest.
+  s0 = vb; vb = addSphere(pos, tris, vb, [10.5, 8.0, 0], 4.3, [1, 1, 1], 8, 10); tag(s0, vb, black);
+
+  // Ears: two cones atop the head.
+  s0 = vb; vb = addCone(pos, tris, vb, [ 8.6, 11.0,  2.4], 1.5, 3.5, 5); tag(s0, vb, black);
+  s0 = vb; vb = addCone(pos, tris, vb, [ 8.6, 11.0, -2.4], 1.5, 3.5, 5); tag(s0, vb, black);
+
+  // Eyes: small glowing spheres on the face (tinted, no light).
+  s0 = vb; vb = addSphere(pos, tris, vb, [13.5, 8.6,  1.7], 1.1, [1,1,1], 6, 8); tag(s0, vb, eyeGlow);
+  s0 = vb; vb = addSphere(pos, tris, vb, [13.5, 8.6, -1.7], 1.1, [1,1,1], 6, 8); tag(s0, vb, eyeGlow);
+
+  // Nose: tiny pink sphere at the tip.
+  s0 = vb; vb = addSphere(pos, tris, vb, [14.2, 7.6, 0], 0.6, [1,1,1], 5, 6); tag(s0, vb, pink);
+
+  // Legs: 4 tapered tubes hanging down (-Y) at front/back X and left/right Z.
+  const legDefs = [[6.0, 3.2], [6.0, -3.2], [-5.0, 3.2], [-5.0, -3.2]];
+  for (const [lx, lz] of legDefs) {
+    s0 = vb;
+    vb = addTube(pos, tris, vb, {
+      rings: 4, segs: 6,
+      centerFn: (t) => [lx, 4.5 - t * 4.5, lz],
+      radiusFn: (t) => 1.2 * (1 - t * 0.2),
+    });
+    tag(s0, vb, black);
+  }
+
+  // Tail: tapered tube trailing back (-X) and rising, curving at the tip (t*t), matching the
+  // Three.js "stiff upright, curving backward" pose baked into the rest position.
+  s0 = vb;
+  vb = addTube(pos, tris, vb, {
+    rings: 8, segs: 6,
+    centerFn: (t) => [-9 - t * 3.0, 5 + t * 9.0, -1 - t * t * 4.0],
+    radiusFn: (t) => 1.0 * (1 - t * 0.5),
+  });
+  tag(s0, vb, black);
+
+  // smooth normals
+  const vCount = pos.length / 3;
+  const nrm = new Float32Array(pos.length);
+  for (let i = 0; i < tris.length; i += 3) {
+    const ia = tris[i]*3, ib = tris[i+1]*3, ic = tris[i+2]*3;
+    const e1 = [pos[ib]-pos[ia], pos[ib+1]-pos[ia+1], pos[ib+2]-pos[ia+2]];
+    const e2 = [pos[ic]-pos[ia], pos[ic+1]-pos[ia+1], pos[ic+2]-pos[ia+2]];
+    const fn = cross(e1, e2);
+    for (const idx of [ia, ib, ic]) { nrm[idx]+=fn[0]; nrm[idx+1]+=fn[1]; nrm[idx+2]+=fn[2]; }
+  }
+  for (let i = 0; i < nrm.length; i += 3) {
+    const l = Math.hypot(nrm[i], nrm[i+1], nrm[i+2]) || 1;
+    nrm[i]/=l; nrm[i+1]/=l; nrm[i+2]/=l;
+  }
+
+  // interleave pos+nrm (float32x6)
+  const vertexData = new Float32Array(vCount * 6);
+  for (let i = 0; i < vCount; i++) {
+    vertexData[i*6]   = pos[i*3];
+    vertexData[i*6+1] = pos[i*3+1];
+    vertexData[i*6+2] = pos[i*3+2];
+    vertexData[i*6+3] = nrm[i*3];
+    vertexData[i*6+4] = nrm[i*3+1];
+    vertexData[i*6+5] = nrm[i*3+2];
+  }
+  // per-vertex tint (float32x3), default black then painted per tagged range
+  const tintData = new Float32Array(vCount * 3);
+  for (let i = 0; i < vCount; i++) { tintData[i*3]=black[0]; tintData[i*3+1]=black[1]; tintData[i*3+2]=black[2]; }
+  for (const { start, end, color } of tintRanges) {
+    for (let i = start; i < end; i++) { tintData[i*3]=color[0]; tintData[i*3+1]=color[1]; tintData[i*3+2]=color[2]; }
+  }
+
+  return {
+    vertexData, tintData,
+    indexData: new Uint32Array(tris),
+    vertexCount: vCount, indexCount: tris.length,
+  };
+}

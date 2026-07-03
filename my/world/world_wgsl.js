@@ -440,6 +440,154 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 }
 `;
 
+// Plants: instanced crossed billboards with vertex-shader wind sway. One instance per plant;
+// 12 vertices (two quads). Camera + Sky + Fog + PlantDraw. (Host factory: createPlants in
+// renderer.js.)
+export const PLANT_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
+struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
+struct PlantDraw {
+  colA   : vec3<f32>, time  : f32,   // base foliage color (young), sim time (sway phase)
+  colB   : vec3<f32>, height: f32,   // tip foliage color (mature/dry), base world height
+  width  : f32, sway : f32, _p0 : f32, _p1 : f32,   // half-width, sway amplitude (world units)
+};
+
+@group(0) @binding(0) var<uniform> CAM : Camera;
+@group(0) @binding(1) var<uniform> PD  : PlantDraw;
+@group(0) @binding(2) var<uniform> SKY : SkyParams;
+@group(0) @binding(3) var<uniform> FOG : FogParams;
+
+struct VsOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) worldPos : vec3<f32>,
+  @location(1) tv       : f32,    // 0 at root, 1 at tip (vertical param, for tint + sway)
+  @location(2) uvx      : f32,    // -1..1 across the quad width (for the leaf-edge cutout)
+  @location(3) tint     : vec3<f32>,
+};
+
+fn hash11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
+
+@vertex
+fn vs(@builtin(vertex_index) vid : u32,
+      @location(0) inst : vec4<f32>) -> VsOut {
+  // x = width axis in [-1,1], y = height in [0,1]. 6 verts each; vid<6 -> quad A, else B.
+  var corners = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 0.0), vec2<f32>( 1.0, 1.0),
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 1.0), vec2<f32>(-1.0, 1.0),
+  );
+  let quad = vid / 6u;
+  let c = corners[vid % 6u];
+
+  let seed = inst.w;
+  // per-plant size so a field doesn't look stamped.
+  let hgt = PD.height * (0.65 + 0.70 * seed);
+  let halfW = PD.width * (0.75 + 0.50 * hash11(seed * 7.13 + 1.0));
+
+  // Billboard the width axis about Y only: a horizontal "right" across the view direction
+  // (in XZ) so the card turns to face the camera in yaw but stays vertical. Quad B uses the
+  // perpendicular horizontal axis so the two cross.
+  let toEye = CAM.eye - inst.xyz;
+  var rightA = normalize(vec3<f32>(-toEye.z, 0.0, toEye.x) + vec3<f32>(1e-4, 0.0, 0.0));
+  var rightB = vec3<f32>(-rightA.z, 0.0, rightA.x);
+  let right = select(rightA, rightB, quad == 1u);
+
+  // Wind sway: displace the top along a per-plant-phased sine, tapered by height^2 so the
+  // root stays fixed. Direction is a gentle world-space drift (matches the rain wind).
+  let phase = seed * 6.2831853;
+  let s = sin(PD.time * 1.6 + phase) + 0.35 * sin(PD.time * 3.1 + phase * 1.7);
+  let swayOff = vec3<f32>(0.8, 0.0, 0.5) * (PD.sway * s * c.y * c.y);
+
+  let worldPos = inst.xyz
+    + right * (c.x * halfW)
+    + vec3<f32>(0.0, 1.0, 0.0) * (c.y * hgt)
+    + swayOff;
+
+  let dry = hash11(seed * 3.77 + 0.5);
+  var out : VsOut;
+  out.worldPos = worldPos;
+  out.clip = CAM.viewProj * vec4<f32>(worldPos, 1.0);
+  out.tv = c.y;
+  out.uvx = c.x;
+  out.tint = mix(PD.colA, PD.colB, dry * 0.85);
+  return out;
+}
+
+@fragment
+fn fs(in : VsOut) -> @location(0) vec4<f32> {
+  // Leaf cutout: taper the silhouette toward the tip so the quad reads as a blade, not a
+  // rectangle. Discard fragments outside the allowed (shrinking) width.
+  let allowed = 1.0 - in.tv * 0.85;
+  if (abs(in.uvx) > allowed) { discard; }
+
+  let shade = 0.45 + 0.55 * in.tv;   // darker at the self-shadowed root, brighter at the tip
+
+  // Sky-driven light: ambient + soft sun wrap + faint moon fill, then fogged like everything.
+  let sunWrap = clamp(SKY.sunDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let sun = SKY.sunColor * (0.35 + 0.65 * sunWrap);
+  let moon = SKY.moonColor * SKY.moonVisible * 0.10;
+  let lit = in.tint * shade * (SKY.ambient + sun + moon);
+
+  let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
+  return vec4<f32>(foggy, 1.0);
+}
+`;
+
+// Cat companion: creature-style lighting (Sky ambient + sun wrap + moon fill + fog), no
+// shadow sampling. A single model matrix + eyeBoost uniform; per-vertex tint (glowing eyes).
+// Consumes the same interleaved pos+nrm layout as the creature pipeline plus a third tint
+// stream. (Mesh bake: buildCatMesh in mesh.js. Host factory: createCat in renderer.js.)
+export const CAT_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
+struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
+struct CatDraw {
+  model    : mat4x4<f32>,   // local -> world (includes yaw rotation, scale, translate)
+  normalM  : mat4x4<f32>,   // upper-3x3 for normals (rotation only; uniform scale so reuse)
+  eyeBoost : f32,           // extra self-emission multiplier for the glowing tint parts
+  _p0 : f32, _p1 : f32, _p2 : f32,
+};
+@group(0) @binding(0) var<uniform> CAM : Camera;
+@group(0) @binding(1) var<uniform> CD  : CatDraw;
+@group(0) @binding(2) var<uniform> SKY : SkyParams;
+@group(0) @binding(3) var<uniform> FOG : FogParams;
+
+struct VsOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) nrm : vec3<f32>,
+  @location(1) tint : vec3<f32>,
+  @location(2) worldPos : vec3<f32>,
+  @location(3) glow : f32,   // how "eye-like" this vertex is (green tint => self-emits)
+};
+
+@vertex
+fn vs(@location(0) vPos : vec3<f32>,
+      @location(1) vNrm : vec3<f32>,
+      @location(2) vTint : vec3<f32>) -> VsOut {
+  let wp = CD.model * vec4<f32>(vPos, 1.0);
+  let wn = (CD.normalM * vec4<f32>(vNrm, 0.0)).xyz;
+  var out : VsOut;
+  out.worldPos = wp.xyz;
+  out.clip = CAM.viewProj * wp;
+  out.nrm = wn;
+  out.tint = vTint;
+  // treat the green channel dominance as the "eye glow" marker (eyes are yellow-green).
+  out.glow = clamp((vTint.g - vTint.r * 0.5 - vTint.b) * 2.0, 0.0, 1.0);
+  return out;
+}
+
+@fragment
+fn fs(in : VsOut) -> @location(0) vec4<f32> {
+  let nrm = normalize(in.nrm);
+  let lightDir = normalize(SKY.sunDir);
+  let ndl = max(dot(nrm, lightDir), 0.0);
+  let wrap = ndl * 0.85 + 0.15;                 // soft wrap so the dark side isn't flat
+  let mdl = max(dot(nrm, normalize(SKY.moonDir)), 0.0);
+  let moon = SKY.moonColor * (mdl * 0.85 + 0.15) * SKY.moonVisible * 0.12;
+  var lit = in.tint * (SKY.ambient + SKY.sunColor * wrap + moon);
+  // eyes self-emit a little so they read at night, scaled by the host eyeBoost.
+  lit = lit + in.tint * in.glow * CD.eyeBoost;
+  let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
+  return vec4<f32>(foggy, 1.0);
+}
+`;
+
 // Move: placeholder movement. Random-walk in XZ, then snap Y via the shared
 // heightAt() (same noise as the renderer). Proves on-GPU position updates with
 // no CPU.

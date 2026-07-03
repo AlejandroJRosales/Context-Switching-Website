@@ -1,7 +1,7 @@
-import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, WATER_RENDER, SHADOW_BAKE } from "./world_wgsl.js";
+import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, WATER_RENDER, SHADOW_BAKE, PLANT_RENDER, CAT_RENDER } from "./world_wgsl.js";
 import { SKY_RENDER } from "./sky.js";
 import { perspective, lookAt, mul, invertMat4 } from "./mat.js";
-import { buildCreatureMesh } from "./mesh.js";
+import { buildCreatureMesh, buildCatMesh } from "./mesh.js";
 
 export function createRenderer(device, context, format, {
   worldMin, worldMax,
@@ -404,5 +404,400 @@ export function createRenderer(device, context, format, {
     waterLevel: resolvedWaterLevel,
     // exposed so weather (rain) and plants can bind the same Camera + Sky + Fog uniforms read-only.
     camBuf, skyBuf, fogBuf,
+  };
+}
+
+// ===========================================================================
+// PLANTS — GPU-resident instanced billboard foliage. Shader (PLANT_RENDER) lives in
+// world_wgsl.js; this is the host factory. Reuses the renderer's Camera/Sky/Fog uniforms
+// read-only (pass them via camBuf/skyBuf/fogBuf, same as rain).
+// ===========================================================================
+export function createPlants(device, format, {
+  camBuf,                 // renderer Camera uniform (144 B) — reused read-only
+  skyBuf,                 // renderer SkyParams uniform (112 B) — reused read-only
+  fogBuf,                 // renderer FogParams uniform (16 B) — reused read-only
+  worldMin, worldMax,     // [x,y,z] world bounds (placement domain)
+  count = 20000,          // fixed plant population
+  clusters = 48,          // number of seed clusters; plants scatter around these
+  clusterRadius = 220,    // world-units spread of a cluster
+  height = 2,             // base billboard height (per-plant varied in the VS)
+  width = 7,              // base billboard half-width
+  sway = 3.2,             // wind sway amplitude at the tip (world units)
+  maxWaterLevel = -1e30,  // (reserved) underwater culling deferred to growth
+  seed = 1,
+}) {
+  // plant buffer. STORAGE (grid reads it) | VERTEX (instanced draw) | COPY_DST (seed).
+  const plantBuf = device.createBuffer({
+    size: Math.max(count, 1) * 16,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  });
+
+  // deterministic RNG independent of the creature/rain seed streams.
+  function makeRng(s0) {
+    let s = (s0 * 2654435761) >>> 0;
+    return () => { s = (Math.imul(s ^ (s >>> 15), 2246822519)) >>> 0; return s / 4294967296; };
+  }
+
+  // Reused scratch for the seed upload (allocated once; re-placement after the async
+  // heightfield arrives reuses it rather than re-allocating).
+  const initScratch = new Float32Array(Math.max(count, 1) * 4);
+
+  // Precompute cluster centers once (deterministic). Plants scatter around a random center
+  // each — the static form of the "clustering" the growth pass will later reinforce.
+  const spanX = worldMax[0] - worldMin[0];
+  const spanZ = worldMax[2] - worldMin[2];
+  const rng = makeRng(seed + 0x51ed);
+  const centers = new Float32Array(clusters * 2);
+  for (let c = 0; c < clusters; c++) {
+    centers[c * 2 + 0] = worldMin[0] + rng() * spanX;
+    centers[c * 2 + 1] = worldMin[2] + rng() * spanZ;
+  }
+
+  // place(sampleHeight): fill the buffer with clustered, ground-baked positions.
+  // sampleHeight(x,z) -> terrain world Y. If omitted, flat scatter at y=worldMin[1].
+  let placed = false;
+  function place(sampleHeight) {
+    const prng = makeRng(seed + 1);
+    for (let i = 0; i < count; i++) {
+      // pick a cluster, then a gaussian-ish offset (two uniforms averaged) around it.
+      const cc = (Math.min(clusters - 1, (prng() * clusters) | 0)) * 2;
+      const ang = prng() * Math.PI * 2;
+      const rr = (prng() * 0.5 + prng() * 0.5) * clusterRadius; // triangular -> denser center
+      let x = centers[cc + 0] + Math.cos(ang) * rr;
+      let z = centers[cc + 1] + Math.sin(ang) * rr;
+      // clamp inside the world so grid cellCoord never sees out-of-range XZ.
+      x = Math.min(worldMax[0], Math.max(worldMin[0], x));
+      z = Math.min(worldMax[2], Math.max(worldMin[2], z));
+
+      const y = sampleHeight ? sampleHeight(x, z) : worldMin[1];
+
+      initScratch[i * 4 + 0] = x;
+      initScratch[i * 4 + 1] = y;
+      initScratch[i * 4 + 2] = z;
+      initScratch[i * 4 + 3] = prng();   // per-plant seed (size/phase/tint)
+    }
+    device.queue.writeBuffer(plantBuf, 0, initScratch);
+    placed = true;
+  }
+  place(null);   // immediate fallback scatter so a draw before place(withHeights) is valid.
+
+  // PlantDraw uniform. Static fields written once; writeDraw refreshes tint + time.
+  const pdBuf = device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const pdScratch = new Float32Array(16);
+  pdScratch[7] = height;   // .height
+  pdScratch[8] = width;    // .width
+  pdScratch[9] = sway;     // .sway
+  function writeDraw(time, sunVisible) {
+    const day = 0.35 + 0.65 * Math.max(0, Math.min(1, sunVisible)); // dimmed a touch at night
+    pdScratch[0] = 0.16 * day; pdScratch[1] = 0.42 * day; pdScratch[2] = 0.14 * day; // colA
+    pdScratch[3] = time;                                                             // .time
+    pdScratch[4] = 0.45 * day; pdScratch[5] = 0.52 * day; pdScratch[6] = 0.20 * day; // colB
+    device.queue.writeBuffer(pdBuf, 0, pdScratch);
+  }
+
+  // render pipeline: instanced crossed billboards, opaque (depth test + write), cutout alpha
+  // via discard. Drawn after creatures, before water.
+  const drawBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Camera
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // PlantDraw
+    { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Sky
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT,                        buffer: { type: "uniform" } }, // Fog
+  ]});
+  const drawBG = device.createBindGroup({ layout: drawBGL, entries: [
+    { binding: 0, resource: { buffer: camBuf } },
+    { binding: 1, resource: { buffer: pdBuf } },
+    { binding: 2, resource: { buffer: skyBuf } },
+    { binding: 3, resource: { buffer: fogBuf } },
+  ]});
+  const drawMod = device.createShaderModule({ code: PLANT_RENDER });
+  const drawPipe = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [drawBGL] }),
+    vertex: { module: drawMod, entryPoint: "vs", buffers: [
+      { arrayStride: 16, stepMode: "instance", attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x4" },   // inst pos.xyz + seed.w
+      ]},
+    ]},
+    fragment: { module: drawMod, entryPoint: "fs", targets: [{ format }] },
+    primitive: { topology: "triangle-list", cullMode: "none" },   // double-sided cards
+    depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+  });
+
+  // HUD-controlled toggle. When off, draw() is a no-op but the buffer still exists so a
+  // plant grid (if built) stays consistent.
+  let enabled = true;
+  function setEnabled(v) { enabled = !!v; return enabled; }
+
+  // record the draw into the caller's already-open render pass. `time` drives the sway phase.
+  function draw(pass, sky, time) {
+    if (!enabled || count === 0) return;
+    writeDraw(time, sky?.sunVisible ?? 1);
+    pass.setPipeline(drawPipe);
+    pass.setBindGroup(0, drawBG);
+    pass.setVertexBuffer(0, plantBuf);
+    pass.draw(12, count);   // 2 crossed quads, one instance per plant
+  }
+
+  return {
+    draw, place, setEnabled,
+    get enabled() { return enabled; },
+    get placed() { return placed; },
+    buffers: { plants: plantBuf, draw: pdBuf },
+    count,
+  };
+}
+
+// ===========================================================================
+// CAT COMPANION — a single first-person follower ("Nibbler"). NOT a GPU-simulated
+// population: exactly one object whose follow state lives on the CPU. Host-side
+// bookkeeping (a follow state machine) + one per-frame uniform write (model matrix + tint)
+// + one non-instanced draw recorded into the renderer's main pass, after creatures.
+//
+// Mesh (buildCatMesh) is baked in mesh.js and consumes the SAME vertex layout as the
+// creature pipeline (pos+nrm) plus a tint stream. Shader (CAT_RENDER) lives in world_wgsl.js.
+//
+// Ground follows the SAME baked heightfield the player samples (bilinear, via setTerrain),
+// NOT a re-evaluated noise: WGSL fp32 and JS fp64 diverge as world coords grow, which buries
+// walkers. Sampling the identical grid identically => the cat stands on exactly the rendered
+// terrain, same as player.js.
+// ===========================================================================
+
+// Bilinear heightfield sample — identical to player.js sampleHeight so the cat and the
+// player agree on the ground exactly. tp: { heights, gridN, worldMin:[x,z], worldMax:[x,z] }.
+function catSampleHeight(tp, wx, wz) {
+  const clampf = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const mixf = (a, b, t) => a + (b - a) * t;
+  if (!tp || !tp.heights) return 0;
+  const g = tp.gridN;
+  const spanX = tp.worldMax[0] - tp.worldMin[0];
+  const spanZ = tp.worldMax[1] - tp.worldMin[1];
+  let fx = (wx - tp.worldMin[0]) / spanX * (g - 1);
+  let fz = (wz - tp.worldMin[1]) / spanZ * (g - 1);
+  fx = clampf(fx, 0, g - 1);
+  fz = clampf(fz, 0, g - 1);
+  const x0 = Math.floor(fx), z0 = Math.floor(fz);
+  const x1 = Math.min(x0 + 1, g - 1), z1 = Math.min(z0 + 1, g - 1);
+  const tx = fx - x0, tz = fz - z0;
+  const h = tp.heights;
+  const h00 = h[z0 * g + x0], h10 = h[z0 * g + x1];
+  const h01 = h[z1 * g + x0], h11 = h[z1 * g + x1];
+  return mixf(mixf(h00, h10, tx), mixf(h01, h11, tx), tz);
+}
+
+// createCat(device, format, opts) -> {
+//   update(dt, playerPos, playerYaw), draw(pass, sky), setTerrain(tp),
+//   setEnabled(b), get enabled, get position, get yaw, placeBehindPlayer, buffers
+// }
+// opts:
+//   camBuf, skyBuf, fogBuf : renderer uniforms, reused read-only (from createRenderer)
+//   terrain                : { heights, gridN, worldMin:[x,z], worldMax:[x,z] } or null
+//   worldWidth, worldHeight: world span for toroidal wrap (defaults from terrain bounds)
+//   scale                  : world size multiplier (default 0.35; local mesh is ~14 wide)
+//   followDist, catchUpDist, backAwayDist : follow tuning (world units)
+export function createCat(device, format, {
+  camBuf, skyBuf, fogBuf,
+  terrain = null,
+  worldWidth = null, worldHeight = null,
+  scale = 0.35,
+  followDist = 26,
+  catchUpDist = 90,
+  backAwayDist = 4,
+  eyeHeight = 0.0,   // extra lift above terrain for the paws (0 = feet exactly on ground)
+} = {}) {
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const mixf = (a, b, t) => a + (b - a) * t;
+
+  const mesh = buildCatMesh();
+
+  const vtxBuf = device.createBuffer({ size: mesh.vertexData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(vtxBuf, 0, mesh.vertexData);
+  const tintBuf = device.createBuffer({ size: mesh.tintData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(tintBuf, 0, mesh.tintData);
+  const idxBuf = device.createBuffer({ size: mesh.indexData.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(idxBuf, 0, mesh.indexData);
+
+  // CatDraw uniform: model(64) + normalM(64) + eyeBoost+pad(16) = 144 bytes.
+  const cdBuf = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const cdScratch = new Float32Array(36);   // reused every frame, no per-frame allocation
+
+  const bgl = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Camera
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // CatDraw
+    { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Sky
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT,                         buffer: { type: "uniform" } }, // Fog
+  ]});
+  const bg = device.createBindGroup({ layout: bgl, entries: [
+    { binding: 0, resource: { buffer: camBuf } },
+    { binding: 1, resource: { buffer: cdBuf } },
+    { binding: 2, resource: { buffer: skyBuf } },
+    { binding: 3, resource: { buffer: fogBuf } },
+  ]});
+  const mod = device.createShaderModule({ code: CAT_RENDER });
+  const pipe = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+    vertex: { module: mod, entryPoint: "vs", buffers: [
+      { arrayStride: 24, stepMode: "vertex", attributes: [
+        { shaderLocation: 0, offset: 0,  format: "float32x3" },   // pos
+        { shaderLocation: 1, offset: 12, format: "float32x3" },   // nrm
+      ]},
+      { arrayStride: 12, stepMode: "vertex", attributes: [
+        { shaderLocation: 2, offset: 0, format: "float32x3" },    // tint
+      ]},
+    ]},
+    fragment: { module: mod, entryPoint: "fs", targets: [{ format }] },
+    primitive: { topology: "triangle-list", cullMode: "none" },   // low-poly, keep both sides
+    depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+  });
+
+  // ---- world bounds for wrap ----
+  let tp = terrain;
+  function boundsFromTerrain() {
+    if (tp && tp.worldMin && tp.worldMax) {
+      return {
+        minX: tp.worldMin[0], minZ: tp.worldMin[1],
+        w: tp.worldMax[0] - tp.worldMin[0], h: tp.worldMax[1] - tp.worldMin[1],
+      };
+    }
+    return { minX: 0, minZ: 0, w: worldWidth || 1, h: worldHeight || 1 };
+  }
+
+  // ---- follow state (ported from the Three.js updateCat) ----
+  const state = {
+    x: 0, y: 0, z: 0,
+    yaw: 0,
+    vy: 0,
+    animTime: 0,
+    speed: 0,
+    placed: false,
+  };
+  function groundY(x, z) { return catSampleHeight(tp, x, z); }
+
+  function placeBehindPlayer(px, pz, pyaw) {
+    state.x = px - Math.sin(pyaw) * followDist;
+    state.z = pz - Math.cos(pyaw) * followDist;
+    state.y = groundY(state.x, state.z) + eyeHeight;
+    state.yaw = pyaw;
+    state.vy = 0;
+    state.placed = true;
+  }
+
+  function setTerrain(newTp) {
+    tp = newTp;
+    if (state.placed) state.y = groundY(state.x, state.z) + eyeHeight;
+  }
+
+  // shortest signed angular difference a->b in (-pi,pi]
+  function angDelta(a, b) {
+    let d = (b - a) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  const GRAVITY = 260;   // matches player.js gravity scale
+
+  // update(dt, playerPos, playerYaw): playerPos = {x,y,z} (or [x,y,z]); playerYaw in radians.
+  function update(dt, playerPos, playerYaw) {
+    if (!enabled) return;
+    const px = Array.isArray(playerPos) ? playerPos[0] : playerPos.x;
+    const pz = Array.isArray(playerPos) ? playerPos[2] : playerPos.z;
+
+    if (!state.placed) placeBehindPlayer(px, pz, playerYaw || 0);
+
+    state.animTime += dt;
+
+    const dx = px - state.x, dz = pz - state.z;
+    const distToPlayer = Math.hypot(dx, dz);
+    let speed = 0;
+
+    if (distToPlayer > catchUpDist) {
+      // too far behind: recycle next to the player (like the rain pool bracketing the camera)
+      placeBehindPlayer(px, pz, playerYaw || state.yaw);
+    } else if (distToPlayer > followDist) {
+      // chase: quantized heading gives a slightly stepped, less twitchy track (as in the port)
+      speed = distToPlayer > followDist * 1.6 ? 80 : 25;
+      const dxr = Math.round(dx / 2) * 2, dzr = Math.round(dz / 2) * 2;
+      const target = Math.atan2(dxr, dzr);
+      state.yaw += angDelta(state.yaw, target) * Math.min(1, dt * 6);
+      state.x += Math.sin(state.yaw) * speed * dt;
+      state.z += Math.cos(state.yaw) * speed * dt;
+    } else if (distToPlayer < backAwayDist) {
+      // too close: back away so it doesn't clip into the camera
+      speed = 20;
+      const target = Math.atan2(-dx, -dz);
+      state.yaw += angDelta(state.yaw, target) * Math.min(1, dt * 5);
+      state.x += Math.sin(state.yaw) * speed * dt;
+      state.z += Math.cos(state.yaw) * speed * dt;
+    } else {
+      // idle: face the player, no wandering
+      const face = Math.atan2(dx, dz);
+      state.yaw += angDelta(state.yaw, face) * Math.min(1, dt * 2);
+    }
+    state.speed = speed;
+
+    // gravity + ground clamp against the baked heightfield
+    state.vy -= GRAVITY * dt;
+    state.y += state.vy * dt;
+    const floor = groundY(state.x, state.z) + eyeHeight;
+    if (state.y <= floor) { state.y = floor; state.vy = 0; }
+
+    // toroidal world wrap (matches gpuverse terrain domain)
+    const B = boundsFromTerrain();
+    state.x = ((state.x - B.minX) % B.w + B.w) % B.w + B.minX;
+    state.z = ((state.z - B.minZ) % B.h + B.h) % B.h + B.minZ;
+  }
+
+  // Compose the model matrix (column-major, matching mat.js) = T * Ry * S, and its normal
+  // matrix (rotation only — uniform scale, so no inverse-transpose needed). Written into the
+  // reused scratch; one writeBuffer per frame.
+  function writeDraw(sky) {
+    const c = Math.cos(state.yaw), s = Math.sin(state.yaw);
+    const sc = scale;
+    // The follow logic sets yaw via atan2(dx,dz) and steps by (sin yaw, cos yaw), so the cat
+    // TRAVELS along world (sin yaw, cos yaw) in XZ. The mesh nose is local +X, so we map
+    // local +X -> world (sin,0,cos) to keep the body aligned with travel. Local +Z (right)
+    // is then the perpendicular (cos,0,-sin). Column-major columns [c0|c1|c2|c3].
+    const model = [
+       s*sc, 0,   c*sc, 0,   // col0: local +X (nose) -> world (sin,0,cos) = travel dir
+       0,    sc,  0,    0,   // col1: local +Y -> world up
+      -c*sc, 0,   s*sc, 0,   // col2: local +Z (right) -> world (-cos,0,sin), right-handed
+       state.x, state.y, state.z, 1,   // col3: translation
+    ];
+    const normalM = [
+       s, 0,  c, 0,
+       0, 1,  0, 0,
+      -c, 0,  s, 0,
+       0, 0,  0, 1,
+    ];
+    cdScratch.set(model, 0);
+    cdScratch.set(normalM, 16);
+    // brighter eye self-emission at night so the glow reads; fades out in daylight.
+    const sunVis = sky?.sunVisible ?? 1;
+    cdScratch[32] = mixf(0.9, 0.2, clamp(sunVis, 0, 1));
+    cdScratch[33] = 0; cdScratch[34] = 0; cdScratch[35] = 0;
+    device.queue.writeBuffer(cdBuf, 0, cdScratch);
+  }
+
+  let enabled = true;
+  function setEnabled(v) { enabled = !!v; return enabled; }
+
+  // record the draw into the caller's already-open main pass (after creatures, before water).
+  function draw(pass, sky) {
+    if (!enabled) return;
+    writeDraw(sky);
+    pass.setPipeline(pipe);
+    pass.setBindGroup(0, bg);
+    pass.setVertexBuffer(0, vtxBuf);
+    pass.setVertexBuffer(1, tintBuf);
+    pass.setIndexBuffer(idxBuf, "uint32");
+    pass.drawIndexed(mesh.indexCount);
+  }
+
+  return {
+    update, draw, setTerrain, setEnabled, placeBehindPlayer,
+    get enabled() { return enabled; },
+    get position() { return { x: state.x, y: state.y, z: state.z }; },
+    get yaw() { return state.yaw; },
+    buffers: { vtx: vtxBuf, tint: tintBuf, idx: idxBuf, draw: cdBuf },
+    indexCount: mesh.indexCount,
   };
 }
