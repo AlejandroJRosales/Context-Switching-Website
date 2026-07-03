@@ -464,10 +464,19 @@ function handleHud(time, dt, lastHud) {
   // Touch the DOM only every HUD_EVERY frames and only when text changed (avoids
   // per-frame layout/paint).
   if(frameCount%HUD_EVERY===0){
-    const tod = (skyState.timeOfDay*24).toFixed(1);
+    const todHoursTotal = skyState.timeOfDay * 24;
+    const todH = Math.floor(todHoursTotal) % 24;
+    const todM = Math.floor((todHoursTotal - Math.floor(todHoursTotal)) * 60);
+    const tod = `${String(todH).padStart(2,"0")}:${String(todM).padStart(2,"0")}`;
+    // Day/year counters derived from total elapsed sim seconds (same clock the sky
+    // module runs on), so they stay in sync with the HH:MM readout. Day 1 / Year 1 at start.
+    const totalDays = Math.floor((time + SKY_TIME_OFFSET) / DAY_LENGTH);
+    const DAYS_PER_YEAR = 365;
+    const year = Math.floor(totalDays / DAYS_PER_YEAR) + 1;
+    const dayOfYear = (totalDays % DAYS_PER_YEAR) + 1;
     const rainStr = rain.state.mode.toUpperCase() + (rain.state.on ? ` ${(rain.state.intensity*100)|0}%` : "");
     const plantStr = plants.enabled ? `${plants.count.toLocaleString()}  [P]` : `off  [P]`;
-    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nplants ${plantStr}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h\nflying: ${player.flying?"TRUE":"FALSE"}\nrain ${rainStr}\n`;
+    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nplants ${plantStr}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}  day ${dayOfYear}  year ${year}\nflying: ${player.flying?"TRUE":"FALSE"}\nrain ${rainStr}\n`;
     if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
   }
   return lastHud;
