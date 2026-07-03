@@ -1,24 +1,4 @@
-// plant.js: GPU-resident plants (Tier 3.2, fixed-population step) — host + shaders.
-//
-// Plants are a SECOND entity system alongside creatures. They live in one buffer
-//   plants : array<vec4<f32>>   (xyz = world pos baked onto the terrain, w = per-plant seed
-// in [0,1) driving size / phase / tint). It is STORAGE (a grid instance can count/scatter
-// them for sensing/eating) and VERTEX (feeds the instanced billboard draw directly). Seeded
-// once on the host (clustered, baked to the surface) and never touched by the CPU again.
-// No per-plant compute in this step: fixed population, no growth — growth is a birth problem
-// deferred to the Tier 4.x compaction substrate.
-//
-// RENDER: instanced foliage. Each plant draws TWO crossed quads rooted at the ground point
-// and rising along world-up, billboarded only about Y (turned to face the camera in yaw but
-// staying upright, avoiding the "spinning card" look). Wind sway is a VS deformation tapering
-// to zero at the root. Plants are OPAQUE: depth-tested AND depth-writing, drawn before water
-// (so water blends over submerged stems) and after creatures; alpha is a cutout via discard,
-// so no inter-plant sorting is needed.
-//
-// PLACEMENT needs terrain height at each XZ so plants sit ON the ground. The renderer exposes
-// the baked heightfield asynchronously; because readback may not be ready at construction,
-// placement is done in place() (called once the sampler is available). Until then the buffer
-// holds a cheap flat-scatter fallback so an early draw shows something sane rather than NaNs.
+// plant.js: GPU-resident plants with host + shaders
 
 import { SKY_PARAMS_STRUCT, FOG_FN } from "./sky.js";
 
