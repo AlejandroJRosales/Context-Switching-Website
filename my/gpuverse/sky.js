@@ -44,14 +44,14 @@ export function createSky(opts = {}) {
   let state = null;
 
   function update(simTime) {
-    const timeOfDay = (simTime / dayLen) % 1;     // 0..1, 0=midnight
+    const timeOfDay = (simTime / dayLen) % 1;          // 0..1, 0=midnight
     const ang = timeOfDay * Math.PI * 2 - Math.PI / 2; // sun rises ~0.25, sets ~0.75
-    const sunHeight = Math.sin(ang);              // -1..1
+    const sunHeight = Math.sin(ang);
     const sunAz = Math.cos(ang);
 
     const sunDir = [
       sunAz,
-      sunHeight * Math.cos(tilt) + 0.15,           // small uplift so dusk isn't edge-on
+      sunHeight * Math.cos(tilt) + 0.15,   // small uplift so dusk isn't edge-on
       Math.sin(tilt) * 0.6,
     ];
     const len = Math.hypot(sunDir[0], sunDir[1], sunDir[2]) || 1;
@@ -60,8 +60,8 @@ export function createSky(opts = {}) {
     const c = sampleStops(sunHeight);
     const sunVisible = smoothstep(-0.15, 0.05, sunHeight);
 
-    // Moon: roughly opposite the sun, on a slightly different tilt so it doesn't trace the
-    // exact same arc. Up whenever the sun is down; light/disc fade in as the sun sets.
+    // Moon: roughly opposite the sun, on a slightly different tilt. Up whenever the sun is
+    // down; light/disc fade in as the sun sets.
     const moonDir = [
       -sunAz,
       -sunHeight * Math.cos(tilt) + 0.10,
@@ -114,8 +114,8 @@ fn applyFog(litColor : vec3<f32>, worldPos : vec3<f32>, eye : vec3<f32>, fog : F
 }
 `;
 
-// Full-screen sky pass: oversized triangle from vertex_index. Uses the camera's invViewProj
-// to turn screen NDC into world-space view rays so sky/sun align with geometry.
+// Full-screen sky pass: oversized triangle from vertex_index. Uses invViewProj to turn
+// screen NDC into world-space view rays so sky/sun align with geometry.
 export const SKY_RENDER = SKY_PARAMS_STRUCT + /* wgsl */`
 struct Camera {
   viewProj    : mat4x4<f32>,

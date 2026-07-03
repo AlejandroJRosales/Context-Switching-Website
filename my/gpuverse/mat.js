@@ -15,9 +15,9 @@ export function perspective(fovy, aspect, near, far) {
   ];
 }
 
-// Clip-space Z in [0,1] (WebGPU/D3D), NOT GL's [-1,1]. The shadow bake writes clip Z
-// straight into a depth24plus target and the terrain sampler compares against that same
-// [0,1] depth, so the projection must already be [0,1] with no remap.
+// Clip-space Z in [0,1] (WebGPU/D3D), NOT GL's [-1,1]. The shadow bake writes clip Z straight
+// into a depth24plus target and the terrain sampler compares against that same [0,1] depth,
+// so the projection must already be [0,1] with no remap.
 export function ortho(left, right, bottom, top, near, far) {
   const lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
   return [
@@ -62,8 +62,7 @@ export function invertMat4(m) {
 
   let det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
   if (Math.abs(det) < 1e-12) {
-    // degenerate: return identity rather than NaN-poison the GPU.
-    return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; // degenerate: identity, not NaN-poison
   }
   det = 1.0 / det;
 

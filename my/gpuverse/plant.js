@@ -1,39 +1,132 @@
-// plant.js: host orchestration for the GPU plant system (Tier 3.2, fixed-population step).
-// Mirrors createRain: reused scratch typed arrays (no per-frame allocation), own bind
-// group, draw() records into the caller's already-open render pass.
+// plant.js: GPU-resident plants (Tier 3.2, fixed-population step) — host + shaders.
 //
-// Plants are a SECOND entity system. Their buffer  plants : array<vec4<f32>>  is:
-//   - STORAGE, so a grid instance can count/scatter them for sensing/eating, and
-//   - VERTEX,  so it feeds the instanced billboard draw directly (xyz + seed.w).
-// It is seeded once on the host (clustered placement, baked onto the terrain surface) and
-// never touched by the CPU again. No per-plant compute in this step: fixed population, no
-// growth. Growth (spawning toward a target, clustering near existing plants) is a birth
-// problem and waits on the Tier 4.x compaction substrate, per the prompt.
+// Plants are a SECOND entity system alongside creatures. They live in one buffer
+//   plants : array<vec4<f32>>   (xyz = world pos baked onto the terrain, w = per-plant seed
+// in [0,1) driving size / phase / tint). It is STORAGE (a grid instance can count/scatter
+// them for sensing/eating) and VERTEX (feeds the instanced billboard draw directly). Seeded
+// once on the host (clustered, baked to the surface) and never touched by the CPU again.
+// No per-plant compute in this step: fixed population, no growth — growth is a birth problem
+// deferred to the Tier 4.x compaction substrate.
 //
-// PLACEMENT needs the terrain height at each XZ so plants sit ON the ground. The renderer
-// exposes the baked heightfield asynchronously (readHeights). Because that readback may
-// not be ready at construction, placement is done in place() which the caller invokes once
-// the sampler is available; until then the buffer holds a cheap fallback (flat scatter) so
-// a draw before the heightfield arrives still shows something sane rather than NaNs.
+// RENDER: instanced foliage. Each plant draws TWO crossed quads rooted at the ground point
+// and rising along world-up, billboarded only about Y (turned to face the camera in yaw but
+// staying upright, avoiding the "spinning card" look). Wind sway is a VS deformation tapering
+// to zero at the root. Plants are OPAQUE: depth-tested AND depth-writing, drawn before water
+// (so water blends over submerged stems) and after creatures; alpha is a cutout via discard,
+// so no inter-plant sorting is needed.
+//
+// PLACEMENT needs terrain height at each XZ so plants sit ON the ground. The renderer exposes
+// the baked heightfield asynchronously; because readback may not be ready at construction,
+// placement is done in place() (called once the sampler is available). Until then the buffer
+// holds a cheap flat-scatter fallback so an early draw shows something sane rather than NaNs.
 
-import { PLANT_RENDER } from "./plant.wgsl.js";
+import { SKY_PARAMS_STRUCT, FOG_FN } from "./sky.js";
+
+// Render: instanced crossed billboards with vertex-shader wind sway. One instance per plant;
+// 12 vertices (two quads). Camera + Sky + Fog + PlantDraw.
+export const PLANT_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
+struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
+struct PlantDraw {
+  colA   : vec3<f32>, time  : f32,   // base foliage color (young), sim time (sway phase)
+  colB   : vec3<f32>, height: f32,   // tip foliage color (mature/dry), base world height
+  width  : f32, sway : f32, _p0 : f32, _p1 : f32,   // half-width, sway amplitude (world units)
+};
+
+@group(0) @binding(0) var<uniform> CAM : Camera;
+@group(0) @binding(1) var<uniform> PD  : PlantDraw;
+@group(0) @binding(2) var<uniform> SKY : SkyParams;
+@group(0) @binding(3) var<uniform> FOG : FogParams;
+
+struct VsOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) worldPos : vec3<f32>,
+  @location(1) tv       : f32,    // 0 at root, 1 at tip (vertical param, for tint + sway)
+  @location(2) uvx      : f32,    // -1..1 across the quad width (for the leaf-edge cutout)
+  @location(3) tint     : vec3<f32>,
+};
+
+fn hash11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
+
+@vertex
+fn vs(@builtin(vertex_index) vid : u32,
+      @location(0) inst : vec4<f32>) -> VsOut {
+  // x = width axis in [-1,1], y = height in [0,1]. 6 verts each; vid<6 -> quad A, else B.
+  var corners = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 0.0), vec2<f32>( 1.0, 1.0),
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 1.0), vec2<f32>(-1.0, 1.0),
+  );
+  let quad = vid / 6u;
+  let c = corners[vid % 6u];
+
+  let seed = inst.w;
+  // per-plant size so a field doesn't look stamped.
+  let hgt = PD.height * (0.65 + 0.70 * seed);
+  let halfW = PD.width * (0.75 + 0.50 * hash11(seed * 7.13 + 1.0));
+
+  // Billboard the width axis about Y only: a horizontal "right" across the view direction
+  // (in XZ) so the card turns to face the camera in yaw but stays vertical. Quad B uses the
+  // perpendicular horizontal axis so the two cross.
+  let toEye = CAM.eye - inst.xyz;
+  var rightA = normalize(vec3<f32>(-toEye.z, 0.0, toEye.x) + vec3<f32>(1e-4, 0.0, 0.0));
+  var rightB = vec3<f32>(-rightA.z, 0.0, rightA.x);
+  let right = select(rightA, rightB, quad == 1u);
+
+  // Wind sway: displace the top along a per-plant-phased sine, tapered by height^2 so the
+  // root stays fixed. Direction is a gentle world-space drift (matches the rain wind).
+  let phase = seed * 6.2831853;
+  let s = sin(PD.time * 1.6 + phase) + 0.35 * sin(PD.time * 3.1 + phase * 1.7);
+  let swayOff = vec3<f32>(0.8, 0.0, 0.5) * (PD.sway * s * c.y * c.y);
+
+  let worldPos = inst.xyz
+    + right * (c.x * halfW)
+    + vec3<f32>(0.0, 1.0, 0.0) * (c.y * hgt)
+    + swayOff;
+
+  let dry = hash11(seed * 3.77 + 0.5);
+  var out : VsOut;
+  out.worldPos = worldPos;
+  out.clip = CAM.viewProj * vec4<f32>(worldPos, 1.0);
+  out.tv = c.y;
+  out.uvx = c.x;
+  out.tint = mix(PD.colA, PD.colB, dry * 0.85);
+  return out;
+}
+
+@fragment
+fn fs(in : VsOut) -> @location(0) vec4<f32> {
+  // Leaf cutout: taper the silhouette toward the tip so the quad reads as a blade, not a
+  // rectangle. Discard fragments outside the allowed (shrinking) width.
+  let allowed = 1.0 - in.tv * 0.85;
+  if (abs(in.uvx) > allowed) { discard; }
+
+  let shade = 0.45 + 0.55 * in.tv;   // darker at the self-shadowed root, brighter at the tip
+
+  // Sky-driven light: ambient + soft sun wrap + faint moon fill, then fogged like everything.
+  let sunWrap = clamp(SKY.sunDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let sun = SKY.sunColor * (0.35 + 0.65 * sunWrap);
+  let moon = SKY.moonColor * SKY.moonVisible * 0.10;
+  let lit = in.tint * shade * (SKY.ambient + sun + moon);
+
+  let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
+  return vec4<f32>(foggy, 1.0);
+}
+`;
 
 export function createPlants(device, format, {
-  camBuf,                 // GPUBuffer, renderer Camera uniform (144 B) — reused read-only
-  skyBuf,                 // GPUBuffer, renderer SkyParams uniform (112 B) — reused read-only
-  fogBuf,                 // GPUBuffer, renderer FogParams uniform (16 B) — reused read-only
+  camBuf,                 // renderer Camera uniform (144 B) — reused read-only
+  skyBuf,                 // renderer SkyParams uniform (112 B) — reused read-only
+  fogBuf,                 // renderer FogParams uniform (16 B) — reused read-only
   worldMin, worldMax,     // [x,y,z] world bounds (placement domain)
   count = 20000,          // fixed plant population
   clusters = 48,          // number of seed clusters; plants scatter around these
   clusterRadius = 220,    // world-units spread of a cluster
-  height = 2,            // base billboard height (per-plant varied in the VS)
+  height = 2,             // base billboard height (per-plant varied in the VS)
   width = 7,              // base billboard half-width
   sway = 3.2,             // wind sway amplitude at the tip (world units)
-  maxWaterLevel = -1e30,  // plants below this Y are pushed to the fallback flat scatter edge
-                          //   (kept simple here; underwater culling can come with growth)
+  maxWaterLevel = -1e30,  // (reserved) underwater culling deferred to growth
   seed = 1,
 }) {
-  // ---- plant buffer. STORAGE (grid reads it) | VERTEX (instanced draw) | COPY_DST (seed).
+  // plant buffer. STORAGE (grid reads it) | VERTEX (instanced draw) | COPY_DST (seed).
   const plantBuf = device.createBuffer({
     size: Math.max(count, 1) * 16,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -45,14 +138,12 @@ export function createPlants(device, format, {
     return () => { s = (Math.imul(s ^ (s >>> 15), 2246822519)) >>> 0; return s / 4294967296; };
   }
 
-  // Reused scratch for the seed upload (allocated once at construction, not per frame —
-  // placement runs at most once per world build, but we still avoid re-allocating on
-  // re-placement, e.g. after the async heightfield arrives).
+  // Reused scratch for the seed upload (allocated once; re-placement after the async
+  // heightfield arrives reuses it rather than re-allocating).
   const initScratch = new Float32Array(Math.max(count, 1) * 4);
 
-  // Precompute cluster centers once (host-side, deterministic). Plants are then scattered
-  // around a randomly chosen center each — this is the "clustering" the growth pass will
-  // later reinforce, front-loaded here as static placement.
+  // Precompute cluster centers once (deterministic). Plants scatter around a random center
+  // each — the static form of the "clustering" the growth pass will later reinforce.
   const spanX = worldMax[0] - worldMin[0];
   const spanZ = worldMax[2] - worldMin[2];
   const rng = makeRng(seed + 0x51ed);
@@ -63,8 +154,7 @@ export function createPlants(device, format, {
   }
 
   // place(sampleHeight): fill the buffer with clustered, ground-baked positions.
-  // sampleHeight(x, z) -> terrain world Y (same heightfield the player/renderer use).
-  // If omitted, falls back to a flat scatter at y=worldMin[1] so early draws are safe.
+  // sampleHeight(x,z) -> terrain world Y. If omitted, flat scatter at y=worldMin[1].
   let placed = false;
   function place(sampleHeight) {
     const prng = makeRng(seed + 1);
@@ -89,33 +179,29 @@ export function createPlants(device, format, {
     device.queue.writeBuffer(plantBuf, 0, initScratch);
     placed = true;
   }
-  // seed an immediate fallback scatter so a draw before place(withHeights) is valid.
-  place(null);
+  place(null);   // immediate fallback scatter so a draw before place(withHeights) is valid.
 
-  // ---- PlantDraw uniform. colA+time, colB+height, width,sway,pad,pad. 48 B used of 64.
+  // PlantDraw uniform. Static fields written once; writeDraw refreshes tint + time.
   const pdBuf = device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const pdScratch = new Float32Array(16);
-  // static fields written once; per-frame writeDraw only refreshes tint + time.
-  pdScratch[7] = height;   // .height at [7]
-  pdScratch[8] = width;    // .width  at [8]
-  pdScratch[9] = sway;     // .sway   at [9]
+  pdScratch[7] = height;   // .height
+  pdScratch[8] = width;    // .width
+  pdScratch[9] = sway;     // .sway
   function writeDraw(time, sunVisible) {
-    // young (near ground / wet) vs dry (mature) foliage colors, dimmed a touch at night.
-    const day = 0.35 + 0.65 * Math.max(0, Math.min(1, sunVisible));
+    const day = 0.35 + 0.65 * Math.max(0, Math.min(1, sunVisible)); // dimmed a touch at night
     pdScratch[0] = 0.16 * day; pdScratch[1] = 0.42 * day; pdScratch[2] = 0.14 * day; // colA
     pdScratch[3] = time;                                                             // .time
     pdScratch[4] = 0.45 * day; pdScratch[5] = 0.52 * day; pdScratch[6] = 0.20 * day; // colB
-    // [7] height, [8] width, [9] sway are static
     device.queue.writeBuffer(pdBuf, 0, pdScratch);
   }
 
-  // ---- render pipeline: instanced crossed billboards, opaque (depth test + write),
-  // cutout alpha via discard in the FS. Drawn after creatures, before water.
+  // render pipeline: instanced crossed billboards, opaque (depth test + write), cutout alpha
+  // via discard. Drawn after creatures, before water.
   const drawBGL = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Camera
     { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // PlantDraw
     { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }, // Sky
-    { binding: 3, visibility: GPUShaderStage.FRAGMENT,                      buffer: { type: "uniform" } }, // Fog
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT,                        buffer: { type: "uniform" } }, // Fog
   ]});
   const drawBG = device.createBindGroup({ layout: drawBGL, entries: [
     { binding: 0, resource: { buffer: camBuf } },
@@ -132,25 +218,23 @@ export function createPlants(device, format, {
       ]},
     ]},
     fragment: { module: drawMod, entryPoint: "fs", targets: [{ format }] },
-    // opaque foliage: cull nothing (double-sided cards), test AND write depth.
-    primitive: { topology: "triangle-list", cullMode: "none" },
+    primitive: { topology: "triangle-list", cullMode: "none" },   // double-sided cards
     depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
   });
 
-  // enabled toggle (HUD-controlled). When off, draw() is a no-op but the buffer still
-  // exists so a plant grid (if built) stays consistent.
+  // HUD-controlled toggle. When off, draw() is a no-op but the buffer still exists so a
+  // plant grid (if built) stays consistent.
   let enabled = true;
   function setEnabled(v) { enabled = !!v; return enabled; }
 
-  // record the draw into the caller's already-open render pass (after creatures, before
-  // water). `sky` = current sky state; `time` drives the wind sway phase.
+  // record the draw into the caller's already-open render pass. `time` drives the sway phase.
   function draw(pass, sky, time) {
     if (!enabled || count === 0) return;
     writeDraw(time, sky?.sunVisible ?? 1);
     pass.setPipeline(drawPipe);
     pass.setBindGroup(0, drawBG);
     pass.setVertexBuffer(0, plantBuf);
-    pass.draw(12, count);   // 2 crossed quads = 12 verts, one instance per plant
+    pass.draw(12, count);   // 2 crossed quads, one instance per plant
   }
 
   return {

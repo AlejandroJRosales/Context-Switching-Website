@@ -41,7 +41,6 @@ function addTube(pos, tris, vbase, { rings, segs, centerFn, radiusFn }) {
 // Bakes one canonical quadruped (torso + 4 legs + neck + head) in local space oriented
 // +X = forward (nose), +Y = up, +Z = right. Per-species proportions are applied as VS
 // deformation, so this single mesh serves every creature. Interleaved pos+normal, u32 index.
-// Returns { vertexData:Float32Array, indexData:Uint32Array, vertexCount, indexCount }.
 export function buildCreatureMesh() {
   const pos = [];     // flat xyz
   const tris = [];    // flat index triples
@@ -95,16 +94,13 @@ export function buildCreatureMesh() {
     });
   }
 
-  // Tail: a tapered tube rooted at the torso rear (x=-0.5, y~0.55) trailing back and
-  // slightly down along -X. This is the ONLY geometry with local x < -0.5, so the VS
-  // identifies tail verts purely by position (no extra per-vertex attribute needed) and
-  // applies species-specific shaping there. Canonical rest pose is a gentle downward droop;
-  // deer/wolf silhouette and any sway are handled as VS deformation.
+  // Tail: a tapered tube trailing back/down along -X. This is the ONLY geometry with local
+  // x < -0.5, so the VS identifies tail verts purely by position (no per-vertex attribute)
+  // and applies species-specific shaping there. Rest pose is a gentle downward droop.
   vb = addTube(pos, tris, vb, {
     rings: 6, segs: 6,
     centerFn: (t) => {
-      // start just behind the torso cap and curve back/down; keep x strictly < -0.5
-      const x = -0.52 - t * 0.20;
+      const x = -0.52 - t * 0.20;      // keep x strictly < -0.5
       const y = 0.55 - t * t * 0.10;   // droops as it extends
       return [x, y, 0];
     },
