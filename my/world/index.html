@@ -10,26 +10,37 @@
   #c{display:block;width:100vw;height:100vh;touch-action:none}
   #hud{position:fixed;top:8px;left:10px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000}
   #err{position:fixed;inset:0;display:none;place-items:center;color:#f38ba8;padding:24px;text-align:center}
-  #scale{position:fixed;top:8px;right:10px;display:flex;align-items:center;gap:6px;pointer-events:auto}
-  #scale button{width:28px;height:28px;background:#11161d;color:#9aa5b1;border:1px solid #2a3340;
-    border-radius:4px;font:14px/1 'Courier New',monospace;cursor:pointer}
+  #scale{position:fixed;top:8px;right:10px;left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;
+    align-items:center;gap:6px;max-width:calc(100vw - 20px);pointer-events:auto}
+  #scale button{flex:none;box-sizing:border-box;background:#11161d;color:#9aa5b1;
+    border:1px solid #2a3340;border-radius:4px;font:14px/1 'Courier New',monospace;cursor:pointer}
   #scale button:hover{background:#1a212b;color:#fff}
   #scale span{min-width:46px;text-align:center;text-shadow:0 1px 2px #000}
-  #resetSeed{width:auto;padding:0 10px;margin-left:6px}
-  #rainBtn{width:auto;padding:0 10px;margin-left:6px}
-  #plantBtn{width:auto;padding:0 10px;margin-left:6px}
+  #resetSeed,#rainBtn,#plantBtn{width:auto;height:28px;padding:0 10px;margin-left:0;
+    white-space:nowrap;line-height:26px}
+  #settingsBtn{position:relative;width:4em;height:2em;}
+  #settingsPanel{position:absolute;top:34px;right:0;display:none;flex-direction:column;gap:6px;
+    background:#0b0f14;border:1px solid #2a3340;border-radius:6px;padding:8px;min-width:140px;z-index:10}
+  #settingsPanel.open{display:flex}
+  #settingsPanel button{width:100%}
+  #settingsPanel #scaleRow button{width:28px;flex:none}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud"></div>
 <div id="scale">
-  <button id="scaleDown" title="Scale down (-)">-</button>
-  <span id="scaleLabel">1.0</span>
-  <button id="scaleUp" title="Scale up (+)">+</button>
-  <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
-  <button id="plantBtn" title="Toggle plants on / off (P)">PLANTS: ON</button>
-  <button id="resetSeed" title="Roll a new seed and rebuild the world">RESET</button>
+  <button id="settingsBtn" title="Settings">⚙</button>
+  <div id="settingsPanel">
+    <div id="scaleRow" style="display:flex;align-items:center;gap:6px;justify-content:center">
+      <button id="scaleDown" title="Scale down (-)">-</button>
+      <span id="scaleLabel">1.0</span>
+      <button id="scaleUp" title="Scale up (+)">+</button>
+    </div>
+    <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
+    <button id="plantBtn" title="Toggle plants on / off (P)">PLANTS: ON</button>
+    <button id="resetSeed" title="Roll a new seed and rebuild the world">RESET</button>
+  </div>
 </div>
 <div id="err"></div>
 <script type="module">
@@ -92,7 +103,7 @@ let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
 // world config (base values; actual N/world/amplitude scale with the +/- control)
 const BASE_N = 1000;
 const BASE_WORLD = [10000, 10000];
-const BASE_AMPLITUDE = 400;
+const BASE_AMPLITUDE = 500;
 const worldMin = [0,0,0];
 
 const SCALE_STEPS = [0.5,1,2,3,3.5];
@@ -306,6 +317,18 @@ function setScale(newIdx){
   updateScaleLabel();
   buildWorld(SCALE_STEPS[scaleIdx]);
 }
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsPanel = document.getElementById("settingsPanel");
+settingsBtn.addEventListener("click", (e)=>{
+  e.stopPropagation();
+  settingsPanel.classList.toggle("open");
+});
+document.addEventListener("click", (e)=>{
+  if(!settingsPanel.contains(e.target) && e.target!==settingsBtn){
+    settingsPanel.classList.remove("open");
+  }
+});
+
 document.getElementById("scaleUp").addEventListener("click", ()=>setScale(scaleIdx+1));
 document.getElementById("scaleDown").addEventListener("click", ()=>setScale(scaleIdx-1));
 
@@ -444,7 +467,7 @@ function handleHud(time, dt, lastHud) {
     const tod = (skyState.timeOfDay*24).toFixed(1);
     const rainStr = rain.state.mode.toUpperCase() + (rain.state.on ? ` ${(rain.state.intensity*100)|0}%` : "");
     const plantStr = plants.enabled ? `${plants.count.toLocaleString()}  [P]` : `off  [P]`;
-    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nplants ${plantStr}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  ${player.flying?"  [FLYING]":""}\nrain ${rainStr}  [R]\n`;
+    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nplants ${plantStr}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h\nflying: ${player.flying?"TRUE":"FALSE"}\nrain ${rainStr}\n`;
     if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
   }
   return lastHud;
