@@ -75,7 +75,7 @@ fn heightAt(tp : TerrainParams, worldXZ : vec2<f32>) -> f32 {
   let basePos = uv * 6.0 + vec2<f32>(tp.seed, tp.seed * 1.7);
 
   let plains = fractalNoise(basePos);
-  let ridged = ridgedNoise(basePos * 1.6 + vec2<f32>(11.0, -7.0));
+  let ridged = ridgedNoise(basePos * 1.6 + vec2<f32>(11.0, -7.0) * 3);
 
   let mask = biomeMask(uv, tp.seed);
   let mtnBlend = smoothstep(tp.mountainThreshold, tp.mountainThreshold + 0.15, mask);
@@ -445,7 +445,12 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 // no CPU.
 
 export const MOVE = HEIGHT_FN + /* wgsl */`
-struct MoveParams { time : f32, dt : f32, speed : f32, N : u32 };
+struct MoveParams {
+  time : f32, dt : f32, speed : f32, N : u32,
+  waterLevel : f32,   // world Y of the water plane
+  floatDepth : f32,   // how far below the surface a floating body sits
+  _p0 : f32, _p1 : f32,
+};
 @group(0) @binding(0) var<uniform> MP : MoveParams;
 @group(0) @binding(1) var<uniform> TP : TerrainParams;
 @group(0) @binding(2) var<storage, read_write> positions : array<vec4<f32>>;
@@ -478,8 +483,15 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   p.x = clamp(p.x, TP.worldMin.x, TP.worldMax.x);
   p.z = clamp(p.z, TP.worldMin.y, TP.worldMax.y);
 
-  // snap to ground (+ small offset so the body sits above the surface)
-  p.y = heightAt(TP, vec2<f32>(p.x, p.z)) + 1.5;
+  // Ground follow, with water interaction. Normally the body sits a little above the
+  // terrain surface. Where the terrain dips below the water plane, the entity instead
+  // floats: it rides at waterLevel minus a small floatDepth so it appears to sit ON the
+  // water rather than sinking to the (now submerged) terrain floor. max() picks whichever
+  // surface is higher, so the entity always rests on the terrain OR the water, whichever
+  // it would actually be standing/floating on at this XZ.
+  let ground = heightAt(TP, vec2<f32>(p.x, p.z)) + 1.5;
+  let floatY = MP.waterLevel - MP.floatDepth;
+  p.y = max(ground, floatY);
 
   positions[i] = p;
 

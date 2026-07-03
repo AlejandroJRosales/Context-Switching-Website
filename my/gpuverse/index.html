@@ -170,7 +170,7 @@ function buildWorld(scale){
       worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] });
   });
 
-  moveParams = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+  moveParams = device.createBuffer({ size:32, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   moveBGL = device.createBindGroupLayout({entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
@@ -345,9 +345,12 @@ function handleHud(time, dt, lastHud) {
 }
 
 // Reused per-frame scratch (avoids per-frame typed-array allocation). Float fields and the
-// u32 N share one ArrayBuffer so the 16-byte MoveParams uploads in one writeBuffer.
-const moveScratch = new Float32Array(4);
+// u32 N share one ArrayBuffer so the 32-byte MoveParams uploads in one writeBuffer.
+// Layout: [0]time [1]dt [2]speed [3]N(u32) [4]waterLevel [5]floatDepth [6,7]pad.
+const moveScratch = new Float32Array(8);
 const moveScratchU = new Uint32Array(moveScratch.buffer);
+// How far below the surface a floating body rests, so it reads as sitting ON the water.
+const FLOAT_DEPTH = 6.5;
 let t0 = performance.now(), last = t0, frames = 0, fps = 0, facc = 0, frameCount = 0;
 let lastHud = "";
 const HUD_EVERY = 60;
@@ -380,6 +383,7 @@ function frame(now){
     // Feed the move compute pass the accumulated sim time so entities advance the
     // full 1/30s (not just the last 1/60s tick) on the frame we render.
     moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=18.0; moveScratchU[3]=N;
+    moveScratch[4]=renderer.waterLevel; moveScratch[5]=FLOAT_DEPTH;
     device.queue.writeBuffer(moveParams,0,moveScratch);
     dtRenderAcc = 0;
 
