@@ -109,6 +109,9 @@ let speciesHeading;
 let rain;
 let plants, plantGrid;
 let nibbler;
+// How far the cat sinks below the water surface when floating (world units). Small because
+// the cat mesh's paws are at local y=0 with no body lift, unlike the creatures (FLOAT_DEPTH).
+const CAT_FLOAT_DEPTH = 2.0;
 let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
@@ -169,6 +172,10 @@ function buildWorld(scale){
     followDist:  Math.max(60,  worldSpan * 0.012),
     catchUpDist: Math.max(300, worldSpan * 0.06),
     backAwayDist: 12,
+    // Float on water like the creatures. The cat's feet are at local y=0 (no body lift), so it
+    // wants a much smaller float depth than the creatures' 6.5 — just enough to sit paws-on-surface.
+    waterLevel: renderer.waterLevel,
+    floatDepth: CAT_FLOAT_DEPTH,
   });
   if (prevCatPos) nibbler.placeBehindPlayer(prevCatPos.x, prevCatPos.z, player ? player.yaw : 0);
 

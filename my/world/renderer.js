@@ -602,6 +602,8 @@ export function createCat(device, format, {
   catchUpDist = 90,
   backAwayDist = 4,
   eyeHeight = 0.0,   // extra lift above terrain for the paws (0 = feet exactly on ground)
+  waterLevel = -1e30, // world Y of the water plane; default off (no water so terrain always wins)
+  floatDepth = 0.0,   // how far below the surface the floating body sits (matches the MOVE pass)
 } = {}) {
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const mixf = (a, b, t) => a + (b - a) * t;
@@ -669,7 +671,12 @@ export function createCat(device, format, {
     speed: 0,
     placed: false,
   };
-  function groundY(x, z) { return catSampleHeight(tp, x, z); }
+  // effective ground = higher of the terrain surface and the water plane (offset down by
+  // floatDepth). Same rule as the creature MOVE pass: where terrain dips below water, the cat
+  // rides ON the water rather than sinking to the submerged floor; elsewhere it walks the land.
+  // Player deliberately has NO float term, so it wades/sinks instead of floating.
+  let waterY = waterLevel;
+  function groundY(x, z) { return Math.max(catSampleHeight(tp, x, z), waterY - floatDepth); }
 
   function placeBehindPlayer(px, pz, pyaw) {
     state.x = px - Math.sin(pyaw) * followDist;
@@ -680,8 +687,11 @@ export function createCat(device, format, {
     state.placed = true;
   }
 
-  function setTerrain(newTp) {
+  // setTerrain(newTp, newWaterLevel?): rebind the heightfield (and optionally the water plane,
+  // whose seed-derived level can change on a world rebuild), then re-ground in place.
+  function setTerrain(newTp, newWaterLevel) {
     tp = newTp;
+    if (newWaterLevel !== undefined) waterY = newWaterLevel;
     if (state.placed) state.y = groundY(state.x, state.z) + eyeHeight;
   }
 
@@ -734,7 +744,9 @@ export function createCat(device, format, {
     }
     state.speed = speed;
 
-    // gravity + ground clamp against the baked heightfield
+    // gravity + clamp against the effective floor (terrain OR water surface, whichever is
+    // higher — see groundY). Over deep water this floors at the float line so the cat rides
+    // on top rather than sinking to the submerged terrain.
     state.vy -= GRAVITY * dt;
     state.y += state.vy * dt;
     const floor = groundY(state.x, state.z) + eyeHeight;
