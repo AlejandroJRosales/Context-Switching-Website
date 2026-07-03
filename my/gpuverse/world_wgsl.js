@@ -267,7 +267,7 @@ struct VsOut {
 fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
   // axis scales: deer is taller (Y) and a touch shorter (X); wolf is longer (X) and lower (Y).
   let deerS = vec3<f32>(0.95, 1.25, 0.85);
-  let wolfS = vec3<f32>(1.20, 0.80, 0.95);
+  let wolfS = vec3<f32>(0.60, 0.70, 0.85);
   let s = mix(deerS, wolfS, species);
   var p = localPos * s;
 
@@ -279,6 +279,15 @@ fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
   p.y = p.y + headRegion * mix(deerLift, wolfDrop, species);
   // wolves push the muzzle further forward (predatory), deer less so
   p.x = p.x + headRegion * mix(0.02, 0.10, species);
+
+  let tailRegion = smoothstep(-0.52, -0.58, localPos.x);
+  let tailT = clamp((-0.52 - localPos.x) / 0.20, 0.0, 1.0);
+  let deerTailY =  0.17;
+  let wolfTailY =  0.17;
+  let deerTailX =  0.05;
+  let wolfTailX = -0.07;
+  p.y = p.y + tailRegion * tailT * mix(deerTailY, wolfTailY, species);
+  p.x = p.x + tailRegion * tailT * mix(deerTailX, wolfTailX, species);
   return p;
 }
 
@@ -326,7 +335,11 @@ fn vs(@location(0) vPos : vec3<f32>,
   let h = fract(sin(dot(instPos.xz, vec2<f32>(12.9898, 78.233))) * 43758.5453);
   let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h);
   let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h);
-  out.tint = mix(deerCol, wolfCol, species);
+  var baseTint = mix(deerCol, wolfCol, species);
+  // Deer have a white tail ("flag"). Tail verts are the only geometry at local x < -0.52;
+  // reuse that same test and whiten only on deer (species==0), ramping toward the tip.
+  let tailMask = smoothstep(-0.52, -0.58, vPos.x) * (1.0 - species);
+  out.tint = mix(baseTint, vec3<f32>(0.92, 0.92, 0.90), tailMask);
   return out;
 }
 

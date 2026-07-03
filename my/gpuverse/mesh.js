@@ -95,6 +95,22 @@ export function buildCreatureMesh() {
     });
   }
 
+  // Tail: a tapered tube rooted at the torso rear (x=-0.5, y~0.55) trailing back and
+  // slightly down along -X. This is the ONLY geometry with local x < -0.5, so the VS
+  // identifies tail verts purely by position (no extra per-vertex attribute needed) and
+  // applies species-specific shaping there. Canonical rest pose is a gentle downward droop;
+  // deer/wolf silhouette and any sway are handled as VS deformation.
+  vb = addTube(pos, tris, vb, {
+    rings: 6, segs: 6,
+    centerFn: (t) => {
+      // start just behind the torso cap and curve back/down; keep x strictly < -0.5
+      const x = -0.52 - t * 0.20;
+      const y = 0.55 - t * t * 0.10;   // droops as it extends
+      return [x, y, 0];
+    },
+    radiusFn: (t) => 0.055 * (1 - t * 0.55),
+  });
+
   // smooth normals: accumulate face normals per vertex, normalize
   const vCount = pos.length / 3;
   const nrm = new Float32Array(pos.length);
