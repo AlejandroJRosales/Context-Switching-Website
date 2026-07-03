@@ -103,7 +103,14 @@ struct ShadowParams {
 // shadowSamp (sampler_comparison). Returns visibility in [0,1] (1 = fully lit).
 // PCF kernel size is driven by pcfRadius: radius 2 -> 5x5 (25 taps), radius 1 -> 3x3.
 export const SHADOW_FN = /* wgsl */`
-fn sampleShadow(worldPos : vec3<f32>, ndl : f32) -> f32 {
+fn sampleShadow(worldPosIn : vec3<f32>, normal : vec3<f32>, ndl : f32) -> f32 {
+  // Normal offset: push the sample point off the surface along its normal before
+  // projecting into light space. Without this, a coarse heightfield grid samples the
+  // shadow map at points that alias against the baked depth of that same slope,
+  // producing regular terrace-like self-shadow bands running across contours
+  // (worse at grazing angles, where depth bias alone isn't enough).
+  let normalOffset = SHADOW.texel * 2.0 * (1.0 - ndl) * 40.0;
+  let worldPos = worldPosIn + normal * normalOffset;
   let lp = SHADOW.lightViewProj * vec4<f32>(worldPos, 1.0);
   // ortho() has w==1, but divide anyway to stay correct if a perspective light is used later
   let proj = lp.xyz / lp.w;
@@ -213,7 +220,7 @@ fn vs(@builtin(vertex_index) vid : u32) -> VsOut {
   let cell = span / f32(n - 1u);
   let dx = hAt(ix + 1, iz) - hAt(ix - 1, iz);
   let dz = hAt(ix, iz + 1) - hAt(ix, iz - 1);
-  let nrm = normalize(vec3<f32>(-dx, 2.0 * cell.x, -dz));
+  let nrm = normalize(vec3<f32>(-dx * cell.y, 2.0 * cell.x * cell.y, -dz * cell.x));
 
   var out : VsOut;
   out.worldPos = vec3<f32>(worldXZ.x, y, worldXZ.y);
@@ -234,7 +241,7 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   albedo = mix(albedo, high, smoothstep(0.5, 1.0, t));
   // shadow attenuates ONLY the direct sun term; ambient (skylight) stays.
   // strength lets a fully-shadowed fragment keep a little sun rather than going flat.
-  let vis = sampleShadow(in.worldPos, ndl);
+  let vis = sampleShadow(in.worldPos, in.normal, ndl);
   let sunVis = mix(1.0 - SHADOW.strength, 1.0, vis);
   // moon: a dim, unshadowed diffuse fill, only meaningful at night via moonVisible.
   let mdl = max(dot(in.normal, normalize(SKY.moonDir)), 0.0);

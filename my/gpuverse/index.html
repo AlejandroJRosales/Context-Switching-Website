@@ -140,8 +140,7 @@ function buildWorld(scale){
 
   // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
   // visible region would just blur, so trade resolution for coverage at high scale.
-  const shadowRes = scale <= 1 ? 2048 : scale <= 3 ? 1024 : 512;
-  curShadowRes = shadowRes;
+  const shadowRes = curShadowRes;
 
   renderer = createRenderer(device, ctx, format, {
     worldMin, worldMax, gridN:256, amplitude, seed:seedToGpuFloat(seed), creatureRadius:8.0,
@@ -324,7 +323,7 @@ function handleHud(time, dt, lastHud) {
     const coverage = Math.min(fogDist * 0.6, Math.max(worldMax[0], worldMax[2]) * 0.5);
     const depthRange = coverage + amplitude * 2;
     const lightVP = fitLightMatrix(skyState.sunDir, cam.eye, fwd, coverage, depthRange);
-    renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.0015, strength: 0.85 });
+    renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.003, strength: 0.85 });
   }
   renderer.bakeShadow(enc);
 
