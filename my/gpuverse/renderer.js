@@ -329,7 +329,7 @@ export function createRenderer(device, context, format, {
 
   // per-frame draw. positions = the compute positions buffer (instance pos), N = count,
   // speciesHeading = per-instance (species, heading) buffer. `time` drives water.
-  function render(encoder, positions, N, speciesHeading, width, height, time = 0, rain = null, skyState = null, plants = null){
+  function render(encoder, positions, N, speciesHeading, width, height, time = 0, rain = null, skyState = null, plants = null, cat = null){
     ensureDepth(width,height);
     writeWaterParams(time);
 
@@ -356,6 +356,11 @@ export function createRenderer(device, context, format, {
     pass.setVertexBuffer(2, speciesHeading);
     pass.setIndexBuffer(creIdxBuf, "uint32");
     pass.drawIndexed(creIndexCount, N);
+
+    // cat companion: single CPU-driven follower, opaque, lit like creatures (sky+fog, no
+    // shadow map). Drawn after creatures so it shares the depth buffer (terrain occludes it),
+    // before plants/water. No-op when disabled.
+    if (cat) cat.draw(pass, skyState);
 
     // plants after creatures, before water: opaque cutout foliage, depth-tested AND
     // depth-writing, so water correctly blends over any submerged stems and creatures

@@ -41,6 +41,8 @@ import { createPlants } from "./plant.js";
 import { createGrid } from "./grid.js";
 import { MOVE } from "./world_wgsl.js";
 import { ortho, lookAt, mul } from "./mat.js";
+import { createCat } from "./cat.js";
+
 
 const canvas = document.getElementById("c");
 const hud = document.getElementById("hud");
@@ -108,6 +110,7 @@ let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, re
 let speciesHeading;
 let rain;
 let plants, plantGrid;
+let nibbler;
 let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
@@ -150,6 +153,26 @@ function buildWorld(scale){
   renderer = createRenderer(device, ctx, format, {
     worldMin, worldMax, gridN:256, amplitude, seed:seedToGpuFloat(seed), creatureRadius:8.0,
     shadowResolution: shadowRes });
+
+  // Cat companion (single CPU follower, drawn in the renderer's main pass, lit like
+  // creatures). buildWorld makes a NEW renderer with NEW uniform buffers each time (scale/
+  // reset), so the nibbler — whose bind group points at renderer.camBuf/skyBuf/fogBuf — must be
+  // (re)created here to bind the current buffers. Preserve its last world position across a
+  // rebuild so a scale change doesn't teleport it; it re-grounds when setTerrain arrives.
+  const prevCatPos = nibbler ? nibbler.position : null;
+  // Sizes scale with the world: nibbler a bit larger than a creature (creatureRadius 8), follow
+  // distances a fraction of the world span so it trails naturally at any scale.
+  const worldSpan = Math.min(worldMax[0], worldMax[2]);
+  nibbler = createCat(device, format, {
+    camBuf: renderer.camBuf, skyBuf: renderer.skyBuf, fogBuf: renderer.fogBuf,
+    terrain: null,                                  // supplied by the readHeights callback below
+    worldWidth: worldMax[0], worldHeight: worldMax[2],
+    scale: .4,                                     // ~20-unit nibbler; tune to taste
+    followDist:  Math.max(60,  worldSpan * 0.012),
+    catchUpDist: Math.max(300, worldSpan * 0.06),
+    backAwayDist: 12,
+  });
+  if (prevCatPos) nibbler.placeBehindPlayer(prevCatPos.x, prevCatPos.z, player ? player.yaw : 0);
 
   // Weather. The particle column tracks world scale: spawn band well above the tallest
   // terrain, floor at the water level, radius a fraction of the world so a fixed pool
@@ -202,9 +225,14 @@ function buildWorld(scale){
   // Capture which plant system this readback belongs to, so a fast RESET/scale change
   // that rebuilds before the async readback resolves doesn't place onto a stale set.
   const plantsForThisBuild = plants;
+  const catForThisBuild = nibbler;
   renderer.readHeights().then(({data, gridN})=>{
-    if (player) player.setTerrain({ heights:data, gridN,
-      worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] });
+    const tp = { heights:data, gridN,
+      worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] };
+    if (player) player.setTerrain(tp);
+    // Same heightfield to the nibbler, so it stands on the exact rendered ground. Guard against
+    // a stale readback resolving after a fast rebuild replaced the nibbler.
+    if (catForThisBuild === nibbler) nibbler.setTerrain(tp);
 
     // Bilinear sampler over the baked heightfield (row-major heights[z*gridN + x]),
     // matching the rendered ground so plants sit exactly on the surface.
@@ -399,7 +427,7 @@ function handleHud(time, dt, lastHud) {
   }
   renderer.bakeShadow(enc);
 
-  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time, rain, skyState, plants);
+  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time, rain, skyState, plants, nibbler);
   device.queue.submit([enc.finish()]);
 
   facc+=dt; frames++; frameCount++;
@@ -458,6 +486,10 @@ function frame(now){
     moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=18.0; moveScratchU[3]=N;
     moveScratch[4]=renderer.waterLevel; moveScratch[5]=FLOAT_DEPTH;
     device.queue.writeBuffer(moveParams,0,moveScratch);
+
+    // Cat follows the player on the rendered timestep (same accumulated dt the move pass
+    // uses), so its motion stays in step with the entities.
+    if (nibbler) nibbler.update(dtRenderAcc, player.position, player.yaw);
     dtRenderAcc = 0;
 
     renderer.setCamera(player.getCamera(canvas.width/canvas.height));
