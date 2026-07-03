@@ -266,8 +266,8 @@ struct VsOut {
 // (inverse-transpose of a pure non-uniform scale = reciprocal scale), then renormalized.
 fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
   // axis scales: deer is taller (Y) and a touch shorter (X); wolf is longer (X) and lower (Y).
-  let deerS = vec3<f32>(0.95, 1.25, 0.85);
-  let wolfS = vec3<f32>(0.60, 0.70, 0.85);
+  let deerS = vec3<f32>(0.95, 1.25, 0.85) * 2;
+  let wolfS = vec3<f32>(0.60, 0.70, 0.85) * 2;
   let s = mix(deerS, wolfS, species);
   var p = localPos * s;
 
@@ -324,7 +324,7 @@ fn vs(@location(0) vPos : vec3<f32>,
   // sits ~1.5 above ground (move pass); the mesh's own feet are at local y=0, so we
   // drop the placement down by that offset so feet meet the ground rather than float.
   let scale = SIZE.x;
-  let foot = instPos.xyz - vec3<f32>(0.0, 1.5, 0.0);   // undo the move-pass body lift
+  let foot = instPos.xyz - vec3<f32>(0.0, 0.0, 0.0);   // undo the move-pass body lift
   let worldPos = foot + rl * scale;
 
   var out : VsOut;
