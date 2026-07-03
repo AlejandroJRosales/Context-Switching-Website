@@ -329,7 +329,7 @@ export function createRenderer(device, context, format, {
 
   // per-frame draw. positions = the compute positions buffer (instance pos), N = count,
   // speciesHeading = per-instance (species, heading) buffer. `time` drives water.
-  function render(encoder, positions, N, speciesHeading, width, height, time = 0, rain = null, skyState = null){
+  function render(encoder, positions, N, speciesHeading, width, height, time = 0, rain = null, skyState = null, plants = null){
     ensureDepth(width,height);
     writeWaterParams(time);
 
@@ -356,6 +356,11 @@ export function createRenderer(device, context, format, {
     pass.setVertexBuffer(2, speciesHeading);
     pass.setIndexBuffer(creIdxBuf, "uint32");
     pass.drawIndexed(creIndexCount, N);
+
+    // plants after creatures, before water: opaque cutout foliage, depth-tested AND
+    // depth-writing, so water correctly blends over any submerged stems and creatures
+    // occlude/are occluded by plants. No-op when the plant system is disabled.
+    if (plants) plants.draw(pass, skyState, time);
 
     // water last: alpha-blended over opaque terrain/creatures, depth-tested but not written
     pass.setPipeline(waterPipe);
@@ -392,7 +397,7 @@ export function createRenderer(device, context, format, {
     bakeShadow, setShadow, setShadowResolution,
     heights, readHeights, terrainParams:tpBuf, gridN, amplitude,
     waterLevel: resolvedWaterLevel,
-    // exposed so weather (rain) can bind the same Camera + Sky uniforms read-only.
-    camBuf, skyBuf,
+    // exposed so weather (rain) and plants can bind the same Camera + Sky + Fog uniforms read-only.
+    camBuf, skyBuf, fogBuf,
   };
 }

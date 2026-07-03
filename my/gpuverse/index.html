@@ -17,6 +17,7 @@
   #scale span{min-width:46px;text-align:center;text-shadow:0 1px 2px #000}
   #resetSeed{width:auto;padding:0 10px;margin-left:6px}
   #rainBtn{width:auto;padding:0 10px;margin-left:6px}
+  #plantBtn{width:auto;padding:0 10px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -27,6 +28,7 @@
   <span id="scaleLabel">1.0</span>
   <button id="scaleUp" title="Scale up (+)">+</button>
   <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
+  <button id="plantBtn" title="Toggle plants on / off (P)">PLANTS: ON</button>
   <button id="resetSeed" title="Roll a new seed and rebuild the world">RESET</button>
 </div>
 <div id="err"></div>
@@ -35,6 +37,8 @@ import { createRenderer } from "./renderer.js";
 import { createPlayer } from "./player.js";
 import { createSky } from "./sky.js";
 import { createRain } from "./rain.js";
+import { createPlants } from "./plant.js";
+import { createGrid } from "./grid.js";
 import { MOVE } from "./world_wgsl.js";
 import { ortho, lookAt, mul } from "./mat.js";
 
@@ -103,6 +107,7 @@ const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
 let speciesHeading;
 let rain;
+let plants, plantGrid;
 let curShadowRes = 2048;   // mirrors renderer's shadowRes; updated in buildWorld, read by fitLightMatrix
 
 function buildWorld(scale){
@@ -162,12 +167,64 @@ function buildWorld(scale){
     seed,
   });
 
+  // Plants (Tier 3.2): a second entity system. Fixed population for now — placed once at
+  // init, clustered, baked onto the terrain surface. Count scales with the world so density
+  // stays roughly constant across scale steps. Reuses the renderer's Camera/Sky/Fog uniforms
+  // read-only, same as rain.
+  const plantCount = Math.max(1, Math.round(50000 * scale));
+  plants = createPlants(device, format, {
+    camBuf: renderer.camBuf, skyBuf: renderer.skyBuf, fogBuf: renderer.fogBuf,
+    worldMin, worldMax,
+    count: plantCount,
+    clusters: Math.max(10, Math.round(50 * scale)),
+    clusterRadius: Math.max(120, Math.min(worldMax[0], worldMax[2]) * 0.03),
+    height: 5,
+    width:  .5,
+    sway:   1,
+    seed,
+  });
+
+  // A dedicated uniform grid over the plant buffer, so sensing/eating can find plants
+  // without a new neighbor search (reuses grid.js). Cell size ~ a cluster radius keeps
+  // occupancy sane. Built each frame before the (future) eating pass; harmless to skip
+  // drawing it, but we record it so the plant cellStart/sortedIdx are always current.
+  plantGrid = createGrid(device, {
+    N: plantCount,
+    positions: plants.buffers.plants,
+    worldMin, worldMax,
+    cellSize: Math.max(150, Math.min(worldMax[0], worldMax[2]) * 0.02),
+    flat2D: true,
+  });
+
   // player walks the SAME baked heightfield the renderer draws. Read it back once
   // (async) and hand it to the player; this matches the rendered ground exactly,
   // unlike recomputing fp32 GPU noise on the fp64 CPU.
-  if (player) renderer.readHeights().then(({data, gridN})=>{
-    player.setTerrain({ heights:data, gridN,
+  // Capture which plant system this readback belongs to, so a fast RESET/scale change
+  // that rebuilds before the async readback resolves doesn't place onto a stale set.
+  const plantsForThisBuild = plants;
+  renderer.readHeights().then(({data, gridN})=>{
+    if (player) player.setTerrain({ heights:data, gridN,
       worldMin:[worldMin[0], worldMin[2]], worldMax:[worldMax[0], worldMax[2]] });
+
+    // Bilinear sampler over the baked heightfield (row-major heights[z*gridN + x]),
+    // matching the rendered ground so plants sit exactly on the surface.
+    const wx0 = worldMin[0], wz0 = worldMin[2];
+    const sx = (gridN - 1) / (worldMax[0] - worldMin[0]);
+    const sz = (gridN - 1) / (worldMax[2] - worldMin[2]);
+    const sampleHeight = (x, z) => {
+      let fx = (x - wx0) * sx, fz = (z - wz0) * sz;
+      fx = Math.min(gridN - 1, Math.max(0, fx));
+      fz = Math.min(gridN - 1, Math.max(0, fz));
+      const x0 = Math.floor(fx), z0 = Math.floor(fz);
+      const x1 = Math.min(gridN - 1, x0 + 1), z1 = Math.min(gridN - 1, z0 + 1);
+      const tx = fx - x0, tz = fz - z0;
+      const h00 = data[z0 * gridN + x0], h10 = data[z0 * gridN + x1];
+      const h01 = data[z1 * gridN + x0], h11 = data[z1 * gridN + x1];
+      const a = h00 + (h10 - h00) * tx, b = h01 + (h11 - h01) * tx;
+      return a + (b - a) * tz;
+    };
+    // Only place if this build's plant system is still the live one.
+    if (plantsForThisBuild === plants) plantsForThisBuild.place(sampleHeight);
   });
 
   moveParams = device.createBuffer({ size:32, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
@@ -192,6 +249,8 @@ function buildWorld(scale){
   // exists yet (it doesn't on the very first buildWorld, which runs before the wiring).
   const rb = document.getElementById("rainBtn");
   if (rb) rb.textContent = "RAIN: " + rain.state.mode.toUpperCase();
+  const pb = document.getElementById("plantBtn");
+  if (pb) pb.textContent = "PLANTS: " + (plants.enabled ? "ON" : "OFF");
 }
 
 // player: WASD+space (keyboard) and on-screen joystick+jump (touch), both always on
@@ -225,10 +284,19 @@ function cycleRain(){
 }
 rainBtn.addEventListener("click", cycleRain);
 
+// plant toggle: button + P key both route through here so the label stays in sync.
+const plantBtn = document.getElementById("plantBtn");
+function togglePlants(){
+  const on = plants.setEnabled(!plants.enabled);
+  plantBtn.textContent = "PLANTS: " + (on ? "ON" : "OFF");
+}
+plantBtn.addEventListener("click", togglePlants);
+
 addEventListener("keydown", e=>{
   if(e.key==="+"||e.key==="=") setScale(scaleIdx+1);
   if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
   if(e.key==="r"||e.key==="R") cycleRain();
+  if(e.key==="p"||e.key==="P") togglePlants();
 });
 
 // new seed and rebuild (terrain, biomes, scatter, water all re-derive).
@@ -312,6 +380,10 @@ function handleHud(time, dt, lastHud) {
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
   rain.buildFrame(enc, cam0.eye, dt);
+  // Rebuild the plant grid so cellStart/sortedIdx reflect current plant positions. Plants
+  // don't move yet, so this is redundant work today; recording it now keeps the plant grid
+  // live for the (future) sensing/eating pass and validates the second-grid wiring.
+  if (plantGrid) plantGrid.buildFrame(enc);
 
   // Fit + upload the sun-view light frustum, then bake the shadow depth map. The
   // coverage radius is tied to fog distance (no point shadowing past the fog wall),
@@ -327,7 +399,7 @@ function handleHud(time, dt, lastHud) {
   }
   renderer.bakeShadow(enc);
 
-  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time, rain, skyState);
+  renderer.render(enc, positions, N, speciesHeading, canvas.width, canvas.height, time, rain, skyState, plants);
   device.queue.submit([enc.finish()]);
 
   facc+=dt; frames++; frameCount++;
@@ -338,7 +410,8 @@ function handleHud(time, dt, lastHud) {
   if(frameCount%HUD_EVERY===0){
     const tod = (skyState.timeOfDay*24).toFixed(1);
     const rainStr = rain.state.mode.toUpperCase() + (rain.state.on ? ` ${(rain.state.intensity*100)|0}%` : "");
-    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  ${player.flying?"  [FLYING]":""}\nrain ${rainStr}  [R]\n`;
+    const plantStr = plants.enabled ? `${plants.count.toLocaleString()}  [P]` : `off  [P]`;
+    const hudText=`3.0.0  seed ${seed}  fps ${fps}\nentities ${N.toLocaleString()}\nplants ${plantStr}\nworld ${Math.round(worldMax[0])}x${Math.round(worldMax[2])}\ntime ${tod}h  ${player.flying?"  [FLYING]":""}\nrain ${rainStr}  [R]\n`;
     if(hudText!==lastHud){ hud.textContent=hudText; lastHud=hudText; }
   }
   return lastHud;
