@@ -186,11 +186,7 @@ function addCone(pos, tris, vbase, ctr, rad, height, segs = 6) {
 
 // Bakes the single first-person COMPANION cat ("Nibbler") in local space:
 //   +X = forward (nose), +Y = up, +Z = right. Feet at local y=0 so placement at the
-// terrain height puts paws on the ground with no fudge factor. Ported proportions from
-// the Three.js createCatMesh: long low body, cone ears, glowing eye tint (baked as vertex
-// tint, not a light), legs, tail. Returns interleaved pos+nrm (float32x6) + u32 index + a
-// per-vertex tint stream (float32x3) so eyes/nose glow without a separate light. The cat
-// pipeline has its own layout, so the tint stream doesn't need to match the creature streams.
+// terrain height puts paws on the ground with no fudge factor
 export function buildCatMesh() {
   const pos = [];   // flat xyz
   const tris = [];  // flat index triples
@@ -205,9 +201,7 @@ export function buildCatMesh() {
 
   const tag = (start, end, color) => tintRanges.push({ start, end, color });
 
-  // Body: long low tube along X (tail x=-9 .. chest x=+9), fattest mid-body. Local units
-  // roughly follow the Three.js proportions (which used ~5-unit sphere radii at 0.85 scale);
-  // here we keep them in the same ballpark so the world scale param lands similarly.
+  // Body: long low tube along X (tail x=-9 .. chest x=+9)
   let s0 = vb;
   vb = addTube(pos, tris, vb, {
     rings: 11, segs: SEG,
@@ -242,8 +236,7 @@ export function buildCatMesh() {
     tag(s0, vb, black);
   }
 
-  // Tail: tapered tube trailing back (-X) and rising, curving at the tip (t*t), matching the
-  // Three.js "stiff upright, curving backward" pose baked into the rest position.
+  // Tail: tapered tube trailing back (-X) and rising, curving at the tip (t*t)
   s0 = vb;
   vb = addTube(pos, tris, vb, {
     rings: 8, segs: 6,

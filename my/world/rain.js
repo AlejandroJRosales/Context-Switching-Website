@@ -3,13 +3,7 @@
 // Re-expression of mbverse's CPU rain into the compute-first architecture: particles live
 // in one storage buffer  rain : array<vec4<f32>>  (xyz = world pos, w = per-drop seed for
 // length variation), never read back to the CPU. One compute pass advances + recycles each
-// drop; the render pass draws the pool as instanced billboard streaks.
-//
-// The buffer is NOT ping-ponged: each thread touches only its own element, so there is no
-// cross-thread aliasing and double-buffering would only add a copy.
-//
-// Intensity/mode is CPU-side global state (correctly a uniform, not a compute output):
-// a 3-way toggle auto/on/off, eased each frame, surfaced in the HUD by the caller.
+// drop; the render pass draws the pool as instanced billboard streak.
 
 import { SKY_PARAMS_STRUCT } from "./sky.js";
 
@@ -94,11 +88,7 @@ fn vs(@builtin(vertex_index) vid : u32,
   let world = inst.xyz + vec3<f32>(0.0, 1.0, 0.0) * (c.y * len);
   var clip = CAM.viewProj * vec4<f32>(world, 1.0);
 
-  // Width in CLIP space as a horizontal screen offset. The old world-space "right" axis was
-  // derived from the drop->camera vector projected to XZ, which degenerates (parallel to
-  // view) for drops straight ahead, stacking the still-camera column into one fat bar. A
-  // screen-space offset can't degenerate. Multiply by clip.w so the perspective divide
-  // leaves a constant NDC width; divide by aspect so it isn't stretched by the viewport.
+  // Width in CLIP space as a horizontal screen offset
   clip.x = clip.x + c.x * RD.width * clip.w / RD.aspect;
 
   var out : VsOut;
@@ -117,8 +107,8 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
 
 export function createRain(device, format, {
-  camBuf,                    // renderer Camera uniform (144 B) — reused
-  skyBuf,                    // renderer SkyParams uniform (112 B) — reused
+  camBuf,                    // renderer Camera uniform (144 B): reused
+  skyBuf,                    // renderer SkyParams uniform (112 B): reused
   count = 4096,              // particle pool size (power of 2)
   radius = 700,              // camera-column radius drops live within
   top = 400,                 // world Y where drops spawn

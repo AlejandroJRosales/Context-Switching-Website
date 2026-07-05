@@ -18,9 +18,7 @@ export function createRenderer(device, context, format, {
   const wXZmax = [worldMax[0], worldMax[2]];
 
   // Seed-derived water level: deterministic fraction of amplitude so different seeds
-  // get different lake levels. `seed` here is already the small bounded GPU float from
-  // the host (seedToGpuFloat), so a plain integer-mixing hash decorrelates cleanly
-  // without sin() of a large argument (which clumps and loses precision).
+  // get different lake levels.
   function hashSeedTo01(s) {
     let h = Math.imul((s * 65536) | 0 ^ 0x9e3779b9, 2654435761);
     h = Math.imul(h ^ (h >>> 15), 2246822519);
@@ -407,15 +405,12 @@ export function createRenderer(device, context, format, {
   };
 }
 
-// ===========================================================================
-// PLANTS — GPU-resident instanced billboard foliage. Shader (PLANT_RENDER) lives in
-// world_wgsl.js; this is the host factory. Reuses the renderer's Camera/Sky/Fog uniforms
-// read-only (pass them via camBuf/skyBuf/fogBuf, same as rain).
-// ===========================================================================
+// PLANTS: GPU-resident instanced billboard foliage. Shader (PLANT_RENDER) lives in
+// world_wgsl.js; this is the host factory
 export function createPlants(device, format, {
-  camBuf,                 // renderer Camera uniform (144 B) — reused read-only
-  skyBuf,                 // renderer SkyParams uniform (112 B) — reused read-only
-  fogBuf,                 // renderer FogParams uniform (16 B) — reused read-only
+  camBuf,                 // renderer Camera uniform (144 B): reused read-only
+  skyBuf,                 // renderer SkyParams uniform (112 B): reused read-only
+  fogBuf,                 // renderer FogParams uniform (16 B): reused read-only
   worldMin, worldMax,     // [x,y,z] world bounds (placement domain)
   count = 20000,          // fixed plant population
   clusters = 48,          // number of seed clusters; plants scatter around these
@@ -443,7 +438,7 @@ export function createPlants(device, format, {
   const initScratch = new Float32Array(Math.max(count, 1) * 4);
 
   // Precompute cluster centers once (deterministic). Plants scatter around a random center
-  // each — the static form of the "clustering" the growth pass will later reinforce.
+  // each: the static form of the "clustering" the growth pass will later reinforce.
   const spanX = worldMax[0] - worldMin[0];
   const spanZ = worldMax[2] - worldMin[2];
   const rng = makeRng(seed + 0x51ed);
@@ -546,22 +541,12 @@ export function createPlants(device, format, {
   };
 }
 
-// ===========================================================================
-// CAT COMPANION — a single first-person follower ("Nibbler"). NOT a GPU-simulated
+// CAT COMPANION: a single first-person follower ("Nibbler"). NOT a GPU-simulated
 // population: exactly one object whose follow state lives on the CPU. Host-side
 // bookkeeping (a follow state machine) + one per-frame uniform write (model matrix + tint)
 // + one non-instanced draw recorded into the renderer's main pass, after creatures.
-//
-// Mesh (buildCatMesh) is baked in mesh.js and consumes the SAME vertex layout as the
-// creature pipeline (pos+nrm) plus a tint stream. Shader (CAT_RENDER) lives in world_wgsl.js.
-//
-// Ground follows the SAME baked heightfield the player samples (bilinear, via setTerrain),
-// NOT a re-evaluated noise: WGSL fp32 and JS fp64 diverge as world coords grow, which buries
-// walkers. Sampling the identical grid identically => the cat stands on exactly the rendered
-// terrain, same as player.js.
-// ===========================================================================
 
-// Bilinear heightfield sample — identical to player.js sampleHeight so the cat and the
+// Bilinear heightfield sample: identical to player.js sampleHeight so the cat and the
 // player agree on the ground exactly. tp: { heights, gridN, worldMin:[x,z], worldMax:[x,z] }.
 function catSampleHeight(tp, wx, wz) {
   const clampf = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -583,16 +568,7 @@ function catSampleHeight(tp, wx, wz) {
   return mixf(mixf(h00, h10, tx), mixf(h01, h11, tx), tz);
 }
 
-// createCat(device, format, opts) -> {
-//   update(dt, playerPos, playerYaw), draw(pass, sky), setTerrain(tp),
-//   setEnabled(b), get enabled, get position, get yaw, placeBehindPlayer, buffers
-// }
-// opts:
-//   camBuf, skyBuf, fogBuf : renderer uniforms, reused read-only (from createRenderer)
-//   terrain                : { heights, gridN, worldMin:[x,z], worldMax:[x,z] } or null
-//   worldWidth, worldHeight: world span for toroidal wrap (defaults from terrain bounds)
-//   scale                  : world size multiplier (default 0.35; local mesh is ~14 wide)
-//   followDist, catchUpDist, backAwayDist : follow tuning (world units)
+
 export function createCat(device, format, {
   camBuf, skyBuf, fogBuf,
   terrain = null,
@@ -671,10 +647,6 @@ export function createCat(device, format, {
     speed: 0,
     placed: false,
   };
-  // effective ground = higher of the terrain surface and the water plane (offset down by
-  // floatDepth). Same rule as the creature MOVE pass: where terrain dips below water, the cat
-  // rides ON the water rather than sinking to the submerged floor; elsewhere it walks the land.
-  // Player deliberately has NO float term, so it wades/sinks instead of floating.
   let waterY = waterLevel;
   function groundY(x, z) { return Math.max(catSampleHeight(tp, x, z), waterY - floatDepth); }
 
@@ -687,8 +659,6 @@ export function createCat(device, format, {
     state.placed = true;
   }
 
-  // setTerrain(newTp, newWaterLevel?): rebind the heightfield (and optionally the water plane,
-  // whose seed-derived level can change on a world rebuild), then re-ground in place.
   function setTerrain(newTp, newWaterLevel) {
     tp = newTp;
     if (newWaterLevel !== undefined) waterY = newWaterLevel;
@@ -745,7 +715,7 @@ export function createCat(device, format, {
     state.speed = speed;
 
     // gravity + clamp against the effective floor (terrain OR water surface, whichever is
-    // higher — see groundY). Over deep water this floors at the float line so the cat rides
+    // higher: see groundY). Over deep water this floors at the float line so the cat rides
     // on top rather than sinking to the submerged terrain.
     state.vy -= GRAVITY * dt;
     state.y += state.vy * dt;
@@ -759,15 +729,14 @@ export function createCat(device, format, {
   }
 
   // Compose the model matrix (column-major, matching mat.js) = T * Ry * S, and its normal
-  // matrix (rotation only — uniform scale, so no inverse-transpose needed). Written into the
+  // matrix (rotation only: uniform scale, so no inverse-transpose needed). Written into the
   // reused scratch; one writeBuffer per frame.
   function writeDraw(sky) {
     const c = Math.cos(state.yaw), s = Math.sin(state.yaw);
     const sc = scale;
     // The follow logic sets yaw via atan2(dx,dz) and steps by (sin yaw, cos yaw), so the cat
     // TRAVELS along world (sin yaw, cos yaw) in XZ. The mesh nose is local +X, so we map
-    // local +X -> world (sin,0,cos) to keep the body aligned with travel. Local +Z (right)
-    // is then the perpendicular (cos,0,-sin). Column-major columns [c0|c1|c2|c3].
+    // local +X -> world (sin,0,cos) to keep the body aligned with travel
     const model = [
        s*sc, 0,   c*sc, 0,   // col0: local +X (nose) -> world (sin,0,cos) = travel dir
        0,    sc,  0,    0,   // col1: local +Y -> world up

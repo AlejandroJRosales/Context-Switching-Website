@@ -15,9 +15,7 @@ export function perspective(fovy, aspect, near, far) {
   ];
 }
 
-// Clip-space Z in [0,1] (WebGPU/D3D), NOT GL's [-1,1]. The shadow bake writes clip Z straight
-// into a depth24plus target and the terrain sampler compares against that same [0,1] depth,
-// so the projection must already be [0,1] with no remap.
+// Clip-space Z in [0,1] (WebGPU/D3D), NOT GL's [-1,1]
 export function ortho(left, right, bottom, top, near, far) {
   const lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
   return [

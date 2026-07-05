@@ -105,10 +105,7 @@ struct ShadowParams {
 export const SHADOW_FN = /* wgsl */`
 fn sampleShadow(worldPosIn : vec3<f32>, normal : vec3<f32>, ndl : f32) -> f32 {
   // Normal offset: push the sample point off the surface along its normal before
-  // projecting into light space. Without this, a coarse heightfield grid samples the
-  // shadow map at points that alias against the baked depth of that same slope,
-  // producing regular terrace-like self-shadow bands running across contours
-  // (worse at grazing angles, where depth bias alone isn't enough).
+  // projecting into light space
   let normalOffset = SHADOW.texel * 2.0 * (1.0 - ndl) * 40.0;
   let worldPos = worldPosIn + normal * normalOffset;
   let lp = SHADOW.lightViewProj * vec4<f32>(worldPos, 1.0);
@@ -119,10 +116,6 @@ fn sampleShadow(worldPosIn : vec3<f32>, normal : vec3<f32>, ndl : f32) -> f32 {
   // Z: ortho() already emits WebGPU-convention depth in [0,1], so compare directly (no remap).
   let depthRef = proj.z;
 
-  // Whether this fragment falls inside the light frustum. We must NOT branch the
-  // texture sample on this (textureSampleCompare requires uniform control flow), so
-  // instead we clamp the UV so the sample is always valid, run PCF unconditionally,
-  // then blend the result toward "fully lit" by this 0/1 mask afterward.
   let inside = f32(uvRaw.x >= 0.0 && uvRaw.x <= 1.0 &&
                    uvRaw.y >= 0.0 && uvRaw.y <= 1.0 && depthRef <= 1.0);
   let uv = clamp(uvRaw, vec2<f32>(0.0), vec2<f32>(1.0));
@@ -131,9 +124,6 @@ fn sampleShadow(worldPosIn : vec3<f32>, normal : vec3<f32>, ndl : f32) -> f32 {
   let slopeBias = SHADOW.bias * (1.0 + (1.0 - ndl) * 3.0);
   let cmp = depthRef - slopeBias;
 
-  // PCF box kernel of half-width pcfRadius, in texels. Use ...CompareLevel (samples at
-  // mip 0, no implicit derivatives) so there's no uniform-control-flow requirement at
-  // all — the correct, portable choice for shadow PCF.
   let r = i32(SHADOW.pcfRadius);
   var sum = 0.0;
   var taps = 0.0;
@@ -267,10 +257,7 @@ struct VsOut {
 };
 
 // Per-species deformation of a canonical-space vertex (local mesh coords, +X fwd, +Y up,
-// +Z right). species: 0 = deer, 1 = wolf. Returns the deformed local position. We scale
-// the three axes differently and lift/lower the neck+head region (high X) to change the
-// silhouette without touching topology. Normals are deformed by the same diagonal scale
-// (inverse-transpose of a pure non-uniform scale = reciprocal scale), then renormalized.
+// +Z right). species: 0 = deer, 1 = wolf. Returns the deformed local position
 fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
   // axis scales: deer is taller (Y) and a touch shorter (X); wolf is longer (X) and lower (Y).
   let deerS = vec3<f32>(0.95, 1.25, 0.85) * 2;
@@ -531,10 +518,7 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 }
 `;
 
-// Cat companion: creature-style lighting (Sky ambient + sun wrap + moon fill + fog), no
-// shadow sampling. A single model matrix + eyeBoost uniform; per-vertex tint (glowing eyes).
-// Consumes the same interleaved pos+nrm layout as the creature pipeline plus a third tint
-// stream. (Mesh bake: buildCatMesh in mesh.js. Host factory: createCat in renderer.js.)
+// Cat companion: creature-style lighting (Sky ambient + sun wrap + moon fill + fog)
 export const CAT_RENDER = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
 struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
 struct CatDraw {
@@ -591,7 +575,6 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
 // Move: placeholder movement. Random-walk in XZ, then snap Y via the shared
 // heightAt() (same noise as the renderer). Proves on-GPU position updates with
 // no CPU.
-
 export const MOVE = HEIGHT_FN + /* wgsl */`
 struct MoveParams {
   time : f32, dt : f32, speed : f32, N : u32,
@@ -634,20 +617,14 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   // Ground follow, with water interaction. Normally the body sits a little above the
   // terrain surface. Where the terrain dips below the water plane, the entity instead
   // floats: it rides at waterLevel minus a small floatDepth so it appears to sit ON the
-  // water rather than sinking to the (now submerged) terrain floor. max() picks whichever
-  // surface is higher, so the entity always rests on the terrain OR the water, whichever
-  // it would actually be standing/floating on at this XZ.
+  // water rather than sinking
   let ground = heightAt(TP, vec2<f32>(p.x, p.z)) + 1.5;
   let floatY = MP.waterLevel - MP.floatDepth;
   p.y = max(ground, floatY);
 
   positions[i] = p;
 
-  // facing: heading is the chosen travel direction. The mesh's +X axis is the nose, and
-  // the render rotates +X toward this angle, so the creature walks nose-first. Written from
-  // ang directly (not atan2 of the step) so facing stays correct even when clamped at a
-  // world edge where dx/dz would otherwise be cancelled.
-  // species (.x) is set once at init and never touched here.
+  // facing: heading is the chosen travel direction
   var sh = speciesHeading[i];
   sh.y = ang;
   speciesHeading[i] = sh;

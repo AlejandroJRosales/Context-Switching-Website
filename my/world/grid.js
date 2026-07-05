@@ -1,4 +1,4 @@
-// grid.js: GPU-resident uniform-grid neighbor search — WGSL + host orchestration
+// grid.js: GPU-resident uniform-grid neighbor search: WGSL + host orchestration
 // + the downstream sensing pass, all in one subsystem file.
 //
 // Per frame: clear -> count -> scan(local) -> scan(blockSums) -> scan(addOffsets) -> scatter.
@@ -279,7 +279,6 @@ fn sense(@builtin(global_invocation_id) gid : vec3<u32>) {
     }
     z = z + 1u;
   }
-  // write the 'count' value to your sensing output buffer here.
 }
 `;
 
@@ -381,10 +380,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 }
 `;
 
-// ---------------------------------------------------------------------------
 // Host-side orchestration for the GPU uniform-grid neighbor search.
 // No host readback in the hot path: buildFrame() only records dispatches.
-// ---------------------------------------------------------------------------
 const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
 
 export function createGrid(device, opts) {
@@ -428,7 +425,6 @@ export function createGrid(device, opts) {
   }
 
   // buffers
-  // allowReadback adds COPY_SRC to the buffers verify.js reads back. Off in production.
   const S = GPUBufferUsage.STORAGE;
   const SRC = opts.allowReadback ? GPUBufferUsage.COPY_SRC : 0;
   const mk = (bytes, usage) => device.createBuffer({ size: Math.max(bytes, 4), usage });

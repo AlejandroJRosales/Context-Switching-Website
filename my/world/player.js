@@ -1,23 +1,11 @@
 // player.js: first-person walker driven by TWO input sources at once:
 //   keyboard: W/A/S/D to move, Space to jump, mouse-drag to look
 //   touch:    on-screen joystick to move, on-screen JUMP button, drag-to-look
-// Both modes are always live regardless of device; their movement intents are summed,
-// so a gamepad-less laptop and a phone behave identically and can even be used together.
-//
-// The player owns its own position + look angles and produces an {eye,target} camera
-// each frame. Ground height is read from the SAME baked heightfield the renderer draws
-// (passed in via setTerrain as {heights, gridN, worldMin, worldMax}), then bilinearly
-// sampled: so the walker stands exactly on the rendered terrain. We do NOT recompute
-// the noise on the CPU: WGSL's fp32 sin-hash and JS's fp64 Math.sin diverge badly as
-// world coords grow, which is what previously buried the player when walking out.
 
 const mixf = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-// Bilinear sample of the baked heightfield at world (wx,wz).
-// tp: { heights:Float32Array(gridN*gridN), gridN, worldMin:[x,z], worldMax:[x,z] }.
-// Mirrors the terrain vertex shader: vertex iz*gridN+ix sits at uv=(ix,iz)/(gridN-1)
-// across [worldMin,worldMax]. Sampling the same grid the same way => identical ground.
+// Bilinear sample of the baked heightfield at world (wx,wz)
 function sampleHeight(tp, wx, wz) {
   if (!tp || !tp.heights) return 0;
   const g = tp.gridN;
@@ -39,24 +27,6 @@ function sampleHeight(tp, wx, wz) {
 
 // createPlayer(canvas, opts) -> { update(dt), getCamera(aspect), setTerrain(tp),
 //                                 position, destroy() }
-//
-// opts:
-//   terrain   : { heights:Float32Array, gridN, worldMin:[x,z], worldMax:[x,z] }
-//               the baked heightfield from renderer.readHeights() + world XZ bounds.
-//               May be null at construction and supplied later via setTerrain().
-//   eyeHeight : meters above ground the camera sits          (default 6)
-//   moveSpeed : horizontal units/sec                          (default 120)
-//   jumpSpeed : initial vertical velocity on jump             (default 90)
-//   gravity   : downward accel units/sec^2                    (default 260)
-//   flySpeed  : vertical units/sec while flying               (default 160)
-//   start     : [x,z] spawn (defaults to world center)
-//
-// Controls: both input modes always live:
-//   move : W/A/S/D or arrows, or the joystick
-//   jump : Space or the JUMP button (only while walking; independent of moving)
-//   look : drag anywhere on the canvas
-//   fly  : F or the FLY button toggles. While flying: Space/JUMP/▲ ascend,
-//          Shift or C or ▼ descend; gravity is off and you can't sink below ground.
 export function createPlayer(canvas, opts = {}) {
   let terrain   = opts.terrain || null;
   const eyeH    = opts.eyeHeight ?? 6;
@@ -103,11 +73,7 @@ export function createPlayer(canvas, opts = {}) {
   addEventListener("keyup", onKeyUp);
 
   // LOOK (drag anywhere on canvas that isn't a touch control)
-  // Shared by mouse and touch-drag. Joystick/jump swallow their own pointers.
-  // pointermove can fire many times per frame; rather than mutate yaw/pitch in the
-  // handler (which also competes with rendering), we ACCUMULATE the raw pixel delta
-  // here and apply it exactly once per frame in update(). preventDefault() on the
-  // move stops the browser from treating the drag as a scroll/pinch gesture.
+  // Shared by mouse and touch-drag. Joystick/jump swallow their own pointers
   let looking = false, lookId = -1, lx = 0, ly = 0;
   let pendingDX = 0, pendingDY = 0;   // accumulated, consumed each frame
   const LOOK_SENS = 0.0042;
@@ -253,11 +219,7 @@ export function createPlayer(canvas, opts = {}) {
 }
 
 // On-screen touch controls: a draggable joystick (bottom-left) and a right-side
-// button cluster (bottom-right): FLY toggle on top, then JUMP/UP, and a DOWN
-// button shown only while flying. Built in JS so player.js is drop-in.
-// joystick.{x,y} live in [-1,1]; (0,0) at rest.
-// API: { joystick, onJump(), flyUp, flyDown, onFlyToggle(), setFlying(bool), destroy() }
-//   flyUp/flyDown are HELD booleans (true while the button is pressed).
+// button cluster (bottom-right)
 function buildTouchUI() {
   const root = document.createElement("div");
   root.id = "playerControls";
