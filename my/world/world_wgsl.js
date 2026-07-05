@@ -276,10 +276,10 @@ fn deform(localPos : vec3<f32>, species : f32) -> vec3<f32> {
 
   let tailRegion = smoothstep(-0.52, -0.58, localPos.x);
   let tailT = clamp((-0.52 - localPos.x) / 0.20, 0.0, 1.0);
-  let deerTailY =  0.17;
+  let deerTailY =  0.50;
   let wolfTailY =  0.17;
   let deerTailX =  0.05;
-  let wolfTailX = -0.07;
+  let wolfTailX = -0.37;
   p.y = p.y + tailRegion * tailT * mix(deerTailY, wolfTailY, species);
   p.x = p.x + tailRegion * tailT * mix(deerTailX, wolfTailX, species);
   return p;
@@ -582,10 +582,15 @@ struct MoveParams {
   floatDepth : f32,   // how far below the surface a floating body sits
   _p0 : f32, _p1 : f32,
 };
+// SenseResult mirrors grid.js: per-entity neighbor summary produced by the SENSE pass that
+// runs immediately before MOVE. Bound read-only here (binding 4) so movement can react.
+struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
+
 @group(0) @binding(0) var<uniform> MP : MoveParams;
 @group(0) @binding(1) var<uniform> TP : TerrainParams;
 @group(0) @binding(2) var<storage, read_write> positions : array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read_write> speciesHeading : array<vec2<f32>>;
+@group(0) @binding(4) var<storage, read> senseOut : array<SenseResult>;
 
 fn hash11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
 // two-input hash: stable random in [0,1) for a given (entity, epoch) pair.
@@ -597,13 +602,41 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   if (i >= MP.N) { return; }
   var p = positions[i];
 
-  // Random walk: each entity picks a random heading in [0, 2pi) and holds it for
-  // WANDER_SECS, then picks a new one. The "epoch" index = floor(time / WANDER_SECS)
-  // is constant for 10s at a time, so hashing (entity, epoch) gives a heading that's
-  // fixed within the window and jumps to a fresh random direction each new window.
+  // The animal's ACTUAL facing persists in speciesHeading[i].y across frames. We never snap
+  // it: each frame we pick a DESIRED heading and rotate the current facing toward it by at
+  // most MAX_TURN*dt radians. This turn-rate cap is what kills the sub-second left/right
+  // stutter: the nearest-neighbor target can flip between frames, but the body physically
+  // can't reverse that fast, so a one-frame target flip only nudges the heading a few degrees.
+  // (Placeholder steering until per-animal neural nets drive the desired heading instead.)
+  let MAX_TURN = 2.5;   // radians/sec; ~quick-but-physical predator turn at the 30Hz step
+  let me = speciesHeading[i];
+  var ang = me.y;       // current facing (what we actually travel along)
+
+  // Desired heading. Default: a slow random wander that changes each WANDER_SECS window
+  // (epoch = floor(time/WANDER_SECS) is constant for the whole window, so the hash is too).
   let WANDER_SECS = 10.0;
   let epoch = floor(MP.time / WANDER_SECS);
-  let ang = hash21(f32(i) + 1.0, epoch) * 6.2831853;
+  var want = hash21(f32(i) + 1.0, epoch) * 6.2831853;
+
+  // If something's in sense range, override the desired heading: species 1 (wolf) pursues
+  // its single nearest target; species 0 (deer) flees it (+pi). Target selection is still
+  // per-frame/stateless here on purpose — the turn cap absorbs the churn until the nets add
+  // real target locking.
+  let sr = senseOut[i];
+  if (sr.nearest != 0xffffffffu) {
+    let q = positions[sr.nearest].xyz;
+    let toN = vec2<f32>(q.x - p.x, q.z - p.z);
+    if (dot(toN, toN) > 1e-4) {
+      want = atan2(toN.y, toN.x);
+      if (me.x < 0.5) { want = want + 3.1415927; }  // deer: flee
+    }
+  }
+
+  var d = want - ang;
+  d = d - 6.2831853 * floor((d + 3.1415927) / 6.2831853);  // wrap to (-pi, pi]
+  let maxStep = MAX_TURN * MP.dt;
+  ang = ang + clamp(d, -maxStep, maxStep);
+
   let step = MP.speed * MP.dt;
   let dx = cos(ang) * step;
   let dz = sin(ang) * step;
@@ -628,5 +661,59 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   var sh = speciesHeading[i];
   sh.y = ang;
   speciesHeading[i] = sh;
+}
+`;
+// INIT: one-time GPU seeding of the entity buffers. Replaces the CPU Float32Array
+// build+upload that stalled on every scale change (that path allocated N*16 + N*8 bytes,
+// filled them on the CPU, and blocked on two writeBuffers). Here each entity hashes its
+// own index against the world seed to place itself, choose a species + heading, and set a
+// starting energy, entirely on the GPU. Same seed -> same scatter (the hashes are pure),
+// so determinism is preserved.
+//
+// Buffers written (must match the MOVE bind group so INIT can reuse the same layout):
+//   positions      : array<vec4<f32>>  (.xyz = world pos, .w = energy)
+//   speciesHeading : array<vec2<f32>>  (.x = species {0,1}, .y = heading radians)
+//
+// The world-Y is seeded above the terrain (at amplitude) exactly as the old CPU path did;
+// the first MOVE pass snaps every entity down onto the ground/water on frame 0.
+export const INIT = HEIGHT_FN + /* wgsl */`
+struct InitParams {
+  worldMin : vec2<f32>,
+  worldMax : vec2<f32>,
+  amplitude : f32,
+  seed      : f32,
+  N         : u32,
+  deerFrac  : f32,   // fraction assigned species 0 (deer); rest are species 1 (wolf)
+};
+@group(0) @binding(0) var<uniform> IP : InitParams;
+@group(0) @binding(1) var<storage, read_write> positions : array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> speciesHeading : array<vec2<f32>>;
+
+// Pure hashes: identical stream for a given (index, salt) pair on any GPU, so the scatter
+// is reproducible from the seed alone (matches the determinism the CPU RNG gave us).
+fn ih11(x : f32) -> f32 { return fract(sin(x * 91.345) * 47453.21); }
+fn ih21(a : f32, b : f32) -> f32 { return fract(sin(a * 91.345 + b * 47.853) * 47453.21); }
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= IP.N) { return; }
+
+  let fi = f32(i);
+  // decorrelate the draws by salting each with the seed + a distinct constant.
+  let rx = ih21(fi + 1.0,  IP.seed + 17.13);
+  let rz = ih21(fi + 2.0,  IP.seed + 43.71);
+  let rs = ih21(fi + 3.0,  IP.seed + 91.19);
+  let rh = ih21(fi + 4.0,  IP.seed + 57.07);
+
+  var p : vec4<f32>;
+  p.x = IP.worldMin.x + rx * (IP.worldMax.x - IP.worldMin.x);
+  p.z = IP.worldMin.y + rz * (IP.worldMax.y - IP.worldMin.y);
+  p.y = IP.amplitude;              // seeded high; MOVE snaps to ground/water on frame 0
+  p.w = 0.5 + 0.5 * ih11(fi + 5.0); // starting energy in [0.5,1.0)
+  positions[i] = p;
+
+  let species = select(1.0, 0.0, rs < IP.deerFrac);
+  speciesHeading[i] = vec2<f32>(species, rh * 6.2831853);
 }
 `;

@@ -148,8 +148,8 @@ import { createRenderer, createPlants, createCat } from "./renderer.js";
 import { createPlayer } from "./player.js";
 import { createSky } from "./sky.js";
 import { createRain } from "./rain.js";
-import { createGrid } from "./grid.js";
-import { MOVE } from "./world_wgsl.js";
+import { createGrid, SENSE } from "./grid.js";
+import { MOVE, INIT } from "./world_wgsl.js";
 import { ortho, lookAt, mul } from "./mat.js";
 
 
@@ -210,6 +210,9 @@ let speciesHeading;
 let rain;
 let plants, plantGrid;
 let nibbler;
+// Entity uniform grid (neighbor search over `positions`) + its downstream sensing pass.
+// Rebuilt each buildWorld because N and the world bounds change with scale.
+let entityGrid, senseParamsBuf, senseOut, senseBG, sensePipe;
 // How far the cat sinks below the water surface when floating (world units). Small because
 // the cat mesh's paws are at local y=0 with no body lift, unlike the creatures (FLOAT_DEPTH).
 const CAT_FLOAT_DEPTH = 2.0;
@@ -220,31 +223,50 @@ function buildWorld(scale){
   worldMax = [BASE_WORLD[0]*scale, 0, BASE_WORLD[1]*scale];
   amplitude = BASE_AMPLITUDE * scale;
 
-  // Seeded RNG (1.4): same seed -> same initial scatter of entities, every run.
-  const rng = mulberry32(seedToState(seed));
+  // Entity state buffers. No longer COPY_DST-seeded from the CPU: a one-time GPU INIT pass
+  // (below) scatters positions, assigns species/heading, and sets starting energy. This
+  // removes the per-scale-change stall where we allocated N*16 + N*8 bytes on the CPU,
+  // filled them in a loop, and blocked on two writeBuffers. .w of positions carries energy.
   positions = device.createBuffer({
-    size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
-  {
-    const init = new Float32Array(N*4);
-    for(let i=0;i<N;i++){
-      init[i*4]   = worldMin[0]+rng()*(worldMax[0]-worldMin[0]);
-      init[i*4+2] = worldMin[2]+rng()*(worldMax[2]-worldMin[2]);
-      init[i*4+1] = amplitude;
-    }
-    device.queue.writeBuffer(positions,0,init);
-  }
-
-  // Per-instance (species, heading). Species assigned once here (~55% deer / 45% wolf via
-  // the same seeded RNG so it's reproducible)
+    size: N*16, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX });
+  // Per-instance (species, heading): (~55% deer / 45% wolf), seeded on the GPU so the
+  // scatter is still reproducible from `seed` alone.
   speciesHeading = device.createBuffer({
-    size: N*8, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+    size: N*8, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.VERTEX });
+
+  // GPU position init (2.1): hash(index, seed) -> pos/species/heading/energy, dispatched
+  // once. InitParams (std140): vec2 worldMin, vec2 worldMax, f32 amplitude, f32 seed,
+  // u32 N, f32 deerFrac = 32 bytes.
   {
-    const sh = new Float32Array(N*2);
-    for(let i=0;i<N;i++){
-      sh[i*2]   = rng() < 0.55 ? 0 : 1;
-      sh[i*2+1] = rng() * Math.PI * 2;
-    }
-    device.queue.writeBuffer(speciesHeading,0,sh);
+    const initParams = device.createBuffer({ size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const ipf = new Float32Array(8), ipu = new Uint32Array(ipf.buffer);
+    ipf[0]=worldMin[0]; ipf[1]=worldMin[2];       // worldMin.xz
+    ipf[2]=worldMax[0]; ipf[3]=worldMax[2];       // worldMax.xz
+    ipf[4]=amplitude;   ipf[5]=seedToGpuFloat(seed);
+    ipu[6]=N;           ipf[7]=0.55;              // deerFrac
+    device.queue.writeBuffer(initParams, 0, ipf);
+
+    const initBGL = device.createBindGroupLayout({ entries:[
+      {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+      {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+      {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    ]});
+    const initBG = device.createBindGroup({ layout:initBGL, entries:[
+      {binding:0,resource:{buffer:initParams}},
+      {binding:1,resource:{buffer:positions}},
+      {binding:2,resource:{buffer:speciesHeading}},
+    ]});
+    const initPipe = device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts:[initBGL] }),
+      compute:{ module: device.createShaderModule({ code:INIT }), entryPoint:"main" },
+    });
+    const enc = device.createCommandEncoder();
+    const p = enc.beginComputePass();
+    p.setPipeline(initPipe); p.setBindGroup(0, initBG);
+    p.dispatchWorkgroups(Math.ceil(N/64));
+    p.end();
+    device.queue.submit([enc.finish()]);
   }
 
   // Shadow map shrinks as the world grows: a fixed texel budget over a bigger
@@ -347,22 +369,85 @@ function buildWorld(scale){
   });
 
   moveParams = device.createBuffer({ size:32, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+  // MOVE now also reads senseOut (binding 4, read-only) so movement can react to the sensing
+  // pass recorded just before it. senseOut is created below alongside the grid, so the move
+  // bind group is assembled after that; see the sensing block.
   moveBGL = device.createBindGroupLayout({entries:[
     {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
     {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
     {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
-  ]});
-  moveBG = device.createBindGroup({layout:moveBGL,entries:[
-    {binding:0,resource:{buffer:moveParams}},
-    {binding:1,resource:{buffer:renderer.terrainParams}},
-    {binding:2,resource:{buffer:positions}},
-    {binding:3,resource:{buffer:speciesHeading}},
+    {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
   ]});
   movePipe = device.createComputePipeline({
     layout: device.createPipelineLayout({bindGroupLayouts:[moveBGL]}),
     compute:{module:device.createShaderModule({code:MOVE}),entryPoint:"main"},
   });
+
+  // ---- 2.2 sensing: uniform grid over the entity positions + a per-entity sense pass ----
+  // The grid substrate (createGrid + SENSE) was already complete; this is the orchestration
+  // that was missing. buildFrame() records clear/count/scan/scatter; the SENSE pass then
+  // reads the sorted grid to produce per-entity {count, nearest, nearestD2}. Both run each
+  // frame BEFORE the MOVE pass so movement can react to fresh neighbor data.
+  //
+  // cellSize is chosen so the sense radius spans ~1 cell (SENSE scans an R-cell halo, with R
+  // = ceil(senseRadius/cellSize)); a coarser cell keeps totalCells within the single-level
+  // scan bound (SCAN_BLOCK^2) as the world grows.
+  const SENSE_RADIUS = Math.max(120, Math.min(worldMax[0], worldMax[2]) * 0.02);
+  entityGrid = createGrid(device, {
+    N,
+    positions,
+    worldMin, worldMax,
+    cellSize: SENSE_RADIUS,
+    flat2D: true,                       // entities live on a 2D plane; y collapses to one cell
+    allowReadback: false,
+  });
+
+  // SenseParams (std140): f32 senseRadius + 3 pad = 16 bytes.
+  senseParamsBuf = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(senseParamsBuf, 0, new Float32Array([SENSE_RADIUS, 0, 0, 0]));
+
+  // SenseResult is 16 bytes (u32 count, u32 nearest, f32 nearestD2, u32 pad) per entity.
+  senseOut = device.createBuffer({ size: N*16,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+
+  // SENSE bindings (see grid.js): 0 grid Params, 1 SenseParams, 2 positions,
+  // 3 cellStart, 4 cellCount (bound here as a read-only, non-atomic view), 5 sortedIdx,
+  // 6 senseOut. cellCount is the SAME buffer the grid writes atomically; WGSL forbids
+  // aliasing it as atomic and non-atomic in one shader, but SENSE is a separate module that
+  // only ever reads it, so a plain read-only-storage binding is valid.
+  const senseBGL = device.createBindGroupLayout({ entries:[
+    {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+    {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+    {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+    {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+    {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+    {binding:5,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+    {binding:6,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+  ]});
+  senseBG = device.createBindGroup({ layout:senseBGL, entries:[
+    {binding:0,resource:{buffer:entityGrid.buffers.params}},
+    {binding:1,resource:{buffer:senseParamsBuf}},
+    {binding:2,resource:{buffer:positions}},
+    {binding:3,resource:{buffer:entityGrid.buffers.cellStart}},
+    {binding:4,resource:{buffer:entityGrid.buffers.cellCount}},
+    {binding:5,resource:{buffer:entityGrid.buffers.sortedIdx}},
+    {binding:6,resource:{buffer:senseOut}},
+  ]});
+  sensePipe = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts:[senseBGL] }),
+    compute:{ module: device.createShaderModule({ code:SENSE }), entryPoint:"main" },
+  });
+
+  // MOVE bind group, assembled now that senseOut exists (binding 4). moveBGL/movePipe were
+  // created above so the pipeline layout was ready; only the resource binding waited.
+  moveBG = device.createBindGroup({layout:moveBGL,entries:[
+    {binding:0,resource:{buffer:moveParams}},
+    {binding:1,resource:{buffer:renderer.terrainParams}},
+    {binding:2,resource:{buffer:positions}},
+    {binding:3,resource:{buffer:speciesHeading}},
+    {binding:4,resource:{buffer:senseOut}},
+  ]});
 
   // buildWorld makes a fresh rain (mode resets to auto); resync the button label if it
   // exists yet (it doesn't on the very first buildWorld, which runs before the wiring).
@@ -500,6 +585,18 @@ function handleHud(time, dt, lastHud) {
   rain.resolve(dt, time);
 
   const enc=device.createCommandEncoder();
+
+  // 2.2: neighbor grid + sensing BEFORE movement. buildFrame() records the
+  // clear->count->scan->scatter chain (its own compute pass); the sense pass then reads the
+  // sorted grid into senseOut. Recorded ahead of MOVE so entities can react to fresh sensing.
+  if (entityGrid) {
+    entityGrid.buildFrame(enc);
+    const sp = enc.beginComputePass();
+    sp.setPipeline(sensePipe); sp.setBindGroup(0, senseBG);
+    sp.dispatchWorkgroups(Math.ceil(N/64));
+    sp.end();
+  }
+
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
   rain.buildFrame(enc, cam0.eye, dt);
