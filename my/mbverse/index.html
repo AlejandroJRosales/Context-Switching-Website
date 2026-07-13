@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>mbverse</title>
 <style>
-*{ margin:0; padding:0; box-sizing:border-box; user-select:none; }
-  html,body { width:100%; height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; font-size:12px;}
+  * { margin:0; padding:0; user-select:none; }
+  html,body { height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; font-size:12px; }
   #gl  { display:block; width:100%; height:100%; touch-action:none; }
   #hud { position:absolute; inset:0; pointer-events:none; }
   #look { position:absolute; inset:0; pointer-events:auto; z-index:1; }
@@ -16,12 +16,13 @@
   #joy  { left:24px; }
   #jump { right:24px; width:90px; height:90px; bottom:39px; display:flex; align-items:center; justify-content:center; }
   #joy .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.25); }
-  #info { position:absolute; top:8px; left:8px; color:#fff;line-height:1.5; pointer-events:none; white-space:pre; z-index:4; }
+  #info { position:absolute; top:8px; left:8px; color:#fff; line-height:1.5; white-space:pre; z-index:4; }
   #gear { position:absolute; top:8px; right:8px; z-index:5; pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; border-radius:4px; padding:6px 10px; font-size:16px; line-height:1; }
-  #btns { position:absolute; top:44px; right:8px; display:none; flex-direction:column; align-items:stretch; gap:6px; z-index:4; background:rgba(0,0,0,.55); padding:8px; border-radius:6px; }
+  #btns { position:absolute; top:44px; right:8px; display:none; flex-direction:column; gap:6px; z-index:4; background:rgba(0,0,0,.55); padding:8px; border-radius:6px; }
   #btns.open { display:flex; }
-  #scaleWrap { display:flex; align-items:center; justify-content:center; gap:2px; }
-  .btn  { pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; border-radius:4px; padding:6px 10px; }
+  #scaleWrap, #timeWrap { display:flex; gap:6px; }
+  #scaleWrap .btn, #timeWrap .btn { flex:1 1 0; min-width:0; }
+  .btn  { pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; padding:6px 10px; text-align:center; }
 </style>
 </head>
 <body>
@@ -1251,7 +1252,7 @@ function simClock(t){
   return `${p2(MM)}/${p2(DD)} ${p2(hh)}:${p2(mm)}`;
 }
 function sunState(t){
-  const ang=t*0.005;
+  const ang=t*0.005 - Math.PI/2;
   const sunDir=[Math.cos(ang)*0.6, Math.sin(ang), 0.4];
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
   const up=Math.max(0, sunDir[1]);
@@ -1521,11 +1522,10 @@ function shiftSimTime(hours){
   currentTimeOfDay=sunState(simTime).up;
   if (paused) redrawPaused();
 }
-// paused redraw: render one frame with dt=0 so nothing simulates, only lighting/visuals update
 function redrawPaused(){
   paused=false;
   const t=performance.now();
-  last=t;            // dt = 0 for this frame
+  last=t;
   frame(t);
   paused=true;
   if (rafId){ cancelAnimationFrame(rafId); rafId=0; }
