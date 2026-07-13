@@ -7,22 +7,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>mbverse</title>
 <style>
-  * { margin:0; padding:0; user-select:none; }
-  html,body { height:100dvh; overflow:hidden; background:#000; font-family:'Courier New',monospace; font-size:12px; }
-  #gl  { display:block; width:100%; height:100%; touch-action:none; }
-  #hud { position:absolute; inset:0; pointer-events:none; }
-  #look { position:absolute; inset:0; pointer-events:auto; z-index:1; }
-  .pad { position:absolute; bottom:24px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); pointer-events:auto; z-index:3; }
-  #joy  { left:24px; }
-  #jump { right:24px; width:90px; height:90px; bottom:39px; display:flex; align-items:center; justify-content:center; }
-  #joy .nub { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.25); }
-  #info { position:absolute; top:8px; left:8px; color:#fff; line-height:1.5; white-space:pre; z-index:4; }
-  #gear { position:absolute; top:8px; right:8px; z-index:5; pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; border-radius:4px; padding:6px 10px; font-size:16px; line-height:1; }
-  #btns { position:absolute; top:44px; right:8px; display:none; flex-direction:column; gap:6px; z-index:4; background:rgba(0,0,0,.55); padding:8px; border-radius:6px; }
-  #btns.open { display:flex; }
-  #scaleWrap, #timeWrap { display:flex; gap:6px; }
-  #scaleWrap .btn, #timeWrap .btn { flex:1 1 0; min-width:0; }
-  .btn  { pointer-events:auto; background:rgba(0,0,0,.5); color:#fff; padding:6px 10px; text-align:center; }
+*{margin:0;padding:0;user-select:none}
+html,body{height:100dvh;overflow:hidden;background:#000;font-family:'Courier New',monospace;font-size:12px}
+#gl{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;inset:0;pointer-events:none}
+#look{position:absolute;inset:0;pointer-events:auto;z-index:1}
+.pad{position:absolute;bottom:24px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);pointer-events:auto;z-index:3}
+#joy{left:24px}
+#jump{right:24px;width:90px;height:90px;bottom:39px;display:flex;align-items:center;justify-content:center}
+#joy .nub{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.25)}
+#info{position:absolute;top:8px;left:8px;color:#fff;line-height:1.5;white-space:pre;z-index:4}
+#gear{position:absolute;top:8px;right:8px;z-index:5;pointer-events:auto;background:rgba(0,0,0,.5);color:#fff;border-radius:4px;padding:6px 10px;font-size:16px;line-height:1}
+#btns{position:absolute;top:44px;right:8px;display:none;flex-direction:column;gap:6px;z-index:4;background:rgba(0,0,0,.55);padding:8px;border-radius:6px}
+#btns.open{display:flex}
+#scaleWrap,#timeWrap{display:flex;gap:6px}
+#scaleWrap .btn,#timeWrap .btn{flex:1 1 0;min-width:0}
+.btn{pointer-events:auto;background:rgba(0,0,0,.5);color:#fff;padding:6px 10px;text-align:center}
 </style>
 </head>
 <body>
@@ -34,6 +34,7 @@
     <button class="btn" id="qualityBtn">QUAL: H</button>
     <button class="btn" id="flyBtn">FLY: 0</button>
     <button class="btn" id="rainBtn">RAIN: /</button>
+    <button class="btn" id="audioBtn">AUDIO: 0</button>
     <button class="btn" id="resetBtn">RESET</button>
     <span id="scaleWrap">
       <button class="btn" id="scaleDown">-</button>
@@ -41,9 +42,9 @@
       <button class="btn" id="scaleUp">+</button>
     </span>
     <span id="timeWrap">
-      <button class="btn" id="timeDown">-5H</button>
+      <button class="btn" id="timeDown">-2H</button>
       <button class="btn" id="timePause">R</button>
-      <button class="btn" id="timeUp">+5H</button>
+      <button class="btn" id="timeUp">+2H</button>
     </span>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
@@ -58,9 +59,9 @@ function setWorldSize(){const s=scale(CONFIG.worldScale);CONFIG.worldW=s;CONFIG.
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 const CONFIG={
-  isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
+  isMobile: /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 20,
-  probSpawnPlant: 0.04,
+  probSpawnPlant: .04,
   quality: 'H',
   seed: (Math.random()*1e9)|0,
 };
@@ -149,7 +150,7 @@ function ridgedNoise(wx, wz){
     let n=valueNoise(wx*freq+o*31.4, wz*freq-o*17.1);
     n=1-Math.abs(n*2-1);
     n*=n;
-    h+=n*amp; norm+=amp; amp*=0.5; freq*=2.0;
+    h+=n*amp; norm+=amp; amp*=.5; freq*=2.0;
   }
   return h/norm;
 }
@@ -158,8 +159,7 @@ const canvas=document.getElementById('gl');
 const gl=canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' }) || canvas.getContext('experimental-webgl');
 const EXT_INSTANCE=gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT=gl.getExtension('OES_element_index_uint');
-if (!EXT_INSTANCE) console.warn('ANGLE_instanced_arrays missing; creature instancing disabled');
-const GLAB  = gl.ARRAY_BUFFER;
+const GLAB = gl.ARRAY_BUFFER;
 const GLEAB = gl.ELEMENT_ARRAY_BUFFER;
 const GLDYN = gl.DYNAMIC_DRAW;
 const GLSTA = gl.STATIC_DRAW;
@@ -205,22 +205,22 @@ const SHADOW_GLSL=`
     return mix(c.r, unpackDepth(c), uShadowMode);
   }
   float shadowFactor(vec3 worldPos, float ndotl){
-    if (uShadowEnabled < 0.5) return 1.0;
+    if (uShadowEnabled < .5) return 1.0;
     vec4 lp=uLightVP*vec4(worldPos, 1.0);
     vec3 proj=lp.xyz/lp.w;
-    proj=proj*0.5+0.5;
-    if (proj.x<0.0||proj.x>1.0||proj.y<0.0||proj.y>1.0||proj.z>1.0) return 1.0;
-    float bias=clamp(0.0012*(1.0-ndotl), 0.0004, 0.0028);
-    float lit=0.0;
+    proj=proj*.5+.5;
+    if (proj.x<.0||proj.x>1.0||proj.y<.0||proj.y>1.0||proj.z>1.0) return 1.0;
+    float bias=clamp(.0012*(1.0-ndotl), .0004, .0028);
+    float lit=.0;
     for (int x=-1; x<=0; x++){
       for (int y=-1; y<=0; y++){
-        vec2 o=vec2(float(x)+0.5, float(y)+0.5)*uShadowTexel;
+        vec2 o=vec2(float(x)+.5, float(y)+.5)*uShadowTexel;
         float sd=sampleShadowDepth(proj.xy+o);
-        lit+=(proj.z-bias <= sd) ? 1.0 : 0.0;
+        lit+=(proj.z-bias <= sd) ? 1.0 : .0;
       }
     }
-    lit*=0.25;
-    return mix(0.25, 1.0, lit);
+    lit*=.25;
+    return mix(.25, 1.0, lit);
   }
 `;
 const DEPTH_FRAG=`
@@ -228,11 +228,11 @@ const DEPTH_FRAG=`
   uniform float uShadowMode;
   vec4 packDepth(float d){
     vec4 c=fract(d*vec4(1.0, 255.0, 65025.0, 16581375.0));
-    c-=c.yzww*vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, 0.0);
+    c-=c.yzww*vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, .0);
     return c;
   }
   void main(){
-    gl_FragColor=(uShadowMode > 0.5) ? packDepth(gl_FragCoord.z) : vec4(1.0);
+    gl_FragColor=(uShadowMode > .5) ? packDepth(gl_FragCoord.z) : vec4(1.0);
   }
 `;
 const INST_DEFORM_GLSL=`
@@ -246,17 +246,17 @@ const INST_DEFORM_GLSL=`
     vec3 lp=aPos;
     float pred=aInstSpecies;
     lp.z*=mix(1.0, 1.6, pred);
-    lp.x*=mix(1.0, 0.8, pred);
-    lp.y*=mix(1.0, 0.85, pred);
+    lp.x*=mix(1.0, .8, pred);
+    lp.y*=mix(1.0, .85, pred);
     float s=sin(aInstHeading), c=cos(aInstHeading);
-    instRot=mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c);
+    instRot=mat3(c,.0,-s, .0,1.0,.0, s,.0,c);
     return instRot*(lp*aInstScale);
   }
 `;
 const FOG_GLSL=`
   vec3 applyFog(vec3 col, vec3 wp){
     float d=length(wp-uEye);
-    float fog=clamp(d/uFogDist, 0.0, 1.0); fog*=fog;
+    float fog=clamp(d/uFogDist, .0, 1.0); fog*=fog;
     return mix(col, uFogColor, fog);
   }
 `;
@@ -275,10 +275,10 @@ const TERRAIN={
   mtnAmp: 600,
   mtnSize: 2000,
   mtnOctaves: 4,
-  mtnThreshold: 0.45,
+  mtnThreshold: .45,
   biomeSize: 4200,
-  biomeLo: 0.42, biomeHi: 0.60,
-  plainsAmp: 0.35,
+  biomeLo: .42, biomeHi: .60,
+  plainsAmp: .35,
 };
 const THCACHE={res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0, W: 0, H: 0, data: null,
   wmRes: 0, wmCols: 0, wmRows: 0, wmOx: 0, wmOz: 0, wmInvStep: 0, waterMask: null};
@@ -354,7 +354,7 @@ function terrainHeightExact(wx, wz){
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
   for (let o=0;o<TERRAIN.octaves;o++){
     h+=valueNoise(wx*freq+o*13.7, wz*freq-o*7.3)*amp;
-    norm+=amp; amp*=0.5; freq*=2.0;
+    norm+=amp; amp*=.5; freq*=2.0;
   }
   h/=norm;
   h=Math.pow(h, 1.35);
@@ -364,7 +364,7 @@ function terrainHeightExact(wx, wz){
   t=Math.max(0, Math.min(1, t));
   let mtn=t*t*(3-2*t);
   let relief=TERRAIN.plainsAmp+(1-TERRAIN.plainsAmp)*mtn;
-  let y=h*TERRAIN.amp*relief-TERRAIN.amp*0.15;
+  let y=h*TERRAIN.amp*relief-TERRAIN.amp*.15;
   const r=ridgedNoise(wx, wz);
   const m=Math.max(0, r-TERRAIN.mtnThreshold)/(1-TERRAIN.mtnThreshold);
   y+=m*m*TERRAIN.mtnAmp*mtn;
@@ -420,19 +420,19 @@ const terrainProg=program(`
   ${SHADOW_GLSL}
   ${FOG_GLSL}
   void main(){
-    float slope=1.0-clamp(vN.y, 0.0, 1.0);
-    vec3 sand=vec3(0.76,0.70,0.50);
-    vec3 grass=vec3(0.26,0.52,0.24);
-    vec3 rock=vec3(0.42,0.40,0.38);
-    vec3 snow=vec3(0.92,0.94,0.97);
-    float hN=clamp((vH-uWaterLevel)/600.0, 0.0, 1.0);
-    vec3 col=mix(sand, grass, smoothstep(0.0,0.04,hN));
-    col=mix(col, rock, smoothstep(0.30,0.55,hN));
-    col=mix(col, snow, smoothstep(0.62,0.80,hN));
-    col=mix(col, rock, smoothstep(0.45,0.85,slope));
-    float diff=max(dot(normalize(vN), uSunDir), 0.0);
+    float slope=1.0-clamp(vN.y, .0, 1.0);
+    vec3 sand=vec3(.76,.70,.50);
+    vec3 grass=vec3(.26,.52,.24);
+    vec3 rock=vec3(.42,.40,.38);
+    vec3 snow=vec3(.92,.94,.97);
+    float hN=clamp((vH-uWaterLevel)/600.0, .0, 1.0);
+    vec3 col=mix(sand, grass, smoothstep(.0,.04,hN));
+    col=mix(col, rock, smoothstep(.30,.55,hN));
+    col=mix(col, snow, smoothstep(.62,.80,hN));
+    col=mix(col, rock, smoothstep(.45,.85,slope));
+    float diff=max(dot(normalize(vN), uSunDir), .0);
     float sh=shadowFactor(vW, diff);
-    float mdiff=max(dot(normalize(vN), uMoonDir), 0.0);
+    float mdiff=max(dot(normalize(vN), uMoonDir), .0);
     vec3 lit=col*(uAmbient+uSunColor*diff*sh+uMoonColor*mdiff);
     gl_FragColor=vec4(applyFog(lit, vW), 1.0);
   }
@@ -442,21 +442,21 @@ bindBuf(GLAB, quadBuf);
 bufData(GLAB, new Float32Array([-1,-1, 3,-1, -1,3]), GLSTA);
 const skyProg=program(`
   attribute vec2 aPos; varying vec2 vUv;
-  void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }
+  void main(){ vUv=aPos*.5+.5; gl_Position=vec4(aPos,.0,1.0); }
 `, `
   precision mediump float; varying vec2 vUv;
   uniform vec3 uTop; uniform vec3 uBottom; uniform vec2 uSunScreen; uniform float uSunUp;
   uniform vec2 uMoonScreen; uniform float uMoonUp;
   void main(){
-    vec3 sky=mix(uBottom, uTop, pow(vUv.y, 0.7));
+    vec3 sky=mix(uBottom, uTop, pow(vUv.y, .7));
     float d=distance(vUv, uSunScreen);
-    float disc=smoothstep(0.06, 0.02, d)*uSunUp;
-    float glow=smoothstep(0.5, 0.0, d)*0.35*uSunUp;
-    vec3 sun=vec3(1.0,0.95,0.8);
+    float disc=smoothstep(.06, .02, d)*uSunUp;
+    float glow=smoothstep(.5, .0, d)*.35*uSunUp;
+    vec3 sun=vec3(1.0,.95,.8);
     float md=distance(vUv, uMoonScreen);
-    float mdisc=smoothstep(0.045, 0.03, md)*uMoonUp;
-    float mglow=smoothstep(0.28, 0.0, md)*0.18*uMoonUp;
-    vec3 moon=vec3(0.85,0.88,1.0);
+    float mdisc=smoothstep(.045, .03, md)*uMoonUp;
+    float mglow=smoothstep(.28, .0, md)*.18*uMoonUp;
+    vec3 moon=vec3(.85,.88,1.0);
     gl_FragColor=vec4(sky+sun*(disc+glow)+moon*(mdisc+mglow), 1.0);
   }
 `);
@@ -481,23 +481,23 @@ const waterProg=program(`
   ${FOG_GLSL}
   void main(){
     float d=length(uEye-vW);
-    float detail=clamp(1.0-d/uFogDist, 0.0, 1.0)*uHighQ;
-    vec2 p=vW.xz*0.02;
-    float n1=sin(p.x*1.3+uTime*0.8)+cos(p.y*1.7-uTime*0.6);
+    float detail=clamp(1.0-d/uFogDist, .0, 1.0)*uHighQ;
+    vec2 p=vW.xz*.02;
+    float n1=sin(p.x*1.3+uTime*.8)+cos(p.y*1.7-uTime*.6);
     float n2=sin((p.x+p.y)*2.1+uTime*1.1);
-    vec3 N=normalize(vec3((n1+n2)*0.05*detail, 1.0, (n1-n2)*0.05*detail));
+    vec3 N=normalize(vec3((n1+n2)*.05*detail, 1.0, (n1-n2)*.05*detail));
     vec3 V=normalize(uEye-vW);
-    float fres=pow(1.0-max(dot(V,N),0.0), 3.0);
-    vec3 deep=vec3(0.05,0.18,0.30), shallow=vec3(0.10,0.35,0.45);
-    vec3 body=mix(deep, shallow, 0.3)*uAmbient;
+    float fres=pow(1.0-max(dot(V,N),.0), 3.0);
+    vec3 deep=vec3(.05,.18,.30), shallow=vec3(.10,.35,.45);
+    vec3 body=mix(deep, shallow, .3)*uAmbient;
     vec3 col=mix(body, uSkyTop, fres);
     vec3 R=reflect(-uSunDir, N);
     vec3 MR=reflect(-uMoonDir, N);
-    float spec=pow(max(dot(R,V),0.0), 20.0);
-    col+=uSunColor*min(spec,1.0)*0.4;
-    float mspec=pow(max(dot(MR,V),0.0), 40.0);
-    col+=uMoonColor*min(mspec,1.0)*0.4;
-    gl_FragColor=vec4(applyFog(col, vW), 0.92);
+    float spec=pow(max(dot(R,V),.0), 20.0);
+    col+=uSunColor*min(spec,1.0)*.4;
+    float mspec=pow(max(dot(MR,V),.0), 40.0);
+    col+=uMoonColor*min(mspec,1.0)*.4;
+    gl_FragColor=vec4(applyFog(col, vW), .92);
   }
 `);
 // creatures
@@ -533,7 +533,7 @@ const C={
   rewardAcc: new Float32Array(MAX_CREATURES),
 };
 const LIFESPAN=100;
-const SENESCENCE=0.02;
+const SENESCENCE=.02;
 let STAGGER_N=3;
 let staggerFrame=0;
 // creature geometry
@@ -568,7 +568,7 @@ function buildCreatures(){
     for(let j=0;j<segs;j++){
       const u0=j/segs*Math.PI*2, u1=(j+1)/segs*Math.PI*2;
       const c0=Math.cos(u0),s0=Math.sin(u0), c1=Math.cos(u1),s1=Math.sin(u1);
-      const aF=[c0*r, s0*r,  halfLen], bF=[c1*r, s1*r,  halfLen];
+      const aF=[c0*r, s0*r, halfLen], bF=[c1*r, s1*r, halfLen];
       const aB=[c0*r, s0*r, -halfLen], bB=[c1*r, s1*r, -halfLen];
       const nA=[c0,s0,0], nB=[c1,s1,0];
       push(...aB,...nA); push(...aF,...nA); push(...bB,...nB);
@@ -577,11 +577,11 @@ function buildCreatures(){
   }
   const lod=CONFIG.isMobile ? 0 : 1;
   const rings=lod? 8:6, segs=lod? 10:7;
-  const bodyR=0.5, bodyHalf=0.9;
+  const bodyR=.5, bodyHalf=.9;
   tube(bodyR, bodyHalf, segs);
   sphere(0,0, bodyHalf, bodyR, 1, rings, segs);
   sphere(0,0,-bodyHalf, bodyR, 1, rings, segs);
-  sphere(0,0.35, bodyHalf+0.55, 0.45, 1, rings, segs);
+  sphere(0,.35, bodyHalf+.55, .45, 1, rings, segs);
   const tris=new Float32Array(verts);
   creatureGeoBuf=gl.createBuffer();
   bindBuf(GLAB, creatureGeoBuf);
@@ -607,16 +607,16 @@ function buildCreatures(){
     uniform vec3 uMoonDir; uniform vec3 uMoonColor;
     ${SHADOW_GLSL}
     void main(){
-      float d=max(dot(normalize(vN), uSunDir), 0.0);
+      float d=max(dot(normalize(vN), uSunDir), .0);
       float sh=shadowFactor(vWorld, d);
-      float md=max(dot(normalize(vN), uMoonDir), 0.0);
+      float md=max(dot(normalize(vN), uMoonDir), .0);
       gl_FragColor=vec4(vColor*(uAmbient+vec3(d)*sh+uMoonColor*md), 1.0);
     }
   `);
 }
 // brain
 const N_RAYS=5;
-const RAY_FOV=Math.PI*0.55;
+const RAY_FOV=Math.PI*.55;
 const RAY_LEN=220;
 const RAY_STEP=22;
 const SENSE_SCAN_CAP=RAY_STEP;
@@ -633,10 +633,10 @@ const A_B=new Float32Array(MAX_CREATURES*MAX_A*3);
 const hA=new Float32Array(MAX_CREATURES*MAX_A);
 const B_W=new Float32Array(MAX_CREATURES*MAX_B*MAX_A);
 const B_v=new Float32Array(MAX_CREATURES*MAX_B);
-const B_thr=1.0, B_leak=0.85, B_reset=0.0;
+const B_thr=1.0, B_leak=.85, B_reset=.0;
 const R_W=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
 const R_e=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
-const PRUNE_THR=0.02, TRACE_DECAY=0.92, LR=0.04;
+const PRUNE_THR=.02, TRACE_DECAY=.92, LR=.04;
 const sIn=new Float32Array(N_INPUT);
 const sA=new Float32Array(MAX_A);
 const sSpike=new Float32Array(MAX_B);
@@ -655,23 +655,23 @@ function brainInit(i){
   for(let u=0;u<a;u++){
     for(let g=0;g<3;g++){
       for(let k=0;k<N_INPUT;k++) A_W[baseW+(u*3+g)*N_INPUT+k]=gauss()*sa;
-      for(let k=0;k<a;k++) A_U[baseU+(u*3+g)*MAX_A +k]=gauss()*sa*0.5;
+      for(let k=0;k<a;k++) A_U[baseU+(u*3+g)*MAX_A +k]=gauss()*sa*.5;
       A_B[baseB+u*3+g]=0;
     }
     hA[i*MAX_A+u]=0;
   }
   let baseBW=i*MAX_B*MAX_A;
   for(let n=0;n<b;n++){
-    for(let k=0;k<a;k++) B_W[baseBW+n*MAX_A+k]=gauss()*0.6;
+    for(let k=0;k<a;k++) B_W[baseBW+n*MAX_A+k]=gauss()*.6;
     B_v[i*MAX_B+n]=0;
   }
   let baseR=i*N_MOTOR*MAX_B;
-  for(let m=0;m<N_MOTOR;m++) for(let n=0;n<b;n++){ R_W[baseR+m*MAX_B+n]=gauss()*0.4; R_e[baseR+m*MAX_B+n]=0; }
+  for(let m=0;m<N_MOTOR;m++) for(let n=0;n<b;n++){ R_W[baseR+m*MAX_B+n]=gauss()*.4; R_e[baseR+m*MAX_B+n]=0; }
 }
 function brainInherit(child, parent, mut){
   const a=C.szA[parent], b=C.szB[parent];
-  let ca=Math.max(4,Math.min(MAX_A, a+(RNG()<0.2?(RNG()<0.5?-1:1):0)));
-  let cb=Math.max(3,Math.min(MAX_B, b+(RNG()<0.2?(RNG()<0.5?-1:1):0)));
+  let ca=Math.max(4,Math.min(MAX_A, a+(RNG()<.2?(RNG()<.5?-1:1):0)));
+  let cb=Math.max(3,Math.min(MAX_B, b+(RNG()<.2?(RNG()<.5?-1:1):0)));
   C.szA[child]=ca; C.szB[child]=cb;
   const cW=child*MAX_A*N_INPUT*3, pW=parent*MAX_A*N_INPUT*3;
   for(let k=0;k<MAX_A*N_INPUT*3;k++) A_W[cW+k]=A_W[pW+k]+gauss()*mut;
@@ -691,7 +691,7 @@ function senseCreature(i, timeOfDay){
   const preyType=C.species[i] ? 1 : 0;
   sFoodCue=0;
   for(let r=0;r<N_RAYS;r++){
-    const t=N_RAYS>1 ? r/(N_RAYS-1)-0.5 : 0;
+    const t=N_RAYS>1 ? r/(N_RAYS-1)-.5 : 0;
     const ang=h+t*RAY_FOV;
     const dx=Math.sin(ang), dz=Math.cos(ang);
     let hitDist=RAY_LEN, hitType=-1;
@@ -770,7 +770,7 @@ function brainTick(i, dt){
     sMotor[m]=acc;
   }
   C.mTurn[i]=Math.tanh(sMotor[0]);
-  C.mMove[i]=Math.tanh(sMotor[1]+0.6);
+  C.mMove[i]=Math.tanh(sMotor[1]+.6);
   C.mEat[i]=sigmoid(sMotor[2]);
   C.mRest[i]=sigmoid(sMotor[3]);
 }
@@ -785,10 +785,10 @@ function brainLearn(i, reward){
       }
     }
   }
-  if(RNG()<0.01){
+  if(RNG()<.01){
     const baseR=i*N_MOTOR*MAX_B;
     const m=(RNG()*N_MOTOR)|0, n=(RNG()*b)|0;
-    if(R_W[baseR+m*MAX_B+n]===0) R_W[baseR+m*MAX_B+n]=gauss()*0.3;
+    if(R_W[baseR+m*MAX_B+n]===0) R_W[baseR+m*MAX_B+n]=gauss()*.3;
   }
 }
 function spawnCreatures(){
@@ -796,21 +796,21 @@ function spawnCreatures(){
   const scaledCreatures=Math.round(baseCreatures*Math.max(CONFIG.worldScale,1)/10);
   C.n=Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
   for (let i=0;i<C.n;i++){
-    const x=(RNG()-0.5)*CONFIG.worldW*0.9;
-    const z=(RNG()-0.5)*CONFIG.worldH*0.9;
+    const x=(RNG()-.5)*CONFIG.worldW*.9;
+    const z=(RNG()-.5)*CONFIG.worldH*.9;
     C.x[i]=x; C.z[i]=z; C.y[i]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
     C.head[i]=RNG()*Math.PI*2;
     C.face[i]=C.head[i];
     C.spd[i]=0;
     C.size[i]=4+RNG()*4;
-    C.energy[i]=0.5+RNG()*0.5;
+    C.energy[i]=.5+RNG()*.5;
     C.prevEnergy[i]=C.energy[i];
     C.age[i]=0; C.gen[i]=0;
     C.sgroup[i]=i%STAGGER_N; C.rewardAcc[i]=0;
-    const predator=RNG()<0.2;
+    const predator=RNG()<.2;
     C.species[i]= predator?1:0;
-    if(predator){ C.cr[i]=0.7+0.3*RNG(); C.cg[i]=0.25*RNG(); C.cb[i]=0.15*RNG(); }
-    else { const h=RNG(); C.cr[i]=0.2+0.3*h; C.cg[i]=0.55+0.35*RNG(); C.cb[i]=0.3+0.4*(1-h); }
+    if(predator){ C.cr[i]=.7+.3*RNG(); C.cg[i]=.25*RNG(); C.cb[i]=.15*RNG(); }
+    else { const h=RNG(); C.cr[i]=.2+.3*h; C.cg[i]=.55+.35*RNG(); C.cb[i]=.3+.4*(1-h); }
     brainInit(i);
   }
 }
@@ -927,7 +927,7 @@ function spawnPlants(){
   let tries=0;
   while(P.n<targetPlants() && tries<targetPlants()*4){
     tries++;
-    const x=(RNG()-0.5)*CONFIG.worldW*0.96, z=(RNG()-0.5)*CONFIG.worldH*0.96;
+    const x=(RNG()-.5)*CONFIG.worldW*.96, z=(RNG()-.5)*CONFIG.worldH*.96;
     if(plantPlaceAt(P.n, x, z)) P.n++;
   }
 }
@@ -940,8 +940,8 @@ function plantsGrow(dt){
   const rate=CONFIG.probSpawnPlant*(1-P.n/targetPlants());
   if(RNG() < rate*dt*60){
     let x,z;
-    if(P.n>0 && RNG()<0.7){ const s=(RNG()*P.n)|0; x=P.x[s]+(RNG()-0.5)*120; z=P.z[s]+(RNG()-0.5)*120; }
-    else { x=(RNG()-0.5)*CONFIG.worldW*0.96; z=(RNG()-0.5)*CONFIG.worldH*0.96; }
+    if(P.n>0 && RNG()<.7){ const s=(RNG()*P.n)|0; x=P.x[s]+(RNG()-.5)*120; z=P.z[s]+(RNG()-.5)*120; }
+    else { x=(RNG()-.5)*CONFIG.worldW*.96; z=(RNG()-.5)*CONFIG.worldH*.96; }
     x=Math.max(-CONFIG.worldW/2,Math.min(CONFIG.worldW/2,x));
     z=Math.max(-CONFIG.worldH/2,Math.min(CONFIG.worldH/2,z));
     if(P.n<MAX_PLANTS && plantPlaceAt(P.n,x,z)) P.n++;
@@ -974,15 +974,15 @@ function buildPlants(){
     void main(){
       vV=aV;
       float w=sin(uTime*1.5+aSway)*1.6*aV;
-      vec3 world=aInstPos+aPos+vec3(w,0.0,w*0.5);
+      vec3 world=aInstPos+aPos+vec3(w,.0,w*.5);
       gl_Position=uVP*vec4(world,1.0);
     }
   `,`
     precision mediump float; varying float vV;
     uniform vec3 uSunColor; uniform vec3 uAmbient; uniform vec3 uMoonColor;
     void main(){
-      vec3 base=mix(vec3(0.18,0.32,0.10), vec3(0.40,0.65,0.22), vV);
-      vec3 lit=base*(uAmbient+uSunColor*0.6+uMoonColor*0.6);
+      vec3 base=mix(vec3(.18,.32,.10), vec3(.40,.65,.22), vV);
+      vec3 lit=base*(uAmbient+uSunColor*.6+uMoonColor*.6);
       gl_FragColor=vec4(lit,1.0);
     }
   `);
@@ -1022,7 +1022,7 @@ function creatureRemove(i){
 function creatureBirth(parent){
   if(C.n>=MAX_CREATURES) return;
   if(parent>=C.n) return;
-  if(C.energy[parent]<=0.6) return;
+  if(C.energy[parent]<=.6) return;
   const c=C.n++;
   const ang=RNG()*6.28, dist=8+RNG()*10;
   let x=C.x[parent]+Math.cos(ang)*dist, z=C.z[parent]+Math.sin(ang)*dist;
@@ -1033,12 +1033,12 @@ function creatureBirth(parent){
   C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
   C.sgroup[c]=c%STAGGER_N; C.rewardAcc[c]=0;
   C.species[c]=C.species[parent];
-  C.size[c]=C.size[parent]*(0.9+RNG()*0.2);
-  C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-0.5)*0.1));
-  C.cg[c]=Math.min(1,Math.max(0,C.cg[parent]+(RNG()-0.5)*0.1));
-  C.cb[c]=Math.min(1,Math.max(0,C.cb[parent]+(RNG()-0.5)*0.1));
-  brainInherit(c, parent, 0.06);
-  const give=C.energy[parent]*0.5;
+  C.size[c]=C.size[parent]*(.9+RNG()*.2);
+  C.cr[c]=Math.min(1,Math.max(0,C.cr[parent]+(RNG()-.5)*.1));
+  C.cg[c]=Math.min(1,Math.max(0,C.cg[parent]+(RNG()-.5)*.1));
+  C.cb[c]=Math.min(1,Math.max(0,C.cb[parent]+(RNG()-.5)*.1));
+  brainInherit(c, parent, .06);
+  const give=C.energy[parent]*.5;
   C.energy[parent]-=give; C.energy[c]=give; C.prevEnergy[c]=give;
 }
 const _births=new Int32Array(MAX_CREATURES);
@@ -1058,9 +1058,9 @@ function updateCreatures(dt){
       brainTick(i, dt);
     }
     const rest=C.mRest[i];
-    C.head[i]+=C.mTurn[i]*2.2*dt*(1-0.7*rest);
+    C.head[i]+=C.mTurn[i]*2.2*dt*(1-.7*rest);
     const maxSpd=C.species[i]?40:30;
-    const targetSpd=C.mMove[i]*maxSpd*(1-0.85*rest);
+    const targetSpd=C.mMove[i]*maxSpd*(1-.85*rest);
     C.spd[i]+=(targetSpd-C.spd[i])*Math.min(1,dt*3);
     const xi=C.x[i], zi=C.z[i];
     const vx=Math.sin(C.head[i])*C.spd[i]*dt, vz=Math.cos(C.head[i])*C.spd[i]*dt;
@@ -1069,30 +1069,30 @@ function updateCreatures(dt){
     let nx=xi+vx, nz=zi+vz;
     const bx=CONFIG.worldW/2-20, bz=CONFIG.worldH/2-20;
     if(nx<-bx){nx=-bx; C.head[i]=Math.PI-C.head[i];} else if(nx>bx){nx=bx; C.head[i]=Math.PI-C.head[i];}
-    if(nz<-bz){nz=-bz; C.head[i]=-C.head[i];}        else if(nz>bz){nz=bz; C.head[i]=-C.head[i];}
+    if(nz<-bz){nz=-bz; C.head[i]=-C.head[i];} else if(nz>bz){nz=bz; C.head[i]=-C.head[i];}
     C.x[i]=nx; C.z[i]=nz;
     C.y[i]=Math.max(terrainHeight(nx,nz),CONFIG.waterLevel)+1.5;
     C.age[i]+=dt;
-    const moveCost=Math.abs(C.spd[i])/maxSpd*0.02;
-    const spikeCost=C.spikeRate[i]*0.012;
-    const baseCost=0.0035;
+    const moveCost=Math.abs(C.spd[i])/maxSpd*.02;
+    const spikeCost=C.spikeRate[i]*.012;
+    const baseCost=.0035;
     let ageCost=0;
     if(C.age[i]>LIFESPAN){
       const over=(C.age[i]-LIFESPAN)/LIFESPAN;
       ageCost=SENESCENCE*(over/(1+over));
     }
-    C.energy[i]-=(moveCost+spikeCost+baseCost+ageCost)*dt*(1-0.5*rest);
-    const suppressEat=C.mEat[i] < 0.15;
+    C.energy[i]-=(moveCost+spikeCost+baseCost+ageCost)*dt*(1-.5*rest);
+    const suppressEat=C.mEat[i] < .15;
     if(!suppressEat){
       if(!C.species[i]){
         const reach=16+C.size[i];
         pgridScanNearest(nx,nz,reach);
-        if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+0.35); plantRemove(pqBest); pgridRebuild(); }
+        if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+.35); plantRemove(pqBest); pgridRebuild(); }
       } else {
         const reach=20+C.size[i];
         gridScanPrey(nx,nz,reach,i);
         if(gqBest!==-1){
-          C.energy[i]=Math.min(1,C.energy[i]+0.5);
+          C.energy[i]=Math.min(1,C.energy[i]+.5);
           const last=C.n-1;
           creatureRemove(gqBest);
           if(i===last) i=gqBest;
@@ -1103,11 +1103,11 @@ function updateCreatures(dt){
     C.rewardAcc[i]+=(C.energy[i]-C.prevEnergy[i]);
     if(doTick){
       let r=C.rewardAcc[i];
-      if(sFoodCue>0 && C.mMove[i]>0) r+=0.0006*sFoodCue*C.mMove[i];
+      if(sFoodCue>0 && C.mMove[i]>0) r+=.0006*sFoodCue*C.mMove[i];
       brainLearn(i, r);
       C.rewardAcc[i]=0;
     }
-    if(C.energy[i]>0.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
+    if(C.energy[i]>.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
       _births[_birthN++]=i;
     }
     if(C.energy[i]<=0){
@@ -1131,7 +1131,7 @@ function uploadCreatures(){
   bufData(GLAB, instData.subarray(0,C.n*INST_STRIDE), GLDYN);
 }
 // player
-const cam={ x:0, y:120, z:CONFIG.worldH*0.35, yaw:Math.PI, pitch:-0.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
+const cam={ x:0, y:120, z:CONFIG.worldH*.35, yaw:Math.PI, pitch:-.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
 const move={ x:0, y:0 };
 const SPEED=220;
 const GRAVITY=320;
@@ -1140,8 +1140,39 @@ const JUMP_VELOCITY=150;
 const FLY_SPEED=400;
 const FLY_LIFT=280;
 const STEP_GRIP=8;
-const LOOK_SENS=0.005;
+const LOOK_SENS=.005;
 const keys={};
+let audioOn=false;
+let actx=null, amaster=null, anoise=null, arain=null, arainG=null, arainLvl=-1;
+let stepAcc=0, wasWet=false;
+function audioInit(){
+  if (!audioOn) return;
+  if (actx) { actx.resume(); return; }
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if (!AC) return;
+  actx=new AC();
+  amaster=actx.createGain(); amaster.gain.value=1; amaster.connect(actx.destination);
+  anoise=actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+  const d=anoise.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  arain=actx.createBufferSource(); arain.buffer=anoise; arain.loop=true;
+  const bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2400; bp.Q.value=.4;
+  arainG=actx.createGain(); arainG.gain.value=0;
+  arain.connect(bp); bp.connect(arainG); arainG.connect(amaster);
+  arain.start();
+  actx.resume();
+}
+function snd(f0, f1, q, vol, dur, lp){
+  if (!actx) return;
+  const t=actx.currentTime;
+  const s=actx.createBufferSource(); s.buffer=anoise; s.playbackRate.value=.8+Math.random()*.4;
+  const b=actx.createBiquadFilter(); b.type=lp?'lowpass':'bandpass'; b.Q.value=q;
+  b.frequency.setValueAtTime(f0, t); b.frequency.exponentialRampToValueAtTime(f1, t+dur);
+  const g=actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t+dur);
+  s.connect(b); b.connect(g); g.connect(amaster);
+  s.start(t); s.stop(t+dur);
+}
 function applyLook(dxPix, dyPix){
   cam.yaw-=dxPix*LOOK_SENS;
   cam.pitch-=dyPix*LOOK_SENS;
@@ -1177,7 +1208,7 @@ if (HAS_TOUCH){
   })();
   (function(){
     const jb=byId('jump');
-    const down=e=>{ keys[' ']=true;  e.preventDefault(); };
+    const down=e=>{ keys[' ']=true; e.preventDefault(); };
     const up =e=>{ keys[' ']=false; e.preventDefault(); };
     jb.addEventListener('touchstart', down, {passive:false});
     jb.addEventListener('touchend', up, {passive:false});
@@ -1188,13 +1219,15 @@ if (HAS_TOUCH){
   lookEl.style.display='none';
   byId('jump').style.display='none';
 }
+byId('audioBtn').addEventListener('click', ()=>{ audioOn=!audioOn; byId('audioBtn').textContent='AUDIO: '+(audioOn?'1':'0'); if(audioOn) audioInit(); else if(actx) actx.suspend(); });
 on(window, 'keydown', e=>{ keys[e.key.toLowerCase()]=true; if(e.key.toLowerCase()==='r') cycleRainMode(); });
-on(window, 'keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
+on(window, 'keyup', e=>{ keys[e.key.toLowerCase()]=false; });
 (function(){
   let locked=false;
   const lock=()=>(canvas.requestPointerLock||canvas.mozRequestPointerLock||canvas.webkitRequestPointerLock||function(){}).call(canvas);
   on(document, 'pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
-  if (!HAS_TOUCH) canvas.addEventListener('click', lock);
+  if (!HAS_TOUCH) canvas.addEventListener('click', ()=>{ audioInit(); lock(); });
+  else on(document, 'touchstart', audioInit, {once:true});
   on(document, 'mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
   let drag=false,lx=0,ly=0;
   on(document, 'mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
@@ -1241,7 +1274,7 @@ function applyWorldScale(n){
 }
 on(byId('scaleDown'), 'click', ()=> applyWorldScale(CONFIG.worldScale-5));
 on(byId('scaleUp'), 'click', ()=> applyWorldScale(CONFIG.worldScale+5));
-const DAY_SECONDS=2*Math.PI/0.005;
+const DAY_SECONDS=2*Math.PI/.005;
 function simClock(t){
   const days=t/DAY_SECONDS;
   const frac=days-Math.floor(days);
@@ -1255,29 +1288,29 @@ function simClock(t){
 }
 function sunState(t){
   const ang=t*(2*Math.PI/DAY_SECONDS) - Math.PI/2;
-  const sunDir=[Math.cos(ang), Math.sin(ang), 0.0];
+  const sunDir=[Math.cos(ang), Math.sin(ang), .0];
   const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
   const up=Math.max(0, sunDir[1]);
-  const day=Math.pow(up, 0.5);
+  const day=Math.pow(up, .5);
   const moonDir=[-sunDir[0], -sunDir[1], -sunDir[2]];
   const moonUp=Math.max(0, moonDir[1]);
-  const night=Math.pow(moonUp, 0.5);
-  const moonColor=[0.13*night, 0.15*night, 0.22*night];
-  const NIGHT_TOP    = [0.02, 0.03, 0.07];
-  const NIGHT_BOTTOM = [0.05, 0.06, 0.11];
-  const DAY_TOP      = [0.30, 0.45, 0.70];
-  const DAY_BOTTOM   = [0.55, 0.65, 0.80];
+  const night=Math.pow(moonUp, .5);
+  const moonColor=[.13*night, .15*night, .22*night];
+  const NIGHT_TOP = [.02, .03, .07];
+  const NIGHT_BOTTOM = [.05, .06, .11];
+  const DAY_TOP = [.30, .45, .70];
+  const DAY_BOTTOM = [.55, .65, .80];
 
   const lerp3 = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]
   return {
     sunDir, up,
     moonDir, moonUp,
     moonColor,
-    sunColor: [1.0*day, 0.92*day, 0.78*day],
-    skyTop:    lerp3(NIGHT_TOP,    DAY_TOP,    day),
+    sunColor: [1.0*day, .92*day, .78*day],
+    skyTop: lerp3(NIGHT_TOP, DAY_TOP, day),
     skyBottom: lerp3(NIGHT_BOTTOM, DAY_BOTTOM, day),
-    fog:       lerp3(NIGHT_BOTTOM, [0.55,0.65,0.80], day),
-    ambient:   lerp3([0.03,0.04,0.08], [0.46,0.50,0.58], day),
+    fog: lerp3(NIGHT_BOTTOM, [.55,.65,.80], day),
+    ambient: lerp3([.03,.04,.08], [.46,.50,.58], day),
   };
 }
 const depthProg=program(`
@@ -1313,15 +1346,15 @@ const RAIN={
 function rainAuto(dt, t){
   if (t >= RAIN.nextRoll){
     RAIN.nextRoll=t+20+RNG()*40;
-    RAIN.target=RNG() < 0.35 ? (0.4+RNG()*0.6) : 0;
+    RAIN.target=RNG() < .35 ? (.4+RNG()*.6) : 0;
   }
-  const k=Math.min(1, dt*0.4);
+  const k=Math.min(1, dt*.4);
   RAIN.intensity+=(RAIN.target-RAIN.intensity)*k;
-  RAIN.on=RAIN.intensity > 0.02;
+  RAIN.on=RAIN.intensity > .02;
 }
 function rainResolve(dt, t){
-  if (RAIN.mode=== '1'){ RAIN.on=true;  RAIN.intensity+=(1-RAIN.intensity)*Math.min(1,dt*0.6); }
-  else if (RAIN.mode=== '0'){ RAIN.on=false; RAIN.intensity+=(0-RAIN.intensity)*Math.min(1,dt*0.6); RAIN.on=RAIN.intensity>0.02; }
+  if (RAIN.mode=== '1'){ RAIN.on=true; RAIN.intensity+=(1-RAIN.intensity)*Math.min(1,dt*.6); }
+  else if (RAIN.mode=== '0'){ RAIN.on=false; RAIN.intensity+=(0-RAIN.intensity)*Math.min(1,dt*.6); RAIN.on=RAIN.intensity>.02; }
   else rainAuto(dt, t);
 }
 const RAIN_MODES=['/','1','0'];
@@ -1335,8 +1368,8 @@ function cycleRainMode(){
 const rainGeoBuf=gl.createBuffer();
 bindBuf(GLAB, rainGeoBuf);
 bufData(GLAB, new Float32Array([
-  -1,-1,  1,-1,  1,1,
-  -1,-1,  1,1,  -1,1,
+  -1,-1, 1,-1, 1,1,
+  -1,-1, 1,1, -1,1,
 ]), GLSTA);
 const rainGeoCount=6;
 const rainProg=program(`
@@ -1349,11 +1382,11 @@ const rainProg=program(`
   uniform float uLen;
   varying float vT;
   void main(){
-    vT=aCorner.y*0.5+0.5;
-    float len=uLen*(0.6+0.4*aSeed);
+    vT=aCorner.y*.5+.5;
+    float len=uLen*(.6+.4*aSeed);
     vec3 world=aInstPos
     +uRight*(aCorner.x*uWidth)
-    +vec3(0.0,1.0,0.0)*(aCorner.y*len);
+    +vec3(.0,1.0,.0)*(aCorner.y*len);
     gl_Position=uVP*vec4(world,1.0);
   }
 `,`
@@ -1362,7 +1395,7 @@ const rainProg=program(`
   uniform float uAlpha;
   varying float vT;
   void main(){
-    float a=uAlpha*(0.15+0.85*vT);
+    float a=uAlpha*(.15+.85*vT);
     gl_FragColor=vec4(uColor, a);
   }
 `);
@@ -1440,7 +1473,6 @@ function initShadow(){
   }
   const status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
   SHADOW.ready=(status=== gl.FRAMEBUFFER_COMPLETE);
-  if (!SHADOW.ready) console.warn('shadow FBO incomplete:', status, '— shadows disabled');
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
@@ -1450,7 +1482,7 @@ function shadowsEnabled(){ return CONFIG.quality==='H'; }
 function updateLightVP(sunDir, focusX, focusZ){
   const half=SHADOW_RADIUS;
   const dist=Math.max(CONFIG.worldW, CONFIG.worldH);
-  const sd=[sunDir[0], Math.max(sunDir[1], 0.15), sunDir[2]];
+  const sd=[sunDir[0], Math.max(sunDir[1], .15), sunDir[2]];
   const il=1/Math.hypot(sd[0],sd[1],sd[2]); sd[0]*=il; sd[1]*=il; sd[2]*=il;
   const worldPerTexel=(2*half)/SHADOW.size;
   const fx=Math.round(focusX/worldPerTexel)*worldPerTexel;
@@ -1470,7 +1502,7 @@ function renderShadowPass(){
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
-  const packMode=SHADOW.packed ? 1.0 : 0.0;
+  const packMode=SHADOW.packed ? 1.0 : .0;
   gl.useProgram(depthProg);
   bindBuf(GLAB, terrainBuf);
   setAttr(depthProg.a('aPos'),3,24,0);
@@ -1507,8 +1539,8 @@ function bindShadowUniforms(prog){
   u1i(prog.u('uShadowMap'), 1);
   uMat4(prog.u('uLightVP'), SHADOW.lightVP);
   u1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
-  u1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
-  u1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : 0.0);
+  u1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : .0);
+  u1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : .0);
   gl.activeTexture(gl.TEXTURE0);
 }
 function rebuildWorld(){
@@ -1546,11 +1578,11 @@ function setPaused(v){
   else { last=performance.now(); rafId=requestAnimationFrame(frame); }
 }
 on(byId('timePause'), 'click', ()=> setPaused(!paused));
-on(byId('timeDown'), 'click', ()=> shiftSimTime(-5));
-on(byId('timeUp'), 'click', ()=> shiftSimTime(5));
+on(byId('timeDown'), 'click', ()=> shiftSimTime(-2));
+on(byId('timeUp'), 'click', ()=> shiftSimTime(2));
 let frameCount=0, shadowFrame=0;
 let rebuilding=false;
-let currentTimeOfDay=0.5;
+let currentTimeOfDay=.5;
 let prevJumpKey=false;
 let _curProg=null, _iAttribs=null;
 function bindGeom(prog, geoBuf, vAttribs, instBuf, iAttribs, idxBuf){
@@ -1589,9 +1621,9 @@ function frame(now){
   if (rebuilding){ last=now; rafId=requestAnimationFrame(frame); return; }
   let dt=(now-last)/1000; last=now;
   if (!(dt>0)) dt=0;
-  if (dt>0.05) dt=0.05;
+  if (dt>.05) dt=.05;
   simTime+=dt;
-  fpsT+=dt; fpsN++; if (fpsT>=0.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
+  fpsT+=dt; fpsN++; if (fpsT>=.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
   let mf=move.y, ms=move.x;
   if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=1; if (keys['d']) ms=-1;
   const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
@@ -1608,8 +1640,9 @@ function frame(now){
     cam.onGround=false;
     prevJumpKey=jumpKey;
   } else {
-    cam.x+=(fwd[0]*mf+rgt[0]*ms)*SPEED*dt;
-    cam.z+=(fwd[2]*mf+rgt[2]*ms)*SPEED*dt;
+    const dx=(fwd[0]*mf+rgt[0]*ms)*SPEED*dt, dz=(fwd[2]*mf+rgt[2]*ms)*SPEED*dt;
+    cam.x+=dx; cam.z+=dz;
+    stepAcc+=Math.abs(dx)+Math.abs(dz);
     if (jumpKey && !prevJumpKey && cam.jumpsLeft > 0){
       cam.vy=JUMP_VELOCITY;
       cam.onGround=false;
@@ -1627,6 +1660,23 @@ function frame(now){
     } else {
       cam.onGround=false;
     }
+    const wet=floorY-EYE_HEIGHT < CONFIG.waterLevel;
+    if (actx){
+      if (cam.onGround && stepAcc>90){
+        stepAcc=0;
+        const j=.85+Math.random()*.3;
+        if (wet) snd(1000*j, 2600*j, .5, .13, .02, false);
+        else snd(1000*j, 500*j, .4, .09, .06, true);
+      }
+      if (arainG){
+        const want = RAIN.intensity > .03 ? RAIN.intensity : 0;
+        if (Math.abs(want-arainLvl) > .01){
+          arainLvl = want;
+          arainG.gain.setTargetAtTime(want*.22, actx.currentTime, .6);
+        }
+      }
+    }
+    if (stepAcc>90) stepAcc=0;
   }
   const aspect=VIEW_W/VIEW_H;
   M4.perspective(proj, 1.05, aspect, 1.0, Math.max(CONFIG.worldW,CONFIG.worldH)*1.4);
@@ -1644,9 +1694,13 @@ function frame(now){
   uploadCreatures();
   uploadPlants();
   rainResolve(dt, simTime);
+  if (arainG && Math.abs(RAIN.intensity-arainLvl)>.02){
+    arainLvl=RAIN.intensity;
+    arainG.gain.setTargetAtTime(arainLvl*.22, actx.currentTime, .6);
+  }
   rainUpdate(dt, cam.x, cam.z);
   const eye=[cam.x,cam.y,cam.z];
-  const fogDist=Math.max(CONFIG.worldW,CONFIG.worldH)*0.9;
+  const fogDist=Math.max(CONFIG.worldW,CONFIG.worldH)*.9;
   gl.clearColor(S.skyBottom[0],S.skyBottom[1],S.skyBottom[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
@@ -1654,11 +1708,11 @@ function frame(now){
   const sunW=[cam.x+S.sunDir[0]*1000, cam.y+S.sunDir[1]*1000, cam.z+S.sunDir[2]*1000];
   const cv=[0,0,0,0];
   for(let i=0;i<4;i++) cv[i]=VP[i]*sunW[0]+VP[i+4]*sunW[1]+VP[i+8]*sunW[2]+VP[i+12];
-  const sx=cv[3]>0 ? (cv[0]/cv[3])*0.5+0.5 : -1, sy=cv[3]>0 ? (cv[1]/cv[3])*0.5+0.5 : -1;
+  const sx=cv[3]>0 ? (cv[0]/cv[3])*.5+.5 : -1, sy=cv[3]>0 ? (cv[1]/cv[3])*.5+.5 : -1;
   const moonW=[cam.x+S.moonDir[0]*1000, cam.y+S.moonDir[1]*1000, cam.z+S.moonDir[2]*1000];
   const mv=[0,0,0,0];
   for(let i=0;i<4;i++) mv[i]=VP[i]*moonW[0]+VP[i+4]*moonW[1]+VP[i+8]*moonW[2]+VP[i+12];
-  const mx=mv[3]>0 ? (mv[0]/mv[3])*0.5+0.5 : -1, my=mv[3]>0 ? (mv[1]/mv[3])*0.5+0.5 : -1;
+  const mx=mv[3]>0 ? (mv[0]/mv[3])*.5+.5 : -1, my=mv[3]>0 ? (mv[1]/mv[3])*.5+.5 : -1;
   bindGeom(skyProg, quadBuf, VA_SKY);
   u3f(skyProg.u('uTop'),S.skyTop); u3f(skyProg.u('uBottom'),S.skyBottom);
   gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); u1f(skyProg.u('uSunUp'),S.up);
@@ -1711,7 +1765,7 @@ function frame(now){
   u1f(waterProg.u('uTime'),simTime);
   u3f(waterProg.u('uFogColor'),S.fog);
   u1f(waterProg.u('uFogDist'),fogDist);
-  u1f(waterProg.u('uHighQ'),CONFIG.quality==='H'?1.0:0.0);
+  u1f(waterProg.u('uHighQ'),CONFIG.quality==='H'?1.0:.0);
   u3f(waterProg.u('uAmbient'),S.ambient);
   u3f(waterProg.u('uSkyTop'),S.skyTop);
   drawArraysPass(GLTRI,0,6);
@@ -1723,10 +1777,10 @@ function frame(now){
     bindGeom(rainProg, rainGeoBuf, VA_RAIN_G, RAIN.buf, IA_RAIN);
     uMat4(rainProg.u('uVP'), VP);
     gl.uniform3f(rainProg.u('uRight'), rgt[0], rgt[1], rgt[2]);
-    u1f(rainProg.u('uWidth'), 0.5);
+    u1f(rainProg.u('uWidth'), .5);
     u1f(rainProg.u('uLen'), 14.0);
-    gl.uniform3f(rainProg.u('uColor'), 0.62*S.up+0.30, 0.68*S.up+0.34, 0.78*S.up+0.40);
-    u1f(rainProg.u('uAlpha'), 0.42*Math.max(0.15, RAIN.intensity));
+    gl.uniform3f(rainProg.u('uColor'), .62*S.up+.30, .68*S.up+.34, .78*S.up+.40);
+    u1f(rainProg.u('uAlpha'), .42*Math.max(.15, RAIN.intensity));
     drawInstancedPass(GLTRI,rainGeoCount,RAIN.count);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
@@ -1738,11 +1792,11 @@ function frame(now){
       if(C.gen[i]>maxGen) maxGen=C.gen[i];
     }
     info.textContent=
-      `4.0.1  seed ${CONFIG.seed}  FPS ${fps} \n`+
-      `tri ${terrainIdxCount/3}  shadowRef ${SHADOW.refreshInterval}  shadowSize ${SHADOW.size}\n`+
-      `creatures ${C.n}  ${herb}H/${C.n-herb}R/${P.n}P waterLevel ${(CONFIG.waterLevel)}\n`+
-      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s ${simClock(simTime)}`;
+      `4.0.1 seed ${CONFIG.seed} FPS ${fps} \n`+
+      `tri ${terrainIdxCount/3} shadowRef ${SHADOW.refreshInterval} shadowSize ${SHADOW.size}\n`+
+      `creatures ${C.n} ${herb}H/${C.n-herb}R/${P.n}P waterLevel ${(CONFIG.waterLevel)}\n`+
+      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
+      `max gen ${maxGen} avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s ${simClock(simTime)}`;
   }
   frameCount++;
   if (!paused) rafId=requestAnimationFrame(frame); else rafId=0;
