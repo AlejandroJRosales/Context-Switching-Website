@@ -409,6 +409,7 @@ const terrainProg=program(`
   precision mediump float;
   varying vec3 vN; varying float vH; varying highp vec3 vW;
   uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
+  uniform vec3 uMoonDir; uniform vec3 uMoonColor;
   uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform highp vec3 uEye;
   ${SHADOW_GLSL}
   ${FOG_GLSL}
@@ -425,7 +426,8 @@ const terrainProg=program(`
     col=mix(col, rock, smoothstep(0.45,0.85,slope));
     float diff=max(dot(normalize(vN), uSunDir), 0.0);
     float sh=shadowFactor(vW, diff);
-    vec3 lit=col*(uAmbient+uSunColor*diff*sh);
+    float mdiff=max(dot(normalize(vN), uMoonDir), 0.0);
+    vec3 lit=col*(uAmbient+uSunColor*diff*sh+uMoonColor*mdiff);
     gl_FragColor=vec4(applyFog(lit, vW), 1.0);
   }
 `);
@@ -467,6 +469,7 @@ const waterProg=program(`
 `, `
   precision highp float; varying highp vec3 vW;
   uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
+  uniform vec3 uMoonDir; uniform vec3 uMoonColor;
   uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
   ${FOG_GLSL}
   void main(){
@@ -481,8 +484,11 @@ const waterProg=program(`
     vec3 deep=vec3(0.05,0.18,0.30), shallow=vec3(0.10,0.35,0.45);
     vec3 col=mix(deep, shallow, fres);
     vec3 R=reflect(-uSunDir, N);
+    vec3 MR=reflect(-uMoonDir, N);
     float spec=pow(max(dot(R,V),0.0), 20.0);
     col+=uSunColor*min(spec,1.0)*0.4;
+    float mspec=pow(max(dot(MR,V),0.0), 40.0);
+    col+=uMoonColor*min(mspec,1.0)*3.0;
     gl_FragColor=vec4(applyFog(col, vW), 0.92);
   }
 `);
@@ -590,11 +596,13 @@ function buildCreatures(){
   `, `
     precision mediump float; varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
     uniform vec3 uSunDir; uniform vec3 uAmbient;
+    uniform vec3 uMoonDir; uniform vec3 uMoonColor;
     ${SHADOW_GLSL}
     void main(){
       float d=max(dot(normalize(vN), uSunDir), 0.0);
       float sh=shadowFactor(vWorld, d);
-      gl_FragColor=vec4(vColor*(uAmbient+vec3(d)*sh), 1.0);
+      float md=max(dot(normalize(vN), uMoonDir), 0.0);
+      gl_FragColor=vec4(vColor*(uAmbient+vec3(d)*sh+uMoonColor*md), 1.0);
     }
   `);
 }
@@ -963,10 +971,10 @@ function buildPlants(){
     }
   `,`
     precision mediump float; varying float vV;
-    uniform vec3 uSunColor; uniform vec3 uAmbient;
+    uniform vec3 uSunColor; uniform vec3 uAmbient; uniform vec3 uMoonColor;
     void main(){
       vec3 base=mix(vec3(0.18,0.32,0.10), vec3(0.40,0.65,0.22), vV);
-      vec3 lit=base*(uAmbient+uSunColor*0.6);
+      vec3 lit=base*(uAmbient+uSunColor*0.6+uMoonColor*0.6);
       gl_FragColor=vec4(lit,1.0);
     }
   `);
@@ -1225,6 +1233,18 @@ function applyWorldScale(n){
 }
 on(byId('scaleDown'), 'click', ()=> applyWorldScale(CONFIG.worldScale-5));
 on(byId('scaleUp'), 'click', ()=> applyWorldScale(CONFIG.worldScale+5));
+const DAY_SECONDS=2*Math.PI/0.005;
+function simClock(t){
+  const days=t/DAY_SECONDS;
+  const frac=days-Math.floor(days);
+  const dayIndex=Math.floor(days);
+  const mins=Math.round(frac*1440)%1440;
+  const hh=(mins/60)|0, mm=mins%60;
+  const d=new Date(Date.UTC(2000,0,1+dayIndex));
+  const MM=d.getUTCMonth()+1, DD=d.getUTCDate();
+  const p2=v=>(v<10?'0':'')+v;
+  return `${p2(MM)}/${p2(DD)} ${p2(hh)}:${p2(mm)}`;
+}
 function sunState(t){
   const ang=t*0.005;
   const sunDir=[Math.cos(ang)*0.6, Math.sin(ang), 0.4];
@@ -1234,13 +1254,13 @@ function sunState(t){
   const moonDir=[-sunDir[0], -sunDir[1], -sunDir[2]];
   const moonUp=Math.max(0, moonDir[1]);
   const night=Math.pow(moonUp, 0.5);
-  const moonColor=[0.10*night, 0.11*night, 0.16*night];
+  const moonColor=[0.13*night, 0.15*night, 0.22*night];
   return {
     sunDir, up,
     moonDir, moonUp,
     moonColor,
     sunColor: [1.0*day, 0.92*day, 0.78*day],
-    ambient: [0.18+0.32*day+0.05*night, 0.20+0.34*day+0.05*night, 0.28+0.34*day+0.07*night],
+    ambient: [0.14+0.32*day+0.03*night, 0.16+0.34*day+0.03*night, 0.24+0.34*day+0.05*night],
     skyTop: [0.30+0.20*day, 0.45+0.30*day, 0.70+0.25*day],
     skyBottom:[0.55+0.30*day, 0.65+0.25*day, 0.80+0.15*day],
     fog: [0.55+0.25*day, 0.65+0.22*day, 0.80+0.10*day],
@@ -1611,6 +1631,8 @@ function frame(now){
   u3f(terrainProg.u('uSunDir'),S.sunDir);
   u3f(terrainProg.u('uSunColor'),S.sunColor);
   u3f(terrainProg.u('uAmbient'),S.ambient);
+  u3f(terrainProg.u('uMoonDir'),S.moonDir);
+  u3f(terrainProg.u('uMoonColor'),S.moonColor);
   u1f(terrainProg.u('uWaterLevel'),CONFIG.waterLevel);
   u3f(terrainProg.u('uFogColor'),S.fog);
   u1f(terrainProg.u('uFogDist'),fogDist);
@@ -1623,6 +1645,8 @@ function frame(now){
     uMat4(creatureProg.u('uVP'), VP);
     u3f(creatureProg.u('uSunDir'),S.sunDir);
     u3f(creatureProg.u('uAmbient'),S.ambient);
+    u3f(creatureProg.u('uMoonDir'),S.moonDir);
+    u3f(creatureProg.u('uMoonColor'),S.moonColor);
     bindShadowUniforms(creatureProg);
     drawInstancedPass(GLTRI,creatureGeoCount,C.n);
   }
@@ -1633,6 +1657,7 @@ function frame(now){
     u1f(plantProg.u('uTime'),simTime);
     u3f(plantProg.u('uSunColor'),S.sunColor);
     u3f(plantProg.u('uAmbient'),S.ambient);
+    u3f(plantProg.u('uMoonColor'),S.moonColor);
     drawInstancedPass(GLTRI,plantGeoCount,P.n);
   }
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
@@ -1642,6 +1667,8 @@ function frame(now){
   u3f(waterProg.u('uEye'),eye);
   u3f(waterProg.u('uSunDir'),S.sunDir);
   u3f(waterProg.u('uSunColor'),S.sunColor);
+  u3f(waterProg.u('uMoonDir'),S.moonDir);
+  u3f(waterProg.u('uMoonColor'),S.moonColor);
   u1f(waterProg.u('uTime'),simTime);
   u3f(waterProg.u('uFogColor'),S.fog);
   u1f(waterProg.u('uFogDist'),fogDist);
@@ -1670,11 +1697,11 @@ function frame(now){
       if(C.gen[i]>maxGen) maxGen=C.gen[i];
     }
     info.textContent=
-      `4.0.1  seed ${CONFIG.seed}  FPS ${fps}\n`+
+      `4.0.1  seed ${CONFIG.seed}  FPS ${fps} \n`+
       `tri ${terrainIdxCount/3}  shadowRef ${SHADOW.refreshInterval}  shadowSize ${SHADOW.size}\n`+
       `creatures ${C.n}  ${herb}H/${C.n-herb}R/${P.n}P waterLevel ${(CONFIG.waterLevel)}\n`+
       `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)}  spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s `;
+      `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s ${simClock(simTime)}`;
   }
   frameCount++;
   requestAnimationFrame(frame);
