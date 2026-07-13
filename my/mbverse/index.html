@@ -30,14 +30,19 @@
   <div id="info"></div>
   <button id="gear">=</button>
   <div id="btns">
-    <button class="btn" id="qualityBtn">GRAPH: HIGH</button>
-    <button class="btn" id="flyBtn">FLY: OFF</button>
-    <button class="btn" id="rainBtn">RAIN: AUTO</button>
+    <button class="btn" id="qualityBtn">QUAL: H</button>
+    <button class="btn" id="flyBtn">FLY: 0</button>
+    <button class="btn" id="rainBtn">RAIN: /</button>
     <button class="btn" id="resetBtn">RESET</button>
     <span id="scaleWrap">
       <button class="btn" id="scaleDown">-</button>
       <button class="btn" id="scaleDisplay">20</button>
       <button class="btn" id="scaleUp">+</button>
+    </span>
+    <span id="timeWrap">
+      <button class="btn" id="timeDown">-5H</button>
+      <button class="btn" id="timePause">R</button>
+      <button class="btn" id="timeUp">+5H</button>
     </span>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
@@ -55,7 +60,7 @@ const CONFIG={
   isMobile:  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 20,
   probSpawnPlant: 0.04,
-  quality: 'HIGH',
+  quality: 'H',
   seed: (Math.random()*1e9)|0,
 };
 let RNG=mulberry32(CONFIG.seed);
@@ -174,8 +179,8 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const byId = (id) => document.getElementById(id);
 const on = (el,ev,fn,o) => el.addEventListener(ev,fn,o);
 // shadows
-function setShadowSize(){ return CONFIG.quality==='HIGH' ? 1024 : 256; }
-function setShadowRefresh(){ return CONFIG.quality==='HIGH' ? 5 : 30; } 
+function setShadowSize(){ return CONFIG.quality==='H' ? 1024 : 256; }
+function setShadowRefresh(){ return CONFIG.quality==='H' ? 5 : 30; } 
 const SHADOW={
   size: setShadowSize(),
   refreshInterval: setShadowRefresh(),
@@ -365,8 +370,8 @@ function terrainHeightExact(wx, wz){
   return y;
 }
 function buildTerrain(){
-  const segX=CONFIG.quality==='HIGH' ? 160 : 96;
-  const segZ=CONFIG.quality==='HIGH' ? 120 : 72;
+  const segX=CONFIG.quality==='H' ? 160 : 96;
+  const segZ=CONFIG.quality==='H' ? 120 : 72;
   const W=CONFIG.worldW, H=CONFIG.worldH;
   const verts=new Float32Array((segX+1)*(segZ+1)*6);
   let vi=0;
@@ -1194,8 +1199,8 @@ on(window, 'keyup',  e=>{ keys[e.key.toLowerCase()]=false; });
   on(document, 'mousemove',e=>{ if(!locked&&drag){applyLook(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;} });
 })();
 byId('qualityBtn').addEventListener('click', function(){
-  CONFIG.quality=CONFIG.quality==='HIGH' ? 'LOW' : 'HIGH';
-  this.textContent='GRAPH: '+CONFIG.quality;
+  CONFIG.quality=CONFIG.quality==='H' ? 'L' : 'H';
+  this.textContent='QUAL: '+CONFIG.quality;
   SHADOW.size=setShadowSize(CONFIG.quality);
   SHADOW.refreshInterval=setShadowRefresh(CONFIG.quality);
   initShadow();
@@ -1204,7 +1209,7 @@ byId('qualityBtn').addEventListener('click', function(){
 });
 byId('flyBtn').addEventListener('click', function(){
   cam.fly=!cam.fly;
-  this.textContent='FLY: '+(cam.fly ? 'ON' : 'OFF');
+  this.textContent='FLY: '+(cam.fly ? '1' : '0');
   cam.vy=0;
   if (cam.fly) cam.onGround=false;
 });
@@ -1286,7 +1291,7 @@ const RAIN={
   top: 0,
   fall: 1000,
   speed: 1300,
-  mode: 'auto',
+  mode: '/',
   on: false,
   intensity: 0,
   target: 0,
@@ -1306,17 +1311,17 @@ function rainAuto(dt, t){
   RAIN.on=RAIN.intensity > 0.02;
 }
 function rainResolve(dt, t){
-  if (RAIN.mode=== 'on'){ RAIN.on=true;  RAIN.intensity+=(1-RAIN.intensity)*Math.min(1,dt*0.6); }
-  else if (RAIN.mode=== 'off'){ RAIN.on=false; RAIN.intensity+=(0-RAIN.intensity)*Math.min(1,dt*0.6); RAIN.on=RAIN.intensity>0.02; }
+  if (RAIN.mode=== '1'){ RAIN.on=true;  RAIN.intensity+=(1-RAIN.intensity)*Math.min(1,dt*0.6); }
+  else if (RAIN.mode=== '0'){ RAIN.on=false; RAIN.intensity+=(0-RAIN.intensity)*Math.min(1,dt*0.6); RAIN.on=RAIN.intensity>0.02; }
   else rainAuto(dt, t);
 }
-const RAIN_MODES=['auto','on','off'];
+const RAIN_MODES=['/','1','0'];
 function cycleRainMode(){
   const i=RAIN_MODES.indexOf(RAIN.mode);
   RAIN.mode=RAIN_MODES[(i+1)%RAIN_MODES.length];
-  if (RAIN.mode=== 'auto') RAIN.nextRoll=0;
+  if (RAIN.mode=== '/') RAIN.nextRoll=0;
   const btn=byId('rainBtn');
-  if (btn) btn.textContent='RAIN: '+RAIN.mode.toUpperCase();
+  if (btn) btn.textContent='RAIN: '+RAIN.mode;
 }
 const rainGeoBuf=gl.createBuffer();
 bindBuf(GLAB, rainGeoBuf);
@@ -1432,7 +1437,7 @@ function initShadow(){
 }
 function setShadowRadius(){ return Math.max(CONFIG.worldW, CONFIG.worldH)/2; }
 let SHADOW_RADIUS=setShadowRadius();
-function shadowsEnabled(){ return CONFIG.quality==='HIGH'; }
+function shadowsEnabled(){ return CONFIG.quality==='H'; }
 function updateLightVP(sunDir, focusX, focusZ){
   const half=SHADOW_RADIUS;
   const dist=Math.max(CONFIG.worldW, CONFIG.worldH);
@@ -1509,6 +1514,32 @@ function rebuildWorld(){
 const VP=M4.create(), proj=M4.create(), viewM=M4.create();
 const info=byId('info');
 let last=performance.now(), simTime=0, fpsT=0, fpsN=0, fps=0;
+const HOUR_SECONDS=DAY_SECONDS/24;
+let paused=false, rafId=0;
+function shiftSimTime(hours){
+  simTime=Math.max(0, simTime + hours*HOUR_SECONDS);
+  currentTimeOfDay=sunState(simTime).up;
+  if (paused) redrawPaused();
+}
+// paused redraw: render one frame with dt=0 so nothing simulates, only lighting/visuals update
+function redrawPaused(){
+  paused=false;
+  const t=performance.now();
+  last=t;            // dt = 0 for this frame
+  frame(t);
+  paused=true;
+  if (rafId){ cancelAnimationFrame(rafId); rafId=0; }
+}
+function setPaused(v){
+  if (paused===v) return;
+  paused=v;
+  byId('timePause').textContent = paused ? 'P' : 'R';
+  if (paused){ if (rafId) cancelAnimationFrame(rafId); rafId=0; }
+  else { last=performance.now(); rafId=requestAnimationFrame(frame); }
+}
+on(byId('timePause'), 'click', ()=> setPaused(!paused));
+on(byId('timeDown'), 'click', ()=> shiftSimTime(-5));
+on(byId('timeUp'), 'click', ()=> shiftSimTime(5));
 let frameCount=0, shadowFrame=0;
 let rebuilding=false;
 let currentTimeOfDay=0.5;
@@ -1547,7 +1578,7 @@ const IA_PLANT=[['aInstPos',3,P_STRIDE*4,0],['aSway',1,P_STRIDE*4,12]];
 const VA_RAIN_G=[['aCorner',2,8,0]];
 const IA_RAIN=[['aInstPos',3,RAIN.STRIDE*4,0],['aSeed',1,RAIN.STRIDE*4,12]];
 function frame(now){
-  if (rebuilding){ last=now; requestAnimationFrame(frame); return; }
+  if (rebuilding){ last=now; rafId=requestAnimationFrame(frame); return; }
   let dt=(now-last)/1000; last=now;
   if (!(dt>0)) dt=0;
   if (dt>0.05) dt=0.05;
@@ -1672,7 +1703,7 @@ function frame(now){
   u1f(waterProg.u('uTime'),simTime);
   u3f(waterProg.u('uFogColor'),S.fog);
   u1f(waterProg.u('uFogDist'),fogDist);
-  u1f(waterProg.u('uHighQ'),CONFIG.quality==='HIGH'?1.0:0.0);
+  u1f(waterProg.u('uHighQ'),CONFIG.quality==='H'?1.0:0.0);
   drawArraysPass(GLTRI,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
   // rain pass
@@ -1704,7 +1735,7 @@ function frame(now){
       `max gen ${maxGen}  avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s ${simClock(simTime)}`;
   }
   frameCount++;
-  requestAnimationFrame(frame);
+  if (!paused) rafId=requestAnimationFrame(frame); else rafId=0;
 }
 resize();
 initShadow();
@@ -1712,7 +1743,7 @@ gridInit();
 buildCreatures();
 buildPlants();
 rebuildWorld();
-requestAnimationFrame(frame);
+rafId=requestAnimationFrame(frame);
 </script>
 </body>
 </html>
