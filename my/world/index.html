@@ -124,6 +124,11 @@
     width: 28px;
     flex: none;
   }
+
+  #settingsPanel #timeRow button {
+    width: 38px;
+    flex: none;
+  }
 </style>
 </head>
 <body>
@@ -139,6 +144,11 @@
     </div>
     <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
     <button id="plantBtn" title="Toggle plants on / off (P)">PLANTS: ON</button>
+    <div id="timeRow" style="display:flex;align-items:center;gap:6px;justify-content:center">
+      <button id="timeBack" title="Rewind 5 hours">-5h</button>
+      <span id="timeLabel">TIME</span>
+      <button id="timeFwd" title="Advance 5 hours">+5h</button>
+    </div>
     <button id="resetSeed" title="Roll a new seed and rebuild the world">RESET</button>
   </div>
 </div>
@@ -199,7 +209,8 @@ let scaleIdx = SCALE_STEPS.indexOf(2);
 
 const DAY_LENGTH = 500;
 // Start the sky clock at midday: timeOfDay 0=midnight, 0.5
-const SKY_TIME_OFFSET = DAY_LENGTH * 0.5;
+let skyTimeOffset = DAY_LENGTH * 0.5;
+const HOUR_SECONDS = DAY_LENGTH / 24;
 const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 
 let N, worldMax, amplitude, positions, moveParams, moveBGL, moveBG, movePipe, renderer, player;
@@ -489,6 +500,15 @@ document.addEventListener("click", (e)=>{
 document.getElementById("scaleUp").addEventListener("click", ()=>setScale(scaleIdx+1));
 document.getElementById("scaleDown").addEventListener("click", ()=>setScale(scaleIdx-1));
 
+// Shift the sky clock by whole hours. Clamped at 0 so `time + skyTimeOffset` never goes
+// negative: sky.js does `(simTime / dayLen) % 1` and JS `%` keeps the sign, and the HUD's
+// day/year counters floor the same sum.
+function shiftTime(hours){
+  skyTimeOffset = Math.max(0, skyTimeOffset + hours * HOUR_SECONDS);
+}
+document.getElementById("timeFwd").addEventListener("click", ()=>shiftTime(5));
+document.getElementById("timeBack").addEventListener("click", ()=>shiftTime(-5));
+
 // rain mode toggle: button + R key both route through here so the label stays in sync.
 const rainBtn = document.getElementById("rainBtn");
 function cycleRain(){
@@ -571,7 +591,7 @@ function resize(){
 addEventListener("resize",resize); resize();
 
 function handleHud(time, dt, lastHud) {
-  const skyState = sky.update(time + SKY_TIME_OFFSET);
+  const skyState = sky.update(time + skyTimeOffset);
   renderer.setSky(skyState);
   const fogDist = Math.max(worldMax[0], worldMax[2]) * 0.55;
   renderer.setFog(skyState.fogColor, fogDist);
@@ -622,7 +642,7 @@ function handleHud(time, dt, lastHud) {
     const tod = `${String(todH).padStart(2,"0")}:${String(todM).padStart(2,"0")}`;
     // Day/year counters derived from total elapsed sim seconds (same clock the sky
     // module runs on), so they stay in sync with the HH:MM readout. Day 1 / Year 1 at start.
-    const totalDays = Math.floor((time + SKY_TIME_OFFSET) / DAY_LENGTH);
+    const totalDays = Math.floor((time + skyTimeOffset) / DAY_LENGTH);
     const DAYS_PER_YEAR = 365;
     const year = Math.floor(totalDays / DAYS_PER_YEAR) + 1;
     const dayOfYear = (totalDays % DAYS_PER_YEAR) + 1;
