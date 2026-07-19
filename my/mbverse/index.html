@@ -59,7 +59,6 @@ function setWorldSize(){const s=scale(CONFIG.worldScale);CONFIG.worldW=s;CONFIG.
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 const CONFIG={
-  isMobile: /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
   worldScale: 20,
   probSpawnPlant: .04,
   quality: 'H',
@@ -192,73 +191,73 @@ const SHADOW={
 };
 SHADOW.packed=!SHADOW.depthExt;
 const SHADOW_GLSL=`
-  uniform sampler2D uShadowMap;
-  uniform mat4 uLightVP;
-  uniform float uShadowTexel;
-  uniform float uShadowMode;
-  uniform float uShadowEnabled;
-  float unpackDepth(vec4 c){
-    return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
-  }
-  float sampleShadowDepth(vec2 uv){
-    vec4 c=texture2D(uShadowMap, uv);
-    return mix(c.r, unpackDepth(c), uShadowMode);
-  }
-  float shadowFactor(vec3 worldPos, float ndotl){
-    if (uShadowEnabled < .5) return 1.0;
-    vec4 lp=uLightVP*vec4(worldPos, 1.0);
-    vec3 proj=lp.xyz/lp.w;
-    proj=proj*.5+.5;
-    if (proj.x<.0||proj.x>1.0||proj.y<.0||proj.y>1.0||proj.z>1.0) return 1.0;
-    float bias=clamp(.0012*(1.0-ndotl), .0004, .0028);
-    float lit=.0;
-    for (int x=-1; x<=0; x++){
-      for (int y=-1; y<=0; y++){
-        vec2 o=vec2(float(x)+.5, float(y)+.5)*uShadowTexel;
-        float sd=sampleShadowDepth(proj.xy+o);
-        lit+=(proj.z-bias <= sd) ? 1.0 : .0;
-      }
+uniform sampler2D uShadowMap;
+uniform mat4 uLightVP;
+uniform float uShadowTexel;
+uniform float uShadowMode;
+uniform float uShadowEnabled;
+float unpackDepth(vec4 c){
+  return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
+}
+float sampleShadowDepth(vec2 uv){
+  vec4 c=texture2D(uShadowMap, uv);
+  return mix(c.r, unpackDepth(c), uShadowMode);
+}
+float shadowFactor(vec3 worldPos, float ndotl){
+  if (uShadowEnabled < .5) return 1.0;
+  vec4 lp=uLightVP*vec4(worldPos, 1.0);
+  vec3 proj=lp.xyz/lp.w;
+  proj=proj*.5+.5;
+  if (proj.x<.0||proj.x>1.0||proj.y<.0||proj.y>1.0||proj.z>1.0) return 1.0;
+  float bias=clamp(.0012*(1.0-ndotl), .0004, .0028);
+  float lit=.0;
+  for (int x=-1; x<=0; x++){
+    for (int y=-1; y<=0; y++){
+      vec2 o=vec2(float(x)+.5, float(y)+.5)*uShadowTexel;
+      float sd=sampleShadowDepth(proj.xy+o);
+      lit+=(proj.z-bias <= sd) ? 1.0 : .0;
     }
-    lit*=.25;
-    return mix(.25, 1.0, lit);
   }
+  lit*=.25;
+  return mix(.25, 1.0, lit);
+}
 `;
 const DEPTH_FRAG=`
-  precision highp float;
-  uniform float uShadowMode;
-  vec4 packDepth(float d){
-    vec4 c=fract(d*vec4(1.0, 255.0, 65025.0, 16581375.0));
-    c-=c.yzww*vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, .0);
-    return c;
-  }
-  void main(){
-    gl_FragColor=(uShadowMode > .5) ? packDepth(gl_FragCoord.z) : vec4(1.0);
-  }
+precision highp float;
+uniform float uShadowMode;
+vec4 packDepth(float d){
+  vec4 c=fract(d*vec4(1.0, 255.0, 65025.0, 16581375.0));
+  c-=c.yzww*vec4(1.0/255.0, 1.0/255.0, 1.0/255.0, .0);
+  return c;
+}
+void main(){
+  gl_FragColor=(uShadowMode > .5) ? packDepth(gl_FragCoord.z) : vec4(1.0);
+}
 `;
 const INST_DEFORM_GLSL=`
-  attribute vec3 aPos;
-  attribute vec3 aInstPos;
-  attribute float aInstScale;
-  attribute float aInstHeading;
-  attribute float aInstSpecies;
-  mat3 instRot;
-  vec3 instDeform(){
-    vec3 lp=aPos;
-    float pred=aInstSpecies;
-    lp.z*=mix(1.0, 1.6, pred);
-    lp.x*=mix(1.0, .8, pred);
-    lp.y*=mix(1.0, .85, pred);
-    float s=sin(aInstHeading), c=cos(aInstHeading);
-    instRot=mat3(c,.0,-s, .0,1.0,.0, s,.0,c);
-    return instRot*(lp*aInstScale);
-  }
+attribute vec3 aPos;
+attribute vec3 aInstPos;
+attribute float aInstScale;
+attribute float aInstHeading;
+attribute float aInstSpecies;
+mat3 instRot;
+vec3 instDeform(){
+  vec3 lp=aPos;
+  float pred=aInstSpecies;
+  lp.z*=mix(1.0, 1.6, pred);
+  lp.x*=mix(1.0, .8, pred);
+  lp.y*=mix(1.0, .85, pred);
+  float s=sin(aInstHeading), c=cos(aInstHeading);
+  instRot=mat3(c,.0,-s, .0,1.0,.0, s,.0,c);
+  return instRot*(lp*aInstScale);
+}
 `;
 const FOG_GLSL=`
-  vec3 applyFog(vec3 col, vec3 wp){
-    float d=length(wp-uEye);
-    float fog=clamp(d/uFogDist, .0, 1.0); fog*=fog;
-    return mix(col, uFogColor, fog);
-  }
+vec3 applyFog(vec3 col, vec3 wp){
+  float d=length(wp-uEye);
+  float fog=clamp(d/uFogDist, .0, 1.0); fog*=fog;
+  return mix(col, uFogColor, fog);
+}
 `;
 let DPR=1, VIEW_W=1, VIEW_H=1;
 function resize() {
@@ -284,7 +283,7 @@ const THCACHE={res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0,
   wmRes: 0, wmCols: 0, wmRows: 0, wmOx: 0, wmOz: 0, wmInvStep: 0, waterMask: null};
 let terrainBuf=null, terrainIdxBuf=null, terrainIdxCount=0;
 function buildTerrainCache(){
-  const step=CONFIG.isMobile ? 12 : 8;
+  const step=CONFIG.quality==='H' ? 8 : 16;
   const W=CONFIG.worldW, H=CONFIG.worldH;
   const pad=step*2;
   const ox=-W/2-pad, oz=-H/2-pad;
@@ -407,58 +406,58 @@ function buildTerrain(){
   terrainIdxCount=idx.length;
 }
 const terrainProg=program(`
-  attribute vec3 aPos; attribute vec3 aNormal;
-  uniform mat4 uVP;
-  varying vec3 vN; varying float vH; varying highp vec3 vW;
-  void main(){ vN=aNormal; vH=aPos.y; vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }
+attribute vec3 aPos; attribute vec3 aNormal;
+uniform mat4 uVP;
+varying vec3 vN; varying float vH; varying highp vec3 vW;
+void main(){ vN=aNormal; vH=aPos.y; vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }
 `, `
-  precision mediump float;
-  varying vec3 vN; varying float vH; varying highp vec3 vW;
-  uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
-  uniform vec3 uMoonDir; uniform vec3 uMoonColor;
-  uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform highp vec3 uEye;
-  ${SHADOW_GLSL}
-  ${FOG_GLSL}
-  void main(){
-    float slope=1.0-clamp(vN.y, .0, 1.0);
-    vec3 sand=vec3(.76,.70,.50);
-    vec3 grass=vec3(.26,.52,.24);
-    vec3 rock=vec3(.42,.40,.38);
-    vec3 snow=vec3(.92,.94,.97);
-    float hN=clamp((vH-uWaterLevel)/600.0, .0, 1.0);
-    vec3 col=mix(sand, grass, smoothstep(.0,.04,hN));
-    col=mix(col, rock, smoothstep(.30,.55,hN));
-    col=mix(col, snow, smoothstep(.62,.80,hN));
-    col=mix(col, rock, smoothstep(.45,.85,slope));
-    float diff=max(dot(normalize(vN), uSunDir), .0);
-    float sh=shadowFactor(vW, diff);
-    float mdiff=max(dot(normalize(vN), uMoonDir), .0);
-    vec3 lit=col*(uAmbient+uSunColor*diff*sh+uMoonColor*mdiff);
-    gl_FragColor=vec4(applyFog(lit, vW), 1.0);
-  }
+precision mediump float;
+varying vec3 vN; varying float vH; varying highp vec3 vW;
+uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uAmbient;
+uniform vec3 uMoonDir; uniform vec3 uMoonColor;
+uniform float uWaterLevel; uniform vec3 uFogColor; uniform float uFogDist; uniform highp vec3 uEye;
+${SHADOW_GLSL}
+${FOG_GLSL}
+void main(){
+  float slope=1.0-clamp(vN.y, .0, 1.0);
+  vec3 sand=vec3(.76,.70,.50);
+  vec3 grass=vec3(.26,.52,.24);
+  vec3 rock=vec3(.42,.40,.38);
+  vec3 snow=vec3(.92,.94,.97);
+  float hN=clamp((vH-uWaterLevel)/600.0, .0, 1.0);
+  vec3 col=mix(sand, grass, smoothstep(.0,.04,hN));
+  col=mix(col, rock, smoothstep(.30,.55,hN));
+  col=mix(col, snow, smoothstep(.62,.80,hN));
+  col=mix(col, rock, smoothstep(.45,.85,slope));
+  float diff=max(dot(normalize(vN), uSunDir), .0);
+  float sh=shadowFactor(vW, diff);
+  float mdiff=max(dot(normalize(vN), uMoonDir), .0);
+  vec3 lit=col*(uAmbient+uSunColor*diff*sh+uMoonColor*mdiff);
+  gl_FragColor=vec4(applyFog(lit, vW), 1.0);
+}
 `);
 const quadBuf=gl.createBuffer();
 bindBuf(GLAB, quadBuf);
 bufData(GLAB, new Float32Array([-1,-1, 3,-1, -1,3]), GLSTA);
 const skyProg=program(`
-  attribute vec2 aPos; varying vec2 vUv;
-  void main(){ vUv=aPos*.5+.5; gl_Position=vec4(aPos,.0,1.0); }
+attribute vec2 aPos; varying vec2 vUv;
+void main(){ vUv=aPos*.5+.5; gl_Position=vec4(aPos,.0,1.0); }
 `, `
-  precision mediump float; varying vec2 vUv;
-  uniform vec3 uTop; uniform vec3 uBottom; uniform vec2 uSunScreen; uniform float uSunUp;
-  uniform vec2 uMoonScreen; uniform float uMoonUp;
-  void main(){
-    vec3 sky=mix(uBottom, uTop, pow(vUv.y, .7));
-    float d=distance(vUv, uSunScreen);
-    float disc=smoothstep(.06, .02, d)*uSunUp;
-    float glow=smoothstep(.5, .0, d)*.35*uSunUp;
-    vec3 sun=vec3(1.0,.95,.8);
-    float md=distance(vUv, uMoonScreen);
-    float mdisc=smoothstep(.045, .03, md)*uMoonUp;
-    float mglow=smoothstep(.28, .0, md)*.18*uMoonUp;
-    vec3 moon=vec3(.85,.88,1.0);
-    gl_FragColor=vec4(sky+sun*(disc+glow)+moon*(mdisc+mglow), 1.0);
-  }
+precision mediump float; varying vec2 vUv;
+uniform vec3 uTop; uniform vec3 uBottom; uniform vec2 uSunScreen; uniform float uSunUp;
+uniform vec2 uMoonScreen; uniform float uMoonUp;
+void main(){
+  vec3 sky=mix(uBottom, uTop, pow(vUv.y, .7));
+  float d=distance(vUv, uSunScreen);
+  float disc=smoothstep(.06, .02, d)*uSunUp;
+  float glow=smoothstep(.5, .0, d)*.35*uSunUp;
+  vec3 sun=vec3(1.0,.95,.8);
+  float md=distance(vUv, uMoonScreen);
+  float mdisc=smoothstep(.045, .03, md)*uMoonUp;
+  float mglow=smoothstep(.28, .0, md)*.18*uMoonUp;
+  vec3 moon=vec3(.85,.88,1.0);
+  gl_FragColor=vec4(sky+sun*(disc+glow)+moon*(mdisc+mglow), 1.0);
+}
 `);
 const waterBuf=gl.createBuffer();
 function buildWater(){
@@ -468,37 +467,37 @@ function buildWater(){
 }
 buildWater();
 const waterProg=program(`
-  precision highp float;
-  attribute vec2 aXZ; uniform mat4 uVP; uniform float uLevel;
-  varying highp vec3 vW;
-  void main(){ vW=vec3(aXZ.x, uLevel, aXZ.y); gl_Position=uVP*vec4(vW,1.0); }
+precision highp float;
+attribute vec2 aXZ; uniform mat4 uVP; uniform float uLevel;
+varying highp vec3 vW;
+void main(){ vW=vec3(aXZ.x, uLevel, aXZ.y); gl_Position=uVP*vec4(vW,1.0); }
 `, `
-  precision highp float; varying highp vec3 vW;
-  uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
-  uniform vec3 uMoonDir; uniform vec3 uMoonColor;
-  uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
-  uniform vec3 uAmbient; uniform vec3 uSkyTop;
-  ${FOG_GLSL}
-  void main(){
-    float d=length(uEye-vW);
-    float detail=clamp(1.0-d/uFogDist, .0, 1.0)*uHighQ;
-    vec2 p=vW.xz*.02;
-    float n1=sin(p.x*1.3+uTime*.8)+cos(p.y*1.7-uTime*.6);
-    float n2=sin((p.x+p.y)*2.1+uTime*1.1);
-    vec3 N=normalize(vec3((n1+n2)*.05*detail, 1.0, (n1-n2)*.05*detail));
-    vec3 V=normalize(uEye-vW);
-    float fres=pow(1.0-max(dot(V,N),.0), 3.0);
-    vec3 deep=vec3(.05,.18,.30), shallow=vec3(.10,.35,.45);
-    vec3 body=mix(deep, shallow, .3)*uAmbient;
-    vec3 col=mix(body, uSkyTop, fres);
-    vec3 R=reflect(-uSunDir, N);
-    vec3 MR=reflect(-uMoonDir, N);
-    float spec=pow(max(dot(R,V),.0), 20.0);
-    col+=uSunColor*min(spec,1.0)*.4;
-    float mspec=pow(max(dot(MR,V),.0), 40.0);
-    col+=uMoonColor*min(mspec,1.0)*.4;
-    gl_FragColor=vec4(applyFog(col, vW), .92);
-  }
+precision highp float; varying highp vec3 vW;
+uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
+uniform vec3 uMoonDir; uniform vec3 uMoonColor;
+uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
+uniform vec3 uAmbient; uniform vec3 uSkyTop;
+${FOG_GLSL}
+void main(){
+  float d=length(uEye-vW);
+  float detail=clamp(1.0-d/uFogDist, .0, 1.0)*uHighQ;
+  vec2 p=vW.xz*.02;
+  float n1=sin(p.x*1.3+uTime*.8)+cos(p.y*1.7-uTime*.6);
+  float n2=sin((p.x+p.y)*2.1+uTime*1.1);
+  vec3 N=normalize(vec3((n1+n2)*.05*detail, 1.0, (n1-n2)*.05*detail));
+  vec3 V=normalize(uEye-vW);
+  float fres=pow(1.0-max(dot(V,N),.0), 3.0);
+  vec3 deep=vec3(.05,.18,.30), shallow=vec3(.10,.35,.45);
+  vec3 body=mix(deep, shallow, .3)*uAmbient;
+  vec3 col=mix(body, uSkyTop, fres);
+  vec3 R=reflect(-uSunDir, N);
+  vec3 MR=reflect(-uMoonDir, N);
+  float spec=pow(max(dot(R,V),.0), 20.0);
+  col+=uSunColor*min(spec,1.0)*.4;
+  float mspec=pow(max(dot(MR,V),.0), 40.0);
+  col+=uMoonColor*min(mspec,1.0)*.4;
+  gl_FragColor=vec4(applyFog(col, vW), .92);
+}
 `);
 // creatures
 let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
@@ -630,7 +629,7 @@ function buildCreatures(){
       push(...bB,...nB); push(...aF,...nA); push(...bF,...nB);
     }
   }
-  const lod=CONFIG.isMobile ? 0 : 1;
+  const lod=CONFIG.quality==='H' ? 1 : 0;
   const rings=lod? 8:6, segs=lod? 10:7;
   const bodyR=.5, bodyHalf=.9;
   tube(bodyR, bodyHalf, segs);
@@ -644,29 +643,29 @@ function buildCreatures(){
   creatureGeoCount=verts.length/6;
   instBuf=gl.createBuffer();
   creatureProg=program(`
-    attribute vec3 aNormal;
-    attribute vec3 aInstColor;
-    uniform mat4 uVP;
-    ${INST_DEFORM_GLSL}
-    varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
-    void main(){
-      vec3 p=instDeform();
-      vN=instRot*aNormal;
-      vColor=aInstColor;
-      vWorld=aInstPos+p;
-      gl_Position=uVP*vec4(aInstPos+p, 1.0);
-    }
+attribute vec3 aNormal;
+attribute vec3 aInstColor;
+uniform mat4 uVP;
+${INST_DEFORM_GLSL}
+varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
+void main(){
+  vec3 p=instDeform();
+  vN=instRot*aNormal;
+  vColor=aInstColor;
+  vWorld=aInstPos+p;
+  gl_Position=uVP*vec4(aInstPos+p, 1.0);
+}
   `, `
-    precision mediump float; varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
-    uniform vec3 uSunDir; uniform vec3 uAmbient;
-    uniform vec3 uMoonDir; uniform vec3 uMoonColor;
-    ${SHADOW_GLSL}
-    void main(){
-      float d=max(dot(normalize(vN), uSunDir), .0);
-      float sh=shadowFactor(vWorld, d);
-      float md=max(dot(normalize(vN), uMoonDir), .0);
-      gl_FragColor=vec4(vColor*(uAmbient+vec3(d)*sh+uMoonColor*md), 1.0);
-    }
+precision mediump float; varying vec3 vColor; varying vec3 vN; varying vec3 vWorld;
+uniform vec3 uSunDir; uniform vec3 uAmbient;
+uniform vec3 uMoonDir; uniform vec3 uMoonColor;
+${SHADOW_GLSL}
+void main(){
+  float d=max(dot(normalize(vN), uSunDir), .0);
+  float sh=shadowFactor(vWorld, d);
+  float md=max(dot(normalize(vN), uMoonDir), .0);
+  gl_FragColor=vec4(vColor*(uAmbient+vec3(d)*sh+uMoonColor*md), 1.0);
+}
   `);
 }
 // brain
@@ -1021,24 +1020,24 @@ function buildPlants(){
   plantGeoCount=q.length/4;
   plantInstBuf=gl.createBuffer();
   plantProg=program(`
-    attribute vec3 aPos; attribute float aV;
-    attribute vec3 aInstPos; attribute float aSway;
-    uniform mat4 uVP; uniform float uTime;
-    varying float vV;
-    void main(){
-      vV=aV;
-      float w=sin(uTime*1.5+aSway)*1.6*aV;
-      vec3 world=aInstPos+aPos+vec3(w,.0,w*.5);
-      gl_Position=uVP*vec4(world,1.0);
-    }
+attribute vec3 aPos; attribute float aV;
+attribute vec3 aInstPos; attribute float aSway;
+uniform mat4 uVP; uniform float uTime;
+varying float vV;
+void main(){
+  vV=aV;
+  float w=sin(uTime*1.5+aSway)*1.6*aV;
+  vec3 world=aInstPos+aPos+vec3(w,.0,w*.5);
+  gl_Position=uVP*vec4(world,1.0);
+}
   `,`
-    precision mediump float; varying float vV;
-    uniform vec3 uSunColor; uniform vec3 uAmbient; uniform vec3 uMoonColor;
-    void main(){
-      vec3 base=mix(vec3(.18,.32,.10), vec3(.40,.65,.22), vV);
-      vec3 lit=base*(uAmbient+uSunColor*.6+uMoonColor*.6);
-      gl_FragColor=vec4(lit,1.0);
-    }
+precision mediump float; varying float vV;
+uniform vec3 uSunColor; uniform vec3 uAmbient; uniform vec3 uMoonColor;
+void main(){
+  vec3 base=mix(vec3(.18,.32,.10), vec3(.40,.65,.22), vV);
+  vec3 lit=base*(uAmbient+uSunColor*.6+uMoonColor*.6);
+  gl_FragColor=vec4(lit,1.0);
+}
   `);
 }
 function uploadPlants(){
@@ -1368,17 +1367,17 @@ function sunState(t){
   };
 }
 const depthProg=program(`
-  attribute vec3 aPos;
-  uniform mat4 uLightVP;
-  void main(){ gl_Position=uLightVP*vec4(aPos, 1.0); }
+attribute vec3 aPos;
+uniform mat4 uLightVP;
+void main(){ gl_Position=uLightVP*vec4(aPos, 1.0); }
 `, DEPTH_FRAG);
 const depthInstProg=program(`
-  uniform mat4 uLightVP;
-  ${INST_DEFORM_GLSL}
-  void main(){
-    vec3 p=instDeform();
-    gl_Position=uLightVP*vec4(aInstPos+p, 1.0);
-  }
+uniform mat4 uLightVP;
+${INST_DEFORM_GLSL}
+void main(){
+  vec3 p=instDeform();
+  gl_Position=uLightVP*vec4(aInstPos+p, 1.0);
+}
 `, DEPTH_FRAG);
 // rain
 const RAIN={
@@ -1427,31 +1426,31 @@ bufData(GLAB, new Float32Array([
 ]), GLSTA);
 const rainGeoCount=6;
 const rainProg=program(`
-  attribute vec2 aCorner;
-  attribute vec3 aInstPos;
-  attribute float aSeed;
-  uniform mat4 uVP;
-  uniform vec3 uRight;
-  uniform float uWidth;
-  uniform float uLen;
-  varying float vT;
-  void main(){
-    vT=aCorner.y*.5+.5;
-    float len=uLen*(.6+.4*aSeed);
-    vec3 world=aInstPos
-    +uRight*(aCorner.x*uWidth)
-    +vec3(.0,1.0,.0)*(aCorner.y*len);
-    gl_Position=uVP*vec4(world,1.0);
-  }
+attribute vec2 aCorner;
+attribute vec3 aInstPos;
+attribute float aSeed;
+uniform mat4 uVP;
+uniform vec3 uRight;
+uniform float uWidth;
+uniform float uLen;
+varying float vT;
+void main(){
+  vT=aCorner.y*.5+.5;
+  float len=uLen*(.6+.4*aSeed);
+  vec3 world=aInstPos
+  +uRight*(aCorner.x*uWidth)
+  +vec3(.0,1.0,.0)*(aCorner.y*len);
+  gl_Position=uVP*vec4(world,1.0);
+}
 `,`
-  precision mediump float;
-  uniform vec3 uColor;
-  uniform float uAlpha;
-  varying float vT;
-  void main(){
-    float a=uAlpha*(.15+.85*vT);
-    gl_FragColor=vec4(uColor, a);
-  }
+precision mediump float;
+uniform vec3 uColor;
+uniform float uAlpha;
+varying float vT;
+void main(){
+  float a=uAlpha*(.15+.85*vT);
+  gl_FragColor=vec4(uColor, a);
+}
 `);
 function rainBuild(){
   RAIN.top=Math.max(120, CONFIG.waterLevel+600+CONFIG.worldScale*8);
