@@ -306,9 +306,17 @@ fn vs(@location(0) vPos : vec3<f32>,
       @location(3) instSH  : vec2<f32>) -> VsOut {
   let species = instSH.x;
   let heading = instSH.y;
+  // dead when energy (instPos.w) has crossed <= 0; MOVE has frozen the corpse in place.
+  let dead = select(0.0, 1.0, instPos.w <= 0.0);
 
-  let dl = deform(vPos, species);
-  let dn = deformNormal(vNrm, species);
+  var dl = deform(vPos, species);
+  var dn = deformNormal(vNrm, species);
+  if (dead > 0.5) {
+    // roll 90° about local X (y' = -z, z' = y) so the body lies on its flank with the legs
+    // pointing sideways, then lift by ~the body half-width so the flank rests on the ground.
+    dl = vec3<f32>(dl.x, -dl.z + 0.40, dl.y);
+    dn = vec3<f32>(dn.x, -dn.z, dn.y);
+  }
 
   // rotate about Y by heading so +X (nose) points along travel direction.
   // MOVE travels by (dx,dz) = (cos(heading), sin(heading)) in world XZ, so the nose
@@ -337,7 +345,10 @@ fn vs(@location(0) vPos : vec3<f32>,
   // Deer have a white tail ("flag"). Tail verts are the only geometry at local x < -0.52;
   // reuse that same test and whiten only on deer (species==0), ramping toward the tip.
   let tailMask = smoothstep(-0.52, -0.58, vPos.x) * (1.0 - species);
-  out.tint = mix(baseTint, vec3<f32>(0.92, 0.92, 0.90), tailMask);
+  var tint = mix(baseTint, vec3<f32>(0.92, 0.92, 0.90), tailMask);
+  // corpses drain toward a flat cool grey
+  tint = mix(tint, vec3<f32>(0.42, 0.42, 0.44), dead * 0.7);
+  out.tint = tint;
   return out;
 }
 
