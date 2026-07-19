@@ -128,6 +128,12 @@
     width: 38px;
     flex: none;
   }
+
+  #settingsPanel #flyBtn.on {
+    background: rgba(56,139,168,.7);
+    border-color: #4aa0c0;
+    color: #fff;
+  }
 </style>
 </head>
 <body>
@@ -141,6 +147,7 @@
       <span id="scaleLabel">1.0</span>
       <button id="scaleUp" title="Scale up (+)">+</button>
     </div>
+    <button id="flyBtn" title="Toggle fly mode (F)">FLY: OFF</button>
     <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
     <div id="timeRow" style="display:flex;align-items:center;gap:6px;justify-content:center">
       <button id="timeBack" title="Rewind 2 hours">-2h</button>
@@ -202,7 +209,7 @@ const BASE_WORLD = [10000, 10000];
 const BASE_AMPLITUDE = 500;
 const worldMin = [0,0,0];
 
-const SCALE_STEPS = [0.5,1,2,3,3.5];
+const SCALE_STEPS = [0.5,1,2,3,4];
 let scaleIdx = SCALE_STEPS.indexOf(2);
 
 const DAY_LENGTH = 500;
@@ -566,7 +573,12 @@ function buildWorld(scale){
 // Created before the first buildWorld so the first heightfield readback finds it.
 // Terrain (the baked heightfield) is supplied asynchronously by buildWorld via setTerrain.
 player = createPlayer(canvas, {
-  eyeHeight: 20, moveSpeed: 300, jumpSpeed: 125, gravity: 300, flySpeed: 300
+  eyeHeight: 20, moveSpeed: 300, jumpSpeed: 125, gravity: 300, flySpeed: 300,
+  onFlyChange: (on)=>{
+    const b = document.getElementById("flyBtn");
+    b.textContent = on ? "FLY: ON" : "FLY: OFF";
+    b.classList.toggle("on", on);
+  }
 });
 
 buildWorld(SCALE_STEPS[scaleIdx]);
@@ -596,6 +608,7 @@ document.addEventListener("click", (e)=>{
 
 document.getElementById("scaleUp").addEventListener("click", ()=>setScale(scaleIdx+1));
 document.getElementById("scaleDown").addEventListener("click", ()=>setScale(scaleIdx-1));
+document.getElementById("flyBtn").addEventListener("click", ()=>player.toggleFly());
 
 // Shift the sky clock by whole hours. Clamped at 0 so `time + skyTimeOffset` never goes
 // negative: sky.js does `(simTime / dayLen) % 1` and JS `%` keeps the sign, and the HUD's

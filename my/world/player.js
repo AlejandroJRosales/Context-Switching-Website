@@ -46,6 +46,7 @@ export function createPlayer(canvas, opts = {}) {
   let onGround = false;
   let flying = false;       // toggled by F / FLY button
   const flySpd = opts.flySpeed ?? 160;  // vertical units/sec while flying
+  const onFlyChange = opts.onFlyChange || (() => {}); // external listeners (e.g. settings UI)
 
   function groundY(x, z) {
     return sampleHeight(terrain, x, z);
@@ -108,6 +109,7 @@ export function createPlayer(canvas, opts = {}) {
     flying = !flying;
     if (flying) { vy = 0; onGround = false; } // stop falling the instant we lift off
     ui.setFlying(flying);
+    onFlyChange(flying);
   };
   ui.onFlyToggle = toggleFly;
 
@@ -246,7 +248,6 @@ function buildTouchUI() {
     </style>
     <div class="pad" id="pcPad"><div class="nub" id="pcNub"></div></div>
     <div class="cluster">
-      <button class="btn fly" id="pcFly" type="button">FLY</button>
       <button class="btn" id="pcJump" type="button">JUMP</button>
       <button class="btn dn" id="pcDown" type="button">▼ DN</button>
     </div>
@@ -256,7 +257,6 @@ function buildTouchUI() {
   const pad = root.querySelector("#pcPad");
   const nub = root.querySelector("#pcNub");
   const jumpBtn = root.querySelector("#pcJump");
-  const flyBtn = root.querySelector("#pcFly");
   const downBtn = root.querySelector("#pcDown");
 
   const joystick = { x: 0, y: 0 };
@@ -297,7 +297,6 @@ function buildTouchUI() {
     onJump: () => {}, onFlyToggle: () => {},
     setFlying: (on) => {
       root.classList.toggle("flying", on);
-      flyBtn.classList.toggle("on", on);
       jumpBtn.textContent = on ? "▲ UP" : "JUMP";
       if (!on) { api.flyUp = false; api.flyDown = false; }
     },
@@ -318,9 +317,6 @@ function buildTouchUI() {
   downBtn.addEventListener("pointerup", downUp);
   downBtn.addEventListener("pointercancel", downUp);
   downBtn.addEventListener("pointerleave", downUp);
-
-  const flyTap = (e) => { api.onFlyToggle(); e.preventDefault(); };
-  flyBtn.addEventListener("pointerdown", flyTap);
 
   return api;
 }
