@@ -778,9 +778,9 @@ struct MoveParams {
   floatDepth : f32,   // how far below the surface a floating body sits
   _p0 : f32, _p1 : f32,
 };
-// SenseResult mirrors grid.js: per-entity neighbor summary produced by the SENSE pass that
-// runs immediately before MOVE. Bound read-only here (binding 4) so movement can react.
-struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
+// SenseResult mirrors the SENSE pass that runs immediately before MOVE. Bound read-only here
+// (binding 4) so movement can react. nearestFoe = nearest LIVING other-species creature.
+struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, nearestFoe : u32 };
 
 @group(0) @binding(0) var<uniform> MP : MoveParams;
 @group(0) @binding(1) var<uniform> TP : TerrainParams;
@@ -820,13 +820,14 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let epoch = floor(MP.time / WANDER_SECS);
   var want = hash21(f32(i) + 1.0, epoch) * 6.2831853;
 
-  // If something's in sense range, override the desired heading: species 1 (wolf) pursues
-  // its single nearest target; species 0 (deer) flees it (+pi). Target selection is still
-  // per-frame/stateless here on purpose — the turn cap absorbs the churn until the nets add
-  // real target locking.
+  // If a foe is in sense range, override the desired heading: species 1 (wolf) pursues the
+  // nearest LIVING deer; species 0 (deer) flees the nearest LIVING wolf (+pi). Using
+  // nearestFoe (not nearest-any) stops wolves chasing packmates and deer fleeing other deer.
+  // Target selection is still per-frame/stateless on purpose — the turn cap absorbs the
+  // churn until the nets add real target locking.
   let sr = senseOut[i];
-  if (sr.nearest != 0xffffffffu) {
-    let q = positions[sr.nearest].xyz;
+  if (sr.nearestFoe != 0xffffffffu) {
+    let q = positions[sr.nearestFoe].xyz;
     let toN = vec2<f32>(q.x - p.x, q.z - p.z);
     if (dot(toN, toN) > 1e-4) {
       want = atan2(toN.y, toN.x);
@@ -909,7 +910,7 @@ struct GParams {
   worldMax : vec3<f32>, cellSize : f32,
   gridDims : vec3<u32>, totalCells : u32,
 };
-struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
+struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, nearestFoe : u32 };
 
 @group(0) @binding(0) var<uniform> IP : InteractParams;
 @group(0) @binding(1) var<storage, read_write> positions      : array<vec4<f32>>; // creatures (.w=energy)
@@ -950,29 +951,37 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   var p = positions[i];
   if (p.w <= 0.0) { return; }              // already dead: no metabolism, no eating
 
-  // ---- metabolic drain: the clock that makes energy (and death) mean something ----
-  var energy = p.w - IP.metabolic * IP.dt;
+  // ---- apply predation damage deposited by wolves (this frame or last), then metabolize ----
+  // Wolves never write our energy directly (see predator branch): they atomicAdd fixed-point
+  // damage into claim[i], and only WE apply it to ourselves here. atomicExchange(->0) means
+  // each deposited quantum is consumed exactly once regardless of thread ordering, which
+  // kills the read-modify-write race where our own energy write-back erased the wolf's bite.
+  let dmgFixed = atomicExchange(&claim[i], 0u);
+  var energy = p.w - IP.metabolic * IP.dt - f32(dmgFixed) / 65536.0;
 
   let species = speciesHeading[i].x;
   let r2 = IP.eatRadius * IP.eatRadius;
 
   if (species >= 0.5) {
     // ----- PREDATOR: eat the nearest LIVING deer within reach (claimed once/frame) -----
+    // nearestFoe is already species-filtered and corpse-filtered by SENSE, so a closer
+    // packmate or a frozen kill can no longer mask the live deer under the wolf's nose.
+    // The preyIsDeer/alive guards below stay as cheap insurance against stale indices.
     let sr = senseOut[i];
-    let j = sr.nearest;
+    let j = sr.nearestFoe;
     if (j != 0xffffffffu && j < IP.N) {
       let prey = positions[j];
       let preyIsDeer = speciesHeading[j].x < 0.5;
       if (preyIsDeer && prey.w > 0.0) {
         let d = prey.xyz - p.xyz;
         if (dot(d, d) <= r2) {
-          // claim the prey: 0 -> 1. Only the winning predator this frame proceeds.
-          let won = atomicCompareExchangeWeak(&claim[j], 0u, 1u);
-          if (won.exchanged) {
-            let drain = min(prey.w, IP.transferPred * IP.dt);
-            positions[j].w = prey.w - drain;     // may cross <= 0 -> the kill; MOVE freezes it
-            energy = min(IP.maxEnergy, energy + IP.gainPred * IP.dt);
-          }
+          // Deposit the bite as fixed-point (16.16) damage; the prey's OWN thread applies it
+          // (this frame or next). No claim flag: several wolves may bite one deer per frame,
+          // each banking gain — pack takedowns are faster, which is fine. prey.w here may be
+          // slightly stale; it only soft-caps the drain, and application clamps at the kill.
+          let drain = min(prey.w, IP.transferPred * IP.dt);
+          atomicAdd(&claim[j], u32(drain * 65536.0));
+          energy = min(IP.maxEnergy, energy + IP.gainPred * IP.dt);
         }
       }
     }
@@ -1044,14 +1053,14 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 // Dispatched twice per frame (once per buffer) before INTERACT, so each prey/plant can be
 // claimed exactly once that frame.
 export const CLAIM_CLEAR = /* wgsl */`
-struct ClearParams { count : u32, _p0 : u32, _p1 : u32, _p2 : u32 };
+struct ClearParams { count : u32, base : u32, _p1 : u32, _p2 : u32 };
 @group(0) @binding(0) var<uniform> CP : ClearParams;
 @group(0) @binding(1) var<storage, read_write> claim : array<atomic<u32>>;
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let i = gid.x;
   if (i >= CP.count) { return; }
-  atomicStore(&claim[i], 0u);
+  atomicStore(&claim[CP.base + i], 0u);
 }
 `;
 // INIT: one-time GPU seeding of the entity buffers. Replaces the CPU Float32Array
@@ -1409,7 +1418,11 @@ struct Params {
   gridDims : vec3<u32>, totalCells : u32,
 };
 struct SenseParams { senseRadius : f32, _p0 : f32, _p1 : f32, _p2 : f32 };
-struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
+// nearest     = nearest LIVING creature of any species (dead bodies are ignored so a frozen
+//               corpse can't permanently occupy the slot and starve its killer).
+// nearestFoe  = nearest LIVING creature of the OTHER species: the wolf's prey candidate and
+//               the deer's threat. Same 16-byte footprint (repurposes the old _pad word).
+struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, nearestFoe : u32 };
 
 @group(0) @binding(0) var<uniform> P  : Params;
 @group(0) @binding(1) var<uniform> SP : SenseParams;
@@ -1418,6 +1431,7 @@ struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
 @group(0) @binding(4) var<storage, read> cellCountRO : array<u32>;
 @group(0) @binding(5) var<storage, read> sortedEntityIndices : array<u32>;
 @group(0) @binding(6) var<storage, read_write> senseOut : array<SenseResult>;
+@group(0) @binding(7) var<storage, read> speciesHeading : array<vec2<f32>>; // .x = species
 
 fn cellCoord(posIn : vec3<f32>) -> vec3<u32> {
   var p = posIn;
@@ -1442,6 +1456,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let i = gid.x;
   if (i >= P.N) { return; }
   let myPos = positions[i].xyz;
+  let mySpec = speciesHeading[i].x;
   let c = cellCoord(myPos);
 
   // scan enough cells to cover a sphere of radius senseRadius (R rounds UP), then
@@ -1458,6 +1473,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   var count = 0u;
   var nearest = 0xffffffffu;          // sentinel = none found
   var bestD2 = 3.4e38;                // ~f32 max
+  var nearestFoe = 0xffffffffu;       // nearest LIVING other-species creature
+  var bestFoeD2 = 3.4e38;
 
   var z = zLo;
   loop {
@@ -1473,12 +1490,16 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         loop {
           if (s >= rng.y) { break; }
           let j = sortedEntityIndices[s];
-          if (j != i) {
+          if (j != i && positions[j].w > 0.0) {   // ignore the dead: corpses aren't neighbors
             let d = positions[j].xyz - myPos;
             let dd = dot(d, d);
             if (dd <= r2) {
               count = count + 1u;
               if (dd < bestD2) { bestD2 = dd; nearest = j; }
+              // other-species check via species distance (deer=0, wolf=1)
+              if (abs(speciesHeading[j].x - mySpec) > 0.5 && dd < bestFoeD2) {
+                bestFoeD2 = dd; nearestFoe = j;
+              }
             }
           }
           s = s + 1u;
@@ -1490,7 +1511,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     z = z + 1u;
   }
 
-  senseOut[i] = SenseResult(count, nearest, select(0.0, bestD2, nearest != 0xffffffffu), 0u);
+  senseOut[i] = SenseResult(count, nearest, select(0.0, bestD2, nearest != 0xffffffffu), nearestFoe);
 }
 `;
 

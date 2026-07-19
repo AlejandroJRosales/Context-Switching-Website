@@ -81,8 +81,7 @@
   }
 
   #resetSeed,
-  #rainBtn,
-  #plantBtn {
+  #rainBtn {
     width: auto;
     height: 28px;
     padding: 0 10px;
@@ -143,7 +142,6 @@
       <button id="scaleUp" title="Scale up (+)">+</button>
     </div>
     <button id="rainBtn" title="Cycle rain: auto / on / off (R)">RAIN: AUTO</button>
-    <button id="plantBtn" title="Toggle plants on / off (P)">PLANTS: ON</button>
     <div id="timeRow" style="display:flex;align-items:center;gap:6px;justify-content:center">
       <button id="timeBack" title="Rewind 2 hours">-2h</button>
       <span id="timeLabel">TIME</span>
@@ -208,8 +206,8 @@ const SCALE_STEPS = [0.5,1,2,3,3.5];
 let scaleIdx = SCALE_STEPS.indexOf(2);
 
 const DAY_LENGTH = 500;
-// Start the sky clock at midday: timeOfDay 0=midnight, 0.5
-let skyTimeOffset = DAY_LENGTH * 0.5;
+// Start the sky clock at 6am: timeOfDay 0=midnight, 0.25=6am (sunrise), 0.5=midday
+let skyTimeOffset = DAY_LENGTH * 0.25;
 const HOUR_SECONDS = DAY_LENGTH / 24;
 const sky = createSky({ dayLengthSeconds: DAY_LENGTH });
 
@@ -427,7 +425,8 @@ function buildWorld(scale){
   senseParamsBuf = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(senseParamsBuf, 0, new Float32Array([SENSE_RADIUS, 0, 0, 0]));
 
-  // SenseResult is 16 bytes (u32 count, u32 nearest, f32 nearestD2, u32 pad) per entity.
+  // SenseResult is 16 bytes (u32 count, u32 nearest, f32 nearestD2, u32 nearestFoe) per
+  // entity. nearestFoe = nearest LIVING other-species creature (wolf's prey / deer's threat).
   senseOut = device.createBuffer({ size: N*16,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
 
@@ -444,6 +443,7 @@ function buildWorld(scale){
     {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
     {binding:5,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
     {binding:6,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    {binding:7,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},  // speciesHeading
   ]});
   senseBG = device.createBindGroup({ layout:senseBGL, entries:[
     {binding:0,resource:{buffer:entityGrid.buffers.params}},
@@ -453,6 +453,7 @@ function buildWorld(scale){
     {binding:4,resource:{buffer:entityGrid.buffers.cellCount}},
     {binding:5,resource:{buffer:entityGrid.buffers.sortedIdx}},
     {binding:6,resource:{buffer:senseOut}},
+    {binding:7,resource:{buffer:speciesHeading}},
   ]});
   sensePipe = device.createComputePipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts:[senseBGL] }),
@@ -536,7 +537,10 @@ function buildWorld(scale){
     compute:{ module: device.createShaderModule({ code:INTERACT }), entryPoint:"main" },
   });
 
-  // CLAIM_CLEAR: zero the combined claim buffer each frame (one dispatch over N+plantCount).
+  // CLAIM_CLEAR: zero only the PLANT claim range [N, N+plantCount) each frame. The creature
+  // range [0, N) now holds fixed-point predation damage that self-clears when each creature
+  // consumes it via atomicExchange in INTERACT — clearing it here would wipe damage deposited
+  // late last frame before its owner applied it.
   const clearBGL = device.createBindGroupLayout({ entries:[
     {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"}},
     {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:"storage"}},
@@ -547,7 +551,7 @@ function buildWorld(scale){
   });
   {
     const cp = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(cp, 0, new Uint32Array([claimLen,0,0,0]));
+    device.queue.writeBuffer(cp, 0, new Uint32Array([plantCount, N, 0, 0]));
     claimClearBG = device.createBindGroup({ layout:clearBGL, entries:[
       {binding:0,resource:{buffer:cp}}, {binding:1,resource:{buffer:claimBuf}} ]});
   }
@@ -556,8 +560,6 @@ function buildWorld(scale){
   // exists yet (it doesn't on the very first buildWorld, which runs before the wiring).
   const rb = document.getElementById("rainBtn");
   if (rb) rb.textContent = "RAIN: " + rain.state.mode.toUpperCase();
-  const pb = document.getElementById("plantBtn");
-  if (pb) pb.textContent = "PLANTS: " + (plants.enabled ? "ON" : "OFF");
 }
 
 // player: WASD+space (keyboard) and on-screen joystick+jump (touch), both always on
@@ -612,19 +614,12 @@ function cycleRain(){
 }
 rainBtn.addEventListener("click", cycleRain);
 
-// plant toggle: button + P key both route through here so the label stays in sync.
-const plantBtn = document.getElementById("plantBtn");
-function togglePlants(){
-  const on = plants.setEnabled(!plants.enabled);
-  plantBtn.textContent = "PLANTS: " + (on ? "ON" : "OFF");
-}
-plantBtn.addEventListener("click", togglePlants);
+// (plants are always on: the toggle button, P keybinding, and togglePlants were removed)
 
 addEventListener("keydown", e=>{
   if(e.key==="+"||e.key==="=") setScale(scaleIdx+1);
   if(e.key==="-"||e.key==="_") setScale(scaleIdx-1);
   if(e.key==="r"||e.key==="R") cycleRain();
-  if(e.key==="p"||e.key==="P") togglePlants();
 });
 
 // new seed and rebuild (terrain, biomes, scatter, water all re-derive).
@@ -718,7 +713,7 @@ function handleHud(time, dt, lastHud) {
   if (interactPipe) {
     const cp = enc.beginComputePass();
     cp.setPipeline(claimClearPipe);
-    cp.setBindGroup(0, claimClearBG); cp.dispatchWorkgroups(Math.ceil((N+plantCount)/64));
+    cp.setBindGroup(0, claimClearBG); cp.dispatchWorkgroups(Math.ceil(plantCount/64));
     cp.setPipeline(interactPipe); cp.setBindGroup(0, interactBG);
     cp.dispatchWorkgroups(Math.ceil(N/64));
     cp.end();
@@ -799,7 +794,7 @@ function frame(now){
 
     // Feed the move compute pass the accumulated sim time so entities advance the
     // full 1/30s (not just the last 1/60s tick) on the frame we render.
-    moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=18.0; moveScratchU[3]=N;
+    moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=54.0; moveScratchU[3]=N;
     moveScratch[4]=renderer.waterLevel; moveScratch[5]=FLOAT_DEPTH;
     device.queue.writeBuffer(moveParams,0,moveScratch);
 
