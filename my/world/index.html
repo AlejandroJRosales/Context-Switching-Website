@@ -157,7 +157,7 @@
 import { createRenderer, createPlants, createCat, ortho, lookAt, mul } from "./renderer.js";
 import { createPlayer } from "./player.js";
 import { createSky, createRain } from "./sky.js";
-import { createGrid, SENSE, MOVE, INIT } from "./world.js";
+import { createGrid, SENSE, MOVE, INIT, INTERACT, CLAIM_CLEAR } from "./world.js";
 
 
 const canvas = document.getElementById("c");
@@ -221,6 +221,12 @@ let nibbler;
 // Entity uniform grid (neighbor search over `positions`) + its downstream sensing pass.
 // Rebuilt each buildWorld because N and the world bounds change with scale.
 let entityGrid, senseParamsBuf, senseOut, senseBG, sensePipe;
+// 2.3/2.4 energy economy + eating: INTERACT reads the creature sense + plant grid, transfers
+// energy, and marks eaten plants inert. Two atomic claim buffers (cleared each frame) stop a
+// prey/plant from being eaten twice in one frame.
+let interactParamsBuf, interactBG, interactPipe;
+let claimBuf, claimClearPipe, claimClearBG;
+let plantCount = 0;   // hoisted so INTERACT/claim wiring can size the plant claim buffer
 // How far the cat sinks below the water surface when floating (world units). Small because
 // the cat mesh's paws are at local y=0 with no body lift, unlike the creatures (FLOAT_DEPTH).
 const CAT_FLOAT_DEPTH = 2.0;
@@ -320,7 +326,7 @@ function buildWorld(scale){
   });
 
   // Plants: a second entity system. Fixed population for now
-  const plantCount = Math.max(1, Math.round(50000 * scale));
+  plantCount = Math.max(1, Math.round(50000 * scale));
   plants = createPlants(device, format, {
     camBuf: renderer.camBuf, skyBuf: renderer.skyBuf, fogBuf: renderer.fogBuf,
     worldMin, worldMax,
@@ -334,12 +340,18 @@ function buildWorld(scale){
   });
 
   // A dedicated uniform grid over the plant buffer, so sensing/eating can find plants
-  // without a new neighbor search (reuses grid.js)
+  // without a new neighbor search (reuses grid.js). cellSize is deliberately close to the
+  // herbivore EAT_RADIUS (defined below): with a center+1-ring (3x3) scan the deer covers a
+  // ~3*cellSize window that tightly brackets its actual reach, and each cell holds only a
+  // handful of plants (vs. hundreds at the old 400-unit cell), so a capped scan reliably finds
+  // a live plant even in a partially-grazed cluster. Floored at 60 and kept well under the
+  // grid's totalCells <= 512^2 ceiling (worst case here ~62k cells).
+  const PLANT_CELL = Math.max(60, Math.min(worldMax[0], worldMax[2]) * 0.004);
   plantGrid = createGrid(device, {
     N: plantCount,
     positions: plants.buffers.plants,
     worldMin, worldMax,
-    cellSize: Math.max(150, Math.min(worldMax[0], worldMax[2]) * 0.02),
+    cellSize: PLANT_CELL,
     flat2D: true,
   });
 
@@ -456,6 +468,89 @@ function buildWorld(scale){
     {binding:3,resource:{buffer:speciesHeading}},
     {binding:4,resource:{buffer:senseOut}},
   ]});
+
+  // ---- 2.3/2.4 INTERACT: energy economy + eating (predation + grazing) ----
+  // Recorded each frame after SENSE and the plant grid build, before MOVE. Reads the creature
+  // sense result (nearest creature) for predation and queries the plant grid for grazing,
+  // transfers energy, drains prey (kill = energy crossing 0), and marks eaten plants inert.
+  //
+  // ONE atomic<u32> claim buffer covers both prey and plants to stay within the 8-storage-
+  // buffer compute limit: creature (prey) claims at [0, N); plant claims at [N, N+plantCount).
+  // Zeroed each frame by CLAIM_CLEAR so a prey/plant is eaten at most once per frame.
+  const claimLen = N + plantCount;
+  claimBuf = device.createBuffer({ size: claimLen*4, usage: GPUBufferUsage.STORAGE });
+
+  // InteractParams (std140-ish, 48 B). Tuned so: a lone animal starves in ~tens of seconds,
+  // a bite is worth several seconds of metabolism, and energy caps at 1.5 (init is [0.5,1)).
+  interactParamsBuf = device.createBuffer({ size: 48,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  {
+    const f = new Float32Array(12), u = new Uint32Array(f.buffer);
+    // Grazing reach ~ one plant-grid cell, so a deer sitting in a cell can eat plants in it and
+    // its immediate ring. Kept below SENSE_RADIUS (predator/creature sensing) so herbivores
+    // don't graze from implausibly far. Predators still use their creature-sense nearest.
+    const EAT_RADIUS = Math.max(40, Math.min(SENSE_RADIUS * 0.9, PLANT_CELL * 1.1));
+    f[0] = 0;                  // dt (written per-frame)
+    u[1] = N;                  // creature count
+    f[2] = EAT_RADIUS;         // eatRadius
+    f[3] = 0.03;               // metabolic  (energy/sec) -> ~starve from 1.0 in ~33s idle
+    f[4] = 0.60;               // transferPred (energy/sec drained from prey)
+    f[5] = 0.35;               // gainPred     (energy/sec banked by predator)
+    f[6] = 0.25;               // gainHerb     (energy/sec banked by herbivore)
+    f[7] = 1.5;                // maxEnergy    (clamp)
+    // maxScan bounds cost, but must be large enough that a deer in a partially-grazed cluster
+    // still reaches a live plant past the eaten ones it skips. With the finer plant grid a 3x3
+    // neighborhood holds a few dozen plants at peak; 96 covers that with headroom.
+    u[8] = 96;                 // maxScan   (LIVE plants considered)
+    u[9] = N;                  // plantBase (plant claims start at index N in claimBuf)
+    u[10] = 256;               // maxWalk   (raw grid entries examined; hard cost bound)
+    device.queue.writeBuffer(interactParamsBuf, 0, f);
+  }
+
+  const interactBGL = device.createBindGroupLayout({ entries:[
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:"storage"}},              // positions
+    {binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"}},    // speciesHeading
+    {binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"}},    // senseOut
+    {binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:"storage"}},              // claim (shared prey+plant)
+    {binding:5, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"}},              // plant grid Params
+    {binding:6, visibility:GPUShaderStage.COMPUTE, buffer:{type:"storage"}},              // plants (.w=seed)
+    {binding:7, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"}},    // plantStart
+    {binding:8, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"}},    // plantCountRO
+    {binding:9, visibility:GPUShaderStage.COMPUTE, buffer:{type:"read-only-storage"}},    // plantSorted
+  ]});
+  interactBG = device.createBindGroup({ layout:interactBGL, entries:[
+    {binding:0, resource:{buffer:interactParamsBuf}},
+    {binding:1, resource:{buffer:positions}},
+    {binding:2, resource:{buffer:speciesHeading}},
+    {binding:3, resource:{buffer:senseOut}},
+    {binding:4, resource:{buffer:claimBuf}},
+    {binding:5, resource:{buffer:plantGrid.buffers.params}},
+    {binding:6, resource:{buffer:plants.buffers.plants}},
+    {binding:7, resource:{buffer:plantGrid.buffers.cellStart}},
+    {binding:8, resource:{buffer:plantGrid.buffers.cellCount}},
+    {binding:9, resource:{buffer:plantGrid.buffers.sortedIdx}},
+  ]});
+  interactPipe = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts:[interactBGL] }),
+    compute:{ module: device.createShaderModule({ code:INTERACT }), entryPoint:"main" },
+  });
+
+  // CLAIM_CLEAR: zero the combined claim buffer each frame (one dispatch over N+plantCount).
+  const clearBGL = device.createBindGroupLayout({ entries:[
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:"uniform"}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:"storage"}},
+  ]});
+  claimClearPipe = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts:[clearBGL] }),
+    compute:{ module: device.createShaderModule({ code:CLAIM_CLEAR }), entryPoint:"main" },
+  });
+  {
+    const cp = device.createBuffer({ size:16, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(cp, 0, new Uint32Array([claimLen,0,0,0]));
+    claimClearBG = device.createBindGroup({ layout:clearBGL, entries:[
+      {binding:0,resource:{buffer:cp}}, {binding:1,resource:{buffer:claimBuf}} ]});
+  }
 
   // buildWorld makes a fresh rain (mode resets to auto); resync the button label if it
   // exists yet (it doesn't on the very first buildWorld, which runs before the wiring).
@@ -614,10 +709,24 @@ function handleHud(time, dt, lastHud) {
     sp.end();
   }
 
+  // 2.3/2.4: build the plant grid, clear the per-frame claim buffers, then run INTERACT
+  // (metabolism + eating). Ordered AFTER the creature SENSE pass (INTERACT reads the fresh
+  // nearest-creature for predation) and AFTER plantGrid.buildFrame (it reads the sorted plant
+  // grid for grazing). Each is its own compute pass, so they serialize in submission order and
+  // INTERACT always sees a fully sorted grid + zeroed claims.
+  if (plantGrid) plantGrid.buildFrame(enc);
+  if (interactPipe) {
+    const cp = enc.beginComputePass();
+    cp.setPipeline(claimClearPipe);
+    cp.setBindGroup(0, claimClearBG); cp.dispatchWorkgroups(Math.ceil((N+plantCount)/64));
+    cp.setPipeline(interactPipe); cp.setBindGroup(0, interactBG);
+    cp.dispatchWorkgroups(Math.ceil(N/64));
+    cp.end();
+  }
+
   { const p=enc.beginComputePass(); p.setPipeline(movePipe); p.setBindGroup(0,moveBG);
     p.dispatchWorkgroups(Math.ceil(N/64)); p.end(); }
   rain.buildFrame(enc, cam0.eye, dt);
-  if (plantGrid) plantGrid.buildFrame(enc);
   {
     const cam = player.getCamera(canvas.width/canvas.height);
     const fwd = [cam.target[0]-cam.eye[0], cam.target[1]-cam.eye[1], cam.target[2]-cam.eye[2]];
@@ -659,6 +768,8 @@ function handleHud(time, dt, lastHud) {
 // Layout: [0]time [1]dt [2]speed [3]N(u32) [4]waterLevel [5]floatDepth [6,7]pad.
 const moveScratch = new Float32Array(8);
 const moveScratchU = new Uint32Array(moveScratch.buffer);
+// Reused single-float scratch for the per-frame InteractParams.dt update (offset 0).
+const interactScratch = new Float32Array(1);
 // How far below the surface a floating body rests, so it reads as sitting ON the water.
 const FLOAT_DEPTH = 6.5;
 let t0 = performance.now(), last = t0, frames = 0, fps = 0, facc = 0, frameCount = 0;
@@ -691,6 +802,11 @@ function frame(now){
     moveScratch[0]=time; moveScratch[1]=dtRenderAcc; moveScratch[2]=18.0; moveScratchU[3]=N;
     moveScratch[4]=renderer.waterLevel; moveScratch[5]=FLOAT_DEPTH;
     device.queue.writeBuffer(moveParams,0,moveScratch);
+
+    // INTERACT shares the rendered timestep (dtRenderAcc) so metabolism/eating advance the
+    // full 1/30s. Only dt (offset 0) changes per-frame; the rest was written in buildWorld.
+    interactScratch[0]=dtRenderAcc;
+    device.queue.writeBuffer(interactParamsBuf, 0, interactScratch, 0, 1);
 
     // Cat follows the player on the rendered timestep (same accumulated dt the move pass
     // uses), so its motion stays in step with the entities.

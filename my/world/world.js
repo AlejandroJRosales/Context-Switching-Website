@@ -469,6 +469,17 @@ fn vs(@builtin(vertex_index) vid : u32,
   let c = corners[vid % 6u];
 
   let seed = inst.w;
+  // Eaten plants are marked inert by the INTERACT pass setting inst.w negative (valid seeds
+  // are in [0,1)). Collapse every vertex of an eaten instance to a single clip-space point so
+  // it produces zero-area triangles and disappears from the mesh. No index/draw-count change:
+  // the instance is still drawn, it just rasterizes nothing (mark-to-inert, not compaction).
+  if (seed < 0.0) {
+    var gone : VsOut;
+    gone.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);  // outside the clip volume, degenerate
+    gone.worldPos = vec3<f32>(0.0);
+    gone.tv = 0.0; gone.uvx = 0.0; gone.tint = vec3<f32>(0.0);
+    return gone;
+  }
   // per-plant size so a field doesn't look stamped.
   let hgt = PD.height * (0.65 + 0.70 * seed);
   let halfW = PD.width * (0.75 + 0.50 * hash11(seed * 7.13 + 1.0));
@@ -606,6 +617,12 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   if (i >= MP.N) { return; }
   var p = positions[i];
 
+  // Dead animals freeze in place. Energy lives in positions[i].w; the INTERACT pass drives it
+  // to <= 0 via metabolic drain or predation. We keep the corpse visible (the CREATURE_RENDER
+  // VS still draws it) but skip all steering/locomotion so it stays exactly where it fell.
+  // No position/heading writes below run for the dead.
+  if (p.w <= 0.0) { return; }
+
   // The animal's ACTUAL facing persists in speciesHeading[i].y across frames. We never snap
   // it: each frame we pick a DESIRED heading and rotate the current facing toward it by at
   // most MAX_TURN*dt radians. This turn-rate cap is what kills the sub-second left/right
@@ -665,6 +682,195 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   var sh = speciesHeading[i];
   sh.y = ang;
   speciesHeading[i] = sh;
+}
+`;
+
+// ===========================================================================
+// INTERACT (Tier 2.3 + 2.4): energy economy + eating, one thread per creature.
+// Runs AFTER the creature SENSE pass and the plant grid build, BEFORE MOVE, so:
+//   - it can read creature senseOut[i].nearest (nearest creature) for predation, and
+//   - it can query the plant grid (cellStart/cellCount/sortedIdx over the plant buffer) for
+//     herbivore grazing, without a second full SENSE pass.
+//
+// Model (mark-to-inert energy transfer; no removal here):
+//   * Every LIVING animal pays a metabolic cost   e -= metabolicRate * dt   -> starvation.
+//   * species 1 (wolf/predator): if its nearest creature is a LIVING deer within eatRadius,
+//     it CLAIMS that prey (atomic 0->1 so only one predator eats it per frame), drains
+//     transferPred energy from the prey (capped), and banks gainPred into itself (capped at
+//     maxEnergy). A drain that takes prey energy <= 0 is the kill; MOVE freezes it next.
+//   * species 0 (deer/herbivore): scans the PLANT grid over a capped neighborhood (center
+//     cell + 1 ring, at most MAX_SCAN candidates) for the nearest un-eaten plant within
+//     eatRadius. It CLAIMS that plant (atomic 0->1), banks gainHerb energy (capped), and marks
+//     the plant inert by writing its .w negative -> the plant VS emits degenerate verts, so it
+//     vanishes from the mesh and is skipped by every future scan (w<0 == already eaten).
+//
+// Prey/plant claims live in two atomic<u32> buffers cleared each frame by CLAIM_CLEAR. The
+// creature scan is O(1) (reuses the single nearest from SENSE); the plant scan is bounded by
+// MAX_SCAN so cost stays fixed regardless of cluster density.
+export const INTERACT = /* wgsl */`
+struct InteractParams {
+  dt          : f32,
+  N           : u32,      // creature count
+  eatRadius   : f32,      // world-units reach for a bite (predator + herbivore)
+  metabolic   : f32,      // energy/sec drained from every living animal
+  transferPred: f32,      // energy/sec a predator drains from claimed prey
+  gainPred    : f32,      // energy/sec a predator banks from a successful bite
+  gainHerb    : f32,      // energy/sec a herbivore banks from a claimed plant
+  maxEnergy   : f32,      // energy clamp (so a well-fed animal doesn't grow unbounded)
+  maxScan     : u32,      // hard cap on LIVE plant candidates considered per herbivore
+  plantBase   : u32,      // offset into the shared claim buffer where plant claims begin (= N)
+  maxWalk     : u32,      // hard cap on RAW grid entries examined (bounds cost in dense cells)
+  _p0 : u32,
+};
+// Plant grid Params: same layout as the grid COMMON Params struct.
+struct GParams {
+  worldMin : vec3<f32>, N : u32,
+  worldMax : vec3<f32>, cellSize : f32,
+  gridDims : vec3<u32>, totalCells : u32,
+};
+struct SenseResult { count : u32, nearest : u32, nearestD2 : f32, _pad : u32 };
+
+@group(0) @binding(0) var<uniform> IP : InteractParams;
+@group(0) @binding(1) var<storage, read_write> positions      : array<vec4<f32>>; // creatures (.w=energy)
+@group(0) @binding(2) var<storage, read>       speciesHeading : array<vec2<f32>>; // .x=species
+@group(0) @binding(3) var<storage, read>       senseOut       : array<SenseResult>;
+// ONE shared claim buffer keeps the compute stage within the 8-storage-buffer limit: creature
+// (prey) claims live at [0, N); plant claims live at [plantBase, plantBase + plantCount).
+@group(0) @binding(4) var<storage, read_write> claim          : array<atomic<u32>>;
+// Plant grid (read plant positions; mark eaten by writing .w<0).
+@group(0) @binding(5) var<uniform> GP : GParams;
+@group(0) @binding(6) var<storage, read_write> plants         : array<vec4<f32>>; // (.w=seed; <0 eaten)
+@group(0) @binding(7) var<storage, read>       plantStart     : array<u32>;
+@group(0) @binding(8) var<storage, read>       plantCountRO   : array<u32>;
+@group(0) @binding(9) var<storage, read>       plantSorted    : array<u32>;
+
+fn plantCell(posIn : vec3<f32>) -> vec3<u32> {
+  var p = posIn;
+  if (!(p.x == p.x)) { p.x = GP.worldMin.x; }
+  if (!(p.y == p.y)) { p.y = GP.worldMin.y; }
+  if (!(p.z == p.z)) { p.z = GP.worldMin.z; }
+  let rel = (p - GP.worldMin) / GP.cellSize;
+  let gx = u32(clamp(floor(rel.x), 0.0, f32(GP.gridDims.x - 1u)));
+  let gy = select(0u, u32(clamp(floor(rel.y), 0.0, f32(GP.gridDims.y - 1u))), GP.gridDims.y > 1u);
+  let gz = u32(clamp(floor(rel.z), 0.0, f32(GP.gridDims.z - 1u)));
+  return vec3<u32>(gx, gy, gz);
+}
+fn plantRange(x : u32, y : u32, z : u32) -> vec2<u32> {
+  let idx = x + GP.gridDims.x * (y + GP.gridDims.y * z);
+  let s = plantStart[idx];
+  return vec2<u32>(s, s + plantCountRO[idx]);
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= IP.N) { return; }
+
+  var p = positions[i];
+  if (p.w <= 0.0) { return; }              // already dead: no metabolism, no eating
+
+  // ---- metabolic drain: the clock that makes energy (and death) mean something ----
+  var energy = p.w - IP.metabolic * IP.dt;
+
+  let species = speciesHeading[i].x;
+  let r2 = IP.eatRadius * IP.eatRadius;
+
+  if (species >= 0.5) {
+    // ----- PREDATOR: eat the nearest LIVING deer within reach (claimed once/frame) -----
+    let sr = senseOut[i];
+    let j = sr.nearest;
+    if (j != 0xffffffffu && j < IP.N) {
+      let prey = positions[j];
+      let preyIsDeer = speciesHeading[j].x < 0.5;
+      if (preyIsDeer && prey.w > 0.0) {
+        let d = prey.xyz - p.xyz;
+        if (dot(d, d) <= r2) {
+          // claim the prey: 0 -> 1. Only the winning predator this frame proceeds.
+          let won = atomicCompareExchangeWeak(&claim[j], 0u, 1u);
+          if (won.exchanged) {
+            let drain = min(prey.w, IP.transferPred * IP.dt);
+            positions[j].w = prey.w - drain;     // may cross <= 0 -> the kill; MOVE freezes it
+            energy = min(IP.maxEnergy, energy + IP.gainPred * IP.dt);
+          }
+        }
+      }
+    }
+  } else {
+    // ----- HERBIVORE: graze the nearest un-eaten plant within reach, capped scan -----
+    let myPos = p.xyz;
+    let c = plantCell(myPos);
+    let R = 1u;                              // center + one ring (capped neighborhood)
+    let xLo = max(c.x, R) - R; let xHi = min(c.x + R, GP.gridDims.x - 1u);
+    let zLo = max(c.z, R) - R; let zHi = min(c.z + R, GP.gridDims.z - 1u);
+    let yLo = select(c.y, max(c.y, R) - R, GP.gridDims.y > 1u);
+    let yHi = select(c.y, min(c.y + R, GP.gridDims.y - 1u), GP.gridDims.y > 1u);
+
+    var best = 0xffffffffu;
+    var bestD2 = 3.4e38;
+    var tested = 0u;   // LIVE plants considered (drives the eat-reliability cap)
+    var walked = 0u;   // raw entries examined (drives the hard cost bound)
+
+    var z = zLo;
+    loop {
+      if (z > zHi || tested >= IP.maxScan || walked >= IP.maxWalk) { break; }
+      var y = yLo;
+      loop {
+        if (y > yHi || tested >= IP.maxScan || walked >= IP.maxWalk) { break; }
+        var x = xLo;
+        loop {
+          if (x > xHi || tested >= IP.maxScan || walked >= IP.maxWalk) { break; }
+
+          // walk this cell's sorted plant entries: skip eaten (.w < 0), track nearest in reach
+          let rg = plantRange(x, y, z);
+          var k = rg.x;
+          loop {
+            if (k >= rg.y || tested >= IP.maxScan || walked >= IP.maxWalk) { break; }
+            walked = walked + 1u;
+            let pi = plantSorted[k];
+            let pl = plants[pi];
+            if (pl.w >= 0.0) {               // live plant (eaten ones are marked w = -1)
+              tested = tested + 1u;
+              let d = pl.xyz - myPos;
+              let d2 = dot(d, d);
+              if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = pi; }
+            }
+            k = k + 1u;
+          }
+
+          x = x + 1u;
+        }
+        y = y + 1u;
+      }
+      z = z + 1u;
+    }
+
+    if (best != 0xffffffffu) {
+      // claim the plant: 0 -> 1, so two deer can't both eat it this frame. Plant claims are
+      // offset by plantBase (= N) so they never collide with creature (prey) claims.
+      let won = atomicCompareExchangeWeak(&claim[IP.plantBase + best], 0u, 1u);
+      if (won.exchanged) {
+        plants[best].w = -1.0;               // mark inert: vanishes + skipped by all scans
+        energy = min(IP.maxEnergy, energy + IP.gainHerb * IP.dt);
+      }
+    }
+  }
+
+  positions[i].w = energy;   // write back energy only; MOVE owns xyz/heading next
+}
+`;
+
+// CLAIM_CLEAR: zero one atomic<u32> claim buffer (creatures or plants). One thread per slot.
+// Dispatched twice per frame (once per buffer) before INTERACT, so each prey/plant can be
+// claimed exactly once that frame.
+export const CLAIM_CLEAR = /* wgsl */`
+struct ClearParams { count : u32, _p0 : u32, _p1 : u32, _p2 : u32 };
+@group(0) @binding(0) var<uniform> CP : ClearParams;
+@group(0) @binding(1) var<storage, read_write> claim : array<atomic<u32>>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= CP.count) { return; }
+  atomicStore(&claim[i], 0u);
 }
 `;
 // INIT: one-time GPU seeding of the entity buffers. Replaces the CPU Float32Array
