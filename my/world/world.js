@@ -252,6 +252,13 @@ struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj :
 @group(0) @binding(1) var<uniform> SIZE : vec4<f32>;
 @group(0) @binding(2) var<uniform> SKY : SkyParams;
 @group(0) @binding(3) var<uniform> FOG : FogParams;
+// Cull-pass indirection: instance_index i means "the i-th VISIBLE near-LOD creature".
+// visNear (written by CREATURE_CULL) maps it back to the real entity index, which then
+// indexes the sim's positions/speciesHeading storage buffers directly — no instance
+// vertex buffers, no data copying, draw count comes from drawIndexedIndirect.
+@group(0) @binding(4) var<storage, read> IPOS : array<vec4<f32>>;
+@group(0) @binding(5) var<storage, read> ISH  : array<vec2<f32>>;
+@group(0) @binding(6) var<storage, read> visNear : array<u32>;
 
 struct VsOut {
   @builtin(position) clip : vec4<f32>,
@@ -302,8 +309,10 @@ fn deformNormal(localN : vec3<f32>, species : f32) -> vec3<f32> {
 @vertex
 fn vs(@location(0) vPos : vec3<f32>,
       @location(1) vNrm : vec3<f32>,
-      @location(2) instPos : vec4<f32>,
-      @location(3) instSH  : vec2<f32>) -> VsOut {
+      @builtin(instance_index) ii : u32) -> VsOut {
+  let entity = visNear[ii];
+  let instPos = IPOS[entity];
+  let instSH  = ISH[entity];
   let species = instSH.x;
   let heading = instSH.y;
   // dead when energy (instPos.w) has crossed <= 0; MOVE has frozen the corpse in place.
@@ -363,6 +372,136 @@ fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let mdl = max(dot(nrm, normalize(SKY.moonDir)), 0.0);
   let moon = SKY.moonColor * (mdl * 0.85 + 0.15) * SKY.moonVisible * 0.12;
   let lit = in.tint * (SKY.ambient + SKY.sunColor * wrap + moon);
+  let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
+  return vec4<f32>(foggy, 1.0);
+}
+`;
+
+// CREATURE_CULL: per-entity frustum + distance cull into TWO compacted visible lists
+// (near = full mesh, far = crossed-billboard impostor), bumping the instanceCount words
+// of the shared indirect-args buffer atomically. The draw counts therefore live and die
+// on the GPU — drawIndexedIndirect/drawIndirect consume them with zero CPU readback.
+// Recorded as a compute pass at the top of renderer.render(), before the render pass.
+export const CREATURE_CULL = /* wgsl */`
+struct CullParams {
+  planes  : array<vec4<f32>, 6>,   // view-frustum planes, xyz normalized, inside: dot+w >= 0
+  eye     : vec3<f32>, N : u32,
+  lodDist : f32,                   // camera distance where mesh hands off to billboard
+  maxDist : f32,                   // beyond this (fully fogged) draw nothing at all
+  boundR  : f32,                   // conservative world-space bounding-sphere radius
+  _p0     : f32,
+};
+@group(0) @binding(0) var<uniform> CU : CullParams;
+@group(0) @binding(1) var<storage, read>       positions : array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> visNear   : array<u32>;
+@group(0) @binding(3) var<storage, read_write> visFar    : array<u32>;
+// Indirect args as raw u32 words, reset each frame by the host from a reused scratch:
+//   [0..4]  DrawIndexedIndirect (mesh):    indexCount, instanceCount, firstIndex, baseVertex, firstInstance
+//   [5..8]  DrawIndirect (billboard):      vertexCount, instanceCount, firstVertex, firstInstance
+// Only words 1 and 6 (the instanceCounts) are touched here.
+@group(0) @binding(4) var<storage, read_write> indirect  : array<atomic<u32>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= CU.N) { return; }
+  let p = positions[i].xyz;
+  let d = distance(p, CU.eye);
+  if (d > CU.maxDist) { return; }
+  // sphere-vs-frustum: reject only when fully outside a plane by more than the bound radius
+  var j = 0u;
+  loop {
+    if (j >= 6u) { break; }
+    let pl = CU.planes[j];
+    if (dot(pl.xyz, p) + pl.w < -CU.boundR) { return; }
+    j = j + 1u;
+  }
+  if (d <= CU.lodDist) {
+    let slot = atomicAdd(&indirect[1u], 1u);
+    visNear[slot] = i;
+  } else {
+    let slot = atomicAdd(&indirect[6u], 1u);
+    visFar[slot] = i;
+  }
+}
+`;
+
+// CREATURE_BILLBOARD: far-LOD impostor — two crossed quads (12 verts, no vertex buffer),
+// Y-billboarded toward the camera like the plants, tinted with the same species palette as
+// the mesh so the LOD handoff doesn't pop color. Dead animals render squat + grey so
+// corpses still read at distance. Instance data comes through visFar exactly as the mesh
+// path comes through visNear; drawn with drawIndirect from words [5..8] of the args buffer.
+export const CREATURE_BILLBOARD = SKY_PARAMS_STRUCT + FOG_FN + /* wgsl */`
+struct Camera { viewProj : mat4x4<f32>, eye : vec3<f32>, _p : f32, invViewProj : mat4x4<f32> };
+@group(0) @binding(0) var<uniform> CAM : Camera;
+@group(0) @binding(1) var<uniform> SIZE : vec4<f32>;
+@group(0) @binding(2) var<uniform> SKY : SkyParams;
+@group(0) @binding(3) var<uniform> FOG : FogParams;
+@group(0) @binding(4) var<storage, read> IPOS : array<vec4<f32>>;
+@group(0) @binding(5) var<storage, read> ISH  : array<vec2<f32>>;
+@group(0) @binding(6) var<storage, read> visFar : array<u32>;
+
+struct VsOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) uv : vec2<f32>,        // x in [-1,1], y in [0,1]
+  @location(1) tint : vec3<f32>,
+  @location(2) worldPos : vec3<f32>,
+};
+
+@vertex
+fn vs(@builtin(vertex_index) vid : u32,
+      @builtin(instance_index) ii : u32) -> VsOut {
+  let entity = visFar[ii];
+  let inst = IPOS[entity];
+  let sh = ISH[entity];
+  let species = sh.x;
+  let dead = select(0.0, 1.0, inst.w <= 0.0);
+
+  var corners = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 0.0), vec2<f32>( 1.0, 1.0),
+    vec2<f32>(-1.0, 0.0), vec2<f32>( 1.0, 1.0), vec2<f32>(-1.0, 1.0),
+  );
+  let quad = vid / 6u;
+  let c = corners[vid % 6u];
+
+  // sized to roughly match the deformed mesh: deer taller, wolf longer/lower; corpses squat.
+  let scale = SIZE.x;
+  let hgt   = mix(2.7, 1.9, species) * scale * mix(1.0, 0.40, dead);
+  let halfW = mix(1.6, 2.0, species) * scale;
+
+  // Y-only billboard: quad A faces the camera in yaw, quad B is its perpendicular cross.
+  let toEye = CAM.eye - inst.xyz;
+  let rightA = normalize(vec3<f32>(-toEye.z, 0.0, toEye.x) + vec3<f32>(1e-4, 0.0, 0.0));
+  let right = select(rightA, vec3<f32>(-rightA.z, 0.0, rightA.x), quad == 1u);
+
+  let worldPos = inst.xyz + right * (c.x * halfW) + vec3<f32>(0.0, 1.0, 0.0) * (c.y * hgt);
+
+  // same palette + per-individual hash as CREATURE_RENDER so the LOD switch doesn't pop
+  let h = fract(sin(dot(inst.xz, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+  let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h);
+  let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h);
+  var tint = mix(deerCol, wolfCol, species);
+  tint = mix(tint, vec3<f32>(0.42, 0.42, 0.44), dead * 0.7);
+
+  var out : VsOut;
+  out.clip = CAM.viewProj * vec4<f32>(worldPos, 1.0);
+  out.uv = c;
+  out.tint = tint;
+  out.worldPos = worldPos;
+  return out;
+}
+
+@fragment
+fn fs(in : VsOut) -> @location(0) vec4<f32> {
+  // elliptical body silhouette: at billboard distances a soft blob reads as an animal,
+  // especially through fog; discard everything outside it so the quad doesn't show.
+  let dx = in.uv.x;
+  let dy = (in.uv.y - 0.52) / 0.50;
+  if (dx * dx + dy * dy > 1.0) { discard; }
+
+  let sunWrap = clamp(SKY.sunDir.y * 0.5 + 0.5, 0.0, 1.0);
+  let lit = in.tint * (SKY.ambient + SKY.sunColor * (0.30 + 0.60 * sunWrap)
+                       + SKY.moonColor * SKY.moonVisible * 0.10);
   let foggy = applyFog(lit, in.worldPos, CAM.eye, FOG);
   return vec4<f32>(foggy, 1.0);
 }

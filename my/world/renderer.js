@@ -1,7 +1,7 @@
 // renderer.js: WebGPU render pipelines (terrain, sky, creatures, water, plants, cat)
 // plus the mat4/vec3 math they depend on. (merged: mat.js + renderer.js)
 
-import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, WATER_RENDER, SHADOW_BAKE, PLANT_RENDER, CAT_RENDER } from "./world.js";
+import { TERRAIN_BAKE, TERRAIN_RENDER, CREATURE_RENDER, CREATURE_CULL, CREATURE_BILLBOARD, WATER_RENDER, SHADOW_BAKE, PLANT_RENDER, CAT_RENDER } from "./world.js";
 import { SKY_RENDER } from "./sky.js";
 import { buildCreatureMesh, buildCatMesh } from "./mesh.js";
 
@@ -151,6 +151,7 @@ export function createRenderer(device, context, format, {
   // FogParams uniform (16 bytes: vec3 + f32)
   const fogBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   function setFog(fogColor, fogDist) {
+    currentFogDist = fogDist;   // the creature cull keys its LOD/max distances off this
     device.queue.writeBuffer(fogBuf, 0, new Float32Array([fogColor[0], fogColor[1], fogColor[2], fogDist]));
   }
 
@@ -319,15 +320,22 @@ export function createRenderer(device, context, format, {
   device.queue.writeBuffer(creIdxBuf, 0, mesh.indexData);
   const creIndexCount = mesh.indexCount;
 
+  // ---- creatures: GPU cull + 2-level LOD ----
+  // The creature draw no longer instances over ALL N entities. A CREATURE_CULL compute
+  // pass (recorded at the top of render(), same encoder, before the render pass) tests each
+  // entity against the view frustum + a fog-based max distance and appends its index into
+  // one of two compacted lists: visNear (full deformed mesh) or visFar (crossed-billboard
+  // impostor). It atomically bumps the instanceCount words of `indirectBuf`, and the two
+  // draws below consume them via drawIndexedIndirect/drawIndirect — the visible counts
+  // never touch the CPU.
   const creBGL = device.createBindGroupLayout({ entries:[
     {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}},
     {binding:2,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
     {binding:3,visibility:GPUShaderStage.FRAGMENT,buffer:{type:"uniform"}},
-  ]});
-  const creBG = device.createBindGroup({layout:creBGL,entries:[
-    {binding:0,resource:{buffer:camBuf}},{binding:1,resource:{buffer:sizeBuf}},
-    {binding:2,resource:{buffer:skyBuf}},{binding:3,resource:{buffer:fogBuf}},
+    {binding:4,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}},  // positions
+    {binding:5,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}},  // speciesHeading
+    {binding:6,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage"}},  // visNear / visFar
   ]});
   const creMod = device.createShaderModule({code:CREATURE_RENDER});
   const crePipe = device.createRenderPipeline({
@@ -337,17 +345,81 @@ export function createRenderer(device, context, format, {
         {shaderLocation:0,offset:0,  format:"float32x3"},
         {shaderLocation:1,offset:12, format:"float32x3"},
       ]},
-      { arrayStride:16, stepMode:"instance", attributes:[
-        {shaderLocation:2,offset:0, format:"float32x4"},
-      ]},
-      { arrayStride:8, stepMode:"instance", attributes:[
-        {shaderLocation:3,offset:0, format:"float32x2"},
-      ]},
     ]},
     fragment:{module:creMod,entryPoint:"fs",targets:[{format}]},
     primitive:{topology:"triangle-list",cullMode:"none"},
     depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
   });
+  // billboard far-LOD: same bind group layout (binding 6 = visFar), no vertex buffers.
+  const bbMod = device.createShaderModule({code:CREATURE_BILLBOARD});
+  const bbPipe = device.createRenderPipeline({
+    layout: device.createPipelineLayout({bindGroupLayouts:[creBGL]}),
+    vertex:{module:bbMod,entryPoint:"vs"},
+    fragment:{module:bbMod,entryPoint:"fs",targets:[{format}]},
+    primitive:{topology:"triangle-list",cullMode:"none"},
+    depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"},
+  });
+
+  // indirect args (10 u32 words = 40 B): [0..4] DrawIndexedIndirect for the mesh,
+  // [5..8] DrawIndirect for the billboard, [9] pad. Host resets counts each frame from
+  // indirectScratch (reused); the cull pass atomically bumps words 1 and 6.
+  const indirectBuf = device.createBuffer({ size: 40,
+    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const indirectScratch = new Uint32Array(10);
+  indirectScratch[0] = creIndexCount;   // mesh indexCount (static)
+  indirectScratch[5] = 12;              // billboard vertexCount: 2 quads * 6 (static)
+
+  // CullParams (128 B): planes[6] (96) + eye/N (16) + lodDist/maxDist/boundR/pad (16).
+  const cullParamsBuf = device.createBuffer({ size: 128,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const cullScratch = new Float32Array(32);
+  const cullScratchU = new Uint32Array(cullScratch.buffer);
+  const cullBGL = device.createBindGroupLayout({ entries:[
+    {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+    {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+    {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+  ]});
+  const cullPipe = device.createComputePipeline({
+    layout: device.createPipelineLayout({bindGroupLayouts:[cullBGL]}),
+    compute:{ module: device.createShaderModule({code:CREATURE_CULL}), entryPoint:"main" },
+  });
+
+  // visNear/visFar (N*4 B each) + the three bind groups depend on the sim's buffers, which
+  // arrive per render() call — build lazily on first frame, rebuild only if identity or N
+  // changes (once per world build, never per-frame in steady state).
+  let visNear=null, visFar=null, cullBG=null, creBG=null, bbBG=null;
+  let cullPosRef=null, cullShRef=null, cullN=0;
+  function ensureCull(positions, speciesHeading, N){
+    if (cullBG && cullPosRef===positions && cullShRef===speciesHeading && cullN===N) return;
+    visNear?.destroy?.(); visFar?.destroy?.();
+    visNear = device.createBuffer({ size: Math.max(N,1)*4, usage: GPUBufferUsage.STORAGE });
+    visFar  = device.createBuffer({ size: Math.max(N,1)*4, usage: GPUBufferUsage.STORAGE });
+    cullBG = device.createBindGroup({ layout:cullBGL, entries:[
+      {binding:0,resource:{buffer:cullParamsBuf}},
+      {binding:1,resource:{buffer:positions}},
+      {binding:2,resource:{buffer:visNear}},
+      {binding:3,resource:{buffer:visFar}},
+      {binding:4,resource:{buffer:indirectBuf}},
+    ]});
+    const mk = (vis) => device.createBindGroup({ layout:creBGL, entries:[
+      {binding:0,resource:{buffer:camBuf}},{binding:1,resource:{buffer:sizeBuf}},
+      {binding:2,resource:{buffer:skyBuf}},{binding:3,resource:{buffer:fogBuf}},
+      {binding:4,resource:{buffer:positions}},
+      {binding:5,resource:{buffer:speciesHeading}},
+      {binding:6,resource:{buffer:vis}},
+    ]});
+    creBG = mk(visNear);
+    bbBG  = mk(visFar);
+    cullPosRef=positions; cullShRef=speciesHeading; cullN=N;
+  }
+
+  // LOD/cutoff distances track the fog: past ~1.6x fogDist the exponential-squared fog has
+  // eaten ~95%+ of the color, so drawing there is waste; the mesh->billboard handoff sits
+  // where a creature is a handful of pixels. Bounding sphere ~ mesh local extent (~3) * SIZE.
+  let currentFogDist = 3000;
+  const CRE_BOUND_R = 3.2 * creatureRadius;
 
   const waterBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   let currentWaterLevel = resolvedWaterLevel;
@@ -404,6 +476,30 @@ export function createRenderer(device, context, format, {
     camScratch[16]=eye[0]; camScratch[17]=eye[1]; camScratch[18]=eye[2]; camScratch[19]=0;
     camScratch.set(invVp, 20);
     device.queue.writeBuffer(camBuf, 0, camScratch);
+
+    // frustum planes for the creature cull, extracted from the same viewProj (column-major;
+    // row(i)[k] = vp[k*4+i]). Inside test: dot(plane.xyz, p) + plane.w >= 0. Clip z in [0,1],
+    // so near = row2 and far = row3 - row2. Normalized by |xyz| so plane.w is a distance.
+    const row = (i,k) => vp[k*4+i];
+    // [useR3, sign, k]: plane = (useR3 ? row3 : 0) + sign * rowK
+    const planeDefs = [
+      [1,  1, 0],   // left   = r3 + r0
+      [1, -1, 0],   // right  = r3 - r0
+      [1,  1, 1],   // bottom = r3 + r1
+      [1, -1, 1],   // top    = r3 - r1
+      [0,  1, 2],   // near   = r2          (WebGPU clip z >= 0)
+      [1, -1, 2],   // far    = r3 - r2
+    ];
+    for (let p = 0; p < 6; p++) {
+      const [useR3, sgn, k] = planeDefs[p];
+      const a = useR3*row(3,0) + sgn*row(k,0);
+      const b = useR3*row(3,1) + sgn*row(k,1);
+      const c = useR3*row(3,2) + sgn*row(k,2);
+      const d = useR3*row(3,3) + sgn*row(k,3);
+      const inv = 1 / (Math.hypot(a,b,c) || 1);
+      cullScratch[p*4]=a*inv; cullScratch[p*4+1]=b*inv; cullScratch[p*4+2]=c*inv; cullScratch[p*4+3]=d*inv;
+    }
+    cullScratch[24]=eye[0]; cullScratch[25]=eye[1]; cullScratch[26]=eye[2];
   }
 
   // Render the sun-view depth map. Call once per frame (or every N frames) BEFORE
@@ -427,6 +523,24 @@ export function createRenderer(device, context, format, {
     ensureDepth(width,height);
     writeWaterParams(time);
 
+    // ---- creature cull (compute, BEFORE the render pass, same encoder) ----
+    ensureCull(positions, speciesHeading, N);
+    // finish CullParams: planes+eye were filled by setCamera; add N + distances.
+    cullScratchU[27] = N;
+    cullScratch[28] = currentFogDist * 0.35;   // lodDist: mesh inside, billboards beyond
+    cullScratch[29] = currentFogDist * 1.6;    // maxDist: fully fogged, draw nothing
+    cullScratch[30] = CRE_BOUND_R;
+    device.queue.writeBuffer(cullParamsBuf, 0, cullScratch);
+    // reset the two instanceCount words (queue writes land before this encoder executes)
+    device.queue.writeBuffer(indirectBuf, 0, indirectScratch);
+    {
+      const cp = encoder.beginComputePass();
+      cp.setPipeline(cullPipe);
+      cp.setBindGroup(0, cullBG);
+      cp.dispatchWorkgroups(Math.ceil(N/64));
+      cp.end();
+    }
+
     const pass = encoder.beginRenderPass({
       colorAttachments:[{ view: context.getCurrentTexture().createView(),
         clearValue:{r:0.05,g:0.07,b:0.1,a:1}, loadOp:"clear", storeOp:"store" }],
@@ -443,13 +557,18 @@ export function createRenderer(device, context, format, {
     pass.setIndexBuffer(terrIndexBuf, "uint32");
     pass.drawIndexed(terrIndexCount);
 
+    // near LOD: full deformed mesh, instanced over the compacted visNear list; the
+    // instance count was written by the cull pass and never read back.
     pass.setPipeline(crePipe);
     pass.setBindGroup(0, creBG);
     pass.setVertexBuffer(0, creVtxBuf);
-    pass.setVertexBuffer(1, positions);
-    pass.setVertexBuffer(2, speciesHeading);
     pass.setIndexBuffer(creIdxBuf, "uint32");
-    pass.drawIndexed(creIndexCount, N);
+    pass.drawIndexedIndirect(indirectBuf, 0);
+
+    // far LOD: crossed-billboard impostors over visFar (12 verts each, no vertex buffer).
+    pass.setPipeline(bbPipe);
+    pass.setBindGroup(0, bbBG);
+    pass.drawIndirect(indirectBuf, 20);
 
     // cat companion: single CPU-driven follower, opaque, lit like creatures (sky+fog, no
     // shadow map). Drawn after creatures so it shares the depth buffer (terrain occludes it),
