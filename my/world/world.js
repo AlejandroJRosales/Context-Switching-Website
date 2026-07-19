@@ -446,6 +446,7 @@ struct VsOut {
   @location(0) uv : vec2<f32>,        // x in [-1,1], y in [0,1]
   @location(1) tint : vec3<f32>,
   @location(2) worldPos : vec3<f32>,
+  @location(3) metaData : vec2<f32>,      // x = species, y = dead
 };
 
 @vertex
@@ -464,9 +465,10 @@ fn vs(@builtin(vertex_index) vid : u32,
   let quad = vid / 6u;
   let c = corners[vid % 6u];
 
-  // sized to roughly match the deformed mesh: deer taller, wolf longer/lower; corpses squat.
+  // sized to roughly match the deformed mesh: deer taller, wolf longer/lower. Dead pose is
+  // handled by the fragment silhouette (low mound), so the quad keeps its full size.
   let scale = SIZE.x;
-  let hgt   = mix(2.7, 1.9, species) * scale * mix(1.0, 0.40, dead);
+  let hgt   = mix(2.7, 1.9, species) * scale;
   let halfW = mix(1.6, 2.0, species) * scale;
 
   // Y-only billboard: quad A faces the camera in yaw, quad B is its perpendicular cross.
@@ -481,6 +483,9 @@ fn vs(@builtin(vertex_index) vid : u32,
   let deerCol = mix(vec3<f32>(0.55, 0.38, 0.22), vec3<f32>(0.68, 0.50, 0.30), h);
   let wolfCol = mix(vec3<f32>(0.34, 0.34, 0.36), vec3<f32>(0.50, 0.50, 0.52), h);
   var tint = mix(deerCol, wolfCol, species);
+  // distant impostors: pull ~35% toward grey-green so they don't ping orange against terrain
+  let luma = dot(tint, vec3<f32>(0.299, 0.587, 0.114));
+  tint = mix(tint, vec3<f32>(luma * 0.95, luma, luma * 0.92), 0.35);
   tint = mix(tint, vec3<f32>(0.42, 0.42, 0.44), dead * 0.7);
 
   var out : VsOut;
@@ -488,16 +493,42 @@ fn vs(@builtin(vertex_index) vid : u32,
   out.uv = c;
   out.tint = tint;
   out.worldPos = worldPos;
+  out.metaData = vec2<f32>(species, dead);
   return out;
+}
+
+// squared normalized distance to an ellipse: < 1 means inside
+fn ell(p : vec2<f32>, c : vec2<f32>, r : vec2<f32>) -> f32 {
+  let q = (p - c) / r;
+  return dot(q, q);
 }
 
 @fragment
 fn fs(in : VsOut) -> @location(0) vec4<f32> {
-  // elliptical body silhouette: at billboard distances a soft blob reads as an animal,
-  // especially through fog; discard everything outside it so the quad doesn't show.
-  let dx = in.uv.x;
-  let dy = (in.uv.y - 0.52) / 0.50;
-  if (dx * dx + dy * dy > 1.0) { discard; }
+  // quadruped silhouette instead of a blob: horizontal body, species-posed head + neck,
+  // and two leg bars (a side-on animal's leg pairs merge at billboard distances anyway).
+  let species = in.metaData.x;
+  let dead = in.metaData.y;
+  let p = in.uv;
+
+  var inside = false;
+  if (dead > 0.5) {
+    // corpse: a single low mound near the ground
+    inside = ell(p, vec2<f32>(0.0, 0.22), vec2<f32>(0.62, 0.20)) < 1.0;
+  } else {
+    // body: long horizontal ellipse
+    let body = ell(p, vec2<f32>(-0.05, 0.60), vec2<f32>(0.50, 0.20)) < 1.0;
+    // head: deer carry it high, wolves low and forward (matches the mesh deform)
+    let headC = mix(vec2<f32>(0.52, 0.88), vec2<f32>(0.66, 0.62), species);
+    let head = ell(p, headC, vec2<f32>(0.15, 0.13)) < 1.0;
+    // neck: ellipse bridging chest to head
+    let chest = vec2<f32>(0.38, 0.62);
+    let neck = ell(p, (chest + headC) * 0.5, vec2<f32>(0.14, 0.22)) < 1.0;
+    // legs: two vertical bars from the belly to the ground
+    let legs = (abs(p.x + 0.30) < 0.070 || abs(p.x - 0.26) < 0.070) && p.y < 0.62;
+    inside = body || head || neck || legs;
+  }
+  if (!inside) { discard; }
 
   let sunWrap = clamp(SKY.sunDir.y * 0.5 + 0.5, 0.0, 1.0);
   let lit = in.tint * (SKY.ambient + SKY.sunColor * (0.30 + 0.60 * sunWrap)
