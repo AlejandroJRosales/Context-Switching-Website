@@ -54,13 +54,13 @@ html,body{height:100dvh;overflow:hidden;background:#000;font-family:'Courier New
 <script>
 "use strict";
 // config world based on seed
-function scale(n){ return Math.max(500, Math.round(5000*Math.max(n,1)/10)); }
-function setWorldSize(){const s=scale(CONFIG.worldScale);CONFIG.worldW=s;CONFIG.worldH=s;}
+function worldSizeForScale(worldScale){ return Math.max(500, Math.round(5000*Math.max(worldScale,1)/10)); }
+function setWorldSize(){const s=worldSizeForScale(CONFIG.worldScale);CONFIG.worldWidth=s;CONFIG.worldDepth=s;}
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 const CONFIG={
   worldScale: 20,
-  probSpawnPlant: .04,
+  plantSpawnChance: .04,
   quality: 'H',
   seed: (Math.random()*1e9)|0,
 };
@@ -69,21 +69,21 @@ setWorldSize();
 CONFIG.waterLevel=Math.round(RNG()*10);
 // shader program
 function compile(type, src) {
-  const s=gl.createShader(type);
-  gl.shaderSource(s, src); gl.compileShader(s);
-  return s;
+  const shader=gl.createShader(type);
+  gl.shaderSource(shader, src); gl.compileShader(shader);
+  return shader;
 }
 function program(vsSrc, fsSrc) {
-  const p=gl.createProgram();
-  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
-  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
-  gl.linkProgram(p);
-  p._a={}; p._u={};
-  p.a=n=> (p._a[n] !== undefined ? p._a[n] : (p._a[n]=gl.getAttribLocation(p, n)));
-  p.u=n=> (p._u[n] !== undefined ? p._u[n] : (p._u[n]=gl.getUniformLocation(p, n)));
-  return p;
+  const prog=gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(prog);
+  prog._a={}; prog._u={};
+  prog.a=name=> (prog._a[name] !== undefined ? prog._a[name] : (prog._a[name]=gl.getAttribLocation(prog, name)));
+  prog.u=name=> (prog._u[name] !== undefined ? prog._u[name] : (prog._u[name]=gl.getUniformLocation(prog, name)));
+  return prog;
 }
-const M4={
+const Mat4={
   create(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
   perspective(out, fovy, aspect, near, far){
     const f=1/Math.tan(fovy/2), nf=1/(near-far);
@@ -134,18 +134,18 @@ const NOISE_PERM=(()=> {
   for (let i=0;i<512;i++) p[i]=base[i&255];
   return p;
 })();
-function hash2(ix, iz){ return NOISE_PERM[(ix+NOISE_PERM[iz & 255]) & 255]/255; }
-function smooth(t){ return t*t*(3-2*t); }
+function noiseHash(ix, iz){ return NOISE_PERM[(ix+NOISE_PERM[iz & 255]) & 255]/255; }
+function smoothStep(t){ return t*t*(3-2*t); }
 function valueNoise(x, z){
   const ix=Math.floor(x), iz=Math.floor(z);
-  const fx=x-ix, fz=z-iz, ux=smooth(fx), uz=smooth(fz);
-  const a=hash2(ix,iz), b=hash2(ix+1,iz);
-  const c=hash2(ix,iz+1), d=hash2(ix+1,iz+1);
+  const fx=x-ix, fz=z-iz, ux=smoothStep(fx), uz=smoothStep(fz);
+  const a=noiseHash(ix,iz), b=noiseHash(ix+1,iz);
+  const c=noiseHash(ix,iz+1), d=noiseHash(ix+1,iz+1);
   return a*(1-ux)*(1-uz)+b*ux*(1-uz)+c*(1-ux)*uz+d*ux*uz;
 }
 function ridgedNoise(wx, wz){
-  let h=0, freq=1/TERRAIN.mtnSize, amp=1, norm=0;
-  for (let o=0;o<TERRAIN.mtnOctaves;o++){
+  let h=0, freq=1/TERRAIN.mountainSize, amp=1, norm=0;
+  for (let o=0;o<TERRAIN.mountainOctaves;o++){
     let n=valueNoise(wx*freq+o*31.4, wz*freq-o*17.1);
     n=1-Math.abs(n*2-1);
     n*=n;
@@ -158,18 +158,18 @@ const canvas=document.getElementById('gl');
 const gl=canvas.getContext('webgl', { antialias:true, alpha:false, powerPreference:'high-performance' }) || canvas.getContext('experimental-webgl');
 const EXT_INSTANCE=gl.getExtension('ANGLE_instanced_arrays');
 const EXT_ELEMENT_UINT=gl.getExtension('OES_element_index_uint');
-const GLAB = gl.ARRAY_BUFFER;
-const GLEAB = gl.ELEMENT_ARRAY_BUFFER;
-const GLDYN = gl.DYNAMIC_DRAW;
-const GLSTA = gl.STATIC_DRAW;
-const GLTRI = gl.TRIANGLES;
-const bindBuf = (t,b) => gl.bindBuffer(t,b);
-const bufData = (t,d,u) => gl.bufferData(t,d,u);
-const uMat4 = (l,v) => gl.uniformMatrix4fv(l,false,v);
-const u3f = (l,v) => gl.uniform3fv(l,v);
-const u1f = (l,v) => gl.uniform1f(l,v);
-const u1i = (l,v) => gl.uniform1i(l,v);
-function setAttr(loc, size, stride, offset, divisor){
+const GL_ARRAY_BUFFER = gl.ARRAY_BUFFER;
+const GL_ELEMENT_ARRAY_BUFFER = gl.ELEMENT_ARRAY_BUFFER;
+const GL_DYNAMIC_DRAW = gl.DYNAMIC_DRAW;
+const GL_STATIC_DRAW = gl.STATIC_DRAW;
+const GL_TRIANGLES = gl.TRIANGLES;
+const bindBuffer = (t,b) => gl.bindBuffer(t,b);
+const setBufferData = (t,d,u) => gl.bufferData(t,d,u);
+const setUniformMat4 = (l,v) => gl.uniformMatrix4fv(l,false,v);
+const setUniform3f = (l,v) => gl.uniform3fv(l,v);
+const setUniform1f = (l,v) => gl.uniform1f(l,v);
+const setUniform1i = (l,v) => gl.uniform1i(l,v);
+function setVertexAttrib(loc, size, stride, offset, divisor){
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
   if (EXT_INSTANCE && divisor !== undefined) EXT_INSTANCE.vertexAttribDivisorANGLE(loc, divisor);
@@ -179,13 +179,13 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const byId = (id) => document.getElementById(id);
 const on = (el,ev,fn,o) => el.addEventListener(ev,fn,o);
 // shadows
-function setShadowSize(){ return CONFIG.quality==='H' ? 1024 : 256; }
-function setShadowRefresh(){ return CONFIG.quality==='H' ? 5 : 30; } 
+function shadowSizeForQuality(){ return CONFIG.quality==='H' ? 1024 : 256; }
+function shadowRefreshForQuality(){ return CONFIG.quality==='H' ? 5 : 30; } 
 const SHADOW={
-  size: setShadowSize(),
-  refreshInterval: setShadowRefresh(),
+  size: shadowSizeForQuality(),
+  refreshInterval: shadowRefreshForQuality(),
   depthExt: gl.getExtension('WEBGL_depth_texture') || gl.getExtension('WEBKIT_WEBGL_depth_texture') || gl.getExtension('MOZ_WEBGL_depth_texture'),
-  fbo: null, tex: null, colorTex: null, depthRB: null,
+  framebuffer: null, mapTex: null, colorTex: null, depthRenderbuffer: null,
   lightVP: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
   ready: false,
 };
@@ -270,140 +270,140 @@ function resize() {
 on(window, 'resize', resize);
 // terrain
 const TERRAIN={
-  amp: 220, featureSize: 360, octaves: 5,
-  mtnAmp: 600,
-  mtnSize: 2000,
-  mtnOctaves: 4,
-  mtnThreshold: .45,
+  amplitude: 220, featureSize: 360, octaves: 5,
+  mountainAmp: 600,
+  mountainSize: 2000,
+  mountainOctaves: 4,
+  mountainThreshold: .45,
   biomeSize: 4200,
-  biomeLo: .42, biomeHi: .60,
+  biomeLow: .42, biomeHigh: .60,
   plainsAmp: .35,
 };
-const THCACHE={res: 0, cols: 0, rows: 0, ox: 0, oz: 0, invStepX: 0, invStepZ: 0, W: 0, H: 0, data: null,
-  wmRes: 0, wmCols: 0, wmRows: 0, wmOx: 0, wmOz: 0, wmInvStep: 0, waterMask: null};
+const terrainCache={step: 0, cols: 0, rows: 0, originX: 0, originZ: 0, invStepX: 0, invStepZ: 0, width: 0, depth: 0, heights: null,
+  waterStep: 0, waterCols: 0, waterRows: 0, waterOriginX: 0, waterOriginZ: 0, waterInvStep: 0, waterMask: null};
 let terrainBuf=null, terrainIdxBuf=null, terrainIdxCount=0;
 function buildTerrainCache(){
   const step=CONFIG.quality==='H' ? 8 : 16;
-  const W=CONFIG.worldW, H=CONFIG.worldH;
+  const width=CONFIG.worldWidth, depth=CONFIG.worldDepth;
   const pad=step*2;
-  const ox=-W/2-pad, oz=-H/2-pad;
-  const spanW=W+pad*2, spanH=H+pad*2;
-  const cols=Math.ceil(spanW/step)+1;
-  const rows=Math.ceil(spanH/step)+1;
-  const data=new Float32Array(cols*rows);
-  for (let r=0;r<rows;r++){
-    const wz=oz+r*step;
-    const base=r*cols;
-    for (let c=0;c<cols;c++){
-      data[base+c]=terrainHeightExact(ox+c*step, wz);
+  const originX=-width/2-pad, originZ=-depth/2-pad;
+  const spanWidth=width+pad*2, spanDepth=depth+pad*2;
+  const cols=Math.ceil(spanWidth/step)+1;
+  const rows=Math.ceil(spanDepth/step)+1;
+  const heights=new Float32Array(cols*rows);
+  for (let row=0;row<rows;row++){
+    const wz=originZ+row*step;
+    const rowBase=row*cols;
+    for (let col=0;col<cols;col++){
+      heights[rowBase+col]=terrainHeightExact(originX+col*step, wz);
     }
   }
-  THCACHE.res=step;
-  THCACHE.cols=cols; THCACHE.rows=rows;
-  THCACHE.ox=ox; THCACHE.oz=oz;
-  THCACHE.invStepX=1/step; THCACHE.invStepZ=1/step;
-  THCACHE.data=data;
-  const wmStep=step*2;
-  const wmOx=-W/2-wmStep, wmOz=-H/2-wmStep;
-  const wmSpanW=W+wmStep*2, wmSpanH=H+wmStep*2;
-  const wmCols=Math.ceil(wmSpanW/wmStep)+1;
-  const wmRows=Math.ceil(wmSpanH/wmStep)+1;
-  const mask=new Uint8Array(wmCols*wmRows);
-  const wl=CONFIG.waterLevel;
-  for (let r=0;r<wmRows;r++){
-    const wz=wmOz+r*wmStep;
-    const base=r*wmCols;
-    for (let c=0;c<wmCols;c++){
-      mask[base+c]=terrainHeightExact(wmOx+c*wmStep, wz) < wl ? 1 : 0;
+  terrainCache.step=step;
+  terrainCache.cols=cols; terrainCache.rows=rows;
+  terrainCache.originX=originX; terrainCache.originZ=originZ;
+  terrainCache.invStepX=1/step; terrainCache.invStepZ=1/step;
+  terrainCache.heights=heights;
+  const waterStep=step*2;
+  const waterOriginX=-width/2-waterStep, waterOriginZ=-depth/2-waterStep;
+  const waterSpanWidth=width+waterStep*2, waterSpanDepth=depth+waterStep*2;
+  const waterCols=Math.ceil(waterSpanWidth/waterStep)+1;
+  const waterRows=Math.ceil(waterSpanDepth/waterStep)+1;
+  const mask=new Uint8Array(waterCols*waterRows);
+  const waterLevel=CONFIG.waterLevel;
+  for (let row=0;row<waterRows;row++){
+    const wz=waterOriginZ+row*waterStep;
+    const rowBase=row*waterCols;
+    for (let col=0;col<waterCols;col++){
+      mask[rowBase+col]=terrainHeightExact(waterOriginX+col*waterStep, wz) < waterLevel ? 1 : 0;
     }
   }
-  THCACHE.wmRes=wmStep; THCACHE.wmCols=wmCols; THCACHE.wmRows=wmRows;
-  THCACHE.wmOx=wmOx; THCACHE.wmOz=wmOz; THCACHE.wmInvStep=1/wmStep;
-  THCACHE.waterMask=mask;
+  terrainCache.waterStep=waterStep; terrainCache.waterCols=waterCols; terrainCache.waterRows=waterRows;
+  terrainCache.waterOriginX=waterOriginX; terrainCache.waterOriginZ=waterOriginZ; terrainCache.waterInvStep=1/waterStep;
+  terrainCache.waterMask=mask;
 }
 function isWaterAt(wx, wz){
-  const cache=THCACHE;
+  const cache=terrainCache;
   const mask=cache.waterMask;
   if (!mask) return terrainHeightExact(wx, wz) < CONFIG.waterLevel;
-  let ix=((wx-cache.wmOx)*cache.wmInvStep)|0;
-  let iz=((wz-cache.wmOz)*cache.wmInvStep)|0;
-  if (ix < 0 || iz < 0 || ix >= cache.wmCols || iz >= cache.wmRows)
+  let cellX=((wx-cache.waterOriginX)*cache.waterInvStep)|0;
+  let cellZ=((wz-cache.waterOriginZ)*cache.waterInvStep)|0;
+  if (cellX < 0 || cellZ < 0 || cellX >= cache.waterCols || cellZ >= cache.waterRows)
     return terrainHeightExact(wx, wz) < CONFIG.waterLevel;
-  return mask[iz*cache.wmCols+ix]=== 1;
+  return mask[cellZ*cache.waterCols+cellX]=== 1;
 }
 function terrainHeight(wx, wz){
-  const cache=THCACHE;
-  const data=cache.data;
-  if (!data) return terrainHeightExact(wx, wz);
-  const gx=(wx-cache.ox)*cache.invStepX;
-  const gz=(wz-cache.oz)*cache.invStepZ;
-  let ix=gx|0, iz=gz|0;
+  const cache=terrainCache;
+  const heights=cache.heights;
+  if (!heights) return terrainHeightExact(wx, wz);
+  const cellX=(wx-cache.originX)*cache.invStepX;
+  const cellZ=(wz-cache.originZ)*cache.invStepZ;
+  let cellIX=cellX|0, cellIZ=cellZ|0;
   const cols=cache.cols, rows=cache.rows;
-  if (ix < 0 || iz < 0 || ix >= cols-1 || iz >= rows-1)
+  if (cellIX < 0 || cellIZ < 0 || cellIX >= cols-1 || cellIZ >= rows-1)
     return terrainHeightExact(wx, wz);
-  const fx=gx-ix, fz=gz-iz;
-  const i00=iz*cols+ix;
-  const h00=data[i00], h10=data[i00+1];
-  const h01=data[i00+cols], h11=data[i00+cols+1];
-  const a=h00+(h10-h00)*fx;
-  const b=h01+(h11-h01)*fx;
-  return a+(b-a)*fz;
+  const fx=cellX-cellIX, fz=cellZ-cellIZ;
+  const i00=cellIZ*cols+cellIX;
+  const h00=heights[i00], h10=heights[i00+1];
+  const h01=heights[i00+cols], h11=heights[i00+cols+1];
+  const top=h00+(h10-h00)*fx;
+  const bottom=h01+(h11-h01)*fx;
+  return top+(bottom-top)*fz;
 }
 function terrainHeightExact(wx, wz){
   let h=0, freq=1/TERRAIN.featureSize, amp=1, norm=0;
-  for (let o=0;o<TERRAIN.octaves;o++){
-    h+=valueNoise(wx*freq+o*13.7, wz*freq-o*7.3)*amp;
+  for (let octave=0;octave<TERRAIN.octaves;octave++){
+    h+=valueNoise(wx*freq+octave*13.7, wz*freq-octave*7.3)*amp;
     norm+=amp; amp*=.5; freq*=2.0;
   }
   h/=norm;
   h=Math.pow(h, 1.35);
-  let bf=1/TERRAIN.biomeSize;
-  let b=valueNoise(wx*bf+101.7, wz*bf-58.3);
-  let t=(b-TERRAIN.biomeLo)/(TERRAIN.biomeHi-TERRAIN.biomeLo);
-  t=Math.max(0, Math.min(1, t));
-  let mtn=t*t*(3-2*t);
-  let relief=TERRAIN.plainsAmp+(1-TERRAIN.plainsAmp)*mtn;
-  let y=h*TERRAIN.amp*relief-TERRAIN.amp*.15;
-  const r=ridgedNoise(wx, wz);
-  const m=Math.max(0, r-TERRAIN.mtnThreshold)/(1-TERRAIN.mtnThreshold);
-  y+=m*m*TERRAIN.mtnAmp*mtn;
+  let biomeFreq=1/TERRAIN.biomeSize;
+  let biomeNoise=valueNoise(wx*biomeFreq+101.7, wz*biomeFreq-58.3);
+  let biomeBlend=(biomeNoise-TERRAIN.biomeLow)/(TERRAIN.biomeHigh-TERRAIN.biomeLow);
+  biomeBlend=Math.max(0, Math.min(1, biomeBlend));
+  let mountainMask=biomeBlend*biomeBlend*(3-2*biomeBlend);
+  let relief=TERRAIN.plainsAmp+(1-TERRAIN.plainsAmp)*mountainMask;
+  let y=h*TERRAIN.amplitude*relief-TERRAIN.amplitude*.15;
+  const ridge=ridgedNoise(wx, wz);
+  const ridgeMask=Math.max(0, ridge-TERRAIN.mountainThreshold)/(1-TERRAIN.mountainThreshold);
+  y+=ridgeMask*ridgeMask*TERRAIN.mountainAmp*mountainMask;
   return y;
 }
 function buildTerrain(){
-  const segX=CONFIG.quality==='H' ? 160 : 96;
-  const segZ=CONFIG.quality==='H' ? 120 : 72;
-  const W=CONFIG.worldW, H=CONFIG.worldH;
-  const verts=new Float32Array((segX+1)*(segZ+1)*6);
-  let vi=0;
-  const hAt=(gx,gz)=> terrainHeightExact(-W/2+gx/segX*W, -H/2+gz/segZ*H);
-  for (let gz=0; gz<=segZ; gz++){
-    for (let gx=0; gx<=segX; gx++){
-      const wx=-W/2+gx/segX*W, wz=-H/2+gz/segZ*H, wy=hAt(gx,gz);
-      const e=W/segX;
-      const hl=terrainHeightExact(wx-e,wz), hr=terrainHeightExact(wx+e,wz);
-      const hd=terrainHeightExact(wx,wz-e), hu=terrainHeightExact(wx,wz+e);
-      let nx=hl-hr, ny=2*e, nz=hd-hu;
-      const il=1/Math.hypot(nx,ny,nz); nx*=il; ny*=il; nz*=il;
-      verts[vi++]=wx; verts[vi++]=wy; verts[vi++]=wz;
-      verts[vi++]=nx; verts[vi++]=ny; verts[vi++]=nz;
+  const segmentsX=CONFIG.quality==='H' ? 160 : 96;
+  const segmentsZ=CONFIG.quality==='H' ? 120 : 72;
+  const width=CONFIG.worldWidth, depth=CONFIG.worldDepth;
+  const vertices=new Float32Array((segmentsX+1)*(segmentsZ+1)*6);
+  let v=0;
+  const heightAt=(gx,gz)=> terrainHeightExact(-width/2+gx/segmentsX*width, -depth/2+gz/segmentsZ*depth);
+  for (let gz=0; gz<=segmentsZ; gz++){
+    for (let gx=0; gx<=segmentsX; gx++){
+      const wx=-width/2+gx/segmentsX*width, wz=-depth/2+gz/segmentsZ*depth, wy=heightAt(gx,gz);
+      const sampleStep=width/segmentsX;
+      const heightWest=terrainHeightExact(wx-sampleStep,wz), heightEast=terrainHeightExact(wx+sampleStep,wz);
+      const heightSouth=terrainHeightExact(wx,wz-sampleStep), heightNorth=terrainHeightExact(wx,wz+sampleStep);
+      let nx=heightWest-heightEast, ny=2*sampleStep, nz=heightSouth-heightNorth;
+      const invLen=1/Math.hypot(nx,ny,nz); nx*=invLen; ny*=invLen; nz*=invLen;
+      vertices[v++]=wx; vertices[v++]=wy; vertices[v++]=wz;
+      vertices[v++]=nx; vertices[v++]=ny; vertices[v++]=nz;
     }
   }
-  const idx=new Uint32Array(segX*segZ*6);
-  let ii=0, row=segX+1;
-  for (let gz=0; gz<segZ; gz++){
-    for (let gx=0; gx<segX; gx++){
-      const a=gz*row+gx, b=a+1, c=a+row, d=c+1;
-      idx[ii++]=a; idx[ii++]=c; idx[ii++]=b;
-      idx[ii++]=b; idx[ii++]=c; idx[ii++]=d;
+  const indices=new Uint32Array(segmentsX*segmentsZ*6);
+  let indexCursor=0, rowStride=segmentsX+1;
+  for (let gz=0; gz<segmentsZ; gz++){
+    for (let gx=0; gx<segmentsX; gx++){
+      const v00=gz*rowStride+gx, v10=v00+1, v01=v00+rowStride, v11=v01+1;
+      indices[indexCursor++]=v00; indices[indexCursor++]=v01; indices[indexCursor++]=v10;
+      indices[indexCursor++]=v10; indices[indexCursor++]=v01; indices[indexCursor++]=v11;
     }
   }
   terrainBuf=terrainBuf || gl.createBuffer();
-  bindBuf(GLAB, terrainBuf);
-  bufData(GLAB, verts, GLSTA);
+  bindBuffer(GL_ARRAY_BUFFER, terrainBuf);
+  setBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW);
   terrainIdxBuf=terrainIdxBuf || gl.createBuffer();
-  bindBuf(GLEAB, terrainIdxBuf);
-  bufData(GLEAB, idx, GLSTA);
-  terrainIdxCount=idx.length;
+  bindBuffer(GL_ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
+  setBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
+  terrainIdxCount=indices.length;
 }
 const terrainProg=program(`
 attribute vec3 aPos; attribute vec3 aNormal;
@@ -437,8 +437,8 @@ void main(){
 }
 `);
 const quadBuf=gl.createBuffer();
-bindBuf(GLAB, quadBuf);
-bufData(GLAB, new Float32Array([-1,-1, 3,-1, -1,3]), GLSTA);
+bindBuffer(GL_ARRAY_BUFFER, quadBuf);
+setBufferData(GL_ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), GL_STATIC_DRAW);
 const skyProg=program(`
 attribute vec2 aPos; varying vec2 vUv;
 void main(){ vUv=aPos*.5+.5; gl_Position=vec4(aPos,.0,1.0); }
@@ -461,9 +461,9 @@ void main(){
 `);
 const waterBuf=gl.createBuffer();
 function buildWater(){
-  const W=CONFIG.worldW/2, H=CONFIG.worldH/2;
-  bindBuf(GLAB, waterBuf);
-  bufData(GLAB, new Float32Array([-W,-H, W,-H, -W,H, -W,H, W,-H, W,H]), GLSTA);
+  const halfWidth=CONFIG.worldWidth/2, halfDepth=CONFIG.worldDepth/2;
+  bindBuffer(GL_ARRAY_BUFFER, waterBuf);
+  setBufferData(GL_ARRAY_BUFFER, new Float32Array([-halfWidth,-halfDepth, halfWidth,-halfDepth, -halfWidth,halfDepth, -halfWidth,halfDepth, halfWidth,-halfDepth, halfWidth,halfDepth]), GL_STATIC_DRAW);
 }
 buildWater();
 const waterProg=program(`
@@ -500,10 +500,10 @@ void main(){
 }
 `);
 // creatures
-let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, instBuf=null;
-const INST_STRIDE=9;
+let creatureProg=null, creatureGeoBuf=null, creatureGeoCount=0, creatureInstBuf=null;
+const CREATURE_STRIDE=9;
 const MAX_CREATURES=1000;
-const instData=new Float32Array(MAX_CREATURES*INST_STRIDE);
+const creatureInstData=new Float32Array(MAX_CREATURES*CREATURE_STRIDE);
 const GENE_LEN=18;
 const GENE_CODONS=GENE_LEN/3;
 const GENE_MUT_RATE=.03;
@@ -512,17 +512,17 @@ function hslToRgbInto(i,h,s,l){
   if(s===0){ r=g=b=l; }
   else{
     const q=l<.5?l*(1+s):l+s-l*s, p=2*l-q;
-    const hk=(t)=>{ if(t<0)t+=1; else if(t>1)t-=1;
-      if(t<1/6)return p+(q-p)*6*t;
-      if(t<1/2)return q;
-      if(t<2/3)return p+(q-p)*(2/3-t)*6;
+    const hueToChannel=(hue)=>{ if(hue<0)hue+=1; else if(hue>1)hue-=1;
+      if(hue<1/6)return p+(q-p)*6*hue;
+      if(hue<1/2)return q;
+      if(hue<2/3)return p+(q-p)*(2/3-hue)*6;
       return p; };
-    r=hk(h+1/3); g=hk(h); b=hk(h-1/3);
+    r=hueToChannel(h+1/3); g=hueToChannel(h); b=hueToChannel(h-1/3);
   }
-  C.cr[i]=r; C.cg[i]=g; C.cb[i]=b;
+  creatures.colorR[i]=r; creatures.colorG[i]=g; creatures.colorB[i]=b;
 }
 function geneDecode(i){
-  const base=i*GENE_LEN; const g=C.gene;
+  const base=i*GENE_LEN; const g=creatures.gene;
   let cod0=g[base]*16+g[base+1]*4+g[base+2];
   let cod1=g[base+3]*16+g[base+4]*4+g[base+5];
   let cod2=g[base+6]*16+g[base+7]*4+g[base+8];
@@ -535,84 +535,84 @@ function geneDecode(i){
   hslToRgbInto(i,h,s,l);
 }
 function geneRandom(i,species){
-  const base=i*GENE_LEN; const g=C.gene;
-  let hueLo,hueHi;
-  if(species){ hueLo=-.04; hueHi=.06; }
-  else { hueLo=.22; hueHi=.42; }
-  const hTarget=hueLo+(hueHi-hueLo)*RNG();
-  let hueCodons=Math.round(((hTarget+1)%1)*126);
-  let c0=Math.min(63,Math.max(0,(hueCodons*RNG())|0));
-  let c1=Math.min(63,Math.max(0,hueCodons-c0));
-  const writeCodon=(o,v)=>{ g[o]=(v>>4)&3; g[o+1]=(v>>2)&3; g[o+2]=v&3; };
-  writeCodon(base,c0); writeCodon(base+3,c1);
+  const base=i*GENE_LEN; const g=creatures.gene;
+  let hueMin,hueMax;
+  if(species){ hueMin=-.04; hueMax=.06; }
+  else { hueMin=.22; hueMax=.42; }
+  const targetHue=hueMin+(hueMax-hueMin)*RNG();
+  let hueTotal=Math.round(((targetHue+1)%1)*126);
+  let codonA=Math.min(63,Math.max(0,(hueTotal*RNG())|0));
+  let codonB=Math.min(63,Math.max(0,hueTotal-codonA));
+  const writeCodon=(offset,value)=>{ g[offset]=(value>>4)&3; g[offset+1]=(value>>2)&3; g[offset+2]=value&3; };
+  writeCodon(base,codonA); writeCodon(base+3,codonB);
   for(let k=6;k<GENE_LEN;k++) g[base+k]=(RNG()*4)|0;
   geneDecode(i);
 }
 function geneMutate(i){
-  const base=i*GENE_LEN; const g=C.gene;
+  const base=i*GENE_LEN; const g=creatures.gene;
   for(let k=0;k<GENE_LEN;k++){
     if(RNG()<GENE_MUT_RATE){
-      let nb=(RNG()*3)|0; if(nb>=g[base+k]) nb++;
-      g[base+k]=nb;
+      let newBase=(RNG()*3)|0; if(newBase>=g[base+k]) newBase++;
+      g[base+k]=newBase;
     }
   }
   geneDecode(i);
 }
-const C={
-  n: 0,
+const creatures={
+  count: 0,
   x: new Float32Array(MAX_CREATURES),
   y: new Float32Array(MAX_CREATURES),
   z: new Float32Array(MAX_CREATURES),
-  head:new Float32Array(MAX_CREATURES),
-  face:new Float32Array(MAX_CREATURES),
-  spd: new Float32Array(MAX_CREATURES),
+  heading:new Float32Array(MAX_CREATURES),
+  facing:new Float32Array(MAX_CREATURES),
+  speed: new Float32Array(MAX_CREATURES),
   size:new Float32Array(MAX_CREATURES),
   energy:new Float32Array(MAX_CREATURES),
   prevEnergy:new Float32Array(MAX_CREATURES),
   species:new Uint8Array(MAX_CREATURES),
-  cr: new Float32Array(MAX_CREATURES),
-  cg: new Float32Array(MAX_CREATURES),
-  cb: new Float32Array(MAX_CREATURES),
+  colorR: new Float32Array(MAX_CREATURES),
+  colorG: new Float32Array(MAX_CREATURES),
+  colorB: new Float32Array(MAX_CREATURES),
   gene: new Uint8Array(MAX_CREATURES*GENE_LEN),
-  szA: new Uint16Array(MAX_CREATURES),
-  szB: new Uint16Array(MAX_CREATURES),
-  mTurn:new Float32Array(MAX_CREATURES),
-  mMove:new Float32Array(MAX_CREATURES),
-  mEat: new Float32Array(MAX_CREATURES),
-  mRest:new Float32Array(MAX_CREATURES),
+  gruSize: new Uint16Array(MAX_CREATURES),
+  spikeSize: new Uint16Array(MAX_CREATURES),
+  motorTurn:new Float32Array(MAX_CREATURES),
+  motorMove:new Float32Array(MAX_CREATURES),
+  motorEat: new Float32Array(MAX_CREATURES),
+  motorRest:new Float32Array(MAX_CREATURES),
   spikeRate:new Float32Array(MAX_CREATURES),
   age: new Float32Array(MAX_CREATURES),
-  gen: new Uint16Array(MAX_CREATURES),
-  sgroup: new Uint8Array(MAX_CREATURES),
+  generation: new Uint16Array(MAX_CREATURES),
+  tickGroup: new Uint8Array(MAX_CREATURES),
   rewardAcc: new Float32Array(MAX_CREATURES),
 };
 const LIFESPAN=100;
 const SENESCENCE=.02;
-let STAGGER_N=3;
-let staggerFrame=0;
+let TICK_GROUPS=3;
+let tickPhase=0;
 // creature geometry
 function buildCreatures(){
   const verts=[];
   function push(x,y,z,nx,ny,nz){ verts.push(x,y,z,nx,ny,nz); }
-  function sphere(cx,cy,cz,r,sz, rings,segs){
+  function sphere(cx,cy,cz,r,squash, rings,segs){
     const grid=[];
     for(let i=0;i<=rings;i++){
-      const v=i/rings, phi=v*Math.PI, sp=Math.sin(phi), cp=Math.cos(phi);
-      const rowA=[], rowB=[];
+      const v=i/rings, phi=v*Math.PI, sinPhi=Math.sin(phi), cosPhi=Math.cos(phi);
+      const posRow=[], normRow=[];
       for(let j=0;j<=segs;j++){
-        const u=j/segs, th=u*Math.PI*2, st=Math.sin(th), ct=Math.cos(th);
-        const nx=sp*ct, ny=cp, nz=sp*st;
-        rowA.push([cx+nx*r, cy+ny*r, cz+nz*r*sz]);
-        rowB.push([nx, ny, nz/(sz||1)]);
+        const u=j/segs, theta=u*Math.PI*2, sinTheta=Math.sin(theta), cosTheta=Math.cos(theta);
+        const nx=sinPhi*cosTheta, ny=cosPhi, nz=sinPhi*sinTheta;
+        posRow.push([cx+nx*r, cy+ny*r, cz+nz*r*squash]);
+        normRow.push([nx, ny, nz/(squash||1)]);
       }
-      grid.push([rowA,rowB]);
+      grid.push([posRow,normRow]);
     }
     for(let i=0;i<rings;i++){
       for(let j=0;j<segs;j++){
-        const [a0]=grid[i], A0=grid[i][1];
-        const [a1]=grid[i+1], A1=grid[i+1][1];
-        const p00=a0[j], p01=a0[j+1], p10=a1[j], p11=a1[j+1];
-        const n00=A0[j], n01=A0[j+1], n10=A1[j], n11=A1[j+1];
+        const [posLo]=grid[i], normLo=grid[i][1];
+        const [posHi]=grid[i+1], normHi=grid[i+1][1];
+        const p00=posLo[j], p01=posLo[j+1], p10=posHi[j], p11=posHi[j+1];
+        const n00=normLo[j], n01=normLo[j+1], n10=normHi[j], n11=normHi[j+1];
         push(...p00,...n00); push(...p10,...n10); push(...p01,...n01);
         push(...p01,...n01); push(...p10,...n10); push(...p11,...n11);
       }
@@ -620,28 +620,28 @@ function buildCreatures(){
   }
   function tube(r, halfLen, segs){
     for(let j=0;j<segs;j++){
-      const u0=j/segs*Math.PI*2, u1=(j+1)/segs*Math.PI*2;
-      const c0=Math.cos(u0),s0=Math.sin(u0), c1=Math.cos(u1),s1=Math.sin(u1);
-      const aF=[c0*r, s0*r, halfLen], bF=[c1*r, s1*r, halfLen];
-      const aB=[c0*r, s0*r, -halfLen], bB=[c1*r, s1*r, -halfLen];
-      const nA=[c0,s0,0], nB=[c1,s1,0];
-      push(...aB,...nA); push(...aF,...nA); push(...bB,...nB);
-      push(...bB,...nB); push(...aF,...nA); push(...bF,...nB);
+      const angle0=j/segs*Math.PI*2, angle1=(j+1)/segs*Math.PI*2;
+      const cos0=Math.cos(angle0),sin0=Math.sin(angle0), cos1=Math.cos(angle1),sin1=Math.sin(angle1);
+      const frontA=[cos0*r, sin0*r, halfLen], frontB=[cos1*r, sin1*r, halfLen];
+      const backA=[cos0*r, sin0*r, -halfLen], backB=[cos1*r, sin1*r, -halfLen];
+      const normalA=[cos0,sin0,0], normalB=[cos1,sin1,0];
+      push(...backA,...normalA); push(...frontA,...normalA); push(...backB,...normalB);
+      push(...backB,...normalB); push(...frontA,...normalA); push(...frontB,...normalB);
     }
   }
-  const lod=CONFIG.quality==='H' ? 1 : 0;
-  const rings=lod? 8:6, segs=lod? 10:7;
-  const bodyR=.5, bodyHalf=.9;
-  tube(bodyR, bodyHalf, segs);
-  sphere(0,0, bodyHalf, bodyR, 1, rings, segs);
-  sphere(0,0,-bodyHalf, bodyR, 1, rings, segs);
+  const highDetail=CONFIG.quality==='H' ? 1 : 0;
+  const rings=highDetail? 8:6, segs=highDetail? 10:7;
+  const bodyRadius=.5, bodyHalf=.9;
+  tube(bodyRadius, bodyHalf, segs);
+  sphere(0,0, bodyHalf, bodyRadius, 1, rings, segs);
+  sphere(0,0,-bodyHalf, bodyRadius, 1, rings, segs);
   sphere(0,.35, bodyHalf+.55, .45, 1, rings, segs);
-  const tris=new Float32Array(verts);
+  const vertexData=new Float32Array(verts);
   creatureGeoBuf=gl.createBuffer();
-  bindBuf(GLAB, creatureGeoBuf);
-  bufData(GLAB, tris, GLSTA);
+  bindBuffer(GL_ARRAY_BUFFER, creatureGeoBuf);
+  setBufferData(GL_ARRAY_BUFFER, vertexData, GL_STATIC_DRAW);
   creatureGeoCount=verts.length/6;
-  instBuf=gl.createBuffer();
+  creatureInstBuf=gl.createBuffer();
   creatureProg=program(`
 attribute vec3 aNormal;
 attribute vec3 aInstColor;
@@ -677,347 +677,347 @@ const SENSE_SCAN_CAP=RAY_STEP;
 const SENSE_STEP_MARGIN=2;
 const ENTITY_TYPES=4;
 const SENSE_PER_RAY=1+ENTITY_TYPES;
-const N_INPUT=N_RAYS*SENSE_PER_RAY+3;
-const MAX_A=12;
-const MAX_B=10;
+const N_INPUTS=N_RAYS*SENSE_PER_RAY+3;
+const MAX_GRU_UNITS=12;
+const MAX_SPIKE_NEURONS=10;
 const N_MOTOR=4;
-const A_W=new Float32Array(MAX_CREATURES*MAX_A*N_INPUT*3);
-const A_U=new Float32Array(MAX_CREATURES*MAX_A*MAX_A*3);
-const A_B=new Float32Array(MAX_CREATURES*MAX_A*3);
-const hA=new Float32Array(MAX_CREATURES*MAX_A);
-const B_W=new Float32Array(MAX_CREATURES*MAX_B*MAX_A);
-const B_v=new Float32Array(MAX_CREATURES*MAX_B);
-const B_thr=1.0, B_leak=.85, B_reset=.0;
-const R_W=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
-const R_e=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_B);
-const PRUNE_THR=.02, TRACE_DECAY=.92, LR=.04;
-const sIn=new Float32Array(N_INPUT);
-const sA=new Float32Array(MAX_A);
-const sSpike=new Float32Array(MAX_B);
-const sMotor=new Float32Array(N_MOTOR);
-let sFoodCue=0;
+const gruInputWeights=new Float32Array(MAX_CREATURES*MAX_GRU_UNITS*N_INPUTS*3);
+const gruRecurrentWeights=new Float32Array(MAX_CREATURES*MAX_GRU_UNITS*MAX_GRU_UNITS*3);
+const gruBiases=new Float32Array(MAX_CREATURES*MAX_GRU_UNITS*3);
+const gruHidden=new Float32Array(MAX_CREATURES*MAX_GRU_UNITS);
+const spikeWeights=new Float32Array(MAX_CREATURES*MAX_SPIKE_NEURONS*MAX_GRU_UNITS);
+const spikeVoltage=new Float32Array(MAX_CREATURES*MAX_SPIKE_NEURONS);
+const SPIKE_THRESHOLD=1.0, SPIKE_LEAK=.85, SPIKE_RESET=.0;
+const motorWeights=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_SPIKE_NEURONS);
+const motorTraces=new Float32Array(MAX_CREATURES*N_MOTOR*MAX_SPIKE_NEURONS);
+const PRUNE_THRESHOLD=.02, TRACE_DECAY=.92, LEARN_RATE=.04;
+const senseInput=new Float32Array(N_INPUTS);
+const gruOutput=new Float32Array(MAX_GRU_UNITS);
+const spikeOutput=new Float32Array(MAX_SPIKE_NEURONS);
+const motorOutput=new Float32Array(N_MOTOR);
+let foodCue=0;
 function gauss(){
-  let u=0,v=0; while(u===0)u=RNG(); while(v===0)v=RNG();
-  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  let u1=0,u2=0; while(u1===0)u1=RNG(); while(u2===0)u2=RNG();
+  return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
 }
 function brainInit(i){
-  const a=4+(RNG()*(MAX_A-4)|0);
-  const b=3+(RNG()*(MAX_B-3)|0);
-  C.szA[i]=a; C.szB[i]=b;
-  const sa=1/Math.sqrt(N_INPUT);
-  let baseW=i*MAX_A*N_INPUT*3, baseU=i*MAX_A*MAX_A*3, baseB=i*MAX_A*3;
-  for(let u=0;u<a;u++){
-    for(let g=0;g<3;g++){
-      for(let k=0;k<N_INPUT;k++) A_W[baseW+(u*3+g)*N_INPUT+k]=gauss()*sa;
-      for(let k=0;k<a;k++) A_U[baseU+(u*3+g)*MAX_A +k]=gauss()*sa*.5;
-      A_B[baseB+u*3+g]=0;
+  const nGru=4+(RNG()*(MAX_GRU_UNITS-4)|0);
+  const nSpike=3+(RNG()*(MAX_SPIKE_NEURONS-3)|0);
+  creatures.gruSize[i]=nGru; creatures.spikeSize[i]=nSpike;
+  const initScale=1/Math.sqrt(N_INPUTS);
+  let gruInputBase=i*MAX_GRU_UNITS*N_INPUTS*3, gruRecurBase=i*MAX_GRU_UNITS*MAX_GRU_UNITS*3, gruBiasBase=i*MAX_GRU_UNITS*3;
+  for(let unit=0;unit<nGru;unit++){
+    for(let gate=0;gate<3;gate++){
+      for(let k=0;k<N_INPUTS;k++) gruInputWeights[gruInputBase+(unit*3+gate)*N_INPUTS+k]=gauss()*initScale;
+      for(let k=0;k<nGru;k++) gruRecurrentWeights[gruRecurBase+(unit*3+gate)*MAX_GRU_UNITS +k]=gauss()*initScale*.5;
+      gruBiases[gruBiasBase+unit*3+gate]=0;
     }
-    hA[i*MAX_A+u]=0;
+    gruHidden[i*MAX_GRU_UNITS+unit]=0;
   }
-  let baseBW=i*MAX_B*MAX_A;
-  for(let n=0;n<b;n++){
-    for(let k=0;k<a;k++) B_W[baseBW+n*MAX_A+k]=gauss()*.6;
-    B_v[i*MAX_B+n]=0;
+  let spikeWeightBase=i*MAX_SPIKE_NEURONS*MAX_GRU_UNITS;
+  for(let neuron=0;neuron<nSpike;neuron++){
+    for(let k=0;k<nGru;k++) spikeWeights[spikeWeightBase+neuron*MAX_GRU_UNITS+k]=gauss()*.6;
+    spikeVoltage[i*MAX_SPIKE_NEURONS+neuron]=0;
   }
-  let baseR=i*N_MOTOR*MAX_B;
-  for(let m=0;m<N_MOTOR;m++) for(let n=0;n<b;n++){ R_W[baseR+m*MAX_B+n]=gauss()*.4; R_e[baseR+m*MAX_B+n]=0; }
+  let motorWeightBase=i*N_MOTOR*MAX_SPIKE_NEURONS;
+  for(let motor=0;motor<N_MOTOR;motor++) for(let neuron=0;neuron<nSpike;neuron++){ motorWeights[motorWeightBase+motor*MAX_SPIKE_NEURONS+neuron]=gauss()*.4; motorTraces[motorWeightBase+motor*MAX_SPIKE_NEURONS+neuron]=0; }
 }
-function brainInherit(child, parent, mut){
-  const a=C.szA[parent], b=C.szB[parent];
-  let ca=Math.max(4,Math.min(MAX_A, a+(RNG()<.2?(RNG()<.5?-1:1):0)));
-  let cb=Math.max(3,Math.min(MAX_B, b+(RNG()<.2?(RNG()<.5?-1:1):0)));
-  C.szA[child]=ca; C.szB[child]=cb;
-  const cW=child*MAX_A*N_INPUT*3, pW=parent*MAX_A*N_INPUT*3;
-  for(let k=0;k<MAX_A*N_INPUT*3;k++) A_W[cW+k]=A_W[pW+k]+gauss()*mut;
-  const cU=child*MAX_A*MAX_A*3, pU=parent*MAX_A*MAX_A*3;
-  for(let k=0;k<MAX_A*MAX_A*3;k++) A_U[cU+k]=A_U[pU+k]+gauss()*mut;
-  const cB=child*MAX_A*3, pB=parent*MAX_A*3;
-  for(let k=0;k<MAX_A*3;k++) A_B[cB+k]=A_B[pB+k]+gauss()*mut;
-  const cBW=child*MAX_B*MAX_A, pBW=parent*MAX_B*MAX_A;
-  for(let k=0;k<MAX_B*MAX_A;k++) B_W[cBW+k]=B_W[pBW+k]+gauss()*mut;
-  const cR=child*N_MOTOR*MAX_B, pR=parent*N_MOTOR*MAX_B;
-  for(let k=0;k<N_MOTOR*MAX_B;k++){ R_W[cR+k]=R_W[pR+k]+gauss()*mut; R_e[cR+k]=0; }
-  for(let u=0;u<MAX_A;u++) hA[child*MAX_A+u]=0;
-  for(let n=0;n<MAX_B;n++) B_v[child*MAX_B+n]=0;
+function brainInherit(child, parent, mutation){
+  const parentGru=creatures.gruSize[parent], parentSpike=creatures.spikeSize[parent];
+  let childGru=Math.max(4,Math.min(MAX_GRU_UNITS, parentGru+(RNG()<.2?(RNG()<.5?-1:1):0)));
+  let childSpike=Math.max(3,Math.min(MAX_SPIKE_NEURONS, parentSpike+(RNG()<.2?(RNG()<.5?-1:1):0)));
+  creatures.gruSize[child]=childGru; creatures.spikeSize[child]=childSpike;
+  const childInputBase=child*MAX_GRU_UNITS*N_INPUTS*3, parentInputBase=parent*MAX_GRU_UNITS*N_INPUTS*3;
+  for(let k=0;k<MAX_GRU_UNITS*N_INPUTS*3;k++) gruInputWeights[childInputBase+k]=gruInputWeights[parentInputBase+k]+gauss()*mutation;
+  const childRecurBase=child*MAX_GRU_UNITS*MAX_GRU_UNITS*3, parentRecurBase=parent*MAX_GRU_UNITS*MAX_GRU_UNITS*3;
+  for(let k=0;k<MAX_GRU_UNITS*MAX_GRU_UNITS*3;k++) gruRecurrentWeights[childRecurBase+k]=gruRecurrentWeights[parentRecurBase+k]+gauss()*mutation;
+  const childBiasBase=child*MAX_GRU_UNITS*3, parentBiasBase=parent*MAX_GRU_UNITS*3;
+  for(let k=0;k<MAX_GRU_UNITS*3;k++) gruBiases[childBiasBase+k]=gruBiases[parentBiasBase+k]+gauss()*mutation;
+  const childSpikeBase=child*MAX_SPIKE_NEURONS*MAX_GRU_UNITS, parentSpikeBase=parent*MAX_SPIKE_NEURONS*MAX_GRU_UNITS;
+  for(let k=0;k<MAX_SPIKE_NEURONS*MAX_GRU_UNITS;k++) spikeWeights[childSpikeBase+k]=spikeWeights[parentSpikeBase+k]+gauss()*mutation;
+  const childMotorBase=child*N_MOTOR*MAX_SPIKE_NEURONS, parentMotorBase=parent*N_MOTOR*MAX_SPIKE_NEURONS;
+  for(let k=0;k<N_MOTOR*MAX_SPIKE_NEURONS;k++){ motorWeights[childMotorBase+k]=motorWeights[parentMotorBase+k]+gauss()*mutation; motorTraces[childMotorBase+k]=0; }
+  for(let unit=0;unit<MAX_GRU_UNITS;unit++) gruHidden[child*MAX_GRU_UNITS+unit]=0;
+  for(let neuron=0;neuron<MAX_SPIKE_NEURONS;neuron++) spikeVoltage[child*MAX_SPIKE_NEURONS+neuron]=0;
 }
 function senseCreature(i, timeOfDay){
-  const x=C.x[i], z=C.z[i], h=C.head[i];
-  const preyType=C.species[i] ? 1 : 0;
-  sFoodCue=0;
-  for(let r=0;r<N_RAYS;r++){
-    const t=N_RAYS>1 ? r/(N_RAYS-1)-.5 : 0;
-    const ang=h+t*RAY_FOV;
-    const dx=Math.sin(ang), dz=Math.cos(ang);
+  const selfX=creatures.x[i], selfZ=creatures.z[i], heading=creatures.heading[i];
+  const preyType=creatures.species[i] ? 1 : 0;
+  foodCue=0;
+  for(let ray=0;ray<N_RAYS;ray++){
+    const rayOffset=N_RAYS>1 ? ray/(N_RAYS-1)-.5 : 0;
+    const rayAngle=heading+rayOffset*RAY_FOV;
+    const dx=Math.sin(rayAngle), dz=Math.cos(rayAngle);
     let hitDist=RAY_LEN, hitType=-1;
     let d=RAY_STEP;
     while(d<=RAY_LEN){
-      const px=x+dx*d, pz=z+dz*d;
+      const px=selfX+dx*d, pz=selfZ+dz*d;
       if(isWaterAt(px,pz) && hitType===-1){ hitDist=d; hitType=3; break; }
-      const scanD=RAY_STEP < SENSE_SCAN_CAP ? RAY_STEP : SENSE_SCAN_CAP;
-      gridScanVision(px,pz,scanD,i);
-      let found=gqType, foundD=(gqType!==-1)?gqDist:scanD;
-      pgridScanNearest(px,pz,foundD);
-      if(pqBest!==-1){ const pd=Math.sqrt(pqBestD2); if(pd<foundD){ foundD=pd; found=0; } }
-      if(found!==-1){ hitDist=d; hitType=found; break; }
-      const advance=foundD-SENSE_STEP_MARGIN;
+      const scanRadius=RAY_STEP < SENSE_SCAN_CAP ? RAY_STEP : SENSE_SCAN_CAP;
+      scanNearestCreature(px,pz,scanRadius,i);
+      let hitKind=visionHitType, hitRange=(visionHitType!==-1)?visionHitDist:scanRadius;
+      scanNearestPlant(px,pz,hitRange);
+      if(nearestPlantIdx!==-1){ const plantDist=Math.sqrt(nearestPlantDist2); if(plantDist<hitRange){ hitRange=plantDist; hitKind=0; } }
+      if(hitKind!==-1){ hitDist=d; hitType=hitKind; break; }
+      const advance=hitRange-SENSE_STEP_MARGIN;
       d+=advance > RAY_STEP ? advance : RAY_STEP;
     }
-    const base=r*SENSE_PER_RAY;
-    sIn[base]=hitDist/RAY_LEN;
-    sIn[base+1]=hitType===0?1:0;
-    sIn[base+2]=hitType===1?1:0;
-    sIn[base+3]=hitType===2?1:0;
-    sIn[base+4]=hitType===3?1:0;
+    const base=ray*SENSE_PER_RAY;
+    senseInput[base]=hitDist/RAY_LEN;
+    senseInput[base+1]=hitType===0?1:0;
+    senseInput[base+2]=hitType===1?1:0;
+    senseInput[base+3]=hitType===2?1:0;
+    senseInput[base+4]=hitType===3?1:0;
     if(hitType===preyType){
       const closeness=1-hitDist/RAY_LEN;
-      const central=1-2*Math.abs(t);
-      const w=closeness*Math.max(0,central);
-      if(w>sFoodCue) sFoodCue=w;
+      const central=1-2*Math.abs(rayOffset);
+      const cueWeight=closeness*Math.max(0,central);
+      if(cueWeight>foodCue) foodCue=cueWeight;
     }
   }
-  const g=N_RAYS*SENSE_PER_RAY;
-  sIn[g]=C.energy[i];
-  sIn[g+1]=C.spd[i]/40;
-  sIn[g+2]=timeOfDay;
+  const extraBase=N_RAYS*SENSE_PER_RAY;
+  senseInput[extraBase]=creatures.energy[i];
+  senseInput[extraBase+1]=creatures.speed[i]/40;
+  senseInput[extraBase+2]=timeOfDay;
 }
 const sigmoid=x=> 1/(1+Math.exp(-x));
 function brainTick(i, dt){
-  const a=C.szA[i], b=C.szB[i];
-  const baseW=i*MAX_A*N_INPUT*3, baseU=i*MAX_A*MAX_A*3, baseB=i*MAX_A*3, hBase=i*MAX_A;
-  for(let u=0;u<a;u++){
-    let zPre=A_B[baseB+u*3+0], rPre=A_B[baseB+u*3+1], hPre=A_B[baseB+u*3+2];
-    const wOff=(u*3)*N_INPUT;
-    for(let k=0;k<N_INPUT;k++){ const xk=sIn[k];
-      zPre+=A_W[baseW+wOff+0*N_INPUT+k]*xk;
-      rPre+=A_W[baseW+wOff+1*N_INPUT+k]*xk;
-      hPre+=A_W[baseW+wOff+2*N_INPUT+k]*xk;
+  const nGru=creatures.gruSize[i], nSpike=creatures.spikeSize[i];
+  const gruInputBase=i*MAX_GRU_UNITS*N_INPUTS*3, gruRecurBase=i*MAX_GRU_UNITS*MAX_GRU_UNITS*3, gruBiasBase=i*MAX_GRU_UNITS*3, hiddenBase=i*MAX_GRU_UNITS;
+  for(let unit=0;unit<nGru;unit++){
+    let updatePre=gruBiases[gruBiasBase+unit*3+0], resetPre=gruBiases[gruBiasBase+unit*3+1], candPre=gruBiases[gruBiasBase+unit*3+2];
+    const weightOffset=(unit*3)*N_INPUTS;
+    for(let k=0;k<N_INPUTS;k++){ const input=senseInput[k];
+      updatePre+=gruInputWeights[gruInputBase+weightOffset+0*N_INPUTS+k]*input;
+      resetPre+=gruInputWeights[gruInputBase+weightOffset+1*N_INPUTS+k]*input;
+      candPre+=gruInputWeights[gruInputBase+weightOffset+2*N_INPUTS+k]*input;
     }
-    const uOff=(u*3)*MAX_A;
-    for(let k=0;k<a;k++){ const hk=hA[hBase+k];
-      zPre+=A_U[baseU+uOff+0*MAX_A+k]*hk;
-      rPre+=A_U[baseU+uOff+1*MAX_A+k]*hk;
+    const recurOffset=(unit*3)*MAX_GRU_UNITS;
+    for(let k=0;k<nGru;k++){ const hidden=gruHidden[hiddenBase+k];
+      updatePre+=gruRecurrentWeights[gruRecurBase+recurOffset+0*MAX_GRU_UNITS+k]*hidden;
+      resetPre+=gruRecurrentWeights[gruRecurBase+recurOffset+1*MAX_GRU_UNITS+k]*hidden;
     }
-    const z=sigmoid(zPre), rg=sigmoid(rPre);
-    let cand=hPre;
-    for(let k=0;k<a;k++) cand+=A_U[baseU+uOff+2*MAX_A+k]*(rg*hA[hBase+k]);
-    cand=Math.tanh(cand);
-    sA[u]=(1-z)*hA[hBase+u]+z*cand;
+    const updateGate=sigmoid(updatePre), resetGate=sigmoid(resetPre);
+    let candidate=candPre;
+    for(let k=0;k<nGru;k++) candidate+=gruRecurrentWeights[gruRecurBase+recurOffset+2*MAX_GRU_UNITS+k]*(resetGate*gruHidden[hiddenBase+k]);
+    candidate=Math.tanh(candidate);
+    gruOutput[unit]=(1-updateGate)*gruHidden[hiddenBase+unit]+updateGate*candidate;
   }
-  for(let u=0;u<a;u++) hA[hBase+u]=sA[u];
-  const baseBW=i*MAX_B*MAX_A, vBase=i*MAX_B;
+  for(let unit=0;unit<nGru;unit++) gruHidden[hiddenBase+unit]=gruOutput[unit];
+  const spikeWeightBase=i*MAX_SPIKE_NEURONS*MAX_GRU_UNITS, voltageBase=i*MAX_SPIKE_NEURONS;
   let spikes=0;
-  for(let n=0;n<b;n++){
-    let inp=0; const wOff=n*MAX_A;
-    for(let k=0;k<a;k++) inp+=B_W[baseBW+wOff+k]*sA[k];
-    let v=B_v[vBase+n]*B_leak+inp;
-    if(v>=B_thr){ sSpike[n]=1; v=B_reset; spikes++; } else sSpike[n]=0;
-    B_v[vBase+n]=v;
+  for(let neuron=0;neuron<nSpike;neuron++){
+    let drive=0; const weightOffset=neuron*MAX_GRU_UNITS;
+    for(let k=0;k<nGru;k++) drive+=spikeWeights[spikeWeightBase+weightOffset+k]*gruOutput[k];
+    let voltage=spikeVoltage[voltageBase+neuron]*SPIKE_LEAK+drive;
+    if(voltage>=SPIKE_THRESHOLD){ spikeOutput[neuron]=1; voltage=SPIKE_RESET; spikes++; } else spikeOutput[neuron]=0;
+    spikeVoltage[voltageBase+neuron]=voltage;
   }
-  C.spikeRate[i]=b?spikes/b:0;
-  const baseR=i*N_MOTOR*MAX_B;
-  for(let m=0;m<N_MOTOR;m++){
-    let acc=0; const off=m*MAX_B;
-    for(let n=0;n<b;n++){
-      acc+=R_W[baseR+off+n]*sSpike[n];
-      R_e[baseR+off+n]=R_e[baseR+off+n]*TRACE_DECAY+sSpike[n];
+  creatures.spikeRate[i]=nSpike?spikes/nSpike:0;
+  const motorWeightBase=i*N_MOTOR*MAX_SPIKE_NEURONS;
+  for(let motor=0;motor<N_MOTOR;motor++){
+    let sum=0; const motorOffset=motor*MAX_SPIKE_NEURONS;
+    for(let neuron=0;neuron<nSpike;neuron++){
+      sum+=motorWeights[motorWeightBase+motorOffset+neuron]*spikeOutput[neuron];
+      motorTraces[motorWeightBase+motorOffset+neuron]=motorTraces[motorWeightBase+motorOffset+neuron]*TRACE_DECAY+spikeOutput[neuron];
     }
-    sMotor[m]=acc;
+    motorOutput[motor]=sum;
   }
-  C.mTurn[i]=Math.tanh(sMotor[0]);
-  C.mMove[i]=Math.tanh(sMotor[1]+.6);
-  C.mEat[i]=sigmoid(sMotor[2]);
-  C.mRest[i]=sigmoid(sMotor[3]);
+  creatures.motorTurn[i]=Math.tanh(motorOutput[0]);
+  creatures.motorMove[i]=Math.tanh(motorOutput[1]+.6);
+  creatures.motorEat[i]=sigmoid(motorOutput[2]);
+  creatures.motorRest[i]=sigmoid(motorOutput[3]);
 }
 function brainLearn(i, reward){
-  const b=C.szB[i], a=C.szA[i];
+  const nSpike=creatures.spikeSize[i], nGru=creatures.gruSize[i];
   if(reward!==0){
-    const baseR=i*N_MOTOR*MAX_B;
-    for(let m=0;m<N_MOTOR;m++){ const off=m*MAX_B;
-      for(let n=0;n<b;n++){
-        R_W[baseR+off+n]+=LR*reward*R_e[baseR+off+n];
-        if(Math.abs(R_W[baseR+off+n])<PRUNE_THR) R_W[baseR+off+n]=0;
+    const motorWeightBase=i*N_MOTOR*MAX_SPIKE_NEURONS;
+    for(let motor=0;motor<N_MOTOR;motor++){ const motorOffset=motor*MAX_SPIKE_NEURONS;
+      for(let neuron=0;neuron<nSpike;neuron++){
+        motorWeights[motorWeightBase+motorOffset+neuron]+=LEARN_RATE*reward*motorTraces[motorWeightBase+motorOffset+neuron];
+        if(Math.abs(motorWeights[motorWeightBase+motorOffset+neuron])<PRUNE_THRESHOLD) motorWeights[motorWeightBase+motorOffset+neuron]=0;
       }
     }
   }
   if(RNG()<.01){
-    const baseR=i*N_MOTOR*MAX_B;
-    const m=(RNG()*N_MOTOR)|0, n=(RNG()*b)|0;
-    if(R_W[baseR+m*MAX_B+n]===0) R_W[baseR+m*MAX_B+n]=gauss()*.3;
+    const motorWeightBase=i*N_MOTOR*MAX_SPIKE_NEURONS;
+    const motor=(RNG()*N_MOTOR)|0, neuron=(RNG()*nSpike)|0;
+    if(motorWeights[motorWeightBase+motor*MAX_SPIKE_NEURONS+neuron]===0) motorWeights[motorWeightBase+motor*MAX_SPIKE_NEURONS+neuron]=gauss()*.3;
   }
 }
 function spawnCreatures(){
   const baseCreatures=50;
   const scaledCreatures=Math.round(baseCreatures*Math.max(CONFIG.worldScale,1)/10);
-  C.n=Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
-  for (let i=0;i<C.n;i++){
-    const x=(RNG()-.5)*CONFIG.worldW*.9;
-    const z=(RNG()-.5)*CONFIG.worldH*.9;
-    C.x[i]=x; C.z[i]=z; C.y[i]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
-    C.head[i]=RNG()*Math.PI*2;
-    C.face[i]=C.head[i];
-    C.spd[i]=0;
-    C.size[i]=4+RNG()*4;
-    C.energy[i]=.5+RNG()*.5;
-    C.prevEnergy[i]=C.energy[i];
-    C.age[i]=0; C.gen[i]=0;
-    C.sgroup[i]=i%STAGGER_N; C.rewardAcc[i]=0;
-    const predator=RNG()<.2;
-    C.species[i]= predator?1:0;
-    geneRandom(i, C.species[i]);
+  creatures.count=Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
+  for (let i=0;i<creatures.count;i++){
+    const x=(RNG()-.5)*CONFIG.worldWidth*.9;
+    const z=(RNG()-.5)*CONFIG.worldDepth*.9;
+    creatures.x[i]=x; creatures.z[i]=z; creatures.y[i]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
+    creatures.heading[i]=RNG()*Math.PI*2;
+    creatures.facing[i]=creatures.heading[i];
+    creatures.speed[i]=0;
+    creatures.size[i]=4+RNG()*4;
+    creatures.energy[i]=.5+RNG()*.5;
+    creatures.prevEnergy[i]=creatures.energy[i];
+    creatures.age[i]=0; creatures.generation[i]=0;
+    creatures.tickGroup[i]=i%TICK_GROUPS; creatures.rewardAcc[i]=0;
+    const isPredator=RNG()<.2;
+    creatures.species[i]= isPredator?1:0;
+    geneRandom(i, creatures.species[i]);
     brainInit(i);
   }
 }
 // spatial grid
-const GRID={
-  cell: 70,
+const creatureGrid={
+  cellSize: 70,
   cols: 0, rows: 0,
-  head: null,
-  next: new Int32Array(MAX_CREATURES),
-  ox:0, oz:0,
+  cellHead: null,
+  cellNext: new Int32Array(MAX_CREATURES),
+  originX:0, originZ:0,
 };
-let gqDist=0, gqType=-1;
-let gqBest=-1, gqBestD2=0;
+let visionHitDist=0, visionHitType=-1;
+let nearestPreyIdx=-1, nearestPreyDist2=0;
 function gridInit(){
-  GRID.ox=-CONFIG.worldW/2; GRID.oz=-CONFIG.worldH/2;
-  GRID.cols=Math.ceil(CONFIG.worldW/GRID.cell)+1;
-  GRID.rows=Math.ceil(CONFIG.worldH/GRID.cell)+1;
-  GRID.head=new Int32Array(GRID.cols*GRID.rows);
+  creatureGrid.originX=-CONFIG.worldWidth/2; creatureGrid.originZ=-CONFIG.worldDepth/2;
+  creatureGrid.cols=Math.ceil(CONFIG.worldWidth/creatureGrid.cellSize)+1;
+  creatureGrid.rows=Math.ceil(CONFIG.worldDepth/creatureGrid.cellSize)+1;
+  creatureGrid.cellHead=new Int32Array(creatureGrid.cols*creatureGrid.rows);
 }
-function gridCellOf(x,z){
-  let cx=((x-GRID.ox)/GRID.cell)|0, cz=((z-GRID.oz)/GRID.cell)|0;
-  if(cx<0)cx=0; else if(cx>=GRID.cols)cx=GRID.cols-1;
-  if(cz<0)cz=0; else if(cz>=GRID.rows)cz=GRID.rows-1;
-  return cz*GRID.cols+cx;
+function gridCellIndex(x,z){
+  let cellX=((x-creatureGrid.originX)/creatureGrid.cellSize)|0, cellZ=((z-creatureGrid.originZ)/creatureGrid.cellSize)|0;
+  if(cellX<0)cellX=0; else if(cellX>=creatureGrid.cols)cellX=creatureGrid.cols-1;
+  if(cellZ<0)cellZ=0; else if(cellZ>=creatureGrid.rows)cellZ=creatureGrid.rows-1;
+  return cellZ*creatureGrid.cols+cellX;
 }
-function gridRebuild(){
-  GRID.head.fill(-1);
-  for(let i=0;i<C.n;i++){
-    const c=gridCellOf(C.x[i],C.z[i]);
-    GRID.next[i]=GRID.head[c]; GRID.head[c]=i;
+function rebuildCreatureGrid(){
+  creatureGrid.cellHead.fill(-1);
+  for(let i=0;i<creatures.count;i++){
+    const cell=gridCellIndex(creatures.x[i],creatures.z[i]);
+    creatureGrid.cellNext[i]=creatureGrid.cellHead[cell]; creatureGrid.cellHead[cell]=i;
   }
 }
-function gridScanVision(px,pz,maxD,self){
-  gqDist=maxD; gqType=-1;
-  const r=Math.max(1,Math.ceil(maxD/GRID.cell));
-  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
-  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
-    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
-      let j=GRID.head[zz*GRID.cols+xx];
-      while(j!==-1){
-        if(j!==self){
-          const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
-          if(e2<gqDist*gqDist){ gqDist=Math.sqrt(e2); gqType=C.species[j]?2:1; }
+function scanNearestCreature(px,pz,maxDist,self){
+  visionHitDist=maxDist; visionHitType=-1;
+  const cellRadius=Math.max(1,Math.ceil(maxDist/creatureGrid.cellSize));
+  let cellX=((px-creatureGrid.originX)/creatureGrid.cellSize)|0, cellZ=((pz-creatureGrid.originZ)/creatureGrid.cellSize)|0;
+  for(let cellDZ=-cellRadius;cellDZ<=cellRadius;cellDZ++){ const scanZ=cellZ+cellDZ; if(scanZ<0||scanZ>=creatureGrid.rows)continue;
+    for(let cellDX=-cellRadius;cellDX<=cellRadius;cellDX++){ const scanX=cellX+cellDX; if(scanX<0||scanX>=creatureGrid.cols)continue;
+      let other=creatureGrid.cellHead[scanZ*creatureGrid.cols+scanX];
+      while(other!==-1){
+        if(other!==self){
+          const relX=creatures.x[other]-px, relZ=creatures.z[other]-pz, dist2=relX*relX+relZ*relZ;
+          if(dist2<visionHitDist*visionHitDist){ visionHitDist=Math.sqrt(dist2); visionHitType=creatures.species[other]?2:1; }
         }
-        j=GRID.next[j];
+        other=creatureGrid.cellNext[other];
       }
     }
   }
 }
-function gridScanPrey(px,pz,reach,self){
-  gqBest=-1; gqBestD2=reach*reach;
-  const r=Math.max(1,Math.ceil(reach/GRID.cell));
-  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
-  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
-    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
-      let j=GRID.head[zz*GRID.cols+xx];
-      while(j!==-1){
-        if(j!==self && !C.species[j]){
-          const ex=C.x[j]-px, ez=C.z[j]-pz, e2=ex*ex+ez*ez;
-          if(e2<gqBestD2){ gqBestD2=e2; gqBest=j; }
+function scanNearestPrey(px,pz,reach,self){
+  nearestPreyIdx=-1; nearestPreyDist2=reach*reach;
+  const cellRadius=Math.max(1,Math.ceil(reach/creatureGrid.cellSize));
+  let cellX=((px-creatureGrid.originX)/creatureGrid.cellSize)|0, cellZ=((pz-creatureGrid.originZ)/creatureGrid.cellSize)|0;
+  for(let cellDZ=-cellRadius;cellDZ<=cellRadius;cellDZ++){ const scanZ=cellZ+cellDZ; if(scanZ<0||scanZ>=creatureGrid.rows)continue;
+    for(let cellDX=-cellRadius;cellDX<=cellRadius;cellDX++){ const scanX=cellX+cellDX; if(scanX<0||scanX>=creatureGrid.cols)continue;
+      let other=creatureGrid.cellHead[scanZ*creatureGrid.cols+scanX];
+      while(other!==-1){
+        if(other!==self && !creatures.species[other]){
+          const relX=creatures.x[other]-px, relZ=creatures.z[other]-pz, dist2=relX*relX+relZ*relZ;
+          if(dist2<nearestPreyDist2){ nearestPreyDist2=dist2; nearestPreyIdx=other; }
         }
-        j=GRID.next[j];
+        other=creatureGrid.cellNext[other];
       }
     }
   }
 }
 // plants
 const MAX_PLANTS=12000;
-const P={
-  n: 0,
+const plants={
+  count: 0,
   x: new Float32Array(MAX_PLANTS),
   y: new Float32Array(MAX_PLANTS),
   z: new Float32Array(MAX_PLANTS),
-  sway: new Float32Array(MAX_PLANTS),
+  swayPhase: new Float32Array(MAX_PLANTS),
 };
 function targetPlants(){
   const base=800;
   return Math.min(MAX_PLANTS, Math.max(10, Math.round(base*Math.max(CONFIG.worldScale,1)/10)));
 }
-const PGRID={ head:null, next:new Int32Array(MAX_PLANTS) };
-function pgridRebuild(){
-  const needed=GRID.cols*GRID.rows;
-  if(!PGRID.head || PGRID.head.length !== needed) PGRID.head=new Int32Array(needed);
-  PGRID.head.fill(-1);
-  for(let i=0;i<P.n;i++){
-    const c=gridCellOf(P.x[i],P.z[i]);
-    PGRID.next[i]=PGRID.head[c]; PGRID.head[c]=i;
+const plantGrid={ cellHead:null, cellNext:new Int32Array(MAX_PLANTS) };
+function rebuildPlantGrid(){
+  const needed=creatureGrid.cols*creatureGrid.rows;
+  if(!plantGrid.cellHead || plantGrid.cellHead.length !== needed) plantGrid.cellHead=new Int32Array(needed);
+  plantGrid.cellHead.fill(-1);
+  for(let i=0;i<plants.count;i++){
+    const cell=gridCellIndex(plants.x[i],plants.z[i]);
+    plantGrid.cellNext[i]=plantGrid.cellHead[cell]; plantGrid.cellHead[cell]=i;
   }
 }
-let pqBest=-1, pqBestD2=0;
-function pgridScanNearest(px,pz,maxD){
-  pqBest=-1; pqBestD2=maxD*maxD;
-  const r=Math.max(1,Math.ceil(maxD/GRID.cell));
-  let cx=((px-GRID.ox)/GRID.cell)|0, cz=((pz-GRID.oz)/GRID.cell)|0;
-  for(let dz=-r;dz<=r;dz++){ const zz=cz+dz; if(zz<0||zz>=GRID.rows)continue;
-    for(let dx=-r;dx<=r;dx++){ const xx=cx+dx; if(xx<0||xx>=GRID.cols)continue;
-      let j=PGRID.head[zz*GRID.cols+xx];
-      while(j!==-1){
-        const ex=P.x[j]-px, ez=P.z[j]-pz, e2=ex*ex+ez*ez;
-        if(e2<pqBestD2){ pqBestD2=e2; pqBest=j; }
-        j=PGRID.next[j];
+let nearestPlantIdx=-1, nearestPlantDist2=0;
+function scanNearestPlant(px,pz,maxDist){
+  nearestPlantIdx=-1; nearestPlantDist2=maxDist*maxDist;
+  const cellRadius=Math.max(1,Math.ceil(maxDist/creatureGrid.cellSize));
+  let cellX=((px-creatureGrid.originX)/creatureGrid.cellSize)|0, cellZ=((pz-creatureGrid.originZ)/creatureGrid.cellSize)|0;
+  for(let cellDZ=-cellRadius;cellDZ<=cellRadius;cellDZ++){ const scanZ=cellZ+cellDZ; if(scanZ<0||scanZ>=creatureGrid.rows)continue;
+    for(let cellDX=-cellRadius;cellDX<=cellRadius;cellDX++){ const scanX=cellX+cellDX; if(scanX<0||scanX>=creatureGrid.cols)continue;
+      let plant=plantGrid.cellHead[scanZ*creatureGrid.cols+scanX];
+      while(plant!==-1){
+        const relX=plants.x[plant]-px, relZ=plants.z[plant]-pz, dist2=relX*relX+relZ*relZ;
+        if(dist2<nearestPlantDist2){ nearestPlantDist2=dist2; nearestPlantIdx=plant; }
+        plant=plantGrid.cellNext[plant];
       }
     }
   }
 }
 function plantPlaceAt(idx, x, z){
-  const h=terrainHeight(x,z);
-  if(h < CONFIG.waterLevel+3) return false;
-  P.x[idx]=x; P.z[idx]=z; P.y[idx]=h; P.sway[idx]=RNG()*6.28;
+  const height=terrainHeight(x,z);
+  if(height < CONFIG.waterLevel+3) return false;
+  plants.x[idx]=x; plants.z[idx]=z; plants.y[idx]=height; plants.swayPhase[idx]=RNG()*6.28;
   return true;
 }
 function spawnPlants(){
-  P.n=0;
+  plants.count=0;
   let tries=0;
-  while(P.n<targetPlants() && tries<targetPlants()*4){
+  while(plants.count<targetPlants() && tries<targetPlants()*4){
     tries++;
-    const x=(RNG()-.5)*CONFIG.worldW*.96, z=(RNG()-.5)*CONFIG.worldH*.96;
-    if(plantPlaceAt(P.n, x, z)) P.n++;
+    const x=(RNG()-.5)*CONFIG.worldWidth*.96, z=(RNG()-.5)*CONFIG.worldDepth*.96;
+    if(plantPlaceAt(plants.count, x, z)) plants.count++;
   }
 }
 function plantRemove(i){
-  const last=--P.n;
-  if(i!==last){ P.x[i]=P.x[last]; P.y[i]=P.y[last]; P.z[i]=P.z[last]; P.sway[i]=P.sway[last]; }
+  const lastIdx=--plants.count;
+  if(i!==lastIdx){ plants.x[i]=plants.x[lastIdx]; plants.y[i]=plants.y[lastIdx]; plants.z[i]=plants.z[lastIdx]; plants.swayPhase[i]=plants.swayPhase[lastIdx]; }
 }
 function plantsGrow(dt){
-  if(P.n>=targetPlants() || P.n>=MAX_PLANTS) return;
-  const rate=CONFIG.probSpawnPlant*(1-P.n/targetPlants());
+  if(plants.count>=targetPlants() || plants.count>=MAX_PLANTS) return;
+  const rate=CONFIG.plantSpawnChance*(1-plants.count/targetPlants());
   if(RNG() < rate*dt*60){
     let x,z;
-    if(P.n>0 && RNG()<.7){ const s=(RNG()*P.n)|0; x=P.x[s]+(RNG()-.5)*120; z=P.z[s]+(RNG()-.5)*120; }
-    else { x=(RNG()-.5)*CONFIG.worldW*.96; z=(RNG()-.5)*CONFIG.worldH*.96; }
-    x=Math.max(-CONFIG.worldW/2,Math.min(CONFIG.worldW/2,x));
-    z=Math.max(-CONFIG.worldH/2,Math.min(CONFIG.worldH/2,z));
-    if(P.n<MAX_PLANTS && plantPlaceAt(P.n,x,z)) P.n++;
+    if(plants.count>0 && RNG()<.7){ const seedIdx=(RNG()*plants.count)|0; x=plants.x[seedIdx]+(RNG()-.5)*120; z=plants.z[seedIdx]+(RNG()-.5)*120; }
+    else { x=(RNG()-.5)*CONFIG.worldWidth*.96; z=(RNG()-.5)*CONFIG.worldDepth*.96; }
+    x=Math.max(-CONFIG.worldWidth/2,Math.min(CONFIG.worldWidth/2,x));
+    z=Math.max(-CONFIG.worldDepth/2,Math.min(CONFIG.worldDepth/2,z));
+    if(plants.count<MAX_PLANTS && plantPlaceAt(plants.count,x,z)) plants.count++;
   }
 }
 // plant geometry
 let plantProg=null, plantGeoBuf=null, plantGeoCount=0, plantInstBuf=null;
-const P_STRIDE=4;
-const plantInst=new Float32Array(MAX_PLANTS*P_STRIDE);
+const PLANT_STRIDE=4;
+const plantInstData=new Float32Array(MAX_PLANTS*PLANT_STRIDE);
 function buildPlants(){
-  const q=[];
-  function quad(ax,az){
-    const w=4, hgt=11;
-    const px=-az*w, pz=ax*w;
-    q.push(-px,0,-pz, 0, px,0,pz, 0, px,hgt,pz, 1);
-    q.push(-px,0,-pz, 0, px,hgt,pz, 1, -px,hgt,-pz, 1);
+  const quadVerts=[];
+  function quad(dirX,dirZ){
+    const halfWidth=4, height=11;
+    const offX=-dirZ*halfWidth, offZ=dirX*halfWidth;
+    quadVerts.push(-offX,0,-offZ, 0, offX,0,offZ, 0, offX,height,offZ, 1);
+    quadVerts.push(-offX,0,-offZ, 0, offX,height,offZ, 1, -offX,height,-offZ, 1);
   }
   quad(1,0); quad(0,1);
-  const arr=new Float32Array(q);
+  const vertexData=new Float32Array(quadVerts);
   plantGeoBuf=gl.createBuffer();
-  bindBuf(GLAB, plantGeoBuf);
-  bufData(GLAB, arr, GLSTA);
-  plantGeoCount=q.length/4;
+  bindBuffer(GL_ARRAY_BUFFER, plantGeoBuf);
+  setBufferData(GL_ARRAY_BUFFER, vertexData, GL_STATIC_DRAW);
+  plantGeoCount=quadVerts.length/4;
   plantInstBuf=gl.createBuffer();
   plantProg=program(`
 attribute vec3 aPos; attribute float aV;
@@ -1041,195 +1041,195 @@ void main(){
   `);
 }
 function uploadPlants(){
-  for(let i=0;i<P.n;i++){ const k=i*P_STRIDE;
-    plantInst[k]=P.x[i]; plantInst[k+1]=P.y[i]; plantInst[k+2]=P.z[i]; plantInst[k+3]=P.sway[i]; }
-  bindBuf(GLAB, plantInstBuf);
-  bufData(GLAB, plantInst.subarray(0,P.n*P_STRIDE), GLDYN);
+  for(let i=0;i<plants.count;i++){ const offset=i*PLANT_STRIDE;
+    plantInstData[offset]=plants.x[i]; plantInstData[offset+1]=plants.y[i]; plantInstData[offset+2]=plants.z[i]; plantInstData[offset+3]=plants.swayPhase[i]; }
+  bindBuffer(GL_ARRAY_BUFFER, plantInstBuf);
+  setBufferData(GL_ARRAY_BUFFER, plantInstData.subarray(0,plants.count*PLANT_STRIDE), GL_DYNAMIC_DRAW);
 }
 function creatureCopy(dst, src){
-  C.x[dst]=C.x[src]; C.y[dst]=C.y[src]; C.z[dst]=C.z[src];
-  C.head[dst]=C.head[src]; C.face[dst]=C.face[src]; C.spd[dst]=C.spd[src];
-  C.size[dst]=C.size[src]; C.energy[dst]=C.energy[src]; C.prevEnergy[dst]=C.prevEnergy[src];
-  C.species[dst]=C.species[src]; C.cr[dst]=C.cr[src]; C.cg[dst]=C.cg[src]; C.cb[dst]=C.cb[src];
-  C.gene.copyWithin(dst*GENE_LEN, src*GENE_LEN, (src+1)*GENE_LEN);
-  C.szA[dst]=C.szA[src]; C.szB[dst]=C.szB[src];
-  C.mTurn[dst]=C.mTurn[src]; C.mMove[dst]=C.mMove[src]; C.mEat[dst]=C.mEat[src];
-  C.mRest[dst]=C.mRest[src]; C.spikeRate[dst]=C.spikeRate[src];
-  C.age[dst]=C.age[src]; C.gen[dst]=C.gen[src];
-  C.sgroup[dst]=C.sgroup[src]; C.rewardAcc[dst]=C.rewardAcc[src];
+  creatures.x[dst]=creatures.x[src]; creatures.y[dst]=creatures.y[src]; creatures.z[dst]=creatures.z[src];
+  creatures.heading[dst]=creatures.heading[src]; creatures.facing[dst]=creatures.facing[src]; creatures.speed[dst]=creatures.speed[src];
+  creatures.size[dst]=creatures.size[src]; creatures.energy[dst]=creatures.energy[src]; creatures.prevEnergy[dst]=creatures.prevEnergy[src];
+  creatures.species[dst]=creatures.species[src]; creatures.colorR[dst]=creatures.colorR[src]; creatures.colorG[dst]=creatures.colorG[src]; creatures.colorB[dst]=creatures.colorB[src];
+  creatures.gene.copyWithin(dst*GENE_LEN, src*GENE_LEN, (src+1)*GENE_LEN);
+  creatures.gruSize[dst]=creatures.gruSize[src]; creatures.spikeSize[dst]=creatures.spikeSize[src];
+  creatures.motorTurn[dst]=creatures.motorTurn[src]; creatures.motorMove[dst]=creatures.motorMove[src]; creatures.motorEat[dst]=creatures.motorEat[src];
+  creatures.motorRest[dst]=creatures.motorRest[src]; creatures.spikeRate[dst]=creatures.spikeRate[src];
+  creatures.age[dst]=creatures.age[src]; creatures.generation[dst]=creatures.generation[src];
+  creatures.tickGroup[dst]=creatures.tickGroup[src]; creatures.rewardAcc[dst]=creatures.rewardAcc[src];
   copyBrainSlot(dst, src);
 }
 function copyBrainSlot(dst, src){
-  A_W.copyWithin(dst*MAX_A*N_INPUT*3, src*MAX_A*N_INPUT*3, (src+1)*MAX_A*N_INPUT*3);
-  A_U.copyWithin(dst*MAX_A*MAX_A*3, src*MAX_A*MAX_A*3, (src+1)*MAX_A*MAX_A*3);
-  A_B.copyWithin(dst*MAX_A*3, src*MAX_A*3, (src+1)*MAX_A*3);
-  hA.copyWithin (dst*MAX_A, src*MAX_A, (src+1)*MAX_A);
-  B_W.copyWithin(dst*MAX_B*MAX_A, src*MAX_B*MAX_A, (src+1)*MAX_B*MAX_A);
-  B_v.copyWithin(dst*MAX_B, src*MAX_B, (src+1)*MAX_B);
-  R_W.copyWithin(dst*N_MOTOR*MAX_B, src*N_MOTOR*MAX_B, (src+1)*N_MOTOR*MAX_B);
-  R_e.copyWithin(dst*N_MOTOR*MAX_B, src*N_MOTOR*MAX_B, (src+1)*N_MOTOR*MAX_B);
+  gruInputWeights.copyWithin(dst*MAX_GRU_UNITS*N_INPUTS*3, src*MAX_GRU_UNITS*N_INPUTS*3, (src+1)*MAX_GRU_UNITS*N_INPUTS*3);
+  gruRecurrentWeights.copyWithin(dst*MAX_GRU_UNITS*MAX_GRU_UNITS*3, src*MAX_GRU_UNITS*MAX_GRU_UNITS*3, (src+1)*MAX_GRU_UNITS*MAX_GRU_UNITS*3);
+  gruBiases.copyWithin(dst*MAX_GRU_UNITS*3, src*MAX_GRU_UNITS*3, (src+1)*MAX_GRU_UNITS*3);
+  gruHidden.copyWithin (dst*MAX_GRU_UNITS, src*MAX_GRU_UNITS, (src+1)*MAX_GRU_UNITS);
+  spikeWeights.copyWithin(dst*MAX_SPIKE_NEURONS*MAX_GRU_UNITS, src*MAX_SPIKE_NEURONS*MAX_GRU_UNITS, (src+1)*MAX_SPIKE_NEURONS*MAX_GRU_UNITS);
+  spikeVoltage.copyWithin(dst*MAX_SPIKE_NEURONS, src*MAX_SPIKE_NEURONS, (src+1)*MAX_SPIKE_NEURONS);
+  motorWeights.copyWithin(dst*N_MOTOR*MAX_SPIKE_NEURONS, src*N_MOTOR*MAX_SPIKE_NEURONS, (src+1)*N_MOTOR*MAX_SPIKE_NEURONS);
+  motorTraces.copyWithin(dst*N_MOTOR*MAX_SPIKE_NEURONS, src*N_MOTOR*MAX_SPIKE_NEURONS, (src+1)*N_MOTOR*MAX_SPIKE_NEURONS);
 }
 function creatureRemove(i){
-  const last=--C.n;
-  if(i!==last) creatureCopy(i, last);
+  const lastIdx=--creatures.count;
+  if(i!==lastIdx) creatureCopy(i, lastIdx);
 }
 function creatureBirth(parent){
-  if(C.n>=MAX_CREATURES) return;
-  if(parent>=C.n) return;
-  if(C.energy[parent]<=.6) return;
-  const c=C.n++;
-  const ang=RNG()*6.28, dist=8+RNG()*10;
-  let x=C.x[parent]+Math.cos(ang)*dist, z=C.z[parent]+Math.sin(ang)*dist;
-  const bx=CONFIG.worldW/2-20, bz=CONFIG.worldH/2-20;
-  x=Math.max(-bx,Math.min(bx,x)); z=Math.max(-bz,Math.min(bz,z));
-  C.x[c]=x; C.z[c]=z; C.y[c]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
-  C.head[c]=RNG()*6.28; C.face[c]=C.head[c]; C.spd[c]=0;
-  C.age[c]=0; C.gen[c]=(C.gen[parent]+1)&0xffff;
-  C.sgroup[c]=c%STAGGER_N; C.rewardAcc[c]=0;
-  C.species[c]=C.species[parent];
-  C.size[c]=C.size[parent]*(.9+RNG()*.2);
-  C.gene.copyWithin(c*GENE_LEN, parent*GENE_LEN, (parent+1)*GENE_LEN);
-  geneMutate(c);
-  brainInherit(c, parent, .06);
-  const give=C.energy[parent]*.5;
-  C.energy[parent]-=give; C.energy[c]=give; C.prevEnergy[c]=give;
+  if(creatures.count>=MAX_CREATURES) return;
+  if(parent>=creatures.count) return;
+  if(creatures.energy[parent]<=.6) return;
+  const child=creatures.count++;
+  const angle=RNG()*6.28, distance=8+RNG()*10;
+  let x=creatures.x[parent]+Math.cos(angle)*distance, z=creatures.z[parent]+Math.sin(angle)*distance;
+  const limitX=CONFIG.worldWidth/2-20, limitZ=CONFIG.worldDepth/2-20;
+  x=Math.max(-limitX,Math.min(limitX,x)); z=Math.max(-limitZ,Math.min(limitZ,z));
+  creatures.x[child]=x; creatures.z[child]=z; creatures.y[child]=Math.max(terrainHeight(x,z),CONFIG.waterLevel)+1.5;
+  creatures.heading[child]=RNG()*6.28; creatures.facing[child]=creatures.heading[child]; creatures.speed[child]=0;
+  creatures.age[child]=0; creatures.generation[child]=(creatures.generation[parent]+1)&0xffff;
+  creatures.tickGroup[child]=child%TICK_GROUPS; creatures.rewardAcc[child]=0;
+  creatures.species[child]=creatures.species[parent];
+  creatures.size[child]=creatures.size[parent]*(.9+RNG()*.2);
+  creatures.gene.copyWithin(child*GENE_LEN, parent*GENE_LEN, (parent+1)*GENE_LEN);
+  geneMutate(child);
+  brainInherit(child, parent, .06);
+  const shared=creatures.energy[parent]*.5;
+  creatures.energy[parent]-=shared; creatures.energy[child]=shared; creatures.prevEnergy[child]=shared;
 }
-const _births=new Int32Array(MAX_CREATURES);
-let _birthN=0;
+const birthQueue=new Int32Array(MAX_CREATURES);
+let birthCount=0;
 function updateCreatures(dt){
-  gridRebuild();
-  pgridRebuild();
+  rebuildCreatureGrid();
+  rebuildPlantGrid();
   plantsGrow(dt);
-  _birthN=0;
-  staggerFrame=(staggerFrame+1)%STAGGER_N;
+  birthCount=0;
+  tickPhase=(tickPhase+1)%TICK_GROUPS;
   const timeOfDay=currentTimeOfDay;
-  for(let i=0;i<C.n;i++){
-    C.prevEnergy[i]=C.energy[i];
-    const doTick=C.sgroup[i]===staggerFrame;
+  for(let i=0;i<creatures.count;i++){
+    creatures.prevEnergy[i]=creatures.energy[i];
+    const doTick=creatures.tickGroup[i]===tickPhase;
     if(doTick){
       senseCreature(i, timeOfDay);
       brainTick(i, dt);
     }
-    const rest=C.mRest[i];
-    C.head[i]+=C.mTurn[i]*2.2*dt*(1-.7*rest);
-    const maxSpd=C.species[i]?40:30;
-    const targetSpd=C.mMove[i]*maxSpd*(1-.85*rest);
-    C.spd[i]+=(targetSpd-C.spd[i])*Math.min(1,dt*3);
-    const xi=C.x[i], zi=C.z[i];
-    const vx=Math.sin(C.head[i])*C.spd[i]*dt, vz=Math.cos(C.head[i])*C.spd[i]*dt;
-    if(vx*vx+vz*vz > 1e-6) C.face[i]=Math.atan2(vx,vz);
-    else C.face[i]=C.head[i];
-    let nx=xi+vx, nz=zi+vz;
-    const bx=CONFIG.worldW/2-20, bz=CONFIG.worldH/2-20;
-    if(nx<-bx){nx=-bx; C.head[i]=Math.PI-C.head[i];} else if(nx>bx){nx=bx; C.head[i]=Math.PI-C.head[i];}
-    if(nz<-bz){nz=-bz; C.head[i]=-C.head[i];} else if(nz>bz){nz=bz; C.head[i]=-C.head[i];}
-    C.x[i]=nx; C.z[i]=nz;
-    C.y[i]=Math.max(terrainHeight(nx,nz),CONFIG.waterLevel)+1.5;
-    C.age[i]+=dt;
-    const moveCost=Math.abs(C.spd[i])/maxSpd*.02;
-    const spikeCost=C.spikeRate[i]*.012;
+    const rest=creatures.motorRest[i];
+    creatures.heading[i]+=creatures.motorTurn[i]*2.2*dt*(1-.7*rest);
+    const maxSpeed=creatures.species[i]?40:30;
+    const targetSpeed=creatures.motorMove[i]*maxSpeed*(1-.85*rest);
+    creatures.speed[i]+=(targetSpeed-creatures.speed[i])*Math.min(1,dt*3);
+    const curX=creatures.x[i], curZ=creatures.z[i];
+    const vx=Math.sin(creatures.heading[i])*creatures.speed[i]*dt, vz=Math.cos(creatures.heading[i])*creatures.speed[i]*dt;
+    if(vx*vx+vz*vz > 1e-6) creatures.facing[i]=Math.atan2(vx,vz);
+    else creatures.facing[i]=creatures.heading[i];
+    let nextX=curX+vx, nextZ=curZ+vz;
+    const limitX=CONFIG.worldWidth/2-20, limitZ=CONFIG.worldDepth/2-20;
+    if(nextX<-limitX){nextX=-limitX; creatures.heading[i]=Math.PI-creatures.heading[i];} else if(nextX>limitX){nextX=limitX; creatures.heading[i]=Math.PI-creatures.heading[i];}
+    if(nextZ<-limitZ){nextZ=-limitZ; creatures.heading[i]=-creatures.heading[i];} else if(nextZ>limitZ){nextZ=limitZ; creatures.heading[i]=-creatures.heading[i];}
+    creatures.x[i]=nextX; creatures.z[i]=nextZ;
+    creatures.y[i]=Math.max(terrainHeight(nextX,nextZ),CONFIG.waterLevel)+1.5;
+    creatures.age[i]+=dt;
+    const moveCost=Math.abs(creatures.speed[i])/maxSpeed*.02;
+    const spikeCost=creatures.spikeRate[i]*.012;
     const baseCost=.0035;
     let ageCost=0;
-    if(C.age[i]>LIFESPAN){
-      const over=(C.age[i]-LIFESPAN)/LIFESPAN;
-      ageCost=SENESCENCE*(over/(1+over));
+    if(creatures.age[i]>LIFESPAN){
+      const pastPrime=(creatures.age[i]-LIFESPAN)/LIFESPAN;
+      ageCost=SENESCENCE*(pastPrime/(1+pastPrime));
     }
-    C.energy[i]-=(moveCost+spikeCost+baseCost+ageCost)*dt*(1-.5*rest);
-    const suppressEat=C.mEat[i] < .15;
+    creatures.energy[i]-=(moveCost+spikeCost+baseCost+ageCost)*dt*(1-.5*rest);
+    const suppressEat=creatures.motorEat[i] < .15;
     if(!suppressEat){
-      if(!C.species[i]){
-        const reach=16+C.size[i];
-        pgridScanNearest(nx,nz,reach);
-        if(pqBest!==-1){ C.energy[i]=Math.min(1,C.energy[i]+.35); plantRemove(pqBest); pgridRebuild(); }
+      if(!creatures.species[i]){
+        const reach=16+creatures.size[i];
+        scanNearestPlant(nextX,nextZ,reach);
+        if(nearestPlantIdx!==-1){ creatures.energy[i]=Math.min(1,creatures.energy[i]+.35); plantRemove(nearestPlantIdx); rebuildPlantGrid(); }
       } else {
-        const reach=20+C.size[i];
-        gridScanPrey(nx,nz,reach,i);
-        if(gqBest!==-1){
-          C.energy[i]=Math.min(1,C.energy[i]+.5);
-          const last=C.n-1;
-          creatureRemove(gqBest);
-          if(i===last) i=gqBest;
+        const reach=20+creatures.size[i];
+        scanNearestPrey(nextX,nextZ,reach,i);
+        if(nearestPreyIdx!==-1){
+          creatures.energy[i]=Math.min(1,creatures.energy[i]+.5);
+          const lastIdx=creatures.count-1;
+          creatureRemove(nearestPreyIdx);
+          if(i===lastIdx) i=nearestPreyIdx;
         }
       }
     }
-    if(C.energy[i]>1) C.energy[i]=1;
-    C.rewardAcc[i]+=(C.energy[i]-C.prevEnergy[i]);
+    if(creatures.energy[i]>1) creatures.energy[i]=1;
+    creatures.rewardAcc[i]+=(creatures.energy[i]-creatures.prevEnergy[i]);
     if(doTick){
-      let r=C.rewardAcc[i];
-      if(sFoodCue>0 && C.mMove[i]>0) r+=.0006*sFoodCue*C.mMove[i];
-      brainLearn(i, r);
-      C.rewardAcc[i]=0;
+      let reward=creatures.rewardAcc[i];
+      if(foodCue>0 && creatures.motorMove[i]>0) reward+=.0006*foodCue*creatures.motorMove[i];
+      brainLearn(i, reward);
+      creatures.rewardAcc[i]=0;
     }
-    if(C.energy[i]>.82 && _birthN<MAX_CREATURES && C.n+_birthN<MAX_CREATURES){
-      _births[_birthN++]=i;
+    if(creatures.energy[i]>.82 && birthCount<MAX_CREATURES && creatures.count+birthCount<MAX_CREATURES){
+      birthQueue[birthCount++]=i;
     }
-    if(C.energy[i]<=0){
+    if(creatures.energy[i]<=0){
       creatureRemove(i);
       i--;
       continue;
     }
   }
-  for(let b=0;b<_birthN;b++) creatureBirth(_births[b]);
+  for(let birthIdx=0;birthIdx<birthCount;birthIdx++) creatureBirth(birthQueue[birthIdx]);
 }
 function uploadCreatures(){
-  for(let i=0;i<C.n;i++){
-    const k=i*INST_STRIDE;
-    instData[k]=C.x[i]; instData[k+1]=C.y[i]; instData[k+2]=C.z[i];
-    instData[k+3]=C.size[i];
-    instData[k+4]=C.cr[i]; instData[k+5]=C.cg[i]; instData[k+6]=C.cb[i];
-    instData[k+7]=C.face[i];
-    instData[k+8]=C.species[i];
+  for(let i=0;i<creatures.count;i++){
+    const offset=i*CREATURE_STRIDE;
+    creatureInstData[offset]=creatures.x[i]; creatureInstData[offset+1]=creatures.y[i]; creatureInstData[offset+2]=creatures.z[i];
+    creatureInstData[offset+3]=creatures.size[i];
+    creatureInstData[offset+4]=creatures.colorR[i]; creatureInstData[offset+5]=creatures.colorG[i]; creatureInstData[offset+6]=creatures.colorB[i];
+    creatureInstData[offset+7]=creatures.facing[i];
+    creatureInstData[offset+8]=creatures.species[i];
   }
-  bindBuf(GLAB, instBuf);
-  bufData(GLAB, instData.subarray(0,C.n*INST_STRIDE), GLDYN);
+  bindBuffer(GL_ARRAY_BUFFER, creatureInstBuf);
+  setBufferData(GL_ARRAY_BUFFER, creatureInstData.subarray(0,creatures.count*CREATURE_STRIDE), GL_DYNAMIC_DRAW);
 }
 // player
-const cam={ x:0, y:120, z:CONFIG.worldH*.35, yaw:Math.PI, pitch:-.25, vy:0, onGround:false, jumpsLeft:2, fly:false };
-const move={ x:0, y:0 };
-const SPEED=220;
+const camera={ x:0, y:120, z:CONFIG.worldDepth*.35, yaw:Math.PI, pitch:-.25, velocityY:0, onGround:false, jumpsLeft:2, fly:false };
+const moveInput={ x:0, y:0 };
+const WALK_SPEED=220;
 const GRAVITY=320;
 const EYE_HEIGHT=28;
 const JUMP_VELOCITY=150;
 const FLY_SPEED=400;
 const FLY_LIFT=280;
 const STEP_GRIP=8;
-const LOOK_SENS=.005;
+const LOOK_SENSITIVITY=.005;
 const keys={};
 let audioOn=false;
-let actx=null, amaster=null, anoise=null, arain=null, arainG=null, arainLvl=-1;
-let stepAcc=0, wasWet=false;
+let audioCtx=null, masterGain=null, noiseBuffer=null, rainSource=null, rainGain=null, rainGainLevel=-1;
+let stepDistance=0, wasWet=false;
 function audioInit(){
   if (!audioOn) return;
-  if (actx) { actx.resume(); return; }
+  if (audioCtx) { audioCtx.resume(); return; }
   const AC=window.AudioContext||window.webkitAudioContext;
   if (!AC) return;
-  actx=new AC();
-  amaster=actx.createGain(); amaster.gain.value=1; amaster.connect(actx.destination);
-  anoise=actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
-  const d=anoise.getChannelData(0);
-  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
-  arain=actx.createBufferSource(); arain.buffer=anoise; arain.loop=true;
-  const bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2400; bp.Q.value=.4;
-  arainG=actx.createGain(); arainG.gain.value=0;
-  arain.connect(bp); bp.connect(arainG); arainG.connect(amaster);
-  arain.start();
-  actx.resume();
+  audioCtx=new AC();
+  masterGain=audioCtx.createGain(); masterGain.gain.value=1; masterGain.connect(audioCtx.destination);
+  noiseBuffer=audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+  const samples=noiseBuffer.getChannelData(0);
+  for(let i=0;i<samples.length;i++) samples[i]=Math.random()*2-1;
+  rainSource=audioCtx.createBufferSource(); rainSource.buffer=noiseBuffer; rainSource.loop=true;
+  const bandpass=audioCtx.createBiquadFilter(); bandpass.type='bandpass'; bandpass.frequency.value=2400; bandpass.Q.value=.4;
+  rainGain=audioCtx.createGain(); rainGain.gain.value=0;
+  rainSource.connect(bandpass); bandpass.connect(rainGain); rainGain.connect(masterGain);
+  rainSource.start();
+  audioCtx.resume();
 }
-function snd(f0, f1, q, vol, dur, lp){
-  if (!actx) return;
-  const t=actx.currentTime;
-  const s=actx.createBufferSource(); s.buffer=anoise; s.playbackRate.value=.8+Math.random()*.4;
-  const b=actx.createBiquadFilter(); b.type=lp?'lowpass':'bandpass'; b.Q.value=q;
-  b.frequency.setValueAtTime(f0, t); b.frequency.exponentialRampToValueAtTime(f1, t+dur);
-  const g=actx.createGain();
-  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t+dur);
-  s.connect(b); b.connect(g); g.connect(amaster);
-  s.start(t); s.stop(t+dur);
+function playNoise(freqStart, freqEnd, resonance, volume, duration, lowpass){
+  if (!audioCtx) return;
+  const now=audioCtx.currentTime;
+  const source=audioCtx.createBufferSource(); source.buffer=noiseBuffer; source.playbackRate.value=.8+Math.random()*.4;
+  const filter=audioCtx.createBiquadFilter(); filter.type=lowpass?'lowpass':'bandpass'; filter.Q.value=resonance;
+  filter.frequency.setValueAtTime(freqStart, now); filter.frequency.exponentialRampToValueAtTime(freqEnd, now+duration);
+  const gainNode=audioCtx.createGain();
+  gainNode.gain.setValueAtTime(volume, now); gainNode.gain.exponentialRampToValueAtTime(.0001, now+duration);
+  source.connect(filter); filter.connect(gainNode); gainNode.connect(masterGain);
+  source.start(now); source.stop(now+duration);
 }
-function applyLook(dxPix, dyPix){
-  cam.yaw-=dxPix*LOOK_SENS;
-  cam.pitch-=dyPix*LOOK_SENS;
-  cam.pitch=Math.max(-1.4, Math.min(1.4, cam.pitch));
+function applyLookDelta(dxPixels, dyPixels){
+  camera.yaw-=dxPixels*LOOK_SENSITIVITY;
+  camera.pitch-=dyPixels*LOOK_SENSITIVITY;
+  camera.pitch=Math.max(-1.4, Math.min(1.4, camera.pitch));
 }
 const HAS_TOUCH=(('ontouchstart' in window) || (navigator.maxTouchPoints|0) > 0);
 const joyEl=byId('joy');
@@ -1237,42 +1237,42 @@ const lookEl=byId('look');
 const nub=joyEl.querySelector('.nub');
 if (HAS_TOUCH){
   (function(){
-    let id=null, cx=0, cy=0;
-    joyEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
-      const r=joyEl.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2;
-      onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); }, {passive:false});
-    joyEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
-      onMove(t.clientX-cx, t.clientY-cy); e.preventDefault(); } }, {passive:false});
-    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id){ id=null;
-      move.x=move.y=0; nub.style.transform=''; } };
+    let touchId=null, centerX=0, centerY=0;
+    joyEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; touchId=t.identifier;
+      const rect=joyEl.getBoundingClientRect(); centerX=rect.left+rect.width/2; centerY=rect.top+rect.height/2;
+      onMove(t.clientX-centerX, t.clientY-centerY); e.preventDefault(); }, {passive:false});
+    joyEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===touchId){
+      onMove(t.clientX-centerX, t.clientY-centerY); e.preventDefault(); } }, {passive:false});
+    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===touchId){ touchId=null;
+      moveInput.x=moveInput.y=0; nub.style.transform=''; } };
     joyEl.addEventListener('touchend', end); joyEl.addEventListener('touchcancel', end);
-    function onMove(dx,dy){ const m=Math.min(1,Math.hypot(dx,dy)/55), a=Math.atan2(dy,dx);
-      move.x=-Math.cos(a)*m; move.y=-Math.sin(a)*m;
-      nub.style.transform=`translate(${Math.cos(a)*m*35}px,${Math.sin(a)*m*35}px)`; }
+    function onMove(dx,dy){ const magnitude=Math.min(1,Math.hypot(dx,dy)/55), angle=Math.atan2(dy,dx);
+      moveInput.x=-Math.cos(angle)*magnitude; moveInput.y=-Math.sin(angle)*magnitude;
+      nub.style.transform=`translate(${Math.cos(angle)*magnitude*35}px,${Math.sin(angle)*magnitude*35}px)`; }
   })();
   (function(){
-    let id=null, px=0, py=0;
-    lookEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; id=t.identifier;
-      px=t.clientX; py=t.clientY; e.preventDefault(); }, {passive:false});
-    lookEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===id){
-      applyLook(t.clientX-px, t.clientY-py); px=t.clientX; py=t.clientY; e.preventDefault(); } }, {passive:false});
-    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===id) id=null; };
+    let touchId=null, lastX=0, lastY=0;
+    lookEl.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; touchId=t.identifier;
+      lastX=t.clientX; lastY=t.clientY; e.preventDefault(); }, {passive:false});
+    lookEl.addEventListener('touchmove', e=>{ for (const t of e.changedTouches) if (t.identifier===touchId){
+      applyLookDelta(t.clientX-lastX, t.clientY-lastY); lastX=t.clientX; lastY=t.clientY; e.preventDefault(); } }, {passive:false});
+    const end=e=>{ for (const t of e.changedTouches) if (t.identifier===touchId) touchId=null; };
     lookEl.addEventListener('touchend', end); lookEl.addEventListener('touchcancel', end);
   })();
   (function(){
-    const jb=byId('jump');
+    const jumpBtn=byId('jump');
     const down=e=>{ keys[' ']=true; e.preventDefault(); };
     const up =e=>{ keys[' ']=false; e.preventDefault(); };
-    jb.addEventListener('touchstart', down, {passive:false});
-    jb.addEventListener('touchend', up, {passive:false});
-    jb.addEventListener('touchcancel',up, {passive:false});
+    jumpBtn.addEventListener('touchstart', down, {passive:false});
+    jumpBtn.addEventListener('touchend', up, {passive:false});
+    jumpBtn.addEventListener('touchcancel',up, {passive:false});
   })();
 } else {
   joyEl.style.display='none';
   lookEl.style.display='none';
   byId('jump').style.display='none';
 }
-byId('audioBtn').addEventListener('click', ()=>{ audioOn=!audioOn; byId('audioBtn').textContent='AUDIO: '+(audioOn?'1':'0'); if(audioOn) audioInit(); else if(actx) actx.suspend(); });
+byId('audioBtn').addEventListener('click', ()=>{ audioOn=!audioOn; byId('audioBtn').textContent='AUDIO: '+(audioOn?'1':'0'); if(audioOn) audioInit(); else if(audioCtx) audioCtx.suspend(); });
 on(window, 'keydown', e=>{ keys[e.key.toLowerCase()]=true; if(e.key.toLowerCase()==='r') cycleRainMode(); });
 on(window, 'keyup', e=>{ keys[e.key.toLowerCase()]=false; });
 (function(){
@@ -1281,26 +1281,26 @@ on(window, 'keyup', e=>{ keys[e.key.toLowerCase()]=false; });
   on(document, 'pointerlockchange',()=>{ locked=!!(document.pointerLockElement||document.mozPointerLockElement||document.webkitPointerLockElement); });
   if (!HAS_TOUCH) canvas.addEventListener('click', ()=>{ audioInit(); lock(); });
   else on(document, 'touchstart', audioInit, {once:true});
-  on(document, 'mousemove',e=>{ if(locked) applyLook(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
-  let drag=false,lx=0,ly=0;
-  on(document, 'mousedown',e=>{ if(!locked){drag=true;lx=e.clientX;ly=e.clientY;} });
-  on(document, 'mouseup',()=>{ drag=false; });
-  on(document, 'mousemove',e=>{ if(!locked&&drag){applyLook(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;} });
+  on(document, 'mousemove',e=>{ if(locked) applyLookDelta(e.movementX||e.mozMovementX||0, e.movementY||e.mozMovementY||0); });
+  let dragging=false,lastMouseX=0,lastMouseY=0;
+  on(document, 'mousedown',e=>{ if(!locked){dragging=true;lastMouseX=e.clientX;lastMouseY=e.clientY;} });
+  on(document, 'mouseup',()=>{ dragging=false; });
+  on(document, 'mousemove',e=>{ if(!locked&&dragging){applyLookDelta(e.clientX-lastMouseX,e.clientY-lastMouseY);lastMouseX=e.clientX;lastMouseY=e.clientY;} });
 })();
 byId('qualityBtn').addEventListener('click', function(){
   CONFIG.quality=CONFIG.quality==='H' ? 'L' : 'H';
   this.textContent='QUAL: '+CONFIG.quality;
-  SHADOW.size=setShadowSize(CONFIG.quality);
-  SHADOW.refreshInterval=setShadowRefresh(CONFIG.quality);
+  SHADOW.size=shadowSizeForQuality(CONFIG.quality);
+  SHADOW.refreshInterval=shadowRefreshForQuality(CONFIG.quality);
   initShadow();
   shadowFrame=0;
   resize(); buildTerrain();
 });
 byId('flyBtn').addEventListener('click', function(){
-  cam.fly=!cam.fly;
-  this.textContent='FLY: '+(cam.fly ? '1' : '0');
-  cam.vy=0;
-  if (cam.fly) cam.onGround=false;
+  camera.fly=!camera.fly;
+  this.textContent='FLY: '+(camera.fly ? '1' : '0');
+  camera.velocityY=0;
+  if (camera.fly) camera.onGround=false;
 });
 byId('resetBtn').addEventListener('click', ()=>{
   CONFIG.seed=(Math.random()*1e9)|0;
@@ -1316,54 +1316,54 @@ byId('gear').addEventListener('click', ()=>{
 function applyWorldScale(n){
   CONFIG.worldScale=Math.max(0, Math.min(40, n));
   setWorldSize();
-  SHADOW_RADIUS=setShadowRadius();
+  SHADOW_RADIUS=shadowRadiusForWorld();
   rebuilding=true;
   gridInit();
   buildWater();
   rebuildWorld();
-  last=performance.now();
+  lastFrameMs=performance.now();
   rebuilding=false;
   byId('scaleDisplay').textContent=CONFIG.worldScale;
 }
 on(byId('scaleDown'), 'click', ()=> applyWorldScale(CONFIG.worldScale-5));
 on(byId('scaleUp'), 'click', ()=> applyWorldScale(CONFIG.worldScale+5));
 const DAY_SECONDS=2*Math.PI/.005;
-function simClock(t){
-  const days=t/DAY_SECONDS;
-  const frac=days-Math.floor(days);
+function simClock(seconds){
+  const days=seconds/DAY_SECONDS;
+  const dayFraction=days-Math.floor(days);
   const dayIndex=Math.floor(days);
-  const mins=Math.round(frac*1440)%1440;
-  const hh=(mins/60)|0, mm=mins%60;
-  const d=new Date(Date.UTC(2000,0,1+dayIndex));
-  const MM=d.getUTCMonth()+1, DD=d.getUTCDate();
-  const p2=v=>(v<10?'0':'')+v;
-  return `${p2(MM)}/${p2(DD)} ${p2(hh)}:${p2(mm)}`;
+  const minuteOfDay=Math.round(dayFraction*1440)%1440;
+  const hours=(minuteOfDay/60)|0, minutes=minuteOfDay%60;
+  const date=new Date(Date.UTC(2000,0,1+dayIndex));
+  const month=date.getUTCMonth()+1, day=date.getUTCDate();
+  const pad2=value=>(value<10?'0':'')+value;
+  return `${pad2(month)}/${pad2(day)} ${pad2(hours)}:${pad2(minutes)}`;
 }
-function sunState(t){
-  const ang=t*(2*Math.PI/DAY_SECONDS) - Math.PI/2;
-  const sunDir=[Math.cos(ang), Math.sin(ang), .0];
-  const il=1/Math.hypot(...sunDir); sunDir[0]*=il; sunDir[1]*=il; sunDir[2]*=il;
-  const up=Math.max(0, sunDir[1]);
-  const day=Math.pow(up, .5);
+function sunState(seconds){
+  const angle=seconds*(2*Math.PI/DAY_SECONDS) - Math.PI/2;
+  const sunDir=[Math.cos(angle), Math.sin(angle), .0];
+  const invLen=1/Math.hypot(...sunDir); sunDir[0]*=invLen; sunDir[1]*=invLen; sunDir[2]*=invLen;
+  const sunUp=Math.max(0, sunDir[1]);
+  const dayAmount=Math.pow(sunUp, .5);
   const moonDir=[-sunDir[0], -sunDir[1], -sunDir[2]];
   const moonUp=Math.max(0, moonDir[1]);
-  const night=Math.pow(moonUp, .5);
-  const moonColor=[.13*night, .15*night, .22*night];
+  const nightAmount=Math.pow(moonUp, .5);
+  const moonColor=[.13*nightAmount, .15*nightAmount, .22*nightAmount];
   const NIGHT_TOP = [.02, .03, .07];
   const NIGHT_BOTTOM = [.05, .06, .11];
   const DAY_TOP = [.30, .45, .70];
   const DAY_BOTTOM = [.55, .65, .80];
 
-  const lerp3 = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]
+  const lerp3 = (a,b,seconds) => [a[0]+(b[0]-a[0])*seconds, a[1]+(b[1]-a[1])*seconds, a[2]+(b[2]-a[2])*seconds]
   return {
-    sunDir, up,
+    sunDir, sunUp,
     moonDir, moonUp,
     moonColor,
-    sunColor: [1.0*day, .92*day, .78*day],
-    skyTop: lerp3(NIGHT_TOP, DAY_TOP, day),
-    skyBottom: lerp3(NIGHT_BOTTOM, DAY_BOTTOM, day),
-    fog: lerp3(NIGHT_BOTTOM, [.55,.65,.80], day),
-    ambient: lerp3([.03,.04,.08], [.46,.50,.58], day),
+    sunColor: [1.0*dayAmount, .92*dayAmount, .78*dayAmount],
+    skyTop: lerp3(NIGHT_TOP, DAY_TOP, dayAmount),
+    skyBottom: lerp3(NIGHT_BOTTOM, DAY_BOTTOM, dayAmount),
+    fog: lerp3(NIGHT_BOTTOM, [.55,.65,.80], dayAmount),
+    ambient: lerp3([.03,.04,.08], [.46,.50,.58], dayAmount),
   };
 }
 const depthProg=program(`
@@ -1381,28 +1381,28 @@ void main(){
 `, DEPTH_FRAG);
 // rain
 const RAIN={
-  count: 3000,
+  dropCount: 3000,
   radius: 700,
-  top: 0,
-  fall: 1000,
-  speed: 1300,
+  topY: 0,
+  fallHeight: 1000,
+  fallSpeed: 1300,
   mode: '/',
   on: false,
   intensity: 0,
-  target: 0,
+  targetIntensity: 0,
   nextRoll: 0,
   buf: null,
   data: null,
-  STRIDE: 4,
+  stride: 4,
 };
 // weather
 function rainAuto(dt, t){
   if (t >= RAIN.nextRoll){
     RAIN.nextRoll=t+20+RNG()*40;
-    RAIN.target=RNG() < .35 ? (.4+RNG()*.6) : 0;
+    RAIN.targetIntensity=RNG() < .35 ? (.4+RNG()*.6) : 0;
   }
   const k=Math.min(1, dt*.4);
-  RAIN.intensity+=(RAIN.target-RAIN.intensity)*k;
+  RAIN.intensity+=(RAIN.targetIntensity-RAIN.intensity)*k;
   RAIN.on=RAIN.intensity > .02;
 }
 function rainResolve(dt, t){
@@ -1419,11 +1419,11 @@ function cycleRainMode(){
   if (btn) btn.textContent='RAIN: '+RAIN.mode;
 }
 const rainGeoBuf=gl.createBuffer();
-bindBuf(GLAB, rainGeoBuf);
-bufData(GLAB, new Float32Array([
+bindBuffer(GL_ARRAY_BUFFER, rainGeoBuf);
+setBufferData(GL_ARRAY_BUFFER, new Float32Array([
   -1,-1, 1,-1, 1,1,
   -1,-1, 1,1, -1,1,
-]), GLSTA);
+]), GL_STATIC_DRAW);
 const rainGeoCount=6;
 const rainProg=program(`
 attribute vec2 aCorner;
@@ -1453,103 +1453,103 @@ void main(){
 }
 `);
 function rainBuild(){
-  RAIN.top=Math.max(120, CONFIG.waterLevel+600+CONFIG.worldScale*8);
-  RAIN.data=new Float32Array(RAIN.count*RAIN.STRIDE);
-  for(let i=0;i<RAIN.count;i++){
-    const o=i*RAIN.STRIDE;
-    RAIN.data[o] =(RNG()*2-1)*RAIN.radius;
-    RAIN.data[o+1]=RAIN.top-RNG()*RAIN.fall;
-    RAIN.data[o+2]=(RNG()*2-1)*RAIN.radius;
-    RAIN.data[o+3]=RNG();
+  RAIN.topY=Math.max(120, CONFIG.waterLevel+600+CONFIG.worldScale*8);
+  RAIN.data=new Float32Array(RAIN.dropCount*RAIN.stride);
+  for(let i=0;i<RAIN.dropCount;i++){
+    const offset=i*RAIN.stride;
+    RAIN.data[offset] =(RNG()*2-1)*RAIN.radius;
+    RAIN.data[offset+1]=RAIN.topY-RNG()*RAIN.fallHeight;
+    RAIN.data[offset+2]=(RNG()*2-1)*RAIN.radius;
+    RAIN.data[offset+3]=RNG();
   }
   RAIN.buf=RAIN.buf || gl.createBuffer();
 }
 function rainUpdate(dt, camX, camZ){
   if (!RAIN.on || !RAIN.data) return;
-  const d=RAIN.data, st=RAIN.STRIDE, n=RAIN.count;
-  const dy=RAIN.speed*dt;
+  const drops=RAIN.data, stride=RAIN.stride, dropCount=RAIN.dropCount;
+  const fallStep=RAIN.fallSpeed*dt;
   const windX=40*dt, windZ=18*dt;
-  const floor=CONFIG.waterLevel-20;
-  const top=RAIN.top, fall=RAIN.fall, R=RAIN.radius;
-  for(let i=0;i<n;i++){
-    const o=i*st;
-    d[o] +=windX;
-    d[o+2]+=windZ;
-    d[o+1]-=dy;
-    const ddx=d[o]-camX, ddz=d[o+2]-camZ;
-    if (d[o+1] < floor || ddx*ddx+ddz*ddz > (R*R)*1.2){
-      d[o] =camX+(RNG()*2-1)*R;
-      d[o+1]=top-RNG()*fall;
-      d[o+2]=camZ+(RNG()*2-1)*R;
-      d[o+3]=RNG();
+  const lowestY=CONFIG.waterLevel-20;
+  const topY=RAIN.topY, fallHeight=RAIN.fallHeight, radius=RAIN.radius;
+  for(let i=0;i<dropCount;i++){
+    const offset=i*stride;
+    drops[offset] +=windX;
+    drops[offset+2]+=windZ;
+    drops[offset+1]-=fallStep;
+    const dxToCam=drops[offset]-camX, dzToCam=drops[offset+2]-camZ;
+    if (drops[offset+1] < lowestY || dxToCam*dxToCam+dzToCam*dzToCam > (radius*radius)*1.2){
+      drops[offset] =camX+(RNG()*2-1)*radius;
+      drops[offset+1]=topY-RNG()*fallHeight;
+      drops[offset+2]=camZ+(RNG()*2-1)*radius;
+      drops[offset+3]=RNG();
     }
   }
-  bindBuf(GLAB, RAIN.buf);
-  bufData(GLAB, d, GLDYN);
+  bindBuffer(GL_ARRAY_BUFFER, RAIN.buf);
+  setBufferData(GL_ARRAY_BUFFER, drops, GL_DYNAMIC_DRAW);
 }
 function initShadow(){
-  if (SHADOW.fbo){ gl.deleteFramebuffer(SHADOW.fbo); SHADOW.fbo=null; }
-  if (SHADOW.tex){ gl.deleteTexture(SHADOW.tex); SHADOW.tex=null; }
+  if (SHADOW.framebuffer){ gl.deleteFramebuffer(SHADOW.framebuffer); SHADOW.framebuffer=null; }
+  if (SHADOW.mapTex){ gl.deleteTexture(SHADOW.mapTex); SHADOW.mapTex=null; }
   if (SHADOW.colorTex){ gl.deleteTexture(SHADOW.colorTex); SHADOW.colorTex=null; }
-  if (SHADOW.depthRB){ gl.deleteRenderbuffer(SHADOW.depthRB); SHADOW.depthRB=null; }
-  const sz=SHADOW.size;
-  SHADOW.fbo=gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+  if (SHADOW.depthRenderbuffer){ gl.deleteRenderbuffer(SHADOW.depthRenderbuffer); SHADOW.depthRenderbuffer=null; }
+  const mapSize=SHADOW.size;
+  SHADOW.framebuffer=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.framebuffer);
   if (!SHADOW.packed){
-    SHADOW.tex=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, sz, sz, 0,gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    SHADOW.mapTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, SHADOW.mapTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, mapSize, mapSize, 0,gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, SHADOW.tex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, SHADOW.mapTex, 0);
     SHADOW.colorTex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, SHADOW.colorTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz, sz, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, mapSize, mapSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.colorTex, 0);
   } else {
-    SHADOW.tex=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sz, sz, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    SHADOW.mapTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, SHADOW.mapTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, mapSize, mapSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.tex, 0);
-    SHADOW.depthRB=gl.createRenderbuffer();
-    gl.bindRenderbuffer(gl.RENDERBUFFER, SHADOW.depthRB);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sz, sz);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, SHADOW.depthRB);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, SHADOW.mapTex, 0);
+    SHADOW.depthRenderbuffer=gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, SHADOW.depthRenderbuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, mapSize, mapSize);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, SHADOW.depthRenderbuffer);
   }
   const status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
   SHADOW.ready=(status=== gl.FRAMEBUFFER_COMPLETE);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
-function setShadowRadius(){ return Math.max(CONFIG.worldW, CONFIG.worldH)/2; }
-let SHADOW_RADIUS=setShadowRadius();
+function shadowRadiusForWorld(){ return Math.max(CONFIG.worldWidth, CONFIG.worldDepth)/2; }
+let SHADOW_RADIUS=shadowRadiusForWorld();
 function shadowsEnabled(){ return CONFIG.quality==='H'; }
 function updateLightVP(sunDir, focusX, focusZ){
-  const half=SHADOW_RADIUS;
-  const dist=Math.max(CONFIG.worldW, CONFIG.worldH);
-  const sd=[sunDir[0], Math.max(sunDir[1], .15), sunDir[2]];
-  const il=1/Math.hypot(sd[0],sd[1],sd[2]); sd[0]*=il; sd[1]*=il; sd[2]*=il;
-  const worldPerTexel=(2*half)/SHADOW.size;
-  const fx=Math.round(focusX/worldPerTexel)*worldPerTexel;
-  const fz=Math.round(focusZ/worldPerTexel)*worldPerTexel;
+  const halfExtent=SHADOW_RADIUS;
+  const distance=Math.max(CONFIG.worldWidth, CONFIG.worldDepth);
+  const lightDir=[sunDir[0], Math.max(sunDir[1], .15), sunDir[2]];
+  const invLen=1/Math.hypot(lightDir[0],lightDir[1],lightDir[2]); lightDir[0]*=invLen; lightDir[1]*=invLen; lightDir[2]*=invLen;
+  const worldPerTexel=(2*halfExtent)/SHADOW.size;
+  const snapX=Math.round(focusX/worldPerTexel)*worldPerTexel;
+  const snapZ=Math.round(focusZ/worldPerTexel)*worldPerTexel;
   const focusY=Math.max(terrainHeight(focusX, focusZ), CONFIG.waterLevel);
-  const eye=[fx+sd[0]*dist, focusY+sd[1]*dist, fz+sd[2]*dist];
-  const lview=M4.create(), lproj=M4.create();
-  M4.lookAt(lview, eye, [fx, focusY, fz], [0,1,0]);
-  M4.ortho(lproj, -half, half, -half, half, 1.0, dist*2.0);
-  M4.multiply(SHADOW.lightVP, lproj, lview);
+  const eye=[snapX+lightDir[0]*distance, focusY+lightDir[1]*distance, snapZ+lightDir[2]*distance];
+  const lightView=Mat4.create(), lightProj=Mat4.create();
+  Mat4.lookAt(lightView, eye, [snapX, focusY, snapZ], [0,1,0]);
+  Mat4.ortho(lightProj, -halfExtent, halfExtent, -halfExtent, halfExtent, 1.0, distance*2.0);
+  Mat4.multiply(SHADOW.lightVP, lightProj, lightView);
 }
 function renderShadowPass(){
   if (!SHADOW.ready || !shadowsEnabled()) return;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.framebuffer);
   gl.viewport(0, 0, SHADOW.size, SHADOW.size);
   gl.clearColor(1,1,1,1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1557,30 +1557,30 @@ function renderShadowPass(){
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
   const packMode=SHADOW.packed ? 1.0 : .0;
   gl.useProgram(depthProg);
-  bindBuf(GLAB, terrainBuf);
-  setAttr(depthProg.a('aPos'),3,24,0);
-  bindBuf(GLEAB, terrainIdxBuf);
-  uMat4(depthProg.u('uLightVP'), SHADOW.lightVP);
-  u1f(depthProg.u('uShadowMode'),packMode);
-  gl.drawElements(GLTRI, terrainIdxCount, gl.UNSIGNED_INT, 0);
-  if (EXT_INSTANCE && C.n>0){
-    const ST=INST_STRIDE*4;
+  bindBuffer(GL_ARRAY_BUFFER, terrainBuf);
+  setVertexAttrib(depthProg.a('aPos'),3,24,0);
+  bindBuffer(GL_ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
+  setUniformMat4(depthProg.u('uLightVP'), SHADOW.lightVP);
+  setUniform1f(depthProg.u('uShadowMode'),packMode);
+  gl.drawElements(GL_TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT, 0);
+  if (EXT_INSTANCE && creatures.count>0){
+    const strideBytes=CREATURE_STRIDE*4;
     gl.useProgram(depthInstProg);
-    bindBuf(GLAB, creatureGeoBuf);
-    const ap=depthInstProg.a('aPos');
-    setAttr(ap,3,24,0,0);
-    bindBuf(GLAB, instBuf);
-    const ip=depthInstProg.a('aInstPos'), is=depthInstProg.a('aInstScale'),
-          ih=depthInstProg.a('aInstHeading'), isp=depthInstProg.a('aInstSpecies');
-    setAttr(ip,3,ST,0,1);
-    setAttr(is,1,ST,12,1);
-    setAttr(ih,1,ST,28,1);
-    setAttr(isp,1,ST,32,1);
-    uMat4(depthInstProg.u('uLightVP'), SHADOW.lightVP);
-    u1f(depthInstProg.u('uShadowMode'),packMode);
-    EXT_INSTANCE.drawArraysInstancedANGLE(GLTRI,0,creatureGeoCount,C.n);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(ip,0); EXT_INSTANCE.vertexAttribDivisorANGLE(is,0);
-    EXT_INSTANCE.vertexAttribDivisorANGLE(ih,0); EXT_INSTANCE.vertexAttribDivisorANGLE(isp,0);
+    bindBuffer(GL_ARRAY_BUFFER, creatureGeoBuf);
+    const posLoc=depthInstProg.a('aPos');
+    setVertexAttrib(posLoc,3,24,0,0);
+    bindBuffer(GL_ARRAY_BUFFER, creatureInstBuf);
+    const instPosLoc=depthInstProg.a('aInstPos'), instScaleLoc=depthInstProg.a('aInstScale'),
+          instHeadingLoc=depthInstProg.a('aInstHeading'), instSpeciesLoc=depthInstProg.a('aInstSpecies');
+    setVertexAttrib(instPosLoc,3,strideBytes,0,1);
+    setVertexAttrib(instScaleLoc,1,strideBytes,12,1);
+    setVertexAttrib(instHeadingLoc,1,strideBytes,28,1);
+    setVertexAttrib(instSpeciesLoc,1,strideBytes,32,1);
+    setUniformMat4(depthInstProg.u('uLightVP'), SHADOW.lightVP);
+    setUniform1f(depthInstProg.u('uShadowMode'),packMode);
+    EXT_INSTANCE.drawArraysInstancedANGLE(GL_TRIANGLES,0,creatureGeoCount,creatures.count);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(instPosLoc,0); EXT_INSTANCE.vertexAttribDivisorANGLE(instScaleLoc,0);
+    EXT_INSTANCE.vertexAttribDivisorANGLE(instHeadingLoc,0); EXT_INSTANCE.vertexAttribDivisorANGLE(instSpeciesLoc,0);
   }
   gl.cullFace(gl.BACK); gl.disable(gl.CULL_FACE);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1588,37 +1588,37 @@ function renderShadowPass(){
 }
 function bindShadowUniforms(prog){
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex);
-  u1i(prog.u('uShadowMap'), 1);
-  uMat4(prog.u('uLightVP'), SHADOW.lightVP);
-  u1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
-  u1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : .0);
-  u1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : .0);
+  gl.bindTexture(gl.TEXTURE_2D, SHADOW.mapTex);
+  setUniform1i(prog.u('uShadowMap'), 1);
+  setUniformMat4(prog.u('uLightVP'), SHADOW.lightVP);
+  setUniform1f(prog.u('uShadowTexel'), 1.0/SHADOW.size);
+  setUniform1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : .0);
+  setUniform1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : .0);
   gl.activeTexture(gl.TEXTURE0);
 }
 function rebuildWorld(){
-  const p=new Uint8Array(512), base=new Uint8Array(256);
-  for(let i=0;i<256;i++) base[i]=i;
-  for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const t=base[i]; base[i]=base[j]; base[j]=t; }
-  for(let i=0;i<512;i++) NOISE_PERM[i]=base[i&255];
+  const scratch=new Uint8Array(512), shuffled=new Uint8Array(256);
+  for(let i=0;i<256;i++) shuffled[i]=i;
+  for(let i=255;i>0;i--){ const j=(RNG()*(i+1))|0; const tmp=shuffled[i]; shuffled[i]=shuffled[j]; shuffled[j]=tmp; }
+  for(let i=0;i<512;i++) NOISE_PERM[i]=shuffled[i&255];
   buildTerrainCache();
   buildTerrain(); spawnCreatures(); spawnPlants();
   rainBuild();
 }
-const VP=M4.create(), proj=M4.create(), viewM=M4.create();
+const viewProj=Mat4.create(), projMatrix=Mat4.create(), viewMatrix=Mat4.create();
 const info=byId('info');
-let last=performance.now(), simTime=DAY_SECONDS/2, fpsT=0, fpsN=0, fps=0;
+let lastFrameMs=performance.now(), simTime=DAY_SECONDS/2, fpsElapsed=0, fpsFrames=0, fps=0;
 const HOUR_SECONDS=DAY_SECONDS/24;
 let paused=false, rafId=0;
 function shiftSimTime(hours){
   simTime=Math.max(0, simTime + hours*HOUR_SECONDS);
-  let currentTimeOfDay=sunState(simTime).up;
+  let currentTimeOfDay=sunState(simTime).sunUp;
   if (paused) redrawPaused();
 }
 function redrawPaused(){
   paused=false;
   const t=performance.now();
-  last=t;
+  lastFrameMs=t;
   frame(t);
   paused=true;
   if (rafId){ cancelAnimationFrame(rafId); rafId=0; }
@@ -1628,7 +1628,7 @@ function setPaused(v){
   paused=v;
   byId('timePause').textContent = paused ? 'P' : 'R';
   if (paused){ if (rafId) cancelAnimationFrame(rafId); rafId=0; }
-  else { last=performance.now(); rafId=requestAnimationFrame(frame); }
+  else { lastFrameMs=performance.now(); rafId=requestAnimationFrame(frame); }
 }
 on(byId('timePause'), 'click', ()=> setPaused(!paused));
 on(byId('timeDown'), 'click', ()=> shiftSimTime(-2));
@@ -1637,109 +1637,109 @@ let frameCount=0, shadowFrame=0;
 let rebuilding=false;
 let currentTimeOfDay=.5;
 let prevJumpKey=false;
-let _curProg=null, _iAttribs=null;
-function bindGeom(prog, geoBuf, vAttribs, instBuf, iAttribs, idxBuf){
-  gl.useProgram(prog); _curProg=prog; _iAttribs=iAttribs||null;
-  bindBuf(GLAB, geoBuf);
-  for (let k=0;k<vAttribs.length;k++){
-    const s=vAttribs[k], loc=prog.a(s[0]);
-    setAttr(loc, s[1], s[2], s[3], 0);
+let currentProgram=null, currentInstAttribs=null;
+function bindGeom(prog, geometryBuf, vertexAttribs, instanceBuf, instanceAttribs, indexBuf){
+  gl.useProgram(prog); currentProgram=prog; currentInstAttribs=instanceAttribs||null;
+  bindBuffer(GL_ARRAY_BUFFER, geometryBuf);
+  for (let k=0;k<vertexAttribs.length;k++){
+    const spec=vertexAttribs[k], loc=prog.a(spec[0]);
+    setVertexAttrib(loc, spec[1], spec[2], spec[3], 0);
   }
-  if (instBuf && iAttribs && EXT_INSTANCE){
-    bindBuf(GLAB, instBuf);
-    for (let k=0;k<iAttribs.length;k++){
-      const s=iAttribs[k], loc=prog.a(s[0]);
-      setAttr(loc, s[1], s[2], s[3], 1);
+  if (instanceBuf && instanceAttribs && EXT_INSTANCE){
+    bindBuffer(GL_ARRAY_BUFFER, instanceBuf);
+    for (let k=0;k<instanceAttribs.length;k++){
+      const spec=instanceAttribs[k], loc=prog.a(spec[0]);
+      setVertexAttrib(loc, spec[1], spec[2], spec[3], 1);
     }
   }
-  if (idxBuf) bindBuf(GLEAB, idxBuf);
+  if (indexBuf) bindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuf);
 }
-function _resetInst(){
-  if (_iAttribs && EXT_INSTANCE)
-    for (let k=0;k<_iAttribs.length;k++) EXT_INSTANCE.vertexAttribDivisorANGLE(_curProg.a(_iAttribs[k][0]), 0);
+function resetInstanceDivisors(){
+  if (currentInstAttribs && EXT_INSTANCE)
+    for (let k=0;k<currentInstAttribs.length;k++) EXT_INSTANCE.vertexAttribDivisorANGLE(currentProgram.a(currentInstAttribs[k][0]), 0);
 }
-function drawArraysPass(mode, first, count){ gl.drawArrays(mode, first, count); _resetInst(); }
-function drawElementsPass(mode, count, idxType){ gl.drawElements(mode, count, idxType, 0); _resetInst(); }
-function drawInstancedPass(mode, geoCount, instCount){ EXT_INSTANCE.drawArraysInstancedANGLE(mode, 0, geoCount, instCount); _resetInst(); }
-const VA_SKY=[['aPos',2,0,0]];
-const VA_TERRAIN=[['aPos',3,24,0],['aNormal',3,24,12]];
-const VA_WATER=[['aXZ',2,0,0]];
-const VA_CREAT_G=[['aPos',3,24,0],['aNormal',3,24,12]];
-const IA_CREAT=[['aInstPos',3,INST_STRIDE*4,0],['aInstScale',1,INST_STRIDE*4,12],['aInstColor',3,INST_STRIDE*4,16],['aInstHeading',1,INST_STRIDE*4,28],['aInstSpecies',1,INST_STRIDE*4,32]];
-const VA_PLANT_G=[['aPos',3,16,0],['aV',1,16,12]];
-const IA_PLANT=[['aInstPos',3,P_STRIDE*4,0],['aSway',1,P_STRIDE*4,12]];
-const VA_RAIN_G=[['aCorner',2,8,0]];
-const IA_RAIN=[['aInstPos',3,RAIN.STRIDE*4,0],['aSeed',1,RAIN.STRIDE*4,12]];
+function drawArraysPass(mode, first, count){ gl.drawArrays(mode, first, count); resetInstanceDivisors(); }
+function drawElementsPass(mode, count, indexType){ gl.drawElements(mode, count, indexType, 0); resetInstanceDivisors(); }
+function drawInstancedPass(mode, vertexCount, instanceCount){ EXT_INSTANCE.drawArraysInstancedANGLE(mode, 0, vertexCount, instanceCount); resetInstanceDivisors(); }
+const SKY_ATTRIBS=[['aPos',2,0,0]];
+const TERRAIN_ATTRIBS=[['aPos',3,24,0],['aNormal',3,24,12]];
+const WATER_ATTRIBS=[['aXZ',2,0,0]];
+const CREATURE_ATTRIBS=[['aPos',3,24,0],['aNormal',3,24,12]];
+const CREATURE_INST_ATTRIBS=[['aInstPos',3,CREATURE_STRIDE*4,0],['aInstScale',1,CREATURE_STRIDE*4,12],['aInstColor',3,CREATURE_STRIDE*4,16],['aInstHeading',1,CREATURE_STRIDE*4,28],['aInstSpecies',1,CREATURE_STRIDE*4,32]];
+const PLANT_ATTRIBS=[['aPos',3,16,0],['aV',1,16,12]];
+const PLANT_INST_ATTRIBS=[['aInstPos',3,PLANT_STRIDE*4,0],['aSway',1,PLANT_STRIDE*4,12]];
+const RAIN_ATTRIBS=[['aCorner',2,8,0]];
+const RAIN_INST_ATTRIBS=[['aInstPos',3,RAIN.stride*4,0],['aSeed',1,RAIN.stride*4,12]];
 function frame(now){
-  if (rebuilding){ last=now; rafId=requestAnimationFrame(frame); return; }
-  let dt=(now-last)/1000; last=now;
+  if (rebuilding){ lastFrameMs=now; rafId=requestAnimationFrame(frame); return; }
+  let dt=(now-lastFrameMs)/1000; lastFrameMs=now;
   if (!(dt>0)) dt=0;
   if (dt>.05) dt=.05;
   simTime+=dt;
-  fpsT+=dt; fpsN++; if (fpsT>=.5){ fps=Math.round(fpsN/fpsT); fpsT=0; fpsN=0; }
-  let mf=move.y, ms=move.x;
-  if (keys['w']) mf=1; if (keys['s']) mf=-1; if (keys['a']) ms=1; if (keys['d']) ms=-1;
-  const fwd=[Math.sin(cam.yaw), 0, Math.cos(cam.yaw)];
-  const rgt=[Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
+  fpsElapsed+=dt; fpsFrames++; if (fpsElapsed>=.5){ fps=Math.round(fpsFrames/fpsElapsed); fpsElapsed=0; fpsFrames=0; }
+  let moveFwd=moveInput.y, moveStrafe=moveInput.x;
+  if (keys['w']) moveFwd=1; if (keys['s']) moveFwd=-1; if (keys['a']) moveStrafe=1; if (keys['d']) moveStrafe=-1;
+  const forward=[Math.sin(camera.yaw), 0, Math.cos(camera.yaw)];
+  const right=[Math.cos(camera.yaw), 0, -Math.sin(camera.yaw)];
   const jumpKey=keys[' ']||keys['spacebar'];
   const downKey=keys['shift']||keys['control']||keys['c'];
-  if (cam.fly){
-    const spd=FLY_SPEED;
-    cam.x+=(fwd[0]*mf+rgt[0]*ms)*spd*dt;
-    cam.z+=(fwd[2]*mf+rgt[2]*ms)*spd*dt;
-    let lift=(jumpKey?1:0)-(downKey?1:0);
-    cam.y+=lift*FLY_LIFT*dt;
-    cam.vy=0;
-    cam.onGround=false;
+  if (camera.fly){
+    const flySpeed=FLY_SPEED;
+    camera.x+=(forward[0]*moveFwd+right[0]*moveStrafe)*flySpeed*dt;
+    camera.z+=(forward[2]*moveFwd+right[2]*moveStrafe)*flySpeed*dt;
+    let climb=(jumpKey?1:0)-(downKey?1:0);
+    camera.y+=climb*FLY_LIFT*dt;
+    camera.velocityY=0;
+    camera.onGround=false;
     prevJumpKey=jumpKey;
   } else {
-    const dx=(fwd[0]*mf+rgt[0]*ms)*SPEED*dt, dz=(fwd[2]*mf+rgt[2]*ms)*SPEED*dt;
-    cam.x+=dx; cam.z+=dz;
-    stepAcc+=Math.abs(dx)+Math.abs(dz);
-    if (jumpKey && !prevJumpKey && cam.jumpsLeft > 0){
-      cam.vy=JUMP_VELOCITY;
-      cam.onGround=false;
-      cam.jumpsLeft--;
+    const dx=(forward[0]*moveFwd+right[0]*moveStrafe)*WALK_SPEED*dt, dz=(forward[2]*moveFwd+right[2]*moveStrafe)*WALK_SPEED*dt;
+    camera.x+=dx; camera.z+=dz;
+    stepDistance+=Math.abs(dx)+Math.abs(dz);
+    if (jumpKey && !prevJumpKey && camera.jumpsLeft > 0){
+      camera.velocityY=JUMP_VELOCITY;
+      camera.onGround=false;
+      camera.jumpsLeft--;
     }
     prevJumpKey=jumpKey;
-    const floorY=terrainHeight(cam.x,cam.z)+EYE_HEIGHT;
-    cam.vy-=GRAVITY*dt;
-    cam.y+=cam.vy*dt;
-    if (cam.y <= floorY+STEP_GRIP && cam.vy <= 0){
-      cam.y=floorY;
-      cam.vy=0;
-      cam.onGround=true;
-      cam.jumpsLeft=2;
+    const groundY=terrainHeight(camera.x,camera.z)+EYE_HEIGHT;
+    camera.velocityY-=GRAVITY*dt;
+    camera.y+=camera.velocityY*dt;
+    if (camera.y <= groundY+STEP_GRIP && camera.velocityY <= 0){
+      camera.y=groundY;
+      camera.velocityY=0;
+      camera.onGround=true;
+      camera.jumpsLeft=2;
     } else {
-      cam.onGround=false;
+      camera.onGround=false;
     }
-    const wet=floorY-EYE_HEIGHT < CONFIG.waterLevel;
-    if (actx){
-      if (cam.onGround && stepAcc>90){
-        stepAcc=0;
-        const j=.85+Math.random()*.3;
-        if (wet) snd(600*j, 120*j, 2, .18, .4, false);
-        else snd(1000*j, 500*j, .4, .09, .06, true);
+    const inWater=groundY-EYE_HEIGHT < CONFIG.waterLevel;
+    if (audioCtx){
+      if (camera.onGround && stepDistance>90){
+        stepDistance=0;
+        const pitchJitter=.85+Math.random()*.3;
+        if (inWater) playNoise(600*pitchJitter, 120*pitchJitter, 2, .18, .4, false);
+        else playNoise(1000*pitchJitter, 500*pitchJitter, .4, .09, .06, true);
       }
-      if (arainG){
-        const want = RAIN.intensity > .03 ? RAIN.intensity : 0;
-        if (Math.abs(want-arainLvl) > .01){
-          arainLvl = want;
-          arainG.gain.setTargetAtTime(want*.22, actx.currentTime, .6);
+      if (rainGain){
+        const targetGain = RAIN.intensity > .03 ? RAIN.intensity : 0;
+        if (Math.abs(targetGain-rainGainLevel) > .01){
+          rainGainLevel = targetGain;
+          rainGain.gain.setTargetAtTime(targetGain*.22, audioCtx.currentTime, .6);
         }
       }
     }
-    if (stepAcc>90) stepAcc=0;
+    if (stepDistance>90) stepDistance=0;
   }
   const aspect=VIEW_W/VIEW_H;
-  M4.perspective(proj, 1.05, aspect, 1.0, Math.max(CONFIG.worldW,CONFIG.worldH)*1.4);
-  const dir=[Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw)*Math.cos(cam.pitch)];
-  M4.lookAt(viewM, [cam.x,cam.y,cam.z], [cam.x+dir[0],cam.y+dir[1],cam.z+dir[2]], [0,1,0]);
-  M4.multiply(VP, proj, viewM);
-  const S=sunState(simTime);
-  currentTimeOfDay=S.up;
+  Mat4.perspective(projMatrix, 1.05, aspect, 1.0, Math.max(CONFIG.worldWidth,CONFIG.worldDepth)*1.4);
+  const lookDir=[Math.sin(camera.yaw)*Math.cos(camera.pitch), Math.sin(camera.pitch), Math.cos(camera.yaw)*Math.cos(camera.pitch)];
+  Mat4.lookAt(viewMatrix, [camera.x,camera.y,camera.z], [camera.x+lookDir[0],camera.y+lookDir[1],camera.z+lookDir[2]], [0,1,0]);
+  Mat4.multiply(viewProj, projMatrix, viewMatrix);
+  const sky=sunState(simTime);
+  currentTimeOfDay=sky.sunUp;
   if (shadowFrame % SHADOW.refreshInterval=== 0){
-    updateLightVP(S.sunDir, cam.x, cam.z);
+    updateLightVP(sky.sunDir, camera.x, camera.z);
     renderShadowPass();
   }
   shadowFrame++;
@@ -1747,109 +1747,109 @@ function frame(now){
   uploadCreatures();
   uploadPlants();
   rainResolve(dt, simTime);
-  if (arainG && Math.abs(RAIN.intensity-arainLvl)>.02){
-    arainLvl=RAIN.intensity;
-    arainG.gain.setTargetAtTime(arainLvl*.22, actx.currentTime, .6);
+  if (rainGain && Math.abs(RAIN.intensity-rainGainLevel)>.02){
+    rainGainLevel=RAIN.intensity;
+    rainGain.gain.setTargetAtTime(rainGainLevel*.22, audioCtx.currentTime, .6);
   }
-  rainUpdate(dt, cam.x, cam.z);
-  const eye=[cam.x,cam.y,cam.z];
-  const fogDist=Math.max(CONFIG.worldW,CONFIG.worldH)*.9;
-  gl.clearColor(S.skyBottom[0],S.skyBottom[1],S.skyBottom[2],1);
+  rainUpdate(dt, camera.x, camera.z);
+  const eye=[camera.x,camera.y,camera.z];
+  const fogDist=Math.max(CONFIG.worldWidth,CONFIG.worldDepth)*.9;
+  gl.clearColor(sky.skyBottom[0],sky.skyBottom[1],sky.skyBottom[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
   gl.depthMask(false); gl.disable(gl.DEPTH_TEST);
-  const sunW=[cam.x+S.sunDir[0]*1000, cam.y+S.sunDir[1]*1000, cam.z+S.sunDir[2]*1000];
-  const cv=[0,0,0,0];
-  for(let i=0;i<4;i++) cv[i]=VP[i]*sunW[0]+VP[i+4]*sunW[1]+VP[i+8]*sunW[2]+VP[i+12];
-  const sx=cv[3]>0 ? (cv[0]/cv[3])*.5+.5 : -1, sy=cv[3]>0 ? (cv[1]/cv[3])*.5+.5 : -1;
-  const moonW=[cam.x+S.moonDir[0]*1000, cam.y+S.moonDir[1]*1000, cam.z+S.moonDir[2]*1000];
-  const mv=[0,0,0,0];
-  for(let i=0;i<4;i++) mv[i]=VP[i]*moonW[0]+VP[i+4]*moonW[1]+VP[i+8]*moonW[2]+VP[i+12];
-  const mx=mv[3]>0 ? (mv[0]/mv[3])*.5+.5 : -1, my=mv[3]>0 ? (mv[1]/mv[3])*.5+.5 : -1;
-  bindGeom(skyProg, quadBuf, VA_SKY);
-  u3f(skyProg.u('uTop'),S.skyTop); u3f(skyProg.u('uBottom'),S.skyBottom);
-  gl.uniform2f(skyProg.u('uSunScreen'),sx,sy); u1f(skyProg.u('uSunUp'),S.up);
-  gl.uniform2f(skyProg.u('uMoonScreen'),mx,my); u1f(skyProg.u('uMoonUp'),S.moonUp);
-  drawArraysPass(GLTRI,0,3);
+  const sunWorld=[camera.x+sky.sunDir[0]*1000, camera.y+sky.sunDir[1]*1000, camera.z+sky.sunDir[2]*1000];
+  const sunClip=[0,0,0,0];
+  for(let i=0;i<4;i++) sunClip[i]=viewProj[i]*sunWorld[0]+viewProj[i+4]*sunWorld[1]+viewProj[i+8]*sunWorld[2]+viewProj[i+12];
+  const sunScreenX=sunClip[3]>0 ? (sunClip[0]/sunClip[3])*.5+.5 : -1, sunScreenY=sunClip[3]>0 ? (sunClip[1]/sunClip[3])*.5+.5 : -1;
+  const moonWorld=[camera.x+sky.moonDir[0]*1000, camera.y+sky.moonDir[1]*1000, camera.z+sky.moonDir[2]*1000];
+  const moonClip=[0,0,0,0];
+  for(let i=0;i<4;i++) moonClip[i]=viewProj[i]*moonWorld[0]+viewProj[i+4]*moonWorld[1]+viewProj[i+8]*moonWorld[2]+viewProj[i+12];
+  const moonScreenX=moonClip[3]>0 ? (moonClip[0]/moonClip[3])*.5+.5 : -1, moonScreenY=moonClip[3]>0 ? (moonClip[1]/moonClip[3])*.5+.5 : -1;
+  bindGeom(skyProg, quadBuf, SKY_ATTRIBS);
+  setUniform3f(skyProg.u('uTop'),sky.skyTop); setUniform3f(skyProg.u('uBottom'),sky.skyBottom);
+  gl.uniform2f(skyProg.u('uSunScreen'),sunScreenX,sunScreenY); setUniform1f(skyProg.u('uSunUp'),sky.sunUp);
+  gl.uniform2f(skyProg.u('uMoonScreen'),moonScreenX,moonScreenY); setUniform1f(skyProg.u('uMoonUp'),sky.moonUp);
+  drawArraysPass(GL_TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
-  bindGeom(terrainProg, terrainBuf, VA_TERRAIN, null, null, terrainIdxBuf);
-  uMat4(terrainProg.u('uVP'), VP);
-  u3f(terrainProg.u('uSunDir'),S.sunDir);
-  u3f(terrainProg.u('uSunColor'),S.sunColor);
-  u3f(terrainProg.u('uAmbient'),S.ambient);
-  u3f(terrainProg.u('uMoonDir'),S.moonDir);
-  u3f(terrainProg.u('uMoonColor'),S.moonColor);
-  u1f(terrainProg.u('uWaterLevel'),CONFIG.waterLevel);
-  u3f(terrainProg.u('uFogColor'),S.fog);
-  u1f(terrainProg.u('uFogDist'),fogDist);
-  u3f(terrainProg.u('uEye'),eye);
+  bindGeom(terrainProg, terrainBuf, TERRAIN_ATTRIBS, null, null, terrainIdxBuf);
+  setUniformMat4(terrainProg.u('uVP'), viewProj);
+  setUniform3f(terrainProg.u('uSunDir'),sky.sunDir);
+  setUniform3f(terrainProg.u('uSunColor'),sky.sunColor);
+  setUniform3f(terrainProg.u('uAmbient'),sky.ambient);
+  setUniform3f(terrainProg.u('uMoonDir'),sky.moonDir);
+  setUniform3f(terrainProg.u('uMoonColor'),sky.moonColor);
+  setUniform1f(terrainProg.u('uWaterLevel'),CONFIG.waterLevel);
+  setUniform3f(terrainProg.u('uFogColor'),sky.fog);
+  setUniform1f(terrainProg.u('uFogDist'),fogDist);
+  setUniform3f(terrainProg.u('uEye'),eye);
   bindShadowUniforms(terrainProg);
-  drawElementsPass(GLTRI, terrainIdxCount, gl.UNSIGNED_INT);
+  drawElementsPass(GL_TRIANGLES, terrainIdxCount, gl.UNSIGNED_INT);
   // creature rendering
-  if (EXT_INSTANCE && C.n>0){
-    bindGeom(creatureProg, creatureGeoBuf, VA_CREAT_G, instBuf, IA_CREAT);
-    uMat4(creatureProg.u('uVP'), VP);
-    u3f(creatureProg.u('uSunDir'),S.sunDir);
-    u3f(creatureProg.u('uAmbient'),S.ambient);
-    u3f(creatureProg.u('uMoonDir'),S.moonDir);
-    u3f(creatureProg.u('uMoonColor'),S.moonColor);
+  if (EXT_INSTANCE && creatures.count>0){
+    bindGeom(creatureProg, creatureGeoBuf, CREATURE_ATTRIBS, creatureInstBuf, CREATURE_INST_ATTRIBS);
+    setUniformMat4(creatureProg.u('uVP'), viewProj);
+    setUniform3f(creatureProg.u('uSunDir'),sky.sunDir);
+    setUniform3f(creatureProg.u('uAmbient'),sky.ambient);
+    setUniform3f(creatureProg.u('uMoonDir'),sky.moonDir);
+    setUniform3f(creatureProg.u('uMoonColor'),sky.moonColor);
     bindShadowUniforms(creatureProg);
-    drawInstancedPass(GLTRI,creatureGeoCount,C.n);
+    drawInstancedPass(GL_TRIANGLES,creatureGeoCount,creatures.count);
   }
   // plant rendering
-  if (EXT_INSTANCE && P.n>0){
-    bindGeom(plantProg, plantGeoBuf, VA_PLANT_G, plantInstBuf, IA_PLANT);
-    uMat4(plantProg.u('uVP'), VP);
-    u1f(plantProg.u('uTime'),simTime);
-    u3f(plantProg.u('uSunColor'),S.sunColor);
-    u3f(plantProg.u('uAmbient'),S.ambient);
-    u3f(plantProg.u('uMoonColor'),S.moonColor);
-    drawInstancedPass(GLTRI,plantGeoCount,P.n);
+  if (EXT_INSTANCE && plants.count>0){
+    bindGeom(plantProg, plantGeoBuf, PLANT_ATTRIBS, plantInstBuf, PLANT_INST_ATTRIBS);
+    setUniformMat4(plantProg.u('uVP'), viewProj);
+    setUniform1f(plantProg.u('uTime'),simTime);
+    setUniform3f(plantProg.u('uSunColor'),sky.sunColor);
+    setUniform3f(plantProg.u('uAmbient'),sky.ambient);
+    setUniform3f(plantProg.u('uMoonColor'),sky.moonColor);
+    drawInstancedPass(GL_TRIANGLES,plantGeoCount,plants.count);
   }
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
-  bindGeom(waterProg, waterBuf, VA_WATER);
-  uMat4(waterProg.u('uVP'), VP);
-  u1f(waterProg.u('uLevel'),CONFIG.waterLevel);
-  u3f(waterProg.u('uEye'),eye);
-  u3f(waterProg.u('uSunDir'),S.sunDir);
-  u3f(waterProg.u('uSunColor'),S.sunColor);
-  u3f(waterProg.u('uMoonDir'),S.moonDir);
-  u3f(waterProg.u('uMoonColor'),S.moonColor);
-  u1f(waterProg.u('uTime'),simTime);
-  u3f(waterProg.u('uFogColor'),S.fog);
-  u1f(waterProg.u('uFogDist'),fogDist);
-  u1f(waterProg.u('uHighQ'),CONFIG.quality==='H'?1.0:.0);
-  u3f(waterProg.u('uAmbient'),S.ambient);
-  u3f(waterProg.u('uSkyTop'),S.skyTop);
-  drawArraysPass(GLTRI,0,6);
+  bindGeom(waterProg, waterBuf, WATER_ATTRIBS);
+  setUniformMat4(waterProg.u('uVP'), viewProj);
+  setUniform1f(waterProg.u('uLevel'),CONFIG.waterLevel);
+  setUniform3f(waterProg.u('uEye'),eye);
+  setUniform3f(waterProg.u('uSunDir'),sky.sunDir);
+  setUniform3f(waterProg.u('uSunColor'),sky.sunColor);
+  setUniform3f(waterProg.u('uMoonDir'),sky.moonDir);
+  setUniform3f(waterProg.u('uMoonColor'),sky.moonColor);
+  setUniform1f(waterProg.u('uTime'),simTime);
+  setUniform3f(waterProg.u('uFogColor'),sky.fog);
+  setUniform1f(waterProg.u('uFogDist'),fogDist);
+  setUniform1f(waterProg.u('uHighQ'),CONFIG.quality==='H'?1.0:.0);
+  setUniform3f(waterProg.u('uAmbient'),sky.ambient);
+  setUniform3f(waterProg.u('uSkyTop'),sky.skyTop);
+  drawArraysPass(GL_TRIANGLES,0,6);
   gl.depthMask(true); gl.disable(gl.BLEND);
   // rain pass
   if (EXT_INSTANCE && RAIN.on && RAIN.data){
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
-    bindGeom(rainProg, rainGeoBuf, VA_RAIN_G, RAIN.buf, IA_RAIN);
-    uMat4(rainProg.u('uVP'), VP);
-    gl.uniform3f(rainProg.u('uRight'), rgt[0], rgt[1], rgt[2]);
-    u1f(rainProg.u('uWidth'), .5);
-    u1f(rainProg.u('uLen'), 14.0);
-    gl.uniform3f(rainProg.u('uColor'), .62*S.up+.30, .68*S.up+.34, .78*S.up+.40);
-    u1f(rainProg.u('uAlpha'), .42*Math.max(.15, RAIN.intensity));
-    drawInstancedPass(GLTRI,rainGeoCount,RAIN.count);
+    bindGeom(rainProg, rainGeoBuf, RAIN_ATTRIBS, RAIN.buf, RAIN_INST_ATTRIBS);
+    setUniformMat4(rainProg.u('uVP'), viewProj);
+    gl.uniform3f(rainProg.u('uRight'), right[0], right[1], right[2]);
+    setUniform1f(rainProg.u('uWidth'), .5);
+    setUniform1f(rainProg.u('uLen'), 14.0);
+    gl.uniform3f(rainProg.u('uColor'), .62*sky.sunUp+.30, .68*sky.sunUp+.34, .78*sky.sunUp+.40);
+    setUniform1f(rainProg.u('uAlpha'), .42*Math.max(.15, RAIN.intensity));
+    drawInstancedPass(GL_TRIANGLES,rainGeoCount,RAIN.dropCount);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
   if (frameCount % 60=== 0){
-    let herb=0, eSum=0, spkSum=0, ageSum=0, maxGen=0;
-    for(let i=0;i<C.n;i++){
-      if(!C.species[i]) herb++;
-      eSum+=C.energy[i]; spkSum+=C.spikeRate[i]; ageSum+=C.age[i];
-      if(C.gen[i]>maxGen) maxGen=C.gen[i];
+    let herbivores=0, energySum=0, spikeSum=0, ageSum=0, maxGeneration=0;
+    for(let i=0;i<creatures.count;i++){
+      if(!creatures.species[i]) herbivores++;
+      energySum+=creatures.energy[i]; spikeSum+=creatures.spikeRate[i]; ageSum+=creatures.age[i];
+      if(creatures.generation[i]>maxGeneration) maxGeneration=creatures.generation[i];
     }
     info.textContent=
       `3.0.2 seed ${CONFIG.seed} FPS ${fps} \n`+
       `tri ${terrainIdxCount/3} shadowRef ${SHADOW.refreshInterval} shadowSize ${SHADOW.size}\n`+
-      `creatures ${C.n} ${herb}H/${C.n-herb}R/${P.n}P waterLevel ${(CONFIG.waterLevel)}\n`+
-      `avg energy ${(eSum/Math.max(1,C.n)).toFixed(2)} spike rate ${(spkSum/Math.max(1,C.n)).toFixed(2)}\n`+
-      `max gen ${maxGen} avg age ${(ageSum/Math.max(1,C.n)).toFixed(0)}s ${simClock(simTime)}`;
+      `creatures ${creatures.count} ${herbivores}H/${creatures.count-herbivores}R/${plants.count}P waterLevel ${(CONFIG.waterLevel)}\n`+
+      `avg energy ${(energySum/Math.max(1,creatures.count)).toFixed(2)} spike rate ${(spikeSum/Math.max(1,creatures.count)).toFixed(2)}\n`+
+      `max gen ${maxGeneration} avg age ${(ageSum/Math.max(1,creatures.count)).toFixed(0)}s ${simClock(simTime)}`;
   }
   frameCount++;
   if (!paused) rafId=requestAnimationFrame(frame); else rafId=0;
