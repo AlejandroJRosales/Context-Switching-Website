@@ -106,6 +106,8 @@ export function createRenderer(device, context, format, {
   seed = 7,
   creatureRadius = 1.5,
   mountainThreshold = 0.55,      // biome-mask cutoff (0..1) above which mountains blend in
+  mountainGain = 0.6,            // peak height multiplier inside the mask; independent of amplitude
+  ridgeSharp = 1.0,              // exponent on the ridged field; >1 narrows summits (1.0 = off)
   waterLevel = null,             // world Y of the water plane; null = derive from seed
   shadowResolution = 2048,       // sun-view depth map size per side (quality-scaled by host)
 
@@ -122,12 +124,15 @@ export function createRenderer(device, context, format, {
   }
   const resolvedWaterLevel = waterLevel ?? (amplitude * (0.08 + 0.50 * hashSeedTo01(seed + 0.37)));
 
-  // TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32 -> 32 bytes)
-  const tpBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  // TerrainParams uniform (std140: vec2,vec2,u32,f32,f32,f32,f32,f32 -> 40 bytes,
+  // allocated at 48 to keep the binding a 16-byte multiple). New fields are appended,
+  // so every existing offset is unchanged.
+  const tpBuf = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   {
-    const f = new Float32Array(8), u = new Uint32Array(f.buffer);
+    const f = new Float32Array(12), u = new Uint32Array(f.buffer);
     f[0]=wXZmin[0]; f[1]=wXZmin[1]; f[2]=wXZmax[0]; f[3]=wXZmax[1];
     u[4]=gridN; f[5]=amplitude; f[6]=seed; f[7]=mountainThreshold;
+    f[8]=mountainGain; f[9]=ridgeSharp;
     device.queue.writeBuffer(tpBuf, 0, f);
   }
 
@@ -614,6 +619,8 @@ export function createRenderer(device, context, format, {
     render, setCamera, setSky, setFog, setWaterLevel,
     bakeShadow, setShadow, setShadowResolution,
     heights, readHeights, terrainParams:tpBuf, gridN, amplitude,
+    mountainGain, ridgeSharp,
+    peakHeight: amplitude * (1 + mountainGain),   // true max terrain Y; use for frustum/ceiling fits
     waterLevel: resolvedWaterLevel,
     // exposed so weather (rain) and plants can bind the same Camera + Sky + Fog uniforms read-only.
     camBuf, skyBuf, fogBuf,

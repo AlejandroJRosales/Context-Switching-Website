@@ -207,6 +207,14 @@ let seed = params.has("seed") ? (parseInt(params.get("seed"), 10) || 0) : 7;
 const BASE_N = 1000;
 const BASE_WORLD = [10000, 10000];
 const BASE_AMPLITUDE = 500;
+// Mountain relief, decoupled from BASE_AMPLITUDE: MOUNTAIN_GAIN multiplies height only
+// where the biome mask says "mountain", so raising it grows peaks and leaves the plains
+// (and therefore the seed-derived water level) exactly where they are. RIDGE_SHARP > 1
+// narrows the summits instead of raising them. Original look: 0.6 / 1.0.
+const MOUNTAIN_GAIN = 1.4;
+const RIDGE_SHARP = 1.0;
+// True max terrain Y at a given scale -- what shadow/ceiling fits should use, not amplitude.
+const peakHeight = () => amplitude * (1 + MOUNTAIN_GAIN);
 const worldMin = [0,0,0];
 
 const SCALE_STEPS = [0.5,1,2,3,4];
@@ -294,6 +302,7 @@ function buildWorld(scale){
 
   renderer = createRenderer(device, ctx, format, {
     worldMin, worldMax, gridN:256, amplitude, seed:seedToGpuFloat(seed), creatureRadius:8.0,
+    mountainGain: MOUNTAIN_GAIN, ridgeSharp: RIDGE_SHARP,
     shadowResolution: shadowRes });
 
   // Cat companion (single CPU follower, drawn in the renderer's main pass)
@@ -321,6 +330,11 @@ function buildWorld(scale){
     camBuf: renderer.camBuf, skyBuf: renderer.skyBuf,
     count: 4096,
     radius: Math.max(300, Math.min(worldMax[0], worldMax[2]) * 0.06),
+    // NOTE: peaks now top out at amplitude*(1+MOUNTAIN_GAIN), so once the gain passes
+    // ~1.2 this ceiling sits below the summits and rain may cut off up there. Raising it
+    // to peakHeight()*1.3 would clear them, but `top`/`fall` define the pool's vertical
+    // span in sky.js -- worth checking there before moving it, so it isn't left raining
+    // only above the player's head down on the plains.
     top: amplitude * 2.2,
     fall: amplitude * 1.2,
     floorY: renderer.waterLevel - 20,
@@ -739,7 +753,9 @@ function handleHud(time, dt, lastHud) {
     const cam = player.getCamera(canvas.width/canvas.height);
     const fwd = [cam.target[0]-cam.eye[0], cam.target[1]-cam.eye[1], cam.target[2]-cam.eye[2]];
     const coverage = Math.min(fogDist * 0.6, Math.max(worldMax[0], worldMax[2]) * 0.5);
-    const depthRange = coverage + amplitude * 2;
+    // Depth range has to clear the tallest caster: peaks now reach amplitude*(1+gain),
+    // not amplitude, so fit against peakHeight() or summits clip out of the sun view.
+    const depthRange = coverage + peakHeight() * 2;
     const lightVP = fitLightMatrix(skyState.sunDir, cam.eye, fwd, coverage, depthRange);
     renderer.setShadow(lightVP, { pcfRadius: 2.0, bias: 0.003, strength: 0.85 });
   }

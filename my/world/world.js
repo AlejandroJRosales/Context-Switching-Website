@@ -12,6 +12,8 @@ struct TerrainParams {
   amplitude: f32,
   seed     : f32,
   mountainThreshold : f32,
+  mountainGain : f32,   // extra height multiplier applied only inside the mountain mask
+  ridgeSharp   : f32,   // exponent on the ridged field; >1 pinches summits, valleys stay
 };
 
 fn hash2(p : vec2<f32>) -> f32 {
@@ -84,10 +86,16 @@ fn heightAt(tp : TerrainParams, worldXZ : vec2<f32>) -> f32 {
   let mask = biomeMask(uv, tp.seed);
   let mtnBlend = smoothstep(tp.mountainThreshold, tp.mountainThreshold + 0.15, mask);
 
+  // ridgeSharp reshapes the ridged field before it is blended in: since ridged is in
+  // 0..1, an exponent > 1 pulls mid-slopes down harder than summits, so ridges narrow
+  // and valleys deepen without the peaks moving. max() guards pow(0, x).
+  let peaks = pow(max(ridged, 1e-4), tp.ridgeSharp);
+
   // mountains both blend in ridged detail AND push the base height up, so the
-  // transition reads as rising terrain rather than just a texture change.
-  let h01 = mix(plains, max(plains, ridged), mtnBlend);
-  let lift = mtnBlend * 0.6;
+  // transition reads as rising terrain rather than just a texture change. The lift is
+  // gated by mtnBlend, so mountainGain leaves the plains untouched at any value.
+  let h01 = mix(plains, max(plains, peaks), mtnBlend);
+  let lift = mtnBlend * tp.mountainGain;
 
   return h01 * tp.amplitude * (1.0 + lift);
 }
@@ -227,7 +235,10 @@ fn vs(@builtin(vertex_index) vid : u32) -> VsOut {
 fn fs(in : VsOut) -> @location(0) vec4<f32> {
   let lightDir = normalize(SKY.sunDir);
   let ndl = max(dot(in.normal, lightDir), 0.0);
-  let t = clamp(in.worldPos.y / TP.amplitude, 0.0, 1.0);
+  // Normalize against the true max height (plains cap * the mountain lift), not
+  // colour as soon as mountainGain is raised.
+  let peakY = TP.amplitude * (1.0 + TP.mountainGain);
+  let t = clamp(in.worldPos.y / peakY, 0.0, 1.0);
   let low  = vec3<f32>(0.18, 0.22, 0.16);
   let mid  = vec3<f32>(0.30, 0.34, 0.22);
   let high = vec3<f32>(0.55, 0.54, 0.48);
