@@ -2107,14 +2107,24 @@
             }
 
             move() {
-                // Output index 8 = stay still (no movement)
-                if (this.outputIdx === 8) return;
-                const s = this.speed;
-                const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
-                const cc = DIRS[this.outputIdx];
-                this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
-                this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
-                this.position.y = getTerrainHeight(this.position.x, this.position.z) + (this.type === 'sheep' ? 9 : 15);
+                const lift = this.type === 'sheep' ? 9 : 15;
+                // Output index 8 = stay still: skip the XZ step, but still resolve Y. An
+                // idle animal that stopped in a lake has to keep riding the surface, and
+                // a newly spawned one needs its first Y from somewhere.
+                if (this.outputIdx !== 8) {
+                    const s = this.speed;
+                    const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
+                    const cc = DIRS[this.outputIdx];
+                    this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
+                    this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
+                }
+                // Terrain, or the water surface where the terrain is below it. Inlined
+                // rather than calling groundOrFloat() so the height field is sampled once
+                // per animal per frame, not twice.
+                const g = getTerrainHeight(this.position.x, this.position.z);
+                const floatY = waterLevel - FLOAT_DEPTH;
+                this.floating = g < floatY;
+                this.position.y = (this.floating ? floatY : g) + lift;
             }
 
             update(now, grid, waterLocations, animalIndex) {
@@ -2882,7 +2892,8 @@
             // Gravity / ground clamp
             catState.velocity.y -= 400 * deltaTime;
             catState.position.y += catState.velocity.y * deltaTime;
-            const catGround = getTerrainHeight(catState.position.x, catState.position.z) + 2;
+            // cat floats as well, riding higher than the animals (smaller sink)
+            const catGround = groundOrFloat(catState.position.x, catState.position.z, 2, 1.5);
             if (catState.position.y <= catGround + 33) {
                 catState.position.y = catGround;
                 catState.velocity.y = 0;
@@ -3181,7 +3192,7 @@
         // ============================================================================
         // low-frequency biome mask that both fades in ridged mountain noise AND lifts
         // the base height inside the mask. The lift is a multiplier gated by the mask,
-        // so mountainGain grows peaks without moving the plains -- and therefore
+        // so mountainGain grows peaks without moving the plains, therefore
         // without moving the water line relative to the lowlands.
         const TERRAIN = {
             amplitude: 260,           // plains ceiling, world units above physicalGroundY
@@ -3192,10 +3203,6 @@
             mountainGain: 1.4,        // extra height multiplier inside the mask
             ridgeSharp: 1.0,          // exponent on the ridged field; >1 narrows summits
             ridgeScale: 1.6,          // ridged frequency relative to the plains field
-            // gpuverse blends ridges via max(plains, peaks). Because fBm bunches around
-            // 0.5 and the squared ridged field sits lower, that max() often returns
-            // plains and the crests read faintly. ridgeAdd > 0 adds the ridged field on
-            // top instead; 0 keeps the port faithful. Try 0.35 if peaks look mushy.
             ridgeAdd: 0.0,
             waterCoverage: 0.22,      // fraction of the world that ends up under water
             waterLevelOverride: null, // set a number to pin the water plane manually
@@ -3209,7 +3216,7 @@
             _terrainSeed.ox = Math.random() * 1000;
             _terrainSeed.oz = Math.random() * 1000;
             _terrainSeed.seed = (Math.random() * 0x7fffffff) | 0;
-            _terrainSeed.f = Math.random() * 100;   // noise-space offset (gpuverse `seed`)
+            _terrainSeed.f = Math.random() * 100;
         }
 
         // Seeded value noise + fBm helpers
@@ -3227,8 +3234,7 @@
             const ix = Math.floor(x), iz = Math.floor(z);
             const fx = x - ix, fz = z - iz;
             // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st + 2nd derivative at
-            // cell edges, so no creasing/grain between noise cells. (gpuverse uses a
-            // cubic smoothstep here; the quintic is kept -- it is strictly smoother.)
+            // cell edges, so no creasing/grain between noise cells.
             const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
             const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
             const n00 = _hash2(ix,     iz);
@@ -3422,9 +3428,6 @@
         let waterLevel = physicalGroundY;
         let waterPlane = null;
 
-        // gpuverse picks the level as amplitude * (0.08 + 0.5 * hash(seed)). Because the
-        // plains height distribution bunches near the middle of that range, adjacent
-        // seeds there can swing between "no water at all" and "everything flooded".
         // Sampling the real height field and taking a percentile makes coverage
         // predictable per seed instead: waterCoverage 0.22 means ~22% of the map is wet.
         function computeWaterLevel() {
@@ -3597,6 +3600,19 @@
                 if (ok) out.push([wx, wz, level]);   // [x, z, surfaceY]
             }
             return out;
+        }
+
+        // How far a floating body sinks below the surface, so it reads as sitting IN the
+        // water rather than balanced on top of it.
+        const FLOAT_DEPTH = 5;
+
+        // The surface a body should rest on at (x,z): terrain, or the water plane wherever
+        // terrain dips below it.
+        // (p.y = max(ground, waterLevel - floatDepth)) with the body's own standing offset
+        // (`lift`) applied to whichever surface wins, so a floating animal keeps the same
+        // pose it has on land.
+        function groundOrFloat(x, z, lift = 0, sink = FLOAT_DEPTH) {
+            return Math.max(getTerrainHeight(x, z), waterLevel - sink) + lift;
         }
 
         function updateWater(timeSeconds) {
@@ -4684,10 +4700,11 @@
 
         function spawnAnimals(count, type, y) {
             for (let i = 0; i < count; i++) {
-                const a = new Animal([
-                    Math.random() * CONFIG.worldWidth, y,
-                    Math.random() * CONFIG.worldHeight
-                ], type);
+                const ax = Math.random() * CONFIG.worldWidth;
+                const az = Math.random() * CONFIG.worldHeight;
+                const a = new Animal([ax, y, az], type);
+                // seat it on whatever is underneath instead of dropping from a fixed y
+                a.position.y = groundOrFloat(ax, az, type === 'sheep' ? 9 : 15);
                 animals.push(a);
                 entities.push(a);
             }
@@ -4766,7 +4783,7 @@
                 player.position.y = getTerrainHeight(cabinX, cabinZ) + 35 + 10;
             }
 
-            // Water: ONE world-spanning plane at a single level (the gpuverse model).
+            // Water: ONE world-spanning plane at a single level
             // Lakes are wherever the terrain dips below it, so nothing is carved, no pool
             // meshes are spawned, and the shoreline is whatever the height field gives.
             createWaterPlane();
