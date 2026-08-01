@@ -2624,7 +2624,6 @@
                 scene.remove(terrain);
                 terrain = createTerrain();
                 scene.add(terrain);
-                carveWaterDepressions(terrain, waterLocations);
             }
 
             // Swap plant geometries in-place
@@ -3180,13 +3179,37 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
-        // Layered sine/cosine noise
-        // Returns a height value for any world (wx, wz) coordinate
-        let _terrainSeed = { ox: 0, oz: 0, seed: 1337 };
+        // low-frequency biome mask that both fades in ridged mountain noise AND lifts
+        // the base height inside the mask. The lift is a multiplier gated by the mask,
+        // so mountainGain grows peaks without moving the plains -- and therefore
+        // without moving the water line relative to the lowlands.
+        const TERRAIN = {
+            amplitude: 260,           // plains ceiling, world units above physicalGroundY
+            noiseSpan: 6.0,           // noise units the world spans; lower = larger features
+            biomeSpan: 2.2,           // mountain-mask frequency (well below noiseSpan)
+            mountainThreshold: 0.55,  // mask value where mountains begin
+            mountainBlend: 0.15,      // width of the plains -> mountain fade
+            mountainGain: 1.4,        // extra height multiplier inside the mask
+            ridgeSharp: 1.0,          // exponent on the ridged field; >1 narrows summits
+            ridgeScale: 1.6,          // ridged frequency relative to the plains field
+            // gpuverse blends ridges via max(plains, peaks). Because fBm bunches around
+            // 0.5 and the squared ridged field sits lower, that max() often returns
+            // plains and the crests read faintly. ridgeAdd > 0 adds the ridged field on
+            // top instead; 0 keeps the port faithful. Try 0.35 if peaks look mushy.
+            ridgeAdd: 0.0,
+            waterCoverage: 0.22,      // fraction of the world that ends up under water
+            waterLevelOverride: null, // set a number to pin the water plane manually
+        };
+        function terrainPeakHeight() {
+            return physicalGroundY + TERRAIN.amplitude * (1 + TERRAIN.mountainGain);
+        }
+
+        let _terrainSeed = { ox: 0, oz: 0, seed: 1337, f: 0 };
         function initTerrainSeed() {
             _terrainSeed.ox = Math.random() * 1000;
             _terrainSeed.oz = Math.random() * 1000;
             _terrainSeed.seed = (Math.random() * 0x7fffffff) | 0;
+            _terrainSeed.f = Math.random() * 100;   // noise-space offset (gpuverse `seed`)
         }
 
         // Seeded value noise + fBm helpers
@@ -3204,7 +3227,8 @@
             const ix = Math.floor(x), iz = Math.floor(z);
             const fx = x - ix, fz = z - iz;
             // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st + 2nd derivative at
-            // cell edges, so no creasing/grain between noise cells.
+            // cell edges, so no creasing/grain between noise cells. (gpuverse uses a
+            // cubic smoothstep here; the quintic is kept -- it is strictly smoother.)
             const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
             const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
             const n00 = _hash2(ix,     iz);
@@ -3226,36 +3250,57 @@
             }
             return sum / norm;
         }
-
-        function getTerrainHeight(wx, wz) {
-            const ox = _terrainSeed.ox, oz = _terrainSeed.oz;
-            // Scale world coords into noise space (controls overall feature size).
-            const nx = (wx + ox) * 0.0016;
-            const nz = (wz + oz) * 0.0016;
-
-            let h = physicalGroundY;
-
-            // Rolling base terrain: multi-octave fBm centred around 0.
-            // Fewer octaves + lower gain = smoother, less grainy base.
-            const base = _fbm(nx, nz, 4, 2.0, 0.42) - 0.5;
-            h += base * 150;
-
-            // Gentle warble so slopes aren't uniform
-            h += (_fbm(nx * 2.2 + 11.3, nz * 2.2 - 7.1, 2, 2.0, 0.45) - 0.5) * 26;
-
-            // Mountain mask: a low-frequency field that decides WHERE mountains
-            // appear, so peaks cluster into ranges instead of covering everything.
-            const mask = _fbm(nx * 0.45 + 50.0, nz * 0.45 + 50.0, 2, 2.0, 0.5);
-            const m = Math.max(0, (mask - 0.55) / 0.45); // 0 in lowlands, ramps up in ranges
-            if (m > 0) {
-                // Ridged noise: sharp crests instead of rounded blobs.
-                const r = _fbm(nx * 1.6 + 19.0, nz * 1.6 - 23.0, 5, 2.0, 0.5);
-                const ridge = 1 - Math.abs(2 * r - 1); // [0,1], peaks at ridgelines
-                const mountain = Math.pow(ridge, 1.6) * (m * m); // power sharpens crests
-                h += mountain * 1320;
+        // Ridged multifractal: each octave folded through 1-|2n-1| and squared, so
+        // valley floors pinch into crests instead of rounding off. Returns [0,1].
+        function _ridged(x, z, octaves, lacunarity, gain) {
+            let amp = 1, freq = 1, sum = 0, norm = 0;
+            for (let o = 0; o < octaves; o++) {
+                const n = _valueNoise(x * freq, z * freq);
+                const r = 1 - Math.abs(n * 2 - 1);
+                sum  += r * r * amp;
+                norm += amp;
+                amp  *= gain;
+                freq *= lacunarity;
             }
+            return sum / norm;
+        }
+        function _smoothstep(e0, e1, x) {
+            const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+            return t * t * (3 - 2 * t);
+        }
 
-            return h;
+        // Returns a height value for any world (wx, wz) coordinate.
+        // World XZ is normalised to 0..1 and then scaled into noise space, so feature
+        // size tracks the world size: growing CONFIG.scale gives the SAME landscape
+        // larger, not a busier one. (The previous version used absolute frequency, where
+        // a bigger world meant more hills of the same size.)
+        function getTerrainHeight(wx, wz) {
+            const T = TERRAIN;
+            const s = _terrainSeed.f;
+            const u = wx / CONFIG.worldWidth;
+            const v = wz / CONFIG.worldHeight;
+
+            const bx = u * T.noiseSpan + s;
+            const bz = v * T.noiseSpan + s * 1.7;
+
+            const plains = _fbm(bx, bz, 5, 2.03, 0.5);
+
+            // Biome mask: sampled far lower-frequency than the height field, so mountain
+            // country forms large contiguous regions rather than flickering cell to cell.
+            const mask = _fbm(u * T.biomeSpan + s * 3.1, v * T.biomeSpan - s * 1.9, 5, 2.03, 0.5);
+            const mtn  = _smoothstep(T.mountainThreshold, T.mountainThreshold + T.mountainBlend, mask);
+
+            let h01 = plains;
+            if (mtn > 0) {
+                // ridged field is only evaluated inside the mask -- identical output,
+                // but the lowlands skip five octaves of noise per sample.
+                const ridged = _ridged(bx * T.ridgeScale + 33.0, bz * T.ridgeScale - 21.0, 5, 2.13, 0.5);
+                const peaks  = Math.pow(Math.max(ridged, 1e-4), T.ridgeSharp);
+                h01 = plains + (Math.max(plains, peaks) - plains) * mtn;
+                if (T.ridgeAdd > 0) h01 += peaks * mtn * T.ridgeAdd;
+            }
+            const lift = mtn * T.mountainGain;
+            return physicalGroundY + h01 * T.amplitude * (1 + lift);
         }
 
         function createTerrain() {
@@ -3365,6 +3410,205 @@
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
             paintTerrainBySlope(geometry);
+        }
+
+        // ============================================================================
+        // WATER
+        // ============================================================================
+        // One world-spanning plane at a single Y. Lakes are simply wherever the terrain
+        // dips below it: no per-pool boxes, no carving. All surface detail lives in the
+        // fragment shader -- two scrolling value-noise layers perturb the normal,
+        // Fresnel blends a deep tint toward sky colour, plus a sharp sun glint.
+        let waterLevel = physicalGroundY;
+        let waterPlane = null;
+
+        // gpuverse picks the level as amplitude * (0.08 + 0.5 * hash(seed)). Because the
+        // plains height distribution bunches near the middle of that range, adjacent
+        // seeds there can swing between "no water at all" and "everything flooded".
+        // Sampling the real height field and taking a percentile makes coverage
+        // predictable per seed instead: waterCoverage 0.22 means ~22% of the map is wet.
+        function computeWaterLevel() {
+            if (TERRAIN.waterLevelOverride !== null) return TERRAIN.waterLevelOverride;
+            const N = 96;
+            const samples = new Float64Array(N * N);
+            let k = 0;
+            for (let iz = 0; iz < N; iz++) {
+                const wz = (iz / (N - 1)) * CONFIG.worldHeight;
+                for (let ix = 0; ix < N; ix++) {
+                    samples[k++] = getTerrainHeight((ix / (N - 1)) * CONFIG.worldWidth, wz);
+                }
+            }
+            samples.sort();   // TypedArray sort is numeric
+            const cov = Math.max(0, Math.min(1, TERRAIN.waterCoverage));
+            return samples[Math.floor(cov * (samples.length - 1))];
+        }
+
+        // Nearest point to (x,z) whose ground sits at or above minY. Spirals outward in
+        // rings; returns the original point if nothing dry is found.
+        function findDryGround(x, z, minY, maxRadius = 600, step = 25) {
+            if (getTerrainHeight(x, z) >= minY) return [x, z];
+            for (let r = step; r <= maxRadius; r += step) {
+                const n = Math.max(8, Math.round((2 * Math.PI * r) / step));
+                for (let i = 0; i < n; i++) {
+                    const a = (i / n) * Math.PI * 2;
+                    const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+                    if (px < 60 || px > CONFIG.worldWidth - 60) continue;
+                    if (pz < 60 || pz > CONFIG.worldHeight - 60) continue;
+                    if (getTerrainHeight(px, pz) >= minY) return [px, pz];
+                }
+            }
+            return [x, z];
+        }
+
+        const WATER_VS = `
+            varying vec3 vWorld;
+            void main() {
+                vec4 wp = modelMatrix * vec4(position, 1.0);
+                vWorld = wp.xyz;
+                gl_Position = projectionMatrix * viewMatrix * wp;
+            }
+        `;
+        const WATER_FS = `
+            uniform float uTime;
+            uniform vec3  uSunDir;
+            uniform vec3  uSunColor;
+            uniform vec3  uSkyColor;
+            uniform vec3  uDeepColor;
+            uniform vec3  uFogColor;
+            uniform float uFogNear;
+            uniform float uFogFar;
+            uniform float uOpacity;
+            varying vec3 vWorld;
+
+            float hash2(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+            }
+            float vnoise(vec2 p) {
+                vec2 i = floor(p), f = fract(p);
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                float a = hash2(i),                  b = hash2(i + vec2(1.0, 0.0));
+                float c = hash2(i + vec2(0.0, 1.0)), d = hash2(i + vec2(1.0, 1.0));
+                return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+            }
+            // Animated normal: two scrolling noise layers perturbing the flat normal.
+            vec3 waterNormal(vec2 xz, float t) {
+                float n1 = vnoise(xz * 0.05 + vec2(t * 0.6, t * 0.35)) - 0.5;
+                float n2 = vnoise(xz * 0.13 - vec2(t * 0.4, t * 0.5))  - 0.5;
+                vec2 slope = vec2(n1, n2) * 0.35;
+                return normalize(vec3(-slope.x, 1.0, -slope.y));
+            }
+            void main() {
+                vec3 nrm = waterNormal(vWorld.xz, uTime);
+                vec3 viewDir = normalize(cameraPosition - vWorld);
+
+                // Fresnel: grazing angles reflect sky, head-on shows the deep tint.
+                float fresnel = pow(1.0 - max(dot(nrm, viewDir), 0.0), 4.0);
+                vec3 col = mix(uDeepColor, uSkyColor, clamp(fresnel, 0.0, 0.85));
+
+                // specular sun glint
+                vec3 halfV = normalize(normalize(uSunDir) + viewDir);
+                col += uSunColor * pow(max(dot(nrm, halfV), 0.0), 64.0) * 1.5;
+
+                // linear fog, matched to scene.fog so the plane fades with everything else
+                float fogF = clamp((length(vWorld - cameraPosition) - uFogNear)
+                                   / max(uFogFar - uFogNear, 0.001), 0.0, 1.0);
+                gl_FragColor = vec4(mix(col, uFogColor, fogF), uOpacity);
+            }
+        `;
+
+        function createWaterPlane() {
+            if (waterPlane) {
+                scene.remove(waterPlane);
+                waterPlane.geometry.dispose();
+                waterPlane.material.dispose();
+                waterPlane = null;
+            }
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 1, 1);
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime:      { value: 0 },
+                    uSunDir:    { value: LIGHT_OFFSET.clone().normalize() },
+                    uSunColor:  { value: new THREE.Color(0xffffff) },
+                    uSkyColor:  { value: new THREE.Color(0x87CEEB) },
+                    uDeepColor: { value: new THREE.Color(0x0a1f29) },
+                    uFogColor:  { value: scene.fog.color.clone() },
+                    uFogNear:   { value: scene.fog.near },
+                    uFogFar:    { value: scene.fog.far },
+                    uOpacity:   { value: 0.85 },
+                },
+                vertexShader: WATER_VS,
+                fragmentShader: WATER_FS,
+                transparent: true,
+                depthWrite: false,          // blends over terrain without occluding it
+                side: THREE.DoubleSide,     // visible from underneath in creative flight
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.position.set(CONFIG.worldWidth / 2, waterLevel, CONFIG.worldHeight / 2);
+            mesh.renderOrder = 1;
+            mesh.frustumCulled = false;   // one huge quad; culling it by bounds is noise
+            scene.add(mesh);
+            waterPlane = mesh;
+            return mesh;
+        }
+
+        // Drink points for the animal AI. Previously these were scattered first and pools
+        // drawn around them; now the plane is the source of truth and the points are
+        // sampled off its shoreline (submerged cells that touch dry ground), so animals
+        // walk to an edge they can actually stand on.
+        function deriveWaterLocations(level) {
+            const out = [];
+            const N = 128;
+            const dx = CONFIG.worldWidth / (N - 1), dz = CONFIG.worldHeight / (N - 1);
+            const h = new Float64Array(N * N);
+            for (let iz = 0; iz < N; iz++) {
+                for (let ix = 0; ix < N; ix++) h[iz * N + ix] = getTerrainHeight(ix * dx, iz * dz);
+            }
+            // Collect EVERY shoreline cell first, then thin. Accepting greedily during
+            // the row scan and stopping at the cap would leave the last rows of the map
+            // with no drink points at all.
+            const cand = [];
+            for (let iz = 1; iz < N - 1; iz++) {
+                for (let ix = 1; ix < N - 1; ix++) {
+                    if (h[iz * N + ix] >= level) continue;                 // dry cell
+                    // keep only submerged cells with at least one dry 4-neighbour
+                    if (h[iz * N + ix - 1]   < level && h[iz * N + ix + 1]   < level &&
+                        h[(iz - 1) * N + ix] < level && h[(iz + 1) * N + ix] < level) continue;
+                    cand.push(ix * dx, iz * dz);
+                }
+            }
+            // shuffle so the thinning pass samples the whole map evenly
+            const order = new Uint32Array(cand.length / 2);
+            for (let i = 0; i < order.length; i++) order[i] = i;
+            for (let i = order.length - 1; i > 0; i--) {
+                const j = (Math.random() * (i + 1)) | 0;
+                const t = order[i]; order[i] = order[j]; order[j] = t;
+            }
+            const minSep = Math.max(18, Math.min(CONFIG.worldWidth, CONFIG.worldHeight) * 0.035);
+            const minSepSq = minSep * minSep;
+            const MAX_POINTS = 160;
+            for (let o = 0; o < order.length && out.length < MAX_POINTS; o++) {
+                const wx = cand[order[o] * 2], wz = cand[order[o] * 2 + 1];
+                let ok = true;
+                for (let k = 0; k < out.length; k++) {
+                    const ddx = wx - out[k][0], ddz = wz - out[k][1];
+                    if (ddx * ddx + ddz * ddz < minSepSq) { ok = false; break; }
+                }
+                if (ok) out.push([wx, wz, level]);   // [x, z, surfaceY]
+            }
+            return out;
+        }
+
+        function updateWater(timeSeconds) {
+            if (!waterPlane) return;
+            const u = waterPlane.material.uniforms;
+            u.uTime.value = timeSeconds;
+            // fog range moves with CONFIG.scale and the draw-distance slider
+            u.uFogNear.value = scene.fog.near;
+            u.uFogFar.value  = scene.fog.far;
+            u.uFogColor.value.copy(scene.fog.color);
+            if (scene.background && scene.background.isColor) u.uSkyColor.value.copy(scene.background);
+            u.uSunDir.value.copy(LIGHT_OFFSET).normalize();
         }
 
         // ============================================================================
@@ -4462,6 +4706,12 @@
             cabinObjects = [];
             CABIN_COLLIDERS = [];
 
+            // Roll the terrain seed BEFORE placing cabins so their footing -- and the
+            // underwater rejection below -- use THIS world's height field. (Previously
+            // the seed was rolled after, so cabins were sited against the old terrain.)
+            initTerrainSeed();
+            waterLevel = computeWaterLevel();
+
             // Spawn cabins: num_cabins = max(1, floor(log(scale)))
             const num_cabins = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
             const cabinScale = 1.75;
@@ -4470,15 +4720,18 @@
             for (let i = 0; i < num_cabins; i++) {
                 let cx, cz, tries = 0;
                 if (i === 0) {
-                    // First cabin always at the original fixed position
-                    cx = 400; cz = 300;
+                    // First cabin always at the original fixed position, nudged to the
+                    // nearest dry ground so the player never spawns inside a lake.
+                    const dry0 = findDryGround(400, 300, waterLevel + 4);
+                    cx = dry0[0]; cz = dry0[1];
                 } else {
                     do {
                         cx = 150 + Math.random() * (CONFIG.worldWidth  - 300);
                         cz = 150 + Math.random() * (CONFIG.worldHeight - 300);
                         tries++;
-                    } while (tries < 50 && cabinPositions.some(([px, pz]) =>
-                        Math.hypot(cx - px, cz - pz) < minSep));
+                    } while (tries < 50 && (getTerrainHeight(cx, cz) < waterLevel + 4 ||
+                        cabinPositions.some(([px, pz]) =>
+                            Math.hypot(cx - px, cz - pz) < minSep)));
                 }
                 cabinPositions.push([cx, cz]);
                 const rotY = i === 0
@@ -4501,8 +4754,7 @@
             initInstancedPlantMeshes();
             initInstancedPebbleMeshes();
 
-            // Add terrain
-            initTerrainSeed();
+            // Add terrain (seed + water level were resolved before cabin placement)
             terrain = createTerrain();
             scene.add(terrain);
 
@@ -4514,112 +4766,12 @@
                 player.position.y = getTerrainHeight(cabinX, cabinZ) + 35 + 10;
             }
 
-            // Add water bodies and track locations
-            for (let i = 0; i < 3 * Math.log1p(CONFIG.scale); i++) {
-                let clusterX, clusterZ, isValidCluster = false;
-                const clusterRadius = 60; // Radius around cluster center
-                
-                // Find a valid cluster location that doesn't overlap with existing ones
-                // and sits close to sea level so water never appears on hillsides.
-                const MAX_WATER_HEIGHT = physicalGroundY + 30;
-                while (!isValidCluster) {
-                    clusterX = Math.random() * CONFIG.worldWidth;
-                    clusterZ = Math.random() * CONFIG.worldHeight;
-
-                    // Reject clusters on elevated terrain
-                    if (getTerrainHeight(clusterX, clusterZ) > MAX_WATER_HEIGHT) continue;
-
-                    // Check if this cluster overlaps with existing water clusters
-                    isValidCluster = true;
-                    for (let existing of waterLocations) {
-                        const dist = Math.sqrt(
-                            Math.pow(clusterX - existing[0], 2) + 
-                            Math.pow(clusterZ - existing[1], 2)
-                        );
-                        if (dist < clusterRadius * 2) {
-                            isValidCluster = false;
-                            break;
-                        }
-                    }
-                }
-                
-                // Scatter individual drink points in this cluster (used by animal AI/
-                // navigation), then render ONE water mesh spanning their footprint.
-                const clusterPoints = [];
-                for (let j = 0; j < 15 * Math.log1p(CONFIG.scale); j++) {
-                    let wx, wz, isValidPosition = false;
-                    const tileRadius = 10; // minimum distance between individual drink points
-                    
-                    // Find valid position within cluster
-                    while (!isValidPosition) {
-                        wx = clusterX + (Math.random() - 0.5) * clusterRadius * 2;
-                        wz = clusterZ + (Math.random() - 0.5) * clusterRadius * 2;
-                        
-                        // Keep within world bounds
-                        if (wx < 0 || wx > CONFIG.worldWidth || wz < 0 || wz > CONFIG.worldHeight) {
-                            continue;
-                        }
-                        
-                        // Check distance from other water points in this cluster
-                        isValidPosition = true;
-                        for (let existing of waterLocations) {
-                            const dist = Math.sqrt(
-                                Math.pow(wx - existing[0], 2) + 
-                                Math.pow(wz - existing[1], 2)
-                            );
-                            if (dist < tileRadius) {
-                                isValidPosition = false;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    const pt = [wx, wz];
-                    clusterPoints.push(pt);
-                    waterLocations.push(pt);
-                }
-
-                // One filled pool covering the cluster's bounding box (padded to the
-                // tile edges so the surface reaches the outermost drink points)
-                if (clusterPoints.length) {
-                    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-                    for (const [px, pz] of clusterPoints) {
-                        if (px < minX) minX = px;
-                        if (px > maxX) maxX = px;
-                        if (pz < minZ) minZ = pz;
-                        if (pz > maxZ) maxZ = pz;
-                    }
-                    const pad = 12; // extend past the outermost points for a continuous edge
-                    const width  = (maxX - minX) + pad * 2;
-                    const length = (maxZ - minZ) + pad * 2;
-                    const cx = (minX + maxX) / 2;
-                    const cz = (minZ + maxZ) / 2;
-                    // Place the water surface at the LOWEST terrain height
-                    const halfW = width / 2, halfL = length / 2;
-                    let lowestH = Infinity;
-                    const SAMPLES = 6; // grid resolution per axis across the footprint
-                    for (let sx = 0; sx <= SAMPLES; sx++) {
-                        for (let sz = 0; sz <= SAMPLES; sz++) {
-                            const tx = cx - halfW + (width  * sx) / SAMPLES;
-                            const tz = cz - halfL + (length * sz) / SAMPLES;
-                            const h = getTerrainHeight(tx, tz);
-                            if (h < lowestH) lowestH = h;
-                        }
-                    }
-                    const waterSurfaceY = lowestH - 2;
-
-                    // Tag this cluster's drink points with the surface height
-                    for (const p of clusterPoints) p[2] = waterSurfaceY;
-
-                    const w = new Water([cx, waterSurfaceY, cz], { width, length });
-                    waters.push(w);
-                    entities.push(w);
-                }
-            }
-            waterGridDirty = true; // trigger water spatial grid rebuild
-
-            // Sink the ground beneath each water tile so the translucent cubes read as pools.
-            carveWaterDepressions(terrain, waterLocations);
+            // Water: ONE world-spanning plane at a single level (the gpuverse model).
+            // Lakes are wherever the terrain dips below it, so nothing is carved, no pool
+            // meshes are spawned, and the shoreline is whatever the height field gives.
+            createWaterPlane();
+            waterLocations = deriveWaterLocations(waterLevel);
+            waterGridDirty = true;
 
             // Scatter pebbles across the terrain
             placePebbles();
@@ -5119,6 +5271,8 @@
 
             // Refresh shadow map every 3rd frame (autoUpdate is off; LOW mode skips entirely)
             if (graphicsMode !== 'low' && ticks % 3 === 0) directionalLight.shadow.needsUpdate = true;
+
+            updateWater((timestamp || performance.now()) * 0.001);
 
             renderer.render(scene, camera);
         }
