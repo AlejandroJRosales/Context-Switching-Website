@@ -35,7 +35,6 @@ body {
   position:absolute;
   inset:0;
   pointer-events:auto;
-  touch-action:none;
   z-index:1
 }
 .pad {
@@ -51,6 +50,15 @@ body {
 }
 #joy {
   left:24px
+}
+#jump {
+  right:24px;
+  width:90px;
+  height:90px;
+  bottom:39px;
+  display:flex;
+  align-items:center;
+  justify-content:center
 }
 #joy .nub {
   position:absolute;
@@ -141,6 +149,7 @@ body {
     </span>
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
+  <div class="pad" id="jump"><span class="jlbl">JUMP</span></div>
   <div id="look"></div>
 </div>
 <script>
@@ -1992,7 +2001,6 @@ const HAS_TOUCH = 'ontouchstart' in window || (navigator.maxTouchPoints | 0) > 0
 const joyEl = byId('joy');
 const lookEl = byId('look');
 const nub = joyEl.querySelector('.nub');
-let jumpPulse = false;
 
 if (HAS_TOUCH) {
   (function () {
@@ -2042,20 +2050,9 @@ if (HAS_TOUCH) {
     }
   })();
   (function () {
-    const TAP_MAX_MS = 250,
-      TAP_MOVE_PX = 16,
-      DOUBLE_TAP_MS = 300,
-      DOUBLE_TAP_PX = 60;
     let touchId = null,
       lastX = 0,
-      lastY = 0,
-      startX = 0,
-      startY = 0,
-      startMs = 0,
-      drift = 0,
-      prevTapMs = -1e9,
-      prevTapX = 0,
-      prevTapY = 0;
+      lastY = 0;
     lookEl.addEventListener(
       'touchstart',
       (e) => {
@@ -2063,10 +2060,6 @@ if (HAS_TOUCH) {
         touchId = t.identifier;
         lastX = t.clientX;
         lastY = t.clientY;
-        startX = t.clientX;
-        startY = t.clientY;
-        startMs = performance.now();
-        drift = 0;
         e.preventDefault();
       },
       { passive: false }
@@ -2079,39 +2072,35 @@ if (HAS_TOUCH) {
             applyLookDelta(t.clientX - lastX, t.clientY - lastY);
             lastX = t.clientX;
             lastY = t.clientY;
-            const d = Math.hypot(t.clientX - startX, t.clientY - startY);
-            if (d > drift) drift = d;
             e.preventDefault();
           }
       },
       { passive: false }
     );
     const end = (e) => {
-      for (const t of e.changedTouches)
-        if (t.identifier === touchId) {
-          touchId = null;
-          if (e.type !== 'touchend' || drift > TAP_MOVE_PX) continue;
-          const now = performance.now();
-          if (now - startMs > TAP_MAX_MS) continue;
-          if (
-            now - prevTapMs <= DOUBLE_TAP_MS &&
-            Math.hypot(t.clientX - prevTapX, t.clientY - prevTapY) <= DOUBLE_TAP_PX
-          ) {
-            jumpPulse = true;
-            prevTapMs = -1e9;
-          } else {
-            prevTapMs = now;
-            prevTapX = t.clientX;
-            prevTapY = t.clientY;
-          }
-        }
+      for (const t of e.changedTouches) if (t.identifier === touchId) touchId = null;
     };
     lookEl.addEventListener('touchend', end);
     lookEl.addEventListener('touchcancel', end);
   })();
+  (function () {
+    const jumpBtn = byId('jump');
+    const down = (e) => {
+      keys[' '] = true;
+      e.preventDefault();
+    };
+    const up = (e) => {
+      keys[' '] = false;
+      e.preventDefault();
+    };
+    jumpBtn.addEventListener('touchstart', down, { passive: false });
+    jumpBtn.addEventListener('touchend', up, { passive: false });
+    jumpBtn.addEventListener('touchcancel', up, { passive: false });
+  })();
 } else {
   joyEl.style.display = 'none';
   lookEl.style.display = 'none';
+  byId('jump').style.display = 'none';
 }
 
 byId('audioBtn').addEventListener('click', () => {
@@ -2656,7 +2645,6 @@ function setPaused(v) {
     if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;
   } else {
-    jumpPulse = false;
     lastFrameMs = performance.now();
     rafId = requestAnimationFrame(frame);
   }
@@ -2789,20 +2777,18 @@ function frame(now) {
     camera.velocityY = 0;
     camera.onGround = false;
     prevJumpKey = jumpKey;
-    jumpPulse = false;
   } else {
     const dx = (forward[0] * moveFwd + right[0] * moveStrafe) * WALK_SPEED * dt,
       dz = (forward[2] * moveFwd + right[2] * moveStrafe) * WALK_SPEED * dt;
     camera.x += dx;
     camera.z += dz;
     stepDistance += Math.abs(dx) + Math.abs(dz);
-    if (((jumpKey && !prevJumpKey) || jumpPulse) && camera.jumpsLeft > 0) {
+    if (jumpKey && !prevJumpKey && camera.jumpsLeft > 0) {
       camera.velocityY = JUMP_VELOCITY;
       camera.onGround = false;
       camera.jumpsLeft--;
     }
     prevJumpKey = jumpKey;
-    jumpPulse = false;
     const groundY = terrainHeight(camera.x, camera.z) + EYE_HEIGHT;
     camera.velocityY -= GRAVITY * dt;
     camera.y += camera.velocityY * dt;
