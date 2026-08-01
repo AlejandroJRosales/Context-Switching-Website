@@ -414,31 +414,8 @@
             top: max(10px, env(safe-area-inset-top));
             right: max(10px, env(safe-area-inset-right));
             display: flex;
-            align-items: center;
             gap: 8px;
             z-index: 20;
-        }
-
-        /* Select / Deselect toggle */
-        /* Backgrounds are set on the id so the button:hover/:active rule (which
-           drops to a 0.1-alpha green) can't win on specificity and wash the
-           button out over bright sky. */
-        #select-btn {
-            min-width: 88px;
-            white-space: nowrap;
-            background: rgb(4, 10, 4);
-        }
-        #select-btn:hover,
-        #select-btn:active {
-            background: rgb(10, 34, 10);
-        }
-        #select-btn.selected {
-            background: rgb(8, 40, 8);
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.4);
-        }
-        #select-btn.selected:hover,
-        #select-btn.selected:active {
-            background: rgb(12, 54, 12);
         }
 
         /* Animal Stat Panel */
@@ -711,7 +688,6 @@
 
     <!-- Settings Button -->
     <div id="settings-btn-wrap">
-        <button id="select-btn">SELECT</button>
         <button id="settings-btn">⚙</button>
     </div>
 
@@ -1185,14 +1161,6 @@
 
             if ((e.key === 'Escape' || e.key === 'm' || e.key === 'M') && !e.repeat) {
                 toggleSettings();
-            }
-
-            // Keyboard twin of the SELECT / DESELECT button. Pointer lock swallows
-            // mouse clicks, so the button is unreachable with the mouse while looking
-            // around; this is how the toggle is driven on desktop.
-            if ((e.key === 'e' || e.key === 'E') && !e.repeat) {
-                e.preventDefault();
-                toggleSelection();
             }
         });
 
@@ -4059,25 +4027,15 @@
 
         // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
-        let lockedTargetAnimal = null; // set and cleared by the SELECT / DESELECT toggle
-
-        // Selection used to be hands-free: looking at an animal locked it, clicking
-        // away cleared it. With an explicit toggle those two behaviors fight it --
-        // DESELECT would be undone on the next frame while the crosshair is still on
-        // the animal, and pressing SELECT counts as a click outside the panel. Both
-        // are gated behind this flag; set it to true to get the old behavior back
-        // alongside the button.
-        const AUTO_SELECT_ON_LOOK = false;
+        let lockedTargetAnimal = null; // stays set until click outside ASP panel
 
         // Click outside the ASP panel clears the locked selection
         document.addEventListener('click', (e) => {
-            if (!AUTO_SELECT_ON_LOOK) return;
             if (lockedTargetAnimal && _aspPanel.classList.contains('visible') && !e.target.closest('#animal-stat-panel')) {
                 lockedTargetAnimal = null;
             }
         });
         document.addEventListener('touchend', (e) => {
-            if (!AUTO_SELECT_ON_LOOK) return;
             if (lockedTargetAnimal && _aspPanel.classList.contains('visible')) {
                 for (const touch of e.changedTouches) {
                     // Only a genuine tap (not a joystick or camera drag release) should dismiss the panel
@@ -4101,52 +4059,6 @@
         const _aspWaterValEl= document.getElementById('asp-water-val');
         const _aspAgeLineEl = document.getElementById('asp-age-line');
         const _aspAgeValEl  = document.getElementById('asp-age-val');
-
-        // ---- SELECT / DESELECT toggle -------------------------------------------
-        // Locks the animal under the crosshair, which is what makes the animal stat
-        // panel appear (updateStatLabels only fills the panel for lockedTargetAnimal).
-        const _selectBtn = document.getElementById('select-btn');
-        let _selectBtnLabel = null;   // last string written, to skip redundant DOM writes
-        let _selectFlashUntil = 0;    // brief "NO TARGET" feedback window
-
-        function refreshSelectBtn() {
-            if (!_selectBtn) return;
-            const label = performance.now() < _selectFlashUntil
-                ? 'NO TARGET'
-                : (lockedTargetAnimal ? 'DESELECT' : 'SELECT');
-            if (label !== _selectBtnLabel) {
-                _selectBtnLabel = label;
-                _selectBtn.textContent = label;
-            }
-            const sel = !!lockedTargetAnimal;
-            if (_selectBtn._sel !== sel) {
-                _selectBtn._sel = sel;
-                _selectBtn.classList.toggle('selected', sel);
-            }
-        }
-
-        function toggleSelection() {
-            if (lockedTargetAnimal) {
-                lockedTargetAnimal = null;
-            } else {
-                // currentTargetAnimal is refreshed every other tick; fall back to a
-                // fresh raycast so a press lands on whatever is under the crosshair now.
-                const t = currentTargetAnimal || raycaster();
-                if (t && t.alive) {
-                    lockedTargetAnimal = t;
-                } else {
-                    _selectFlashUntil = performance.now() + 800;
-                }
-            }
-            refreshSelectBtn();
-        }
-
-        if (_selectBtn) {
-            _selectBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                toggleSelection();
-            });
-        }
 
 
         const _aspMemPredTxt    = document.getElementById('asp-mem-predator-dist');
@@ -5383,17 +5295,13 @@
             currentTargetAnimal = (target && target.alive) ? target : null;
 
             // Switch the locked subject whenever the crosshair is on a different animal
-            if (AUTO_SELECT_ON_LOOK && currentTargetAnimal !== null && currentTargetAnimal !== lockedTargetAnimal) {
+            if (currentTargetAnimal !== null && currentTargetAnimal !== lockedTargetAnimal) {
                 lockedTargetAnimal = currentTargetAnimal;
             }
             // If the locked animal died, clear it
             if (lockedTargetAnimal && !lockedTargetAnimal.alive) {
                 lockedTargetAnimal = null;
             }
-
-            // Keeps the toggle honest when something else drops the selection
-            // (death, world reset, HUD cleared) and reverts the NO TARGET flash.
-            refreshSelectBtn();
 
             if (typeof _rayLines !== 'undefined') {
                 _rayLines.visible = sphereVisMode !== 'off' && !!(currentTargetAnimal || lockedTargetAnimal || sphereVisMode === 'all');
