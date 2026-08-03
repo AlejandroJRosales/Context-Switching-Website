@@ -411,7 +411,7 @@
         /* Settings Button */
         #settings-btn-wrap {
             position: absolute;
-            bottom: max(10px, env(safe-area-inset-top));
+            top: max(10px, env(safe-area-inset-top));
             right: max(10px, env(safe-area-inset-right));
             display: flex;
             gap: 8px;
@@ -693,9 +693,9 @@
 
     <!-- Settings Panel -->
     <div id="settings-panel">
-        <div class="sp-game-title">🌿Ecosystem Simulation</div>
+        <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
-            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn from their procedurally generated world.
+            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn from their procedurally generated world. Read more about the architecture of their brains <a class="sp-link" href="https://www.contextswitching.org/neuro/mat"><u>here</u></a>.
         </div>
         <button class="sp-row">
             <span class="sp-label">Creator</span>
@@ -703,7 +703,7 @@
         </button >
         <button class="sp-row">
             <span class="sp-label">Code</span>
-            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">1.3.01</a></span>
+            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">1.3.01-opt</a></span>
         </button>
         <button class="sp-row">
             <span class="sp-label">FPS</span>
@@ -740,6 +740,10 @@
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
             <span class="sp-value" id="vrBtnText">Not Supported</span>
+        </button>
+        <button class="sp-row" id="fpsCapBtn">
+            <span class="sp-label">Frame Cap</span>
+            <span class="sp-value" id="fpsCapState">60</span>
         </button>
         <div class="sp-row-scale">
             <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">10</span></label>
@@ -783,6 +787,58 @@
             worldHeight: Math.trunc(Number(600 * scale)),
             maxDrawDistance: Math.trunc(Number(2000 * scale))
         };
+
+        // ====================================================================
+        // PERF INFRASTRUCTURE
+        // ====================================================================
+
+        // Frame cap. The render loop is driven by setAnimationLoop, which fires
+        // at display refresh (measured 113 fps on a 120 Hz panel). Everything in
+        // the frame -- sim step, matrix composition, GPU uploads -- scaled with
+        // that. 0 disables the cap; XR always runs uncapped (the headset owns
+        // its own cadence and a capped loop would judder).
+        let targetFPS = 60;
+        let _lastRenderTs = -1e9;
+
+        // Bumped whenever terrain geometry is regenerated, so anything that
+        // caches a sampled ground height knows to re-sample.
+        let terrainVersion = 0;
+
+        // How many frames between REINFORCE weight updates for a given animal
+        // (staggered by animal index). Lower = faster learning and more CPU.
+        const BRAIN_UPDATE_INTERVAL = 30;
+
+        // three r158 uploads the ENTIRE typed array whenever needsUpdate is set,
+        // unless updateRange is narrowed first (and it resets to -1 after every
+        // upload, so it has to be re-set each frame). Without this, a 12000-slot
+        // InstancedMesh ships 768 KB per frame even with 25 instances alive.
+        function markAttr(attr, floatCount) {
+            if (!attr) return;
+            if (floatCount <= 0) return;
+            if (attr.addUpdateRange) {          // r159+ API
+                attr.clearUpdateRanges();
+                attr.addUpdateRange(0, floatCount);
+            } else {                            // r158 and earlier
+                attr.updateRange.offset = 0;
+                attr.updateRange.count  = floatCount;
+            }
+            attr.needsUpdate = true;
+        }
+        function markInstances(mesh, count) {
+            mesh.count = count;
+            markAttr(mesh.instanceMatrix, count * 16);
+        }
+        function markInstanceColors(mesh, count) {
+            markAttr(mesh.instanceColor, count * 3);
+        }
+
+        // textContent assignment replaces the element's text node even when the
+        // string is identical -- that was ~5 DOM nodes created per frame.
+        function setTextIfChanged(el, str) {
+            if (!el || el._lastTxt === str) return;
+            el._lastTxt = str;
+            el.textContent = str;
+        }
         const player = {
             position: new THREE.Vector3(400, 50, 330),
             velocity: new THREE.Vector3(0, 0, 0),
@@ -800,6 +856,15 @@
         let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
+        // Frame cap cycle: 30 -> 60 -> 120 -> uncapped. Lower is dramatically
+        // cheaper on battery; every per-frame cost scales linearly with it.
+        const FPS_CAP_OPTIONS = [30, 60, 120, 0];
+        document.getElementById('fpsCapBtn').addEventListener('click', function() {
+            const i = FPS_CAP_OPTIONS.indexOf(targetFPS);
+            targetFPS = FPS_CAP_OPTIONS[(i + 1) % FPS_CAP_OPTIONS.length];
+            document.getElementById('fpsCapState').textContent =
+                targetFPS === 0 ? 'UNCAPPED' : String(targetFPS);
+        });
         document.getElementById('scale-slider').addEventListener('input', function() {
             pendingScale = parseFloat(this.value);
             document.getElementById('scaleDisplay').textContent = pendingScale;
@@ -1408,6 +1473,31 @@
                 bucket.push(entity);
             }
 
+            // Non-generator variant: appends matching entities into `out` and
+            // returns the count (caller iterates 0..n-1 and ignores stale tail
+            // entries). A generator allocates an iterator object plus one result
+            // object per yielded element; with up to 5 queries per animal per
+            // frame that was a large share of the ~140 MB/s allocation rate.
+            // Buckets are never mutated mid-query, so snapshotting is equivalent.
+            queryInto(out, x, z, r) {
+                let n = 0;
+                const cs = this.cellSize;
+                const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
+                const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
+                for (let cy = cy0; cy <= cy1; cy++) {
+                    for (let cx = cx0; cx <= cx1; cx++) {
+                        const k = this._key(
+                            ((cx % this.cols) + this.cols) % this.cols,
+                            ((cy % this.rows) + this.rows) % this.rows
+                        );
+                        const bucket = this.cells.get(k);
+                        if (!bucket) continue;
+                        for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
+                    }
+                }
+                return n;
+            }
+
             // Yields all entities in cells within radius r of (x, z)
             *query(x, z, r) {
                 const cs = this.cellSize;
@@ -1425,6 +1515,14 @@
                 }
             }
         }
+
+        // Reusable scratch buffers for SpatialGrid.queryInto. Separate buffers per
+        // call site so a query is never clobbered by another one nested inside it.
+        const _qLocate    = [];
+        const _qHunt      = [];
+        const _qMate      = [];
+        const _qPlant     = [];
+        const _qWater     = [];
 
         // ============================================================================
         // TWO-LOBE NETWORK
@@ -1987,7 +2085,9 @@
                 let bestPredDist = Infinity, bestFoodDist = Infinity,
                     bestMateDist = Infinity, bestWaterDist = Infinity;
 
-                for (const obj of grid.query(px, pz, this.visionDistance)) {
+                const _n = grid.queryInto(_qLocate, px, pz, this.visionDistance);
+                for (let _i = 0; _i < _n; _i++) {
+                    const obj = _qLocate[_i];
                     if (obj === this) continue;
                     const dx = obj.position.x - px, dz = obj.position.z - pz;
                     const d = dx*dx + dz*dz;
@@ -2146,9 +2246,13 @@
                     this.actionTimer   = this.ACTION_HOLD;
                 }
 
-                // Brain weight update: twice per 60 frames (every 30 frames), staggered per animal
-                // to avoid all animals updating simultaneously.
-                if (ticks % 2 === animalIndex % 2) {
+                // Brain weight update, staggered per animal so they don't all
+                // fire on the same frame.
+                // NOTE: this used to read `ticks % 2 === animalIndex % 2`, which
+                // ran every OTHER frame (~56 Hz), not every 30 frames as the
+                // comment claimed -- 8% of total CPU. Set BRAIN_UPDATE_INTERVAL
+                // back to 2 if the fast cadence was actually intended.
+                if (ticks % BRAIN_UPDATE_INTERVAL === animalIndex % BRAIN_UPDATE_INTERVAL) {
                     // Reward: positive when health improves and needs decrease; negative otherwise.
                     // Each term is normalised to [-1, 1] before combining so no single signal dominates.
                     const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
@@ -2253,12 +2357,20 @@
                 this.maxHealth = 10;
                 // Snap Y to terrain on construction so first render frame is correct
                 this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
+                this._terrainVer = terrainVersion;
             }
 
             remove() { /* no individual mesh to remove */ }
 
             update() {
-                this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
+                // Plants never move, so the sampled ground height is a constant.
+                // Re-sampling it every frame was 691 ms of the trace (~6.4% CPU,
+                // ~15 value-noise lookups per call). Only recompute when the
+                // terrain geometry itself has been rebuilt.
+                if (this._terrainVer !== terrainVersion) {
+                    this._terrainVer = terrainVersion;
+                    this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
+                }
             }
         }
 
@@ -2483,6 +2595,7 @@
         const _pebbleQuat  = new THREE.Quaternion();
         const _pebbleScale = new THREE.Vector3();
         const _pebbleMat4  = new THREE.Matrix4();
+        const _pebbleAxis  = new THREE.Vector3(0, 1, 0); // hoisted out of the loop
 
         function placePebbles() {
             pebbleData = [];
@@ -2527,7 +2640,7 @@
                 const groundY = getTerrainHeight(p.x, p.z);
                 // Sit the pebble on the ground: center = groundY + radius * squashY * 0.5
                 _pebblePos.set(p.x, groundY + p.radius * p.squashY * 0.5, p.z);
-                _pebbleQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.rotY);
+                _pebbleQuat.setFromAxisAngle(_pebbleAxis, p.rotY);
                 _pebbleScale.set(p.radius, p.radius * p.squashY, p.radius);
                 _pebbleMat4.compose(_pebblePos, _pebbleQuat, _pebbleScale);
                 instancedPebbleMeshes[tier].setMatrixAt(idx, _pebbleMat4);
@@ -2535,8 +2648,7 @@
             }
 
             for (let i = 0; i < 3; i++) {
-                instancedPebbleMeshes[i].count = counts[i];
-                instancedPebbleMeshes[i].instanceMatrix.needsUpdate = true;
+                markInstances(instancedPebbleMeshes[i], counts[i]);
             }
         }
 
@@ -2561,14 +2673,34 @@
             }
         }
 
-        // Scratch objects for plant matrix composition (no per-frame allocation)
-        const _plantPos   = new THREE.Vector3();
-        const _plantQuat  = new THREE.Quaternion(); // identity plants don't rotate
-        const _plantScale = new THREE.Vector3();
-        const _plantMat4  = new THREE.Matrix4();
+        // Cached direct references into the plant instance-matrix arrays, so the
+        // hot loop does no property lookups and Object.values() is not rebuilt
+        // every frame. Invalidated when initInstancedPlantMeshes() swaps meshes.
+        let _plantMeshList = null, _plantStemArr = null, _plantLeafArrs = null;
+        let _plantArrOwner = null;
+        function _refreshPlantArrays() {
+            _plantArrOwner  = instancedPlantMeshes;
+            _plantMeshList  = Object.values(instancedPlantMeshes);
+            _plantStemArr   = instancedPlantMeshes.stem.instanceMatrix.array;
+            _plantLeafArrs  = [
+                instancedPlantMeshes.leaf0.instanceMatrix.array,
+                instancedPlantMeshes.leaf1.instanceMatrix.array,
+                instancedPlantMeshes.leaf2.instanceMatrix.array,
+                instancedPlantMeshes.leaf3.instanceMatrix.array,
+            ];
+        }
 
         function updateInstancedPlants(plants) {
             if (!instancedPlantMeshes) return;
+            if (_plantArrOwner !== instancedPlantMeshes) _refreshPlantArrays();
+
+            // Plants have identity rotation and uniform scale, so the instance
+            // matrix is diagonal + translation: only 7 of the 16 floats are ever
+            // non-zero. three seeds every instance matrix with the identity, and
+            // nothing else writes these arrays, so the other 9 slots are already
+            // 0 and stay that way. Writing the 7 live slots directly replaces
+            // 5 x Matrix4.compose + 5 x setMatrixAt per plant per frame
+            // (was 529 ms / 4.9% of CPU).
             let idx = 0;
             for (const p of plants) {
                 if (!p.alive) continue;
@@ -2576,32 +2708,41 @@
 
                 const h = p.health / p.maxHealth;
                 const groundY = p.position.y; // terrainHeight + 3
-                _plantScale.setScalar(h);
+                const px = p.position.x, pz = p.position.z;
+                const o = idx * 16;
 
                 // Stem: 10-unit cylinder, geometry centered at its own origin.
                 // At scale h the cylinder is 10h tall.
                 // To keep its BASE on the ground: center = groundY + 5h
-                _plantPos.set(p.position.x, groundY + 5 * h, p.position.z);
-                _plantMat4.compose(_plantPos, _plantQuat, _plantScale);
-                instancedPlantMeshes.stem.setMatrixAt(idx, _plantMat4);
+                _plantStemArr[o]      = h;
+                _plantStemArr[o + 5]  = h;
+                _plantStemArr[o + 10] = h;
+                _plantStemArr[o + 12] = px;
+                _plantStemArr[o + 13] = groundY + 5 * h;
+                _plantStemArr[o + 14] = pz;
+                _plantStemArr[o + 15] = 1;
 
                 // Leaves sit at the stem TOP: groundY + 10h, spread radius 4 in XZ.
                 // Sphere radius 2, scaled by h no extra position scaling needed.
                 const leafY = groundY + 7 * h;
                 for (let li = 0; li < 4; li++) {
                     const off = LEAF_OFFSETS_XZ[li];
-                    _plantPos.set(p.position.x + off.x, leafY, p.position.z + off.y);
-                    _plantMat4.compose(_plantPos, _plantQuat, _plantScale);
-                    instancedPlantMeshes[`leaf${li}`].setMatrixAt(idx, _plantMat4);
+                    const a = _plantLeafArrs[li];
+                    a[o]      = h;
+                    a[o + 5]  = h;
+                    a[o + 10] = h;
+                    a[o + 12] = px + off.x;
+                    a[o + 13] = leafY;
+                    a[o + 14] = pz + off.y;
+                    a[o + 15] = 1;
                 }
 
                 idx++;
             }
 
-            // Set count and mark dirty on all parts
-            for (const mesh of Object.values(instancedPlantMeshes)) {
-                mesh.count = idx;
-                mesh.instanceMatrix.needsUpdate = true;
+            // Set count and upload ONLY the live slots (was 4.80 MB/frame).
+            for (let i = 0; i < _plantMeshList.length; i++) {
+                markInstances(_plantMeshList[i], idx);
             }
         }
 
@@ -3331,6 +3472,7 @@
 
             paintTerrainBySlope(geometry);
 
+            terrainVersion++; // invalidate cached ground-height samples
             const terrain = new THREE.Mesh(geometry, material);
             terrain.receiveShadow = true;
             terrain.rotation.x = -Math.PI / 2;
@@ -3416,6 +3558,7 @@
             positionAttribute.needsUpdate = true;
             geometry.computeVertexNormals();
             paintTerrainBySlope(geometry);
+            terrainVersion++; // carving moved the ground; re-sample cached heights
         }
 
         // ============================================================================
@@ -3646,13 +3789,36 @@
         const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
         const MIN_SCALE      = 0.25; // 25% of parent size at birth
 
+        const _ANIMAL_TYPES = ['sheep', 'human'];
+        const _PART_NAMES   = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
+        const _LIMB_NAMES   = ['legFL', 'legFR', 'legBL', 'legBR'];
+        // Reused instead of building a fresh object literal per animal per frame.
+        const _legAngles    = { legFL: 0, legFR: 0, legBL: 0, legBR: 0 };
+
+        // Per-type render caches. Kept OUT of the instancedMeshes dicts so that
+        // Object.values(instancedMeshes[type]) elsewhere still yields only meshes.
+        //   list    - the six part meshes, so Object.values isn't rebuilt per frame
+        //   colKeys - colour currently written into each instance slot, so we only
+        //             re-upload instanceColor when a slot's colour actually changes
+        const _animalRenderCache = { sheep: null, human: null };
+        function _animalCacheFor(type, im) {
+            let c = _animalRenderCache[type];
+            if (!c || c.owner !== im) {
+                c = { owner: im, list: Object.values(im), colKeys: [] };
+                _animalRenderCache[type] = c;
+            }
+            return c;
+        }
+
         function updateInstancedMeshes(animals, deltaTime) {
-            for (const type of ['sheep', 'human']) {
+            for (const type of _ANIMAL_TYPES) {
                 const im      = instancedMeshes[type];
                 const offsets = PART_OFFSETS[type];
                 const colors  = SEX_COLORS[type];
                 if (!im) continue;
+                const cache = _animalCacheFor(type, im);
                 let idx = 0;
+                let colorsDirty = false;
 
                 for (const a of animals) {
                     if (!a.alive || a.type !== type) continue;
@@ -3676,10 +3842,17 @@
                         _quat.setFromAxisAngle(_yAxis, a.facingAngle);
                     }
 
-                    // Sex-based color
+                    // Sex-based color. It never changes for a given animal, so
+                    // only rewrite when THIS slot index now holds a different
+                    // colour (slots shift as animals die). Previously this
+                    // re-uploaded 0.86 MB of instanceColor every frame.
                     const col = colors[a.sex];
-                    for (const part of ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR']) {
-                        im[part].setColorAt(idx, col);
+                    if (cache.colKeys[idx] !== col) {
+                        cache.colKeys[idx] = col;
+                        for (let pi = 0; pi < _PART_NAMES.length; pi++) {
+                            im[_PART_NAMES[pi]].setColorAt(idx, col);
+                        }
+                        colorsDirty = true;
                     }
 
                     // Walk cycle parameters; freeze animation when staying still (outputIdx 8)
@@ -3690,17 +3863,15 @@
 
                     // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
                     // Bipedal alternating stride for humans (arms opposite to legs)
-                    const legAngles = type === 'sheep' ? {
-                        legFL:  Math.sin(t),
-                        legFR: -Math.sin(t),
-                        legBL: -Math.sin(t),
-                        legBR:  Math.sin(t),
-                    } : {
-                        legFL:  Math.sin(t),        // left arm swings forward with right leg
-                        legFR: -Math.sin(t),        // right arm swings back
-                        legBL: -Math.sin(t),        // left leg swings back
-                        legBR:  Math.sin(t),        // right leg swings forward
-                    };
+                    // Both gaits reduce to the same +/- pattern; compute sin once
+                    // and fill a reused object (was 1 allocation + 4 sin calls
+                    // per animal per frame).
+                    const sinT = Math.sin(t);
+                    _legAngles.legFL =  sinT;   // sheep: front-left / human: left arm
+                    _legAngles.legFR = -sinT;   // sheep: front-right / human: right arm
+                    _legAngles.legBL = -sinT;   // sheep: back-left  / human: left leg
+                    _legAngles.legBR =  sinT;   // sheep: back-right / human: right leg
+                    const legAngles = _legAngles;
 
                     // Body at animal world position, adjusted so legs always touch the ground
                     const groundOffset = type === 'sheep' ? 9 : 15;
@@ -3720,7 +3891,8 @@
                     const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 -> half=9
 
                     // Each limb: pivot at joint, swing down from there
-                    for (const part of ['legFL', 'legFR', 'legBL', 'legBR']) {
+                    for (let pi = 0; pi < _LIMB_NAMES.length; pi++) {
+                        const part = _LIMB_NAMES[pi];
                         const swing = legAngles[part] * walkAmp;
                         _quatLeg.setFromAxisAngle(_xAxis, swing);
                         _quatFinal.multiplyQuaternions(_quat, _quatLeg);
@@ -3742,10 +3914,12 @@
                     idx++;
                 }
 
-                for (const mesh of Object.values(im)) {
-                    mesh.count = idx;
-                    mesh.instanceMatrix.needsUpdate = true;
-                    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+                // Upload only the live slots (was 4.61 MB of matrices +
+                // 0.86 MB of colours per frame regardless of population).
+                for (let mi = 0; mi < cache.list.length; mi++) {
+                    const mesh = cache.list[mi];
+                    markInstances(mesh, idx);
+                    if (colorsDirty) markInstanceColors(mesh, idx);
                 }
             }
         }
@@ -3897,46 +4071,56 @@
         const _aspMemMateArrow  = document.getElementById('asp-mem-mate-arrow');
 
         function _setMemSlot(txt, active, label) {
-            if (txt) {
-                txt.textContent = active ? label : '';
-                txt.className = 'asp-mem-dist' + (active ? ' active' : '');
+            if (!txt) return;
+            setTextIfChanged(txt, active ? label : '');
+            const cls = 'asp-mem-dist' + (active ? ' active' : '');
+            if (txt.className !== cls) txt.className = cls;
+        }
+
+        // Hoisted out of updateAspMemories: these were two fresh closures per
+        // call (i.e. per frame while an animal is selected).
+        function _aspDist(a, mx, mz) {
+            const dx = mx - a.position.x, dz = mz - a.position.z;
+            return Math.round(Math.sqrt(dx * dx + dz * dz));
+        }
+        // raySin=dx/dist, rayCos=dz/dist in world space.
+        // Subtract facingAngle to get direction relative to animal's own heading
+        function _aspSetArrow(a, arrow, active, sin, cos) {
+            if (!active) {
+                if (arrow._active !== false) { arrow._active = false; arrow.classList.remove('active'); }
+                return;
             }
+            const worldAngle = Math.atan2(sin, cos);
+            const relAngle = worldAngle - a.facingAngle;
+            // Screen rotate() is clockwise and the arrow rests pointing "forward"
+            // Rounded to whole degrees: sub-degree changes are invisible and each
+            // write costs a template-literal allocation plus a style invalidation.
+            const deg = Math.round(-relAngle * (180 / Math.PI));
+            // querySelector ran every frame; the svg child never changes.
+            if (!arrow._svg) arrow._svg = arrow.querySelector('svg');
+            if (arrow._deg !== deg) {
+                arrow._deg = deg;
+                arrow._svg.style.transform = 'rotate(' + deg + 'deg)';
+            }
+            if (arrow._active !== true) { arrow._active = true; arrow.classList.add('active'); }
         }
 
         function updateAspMemories(a) {
-            function dist(mx, mz) {
-                const dx = mx - a.position.x, dz = mz - a.position.z;
-                return Math.round(Math.sqrt(dx * dx + dz * dz));
-            }
-            // raySin=dx/dist, rayCos=dz/dist in world space.
-            // Subtract facingAngle to get direction relative to animal's own heading
-            function setArrow(arrow, active, sin, cos) {
-                if (active) {
-                    const worldAngle = Math.atan2(sin, cos);
-                    const relAngle = worldAngle - a.facingAngle;
-                    // Screen rotate() is clockwise and the arrow rests pointing "forward"
-                    const deg = -relAngle * (180 / Math.PI);
-                    arrow.querySelector('svg').style.transform = `rotate(${deg}deg)`;
-                    arrow.classList.add('active');
-                } else {
-                    arrow.classList.remove('active');
-                }
-            }
             _setMemSlot(_aspMemPredTxt, a.hasPredator,
-                a.hasPredator ? `${dist(a.memPredatorX, a.memPredatorZ)}` : 'no threat');
-            setArrow(_aspMemPredArrow, a.hasPredator, a.rayPredatorSin, a.rayPredatorCos);
+                a.hasPredator ? String(_aspDist(a, a.memPredatorX, a.memPredatorZ)) : 'no threat');
+            _aspSetArrow(a, _aspMemPredArrow, a.hasPredator, a.rayPredatorSin, a.rayPredatorCos);
 
             _setMemSlot(_aspMemFoodTxt, a.hasFood,
-                a.hasFood ? `${dist(a.memFoodX, a.memFoodZ)}` : 'no food');
-            setArrow(_aspMemFoodArrow, a.hasFood, a.rayFoodSin, a.rayFoodCos);
+                a.hasFood ? String(_aspDist(a, a.memFoodX, a.memFoodZ)) : 'no food');
+            _aspSetArrow(a, _aspMemFoodArrow, a.hasFood, a.rayFoodSin, a.rayFoodCos);
 
             _setMemSlot(_aspMemWaterTxt, a.hasWater,
-                a.hasWater ? `${dist(a.memWaterX, a.memWaterZ)}` : 'no water');
-            setArrow(_aspMemWaterArrow, a.hasWater, a.rayWaterSin, a.rayWaterCos);
+                a.hasWater ? String(_aspDist(a, a.memWaterX, a.memWaterZ)) : 'no water');
+            _aspSetArrow(a, _aspMemWaterArrow, a.hasWater, a.rayWaterSin, a.rayWaterCos);
 
             _setMemSlot(_aspMemMateTxt, a.hasMate,
-                a.hasMate ? `${dist(a.memMateX, a.memMateZ)}` : 'no mate');
-            setArrow(_aspMemMateArrow, a.hasMate, a.rayMateSin, a.rayMateCos);
+                a.hasMate ? String(_aspDist(a, a.memMateX, a.memMateZ)) : 'no mate');
+            _aspSetArrow(a, _aspMemMateArrow, a.hasMate, a.rayMateSin, a.rayMateCos);
         }
 
         function updateStatLabels(animals) {
@@ -3953,21 +4137,26 @@
 
                 targetFound = true;
 
+                // Every one of these was an unconditional textContent write,
+                // which replaces the element's text node even when the string is
+                // identical -- ~5 detached DOM nodes per frame, visible in the
+                // trace as node count cycling 380 -> 2000 -> 380.
                 const gen = a.generation ?? 0;
-                _aspHpValEl.textContent   = Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100)).toFixed(1);
-                _aspFoodValEl.textContent = Math.max(0, a.foodNeed).toFixed(1);
-                _aspWaterValEl.textContent= Math.max(0, a.waterNeed).toFixed(1);
+                setTextIfChanged(_aspHpValEl,    Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100)).toFixed(1));
+                setTextIfChanged(_aspFoodValEl,  Math.max(0, a.foodNeed).toFixed(1));
+                setTextIfChanged(_aspWaterValEl, Math.max(0, a.waterNeed).toFixed(1));
 
                 if (!a.isAdult) {
                     const agePct = Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS) * 100;
-                    _aspAgeValEl.textContent = agePct.toFixed(1);
+                    setTextIfChanged(_aspAgeValEl, agePct.toFixed(1));
                 } else {
-                    _aspAgeValEl.textContent = '100.0';
+                    setTextIfChanged(_aspAgeValEl, '100.0');
                 }
-                _aspAgeLineEl.style.display = '';
+                if (_aspAgeLineEl.style.display !== '') _aspAgeLineEl.style.display = '';
 
-                _aspGenEl.textContent = 'Generation ' + gen;
-                _aspGenEl.className = 'asp-generation' + (gen > 0 ? ' born' : '');
+                setTextIfChanged(_aspGenEl, 'Generation ' + gen);
+                const genCls = 'asp-generation' + (gen > 0 ? ' born' : '');
+                if (_aspGenEl.className !== genCls) _aspGenEl.className = genCls;
 
                 _aspPanel.classList.add('visible');
 
@@ -3977,8 +4166,12 @@
                 if (window._hudNNVisualizer3D) {
                     try {
                         window._hudNNVisualizer3D.update(a);
-                        const aspNNLabel = document.getElementById('asp-nn-label');
-                        if (aspNNLabel) aspNNLabel.textContent = 'Two-Lobe GRU Network';
+                        // Cache the element lookup and skip the write when the
+                        // label is already correct (it never changes).
+                        if (updateStatLabels._nnLabelEl === undefined) {
+                            updateStatLabels._nnLabelEl = document.getElementById('asp-nn-label');
+                        }
+                        setTextIfChanged(updateStatLabels._nnLabelEl, 'Two-Lobe GRU Network');
                     } catch(e) {}
                 }
             }
@@ -4010,6 +4203,9 @@
         // ============================================================================
         // NEURAL NETWORK VISUALIZER
         // ============================================================================
+        // Frame budget for the HUD's separate WebGL context (30 fps).
+        const NN_FRAME_MS = 1000 / 30;
+
         class NNVisualizer3D {
             constructor(canvasEl) {
                 this.canvas  = canvasEl;
@@ -4104,14 +4300,24 @@
                 this.renderer.dispose();
             }
 
+            // Returns false when the canvas is not laid out (panel hidden), so
+            // the caller can skip the whole frame. setSize() + projection-matrix
+            // rebuild used to run unconditionally every frame even though the
+            // canvas size almost never changes (86 ms of setSize in the trace).
             _syncSize() {
-                const w = this.canvas.clientWidth  || 260;
-                const h = this.canvas.clientHeight || 220;
+                const cw = this.canvas.clientWidth;
+                const ch = this.canvas.clientHeight;
+                if (cw === 0 && ch === 0) return false; // display:none -> nothing to draw
+                const w = cw || 260;
+                const h = ch || 220;
+                if (w === this._lastW && h === this._lastH) return true;
+                this._lastW = w; this._lastH = h;
                 this.renderer.setSize(w, h, false);
                 if (this.camera) {
                     this.camera.aspect = w / h;
                     this.camera.updateProjectionMatrix();
                 }
+                return true;
             }
 
             _setupDrag() {
@@ -4459,7 +4665,16 @@
                 // Idle: no animal selected skip all sizing, rotation, and rendering
                 if (!this.nn) return;
 
-                this._syncSize();
+                // This is a SECOND WebGL context on its own rAF, previously
+                // running at full display refresh alongside the main scene
+                // (1040 ms / 9.6% of CPU). Cap it -- it is a decorative HUD
+                // widget, 30 fps is indistinguishable.
+                const _t = performance.now();
+                if (_t - (this._lastDraw || 0) < NN_FRAME_MS) return;
+                this._lastDraw = _t;
+
+                // Bails out entirely when the stat panel is hidden.
+                if (!this._syncSize()) return;
 
                 // Auto-rotate when not dragging
                 if (!this._drag) this._targetRotY += 0.004;
@@ -4633,15 +4848,13 @@
                 }
             }
 
-            // Zero out any leftover segments from a previous larger frame
-            const totalFloats = MAX_RAY_ANIMALS * 3 * 2 * 3;
-            for (let i = vi; i < totalFloats; i++) {
-                pos[i] = 0; col[i] = 0;
-            }
-
+            // The leftover-segment zero-fill that used to run here was dead
+            // work: setDrawRange already stops the draw at the live vertices,
+            // so stale floats past that point are never read. It also forced a
+            // full-array upload every frame.
             _rayGeo.setDrawRange(0, (n * 3 * 2)); // n animals x 3 rays x 2 vertices
-            _rayGeo.attributes.position.needsUpdate = true;
-            _rayGeo.attributes.color.needsUpdate    = true;
+            markAttr(_rayGeo.attributes.position, vi);
+            markAttr(_rayGeo.attributes.color,    vi);
         }
 
         // ============================================================================
@@ -4831,13 +5044,23 @@
                 if (!a.alive) continue;
                 if (a.type === 'sheep') sheep++; else wolves++;
             }
-            document.getElementById('deerCount').textContent = sheep;
-            document.getElementById('humanCount').textContent = wolves;
+            // Cache the element lookups and skip no-op text writes.
+            if (!updateStats._els) {
+                updateStats._els = {
+                    deer:   document.getElementById('deerCount'),
+                    human:  document.getElementById('humanCount'),
+                    plant:  document.getElementById('plantCount'),
+                    day:    document.getElementById('dayCount'),
+                };
+            }
+            const _els = updateStats._els;
+            setTextIfChanged(_els.deer,  String(sheep));
+            setTextIfChanged(_els.human, String(wolves));
             // Avoid Array.filter() allocation; plain loop is zero-GC
             let alivePlants = 0;
             for (const p of plants) if (p.alive) alivePlants++;
-            document.getElementById('plantCount').textContent = alivePlants;
-            document.getElementById('dayCount').textContent = Math.floor(ticks / (24 * 60));
+            setTextIfChanged(_els.plant, String(alivePlants));
+            setTextIfChanged(_els.day,   String(Math.floor(ticks / (24 * 60))));
         }
 
         function rebuildWaterGrid() {
@@ -4863,7 +5086,9 @@
 
                 if (a.type === 'human') {
                     // Humans hunt sheep
-                    for (const other of spatialGrid.query(px, pz, 20)) {
+                    const nHunt = spatialGrid.queryInto(_qHunt, px, pz, 20);
+                    for (let i = 0; i < nHunt; i++) {
+                        const other = _qHunt[i];
                         if (other.alive && other.type === 'sheep' &&
                             tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
                             other.attacked(a);
@@ -4871,7 +5096,9 @@
                     }
                     // Humans also mate with opposite-sex humans
                     if (a.lookForMate && a.sex === 'female') {
-                        for (const other of spatialGrid.query(px, pz, 20)) {
+                        const nMate = spatialGrid.queryInto(_qMate, px, pz, 20);
+                        for (let i = 0; i < nMate; i++) {
+                            const other = _qMate[i];
                             if (other !== a && other.alive && other.type === 'human' &&
                                 other.sex === 'male' && other.lookForMate &&
                                 tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
@@ -4885,7 +5112,9 @@
                 } else {
                     // Mate
                     if (a.lookForMate) {
-                        for (const other of spatialGrid.query(px, pz, 20)) {
+                        const nMate = spatialGrid.queryInto(_qMate, px, pz, 20);
+                        for (let i = 0; i < nMate; i++) {
+                            const other = _qMate[i];
                             if (other !== a && other.alive && other.type === a.type &&
                                 other.sex === 'male' && other.lookForMate &&
                                 tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
@@ -4898,7 +5127,9 @@
                     }
 
                     // Sheep eat nearby plants
-                    for (const plant of plantGrid.query(px, pz, 20)) {
+                    const nPlant = plantGrid.queryInto(_qPlant, px, pz, 20);
+                    for (let i = 0; i < nPlant; i++) {
+                        const plant = _qPlant[i];
                         if (plant.alive &&
                             tools.distSq(px, pz, plant.position.x, plant.position.z) < 200) {
                             a.eatPlant(plant);
@@ -4907,7 +5138,9 @@
                 }
 
                 // All animals drink one water source per frame, use spatial grid
-                for (const proxy of waterGrid.query(px, pz, 20)) {
+                const nWater = waterGrid.queryInto(_qWater, px, pz, 20);
+                for (let i = 0; i < nWater; i++) {
+                    const proxy = _qWater[i];
                     if (tools.distSq(px, pz, proxy.position.x, proxy.position.z) < 200) {
                         a.drinkWater();
                         break;
@@ -5126,7 +5359,7 @@
             let sheep = 0, wolves = 0;
             for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
             document.getElementById('vr-stats').textContent =
-                `🌿Ecosystem  🐑${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+                `🐑 ${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
         }
 
         function resizeRenderer() {
@@ -5136,7 +5369,20 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // Scratch objects for the VR movement path (no per-frame allocation).
+        const _vrMove = new THREE.Vector3();
+        const _vrRot  = new THREE.Matrix4();
+
         function animate(timestamp, frame) {
+            // Frame cap. setAnimationLoop fires at display refresh, so on a
+            // 120 Hz panel every cost in this function ran ~1.9x more often than
+            // needed. XR is exempt -- the headset drives its own cadence.
+            if (targetFPS > 0 && !renderer.xr.isPresenting) {
+                const _t = timestamp || performance.now();
+                if (_t - _lastRenderTs < (1000 / targetFPS) - 0.5) return;
+                _lastRenderTs = _t;
+            }
+
             const now = Date.now();
             const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
             lastTime = now;
@@ -5148,13 +5394,14 @@
                 // VR movement: left thumbstick, relative to HMD yaw
                 if (vrState.moveX !== 0 || vrState.moveY !== 0) {
                     const speed = player.speed;
-                    const move = new THREE.Vector3(
+                    // Reused scratch objects instead of two allocations per frame.
+                    const move = _vrMove.set(
                         vrState.moveX * speed * deltaTime,
                         0,
                         vrState.moveY * speed * deltaTime
                     );
-                    const rot = new THREE.Matrix4().makeRotationY(player.yaw);
-                    move.applyMatrix4(rot);
+                    _vrRot.makeRotationY(player.yaw);
+                    move.applyMatrix4(_vrRot);
                     player.position.add(move);
                     player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
                     player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
