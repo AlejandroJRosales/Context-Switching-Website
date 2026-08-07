@@ -545,8 +545,18 @@ const terrainCache = {
   waterOriginX: 0,
   waterOriginZ: 0,
   waterInvStep: 0,
-  waterMask: null
+  waterMask: null,
+  fieldStep: 0,
+  fieldCols: 0,
+  fieldRows: 0,
+  fieldOriginX: 0,
+  fieldOriginZ: 0,
+  fieldInvStep: 0,
+  fieldX: null,
+  fieldZ: null
 };
+const WATER_FIELD_STEP = 64;
+const NO_WATER = 1e9;
 
 let terrainBuf = null,
   terrainIdxBuf = null,
@@ -603,6 +613,104 @@ function buildTerrainCache() {
   terrainCache.waterOriginZ = waterOriginZ;
   terrainCache.waterInvStep = 1 / waterStep;
   terrainCache.waterMask = mask;
+  buildWaterField();
+}
+
+function buildWaterField() {
+  const step = WATER_FIELD_STEP;
+  const originX = -CONFIG.worldWidth / 2,
+    originZ = -CONFIG.worldDepth / 2;
+  const cols = Math.ceil(CONFIG.worldWidth / step) + 1;
+  const rows = Math.ceil(CONFIG.worldDepth / step) + 1;
+  const fieldX = new Float32Array(cols * rows);
+  const fieldZ = new Float32Array(cols * rows);
+  for (let row = 0; row < rows; row++) {
+    const wz = originZ + row * step;
+    const rowBase = row * cols;
+    for (let col = 0; col < cols; col++) {
+      const wx = originX + col * step;
+      if (isWaterAt(wx, wz)) {
+        fieldX[rowBase + col] = wx;
+        fieldZ[rowBase + col] = wz;
+      } else {
+        fieldX[rowBase + col] = NO_WATER;
+        fieldZ[rowBase + col] = NO_WATER;
+      }
+    }
+  }
+  const relax = (col, row, fromCol, fromRow) => {
+    if (fromCol < 0 || fromRow < 0 || fromCol >= cols || fromRow >= rows) return;
+    const from = fromRow * cols + fromCol;
+    const sx = fieldX[from];
+    if (sx === NO_WATER) return;
+    const sz = fieldZ[from];
+    const wx = originX + col * step,
+      wz = originZ + row * step;
+    const here = row * cols + col;
+    const dx = sx - wx,
+      dz = sz - wz;
+    const candidate = dx * dx + dz * dz;
+    const cx = fieldX[here];
+    if (cx === NO_WATER) {
+      fieldX[here] = sx;
+      fieldZ[here] = sz;
+      return;
+    }
+    const ex = cx - wx,
+      ez = fieldZ[here] - wz;
+    if (candidate < ex * ex + ez * ez) {
+      fieldX[here] = sx;
+      fieldZ[here] = sz;
+    }
+  };
+  for (let row = 0; row < rows; row++)
+    for (let col = 0; col < cols; col++) {
+      relax(col, row, col - 1, row);
+      relax(col, row, col, row - 1);
+      relax(col, row, col - 1, row - 1);
+      relax(col, row, col + 1, row - 1);
+    }
+  for (let row = rows - 1; row >= 0; row--)
+    for (let col = cols - 1; col >= 0; col--) {
+      relax(col, row, col + 1, row);
+      relax(col, row, col, row + 1);
+      relax(col, row, col + 1, row + 1);
+      relax(col, row, col - 1, row + 1);
+    }
+  terrainCache.fieldStep = step;
+  terrainCache.fieldCols = cols;
+  terrainCache.fieldRows = rows;
+  terrainCache.fieldOriginX = originX;
+  terrainCache.fieldOriginZ = originZ;
+  terrainCache.fieldInvStep = 1 / step;
+  terrainCache.fieldX = fieldX;
+  terrainCache.fieldZ = fieldZ;
+}
+
+let nearestWaterX = 0,
+  nearestWaterZ = 0,
+  nearestWaterDist2 = 0;
+
+function scanNearestWater(px, pz) {
+  const cache = terrainCache;
+  const fieldX = cache.fieldX;
+  if (!fieldX) return false;
+  let cellX = ((px - cache.fieldOriginX) * cache.fieldInvStep + 0.5) | 0;
+  let cellZ = ((pz - cache.fieldOriginZ) * cache.fieldInvStep + 0.5) | 0;
+  if (cellX < 0) cellX = 0;
+  else if (cellX >= cache.fieldCols) cellX = cache.fieldCols - 1;
+  if (cellZ < 0) cellZ = 0;
+  else if (cellZ >= cache.fieldRows) cellZ = cache.fieldRows - 1;
+  const idx = cellZ * cache.fieldCols + cellX;
+  const wx = fieldX[idx];
+  if (wx === NO_WATER) return false;
+  const wz = cache.fieldZ[idx];
+  const dx = wx - px,
+    dz = wz - pz;
+  nearestWaterX = wx;
+  nearestWaterZ = wz;
+  nearestWaterDist2 = dx * dx + dz * dz;
+  return true;
 }
 
 function isWaterAt(wx, wz) {
@@ -959,6 +1067,7 @@ const creatures = {
   speed: new Float32Array(MAX_CREATURES),
   size: new Float32Array(MAX_CREATURES),
   energy: new Float32Array(MAX_CREATURES),
+  hydration: new Float32Array(MAX_CREATURES),
   species: new Uint8Array(MAX_CREATURES),
   sex: new Uint8Array(MAX_CREATURES),
   colorR: new Float32Array(MAX_CREATURES),
@@ -987,6 +1096,13 @@ const MATE_SENSE_RADIUS = 320,
   MATE_ENERGY_HOLD = 0.5,
   MATE_COOLDOWN = 12,
   MATE_COST = 0.25;
+const DRINK_SENSE_RADIUS = 900,
+  DRINK_REACH = 50,
+  DRINK_TURN_RATE = 2.6,
+  DRINK_SPEED = 0.85,
+  DRINK_THIRST = 0.6,
+  DRINK_DRAIN = 0.003,
+  DEHYDRATION_COST = 0.02;
 
 // creature geometry
 function buildCreatures() {
@@ -1169,6 +1285,7 @@ function spawnCreatures() {
     creatures.speed[i] = 0;
     creatures.size[i] = 4 + RNG() * 4;
     creatures.energy[i] = 0.5 + RNG() * 0.5;
+    creatures.hydration[i] = 0.5 + RNG() * 0.5;
     creatures.age[i] = 0;
     creatures.generation[i] = 0;
     const isPredator = RNG() < 0.2;
@@ -1470,7 +1587,8 @@ function uploadPlants() {
 // forage
 const TARGET_NONE = 0,
   TARGET_PLANT = 1,
-  TARGET_MATE = 2;
+  TARGET_WATER = 2,
+  TARGET_MATE = 3;
 const SENSE_INTERVAL = 0.3;
 const FORAGE_SENSE_RADIUS = 260,
   FORAGE_TURN_RATE = 2.6,
@@ -1498,6 +1616,16 @@ function senseTick(i) {
       creatures.targetZ[i] = plants.z[nearestPlantIdx];
       creatures.targetKind[i] = TARGET_PLANT;
       return;
+    }
+  }
+  if (creatures.hydration[i] < DRINK_THIRST) {
+    if (scanNearestWater(creatures.x[i], creatures.z[i])) {
+      if (nearestWaterDist2 <= DRINK_SENSE_RADIUS * DRINK_SENSE_RADIUS) {
+        creatures.targetX[i] = nearestWaterX;
+        creatures.targetZ[i] = nearestWaterZ;
+        creatures.targetKind[i] = TARGET_WATER;
+        return;
+      }
     }
   }
   if (mateReady(i)) {
@@ -1530,6 +1658,7 @@ function creatureCopy(dst, src) {
   creatures.speed[dst] = creatures.speed[src];
   creatures.size[dst] = creatures.size[src];
   creatures.energy[dst] = creatures.energy[src];
+  creatures.hydration[dst] = creatures.hydration[src];
   creatures.species[dst] = creatures.species[src];
   creatures.sex[dst] = creatures.sex[src];
   creatures.colorR[dst] = creatures.colorR[src];
@@ -1594,6 +1723,7 @@ function creatureBirth(motherIdx, fatherIdx) {
   creatures.energy[motherIdx] -= fromMother;
   creatures.energy[fatherIdx] -= fromFather;
   creatures.energy[child] = fromMother + fromFather;
+  creatures.hydration[child] = 1;
   creatures.mateCooldown[motherIdx] = MATE_COOLDOWN;
   creatures.mateCooldown[fatherIdx] = MATE_COOLDOWN;
   creatures.targetKind[motherIdx] = TARGET_NONE;
@@ -1616,10 +1746,18 @@ function updateCreatures(dt) {
     let rest = creatures.wanderRest[i],
       throttle = creatures.wanderSpeed[i];
     if (kind !== TARGET_NONE) {
-      const mating = kind === TARGET_MATE;
-      steerToTarget(i, dt, mating ? MATE_TURN_RATE : FORAGE_TURN_RATE);
+      steerToTarget(
+        i,
+        dt,
+        kind === TARGET_MATE
+          ? MATE_TURN_RATE
+          : kind === TARGET_WATER
+            ? DRINK_TURN_RATE
+            : FORAGE_TURN_RATE
+      );
       rest = 0;
-      throttle = mating ? MATE_SPEED : FORAGE_SPEED;
+      throttle =
+        kind === TARGET_MATE ? MATE_SPEED : kind === TARGET_WATER ? DRINK_SPEED : FORAGE_SPEED;
     } else {
       creatures.heading[i] += creatures.wanderTurn[i] * WANDER_TURN_SCALE * dt * (1 - 0.7 * rest);
     }
@@ -1661,7 +1799,17 @@ function updateCreatures(dt) {
       const pastPrime = (creatures.age[i] - LIFESPAN) / LIFESPAN;
       ageCost = SENESCENCE * (pastPrime / (1 + pastPrime));
     }
-    creatures.energy[i] -= (moveCost + baseCost + ageCost) * dt * (1 - 0.5 * rest);
+    creatures.hydration[i] -= DRINK_DRAIN * dt * (1 - 0.5 * rest);
+    if (creatures.hydration[i] < 0) creatures.hydration[i] = 0;
+    const thirstCost = creatures.hydration[i] > 0 ? 0 : DEHYDRATION_COST;
+    creatures.energy[i] -= (moveCost + baseCost + ageCost + thirstCost) * dt * (1 - 0.5 * rest);
+    if (creatures.targetKind[i] === TARGET_WATER && scanNearestWater(nextX, nextZ)) {
+      if (nearestWaterDist2 <= DRINK_REACH * DRINK_REACH) {
+        creatures.hydration[i] = 1;
+        creatures.targetKind[i] = TARGET_NONE;
+        creatures.senseTimer[i] = 0;
+      }
+    }
     if (!creatures.species[i]) {
       const reach = 16 + creatures.size[i];
       scanNearestPlant(nextX, nextZ, reach);
