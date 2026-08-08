@@ -978,7 +978,6 @@ const SEX_FEMALE = 0;
 const SEX_MALE = 1;
 
 function hslToRgbInto(species, i, h, s, l) {
-  console.log(species);
   let r, g, b;
   if (s === 0) {
     r = g = b = l;
@@ -1589,12 +1588,31 @@ function uploadPlants() {
 const TARGET_NONE = 0,
   TARGET_PLANT = 1,
   TARGET_WATER = 2,
-  TARGET_MATE = 3;
+  TARGET_MATE = 3,
+  TARGET_PREY = 4;
 const SENSE_INTERVAL = 0.3;
 const FORAGE_SENSE_RADIUS = 260,
   FORAGE_TURN_RATE = 2.6,
   FORAGE_SPEED = 0.85,
   FORAGE_HUNGER = 0.9;
+const HUNT_SENSE_RADIUS = 340,
+  HUNT_TURN_RATE = 2.9,
+  HUNT_SPEED = 1,
+  HUNT_HUNGER = 0.9;
+const TARGET_TURN_RATE = new Float32Array([
+  0,
+  FORAGE_TURN_RATE,
+  DRINK_TURN_RATE,
+  MATE_TURN_RATE,
+  HUNT_TURN_RATE
+]);
+const TARGET_THROTTLE = new Float32Array([
+  0,
+  FORAGE_SPEED,
+  DRINK_SPEED,
+  MATE_SPEED,
+  HUNT_SPEED
+]);
 
 function behaviorInit(i, cooldown) {
   creatures.targetKind[i] = TARGET_NONE;
@@ -1610,7 +1628,17 @@ function mateReady(i) {
 
 function senseTick(i) {
   creatures.senseTimer[i] = SENSE_INTERVAL * (0.75 + RNG() * 0.5);
-  if (creatures.energy[i] < FORAGE_HUNGER && !creatures.species[i]) {
+  if (creatures.species[i]) {
+    if (creatures.energy[i] < HUNT_HUNGER) {
+      scanNearestPrey(creatures.x[i], creatures.z[i], HUNT_SENSE_RADIUS, i);
+      if (nearestPreyIdx !== -1) {
+        creatures.targetX[i] = creatures.x[nearestPreyIdx];
+        creatures.targetZ[i] = creatures.z[nearestPreyIdx];
+        creatures.targetKind[i] = TARGET_PREY;
+        return;
+      }
+    }
+  } else if (creatures.energy[i] < FORAGE_HUNGER) {
     scanNearestPlant(creatures.x[i], creatures.z[i], FORAGE_SENSE_RADIUS);
     if (nearestPlantIdx !== -1) {
       creatures.targetX[i] = plants.x[nearestPlantIdx];
@@ -1747,18 +1775,9 @@ function updateCreatures(dt) {
     let rest = creatures.wanderRest[i],
       throttle = creatures.wanderSpeed[i];
     if (kind !== TARGET_NONE) {
-      steerToTarget(
-        i,
-        dt,
-        kind === TARGET_MATE
-          ? MATE_TURN_RATE
-          : kind === TARGET_WATER
-            ? DRINK_TURN_RATE
-            : FORAGE_TURN_RATE
-      );
+      steerToTarget(i, dt, TARGET_TURN_RATE[kind]);
       rest = 0;
-      throttle =
-        kind === TARGET_MATE ? MATE_SPEED : kind === TARGET_WATER ? DRINK_SPEED : FORAGE_SPEED;
+      throttle = TARGET_THROTTLE[kind];
     } else {
       creatures.heading[i] += creatures.wanderTurn[i] * WANDER_TURN_SCALE * dt * (1 - 0.7 * rest);
     }
@@ -1829,6 +1848,8 @@ function updateCreatures(dt) {
         const lastIdx = creatures.count - 1;
         creatureRemove(nearestPreyIdx);
         if (i === lastIdx) i = nearestPreyIdx;
+        creatures.targetKind[i] = TARGET_NONE;
+        creatures.senseTimer[i] = 0;
       }
     }
     if (creatures.energy[i] > 1) creatures.energy[i] = 1;
