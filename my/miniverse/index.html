@@ -1084,7 +1084,8 @@ const creatures = {
   targetKind: new Uint8Array(MAX_CREATURES),
   mateCooldown: new Float32Array(MAX_CREATURES),
   age: new Float32Array(MAX_CREATURES),
-  generation: new Uint16Array(MAX_CREATURES)
+  generation: new Uint16Array(MAX_CREATURES),
+  isAlive: new Uint8Array(MAX_CREATURES)
 };
 const LIFESPAN = 100;
 const SENESCENCE = 0.02;
@@ -1288,6 +1289,7 @@ function spawnCreatures() {
     creatures.hydration[i] = 0.5 + RNG() * 0.5;
     creatures.age[i] = 0;
     creatures.generation[i] = 0;
+    creatures.isAlive[i] = 1;
     const isPredator = RNG() < 0.5;
     creatures.species[i] = isPredator ? 1 : 0;
     geneRandom(i, creatures.species[i]);
@@ -1358,6 +1360,7 @@ function scanNearestMate(px, pz, reach, self) {
       while (other !== -1) {
         if (
           other !== self &&
+          creatures.isAlive[other] &&
           creatures.species[other] === species &&
           creatures.sex[other] !== sex &&
           mateReady(other)
@@ -1390,7 +1393,7 @@ function scanNearestPrey(px, pz, reach, self) {
       if (scanX < 0 || scanX >= creatureGrid.cols) continue;
       let other = creatureGrid.cellHead[scanZ * creatureGrid.cols + scanX];
       while (other !== -1) {
-        if (other !== self && !creatures.species[other]) {
+        if (other !== self && creatures.isAlive[other] && !creatures.species[other]) {
           const relX = creatures.x[other] - px,
             relZ = creatures.z[other] - pz,
             dist2 = relX * relX + relZ * relZ;
@@ -1705,11 +1708,21 @@ function creatureCopy(dst, src) {
   creatures.mateCooldown[dst] = creatures.mateCooldown[src];
   creatures.age[dst] = creatures.age[src];
   creatures.generation[dst] = creatures.generation[src];
+  creatures.isAlive[dst] = creatures.isAlive[src];
 }
 
 function creatureRemove(i) {
-  const lastIdx = --creatures.count;
-  if (i !== lastIdx) creatureCopy(i, lastIdx);
+  creatures.isAlive[i] = 0;
+}
+
+function compactCreatures() {
+  let write = 0;
+  for (let read = 0; read < creatures.count; read++) {
+    if (!creatures.isAlive[read]) continue;
+    if (write !== read) creatureCopy(write, read);
+    write++;
+  }
+  creatures.count = write;
 }
 
 function creatureBirth(motherIdx, fatherIdx) {
@@ -1730,6 +1743,7 @@ function creatureBirth(motherIdx, fatherIdx) {
   creatures.facing[child] = creatures.heading[child];
   creatures.speed[child] = 0;
   creatures.age[child] = 0;
+  creatures.isAlive[child] = 1;
   const olderGen =
     creatures.generation[motherIdx] > creatures.generation[fatherIdx]
       ? creatures.generation[motherIdx]
@@ -1766,6 +1780,7 @@ function updateCreatures(dt) {
   rebuildPlantGrid();
   plantsGrow(dt);
   for (let i = 0; i < creatures.count; i++) {
+    if (!creatures.isAlive[i]) continue;
     creatures.wanderTimer[i] -= dt;
     if (creatures.wanderTimer[i] <= 0) wanderChoose(i);
     if (creatures.mateCooldown[i] > 0) creatures.mateCooldown[i] -= dt;
@@ -1845,9 +1860,7 @@ function updateCreatures(dt) {
       scanNearestPrey(nextX, nextZ, reach, i);
       if (nearestPreyIdx !== -1) {
         creatures.energy[i] = Math.min(1, creatures.energy[i] + 0.5);
-        const lastIdx = creatures.count - 1;
         creatureRemove(nearestPreyIdx);
-        if (i === lastIdx) i = nearestPreyIdx;
         creatures.targetKind[i] = TARGET_NONE;
         creatures.senseTimer[i] = 0;
       }
@@ -1863,10 +1876,10 @@ function updateCreatures(dt) {
     }
     if (creatures.energy[i] <= 0) {
       creatureRemove(i);
-      i--;
       continue;
     }
   }
+  compactCreatures();
 }
 
 function uploadCreatures() {
