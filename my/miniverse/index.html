@@ -51,7 +51,7 @@ body {
 #joy {
   left:24px
 }
-#jump {
+#jump, #flyUp, #flyDown {
   right:24px;
   width:90px;
   height:90px;
@@ -59,6 +59,12 @@ body {
   display:flex;
   align-items:center;
   justify-content:center
+}
+#flyUp {
+  bottom:139px
+}
+#flyUp, #flyDown {
+  display:none
 }
 #joy .nub {
   position:absolute;
@@ -108,12 +114,14 @@ body {
   display:flex
 }
 #scaleWrap,
-#timeWrap {
+#timeWrap,
+#popWrap {
   display:flex;
   gap:6px
 }
 #scaleWrap .btn,
-#timeWrap .btn {
+#timeWrap .btn,
+#popWrap .btn {
   flex:1 1 0;
   min-width:0
 }
@@ -142,6 +150,11 @@ body {
       <button class="btn" id="scaleDisplay">20</button>
       <button class="btn" id="scaleUp">+</button>
     </span>
+    <span id="popWrap">
+      <button class="btn" id="popDown">-50</button>
+      <button class="btn">C</button>
+      <button class="btn" id="popUp">+50</button>
+    </span>
     <span id="timeWrap">
       <button class="btn" id="timeDown">-2H</button>
       <button class="btn" id="timePause">R</button>
@@ -150,6 +163,8 @@ body {
   </div>
   <div class="pad" id="joy"><div class="nub"></div></div>
   <div class="pad" id="jump"><span class="jlbl">JUMP</span></div>
+  <div class="pad" id="flyUp"><span class="jlbl">UP</span></div>
+  <div class="pad" id="flyDown"><span class="jlbl">DOWN</span></div>
   <div id="look"></div>
 </div>
 <script>
@@ -1271,31 +1286,34 @@ function wanderInit(i) {
   creatures.wanderTimer[i] *= RNG();
 }
 
+let baseCreatures = 50;
+
+function creatureSpawn(i) {
+  const x = (RNG() - 0.5) * CONFIG.worldWidth * 0.9;
+  const z = (RNG() - 0.5) * CONFIG.worldDepth * 0.9;
+  creatures.x[i] = x;
+  creatures.z[i] = z;
+  creatures.y[i] = Math.max(terrainHeight(x, z), CONFIG.waterLevel) + 1.5;
+  creatures.heading[i] = RNG() * Math.PI * 2;
+  creatures.facing[i] = creatures.heading[i];
+  creatures.speed[i] = 0;
+  creatures.size[i] = 4 + RNG() * 4;
+  creatures.energy[i] = 0.5 + RNG() * 0.5;
+  creatures.hydration[i] = 0.5 + RNG() * 0.5;
+  creatures.age[i] = 0;
+  creatures.generation[i] = 0;
+  creatures.isAlive[i] = 1;
+  const isPredator = RNG() < 0.2;
+  creatures.species[i] = isPredator ? 1 : 0;
+  geneRandom(i, creatures.species[i]);
+  wanderInit(i);
+  behaviorInit(i, RNG() * MATE_COOLDOWN);
+}
+
 function spawnCreatures() {
-  const baseCreatures = 50;
   const scaledCreatures = Math.round((baseCreatures * Math.max(CONFIG.worldScale, 1)) / 10);
   creatures.count = Math.min(MAX_CREATURES, Math.max(5, scaledCreatures));
-  for (let i = 0; i < creatures.count; i++) {
-    const x = (RNG() - 0.5) * CONFIG.worldWidth * 0.9;
-    const z = (RNG() - 0.5) * CONFIG.worldDepth * 0.9;
-    creatures.x[i] = x;
-    creatures.z[i] = z;
-    creatures.y[i] = Math.max(terrainHeight(x, z), CONFIG.waterLevel) + 1.5;
-    creatures.heading[i] = RNG() * Math.PI * 2;
-    creatures.facing[i] = creatures.heading[i];
-    creatures.speed[i] = 0;
-    creatures.size[i] = 4 + RNG() * 4;
-    creatures.energy[i] = 0.5 + RNG() * 0.5;
-    creatures.hydration[i] = 0.5 + RNG() * 0.5;
-    creatures.age[i] = 0;
-    creatures.generation[i] = 0;
-    creatures.isAlive[i] = 1;
-    const isPredator = RNG() < 0.5;
-    creatures.species[i] = isPredator ? 1 : 0;
-    geneRandom(i, creatures.species[i]);
-    wanderInit(i);
-    behaviorInit(i, RNG() * MATE_COOLDOWN);
-  }
+  for (let i = 0; i < creatures.count; i++) creatureSpawn(i);
 }
 
 // spatial grid
@@ -2082,18 +2100,22 @@ if (HAS_TOUCH) {
     lookEl.addEventListener('touchcancel', end);
   })();
   (function () {
-    const jumpBtn = byId('jump');
-    const down = (e) => {
-      keys[' '] = true;
-      e.preventDefault();
+    const bindHold = (el, key) => {
+      const down = (e) => {
+        keys[key] = true;
+        e.preventDefault();
+      };
+      const up = (e) => {
+        keys[key] = false;
+        e.preventDefault();
+      };
+      el.addEventListener('touchstart', down, { passive: false });
+      el.addEventListener('touchend', up, { passive: false });
+      el.addEventListener('touchcancel', up, { passive: false });
     };
-    const up = (e) => {
-      keys[' '] = false;
-      e.preventDefault();
-    };
-    jumpBtn.addEventListener('touchstart', down, { passive: false });
-    jumpBtn.addEventListener('touchend', up, { passive: false });
-    jumpBtn.addEventListener('touchcancel', up, { passive: false });
+    bindHold(byId('jump'), ' ');
+    bindHold(byId('flyUp'), ' ');
+    bindHold(byId('flyDown'), 'shift');
   })();
 } else {
   joyEl.style.display = 'none';
@@ -2181,6 +2203,13 @@ byId('flyBtn').addEventListener('click', function () {
   this.textContent = 'FLY: ' + (camera.fly ? '1' : '0');
   camera.velocityY = 0;
   if (camera.fly) camera.onGround = false;
+  keys[' '] = false;
+  keys['shift'] = false;
+  if (HAS_TOUCH) {
+    byId('jump').style.display = camera.fly ? 'none' : 'flex';
+    byId('flyUp').style.display = camera.fly ? 'flex' : 'none';
+    byId('flyDown').style.display = camera.fly ? 'flex' : 'none';
+  }
 });
 
 byId('resetBtn').addEventListener('click', () => {
@@ -2210,6 +2239,24 @@ function applyWorldScale(n) {
 }
 on(byId('scaleDown'), 'click', () => applyWorldScale(CONFIG.worldScale - 5));
 on(byId('scaleUp'), 'click', () => applyWorldScale(CONFIG.worldScale + 5));
+
+function adjustPopulation(delta) {
+  if (delta > 0) {
+    const add = Math.min(delta, MAX_CREATURES - creatures.count);
+    for (let k = 0; k < add; k++) creatureSpawn(creatures.count++);
+  } else if (delta < 0) {
+    let remove = -delta;
+    for (let i = creatures.count - 1; i >= 0 && remove > 0; i--)
+      if (creatures.isAlive[i]) {
+        creatures.isAlive[i] = 0;
+        remove--;
+      }
+    compactCreatures();
+  }
+  baseCreatures = Math.max(0, Math.min(MAX_CREATURES, baseCreatures + delta));
+}
+on(byId('popDown'), 'click', () => adjustPopulation(-50));
+on(byId('popUp'), 'click', () => adjustPopulation(50));
 const DAY_SECONDS = (2 * Math.PI) / 0.005;
 
 function simClock(seconds) {
@@ -3002,9 +3049,9 @@ function frame(now) {
       if (creatures.generation[i] > maxGeneration) maxGeneration = creatures.generation[i];
     }
     info.textContent =
-      `3.0.2 seed ${CONFIG.seed} FPS ${fps} \n` +
+      `3.0.2 FPS ${fps} seed ${CONFIG.seed} waterLevel ${CONFIG.waterLevel}\n` +
       `tri ${terrainIdxCount / 3} shadowRef ${SHADOW.refreshInterval} shadowSize ${SHADOW.size}\n` +
-      `${herbivores}H/${creatures.count - herbivores}R/${plants.count}P ${females}F/${creatures.count - females}M waterLevel ${CONFIG.waterLevel}\n` +
+      `${creatures.count}C ${herbivores}H/${creatures.count - herbivores}R (${females}F/${creatures.count - females}M) ${plants.count}P\n` +
       `avg energy ${(energySum / Math.max(1, creatures.count)).toFixed(2)} avg speed ${(speedSum / Math.max(1, creatures.count)).toFixed(1)}\n` +
       `max gen ${maxGeneration} avg age ${(ageSum / Math.max(1, creatures.count)).toFixed(0)}s ${simClock(simTime)}`;
   }
