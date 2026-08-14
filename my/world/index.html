@@ -746,8 +746,8 @@
             <span class="sp-value" id="fpsCapState">60</span>
         </button>
         <div class="sp-row-scale">
-            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">10</span></label>
-            <input id="scale-slider" type="range" min="0.5" max="20" step="0.5" value="10">
+            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">20</span></label>
+            <input id="scale-slider" type="range" min="0.5" max="40" step="0.5" value="20">
             <div class="sp-hint">Size changes take effect on reset</div>
         </div>
         <button class="sp-row" id="resetBtn">
@@ -772,7 +772,7 @@
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
-        const scale = 10;
+        const scale = 20;
         let pendingScale = scale;
         let hudCleared = false;
         const CONFIG = {
@@ -3341,9 +3341,11 @@
             biomeSpan: 2.2,           // mountain-mask frequency (well below noiseSpan)
             mountainThreshold: 0.55,  // mask value where mountains begin
             mountainBlend: 0.15,      // width of the plains -> mountain fade
-            mountainGain: 1.4,        // extra height multiplier inside the mask
+            mountainGain: 3.0,        // extra height multiplier inside the mask
             ridgeSharp: 1.0,          // exponent on the ridged field; >1 narrows summits
             ridgeScale: 1.6,          // ridged frequency relative to the plains field
+            ridgeOctaves: 4,          // detail layers on the ridged field; fewer = rounder
+            ridgeGain: 0.4,           // per-octave falloff; lower = less fine spiky detail
             ridgeAdd: 0.0,
             waterCoverage: 0.3,      // fraction of the world that ends up under water
             waterLevelOverride: null, // set a number to pin the water plane manually
@@ -3397,14 +3399,17 @@
             }
             return sum / norm;
         }
-        // Ridged multifractal: each octave folded through 1-|2n-1| and squared, so
-        // valley floors pinch into crests instead of rounding off. Returns [0,1].
+        // Ridged multifractal: each octave folded through 1-|2n-1|, then passed through
+        // a smoothstep instead of a plain square. The square leaves a nonzero slope at
+        // r=1, so every octave contributes a crease along its crest; smoothstep has zero
+        // slope at both ends, so summits dome over while valley floors still pinch.
+        // Returns [0,1].
         function _ridged(x, z, octaves, lacunarity, gain) {
             let amp = 1, freq = 1, sum = 0, norm = 0;
             for (let o = 0; o < octaves; o++) {
                 const n = _valueNoise(x * freq, z * freq);
                 const r = 1 - Math.abs(n * 2 - 1);
-                sum  += r * r * amp;
+                sum  += r * r * (3 - 2 * r) * amp;
                 norm += amp;
                 amp  *= gain;
                 freq *= lacunarity;
@@ -3441,7 +3446,7 @@
             if (mtn > 0) {
                 // ridged field is only evaluated inside the mask -- identical output,
                 // but the lowlands skip five octaves of noise per sample.
-                const ridged = _ridged(bx * T.ridgeScale + 33.0, bz * T.ridgeScale - 21.0, 5, 2.13, 0.5);
+                const ridged = _ridged(bx * T.ridgeScale + 33.0, bz * T.ridgeScale - 21.0, T.ridgeOctaves, 2.13, T.ridgeGain);
                 const peaks  = Math.pow(Math.max(ridged, 1e-4), T.ridgeSharp);
                 h01 = plains + (Math.max(plains, peaks) - plains) * mtn;
                 if (T.ridgeAdd > 0) h01 += peaks * mtn * T.ridgeAdd;
@@ -4941,7 +4946,6 @@
             // the seed was rolled after, so cabins were sited against the old terrain.)
             initTerrainSeed();
             waterLevel = computeWaterLevel();
-            console.log(waterLevel);
 
             // Spawn cabins: num_cabins = max(1, floor(log(scale)))
             const num_cabins = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
