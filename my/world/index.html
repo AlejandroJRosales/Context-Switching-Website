@@ -4898,6 +4898,7 @@
         let ticks = 0;
         let lastFpsUpdate = 0;
         let frameCount = 0;
+        let lastStatsUpdate = 0;
         let raycastHelper = new THREE.Raycaster();
         // Spatial grid rebuilt each frame
         const spatialGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 160);
@@ -5078,9 +5079,14 @@
         }
 
         function handleCollisions() {
-            // Rebuild plant grid (plants are sparse, cheap to rebuild)
-            plantGrid.clear();
-            for (const p of plants) if (p.alive) plantGrid.insert(p);
+            // Rebuild plant grid every 3 frames, same cadence as spatialGrid.
+            // A just-eaten plant can stay findable in the grid for up to 2
+            // extra frames -- callers already check p.alive before acting on
+            // a query result, so a stale hit resolves to a no-op, not a bug.
+            if (ticks % 3 === 0) {
+                plantGrid.clear();
+                for (const p of plants) if (p.alive) plantGrid.insert(p);
+            }
 
             // Rebuild water grid only when locations change (done once at init)
             if (waterGridDirty) rebuildWaterGrid();
@@ -5462,9 +5468,14 @@
             // Update cat companion
             updateCat(deltaTime);
 
-            // Rebuild spatial grid once per frame for all animals
-            spatialGrid.clear();
-            for (const a of animals) if (a.alive) spatialGrid.insert(a);
+            // Rebuild spatial grid every 3 frames -- neighbor queries read stale
+            // positions for up to 2 frames, but every consumer already re-checks
+            // exact distSq and .alive after querying, so this only delays
+            // reaction time slightly rather than causing wrong behavior.
+            if (ticks % 3 === 0) {
+                spatialGrid.clear();
+                for (const a of animals) if (a.alive) spatialGrid.insert(a);
+            }
 
             // Update animals
             for (let ai = 0; ai < animals.length; ai++) {
@@ -5518,8 +5529,12 @@
             if (ticks % 2 === 0) updateTargetInfo();
 
             ticks++;
-            // DOM stat update at ~2 Hz is plenty; avoid per-frame string writes
-            if (ticks % 30 === 0) updateStats();
+            // DOM stat update every 30s wall-clock -- purely a display readout,
+            // doesn't feed back into simulation state, so lag here is free.
+            if (now - lastStatsUpdate >= 30000) {
+                updateStats();
+                lastStatsUpdate = now;
+            }
 
             frameCount++;
             if (now - lastFpsUpdate > 1000) {
