@@ -6,15 +6,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Ecosystem Simulation</title>
-    <!-- This code is designed to be copied and pasted. Make it your own! -->
-    <!-- Latest Update: Cliffs and Lakes Update -->
-    <!-- TODO: 
-         - add obstacles that animals can hide behind or in
-         - cat eats meat or if robot needs enery cells given to it by player
-         - can break down rocks to get minerals to give to robot for upgrades.
-    -->
     <style>
-        /* Base */
         * {
             margin: 0;
             padding: 0;
@@ -32,14 +24,12 @@
             background: #000;
         }
 
-        /* Canvas */
         #canvas {
             display: block;
             width: 100%;
             height: 100%;
         }
 
-        /* NN section */
         #asp-nn-wrapper {
             margin-top: 0;
             padding-top: 0;
@@ -67,7 +57,6 @@
             color: rgba(0, 255, 0, 0.5);
         }
 
-        /* HUD */
         .hud {
             position: absolute;
             inset: 0;
@@ -136,7 +125,6 @@
             height: 10px;
         }
 
-        /* Control Panel */
         .control-panel {
             position: absolute;
             bottom: max(10px, env(safe-area-inset-bottom));
@@ -149,7 +137,6 @@
             pointer-events: auto;
         }
 
-        /* Buttons */
         button {
             padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 20px);
             font-size: clamp(9px, 2vw, 12px);
@@ -176,7 +163,6 @@
             transform: scale(0.95);
         }
 
-        /* Joystick */
         .joystick-container {
             position: absolute;
             bottom: max(20px, calc(env(safe-area-inset-bottom) + 10px));
@@ -244,7 +230,6 @@
             box-shadow: 0 0 22px rgba(0, 255, 0, 0.9), inset 0 1px 3px rgba(255, 255, 255, 0.3);
         }
 
-        /* Scanlines */
         .scanlines {
             position: absolute;
             inset: 0;
@@ -259,7 +244,6 @@
             z-index: 100;
         }
 
-        /* Settings Panel */
         #settings-panel {
             display: none;
             position: absolute;
@@ -373,7 +357,6 @@
             padding: 30px 10px 20px;
         }
 
-        /* VR Overlay */
         #vr-overlay {
             display: none;
             position: absolute;
@@ -408,7 +391,6 @@
             border-radius: 4px;
         }
 
-        /* Settings Button */
         #settings-btn-wrap {
             position: absolute;
             top: max(10px, env(safe-area-inset-top));
@@ -418,7 +400,6 @@
             z-index: 20;
         }
 
-        /* Animal Stat Panel */
         #animal-stat-panel {
             display: none;
             position: fixed;
@@ -444,7 +425,6 @@
             gap: 0;
         }
 
-        /* Stats + Memory + Brain */
         #asp-top-row {
             display: flex;
             flex-direction: row;
@@ -566,7 +546,6 @@
             color: rgba(0, 255, 0, 0.85);
         }
 
-        /* Responsive */
         @media (max-width: 600px) {
             .hud-header {
                 font-size: clamp(12px, 4vw, 16px);
@@ -592,12 +571,11 @@
                 height: clamp(100px, 18vw, 150px);
             }
         }
-    </style>
+</style>
 </head>
 <body>
     <canvas id="canvas"></canvas>
 
-    <!-- VR DOM Overlay -->
     <div id="vr-overlay">
         <div id="vr-hud">
             <div id="vr-stats">🌿 Building Ecosystem...</div>
@@ -607,7 +585,6 @@
         </div>
     </div>
 
-    <!-- HUD -->
     <div class="hud">
         <div class="hud-header">
             <span id="deerCount">0</span>🐑
@@ -627,11 +604,8 @@
         <div class="scanlines"></div>
     </div>
 
-    <!-- Animal stat HUD -->
     <div id="animal-stat-panel">
-        <!-- Top row: Stats (left) | Memory (mid) | Brain (right) -->
         <div id="asp-top-row">
-            <!-- Stats col -->
             <div id="asp-left-col">
                 <div id="asp-stats-section">
                     <div class="asp-generation" id="asp-generation">Generation 0</div>
@@ -640,8 +614,7 @@
                     <div class="asp-stat-line">💧 <span id="asp-water-val">100.0</span></div>
                     <div class="asp-stat-line" id="asp-age-line" style="display:none">🚼 <span id="asp-age-val">0.0</span></div>
                 </div>
-            </div><!-- end asp-left-col -->
-            <!-- Memory col -->
+            </div>
             <div id="asp-memories">
                 <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
                 <div class="asp-mem-row" id="asp-mem-predator">
@@ -668,30 +641,25 @@
                     <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
                     <span class="asp-mem-dist" id="asp-mem-mate-dist"></span>
                 </div>
-            </div><!-- end asp-memories -->
-            <!-- Brain visualizer: right col -->
+            </div>
             <div id="asp-nn-wrapper">
                 <div class="asp-mem-label">Brain</div>
                 <canvas id="nnCanvas3D"></canvas>
             </div>
-        </div><!-- end asp-top-row -->
+        </div>
     </div>
 
-    <!-- Joystick -->
     <div class="joystick-container show floating" id="joystick">
         <div class="joystick-base"></div>
         <div class="joystick-deadzone"></div>
     </div>
 
-    <!-- Control Panel -->
     <div class="control-panel"></div>
 
-    <!-- Settings Button -->
     <div id="settings-btn-wrap">
         <button id="settings-btn">⚙</button>
     </div>
 
-    <!-- Settings Panel -->
     <div id="settings-panel">
         <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
@@ -769,6 +737,7 @@
 
     <script type="module">
         import * as THREE from 'three';
+
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
@@ -791,34 +760,20 @@
         // ====================================================================
         // PERF INFRASTRUCTURE
         // ====================================================================
-
-        // Frame cap. The render loop is driven by setAnimationLoop, which fires
-        // at display refresh (measured 113 fps on a 120 Hz panel). Everything in
-        // the frame -- sim step, matrix composition, GPU uploads -- scaled with
-        // that. 0 disables the cap; XR always runs uncapped (the headset owns
-        // its own cadence and a capped loop would judder).
         let targetFPS = 60;
         let _lastRenderTs = -1e9;
 
-        // Bumped whenever terrain geometry is regenerated, so anything that
-        // caches a sampled ground height knows to re-sample.
         let terrainVersion = 0;
 
-        // How many frames between REINFORCE weight updates for a given animal
-        // (staggered by animal index). Lower = faster learning and more CPU.
         const BRAIN_UPDATE_INTERVAL = 30;
 
-        // three r158 uploads the ENTIRE typed array whenever needsUpdate is set,
-        // unless updateRange is narrowed first (and it resets to -1 after every
-        // upload, so it has to be re-set each frame). Without this, a 12000-slot
-        // InstancedMesh ships 768 KB per frame even with 25 instances alive.
         function markAttr(attr, floatCount) {
             if (!attr) return;
             if (floatCount <= 0) return;
-            if (attr.addUpdateRange) {          // r159+ API
+            if (attr.addUpdateRange) {
                 attr.clearUpdateRanges();
                 attr.addUpdateRange(0, floatCount);
-            } else {                            // r158 and earlier
+            } else {
                 attr.updateRange.offset = 0;
                 attr.updateRange.count  = floatCount;
             }
@@ -832,8 +787,6 @@
             markAttr(mesh.instanceColor, count * 3);
         }
 
-        // textContent assignment replaces the element's text node even when the
-        // string is identical -- that was ~5 DOM nodes created per frame.
         function setTextIfChanged(el, str) {
             if (!el || el._lastTxt === str) return;
             el._lastTxt = str;
@@ -851,13 +804,10 @@
             yaw: Math.PI,
             pitch: -0.3,
             targetObject: null,
-            animTime: 0  // walk cycle accumulator
+            animTime: 0
         };
-        let WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
-        // Frame cap cycle: 30 -> 60 -> 120 -> uncapped. Lower is dramatically
-        // cheaper on battery; every per-frame cost scales linearly with it.
         const FPS_CAP_OPTIONS = [30, 60, 120, 0];
         document.getElementById('fpsCapBtn').addEventListener('click', function() {
             const i = FPS_CAP_OPTIONS.indexOf(targetFPS);
@@ -911,7 +861,6 @@
             CONFIG.initialPlants = Math.trunc(200 * pendingScale);
             CONFIG.worldWidth = Math.trunc(850 * pendingScale);
             CONFIG.worldHeight = Math.trunc(600 * pendingScale);
-            WORLD_DIAG = Math.sqrt(CONFIG.worldWidth * CONFIG.worldWidth + CONFIG.worldHeight * CONFIG.worldHeight);
             CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
             CONFIG.scale = pendingScale;
             player.speed = 80 * Math.log1p(pendingScale);
@@ -935,7 +884,6 @@
             ['nnVisBtn',     toggleNNVis],
         ].forEach(([id, fn]) => document.getElementById(id).addEventListener('click', fn));
 
-        // VR Button Configuration
         (function () {
             const btn = document.getElementById('vrBtn');
             const btnText = document.getElementById('vrBtnText');
@@ -946,19 +894,16 @@
                 currentSession = session;
                 session.addEventListener('end', onSessionEnded);
 
-                // Hand off to Three.js renderer if available
                 if (window.renderer && window.renderer.xr) {
                     window.renderer.xr.setSession(session);
                 }
 
-                // Show VR overlay
                 const overlay = document.getElementById('vr-overlay');
                 if (overlay) overlay.style.display = 'block';
 
                 btnText.textContent = 'Exit VR';
                 btn.disabled = false;
 
-                // Disable fullscreen while in VR
                 updateFullscreenBtn(true);
             }
 
@@ -971,7 +916,6 @@
                 btnText.textContent = 'Enter VR';
                 btn.disabled = false;
 
-                // Re-enable fullscreen
                 updateFullscreenBtn(false);
             }
 
@@ -992,7 +936,6 @@
                 }
             });
 
-            // Check WebXR support on load
             btn.disabled = true;
             if ('xr' in navigator) {
                 navigator.xr.isSessionSupported('immersive-vr').then(supported => {
@@ -1012,7 +955,6 @@
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        // Cap draw distance so GPU frustum stays manageable at large scales
         const _fogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + CONFIG.scale * 200);
         scene.fog = new THREE.Fog(0x87CEEB, _fogEnd * 0.4, _fogEnd);
 
@@ -1029,10 +971,8 @@
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // WebXR
         renderer.xr.enabled = true;
 
-        // Show the dom-overlay div when a VR session is active
         renderer.xr.addEventListener('sessionstart', () => {
             document.getElementById('vr-overlay').style.display = 'block';
         });
@@ -1040,7 +980,6 @@
             document.getElementById('vr-overlay').style.display = 'none';
         });
 
-        // VR Controller state
         const vrState = {
             moveX: 0,
             moveY: 0,
@@ -1050,13 +989,6 @@
             aWasDown: false,
             bWasDown: false,
         };
-
-        // XR reference space
-        let xrReferenceSpace = null;
-        renderer.xr.addEventListener('sessionstart', async () => {
-            xrReferenceSpace = await renderer.xr.getSession().requestReferenceSpace('local-floor')
-                .catch(() => renderer.xr.getReferenceSpace());
-        });
 
         camera.position.set(0, 0, 0);
 
@@ -1070,7 +1002,6 @@
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 3000;
         directionalLight.shadow.mapSize.height = 3000;
-        // Shadow frustum covers a generous area around the player (updated each frame)
         const SHADOW_RADIUS = 3000;
         directionalLight.shadow.camera.left   = -SHADOW_RADIUS;
         directionalLight.shadow.camera.right  =  SHADOW_RADIUS;
@@ -1078,13 +1009,19 @@
         directionalLight.shadow.camera.bottom = -SHADOW_RADIUS;
         directionalLight.shadow.camera.near   = 1;
         directionalLight.shadow.camera.far    = 3000;
-        // Light offset relative to its target (target follows the player)
         const LIGHT_OFFSET = new THREE.Vector3(400, 800, 300);
-        directionalLight.target.position.set(400, 0, 300); // initial world centre
+        directionalLight.target.position.set(400, 0, 300);
         scene.add(directionalLight.target);
         directionalLight.position.copy(directionalLight.target.position).add(LIGHT_OFFSET);
         scene.add(directionalLight);
-        directionalLight.shadow.autoUpdate = false; // reuse cached map; needsUpdate raised every 3rd frame
+        directionalLight.shadow.autoUpdate = false;
+
+        const SHADOW_FOLLOW_STEP = 250;
+        const SHADOW_MAX_INTERVAL = 150;
+        const _shadowAnchor = new THREE.Vector3(Infinity, 0, Infinity);
+        let _shadowLastRefresh = -1e9;
+        let _shadowForce = true;
+        function requestShadowRefresh() { _shadowForce = true; }
 
         // ============================================================================
         // FULLSCREEN
@@ -1138,11 +1075,6 @@
 
         const keys = {};
 
-        // Double-press spacebar/tap = big jump
-        let lastSpaceTime = 0;
-        const DOUBLE_TAP_MS = 300;
-
-        // Keyboard input
         document.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
 
@@ -1168,11 +1100,8 @@
             keys[e.key.toLowerCase()] = false;
         });
 
-        // Mouse movement for camera look
         document.addEventListener('mousemove', (e) => {
             const settingsOpen = document.getElementById('settings-panel').style.display === 'block';
-            // Mouse-look works whenever pointer lock is active,
-            // so keyboard+mouse and touch can be used interchangeably without a mode switch.
             if (document.pointerLockElement === canvas && !settingsOpen) {
                 const deltaX = e.movementX || 0;
                 const deltaY = e.movementY || 0;
@@ -1183,15 +1112,12 @@
             }
         });
 
-        // Request pointer lock for mouse whenever the canvas itself is clicked
         canvas.addEventListener('click', () => {
             canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
             canvas.requestPointerLock();
         });
 
-        // Creative mode button, toggles flight with smooth lift-off / drop
         function toggleCreative() {
-            const btn = document.getElementById('flyBtn');
             if (!player.isCreative) {
                 player.isCreative = true;
                 player.velocity.y = 0;
@@ -1209,19 +1135,18 @@
         joystickKnob.className = 'joystick-knob';
         joystickEl.appendChild(joystickKnob);
 
-        const DEAD_ZONE = 0.08; // Fraction of radius below which input is zeroed
+        const DEAD_ZONE = 0.08;
 
         let joystickCenterX = 0;
         let joystickCenterY = 0;
         let joystickRadius = 0;
-        let joystickTouchId = null; // Track the specific touch finger
+        let joystickTouchId = null;
 
         function getJoystickRadius() {
             return joystickEl.getBoundingClientRect().width / 2 - 4;
         }
 
         function positionJoystick(x, y) {
-            // Center the joystick around the touch point, clamped to screen edges
             const halfW = joystickEl.offsetWidth / 2;
             const halfH = joystickEl.offsetHeight / 2;
             const clampedX = Math.max(halfW, Math.min(window.innerWidth - halfW, x));
@@ -1244,7 +1169,6 @@
             let deltaY = y - joystickCenterY;
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-            // Guard against uninitialized or zero radius
             if (!joystickRadius || joystickRadius <= 0) {
                 controls.joystickX = 0;
                 controls.joystickY = 0;
@@ -1261,13 +1185,11 @@
             let normX = deltaX / joystickRadius;
             let normY = deltaY / joystickRadius;
 
-            // Apply dead zone
             const mag = Math.sqrt(normX * normX + normY * normY);
             if (mag < DEAD_ZONE) {
                 normX = 0;
                 normY = 0;
             } else {
-                // Re-scale so dead zone edge = 0, outer edge = 1
                 const scale = (mag - DEAD_ZONE) / (1 - DEAD_ZONE);
                 normX = (normX / mag) * scale;
                 normY = (normY / mag) * scale;
@@ -1279,17 +1201,15 @@
             joystickKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
 
-        // Joystick touch start
         document.addEventListener('touchstart', (e) => {
             for (const touch of e.changedTouches) {
-                if (joystickTouchId !== null) break; // already tracking a joystick touch
+                if (joystickTouchId !== null) break;
 
                 const target = touch.target;
                 if (target.tagName === 'BUTTON' || target.closest('button') ||
                     target.closest('.control-panel') || target.closest('#settings-panel') ||
                     target.closest('#animal-stat-panel')) continue;
 
-                // Bottom-left quadrant is joystick zone
                 if (touch.clientX < window.innerWidth * 0.5 && touch.clientY >= window.innerHeight * 0.5) {
                     joystickTouchId = touch.identifier;
                     positionJoystick(touch.clientX, touch.clientY);
@@ -1314,15 +1234,10 @@
             resetJoystickPosition();
         }
 
-        // Touch screen camera control
-        // Tap behaviour (right half, touch mode):
-        // single tap then start camera drag
-        // double tap then jump (if on ground)
         let cameraTouchId = null;
         let touchStartX = 0;
         let touchStartY = 0;
 
-        // Multi-tap state
         let lastTapTime = 0;
         let lastTapX = 0;
         let lastTapY = 0;
@@ -1335,12 +1250,11 @@
             const isDouble = (now - lastTapTime) < TAP_WINDOW_MS && dist < TAP_DIST_PX;
 
             if (isDouble) {
-                // Double tap: jump immediately, no delay
                 if (!player.isCreative && !player.isJumping) {
                     player.velocity.y = player.jumpForce;
                     player.isJumping = true;
                 }
-                lastTapTime = 0; // reset so next tap starts fresh
+                lastTapTime = 0;
             } else {
                 lastTapTime = now;
             }
@@ -1349,7 +1263,6 @@
             lastTapY = y;
         }
 
-        // Track a pending right-side touch that hasn't moved enough to be a drag yet
         let pendingCameraTouchId = null;
         let pendingTouchStartX = 0;
         let pendingTouchStartY = 0;
@@ -1362,14 +1275,11 @@
                     target.closest('.control-panel') || target.closest('#settings-panel') ||
                     target.closest('#animal-stat-panel')) continue;
 
-                // All quadrants except bottom-left (reserved for the joystick): camera look + multi-tap gestures
                 const isJoystickQuadrant =
                     touch.clientX < window.innerWidth * 0.5 && touch.clientY >= window.innerHeight * 0.5;
                 if (!isJoystickQuadrant) {
-                    // Register tap for gesture detection regardless of existing camera touch
                     handleRightTap(touch.clientX, touch.clientY);
 
-                    // Track as pending drag (don't commit cameraTouchId yet)
                     if (cameraTouchId === null && pendingCameraTouchId === null) {
                         pendingCameraTouchId = touch.identifier;
                         pendingTouchStartX = touch.clientX;
@@ -1382,15 +1292,12 @@
             }
         }, { passive: false });
 
-        // Unified touchmove: handles joystick + camera in one pass 
         document.addEventListener('touchmove', (e) => {
             e.preventDefault();
             for (const touch of e.changedTouches) {
-                // Joystick
                 if (touch.identifier === joystickTouchId) {
                     handleJoystickMove(touch.clientX, touch.clientY);
                 }
-                // Camera drag: promote pending touch once drag threshold crossed
                 if (touch.identifier === pendingCameraTouchId && cameraTouchId === null) {
                     const dx = touch.clientX - pendingTouchStartX;
                     const dy = touch.clientY - pendingTouchStartY;
@@ -1413,7 +1320,6 @@
             }
         }, { passive: false });
 
-        // Unified touchend 
         document.addEventListener('touchend', (e) => {
             for (const touch of e.changedTouches) {
                 if (touch.identifier === joystickTouchId) resetJoystick();
@@ -1422,13 +1328,11 @@
             }
         });
 
-        // Unified touchcancel 
         document.addEventListener('touchcancel', () => {
             resetJoystick();
             cameraTouchId = null;
             pendingCameraTouchId = null;
         });
-
 
         // ============================================================================
         // SPATIAL GRID
@@ -1439,7 +1343,6 @@
                 this.cols = Math.ceil(worldW / cellSize);
                 this.rows = Math.ceil(worldH / cellSize);
                 this.cells = new Map();
-                // Pool of reusable bucket arrays to avoid per-frame allocation
                 this._pool = [];
                 this._usedBuckets = [];
             }
@@ -1453,7 +1356,6 @@
             }
 
             clear() {
-                // Return used buckets to pool and clear cells map
                 for (const bucket of this._usedBuckets) {
                     bucket.length = 0;
                     this._pool.push(bucket);
@@ -1473,12 +1375,6 @@
                 bucket.push(entity);
             }
 
-            // Non-generator variant: appends matching entities into `out` and
-            // returns the count (caller iterates 0..n-1 and ignores stale tail
-            // entries). A generator allocates an iterator object plus one result
-            // object per yielded element; with up to 5 queries per animal per
-            // frame that was a large share of the ~140 MB/s allocation rate.
-            // Buckets are never mutated mid-query, so snapshotting is equivalent.
             queryInto(out, x, z, r) {
                 let n = 0;
                 const cs = this.cellSize;
@@ -1498,7 +1394,6 @@
                 return n;
             }
 
-            // Yields all entities in cells within radius r of (x, z)
             *query(x, z, r) {
                 const cs = this.cellSize;
                 const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
@@ -1516,8 +1411,6 @@
             }
         }
 
-        // Reusable scratch buffers for SpatialGrid.queryInto. Separate buffers per
-        // call site so a query is never clobbered by another one nested inside it.
         const _qLocate    = [];
         const _qHunt      = [];
         const _qMate      = [];
@@ -1537,9 +1430,9 @@
         //
         // GRU cell (simplified - single gate + self-recurrence, no full reset/update gate):
         // ============================================================================
-        const LOBE_SIZE_MIN = 4;    // minimum nodes per lobe (randomised at birth)
-        const LOBE_SIZE_MAX = 10;   // maximum nodes per lobe
-        const LOBE_SPARSITY = 0.20; // fraction of possible connections that are active (0-1)
+        const LOBE_SIZE_MIN = 4;
+        const LOBE_SIZE_MAX = 10;
+        const LOBE_SPARSITY = 0.20;
         const tools = {
             distSq(x1, y1, x2, y2) {
                 return (x2 - x1) ** 2 + (y2 - y1) ** 2;
@@ -1584,10 +1477,9 @@
             return LOBE_SIZE_MIN + Math.floor(Math.random() * (LOBE_SIZE_MAX - LOBE_SIZE_MIN + 1));
         }
         function makeSparseMask(inD, outD, sparsity) {
-            const mask = new Uint8Array(inD * outD); // all 0
+            const mask = new Uint8Array(inD * outD);
             const total = inD * outD;
             const target = Math.max(1, Math.round(total * sparsity));
-            // Fisher-Yates partial shuffle to pick exactly `target` positions
             const indices = new Int32Array(total);
             for (let i = 0; i < total; i++) indices[i] = i;
             for (let i = 0; i < target; i++) {
@@ -1609,7 +1501,6 @@
 
         class DenseNetwork {
             constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
-                // Public fields the rest of the codebase reads
                 this.inputDims    = inputDims;
                 this.outputDims   = 9;
                 this.learningRate = learningRate;
@@ -1622,7 +1513,6 @@
                 this.normCount    = 0;
                 this.EMA          = 0.001;
 
-                // Running normalisation for inputs (kept identical to old code)
                 this.runningMean   = new Float32Array(inputDims);
                 this.runningVar    = new Float32Array(inputDims).fill(1);
                 this._standardized = new Float32Array(inputDims);
@@ -1630,8 +1520,6 @@
                 const I  = inputDims;
                 const O  = this.outputDims;
 
-                // Lobe sizes: inherited from masks (fixed per animal) or freshly randomised.
-                // lobeSizeA = GRU lobe (Lobe A), lobeSizeB = standard LIF lobe (Lobe B).
                 if (masks) {
                     this.lobeSizeA = masks.lobeSizeA;
                     this.lobeSizeB = masks.lobeSizeB;
@@ -1639,21 +1527,18 @@
                     this.lobeSizeA = randLobeSize();
                     this.lobeSizeB = randLobeSize();
                 }
-                // Legacy alias so any external code reading .lobeSize still works
                 this.lobeSize = this.lobeSizeA;
 
                 const NA = this.lobeSizeA;
                 const NB = this.lobeSizeB;
 
-                // Topology masks
-                // Accept inherited masks or generate fresh random ones
                 if (masks) {
-                    this.maskIA = masks.maskIA; // Input   -> Lobe A  [I*NA]
-                    this.maskIB = masks.maskIB; // Input   -> Lobe B  [I*NB]
-                    this.maskAB = masks.maskAB; // Lobe A  -> Lobe B  [NA*NB]
-                    this.maskBA = masks.maskBA; // Lobe B  -> Lobe A  [NB*NA]
-                    this.maskAO = masks.maskAO; // Lobe A  -> Output  [NA*O]
-                    this.maskBO = masks.maskBO; // Lobe B  -> Output  [NB*O]
+                    this.maskIA = masks.maskIA;
+                    this.maskIB = masks.maskIB;
+                    this.maskAB = masks.maskAB;
+                    this.maskBA = masks.maskBA;
+                    this.maskAO = masks.maskAO;
+                    this.maskBO = masks.maskBO;
                 } else {
                     this.maskIA = makeSparseMask(I,  NA, LOBE_SPARSITY);
                     this.maskIB = makeSparseMask(I,  NB, LOBE_SPARSITY);
@@ -1663,7 +1548,6 @@
                     this.maskBO = makeSparseMask(NB, O,  LOBE_SPARSITY);
                 }
 
-                // Weights (freshly randomised, masks applied)
                 this.wIA = makeMaskedWeights(I,  NA, this.maskIA);
                 this.wIB = makeMaskedWeights(I,  NB, this.maskIB);
                 this.wAB = makeMaskedWeights(NA, NB, this.maskAB);
@@ -1671,17 +1555,14 @@
                 this.wAO = makeMaskedWeights(NA, O,  this.maskAO);
                 this.wBO = makeMaskedWeights(NB, O,  this.maskBO);
 
-                // GRU self-recurrence weight (one scalar per Lobe-A node)
                 this.wSelf = new Float32Array(NA);
                 const selfLimit = Math.sqrt(6.0 / (NA + NA));
                 for (let i = 0; i < NA; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
 
-                // Biases
                 this.biasA  = new Float32Array(NA);
                 this.biasB  = new Float32Array(NB);
                 this.biasO  = new Float32Array(O);
 
-                // Momentum velocity buffers (parallel structure to weights)
                 this.vIA    = new Float32Array(I  * NA);
                 this.vIB    = new Float32Array(I  * NB);
                 this.vAB    = new Float32Array(NA * NB);
@@ -1693,45 +1574,27 @@
                 this.vBiasB = new Float32Array(NB);
                 this.vBiasO = new Float32Array(O);
 
-                // Hidden state for Lobe A GRU cells (persists across think() calls)
                 this.hA = new Float32Array(NA);
 
-                // Leaky Integrate-and-Fire state
                 this.hB = new Float32Array(NB);
 
-                // LIF hyperparameters
-                // lifLeak  : fraction of membrane potential retained per step (0-1).
-                //            0.9 ≈ \tau_m ~ 10 steps; lower -> faster forgetting.
-                // lifThresh: voltage threshold that triggers a spike.
-                //            Tuned so typical net inputs (~+-1 after normalisation)
-                //            can accumulate to threshold in a few steps.
-                // lifReset : membrane potential immediately after a spike.
-                //            Sub-threshold reset creates relative refractory period.
-                this.lifLeak   = 0.85;   // membrane leak coefficient
-                this.lifThresh = 0.25;    // spike threshold (V_th)
-                this.lifReset  = -0.1;  // post-spike reset (V_reset < V_rest=0)
+                this.lifLeak   = 0.85;
+                this.lifThresh = 0.25;
+                this.lifReset  = -0.1;
 
-                // Refractory counters: number of steps each node cannot fire
-                // (decremented each propagate call; node clamped to V_reset while > 0)
                 this.refracA = new Uint8Array(NA);
                 this.refracB = new Uint8Array(NB);
-                this.REFRAC_PERIOD = 3; // steps of silence after a spike
+                this.REFRAC_PERIOD = 3;
 
-                // Activation buffers (pre-allocated)
                 this.actA = new Float32Array(NA);
                 this.actB = new Float32Array(NB);
                 this.actO = new Float32Array(O);
 
-                // Expose layerDims in the shape the visualizer and mate() may read
-                // (input, lobeA, lobeB, output; notional; visualizer update deferred)
                 this.layerDims = [I, NA, NB, O];
 
-                // Expose activations array in the shape adjustWeights reads for REINFORCE
-                // We'll keep actO as activations[last] so the existing REINFORCE code works
                 this.activations = [this.actA, this.actB, this.actO];
             }
 
-            // Returns a plain object of mask Uint8Arrays for inheritance
             getMasks() {
                 return {
                     lobeSizeA: this.lobeSizeA, lobeSizeB: this.lobeSizeB,
@@ -1751,24 +1614,12 @@
                 const actO = this.actO;
                 const hA   = this.hA;
 
-                // Lobe A - Leaky Integrate-and-Fire (LIF) nodes with GRU self-recurrence
-                //
-                // Each node maintains a membrane potential V = hA[i] that:
-                //   1. Leaks toward rest (0) each step:  V <- V * lifLeak
-                //   2. Integrates synaptic current (bias + weighted inputs + B->A + self)
-                //   3. Fires (actA[i] = 1) and resets when V >= lifThresh
-                //   4. Is clamped to lifReset during the refractory period
-                //
-                // A continuous "sub-threshold" signal (sigmoid of V - threshold) is
-                // passed to downstream layers so gradient information propagates even
-                // when no discrete spike occurs, preserving trainability under REINFORCE.
                 const refracA  = this.refracA;
                 const lifLeak  = this.lifLeak;
                 const lifTh    = this.lifThresh;
                 const lifRst   = this.lifReset;
                 const refracPd = this.REFRAC_PERIOD;
                 for (let i = 0; i < NA; i++) {
-                    // refractory: node cannot integrate or fire
                     if (refracA[i] > 0) {
                         refracA[i]--;
                         hA[i] = lifRst;
@@ -1776,10 +1627,8 @@
                         continue;
                     }
 
-                    // leak: membrane drifts back toward rest
                     hA[i] *= lifLeak;
 
-                    // integrate: accumulate weighted synaptic input
                     let net = this.biasA[i] + this.wSelf[i] * hA[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * NA + i;
@@ -1789,34 +1638,23 @@
                         const idx = k * NA + i;
                         if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
                     }
-                    // Clamp net current to prevent runaway integration
                     hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
 
-                    // fire-and-reset or soft sub-threshold output
                     if (hA[i] >= lifTh) {
-                        actA[i] = 1.0;          // spike
-                        hA[i]   = lifRst;       // hard reset
-                        refracA[i] = refracPd;  // enter refractory period
+                        actA[i] = 1.0;
+                        hA[i]   = lifRst;
+                        refracA[i] = refracPd;
                     } else {
-                        // Soft sigmoid of (V - threshold): gives graded output below
-                        // threshold, smoothly approaching 1 as V -> lifTh.
-                        const vRel = hA[i] - lifTh;  // negative when sub-threshold
+                        const vRel = hA[i] - lifTh;
                         actA[i] = vRel >= 0
                             ? 1 / (1 + Math.exp(-vRel))
                             : Math.exp(vRel) / (1 + Math.exp(vRel));
                     }
                 }
 
-                // Lobe B - Leaky Integrate-and-Fire (LIF) nodes
-                //
-                // Same LIF dynamics as Lobe A but without self-recurrence.
-                // Lobe B acts as a "fast" integrator (no persistent hA self-loop),
-                // making it responsive to immediate sensory context (analogous to
-                // a more reactive cortical layer receiving feedforward + A->B input).
                 const hB      = this.hB;
                 const refracB = this.refracB;
                 for (let i = 0; i < NB; i++) {
-                    // refractory
                     if (refracB[i] > 0) {
                         refracB[i]--;
                         hB[i] = lifRst;
@@ -1824,10 +1662,8 @@
                         continue;
                     }
 
-                    // leak
                     hB[i] *= lifLeak;
 
-                    // integrate
                     let net = this.biasB[i];
                     for (let j = 0; j < I; j++) {
                         const k = j * NB + i;
@@ -1839,7 +1675,6 @@
                     }
                     hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
 
-                    // fire-and-reset or soft sub-threshold output
                     if (hB[i] >= lifTh) {
                         actB[i] = 1.0;
                         hB[i]   = lifRst;
@@ -1852,10 +1687,6 @@
                     }
                 }
 
-                // Output (softmax)
-                // net_i = biasO[i]
-                //       + \sum_k  wAO[k*O+i] * actA[k]      (A -> output, sparse)
-                //       + \sum_k  wBO[k*O+i] * actB[k]      (B -> output, sparse)
                 for (let i = 0; i < O; i++) {
                     let net = this.biasO[i];
                     for (let k = 0; k < NA; k++) {
@@ -1869,7 +1700,6 @@
                     actO[i] = net;
                 }
 
-                // Softmax over actO
                 let maxV = actO[0];
                 for (let i = 1; i < O; i++) if (actO[i] > maxV) maxV = actO[i];
                 let sum = 0;
@@ -1883,7 +1713,6 @@
                 this.normCount++;
                 const standardized = this._standardized;
 
-                // Online input normalisation (identical to old DenseNetwork)
                 for (let i = 0; i < inputs.length; i++) {
                     const delta = inputs[i] - this.runningMean[i];
                     this.runningMean[i] += this.EMA * delta;
@@ -1920,16 +1749,14 @@
                 const wd1 = 1 - this.weightDecay;
                 const wdB = 1 - this.weightDecay * 0.1;
 
-                // REINFORCE-style policy gradient (identical logic to old DenseNetwork)
                 const chosenProb = this.actO[this.output] ?? 0.5;
                 const policyGrad = r * (1 - chosenProb);
                 const grad  = lr * policyGrad;
                 const gradB = lr * 0.1 * policyGrad;
 
-                // Helper: update one flat weight array with its velocity and mask
                 const updateW = (w, v, mask, len) => {
                     for (let k = 0; k < len; k++) {
-                        if (!mask[k]) continue; // respect topology; never activate pruned edges
+                        if (!mask[k]) continue;
                         const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
                         const vel = mom * v[k] - grad + noise;
                         v[k] = vel;
@@ -1949,7 +1776,6 @@
                 updateW(this.wAO, this.vAO, this.maskAO, NA * O);
                 updateW(this.wBO, this.vBO, this.maskBO, NB * O);
 
-                // Self-recurrence weights (no mask; every GRU node has one)
                 for (let k = 0; k < NA; k++) {
                     const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
                     const vel = mom * this.vSelf[k] - grad + noise;
@@ -1957,7 +1783,6 @@
                     this.wSelf[k] = this.wSelf[k] * wd1 + vel;
                 }
 
-                // Biases
                 const updateBias = (b, v, len) => {
                     for (let k = 0; k < len; k++) {
                         const vel = mom * v[k] - gradB;
@@ -1974,18 +1799,12 @@
         // ============================================================================
         // ENTITY SYSTEM
         // ============================================================================
-        // Static movement tables per type
-        const COORD_CHANGES = {
-            sheep: (() => { const s=25; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
-            human:  (() => { const s=35; return [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]]; })(),
-        };
-
         function randNormal(mean = 1.0, std = 0.12) {
             let u, v;
             do { u = Math.random(); } while (u === 0);
             v = Math.random();
             const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-            return Math.max(0.55, Math.min(1.55, mean + std * n)); // clamp to reasonable range
+            return Math.max(0.55, Math.min(1.55, mean + std * n));
         }
 
         class Entity {
@@ -2015,7 +1834,6 @@
                 this.visionDistSq = this.visionDistance * this.visionDistance;
                 this.generation = 0;
 
-                // All species get normally distributed height variation
                 const heightParams = { human: [1.0, 0.13], sheep: [1.0, 0.10] };
                 const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
                 this.heightScale = randNormal(hMean, hStd);
@@ -2028,55 +1846,50 @@
                 this.sex = Math.random() < 0.5 ? 'male' : 'female';
                 this.mutationMulti = 0.5;
                 this.lastChildTime = Date.now();
-                this.childGracePeriod = (15 + Math.random() * 15) * 1000; // 15-30 s in ms
+                this.childGracePeriod = (15 + Math.random() * 15) * 1000;
                 this.lookForMate = false;
 
                 this.waterIncrement = this.health * 0.0001;
                 this.foodIncrement  = this.health * 0.0001;
                 this.ageDepl        = this.health * 0.00001;
 
-                // Flat memory (no heap allocation per look-up)
                 this.memPredatorX = 0; this.memPredatorZ = 0; this.hasPredator = false;
                 this.memFoodX = 0;     this.memFoodZ = 0;     this.hasFood = false;
                 this.memWaterX = 0;    this.memWaterZ = 0;    this.hasWater = false;
                 this.memMateX = 0;     this.memMateZ = 0;     this.hasMate = false;
                 this.priority = null;
 
-                // Spatial direction rays: sin(angle), cos(angle), normalised distance [0,1]
-                // One ray per need (food, water, predator, mate); 3 values x 4 = 12 extra inputs
                 this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodDist = 0;
                 this.rayWaterSin = 0;     this.rayWaterCos = 0;     this.rayWaterDist = 0;
                 this.rayPredatorSin = 0;  this.rayPredatorCos = 0;  this.rayPredatorDist = 0;
                 this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateDist = 0;
 
-                // 7 original inputs + 12 directional ray inputs = 19 total
                 this.brain = new DenseNetwork(15, null, 0.001, 0.5, 0.001);
-                this.ACTION_HOLD   = 60; // hold each decision for n frames
-                this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD); // random phase offset so animals don't all re-decide on the same frame
+                this.ACTION_HOLD   = 60;
+                this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD);
                 this.currentAction = 0;
                 this.outputIdx = 0;
-                this.facingAngle = 0; // last non-idle heading in radians; updated each move
-                // Stagger training ticks so animals don't all update simultaneously
-                this.prevHealth = this.health; // for delta-based reward signal
+                this.facingAngle = 0;
+                this.prevHealth = this.health;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
-                this._inputs = new Float32Array(15); // pre-alloc: 12 directional ray inputs + 3 vitals
+                this._inputs = new Float32Array(15);
 
-                this.isAdult = true; // overridden to false for born children in mate()
-                this.birthTick = 0;  // stamped in mate() with current ticks value
+                this.isAdult = true;
+                this.birthTick = 0;
 
-                this.animTime = Math.random() * Math.PI * 2; // walk cycle phase, randomized so animals aren't in sync
+                this.animTime = Math.random() * Math.PI * 2;
 
                 this.focusX = this.position.x;
                 this.focusZ = this.position.z;
                 this.tob = Date.now();
 
-                this.mesh = null; // rendered via InstancedMesh
+                this.mesh = null;
             }
 
-            remove() { /* no individual mesh */ }
+            remove() {  }
 
             locate(grid, waterLocations) {
                 const px = this.position.x, pz = this.position.z;
@@ -2128,7 +1941,6 @@
                     }
                 }
 
-                // Sheep scan for nearest plant as their food source
                 if (isSheep) {
                     for (const plant of plants) {
                         if (!plant.alive) continue;
@@ -2158,7 +1970,6 @@
                     }
                 }
 
-                // Expire stale memories and clear their rays
                 if (this.hasPredator && tools.distSq(px,pz,this.memPredatorX,this.memPredatorZ) > vd) {
                     this.hasPredator = false;
                     this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorDist = 0;
@@ -2179,26 +1990,20 @@
 
             think(grid, waterLocations) {
                 this.locate(grid, waterLocations);
-                // Use pre-allocated input buffer; no per-call allocation
                 const inp = this._inputs;
 
-                // Inputs 0-2: food ray    (sin, cos, normalised distance)
                 inp[0]  = this.hasFood     ? this.rayFoodSin      : 0;
                 inp[1]  = this.hasFood     ? this.rayFoodCos      : 0;
                 inp[2]  = this.hasFood     ? this.rayFoodDist     : 0;
-                // Inputs 3-5: water ray
                 inp[3]  = this.hasWater    ? this.rayWaterSin     : 0;
                 inp[4]  = this.hasWater    ? this.rayWaterCos     : 0;
                 inp[5]  = this.hasWater    ? this.rayWaterDist    : 0;
-                // Inputs 6-8: predator ray
                 inp[6]  = this.hasPredator ? this.rayPredatorSin  : 0;
                 inp[7]  = this.hasPredator ? this.rayPredatorCos  : 0;
                 inp[8]  = this.hasPredator ? this.rayPredatorDist : 0;
-                // Inputs 9-11: mate ray
                 inp[9]  = this.hasMate     ? this.rayMateSin      : 0;
                 inp[10] = this.hasMate     ? this.rayMateCos      : 0;
                 inp[11] = this.hasMate     ? this.rayMateDist     : 0;
-                // Inputs 12-14: needs and vitals
                 inp[12] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
                 inp[13] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
                 inp[14] = this.health > 0 ? this.health / this.maxHealth : 0;
@@ -2208,9 +2013,6 @@
 
             move() {
                 const lift = this.type === 'sheep' ? 9 : 15;
-                // Output index 8 = stay still: skip the XZ step, but still resolve Y. An
-                // idle animal that stopped in a lake has to keep riding the surface, and
-                // a newly spawned one needs its first Y from somewhere.
                 if (this.outputIdx !== 8) {
                     const s = this.speed;
                     const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
@@ -2218,9 +2020,6 @@
                     this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                     this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
                 }
-                // Terrain, or the water surface where the terrain is below it. Inlined
-                // rather than calling groundOrFloat() so the height field is sampled once
-                // per animal per frame, not twice.
                 const g = getTerrainHeight(this.position.x, this.position.z);
                 const floatY = waterLevel - FLOAT_DEPTH;
                 this.floating = g < floatY;
@@ -2246,20 +2045,11 @@
                     this.actionTimer   = this.ACTION_HOLD;
                 }
 
-                // Brain weight update, staggered per animal so they don't all
-                // fire on the same frame.
-                // NOTE: this used to read `ticks % 2 === animalIndex % 2`, which
-                // ran every OTHER frame (~56 Hz), not every 30 frames as the
-                // comment claimed -- 8% of total CPU. Set BRAIN_UPDATE_INTERVAL
-                // back to 2 if the fast cadence was actually intended.
                 if (ticks % BRAIN_UPDATE_INTERVAL === animalIndex % BRAIN_UPDATE_INTERVAL) {
-                    // Reward: positive when health improves and needs decrease; negative otherwise.
-                    // Each term is normalised to [-1, 1] before combining so no single signal dominates.
                     const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
-                    const waterDelta  = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05); // need drop = good
+                    const waterDelta  = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05);
                     const foodDelta   = (this.prevFoodNeed  - this.foodNeed)  / (this.startHealth * 0.05);
 
-                    // Urgency weighting: weight need-satisfaction higher when needs are critical
                     const waterUrgency = Math.min(1, this.waterNeed / 50);
                     const foodUrgency  = Math.min(1, this.foodNeed  / 50);
 
@@ -2286,7 +2076,6 @@
             }
 
             mate(partner) {
-                // Crossover + Mutate scalar traits
                 const mm = this.mutationMulti;
                 const lo = Math.max(0.1, 1 - mm);
                 const hi = Math.min(1.1, 1 + mm);
@@ -2299,7 +2088,6 @@
                 child.isAdult = false;
                 child.birthTick = ticks;
 
-                // Crossover: average parents, then mutate
                 child.speed = ((this.speed + partner.speed) / 2) * rand();
                 child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
                 child.visionDistSq = child.visionDistance * child.visionDistance;
@@ -2309,22 +2097,19 @@
                 const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
                 child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + randNormal(0, 0.04)));
 
-                // Inherit topology (masks) from one parent (50/50); weights are freshly randomised
                 const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
                 child.brain = new DenseNetwork(
                     ParentBrain.inputDims,
-                    null, // layerDims ignored by new constructor
+                    null,
                     ((this.brain.learningRate + partner.brain.learningRate) / 2)
                         * (0.5 + Math.random()),
                     ParentBrain.momentum,
                     ParentBrain.weightDecay,
-                    ParentBrain.getMasks()  // topology inherited; weights start fresh
+                    ParentBrain.getMasks()
                 );
 
-                // Generation tracking
                 child.generation = Math.max(this.generation, partner.generation) + 1;
 
-                // Reset parents' reproductive state
                 const now = Date.now();
                 this.lastChildTime = now;
                 this.lookForMate = false;
@@ -2355,52 +2140,17 @@
                 super(position, 'plant');
                 this.health = 10;
                 this.maxHealth = 10;
-                // Snap Y to terrain on construction so first render frame is correct
                 this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
                 this._terrainVer = terrainVersion;
             }
 
-            remove() { /* no individual mesh to remove */ }
+            remove() {  }
 
             update() {
-                // Plants never move, so the sampled ground height is a constant.
-                // Re-sampling it every frame was 691 ms of the trace (~6.4% CPU,
-                // ~15 value-noise lookups per call). Only recompute when the
-                // terrain geometry itself has been rebuilt.
                 if (this._terrainVer !== terrainVersion) {
                     this._terrainVer = terrainVersion;
                     this.position.y = getTerrainHeight(this.position.x, this.position.z) - 3;
                 }
-            }
-        }
-
-        class Water extends Entity {
-            constructor(position, size = { width: 20, length: 20 }) {
-                super(position, 'water');
-                this.size = size;
-                this.createMesh();
-            }
-
-            createMesh() {
-                const depth = 30;
-                const w = this.size.width * (CONFIG.scale * .8);
-                const l = this.size.length * (CONFIG.scale * .8);
-                const geometry = new THREE.BoxGeometry(w, depth, l);
-                const material = new THREE.MeshStandardMaterial({
-                    color: 0x4a90e2,
-                    metalness: 0.3,
-                    roughness: 0.15,
-                    transparent: true,
-                    opacity: 0.6,
-                    depthWrite: false
-                });
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.copy(this.position);
-                // Top surface sits at this.position.y; box extends downward by depth.
-                mesh.position.y = this.position.y - depth / 2 - 20;
-                mesh.receiveShadow = false;
-                this.mesh = mesh;
-                scene.add(this.mesh);
             }
         }
 
@@ -2429,7 +2179,6 @@
             return geometry;
         }
 
-        // HIGH graphics geometry
         const SHARED_GEOMETRIES = {
             sheep: {
                 body: createRoundedBoxGeometry(12, 12, 25, 2.5),
@@ -2443,7 +2192,6 @@
             }
         };
 
-        // LOW graphics geometry
         const SHARED_GEOMETRIES_LOW = {
             sheep: {
                 body: new THREE.BoxGeometry(12, 12, 25),
@@ -2457,18 +2205,16 @@
             }
         };
 
-        // 'high' = rounded/sphere geometry (default), 'low' = flat box geometry
         let graphicsMode = 'high';
 
         const SHARED_MATERIALS = {
             sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
-            human:  new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })  // skin tone
+            human:  new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })
         };
 
-        // Per-sex color tints
         const SEX_COLORS = {
             sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
-            human:  { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }  // human skin variants
+            human:  { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
         };
 
         const PART_OFFSETS = {
@@ -2480,11 +2226,11 @@
                 legBR: new THREE.Vector3( 5, -8, -8),
             },
             human: {
-                head:  new THREE.Vector3(0, 13, 0),      // body half=8.5 + head radius=4.3 + gap=0.2
-                legFL: new THREE.Vector3(-6, 2, 0),      // left arm; top flush with shoulder (body half 8.5 - arm half 6.25 = 2.25)
-                legFR: new THREE.Vector3( 6, 2, 0),      // right arm
-                legBL: new THREE.Vector3(-2, -15, 0),    // left leg; just below torso bottom
-                legBR: new THREE.Vector3( 2, -15, 0),    // right leg
+                head:  new THREE.Vector3(0, 13, 0),
+                legFL: new THREE.Vector3(-6, 2, 0),
+                legFR: new THREE.Vector3( 6, 2, 0),
+                legBL: new THREE.Vector3(-2, -15, 0),
+                legBR: new THREE.Vector3( 2, -15, 0),
             },
         };
 
@@ -2519,8 +2265,6 @@
         // ============================================================================
         const MAX_PLANT_INSTANCES = 15000;
 
-        // Shared plant geometries stem (cylinder) and leaves (4 spheres offset in XZ)
-        // HIGH: smooth segments; LOW: minimal segments
         const PLANT_GEOMETRIES = {
             stem:  new THREE.CylinderGeometry(1, 1, 5, 3),
             leaf:  new THREE.SphereGeometry(1, 2, 2),
@@ -2530,7 +2274,6 @@
             leaf:  new THREE.SphereGeometry(1, 3, 3),
         };
 
-        // Leaf XZ offsets relative to plant base (radius 4); Y is computed at runtime
         const LEAF_OFFSETS_XZ = [0, 1, 2, 3].map(i => {
             const angle = (i / 4) * Math.PI * 2;
             return new THREE.Vector2(Math.cos(angle) * 2, Math.sin(angle) * 2);
@@ -2541,7 +2284,6 @@
             roughness: 0.85,
         });
 
-        // instancedPlantMeshes holds { stem, leaf0, leaf1, leaf2, leaf3 }
         let instancedPlantMeshes = null;
 
         // ============================================================================
@@ -2552,12 +2294,10 @@
         // ============================================================================
         const MAX_PEBBLE_INSTANCES = 4000;
 
-        // Three pebble sizes: small, medium, large — each a slightly squashed sphere
-        // so they look like real rounded stones rather than perfect balls.
         const PEBBLE_GEOMETRIES = [
-            new THREE.SphereGeometry(1, 6, 4),   // small (scaled 2–5)
-            new THREE.SphereGeometry(1, 8, 5),   // medium (scaled 4–9)
-            new THREE.SphereGeometry(1, 10, 6),  // large (scaled 7–12)
+            new THREE.SphereGeometry(1, 6, 4),
+            new THREE.SphereGeometry(1, 8, 5),
+            new THREE.SphereGeometry(1, 10, 6),
         ];
         const PEBBLE_GEOMETRIES_LOW = [
             new THREE.SphereGeometry(1, 4, 3),
@@ -2571,7 +2311,6 @@
             new THREE.MeshStandardMaterial({ color: 0x5a5248, roughness: 0.90, metalness: 0.05 }),
         ];
 
-        // Each pebble record: { x, z, radius, squashY, rotY }
         let pebbleData = [];
         let instancedPebbleMeshes = null;
 
@@ -2595,27 +2334,21 @@
         const _pebbleQuat  = new THREE.Quaternion();
         const _pebbleScale = new THREE.Vector3();
         const _pebbleMat4  = new THREE.Matrix4();
-        const _pebbleAxis  = new THREE.Vector3(0, 1, 0); // hoisted out of the loop
+        const _pebbleAxis  = new THREE.Vector3(0, 1, 0);
 
         function placePebbles() {
             pebbleData = [];
-            // Scatter pebbles across the world. Cluster a few together occasionally.
             const count = Math.floor(60 * Math.log1p(CONFIG.scale));
             for (let i = 0; i < count && pebbleData.length < MAX_PEBBLE_INSTANCES; i++) {
                 const cx = Math.random() * CONFIG.worldWidth;
                 const cz = Math.random() * CONFIG.worldHeight;
-                // Skip very steep terrain (rocks would float or clip)
-                const h = getTerrainHeight(cx, cz);
 
-                // Decide cluster size (1-5 pebbles near each other)
                 const clusterSize = Math.random() < 0.35 ? Math.floor(Math.random() * 4) + 2 : 1;
                 for (let j = 0; j < clusterSize && pebbleData.length < MAX_PEBBLE_INSTANCES; j++) {
                     const spread = clusterSize > 1 ? 30 : 0;
                     const px = cx + (Math.random() - 0.5) * spread;
                     const pz = cz + (Math.random() - 0.5) * spread;
-                    // Radius: 2–12 (half sheep ≈ 12 units)
                     const radius = 2 + Math.random() * 10;
-                    // Slightly flatten vertically so they look grounded
                     const squashY = 0.5 + Math.random() * 0.5;
                     const rotY = Math.random() * Math.PI * 2;
                     pebbleData.push({ x: px, z: pz, radius, squashY, rotY });
@@ -2626,19 +2359,15 @@
 
         function updateInstancedPebbles() {
             if (!instancedPebbleMeshes) return;
-            // Distribute across 3 size tiers by radius
             const counts = [0, 0, 0];
-            // Reset counts
             for (const mesh of instancedPebbleMeshes) mesh.count = 0;
 
             for (const p of pebbleData) {
-                // Assign tier by radius: 2–5 → 0, 5–9 → 1, 9–12 → 2
                 const tier = p.radius < 5 ? 0 : p.radius < 9 ? 1 : 2;
                 const idx = counts[tier];
                 if (idx >= MAX_PEBBLE_INSTANCES) continue;
 
                 const groundY = getTerrainHeight(p.x, p.z);
-                // Sit the pebble on the ground: center = groundY + radius * squashY * 0.5
                 _pebblePos.set(p.x, groundY + p.radius * p.squashY * 0.5, p.z);
                 _pebbleQuat.setFromAxisAngle(_pebbleAxis, p.rotY);
                 _pebbleScale.set(p.radius, p.radius * p.squashY, p.radius);
@@ -2653,7 +2382,6 @@
         }
 
         function initInstancedPlantMeshes() {
-            // Remove old meshes if reinitialising (e.g. after reset)
             if (instancedPlantMeshes) {
                 for (const mesh of Object.values(instancedPlantMeshes)) scene.remove(mesh);
             }
@@ -2673,9 +2401,6 @@
             }
         }
 
-        // Cached direct references into the plant instance-matrix arrays, so the
-        // hot loop does no property lookups and Object.values() is not rebuilt
-        // every frame. Invalidated when initInstancedPlantMeshes() swaps meshes.
         let _plantMeshList = null, _plantStemArr = null, _plantLeafArrs = null;
         let _plantArrOwner = null;
         function _refreshPlantArrays() {
@@ -2694,26 +2419,16 @@
             if (!instancedPlantMeshes) return;
             if (_plantArrOwner !== instancedPlantMeshes) _refreshPlantArrays();
 
-            // Plants have identity rotation and uniform scale, so the instance
-            // matrix is diagonal + translation: only 7 of the 16 floats are ever
-            // non-zero. three seeds every instance matrix with the identity, and
-            // nothing else writes these arrays, so the other 9 slots are already
-            // 0 and stay that way. Writing the 7 live slots directly replaces
-            // 5 x Matrix4.compose + 5 x setMatrixAt per plant per frame
-            // (was 529 ms / 4.9% of CPU).
             let idx = 0;
             for (const p of plants) {
                 if (!p.alive) continue;
                 if (idx >= MAX_PLANT_INSTANCES) break;
 
                 const h = p.health / p.maxHealth;
-                const groundY = p.position.y; // terrainHeight + 3
+                const groundY = p.position.y;
                 const px = p.position.x, pz = p.position.z;
                 const o = idx * 16;
 
-                // Stem: 10-unit cylinder, geometry centered at its own origin.
-                // At scale h the cylinder is 10h tall.
-                // To keep its BASE on the ground: center = groundY + 5h
                 _plantStemArr[o]      = h;
                 _plantStemArr[o + 5]  = h;
                 _plantStemArr[o + 10] = h;
@@ -2722,8 +2437,6 @@
                 _plantStemArr[o + 14] = pz;
                 _plantStemArr[o + 15] = 1;
 
-                // Leaves sit at the stem TOP: groundY + 10h, spread radius 4 in XZ.
-                // Sphere radius 2, scaled by h no extra position scaling needed.
                 const leafY = groundY + 7 * h;
                 for (let li = 0; li < 4; li++) {
                     const off = LEAF_OFFSETS_XZ[li];
@@ -2740,7 +2453,6 @@
                 idx++;
             }
 
-            // Set count and upload ONLY the live slots (was 4.80 MB/frame).
             for (let i = 0; i < _plantMeshList.length; i++) {
                 markInstances(_plantMeshList[i], idx);
             }
@@ -2753,8 +2465,8 @@
             const shadowsOn = graphicsMode !== 'low';
             renderer.shadowMap.enabled = shadowsOn;
             directionalLight.castShadow = shadowsOn;
+            requestShadowRefresh();
 
-            // Swap geometries on all instanced meshes in-place, no world reset needed
             for (const type of ['sheep', 'human']) {
                 const im = instancedMeshes[type];
                 if (!im) continue;
@@ -2769,7 +2481,6 @@
                 }
             }
 
-            // Rebuild terrain with updated mesh resolution
             if (terrain) {
                 terrain.geometry.dispose();
                 scene.remove(terrain);
@@ -2777,7 +2488,6 @@
                 scene.add(terrain);
             }
 
-            // Swap plant geometries in-place
             if (instancedPlantMeshes) {
                 const pgeos = graphicsMode === 'low' ? PLANT_GEOMETRIES_LOW : PLANT_GEOMETRIES;
                 instancedPlantMeshes.stem.geometry = pgeos.stem;
@@ -2788,7 +2498,6 @@
                 }
             }
 
-            // Swap pebble geometries in-place
             if (instancedPebbleMeshes) {
                 const pgeos = graphicsMode === 'low' ? PEBBLE_GEOMETRIES_LOW : PEBBLE_GEOMETRIES;
                 for (let i = 0; i < 3; i++) {
@@ -2817,16 +2526,13 @@
             group.add(head);
             group.userData.head = head;
 
-            // Limb geometry half-height; mesh center sits this far below the pivot
             const limbHalf = 6.25;
 
-            // Helper: create a pivot Object3D at (px, py, pz) with a limb mesh hanging
-            // limbHalf units below it. Rotating the pivot on X swings from the joint.
             function makePivotedLimb(px, py, pz) {
                 const pivot = new THREE.Object3D();
                 pivot.position.set(px, py, pz);
                 const mesh = new THREE.Mesh(geom.leg, mat);
-                mesh.position.set(0, -limbHalf, 0); // hangs below pivot
+                mesh.position.set(0, -limbHalf, 0);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 pivot.add(mesh);
@@ -2834,10 +2540,8 @@
                 return pivot;
             }
 
-            // Pivot positions = joint attachment points on the body
-            // Shoulder: off.legFL/FR x, but Y = top of arm = off.legFL.y + limbHalf
-            const shoulderY =  off.legFL.y + limbHalf;  //  2 + 6.25 = 8.25
-            const hipY      =  off.legBL.y + limbHalf;  // -15 + 6.25 = -8.75
+            const shoulderY =  off.legFL.y + limbHalf;
+            const hipY      =  off.legBL.y + limbHalf;
 
             const pivotArmL = makePivotedLimb( off.legFL.x, shoulderY, 0);
             const pivotArmR = makePivotedLimb( off.legFR.x, shoulderY, 0);
@@ -2847,13 +2551,11 @@
             body.castShadow = true;  body.receiveShadow = true;
             head.castShadow = true;  head.receiveShadow = true;
 
-            // Store pivot refs; animation just sets pivot.rotation.x
             group.userData.pivotArmL = pivotArmL;
             group.userData.pivotArmR = pivotArmR;
             group.userData.pivotLegL = pivotLegL;
             group.userData.pivotLegR = pivotLegR;
 
-            // Start in 1st person; hide entire mesh
             head.visible = false;
             group.visible = false;
             scene.add(group);
@@ -2877,20 +2579,17 @@
             const pupilMat  = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 });
             const noseMat   = new THREE.MeshStandardMaterial({ color: 0xff8888, roughness: 1 });
 
-            // long oval body that is a sphere scaled non-uniformly (wide along Z = body length)
             const body = new THREE.Mesh(new THREE.SphereGeometry(5, 14, 10), blackMat);
-            body.scale.set(0.72, 0.78, 1.9); // narrow sides, tall-ish, very long
+            body.scale.set(0.72, 0.78, 1.9);
             body.position.set(0, 5, 0);
             body.castShadow = true;
             group.add(body);
 
-            // Head
             const head = new THREE.Mesh(new THREE.SphereGeometry(4.5, 12, 10), blackMat);
             head.position.set(0, 8, 9);
             head.castShadow = true;
             group.add(head);
 
-            // Ears (two triangular cones)
             const earGeo = new THREE.ConeGeometry(1.5, 3.5, 4);
             const earL = new THREE.Mesh(earGeo, blackMat);
             earL.position.set(-2.5, 11.5, 9);
@@ -2901,7 +2600,6 @@
             earR.rotation.z = -0.25;
             group.add(earR);
 
-            // Eyes (iris + pupil)
             const irisGeo  = new THREE.SphereGeometry(1.1, 8, 8);
             const pupilGeo = new THREE.SphereGeometry(0.55, 6, 6);
 
@@ -2919,18 +2617,16 @@
             pupilR.position.set( 1.7, 8.6, 13.7);
             group.add(pupilR);
 
-            // Nose
             const nose = new THREE.Mesh(new THREE.SphereGeometry(0.5, 6, 6), noseMat);
             nose.position.set(0, 7.5, 13.5);
             group.add(nose);
 
-            // stored on group for animation
             const legGeo = new THREE.CylinderGeometry(1.2, 1.0, 7, 6);
             const legPositions = [
-                [-3.2, 1, 5],   // front-left
-                [ 3.2, 1, 5],   // front-right
-                [-3.2, 1, -4],  // back-left
-                [ 3.2, 1, -4],  // back-right
+                [-3.2, 1, 5],
+                [ 3.2, 1, 5],
+                [-3.2, 1, -4],
+                [ 3.2, 1, -4],
             ];
             group.userData.legs = [];
             for (const pos of legPositions) {
@@ -2941,7 +2637,6 @@
                 group.userData.legs.push(leg);
             }
 
-            // Tail is a chain of segments stored for animation
             const tailSegGeo = new THREE.SphereGeometry(1.0, 6, 6);
             group.userData.tailSegments = [];
             const tailCount = 7;
@@ -2954,7 +2649,6 @@
                 group.userData.tailSegments.push(seg);
             }
 
-            // Point light for robot eye glow
             const eyeGlow = new THREE.PointLight(0x88ee00, 0.3, 30);
             eyeGlow.position.set(0, 9, 13);
             group.add(eyeGlow);
@@ -2978,7 +2672,6 @@
             playerLastPos: new THREE.Vector3(),
         };
 
-        // Place cat at ground level initially
         catState.position.copy(player.position);
         catState.position.z += 5;
         catState.position.y  = physicalGroundY + 2;
@@ -3001,7 +2694,6 @@
             let speed = 0;
 
             if (distToPlayer + 50 > followDist) {
-                // Chase player
                 speed = distToPlayer > 80 ? 80 : 25;
                 const dxRounded = Math.round(dx / 10) * 10;
                 const dzRounded = Math.round(dz / 10) * 10;
@@ -3010,7 +2702,6 @@
                 catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
                 catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
             } else if (distToPlayer > catchUpDist) {
-                // Teleport next to player
                 catState.position.set(
                     px - Math.sin(player.yaw) * followDist,
                     physicalGroundY + 2,
@@ -3018,38 +2709,31 @@
                 );
                 catState.yaw = player.yaw;
             } else if (distToPlayer < 12) {
-                // Too close back away
                 speed = 20;
                 const angle = Math.atan2(-dx, -dz);
                 catState.yaw += (angle - catState.yaw) * Math.min(1, deltaTime * 5);
                 catState.position.x += Math.sin(catState.yaw) * speed * deltaTime;
                 catState.position.z += Math.cos(catState.yaw) * speed * deltaTime;
             } else {
-                // Idle near player face them, no wandering
                 const faceAngle = Math.atan2(dx, dz);
                 catState.yaw += (faceAngle - catState.yaw) * Math.min(1, deltaTime * 2);
             }
 
-            // Gravity / ground clamp
             catState.velocity.y -= 400 * deltaTime;
             catState.position.y += catState.velocity.y * deltaTime;
-            // cat floats as well, riding higher than the animals (smaller sink)
             const catGround = groundOrFloat(catState.position.x, catState.position.z, 2, 1.5);
             if (catState.position.y <= catGround + 33) {
                 catState.position.y = catGround;
                 catState.velocity.y = 0;
             }
 
-            // World wrap
             catState.position.x = ((catState.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
             catState.position.z = ((catState.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
 
-            // Apply transform
             catMesh.position.copy(catState.position);
             catMesh.rotation.y = catState.yaw;
             catMesh.scale.setScalar(0.85);
 
-            // Animate legs (walk cycle only when moving)
             const legs = catMesh.userData.legs;
             const walkFreq = speed > 50 ? 12 : 7;
             const walkAmp  = speed > 0 ? 0.35 : 0;
@@ -3060,7 +2744,6 @@
                 legs[3].rotation.x =  Math.sin(catState.animTime * walkFreq) * walkAmp;
             }
 
-            // Tail: stiff upright pose curving backward at the tip
             const tailSegs = catMesh.userData.tailSegments;
             if (tailSegs) {
                 const count = tailSegs.length;
@@ -3101,7 +2784,6 @@
 
             _build() {
 
-                // MATERIALS
                 const M = {
                     log:     new THREE.MeshStandardMaterial({ color: 0xA0693A, roughness: 0.9 }),
                     logDark: new THREE.MeshStandardMaterial({ color: 0x6B4226, roughness: 0.95 }),
@@ -3111,7 +2793,6 @@
                     frame:   new THREE.MeshStandardMaterial({ color: 0x5c3214, roughness: 0.85 })
                 };
 
-                // DIMENSIONS
                 const CW = 80;
                 const CD = 60;
                 const LR = 2.5;
@@ -3122,7 +2803,6 @@
                 const DOOR_WIDTH  = 18;
                 const DOOR_HEIGHT = 42;
 
-                // HELPERS
                 const add = (mesh, cast = true, receive = true) => {
                     mesh.castShadow = cast;
                     mesh.receiveShadow = receive;
@@ -3147,15 +2827,12 @@
                     return add(mesh);
                 };
 
-                // FLOOR
                 box(CW + 8, FLOOR_Y, CD + 8, M.logDark, 0, FLOOR_Y / 2, 0);
 
-                // WALLS
                 for (let i = 0; i < ROWS; i++) {
                     const y = FLOOR_Y + i * LD + LR;
                     const bottomOfLog = y - LR;
 
-                    // FRONT WALL (with door cutout)
                     if (bottomOfLog < FLOOR_Y + DOOR_HEIGHT) {
                         const sideLength = (CW / 2 + LD) - DOOR_WIDTH / 2;
 
@@ -3171,7 +2848,6 @@
                     hlog(CD, M.log,  CW / 2, y, 0, 'x');
                 }
 
-                // ROOF
                 const ROOF_BASE = FLOOR_Y + WALL_H - 4;
                 const RIDGE_H = 34;
                 const OVH = 8;
@@ -3202,23 +2878,21 @@
                     shape.lineTo(-(CW / 2 + OVH), 0);
 
                     const geo = new THREE.ExtrudeGeometry(shape, {
-                        depth: LD * 2,  // thickness (matches log diameter)
+                        depth: LD * 2,
                         bevelEnabled: false
                     });
 
                     const mat = new THREE.MeshStandardMaterial({
                         color: 0x3a2b1b,
                         roughness: 0.92,
-                        side: THREE.DoubleSide  // visible from both sides
+                        side: THREE.DoubleSide
                     });
 
                     const mesh = new THREE.Mesh(geo, mat);
-                    // offset by half the depth so centered on the wall edge
                     mesh.position.set(0, ROOF_BASE, sz * (CD / 2 + OVH + 2) - (sz * LD * 2));
                     add(mesh);
                 });
 
-                // CHIMNEY
                 const CHX = -18;
                 const CHZ = -12;
                 const CHW = 11;
@@ -3237,7 +2911,7 @@
             const FLOOR_Y = 2 * s;
             const WALL_THICK = LR * 2;
             const DOOR_WIDTH  = 18 * s;
-            const DOOR_HEIGHT = 42 * s;  // extra clearance so player capsule fits through
+            const DOOR_HEIGHT = 42 * s;
 
             const ROOF_BASE = FLOOR_Y + WALL_H - 4 * s;
             const RIDGE_H = 34 * s;
@@ -3252,29 +2926,17 @@
             const frontLZ = CD / 2;
             const backLZ  = -CD / 2;
 
-            // All minY/maxY values are local to the cabin group (which sits at baseY in world space).
-            // Shift them by baseY so collision checks in world-Y space work correctly.
             const by = baseY;
             const localBoxes = [
-                // Floor
                 { minX: -(CW/2 + 4), maxX: CW/2 + 4, minY: by, maxY: by + FLOOR_Y, minZ: -(CD/2 + 4), maxZ: CD/2 + 4 },
-                // Front wall left segment (beside door)
                 { minX: -CW/2 - WALL_THICK, maxX: -halfDoor,          minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
-                // Front wall right segment (beside door)
                 { minX:  halfDoor,           maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
-                // Front wall above door
                 { minX: -halfDoor,           maxX:  halfDoor,           minY: by+FLOOR_Y + DOOR_HEIGHT, maxY: by+FLOOR_Y + WALL_H, minZ: frontLZ - WALL_THICK, maxZ: frontLZ + WALL_THICK },
-                // Back wall
                 { minX: -CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: backLZ + WALL_THICK  },
-                // Left side wall (covers full depth including corner overlaps)
                 { minX: -CW/2 - WALL_THICK, maxX: -CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
-                // Right side wall (covers full depth including corner overlaps)
                 { minX:  CW/2 - WALL_THICK, maxX:  CW/2 + WALL_THICK, minY: by+FLOOR_Y,               maxY: by+FLOOR_Y + WALL_H, minZ: backLZ - WALL_THICK,  maxZ: frontLZ + WALL_THICK },
-                // Roof left panel
                 { minX: -(CW/2+OVH) - WALL_THICK, maxX: 0,            minY: by+ROOF_BASE,             maxY: by+roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
-                // Roof right panel
                 { minX: 0, maxX:  (CW/2+OVH) + WALL_THICK,            minY: by+ROOF_BASE,             maxY: by+roofTop + 5,      minZ: -(CD/2+OVH),          maxZ: CD/2+OVH             },
-                // Chimney (start at FLOOR_Y so it doesn't extend into the ground)
                 { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: by+FLOOR_Y,               maxY: by+chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
             ];
 
@@ -3289,9 +2951,6 @@
         function resolveCabinCollisions(pos, radius, halfH, velocityY) {
             for (const cabin of CABIN_COLLIDERS) {
                 const dx = pos.x - cabin.cx, dz = pos.z - cabin.cz;
-                // Inverse of Three.js rotation.y=rotationY: local = R^T * world
-                // R(θ): world-from-local = [[cosθ,0,sinθ],[0,1,0],[-sinθ,0,cosθ]]
-                // R^T (local-from-world)  = [[cosθ,0,-sinθ],[0,1,0],[sinθ,0,cosθ]]
                 const lx = dx * cabin.cosR - dz * cabin.sinR;
                 const lz = dx * cabin.sinR + dz * cabin.cosR;
 
@@ -3331,27 +2990,24 @@
         // ============================================================================
         // TERRAIN GENERATION
         // ============================================================================
-        // low-frequency biome mask that both fades in ridged mountain noise AND lifts
-        // the base height inside the mask. The lift is a multiplier gated by the mask,
-        // so mountainGain grows peaks without moving the plains, therefore
-        // without moving the water line relative to the lowlands.
         const TERRAIN = {
-            amplitude: 260,           // plains ceiling, world units above physicalGroundY
-            noiseSpan: 6.0,           // noise units the world spans; lower = larger features
-            biomeSpan: 2.2,           // mountain-mask frequency (well below noiseSpan)
-            mountainThreshold: 0.55,  // mask value where mountains begin
-            mountainBlend: 0.15,      // width of the plains -> mountain fade
-            mountainGain: 3.0,        // extra height multiplier inside the mask
-            ridgeSharp: 1.0,          // exponent on the ridged field; >1 narrows summits
-            ridgeScale: 1.6,          // ridged frequency relative to the plains field
-            ridgeOctaves: 4,          // detail layers on the ridged field; fewer = rounder
-            ridgeGain: 0.4,           // per-octave falloff; lower = less fine spiky detail
+            amplitude: 260,
+            baseScale: 20,
+            noiseSpan: 6.0,
+            biomeSpan: 2.2,
+            mountainThreshold: 0.55,
+            mountainBlend: 0.15,
+            mountainGain: 3.0,
+            ridgeSharp: 1.0,
+            ridgeScale: 1.6,
+            ridgeOctaves: 4,
+            ridgeGain: 0.4,
             ridgeAdd: 0.0,
-            waterCoverage: 0.3,      // fraction of the world that ends up under water
-            waterLevelOverride: null, // set a number to pin the water plane manually
+            waterCoverage: 0.3,
+            waterLevelOverride: null,
         };
-        function terrainPeakHeight() {
-            return physicalGroundY + TERRAIN.amplitude * (1 + TERRAIN.mountainGain);
+        function terrainAmplitude() {
+            return TERRAIN.amplitude * (CONFIG.scale / TERRAIN.baseScale);
         }
 
         let _terrainSeed = { ox: 0, oz: 0, seed: 1337, f: 0 };
@@ -3362,8 +3018,6 @@
             _terrainSeed.f = Math.random() * 100;
         }
 
-        // Seeded value noise + fBm helpers
-        // Deterministic hash -> [0,1) from integer grid coords. Cheap and stable.
         function _hash2(ix, iz) {
             let h = (Math.imul(ix, 374761393) + Math.imul(iz, 668265263)
                      + Math.imul(_terrainSeed.seed, 1274126177)) | 0;
@@ -3372,12 +3026,9 @@
             h = (h ^ (h >>> 16)) >>> 0;
             return h / 4294967295;
         }
-        // Smooth (cubic) interpolated value noise in continuous space.
         function _valueNoise(x, z) {
             const ix = Math.floor(x), iz = Math.floor(z);
             const fx = x - ix, fz = z - iz;
-            // Quintic fade (6t^5 - 15t^4 + 10t^3): zero 1st + 2nd derivative at
-            // cell edges, so no creasing/grain between noise cells.
             const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
             const uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
             const n00 = _hash2(ix,     iz);
@@ -3386,9 +3037,8 @@
             const n11 = _hash2(ix + 1, iz + 1);
             const nx0 = n00 + (n10 - n00) * ux;
             const nx1 = n01 + (n11 - n01) * ux;
-            return nx0 + (nx1 - nx0) * uz; // [0,1]
+            return nx0 + (nx1 - nx0) * uz;
         }
-        // Fractional Brownian motion: layered octaves of value noise. Returns [0,1].
         function _fbm(x, z, octaves, lacunarity, gain) {
             let amp = 1, freq = 1, sum = 0, norm = 0;
             for (let o = 0; o < octaves; o++) {
@@ -3399,11 +3049,6 @@
             }
             return sum / norm;
         }
-        // Ridged multifractal: each octave folded through 1-|2n-1|, then passed through
-        // a smoothstep instead of a plain square. The square leaves a nonzero slope at
-        // r=1, so every octave contributes a crease along its crest; smoothstep has zero
-        // slope at both ends, so summits dome over while valley floors still pinch.
-        // Returns [0,1].
         function _ridged(x, z, octaves, lacunarity, gain) {
             let amp = 1, freq = 1, sum = 0, norm = 0;
             for (let o = 0; o < octaves; o++) {
@@ -3421,11 +3066,6 @@
             return t * t * (3 - 2 * t);
         }
 
-        // Returns a height value for any world (wx, wz) coordinate.
-        // World XZ is normalised to 0..1 and then scaled into noise space, so feature
-        // size tracks the world size: growing CONFIG.scale gives the SAME landscape
-        // larger, not a busier one. (The previous version used absolute frequency, where
-        // a bigger world meant more hills of the same size.)
         function getTerrainHeight(wx, wz) {
             const T = TERRAIN;
             const s = _terrainSeed.f;
@@ -3437,22 +3077,18 @@
 
             const plains = _fbm(bx, bz, 5, 2.03, 0.5);
 
-            // Biome mask: sampled far lower-frequency than the height field, so mountain
-            // country forms large contiguous regions rather than flickering cell to cell.
             const mask = _fbm(u * T.biomeSpan + s * 3.1, v * T.biomeSpan - s * 1.9, 5, 2.03, 0.5);
             const mtn  = _smoothstep(T.mountainThreshold, T.mountainThreshold + T.mountainBlend, mask);
 
             let h01 = plains;
             if (mtn > 0) {
-                // ridged field is only evaluated inside the mask -- identical output,
-                // but the lowlands skip five octaves of noise per sample.
                 const ridged = _ridged(bx * T.ridgeScale + 33.0, bz * T.ridgeScale - 21.0, T.ridgeOctaves, 2.13, T.ridgeGain);
                 const peaks  = Math.pow(Math.max(ridged, 1e-4), T.ridgeSharp);
                 h01 = plains + (Math.max(plains, peaks) - plains) * mtn;
                 if (T.ridgeAdd > 0) h01 += peaks * mtn * T.ridgeAdd;
             }
             const lift = mtn * T.mountainGain;
-            return physicalGroundY + h01 * T.amplitude * (1 + lift);
+            return physicalGroundY + h01 * terrainAmplitude() * (1 + lift);
         }
 
         function createTerrain() {
@@ -3467,7 +3103,6 @@
             const halfW = CONFIG.worldWidth  / 2;
             const halfH = CONFIG.worldHeight / 2;
             for (let i = 0; i < positions.length; i += 3) {
-                // Plane is rotated -90° about X so local X→worldX, local Y→world -Z
                 const worldX = positions[i]     + halfW;
                 const worldZ = -positions[i + 1] + halfH;
                 positions[i + 2] = getTerrainHeight(worldX, worldZ);
@@ -3477,7 +3112,7 @@
 
             paintTerrainBySlope(geometry);
 
-            terrainVersion++; // invalidate cached ground-height samples
+            terrainVersion++;
             const terrain = new THREE.Mesh(geometry, material);
             terrain.receiveShadow = true;
             terrain.rotation.x = -Math.PI / 2;
@@ -3485,8 +3120,6 @@
             return terrain;
         }
 
-        // Paint terrain vertices green (grass) on gentle ground and grey (rock) on
-        // steep faces, giving cliffs/mountainsides a rocky look
         const _grassColor = new THREE.Color(0x2d5016);
         const _rockColor  = new THREE.Color(0x6e6e6e);
         function paintTerrainBySlope(geometry) {
@@ -3498,11 +3131,10 @@
                 geometry.setAttribute('color', colorAttr);
             }
             const colors = colorAttr.array;
-            // Slope threshold: above ROCK_START it's grass, below ROCK_FULL it's full rock.
-            const ROCK_START = 0.12;  // ~23° begins rock
-            const ROCK_FULL  = 0.84;  // ~42° is solid rock
+            const ROCK_START = 0.12;
+            const ROCK_FULL  = 0.84;
             for (let i = 0; i < count; i++) {
-                const ny = Math.abs(normals[i * 3 + 1]); // up-component of normal: 1=flat, 0=vertical
+                const ny = Math.abs(normals[i * 3 + 1]);
                 let t = (ROCK_START - ny) / (ROCK_START - ROCK_FULL);
                 t = Math.max(0, Math.min(1, t));
                 const r = _grassColor.r + (_rockColor.r - _grassColor.r) * t;
@@ -3515,69 +3147,12 @@
             colorAttr.needsUpdate = true;
         }
 
-        // Push terrain vertices down where water sits, so each water cube rests in a real depression
-        function carveWaterDepressions(terrainMesh, locations) {
-            if (!terrainMesh || !locations.length) return;
-            const geometry = terrainMesh.geometry;
-            const positionAttribute = geometry.getAttribute('position');
-            const positions = positionAttribute.array;
-            const halfW = CONFIG.worldWidth / 2;
-            const halfH = CONFIG.worldHeight / 2;
-            const tileHalf = 10 * (CONFIG.scale * 3);  // carve out water tile edge
-            const blend = 14;  // extra falloff distance beyond the tile edge
-            const reach = tileHalf + blend;
-            const reachSq = reach * reach;
-            const carveDepth = 22 * CONFIG.scale;  // fallback depth when no surfaceY is given
-            // Water box bottom relative to its surface: depth(30)/2 + 20 in Water.createMesh.
-            const boxBottomBelowSurface = (30 / 2 + 20) * CONFIG.scale;
-            const floorClearance = 4 * CONFIG.scale;  // keep floor a touch under the box bottom
-
-            for (let i = 0; i < positions.length; i += 3) {
-                // Terrain plane is rotated -90 degrees about X, so local +Y maps to world -Z;
-                // local X maps to world X. Both are then offset by the mesh's half extents.
-                const worldX = positions[i]      + halfW;
-                const worldZ = -positions[i + 1] + halfH;
-
-                const naturalH = getTerrainHeight(worldX, worldZ);
-                let lowest = naturalH;
-                for (let k = 0; k < locations.length; k++) {
-                    const dx = worldX - locations[k][0];
-                    const dz = worldZ - locations[k][1];
-                    const dSq = dx * dx + dz * dz;
-                    if (dSq >= reachSq) continue;
-                    const d = Math.sqrt(dSq);
-                    // Full depth inside the tile, smooth falloff across the blend band.
-                    const t = d <= tileHalf ? 1 : 1 - (d - tileHalf) / blend;
-                    const eased = t * t * (3 - 2 * t); // smoothstep
-                    const surfaceY = locations[k][2];
-                    // Target floor: below this pool's box bottom when we know the surface,
-                    // otherwise fall back to a fixed depth under the local natural height.
-                    const floor = (surfaceY !== undefined)
-                        ? surfaceY - boxBottomBelowSurface - floorClearance
-                        : naturalH - carveDepth;
-                    const h = naturalH + (floor - naturalH) * eased;
-                    if (h < lowest) lowest = h;
-                }
-                positions[i + 2] = lowest;
-            }
-            positionAttribute.needsUpdate = true;
-            geometry.computeVertexNormals();
-            paintTerrainBySlope(geometry);
-            terrainVersion++; // carving moved the ground; re-sample cached heights
-        }
-
         // ============================================================================
         // WATER
         // ============================================================================
-        // One world-spanning plane at a single Y. Lakes are simply wherever the terrain
-        // dips below it: no per-pool boxes, no carving. All surface detail lives in the
-        // fragment shader -- two scrolling value-noise layers perturb the normal,
-        // Fresnel blends a deep tint toward sky colour, plus a sharp sun glint.
         let waterLevel = physicalGroundY;
         let waterPlane = null;
 
-        // Sampling the real height field and taking a percentile makes coverage
-        // predictable per seed instead: waterCoverage 0.22 means ~22% of the map is wet.
         function computeWaterLevel() {
             if (TERRAIN.waterLevelOverride !== null) return TERRAIN.waterLevelOverride;
             const N = 96;
@@ -3589,13 +3164,11 @@
                     samples[k++] = getTerrainHeight((ix / (N - 1)) * CONFIG.worldWidth, wz);
                 }
             }
-            samples.sort();   // TypedArray sort is numeric
+            samples.sort();
             const cov = Math.max(0, Math.min(1, TERRAIN.waterCoverage));
             return samples[Math.floor(cov * (samples.length - 1))];
         }
 
-        // Nearest point to (x,z) whose ground sits at or above minY. Spirals outward in
-        // rings; returns the original point if nothing dry is found.
         function findDryGround(x, z, minY, maxRadius = 600, step = 25) {
             if (getTerrainHeight(x, z) >= minY) return [x, z];
             for (let r = step; r <= maxRadius; r += step) {
@@ -3641,7 +3214,6 @@
                 float c = hash2(i + vec2(0.0, 1.0)), d = hash2(i + vec2(1.0, 1.0));
                 return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
             }
-            // Animated normal: two scrolling noise layers perturbing the flat normal.
             vec3 waterNormal(vec2 xz, float t) {
                 float n1 = vnoise(xz * 0.05 + vec2(t * 0.6, t * 0.35)) - 0.5;
                 float n2 = vnoise(xz * 0.13 - vec2(t * 0.4, t * 0.5))  - 0.5;
@@ -3652,15 +3224,12 @@
                 vec3 nrm = waterNormal(vWorld.xz, uTime);
                 vec3 viewDir = normalize(cameraPosition - vWorld);
 
-                // Fresnel: grazing angles reflect sky, head-on shows the deep tint.
                 float fresnel = pow(1.0 - max(dot(nrm, viewDir), 0.0), 4.0);
                 vec3 col = mix(uDeepColor, uSkyColor, clamp(fresnel, 0.0, 0.85));
 
-                // specular sun glint
                 vec3 halfV = normalize(normalize(uSunDir) + viewDir);
                 col += uSunColor * pow(max(dot(nrm, halfV), 0.0), 64.0) * 1.5;
 
-                // linear fog, matched to scene.fog so the plane fades with everything else
                 float fogF = clamp((length(vWorld - cameraPosition) - uFogNear)
                                    / max(uFogFar - uFogNear, 0.001), 0.0, 1.0);
                 gl_FragColor = vec4(mix(col, uFogColor, fogF), uOpacity);
@@ -3690,23 +3259,19 @@
                 vertexShader: WATER_VS,
                 fragmentShader: WATER_FS,
                 transparent: true,
-                depthWrite: false,          // blends over terrain without occluding it
-                side: THREE.DoubleSide,     // visible from underneath in creative flight
+                depthWrite: false,
+                side: THREE.DoubleSide,
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.rotation.x = -Math.PI / 2;
             mesh.position.set(CONFIG.worldWidth / 2, waterLevel, CONFIG.worldHeight / 2);
             mesh.renderOrder = 1;
-            mesh.frustumCulled = false;   // one huge quad; culling it by bounds is noise
+            mesh.frustumCulled = false;
             scene.add(mesh);
             waterPlane = mesh;
             return mesh;
         }
 
-        // Drink points for the animal AI. Previously these were scattered first and pools
-        // drawn around them; now the plane is the source of truth and the points are
-        // sampled off its shoreline (submerged cells that touch dry ground), so animals
-        // walk to an edge they can actually stand on.
         function deriveWaterLocations(level) {
             const out = [];
             const N = 128;
@@ -3715,20 +3280,15 @@
             for (let iz = 0; iz < N; iz++) {
                 for (let ix = 0; ix < N; ix++) h[iz * N + ix] = getTerrainHeight(ix * dx, iz * dz);
             }
-            // Collect EVERY shoreline cell first, then thin. Accepting greedily during
-            // the row scan and stopping at the cap would leave the last rows of the map
-            // with no drink points at all.
             const cand = [];
             for (let iz = 1; iz < N - 1; iz++) {
                 for (let ix = 1; ix < N - 1; ix++) {
-                    if (h[iz * N + ix] >= level) continue;                 // dry cell
-                    // keep only submerged cells with at least one dry 4-neighbour
+                    if (h[iz * N + ix] >= level) continue;
                     if (h[iz * N + ix - 1]   < level && h[iz * N + ix + 1]   < level &&
                         h[(iz - 1) * N + ix] < level && h[(iz + 1) * N + ix] < level) continue;
                     cand.push(ix * dx, iz * dz);
                 }
             }
-            // shuffle so the thinning pass samples the whole map evenly
             const order = new Uint32Array(cand.length / 2);
             for (let i = 0; i < order.length; i++) order[i] = i;
             for (let i = order.length - 1; i > 0; i--) {
@@ -3745,20 +3305,13 @@
                     const ddx = wx - out[k][0], ddz = wz - out[k][1];
                     if (ddx * ddx + ddz * ddz < minSepSq) { ok = false; break; }
                 }
-                if (ok) out.push([wx, wz, level]);   // [x, z, surfaceY]
+                if (ok) out.push([wx, wz, level]);
             }
             return out;
         }
 
-        // How far a floating body sinks below the surface, so it reads as sitting IN the
-        // water rather than balanced on top of it.
         const FLOAT_DEPTH = 5;
 
-        // The surface a body should rest on at (x,z): terrain, or the water plane wherever
-        // terrain dips below it.
-        // (p.y = max(ground, waterLevel - floatDepth)) with the body's own standing offset
-        // (`lift`) applied to whichever surface wins, so a floating animal keeps the same
-        // pose it has on land.
         function groundOrFloat(x, z, lift = 0, sink = FLOAT_DEPTH) {
             return Math.max(getTerrainHeight(x, z), waterLevel - sink) + lift;
         }
@@ -3767,7 +3320,6 @@
             if (!waterPlane) return;
             const u = waterPlane.material.uniforms;
             u.uTime.value = timeSeconds;
-            // fog range moves with CONFIG.scale and the draw-distance slider
             u.uFogNear.value = scene.fog.near;
             u.uFogFar.value  = scene.fog.far;
             u.uFogColor.value.copy(scene.fog.color);
@@ -3778,33 +3330,25 @@
         // ============================================================================
         // REUSABLE ANIMATION & RENDERING
         // ============================================================================
-        // Reusable objects to avoid per-frame allocation
         const _mat4  = new THREE.Matrix4();
         const _local = new THREE.Vector3();
         const _world = new THREE.Vector3();
         const _quat  = new THREE.Quaternion();
         const _yAxis = new THREE.Vector3(0, 1, 0);
         const _scale = new THREE.Vector3(1, 1, 1);
-        // Extra quaternions for walk animation (reused every frame, no allocation)
-        const _quatLeg  = new THREE.Quaternion(); // leg pitch rotation
-        const _quatFinal = new THREE.Quaternion(); // yaw * legPitch combined
-        const _xAxis = new THREE.Vector3(1, 0, 0); // leg swing axis
+        const _quatLeg  = new THREE.Quaternion();
+        const _quatFinal = new THREE.Quaternion();
+        const _xAxis = new THREE.Vector3(1, 0, 0);
 
-        const TICKS_PER_DAY  = 24 * 60; // matches dayCount formula
-        const MATURITY_TICKS = 3 * TICKS_PER_DAY; // fully grown by sim-day 3
-        const MIN_SCALE      = 0.25; // 25% of parent size at birth
+        const TICKS_PER_DAY  = 24 * 60;
+        const MATURITY_TICKS = 3 * TICKS_PER_DAY;
+        const MIN_SCALE      = 0.25;
 
         const _ANIMAL_TYPES = ['sheep', 'human'];
         const _PART_NAMES   = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
         const _LIMB_NAMES   = ['legFL', 'legFR', 'legBL', 'legBR'];
-        // Reused instead of building a fresh object literal per animal per frame.
         const _legAngles    = { legFL: 0, legFR: 0, legBL: 0, legBR: 0 };
 
-        // Per-type render caches. Kept OUT of the instancedMeshes dicts so that
-        // Object.values(instancedMeshes[type]) elsewhere still yields only meshes.
-        //   list    - the six part meshes, so Object.values isn't rebuilt per frame
-        //   colKeys - colour currently written into each instance slot, so we only
-        //             re-upload instanceColor when a slot's colour actually changes
         const _animalRenderCache = { sheep: null, human: null };
         function _animalCacheFor(type, im) {
             let c = _animalRenderCache[type];
@@ -3829,10 +3373,8 @@
                     if (!a.alive || a.type !== type) continue;
                     if (idx >= MAX_INSTANCES) break;
 
-                    // Advance walk cycle timer (freeze when staying still)
                     if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
 
-                    // Age-based scale: 25% at birth to 100% at sim-day 3. Adults always full size.
                     const ageRatio = a.isAdult ? 1 : Math.min(1, (ticks - a.birthTick) / MATURITY_TICKS);
                     const s = MIN_SCALE + (1 - MIN_SCALE) * ageRatio;
                     const hs = a.heightScale ?? 1.0;
@@ -3840,17 +3382,12 @@
 
                     const angle = DIRECTION_ANGLES[a.outputIdx];
                     if (angle !== null && angle !== undefined) {
-                        a.facingAngle = angle; // stamp so idle frames keep correct facing
+                        a.facingAngle = angle;
                         _quat.setFromAxisAngle(_yAxis, angle);
                     } else {
-                        // Stay-still: restore from this animal's own last heading
                         _quat.setFromAxisAngle(_yAxis, a.facingAngle);
                     }
 
-                    // Sex-based color. It never changes for a given animal, so
-                    // only rewrite when THIS slot index now holds a different
-                    // colour (slots shift as animals die). Previously this
-                    // re-uploaded 0.86 MB of instanceColor every frame.
                     const col = colors[a.sex];
                     if (cache.colKeys[idx] !== col) {
                         cache.colKeys[idx] = col;
@@ -3860,55 +3397,41 @@
                         colorsDirty = true;
                     }
 
-                    // Walk cycle parameters; freeze animation when staying still (outputIdx 8)
                     const isIdle = a.outputIdx === 8;
                     const walkFreq = type === 'sheep' ? 6.5 : 5.0;
-                    const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65); // radians of leg swing
+                    const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65);
                     const t = a.animTime * walkFreq;
 
-                    // Diagonal gait for sheep (FL+BR in phase, FR+BL opposite)
-                    // Bipedal alternating stride for humans (arms opposite to legs)
-                    // Both gaits reduce to the same +/- pattern; compute sin once
-                    // and fill a reused object (was 1 allocation + 4 sin calls
-                    // per animal per frame).
                     const sinT = Math.sin(t);
-                    _legAngles.legFL =  sinT;   // sheep: front-left / human: left arm
-                    _legAngles.legFR = -sinT;   // sheep: front-right / human: right arm
-                    _legAngles.legBL = -sinT;   // sheep: back-left  / human: left leg
-                    _legAngles.legBR =  sinT;   // sheep: back-right / human: right leg
+                    _legAngles.legFL =  sinT;
+                    _legAngles.legFR = -sinT;
+                    _legAngles.legBL = -sinT;
+                    _legAngles.legBR =  sinT;
                     const legAngles = _legAngles;
 
-                    // Body at animal world position, adjusted so legs always touch the ground
                     const groundOffset = type === 'sheep' ? 9 : 15;
                     _world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
                     _mat4.compose(_world, _quat, _scale);
                     im.body.setMatrixAt(idx, _mat4);
 
-                    // Head: no swing
                     _local.copy(offsets.head);
                     if (type === 'human') _local.y *= hs;
                     _local.multiplyScalar(s).applyQuaternion(_quat).add(_world);
                     _mat4.compose(_local, _quat, _scale);
                     im.head.setMatrixAt(idx, _mat4);
 
-                    // Limb half-lengths (distance from pivot joint to limb center)
-                    // leg geometry height = 12.5 -> half = 6.25; arm same geometry
-                    const limbHalf = type === 'sheep' ? 9 : 6.25; // sheep leg height=18 -> half=9
+                    const limbHalf = type === 'sheep' ? 9 : 6.25;
 
-                    // Each limb: pivot at joint, swing down from there
                     for (let pi = 0; pi < _LIMB_NAMES.length; pi++) {
                         const part = _LIMB_NAMES[pi];
                         const swing = legAngles[part] * walkAmp;
                         _quatLeg.setFromAxisAngle(_xAxis, swing);
                         _quatFinal.multiplyQuaternions(_quat, _quatLeg);
 
-                        // 1. Pivot point in world space (joint position)
                         _pivot.copy(PIVOT_OFFSETS[type][part]);
                         if (type === 'human') _pivot.y *= hs;
                         _pivot.multiplyScalar(s).applyQuaternion(_quat).add(_world);
 
-                        // 2. Limb center = pivot + (down the swung limb by half its length)
-                        //    In limb-local space "down" = -Y; apply _quatFinal to get world-space down
                         _local.set(0, -limbHalf * s, 0).applyQuaternion(_quatFinal);
                         _local.add(_pivot);
 
@@ -3919,8 +3442,6 @@
                     idx++;
                 }
 
-                // Upload only the live slots (was 4.61 MB of matrices +
-                // 0.86 MB of colours per frame regardless of population).
                 for (let mi = 0; mi < cache.list.length; mi++) {
                     const mesh = cache.list[mi];
                     markInstances(mesh, idx);
@@ -3929,13 +3450,12 @@
             }
         }
 
-        // Pivot joint offsets (in body-local space, pre-allocated; reused every frame)
         const PIVOT_OFFSETS = {
             human: {
-                legFL: new THREE.Vector3(-6,  8.25, 0),  // left shoulder
-                legFR: new THREE.Vector3( 6,  8.25, 0),  // right shoulder
-                legBL: new THREE.Vector3(-2, -8.75, 0),  // left hip
-                legBR: new THREE.Vector3( 2, -8.75, 0),  // right hip
+                legFL: new THREE.Vector3(-6,  8.25, 0),
+                legFR: new THREE.Vector3( 6,  8.25, 0),
+                legBL: new THREE.Vector3(-2, -8.75, 0),
+                legBR: new THREE.Vector3( 2, -8.75, 0),
             },
             sheep: {
                 legFL: new THREE.Vector3(-5,  0,  8),
@@ -3944,97 +3464,21 @@
                 legBR: new THREE.Vector3( 5,  0, -8),
             },
         };
-        const _pivot = new THREE.Vector3(); // scratch vector for pivot world position
+        const _pivot = new THREE.Vector3();
         const DIRECTION_ANGLES = [
             Math.PI / 2, -Math.PI / 2, 0, Math.PI,
             Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
-            null // index 8 = stay still; rotation kept from previous frame
+            null
         ];
 
         // ============================================================================
         // STAT LABELS (billboarded sprites)
         // ============================================================================
-        const _statLabelCanvas = document.createElement('canvas');
-        _statLabelCanvas.width = 128;
-        _statLabelCanvas.height = 64;
-        const _statLabelCtx = _statLabelCanvas.getContext('2d');
-
-        // Pool of sprites keyed by animal reference
         const animalStatSprites = new Map();
 
-        function createStatSprite() {
-            const texture = new THREE.CanvasTexture(_statLabelCanvas);
-            const mat = new THREE.SpriteMaterial({ map: texture.clone(), depthTest: false, transparent: true });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(30, 15, 1);
-            scene.add(sprite);
-            return sprite;
-        }
-
-        function drawStatLabel(sprite, health, maxHealth, foodNeed, waterNeed, generation, ageRatio) {
-            // Reuse the pre-allocated shared canvas, no per-call allocation
-            const cv = _statLabelCanvas;
-            const ctx = _statLabelCtx;
-            ctx.clearRect(0, 0, 128, 64);
-
-            const BAR_W = 110, BAR_H = 9, X0 = 9;
-
-            // Background
-            ctx.fillStyle = 'rgba(0,0,0,0.55)';
-            ctx.beginPath();
-            ctx.roundRect(2, 2, 124, 60, 6);
-            ctx.fill();
-
-            function drawBar(y, label, value, maxValue, color) {
-                const ratio = Math.max(0, Math.min(1, value / maxValue));
-                // Track bg
-                ctx.fillStyle = '#222';
-                ctx.fillRect(X0, y, BAR_W, BAR_H);
-                // Fill
-                ctx.fillStyle = color;
-                ctx.fillRect(X0, y, Math.round(BAR_W * ratio), BAR_H);
-                // Label
-                ctx.fillStyle = '#fff';
-                ctx.font = 'bold 8px monospace';
-                ctx.fillText(label, X0, y - 1);
-            }
-
-            // Need values grow from ~0.01 upward with no hard cap.
-            const cappedHungerNeed = Math.max(0, Math.min(100, foodNeed)) - 100;
-            const cappedThirstNeed = Math.max(0, Math.min(100, waterNeed)) - 100;
-
-            drawBar(10, '❤️', health, maxHealth, '#e74c3c');
-            drawBar(24, '🍽️', cappedHungerNeed * -1, 100, '#e67e22');
-            drawBar(38, '💧', cappedThirstNeed * -1, 100, '#3498db');
-
-            // Generation label + age bar (only shown for born animals)
-            if (ageRatio < 1) {
-                drawBar(52, '🚼', ageRatio, 1, '#2ecc71');
-            }
-            // Generation tag top-right
-            ctx.fillStyle = generation === 0 ? 'rgba(255,255,255,0.5)' : '#f1c40f';
-            ctx.font = 'bold 8px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText(`Generation ${generation}`, 122, 10);
-            ctx.textAlign = 'left';
-
-            // Reuse a single shared CanvasTexture; never allocate/dispose per frame
-            if (!drawStatLabel._sharedTex) {
-                drawStatLabel._sharedTex = new THREE.CanvasTexture(cv);
-            }
-            if (sprite.material.map !== drawStatLabel._sharedTex) {
-                if (sprite.material.map) sprite.material.map.dispose();
-                sprite.material.map = drawStatLabel._sharedTex;
-            }
-            drawStatLabel._sharedTex.needsUpdate = true;
-            sprite.material.needsUpdate = true;
-        }
-
-        // Tracks which animal the player is currently looking at
         let currentTargetAnimal = null;
-        let lockedTargetAnimal = null; // stays set until click outside ASP panel
+        let lockedTargetAnimal = null;
 
-        // Click outside the ASP panel clears the locked selection
         document.addEventListener('click', (e) => {
             if (lockedTargetAnimal && _aspPanel.classList.contains('visible') && !e.target.closest('#animal-stat-panel')) {
                 lockedTargetAnimal = null;
@@ -4043,7 +3487,6 @@
         document.addEventListener('touchend', (e) => {
             if (lockedTargetAnimal && _aspPanel.classList.contains('visible')) {
                 for (const touch of e.changedTouches) {
-                    // Only a genuine tap (not a joystick or camera drag release) should dismiss the panel
                     if (touch.identifier === joystickTouchId) continue;
                     if (touch.identifier === cameraTouchId) continue;
                     const el = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -4065,7 +3508,6 @@
         const _aspAgeLineEl = document.getElementById('asp-age-line');
         const _aspAgeValEl  = document.getElementById('asp-age-val');
 
-
         const _aspMemPredTxt    = document.getElementById('asp-mem-predator-dist');
         const _aspMemPredArrow  = document.getElementById('asp-mem-predator-arrow');
         const _aspMemFoodTxt    = document.getElementById('asp-mem-food-dist');
@@ -4082,14 +3524,10 @@
             if (txt.className !== cls) txt.className = cls;
         }
 
-        // Hoisted out of updateAspMemories: these were two fresh closures per
-        // call (i.e. per frame while an animal is selected).
         function _aspDist(a, mx, mz) {
             const dx = mx - a.position.x, dz = mz - a.position.z;
             return Math.round(Math.sqrt(dx * dx + dz * dz));
         }
-        // raySin=dx/dist, rayCos=dz/dist in world space.
-        // Subtract facingAngle to get direction relative to animal's own heading
         function _aspSetArrow(a, arrow, active, sin, cos) {
             if (!active) {
                 if (arrow._active !== false) { arrow._active = false; arrow.classList.remove('active'); }
@@ -4097,11 +3535,7 @@
             }
             const worldAngle = Math.atan2(sin, cos);
             const relAngle = worldAngle - a.facingAngle;
-            // Screen rotate() is clockwise and the arrow rests pointing "forward"
-            // Rounded to whole degrees: sub-degree changes are invisible and each
-            // write costs a template-literal allocation plus a style invalidation.
             const deg = Math.round(-relAngle * (180 / Math.PI));
-            // querySelector ran every frame; the svg child never changes.
             if (!arrow._svg) arrow._svg = arrow.querySelector('svg');
             if (arrow._deg !== deg) {
                 arrow._deg = deg;
@@ -4142,10 +3576,6 @@
 
                 targetFound = true;
 
-                // Every one of these was an unconditional textContent write,
-                // which replaces the element's text node even when the string is
-                // identical -- ~5 detached DOM nodes per frame, visible in the
-                // trace as node count cycling 380 -> 2000 -> 380.
                 const gen = a.generation ?? 0;
                 setTextIfChanged(_aspHpValEl,    Math.max(0, Math.min(100, (a.health / a.maxHealth) * 100)).toFixed(1));
                 setTextIfChanged(_aspFoodValEl,  Math.max(0, a.foodNeed).toFixed(1));
@@ -4171,8 +3601,6 @@
                 if (window._hudNNVisualizer3D) {
                     try {
                         window._hudNNVisualizer3D.update(a);
-                        // Cache the element lookup and skip the write when the
-                        // label is already correct (it never changes).
                         if (updateStatLabels._nnLabelEl === undefined) {
                             updateStatLabels._nnLabelEl = document.getElementById('asp-nn-label');
                         }
@@ -4208,16 +3636,14 @@
         // ============================================================================
         // NEURAL NETWORK VISUALIZER
         // ============================================================================
-        // Frame budget for the HUD's separate WebGL context (30 fps).
         const NN_FRAME_MS = 1000 / 30;
 
         class NNVisualizer3D {
             constructor(canvasEl) {
                 this.canvas  = canvasEl;
-                this.nn      = null;   // current DenseNetwork reference
+                this.nn      = null;
                 this.outputIdx = 0;
 
-                // Three.js mini-renderer
                 this.renderer = new THREE.WebGLRenderer({
                     canvas: canvasEl,
                     antialias: true,
@@ -4231,40 +3657,32 @@
                 this.camera = new THREE.PerspectiveCamera(40, canvasEl.clientWidth / canvasEl.clientHeight, 0.1, 100);
                 this.camera.position.set(0, 0, 9);
 
-                // Lights
                 this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
                 const dl = new THREE.DirectionalLight(0xffffff, 0.8);
                 dl.position.set(4, 6, 8);
                 this.scene.add(dl);
 
-                // Root group - everything rotates together
                 this.group = new THREE.Group();
                 this.scene.add(this.group);
 
-                // Per-node mesh refs keyed by role
                 this._nodeMeshes = { in: [], a: [], b: [], out: [] };
-                // Edge line refs  { line, srcRole, srcIdx, tgtRole, tgtIdx, baseOpacity, posArr }
                 this._edges = [];
-                // Self-loop tori for Lobe A
                 this._selfLoops = [];
 
-                // Auto-rotation state
                 this._rotY = 0;
-                this._rotX = 0.18; // slight tilt to show depth
+                this._rotX = 0.18;
 
-                // Mouse-drag orbit
                 this._drag = false;
                 this._lastMX = 0; this._lastMY = 0;
                 this._targetRotY = 0;
                 this._targetRotX = 0.18;
                 this._setupDrag();
 
-                // Colour palette (matches 2-D visualizer)
-                this.COL_IN  = new THREE.Color(0xe67e22); // orange (overridden per group)
-                this.COL_A   = new THREE.Color(0x00e5ff); // cyan
-                this.COL_B   = new THREE.Color(0xaaff00); // yellow-green
-                this.COL_OUT = new THREE.Color(0x00ff88); // green
-                this.COL_OUT_ACTIVE = new THREE.Color(0xff4444); // red
+                this.COL_IN  = new THREE.Color(0xe67e22);
+                this.COL_A   = new THREE.Color(0x00e5ff);
+                this.COL_B   = new THREE.Color(0xaaff00);
+                this.COL_OUT = new THREE.Color(0x00ff88);
+                this.COL_OUT_ACTIVE = new THREE.Color(0xff4444);
 
                 const GROUP_COLS = [0xe67e22, 0x3498db, 0xe74c3c, 0x9b59b6, 0x2ecc71];
                 this._inputGroupCols = [];
@@ -4272,17 +3690,15 @@
                     for (let k = 0; k < 3; k++)
                         this._inputGroupCols.push(new THREE.Color(GROUP_COLS[g]));
 
-                // Shared geometries
                 this._nodeGeo     = new THREE.SphereGeometry(0.13, 12, 8);
                 this._loopGeo     = new THREE.TorusGeometry(0.20, 0.025, 6, 18);
-                this._builtFor    = null; // nn reference last built for
+                this._builtFor    = null;
 
                 this._raf = null;
                 this._animate = this._animate.bind(this);
                 this._animate();
             }
 
-            // Called every frame with the locked animal
             update(animal) {
                 if (!animal || !animal.brain || !animal.brain.maskIA) return;
                 const nn = animal.brain;
@@ -4292,11 +3708,9 @@
                 this._updateActivations();
             }
 
-            // Clear scene when no animal is selected
             clear() {
                 this.nn = null;
                 this._clearScene();
-                // Render one blank frame so the idle guard doesn't leave a stale image
                 this.renderer.render(this.scene, this.camera);
             }
 
@@ -4305,14 +3719,10 @@
                 this.renderer.dispose();
             }
 
-            // Returns false when the canvas is not laid out (panel hidden), so
-            // the caller can skip the whole frame. setSize() + projection-matrix
-            // rebuild used to run unconditionally every frame even though the
-            // canvas size almost never changes (86 ms of setSize in the trace).
             _syncSize() {
                 const cw = this.canvas.clientWidth;
                 const ch = this.canvas.clientHeight;
-                if (cw === 0 && ch === 0) return false; // display:none -> nothing to draw
+                if (cw === 0 && ch === 0) return false;
                 const w = cw || 260;
                 const h = ch || 220;
                 if (w === this._lastW && h === this._lastH) return true;
@@ -4327,7 +3737,6 @@
 
             _setupDrag() {
                 const el = this.canvas;
-                // Block click from reaching the main canvas's pointer-lock listener
                 el.addEventListener('click', e => e.stopPropagation());
                 el.addEventListener('mousedown', e => {
                     e.stopPropagation();
@@ -4344,7 +3753,6 @@
                     this._targetRotX += dy * 0.012;
                     this._targetRotX = Math.max(-1.1, Math.min(1.1, this._targetRotX));
                 });
-                // Touch
                 el.addEventListener('touchstart', e => {
                     e.stopPropagation();
                     if (e.touches.length === 1) {
@@ -4386,30 +3794,22 @@
                 this._selfLoops = [];
             }
 
-            // Build 3-D objects for a given DenseNetwork
             _build(nn) {
                 this._clearScene();
                 this._builtFor = nn;
 
-                const NA = nn.lobeSizeA;  // GRU lobe
-                const NB = nn.lobeSizeB;  // standard LIF lobe
-                const I = nn.inputDims;  // 15
-                const O = nn.outputDims; // 9
-
-                // Node positions
-                //   X axis = layer depth:  Input=-2.8  A=B=0  Out=+2.8
-                //   Lobe A cluster offset +Y, Lobe B cluster offset -Y (stacked)
-                //   Y,Z spread within each lobe cluster
+                const NA = nn.lobeSizeA;
+                const NB = nn.lobeSizeB;
+                const I = nn.inputDims;
+                const O = nn.outputDims;
 
                 const spread = (count, radius) => {
-                    // evenly space on a circle in Y-Z plane
                     return Array.from({ length: count }, (_, i) => {
                         const angle = (i / count) * Math.PI * 2;
                         return new THREE.Vector3(0, Math.cos(angle) * radius, Math.sin(angle) * radius);
                     });
                 };
 
-                // Input: 5 groups of 3 - arrange groups in a ring, intra-group tight
                 const posIn = [];
                 for (let g = 0; g < 5; g++) {
                     const ga = (g / 5) * Math.PI * 2 - Math.PI / 2;
@@ -4427,16 +3827,13 @@
                 const posB   = spread(NB, 0.55);
                 const posOut = spread(O, 0.90);
 
-                // Layer X offsets - A and B share X=0 (stacked mid-column)
                 const X_IN = -2.8, X_MID = 0.0, X_OUT = 2.8;
-                // Y offsets: Lobe A above centre, Lobe B below centre
                 const Y_A = +1.1, Y_B = -1.1;
                 posIn.forEach(p  => p.x += X_IN);
                 posA.forEach(p   => { p.x += X_MID; p.y += Y_A; });
                 posB.forEach(p   => { p.x += X_MID; p.y += Y_B; });
                 posOut.forEach(p => p.x += X_OUT);
 
-                // Node meshes
                 const makeMat = (col, emissive) => new THREE.MeshStandardMaterial({
                     color: col, emissive: emissive ?? col,
                     emissiveIntensity: 0.1,
@@ -4444,7 +3841,6 @@
                     transparent: true, opacity: 0.85,
                 });
 
-                // Input nodes
                 for (let i = 0; i < I; i++) {
                     const col = this._inputGroupCols[i] ?? this.COL_IN;
                     const mat = makeMat(col);
@@ -4453,7 +3849,6 @@
                     this.group.add(mesh);
                     this._nodeMeshes.in.push(mesh);
                 }
-                // Lobe A nodes + self-loop tori
                 for (let i = 0; i < NA; i++) {
                     const mat = makeMat(this.COL_A);
                     const mesh = new THREE.Mesh(this._nodeGeo, mat);
@@ -4461,7 +3856,6 @@
                     this.group.add(mesh);
                     this._nodeMeshes.a.push(mesh);
 
-                    // Self-loop: small torus orbiting the node
                     const lmat = new THREE.MeshStandardMaterial({
                         color: this.COL_A, emissive: this.COL_A,
                         emissiveIntensity: 0.4,
@@ -4474,7 +3868,6 @@
                     this.group.add(loop);
                     this._selfLoops.push(loop);
                 }
-                // Lobe B nodes
                 for (let i = 0; i < NB; i++) {
                     const mat = makeMat(this.COL_B);
                     const mesh = new THREE.Mesh(this._nodeGeo, mat);
@@ -4482,7 +3875,6 @@
                     this.group.add(mesh);
                     this._nodeMeshes.b.push(mesh);
                 }
-                // Output nodes
                 for (let i = 0; i < O; i++) {
                     const mat = makeMat(this.COL_OUT);
                     const mesh = new THREE.Mesh(this._nodeGeo, mat);
@@ -4491,15 +3883,6 @@
                     this._nodeMeshes.out.push(mesh);
                 }
 
-                // Edges
-                // Pre-compute max|w| per matrix for alpha normalisation
-                const maxAbs = arr => {
-                    let m = 1e-6;
-                    for (let k = 0; k < arr.length; k++) if (Math.abs(arr[k]) > m) m = Math.abs(arr[k]);
-                    return m;
-                };
-
-                // Straight edge helper
                 const addStraight = (pA, pB, weight, srcRole, si, tgtRole, ti) => {
                     const geo = new THREE.BufferGeometry().setFromPoints([pA, pB]);
                     const pos = weight >= 0
@@ -4513,40 +3896,6 @@
                     this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.18, weight });
                 };
 
-                // Curved edge helper (QuadraticBezierCurve3) - preserves the A↔B motif
-                const addCurved = (pA, pB, weight, yBias, srcRole, si, tgtRole, ti) => {
-                    const mid = pA.clone().lerp(pB, 0.5);
-                    mid.y += yBias;
-                    const curve = new THREE.QuadraticBezierCurve3(pA, mid, pB);
-                    const pts   = curve.getPoints(16);
-                    const geo   = new THREE.BufferGeometry().setFromPoints(pts);
-                    const col   = weight >= 0
-                        ? new THREE.Color(0x50a0ff)
-                        : new THREE.Color(0xff5050);
-                    const mat = new THREE.LineBasicMaterial({
-                        color: col, transparent: true, opacity: 0.22,
-                    });
-                    const line = new THREE.Line(geo, mat);
-                    this.group.add(line);
-                    this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.22, weight });
-
-                    // Arrow-head cone at pB end (small, same color)
-                    const dir = pB.clone().sub(mid).normalize();
-                    const aGeo = new THREE.ConeGeometry(0.04, 0.12, 5);
-                    const aMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 });
-                    const arrow = new THREE.Mesh(aGeo, aMat);
-                    arrow.position.copy(pB);
-                    // Orient cone along dir
-                    const quat = new THREE.Quaternion().setFromUnitVectors(
-                        new THREE.Vector3(0, 1, 0), dir
-                    );
-                    arrow.quaternion.copy(quat);
-                    this.group.add(arrow);
-                    // store arrow for activation tinting
-                    this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
-                };
-
-                // Curved edge helper arcing in Z - used for A <-> B between stacked lobes
                 const addCurvedZ = (pA, pB, weight, zBias, srcRole, si, tgtRole, ti) => {
                     const mid = pA.clone().lerp(pB, 0.5);
                     mid.z += zBias;
@@ -4563,7 +3912,6 @@
                     this.group.add(line);
                     this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.22, weight });
 
-                    // Arrow-head cone at pB end
                     const dir = pB.clone().sub(mid).normalize();
                     const aGeo = new THREE.ConeGeometry(0.04, 0.12, 5);
                     const aMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 });
@@ -4577,11 +3925,6 @@
                     this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
                 };
 
-                // Build all masked connections
-                const mxIA = maxAbs(nn.wIA), mxIB = maxAbs(nn.wIB);
-                const mxAB = maxAbs(nn.wAB), mxBA = maxAbs(nn.wBA);
-                const mxAO = maxAbs(nn.wAO), mxBO = maxAbs(nn.wBO);
-
                 for (let i = 0; i < I; i++) for (let j = 0; j < NA; j++) {
                     const k = i * NA + j;
                     if (nn.maskIA[k]) addStraight(posIn[i], posA[j], nn.wIA[k], 'in', i, 'a', j);
@@ -4590,8 +3933,6 @@
                     const k = i * NB + j;
                     if (nn.maskIB[k]) addStraight(posIn[i], posB[j], nn.wIB[k], 'in', i, 'b', j);
                 }
-                // A->B  : curved +Z  (in front of the straight line between stacked lobes)
-                // B->A  : curved -Z  (behind)
                 for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
                     const k = i * NB + j;
                     if (nn.maskAB[k]) addCurvedZ(posA[i], posB[j], nn.wAB[k],  0.70, 'a', i, 'b', j);
@@ -4610,7 +3951,6 @@
                 }
             }
 
-            // Returns 1 (firing) or 0 (silent): binary, like an action potential
             _isFiring(role, idx) {
                 if (!this.nn) return 0;
                 switch (role) {
@@ -4625,7 +3965,6 @@
             _updateActivations() {
                 if (!this.nn) return;
 
-                // Binary node appearance: firing = fully lit + scaled up; silent = dim + normal scale
                 const applyNode = (mesh, firing, baseCol, fireCol) => {
                     if (firing) {
                         mesh.material.color.copy(fireCol ?? baseCol);
@@ -4655,7 +3994,6 @@
                     applyNode(this._nodeMeshes.out[i], firing, this.COL_OUT, this.COL_OUT_ACTIVE);
                 }
 
-                // Edges: lit only when the source neuron is firing (signal propagates forward)
                 for (const e of this._edges) {
                     const firing = this._isFiring(e.srcRole, e.si) === 1;
                     e.mat.opacity = firing
@@ -4667,31 +4005,22 @@
             _animate() {
                 this._raf = requestAnimationFrame(this._animate);
 
-                // Idle: no animal selected skip all sizing, rotation, and rendering
                 if (!this.nn) return;
 
-                // This is a SECOND WebGL context on its own rAF, previously
-                // running at full display refresh alongside the main scene
-                // (1040 ms / 9.6% of CPU). Cap it -- it is a decorative HUD
-                // widget, 30 fps is indistinguishable.
                 const _t = performance.now();
                 if (_t - (this._lastDraw || 0) < NN_FRAME_MS) return;
                 this._lastDraw = _t;
 
-                // Bails out entirely when the stat panel is hidden.
                 if (!this._syncSize()) return;
 
-                // Auto-rotate when not dragging
                 if (!this._drag) this._targetRotY += 0.004;
 
-                // Smooth lerp to target
                 this._rotY += (this._targetRotY - this._rotY) * 0.08;
                 this._rotX += (this._targetRotX - this._rotX) * 0.08;
 
                 this.group.rotation.y = this._rotY;
                 this.group.rotation.x = this._rotX;
 
-                // Gentle self-loop spin
                 for (const loop of this._selfLoops) {
                     loop.rotation.z += 0.03;
                 }
@@ -4700,10 +4029,7 @@
             }
         }
 
-        const nnContainer = document.getElementById('nnVisualizerContainer');
-        const nnLabel = document.getElementById('asp-nn-label');
-        let nnVisualizer = null;
-        let nnSprite3DVisualizer = null;  // declared here; initialised lazily below
+        let nnSprite3DVisualizer = null;
         let nnVisEnabled = false;
 
         const _nnSpriteCanvas = document.createElement('canvas');
@@ -4721,12 +4047,12 @@
         nnSprite.scale.set(52.5, 26.25, 1);
         nnSprite.visible = false;
         scene.add(nnSprite);
-        
+
         let statLabelsEnabled = true;
         let sphereVisMode = 'single';
 
         function initNN3DVisualizer() {
-            nnSprite3DVisualizer = true; // sentinel - prevents re-init
+            nnSprite3DVisualizer = true;
             const canvas3D = document.getElementById('nnCanvas3D');
             window._hudNNVisualizer3D = new NNVisualizer3D(canvas3D);
         }
@@ -4738,7 +4064,6 @@
         function toggleNNVis() {
             nnVisEnabled = !nnVisEnabled;
             statLabelsEnabled = nnVisEnabled;
-            const btn = document.getElementById('nnVisBtn');
             const state = document.getElementById('nnVisState');
             if (nnVisEnabled) {
                 if (state) state.textContent = 'ON';
@@ -4767,16 +4092,14 @@
         // ============================================================================
         // VISION RAYS (3 dynamic rays per animal showing current heading +- spread)
         // ============================================================================
-        const MAX_RAY_ANIMALS = 600;          // cap to keep buffer size sane
-        const RAY_SPREAD      = Math.PI / 6;  // +-30° for the flanking rays
-        const RAY_LEN_SCALE   = 0.55;         // fraction of visionDistance each ray reaches
+        const MAX_RAY_ANIMALS = 600;
+        const RAY_SPREAD      = Math.PI / 6;
+        const RAY_LEN_SCALE   = 0.55;
 
-        // Colours: center = white, left = cyan, right = orange
         const _rayColors = [new THREE.Color(0xffffff), new THREE.Color(0x00ffff),  new THREE.Color(0xff8800)];
 
-        // One geometry with pre-allocated buffers; we update positions each frame.
-        const _rayPositions = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3); // 3 rays x 2 pts x xyz
-        const _rayColorsArr = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3); // matching vertex colours
+        const _rayPositions = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3);
+        const _rayColorsArr = new Float32Array(MAX_RAY_ANIMALS * 3 * 2 * 3);
 
         const _rayGeo = new THREE.BufferGeometry();
         _rayGeo.setAttribute('position', new THREE.BufferAttribute(_rayPositions, 3));
@@ -4791,11 +4114,10 @@
 
         const _rayLines = new THREE.LineSegments(_rayGeo, _rayMat);
         _rayLines.frustumCulled = false;
-        _rayLines.visible = true; // default: single mode
+        _rayLines.visible = true;
         scene.add(_rayLines);
 
-        // Scratch angles for the three rays relative to heading
-        const RAY_OFFSETS = [0, -RAY_SPREAD, RAY_SPREAD]; // center, left, right
+        const RAY_OFFSETS = [0, -RAY_SPREAD, RAY_SPREAD];
 
         function updateVisionRays(animals) {
             if (!_rayLines.visible) return;
@@ -4804,7 +4126,6 @@
             const col = _rayColorsArr;
             const target = lockedTargetAnimal || currentTargetAnimal;
 
-            // Decide which animals to draw rays for based on sphere vis mode
             let rayAnimals;
             if (sphereVisMode === 'single') {
                 rayAnimals = (target && target.alive) ? [target] : [];
@@ -4812,39 +4133,34 @@
                 rayAnimals = animals.filter(a => a.alive);
                 if (rayAnimals.length > MAX_RAY_ANIMALS) rayAnimals.length = MAX_RAY_ANIMALS;
             } else {
-                // Sphere vis is off; show rays only for the targeted animal
                 rayAnimals = (target && target.alive) ? [target] : [];
             }
 
             const n = Math.min(rayAnimals.length, MAX_RAY_ANIMALS);
-            let vi = 0; // vertex index (floats)
+            let vi = 0;
 
             for (let ai = 0; ai < n; ai++) {
                 const a = rayAnimals[ai];
                 const ox = a.position.x;
-                const oy = a.position.y + 8; // elevate slightly so rays aren't buried in ground
+                const oy = a.position.y + 8;
                 const oz = a.position.z;
                 const rayLen = a.visionDistance * RAY_LEN_SCALE;
 
-                // Use the animal's stamped facing angle; always correct, even when idle
                 const baseAngle = a.facingAngle;
 
                 for (let r = 0; r < 3; r++) {
                     const angle = baseAngle + RAY_OFFSETS[r];
-                    // Three.js heading 0 = +Z axis; sin->X, cos->Z
                     const dx = Math.sin(angle) * rayLen;
                     const dz = Math.cos(angle) * rayLen;
 
                     const c = _rayColors[r];
 
-                    // Start vertex
                     pos[vi]     = ox;
                     pos[vi + 1] = oy;
                     pos[vi + 2] = oz;
                     col[vi]     = c.r; col[vi + 1] = c.g; col[vi + 2] = c.b;
                     vi += 3;
 
-                    // End vertex
                     pos[vi]     = ox + dx;
                     pos[vi + 1] = oy;
                     pos[vi + 2] = oz + dz;
@@ -4853,11 +4169,7 @@
                 }
             }
 
-            // The leftover-segment zero-fill that used to run here was dead
-            // work: setDrawRange already stops the draw at the live vertices,
-            // so stale floats past that point are never read. It also forced a
-            // full-array upload every frame.
-            _rayGeo.setDrawRange(0, (n * 3 * 2)); // n animals x 3 rays x 2 vertices
+            _rayGeo.setDrawRange(0, (n * 3 * 2));
             markAttr(_rayGeo.attributes.position, vi);
             markAttr(_rayGeo.attributes.color,    vi);
         }
@@ -4869,10 +4181,8 @@
         const POV_MODES   = ['1st', '3rd'];
         const POV_LABELS  = { '1st': '1ST PERSON', '3rd': '3RD PERSON' };
 
-        // 3rd-person offset: behind and slightly above the player
         const TPP_OFFSET = new THREE.Vector3(0, 18, 70);
 
-        // Reusable vector for POV camera maths
         const _povOffset = new THREE.Vector3();
 
         function cyclePov() {
@@ -4900,17 +4210,12 @@
         let frameCount = 0;
         let lastStatsUpdate = 0;
         let raycastHelper = new THREE.Raycaster();
-        // Spatial grid rebuilt each frame
         const spatialGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 160);
-        // Spatial grid for plants only
         const plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
-        // Spatial grid for water, rebuilt lazily when waterLocations changes
         const waterGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
         let waterGridDirty = true;
-        
+
         const _moveVector = new THREE.Vector3();
-        const _rotMatrix  = new THREE.Matrix4();
-        // Reusable sphere and vector for raycasting
         const _raySphere = new THREE.Sphere();
         const _rayTarget = new THREE.Vector3();
         const _rayDirection = new THREE.Vector3();
@@ -4922,7 +4227,6 @@
                 const ax = Math.random() * CONFIG.worldWidth;
                 const az = Math.random() * CONFIG.worldHeight;
                 const a = new Animal([ax, y, az], type);
-                // seat it on whatever is underneath instead of dropping from a fixed y
                 a.position.y = groundOrFloat(ax, az, type === 'sheep' ? 9 : 15);
                 animals.push(a);
                 entities.push(a);
@@ -4930,34 +4234,26 @@
         }
 
         function initializeWorld() {
-            // Clear entities and separate typed arrays
             entities.forEach(e => e.remove());
             waters.forEach(w => w.remove());
             entities = []; animals = []; plants = []; waters = [];
             waterLocations = [];
             if (terrain) scene.remove(terrain);
 
-            // Remove old cabins
             for (const c of cabinObjects) scene.remove(c);
             cabinObjects = [];
             CABIN_COLLIDERS = [];
 
-            // Roll the terrain seed BEFORE placing cabins so their footing -- and the
-            // underwater rejection below -- use THIS world's height field. (Previously
-            // the seed was rolled after, so cabins were sited against the old terrain.)
             initTerrainSeed();
             waterLevel = computeWaterLevel();
 
-            // Spawn cabins: num_cabins = max(1, floor(log(scale)))
             const num_cabins = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
             const cabinScale = 1.75;
-            const minSep = 300; // minimum distance between cabins
+            const minSep = 300;
             const cabinPositions = [];
             for (let i = 0; i < num_cabins; i++) {
                 let cx, cz, tries = 0;
                 if (i === 0) {
-                    // First cabin always at the original fixed position, nudged to the
-                    // nearest dry ground so the player never spawns inside a lake.
                     const dry0 = findDryGround(400, 300, waterLevel + 4);
                     cx = dry0[0]; cz = dry0[1];
                 } else {
@@ -4979,22 +4275,18 @@
                 CABIN_COLLIDERS.push(buildCabinColliders(cx, cz, cabinScale, rotY, getTerrainHeight(cx, cz)));
             }
 
-            // Clear stat label sprites from previous world
             clearAllStatLabels();
 
-            // Hide NN sprite on reset
             nnSprite.visible = false;
 
-            // Initialize instanced meshes and clears old instances
             initInstancedMeshes();
             initInstancedPlantMeshes();
             initInstancedPebbleMeshes();
 
-            // Add terrain (seed + water level were resolved before cabin placement)
             terrain = createTerrain();
             scene.add(terrain);
+            requestShadowRefresh();
 
-            // Place player inside the first cabin.
             {
                 const [cabinX, cabinZ] = cabinPositions[0];
                 player.position.x = cabinX;
@@ -5002,17 +4294,12 @@
                 player.position.y = getTerrainHeight(cabinX, cabinZ) + 35 + 10;
             }
 
-            // Water: ONE world-spanning plane at a single level
-            // Lakes are wherever the terrain dips below it, so nothing is carved, no pool
-            // meshes are spawned, and the shoreline is whatever the height field gives.
             createWaterPlane();
             waterLocations = deriveWaterLocations(waterLevel);
             waterGridDirty = true;
 
-            // Scatter pebbles across the terrain
             placePebbles();
 
-            // Add plants
             for (let i = 0; i < CONFIG.initialPlants; i++) {
                 const px = Math.random() * CONFIG.worldWidth;
                 const pz = Math.random() * CONFIG.worldHeight;
@@ -5032,7 +4319,6 @@
             player.targetObject = null;
             lockedTargetAnimal = null;
 
-            // Reset cat to near player
             catState.position.set(
                 player.position.x - Math.sin(player.yaw) * 28,
                 physicalGroundY + 35,
@@ -5050,7 +4336,6 @@
                 if (!a.alive) continue;
                 if (a.type === 'sheep') sheep++; else wolves++;
             }
-            // Cache the element lookups and skip no-op text writes.
             if (!updateStats._els) {
                 updateStats._els = {
                     deer:   document.getElementById('deerCount'),
@@ -5062,7 +4347,6 @@
             const _els = updateStats._els;
             setTextIfChanged(_els.deer,  String(sheep));
             setTextIfChanged(_els.human, String(wolves));
-            // Avoid Array.filter() allocation; plain loop is zero-GC
             let alivePlants = 0;
             for (const p of plants) if (p.alive) alivePlants++;
             setTextIfChanged(_els.plant, String(alivePlants));
@@ -5072,23 +4356,17 @@
         function rebuildWaterGrid() {
             waterGrid.clear();
             for (const w of waterLocations) {
-                // Insert a lightweight proxy object
                 waterGrid.insert({ position: { x: w[0], z: w[1] }, _raw: w });
             }
             waterGridDirty = false;
         }
 
         function handleCollisions() {
-            // Rebuild plant grid every 3 frames, same cadence as spatialGrid.
-            // A just-eaten plant can stay findable in the grid for up to 2
-            // extra frames -- callers already check p.alive before acting on
-            // a query result, so a stale hit resolves to a no-op, not a bug.
             if (ticks % 3 === 0) {
                 plantGrid.clear();
                 for (const p of plants) if (p.alive) plantGrid.insert(p);
             }
 
-            // Rebuild water grid only when locations change (done once at init)
             if (waterGridDirty) rebuildWaterGrid();
 
             for (const a of animals) {
@@ -5096,7 +4374,6 @@
                 const px = a.position.x, pz = a.position.z;
 
                 if (a.type === 'human') {
-                    // Humans hunt sheep
                     const nHunt = spatialGrid.queryInto(_qHunt, px, pz, 20);
                     for (let i = 0; i < nHunt; i++) {
                         const other = _qHunt[i];
@@ -5105,7 +4382,6 @@
                             other.attacked(a);
                         }
                     }
-                    // Humans also mate with opposite-sex humans
                     if (a.lookForMate && a.sex === 'female') {
                         const nMate = spatialGrid.queryInto(_qMate, px, pz, 20);
                         for (let i = 0; i < nMate; i++) {
@@ -5121,7 +4397,6 @@
                         }
                     }
                 } else {
-                    // Mate
                     if (a.lookForMate) {
                         const nMate = spatialGrid.queryInto(_qMate, px, pz, 20);
                         for (let i = 0; i < nMate; i++) {
@@ -5137,7 +4412,6 @@
                         }
                     }
 
-                    // Sheep eat nearby plants
                     const nPlant = plantGrid.queryInto(_qPlant, px, pz, 20);
                     for (let i = 0; i < nPlant; i++) {
                         const plant = _qPlant[i];
@@ -5148,7 +4422,6 @@
                     }
                 }
 
-                // All animals drink one water source per frame, use spatial grid
                 const nWater = waterGrid.queryInto(_qWater, px, pz, 20);
                 for (let i = 0; i < nWater; i++) {
                     const proxy = _qWater[i];
@@ -5168,16 +4441,12 @@
             const rightX =  cosY;
             const rightZ = -sinY;
 
-            // Keyboard axes (WASD)
             const kFwd   = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0);
             const kRight = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
 
-            // Joystick axes
             const jFwd   = -controls.joystickY;
             const jRight =  controls.joystickX;
 
-            // Combine both sources; clamp so diagonal keyboard+joystick input
-            // doesn't exceed a single input's max magnitude
             let fwd   = kFwd + jFwd;
             let right = kRight + jRight;
             const mag = Math.hypot(fwd, right);
@@ -5193,8 +4462,6 @@
                 _moveVector.y =  Math.sin(player.pitch) * fwd             * currentSpeed * deltaTime;
                 _moveVector.z = (-cosY * cosPitch * fwd + rightZ * right) * currentSpeed * deltaTime;
             } else {
-                // Both keyboard and joystick axes are expressed relative to yaw
-                // using the same sin/cos terms, so they combine directly here.
                 _moveVector.x = (-sinY * fwd + rightX * right) * currentSpeed * deltaTime;
                 _moveVector.z = (-cosY * fwd + rightZ * right) * currentSpeed * deltaTime;
             }
@@ -5242,14 +4509,12 @@
 
             if (window._playerMesh) {
                 if (povMode === '1st') {
-                    // Group positioned so head offset (y+13) sits at camera/eye level
                     window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
                 } else {
                     window._playerMesh.position.set(player.position.x, player.position.y - 13, player.position.z);
                 }
                 window._playerMesh.rotation.y = player.yaw;
 
-                // Walk cycle; only animate when the player is actually moving
                 const isMoving = _moveVector.lengthSq() > 0.0001;
                 const pm = window._playerMesh;
                 const { pivotArmL, pivotArmR, pivotLegL, pivotLegR } = pm.userData;
@@ -5258,13 +4523,11 @@
                     if (isMoving) {
                         player.animTime += deltaTime;
                         const swing = Math.sin(player.animTime * 5.5) * 0.6;
-                        // Arms opposite to legs for natural bipedal gait
                         pivotArmL.rotation.x = -swing;
                         pivotArmR.rotation.x =  swing;
                         pivotLegL.rotation.x =  swing;
                         pivotLegR.rotation.x = -swing;
                     } else {
-                        // Smoothly return to rest when standing still
                         pivotArmL.rotation.x *= 0.8;
                         pivotArmR.rotation.x *= 0.8;
                         pivotLegL.rotation.x *= 0.8;
@@ -5278,7 +4541,6 @@
         }
 
         function raycaster() {
-            // Derive ray direction from the camera's world quaternion so it always matches the crosshair
             camera.getWorldQuaternion(_worldQuat);
             _rayDirection.set(0, 0, -1);
             _rayDirection.applyQuaternion(_worldQuat);
@@ -5288,7 +4550,6 @@
             let closest = null;
             let closestDist = Infinity;
 
-            // Only search animals (skip plants, avoid instanceof)
             for (const a of animals) {
                 if (!a.alive) continue;
                 _raySphere.set(a.position, 15);
@@ -5305,11 +4566,9 @@
             const target = raycaster();
             currentTargetAnimal = (target && target.alive) ? target : null;
 
-            // Switch the locked subject whenever the crosshair is on a different animal
             if (currentTargetAnimal !== null && currentTargetAnimal !== lockedTargetAnimal) {
                 lockedTargetAnimal = currentTargetAnimal;
             }
-            // If the locked animal died, clear it
             if (lockedTargetAnimal && !lockedTargetAnimal.alive) {
                 lockedTargetAnimal = null;
             }
@@ -5319,10 +4578,8 @@
             }
 
             if (target && target.alive && (target.type === 'sheep' || target.type === 'human')) {
-                // Update 3D NN sprite
                 updateNN3DSprite(target);
             } else {
-                // Hide 3D NN sprite when no target
                 updateNN3DSprite(null);
             }
         }
@@ -5335,7 +4592,6 @@
         let lastTime = Date.now();
         let vrSnapCooldown = 0;
 
-        // Read Quest 2 gamepad axes/buttons each frame if in VR mode
         function pollVRControllers() {
             const session = renderer.xr.getSession();
             if (!session) return;
@@ -5345,19 +4601,15 @@
                 if (!gp) continue;
 
                 if (source.handedness === 'left') {
-                    // axes[2] = thumbstick X,  axes[3] = thumbstick Y
                     vrState.moveX = Math.abs(gp.axes[2] ?? 0) > 0.12 ? (gp.axes[2] ?? 0) : 0;
                     vrState.moveY = Math.abs(gp.axes[3] ?? 0) > 0.12 ? (gp.axes[3] ?? 0) : 0;
-                    // Button index 4 = X on left controller, index 5 = Y on left controller
                     const yDown = gp.buttons[5]?.pressed;
                     if (yDown && !vrState.bWasDown) vrState.resetPressed = true;
                     vrState.bWasDown = yDown;
                 }
 
                 if (source.handedness === 'right') {
-                    // axes[2] = right thumbstick X (snap-turn)
                     vrState.turnX = Math.abs(gp.axes[2] ?? 0) > 0.5 ? Math.sign(gp.axes[2]) : 0;
-                    // Button index 4 = A on right controller, index 5 = B on right controller
                     const aDown = gp.buttons[4]?.pressed;
                     if (aDown && !vrState.aWasDown) vrState.jumpPressed = true;
                     vrState.aWasDown = aDown;
@@ -5365,7 +4617,6 @@
             }
         }
 
-        // VR HUD text update
         function updateVRHud() {
             let sheep = 0, wolves = 0;
             for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
@@ -5374,20 +4625,16 @@
         }
 
         function resizeRenderer() {
-            if (renderer.xr.isPresenting) return; // let WebXR handle sizing in VR
+            if (renderer.xr.isPresenting) return;
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Scratch objects for the VR movement path (no per-frame allocation).
         const _vrMove = new THREE.Vector3();
         const _vrRot  = new THREE.Matrix4();
 
         function animate(timestamp, frame) {
-            // Frame cap. setAnimationLoop fires at display refresh, so on a
-            // 120 Hz panel every cost in this function ran ~1.9x more often than
-            // needed. XR is exempt -- the headset drives its own cadence.
             if (targetFPS > 0 && !renderer.xr.isPresenting) {
                 const _t = timestamp || performance.now();
                 if (_t - _lastRenderTs < (1000 / targetFPS) - 0.5) return;
@@ -5402,10 +4649,8 @@
             if (inVR) {
                 pollVRControllers();
 
-                // VR movement: left thumbstick, relative to HMD yaw
                 if (vrState.moveX !== 0 || vrState.moveY !== 0) {
                     const speed = player.speed;
-                    // Reused scratch objects instead of two allocations per frame.
                     const move = _vrMove.set(
                         vrState.moveX * speed * deltaTime,
                         0,
@@ -5418,26 +4663,22 @@
                     player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
                 }
 
-                // Snap-turn: right thumbstick X
                 vrSnapCooldown -= deltaTime;
                 if (vrState.turnX !== 0 && vrSnapCooldown <= 0) {
-                    player.yaw += vrState.turnX * (Math.PI / 6); // 30° snap
+                    player.yaw += vrState.turnX * (Math.PI / 6);
                     vrSnapCooldown = 0.3;
                 }
 
-                // A = jump
                 if (vrState.jumpPressed && !player.isJumping) {
                     player.velocity.y = player.jumpForce;
                     player.isJumping = true;
                 }
                 vrState.jumpPressed = false;
 
-                // B = reset world
                 if (vrState.resetPressed) { initializeWorld(); }
                 vrState.resetPressed = false;
 
-                // Apply gravity and ground collision
-                player.velocity.y -= 400 * deltaTime; // gravity
+                player.velocity.y -= 400 * deltaTime;
                 player.position.y += player.velocity.y * deltaTime;
 
                 const vrGroundAtPlayer = getTerrainHeight(player.position.x, player.position.z) + 35;
@@ -5451,50 +4692,38 @@
                     player.isJumping = false;
                 }
 
-                // Cabin collision
                 player.velocity.y = resolveCabinCollisions(player.position, 10, 20, player.velocity.y);
 
-                // Position the XR camera rig at player position
                 vrCameraRig.position.copy(player.position);
                 vrCameraRig.rotation.y = player.yaw;
 
-                // Update VR overlay HUD
                 if (now % 1000 < 50) updateVRHud();
 
             } else {
                 updatePlayer(deltaTime);
             }
 
-            // Update cat companion
             updateCat(deltaTime);
 
-            // Rebuild spatial grid every 3 frames -- neighbor queries read stale
-            // positions for up to 2 frames, but every consumer already re-checks
-            // exact distSq and .alive after querying, so this only delays
-            // reaction time slightly rather than causing wrong behavior.
             if (ticks % 3 === 0) {
                 spatialGrid.clear();
                 for (const a of animals) if (a.alive) spatialGrid.insert(a);
             }
 
-            // Update animals
             for (let ai = 0; ai < animals.length; ai++) {
                 const a = animals[ai];
                 if (a.alive) {
                     a.update(now, spatialGrid, waterLocations, ai);
-                    // Prevent animals from passing through cabin walls
                     resolveCabinCollisions(a.position, 12, 12, undefined);
                 }
             }
 
-            // Update plants
             for (const p of plants) {
                 if (p.alive) p.update(deltaTime);
             }
 
             handleCollisions();
 
-            // Remove dead entities from typed arrays + shared array
             let anyRemoved = false;
             for (let i = animals.length - 1; i >= 0; i--) {
                 if (!animals[i].alive) { animals[i].remove(); animals.splice(i, 1); anyRemoved = true; }
@@ -5502,10 +4731,8 @@
             for (let i = plants.length - 1; i >= 0; i--) {
                 if (!plants[i].alive) { plants[i].remove(); plants.splice(i, 1); anyRemoved = true; }
             }
-            // Only rebuild entities when something was added or removed
             if (anyRemoved) entities = [...animals, ...plants, ...waters];
 
-            // Occasionally spawn new plants
             if (Math.random() < CONFIG.probSpawnPlant) {
                 const px = Math.random() * CONFIG.worldWidth;
                 const pz = Math.random() * CONFIG.worldHeight;
@@ -5517,20 +4744,15 @@
                 entities.push(p);
             }
 
-            // Update instanced mesh transforms every frame
             updateInstancedMeshes(animals, deltaTime);
             updateInstancedPlants(plants);
             updateVisionRays(animals);
 
-            // Update billboarded stat labels above each entity
             updateStatLabels(animals);
 
-            // Raycast every other frame
             if (ticks % 2 === 0) updateTargetInfo();
 
             ticks++;
-            // DOM stat update every 30s wall-clock -- purely a display readout,
-            // doesn't feed back into simulation state, so lag here is free.
             if (now - lastStatsUpdate >= 30000) {
                 updateStats();
                 lastStatsUpdate = now;
@@ -5543,40 +4765,46 @@
                 lastFpsUpdate = now;
             }
 
-            // Keep shadow frustum centred on the player so animals nearby always cast shadows
-            directionalLight.target.position.set(player.position.x, 0, player.position.z);
-            directionalLight.target.updateMatrixWorld();
-            directionalLight.position.set(
-                player.position.x + LIGHT_OFFSET.x,
-                LIGHT_OFFSET.y,
-                player.position.z + LIGHT_OFFSET.z
-            );
-            directionalLight.shadow.camera.updateProjectionMatrix();
-
-            // Refresh shadow map every 3rd frame (autoUpdate is off; LOW mode skips entirely)
-            if (graphicsMode !== 'low' && ticks % 3 === 0) directionalLight.shadow.needsUpdate = true;
+            if (graphicsMode !== 'low') {
+                const _sdx = player.position.x - _shadowAnchor.x;
+                const _sdz = player.position.z - _shadowAnchor.z;
+                const _moved = (_sdx * _sdx + _sdz * _sdz) > SHADOW_FOLLOW_STEP * SHADOW_FOLLOW_STEP;
+                const _stale = SHADOW_MAX_INTERVAL > 0 && (now - _shadowLastRefresh) >= SHADOW_MAX_INTERVAL;
+                if (_shadowForce || _moved || _stale) {
+                    if (_shadowForce || _moved) {
+                        _shadowAnchor.set(player.position.x, 0, player.position.z);
+                        directionalLight.target.position.set(_shadowAnchor.x, 0, _shadowAnchor.z);
+                        directionalLight.target.updateMatrixWorld();
+                        directionalLight.position.set(
+                            _shadowAnchor.x + LIGHT_OFFSET.x,
+                            LIGHT_OFFSET.y,
+                            _shadowAnchor.z + LIGHT_OFFSET.z
+                        );
+                        directionalLight.shadow.camera.updateProjectionMatrix();
+                    }
+                    directionalLight.shadow.needsUpdate = true;
+                    _shadowLastRefresh = now;
+                    _shadowForce = false;
+                }
+            }
 
             updateWater((timestamp || performance.now()) * 0.001);
 
             renderer.render(scene, camera);
         }
-        
-        // Handle window resize
+
         window.addEventListener('resize', resizeRenderer);
         window.addEventListener('orientationchange', () => setTimeout(resizeRenderer, 100));
 
-        // VR Camera Rig
         const vrCameraRig = new THREE.Group();
         vrCameraRig.add(camera);
         scene.add(vrCameraRig);
 
         toggleSettings();
 
-        // Initialize
         initializeWorld();
 
-        // Use setAnimationLoop (required for WebXR; also works for desktop)
         renderer.setAnimationLoop(animate);
-    </script>
+</script>
 </body>
 </html>
