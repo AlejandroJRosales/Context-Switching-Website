@@ -6,6 +6,9 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Ecosystem Simulation</title>
+
+    <!-- This code was constructed to allow you, the player to copy and paste the code. Make this code yours and have fun! -->
+
     <style>
         * {
             margin: 0;
@@ -251,6 +254,12 @@
             left: 50%;
             transform: translate(-50%, -50%);
             min-width: 280px;
+            max-height: 85vh;
+            max-height: 85dvh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
             background: rgba(0, 0, 0, 0.92);
             color: rgba(0, 255, 0, 0.85);
             z-index: 200;
@@ -341,12 +350,42 @@
             cursor: pointer;
         }
 
+        .sp-row-seed input {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 5px;
+            padding: 5px 7px;
+            font-family: inherit;
+            font-size: 12px;
+            letter-spacing: 1.5px;
+            color: #00ff00;
+            background: rgba(0, 255, 0, 0.06);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            border-radius: 4px;
+            cursor: text;
+            outline: none;
+        }
+
+        .sp-row-seed input:focus {
+            border-color: rgba(0, 255, 0, 0.7);
+            background: rgba(0, 255, 0, 0.1);
+        }
+
         .sp-hint {
             padding-top: 6px;
             font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: rgba(0, 255, 0, 0.4);
+        }
+
+        #sp-more {
+            display: none;
+        }
+
+        #sp-more.open {
+            display: block;
         }
 
         .sp-bttns-main {
@@ -663,7 +702,7 @@
     <div id="settings-panel">
         <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
-            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn from their procedurally generated world. Read more about the architecture of their brains <a class="sp-link" href="https://www.contextswitching.org/neuro/mat"><u>here</u></a>.
+            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world. Read more about the architecture of their brains <a class="sp-link" href="https://www.contextswitching.org/neuro/mat"><u>here</u></a>.
         </div>
         <button class="sp-row">
             <span class="sp-label">Creator</span>
@@ -673,6 +712,7 @@
             <span class="sp-label">Code</span>
             <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">3.0.12</a></span>
         </button>
+        <div id="sp-more">
         <button class="sp-row">
             <span class="sp-label">FPS</span>
             <span class="sp-value" id="fps-counter"></span>
@@ -718,11 +758,19 @@
             <input id="scale-slider" type="range" min="1" max="100" step="0.5" value="50">
             <div class="sp-hint">Size changes take effect on reset</div>
         </div>
+        <div class="sp-row-scale sp-row-seed">
+            <label for="seed-input">World Seed</label>
+            <input id="seed-input" type="text" inputmode="numeric" autocomplete="off"
+                   spellcheck="false" maxlength="12" value="031324">
+            <div class="sp-hint">Seed changes take effect on reset</div>
+        </div>
         <button class="sp-row" id="resetBtn">
             <span class="sp-label">Reset Ecosystem</span>
             <span class="sp-value">↺</span>
         </button>
+        </div>
         <div class="sp-bttns-main">
+            <button id="moreSPBtn">More</button>
             <button id="closeSPBtn">Close</button>
         </div>
     </div>
@@ -743,6 +791,8 @@
         // ============================================================================
         const scale = 50;
         let pendingScale = scale;
+        const DEFAULT_SEED = '031324';
+        let pendingSeed = DEFAULT_SEED;
         let hudCleared = false;
         const CONFIG = {
             isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
@@ -819,6 +869,14 @@
             pendingScale = parseFloat(this.value);
             document.getElementById('scaleDisplay').textContent = pendingScale;
         });
+        document.getElementById('seed-input').addEventListener('input', function() {
+            const cleaned = this.value.replace(/[^0-9]/g, '');
+            if (cleaned !== this.value) this.value = cleaned;
+            pendingSeed = cleaned;
+        });
+        document.getElementById('seed-input').addEventListener('blur', function() {
+            if (!this.value) { pendingSeed = DEFAULT_SEED; this.value = DEFAULT_SEED; }
+        });
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -827,10 +885,17 @@
                 panel.style.display = 'block';
                 document.getElementById('scale-slider').value = pendingScale;
                 document.getElementById('scaleDisplay').textContent = pendingScale;
+                document.getElementById('seed-input').value = pendingSeed;
                 if (document.exitPointerLock) document.exitPointerLock();
             } else {
                 panel.style.display = 'none';
             }
+        }
+
+        function toggleMore() {
+            const more = document.getElementById('sp-more');
+            const isOpen = more.classList.toggle('open');
+            document.getElementById('moreSPBtn').textContent = isOpen ? 'Less' : 'More';
         }
 
         function onClearHud() {
@@ -877,6 +942,7 @@
             ['clearHudBtn',  onClearHud],
             ['resetBtn',     onReset],
             ['closeSPBtn',   toggleSettings],
+            ['moreSPBtn',    toggleMore],
             ['flyBtn',       toggleCreative],
             ['graphicsBtn',  toggleGraphics],
             ['povBtn',       cyclePov],
@@ -1076,6 +1142,7 @@
         const keys = {};
 
         document.addEventListener('keydown', (e) => {
+            if (e.target && e.target.id === 'seed-input' && e.key !== 'Escape') return;
             keys[e.key.toLowerCase()] = true;
 
             if (e.key === ' ') {
@@ -1293,6 +1360,7 @@
         }, { passive: false });
 
         document.addEventListener('touchmove', (e) => {
+            if (e.target && e.target.closest && e.target.closest('#settings-panel')) return;
             e.preventDefault();
             for (const touch of e.changedTouches) {
                 if (touch.identifier === joystickTouchId) {
@@ -3008,11 +3076,34 @@
         }
 
         let _terrainSeed = { ox: 0, oz: 0, seed: 1337, f: 0 };
+        // FNV-1a: turns the seed field's text into a 32-bit integer, so leading
+        // zeros and arbitrary length both survive.
+        function _seedToInt(str) {
+            let h = 2166136261 >>> 0;
+            const s = String(str);
+            for (let i = 0; i < s.length; i++) {
+                h ^= s.charCodeAt(i);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            return h >>> 0;
+        }
+        // mulberry32
+        function _makeRNG(seedInt) {
+            let a = seedInt >>> 0;
+            return function () {
+                a = (a + 0x6D2B79F5) >>> 0;
+                let t = a;
+                t = Math.imul(t ^ (t >>> 15), t | 1);
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
         function initTerrainSeed() {
-            _terrainSeed.ox = Math.random() * 1000;
-            _terrainSeed.oz = Math.random() * 1000;
-            _terrainSeed.seed = (Math.random() * 0x7fffffff) | 0;
-            _terrainSeed.f = Math.random() * 100;
+            const rng = _makeRNG(_seedToInt(pendingSeed || DEFAULT_SEED));
+            _terrainSeed.ox = rng() * 1000;
+            _terrainSeed.oz = rng() * 1000;
+            _terrainSeed.seed = (rng() * 0x7fffffff) | 0;
+            _terrainSeed.f = rng() * 100;
         }
 
         function _hash2(ix, iz) {
