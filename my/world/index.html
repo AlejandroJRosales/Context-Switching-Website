@@ -758,14 +758,14 @@
             <span class="sp-value" id="fpsCapState">60</span>
         </button>
         <div class="sp-row-scale">
-            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">50</span></label>
-            <input id="scale-slider" type="range" min="1" max="100" step="0.5" value="50">
+            <label for="scale-slider">Ecosystem Size <span id="scaleDisplay">20</span></label>
+            <input id="scale-slider" type="range" min="1" max="100" step="0.5" value="20">
             <div class="sp-hint">Size changes take effect on reset</div>
         </div>
         <div class="sp-row-scale sp-row-seed">
             <label for="seed-input">World Seed</label>
             <input id="seed-input" type="text" inputmode="numeric" autocomplete="off"
-                   spellcheck="false" maxlength="12" value="031324">
+                   spellcheck="false" maxlength="12" value="03132024">
             <div class="sp-hint">Seed changes take effect on reset</div>
         </div>
         <button class="sp-row" id="resetBtn">
@@ -793,9 +793,9 @@
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
-        const scale = 50;
+        const scale = 20;
         let pendingScale = scale;
-        const DEFAULT_SEED = '031324';
+        const DEFAULT_SEED = '03132024';
         let pendingSeed = DEFAULT_SEED;
         let hudCleared = false;
         const CONFIG = {
@@ -3480,11 +3480,15 @@
         const RAIN_DRY_SPAN = [90, 240];
         const RAIN_WET_SPAN = [45, 120];
         const RAIN_SHOWCASE = 20;
+        const RAIN_OPACITY  = 0.45;
+        const RAIN_FADE_IN  = 5;
+        const RAIN_FADE_OUT = 11;
 
         function rainSpan(r) { return r[0] + Math.random() * (r[1] - r[0]); }
 
         let rainMode = 'auto';
         let rainActive = false;
+        let rainIntensity = 0;
         let rainTimer = rainSpan(RAIN_DRY_SPAN);
         let rainLines = null;
         let rainPositions = null;
@@ -3539,7 +3543,7 @@
             rainLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
                 color: 0x6d8fa6,
                 transparent: true,
-                opacity: 0.45,
+                opacity: RAIN_OPACITY,
                 depthWrite: false
             }));
             rainLines.frustumCulled = false;
@@ -3548,17 +3552,16 @@
 
         function setRainActive(on) {
             rainActive = on;
-            if (on) {
-                if (!rainLines) buildRain(); else seedRainDrops();
-                rainLines.visible = true;
-            } else if (rainLines) {
-                rainLines.visible = false;
-            }
+            if (!on) return;
+            if (!rainLines) buildRain();
+            else if (rainIntensity <= 0) seedRainDrops();
+            rainLines.visible = true;
         }
 
         function startRainShowcase() {
             if (rainMode !== 'auto') return;
             setRainActive(true);
+            rainIntensity = 1;
             rainTimer = RAIN_SHOWCASE;
         }
 
@@ -3583,7 +3586,19 @@
                     rainTimer = rainSpan(rainActive ? RAIN_WET_SPAN : RAIN_DRY_SPAN);
                 }
             }
-            if (!rainActive || !rainLines) return;
+            if (!rainLines) return;
+            const target = rainActive ? 1 : 0;
+            if (rainIntensity !== target) {
+                const step = deltaTime / (target > rainIntensity ? RAIN_FADE_IN : RAIN_FADE_OUT);
+                rainIntensity = target > rainIntensity
+                    ? Math.min(target, rainIntensity + step)
+                    : Math.max(target, rainIntensity - step);
+                const shown = Math.round(RAIN_COUNT * rainIntensity);
+                rainLines.material.opacity = RAIN_OPACITY * Math.sqrt(rainIntensity);
+                rainLines.geometry.setDrawRange(0, shown * 2);
+                rainLines.visible = shown > 0;
+            }
+            if (rainIntensity <= 0) return;
             camera.getWorldPosition(_rainAnchor);
             const x0 = _rainAnchor.x - RAIN_RADIUS;
             const y0 = _rainAnchor.y - RAIN_BOTTOM;
