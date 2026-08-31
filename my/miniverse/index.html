@@ -790,6 +790,24 @@ function terrainHeightExact(wx, wz) {
   return y;
 }
 
+const WATER_CLIP_RANGE = 32.0;
+let terrainClipTex = null,
+  terrainClipCols = 1,
+  terrainClipRows = 1;
+
+function uploadTerrainClip(data, cols, rows) {
+  terrainClipTex = terrainClipTex || gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, terrainClipTex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, cols, rows, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  terrainClipCols = cols;
+  terrainClipRows = rows;
+}
+
 function buildTerrain() {
   const segmentsX = CONFIG.quality === 'H' ? 160 : 96;
   const segmentsZ = CONFIG.quality === 'H' ? 120 : 72;
@@ -797,6 +815,10 @@ function buildTerrain() {
     depth = CONFIG.worldDepth;
   const vertices = new Float32Array((segmentsX + 1) * (segmentsZ + 1) * 6);
   let v = 0;
+  const clipCols = segmentsX + 1,
+    clipRows = segmentsZ + 1;
+  const clipData = new Uint8Array(clipCols * clipRows);
+  const clipLevel = CONFIG.waterLevel;
   const heightAt = (gx, gz) =>
     terrainHeightExact(
       -width / 2 + (gx / segmentsX) * width,
@@ -819,6 +841,9 @@ function buildTerrain() {
       nx *= invLen;
       ny *= invLen;
       nz *= invLen;
+      const clipT = 0.5 + (wy - clipLevel) / WATER_CLIP_RANGE;
+      clipData[gz * clipCols + gx] =
+        clipT <= 0 ? 0 : clipT >= 1 ? 255 : (clipT * 255) | 0;
       vertices[v++] = wx;
       vertices[v++] = wy;
       vertices[v++] = wz;
@@ -851,6 +876,7 @@ function buildTerrain() {
   bindBuffer(GL_ELEMENT_ARRAY_BUFFER, terrainIdxBuf);
   setBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW);
   terrainIdxCount = indices.length;
+  uploadTerrainClip(clipData, clipCols, clipRows);
 }
 
 const terrainProg = program(
@@ -950,12 +976,15 @@ void main(){ vW=vec3(aXZ.x, uLevel, aXZ.y); gl_Position=uVP*vec4(vW,1.0); }
 `,
   `
 precision highp float; varying highp vec3 vW;
+uniform sampler2D uClipTex; uniform vec4 uClipMap;
 uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
 uniform vec3 uMoonDir; uniform vec3 uMoonColor;
 uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
 uniform vec3 uAmbient; uniform vec3 uSkyTop;
 ${FOG_GLSL}
 void main(){
+  vec2 clipG=(vW.xz+uClipMap.xy)/(uClipMap.xy*2.0)*(uClipMap.zw-1.0);
+  if (texture2D(uClipTex, (clipG+0.5)/uClipMap.zw).r > 0.5) discard;
   float d=length(uEye-vW);
   float detail=clamp(1.0-d/uFogDist, .0, 1.0)*uHighQ;
   vec2 p=vW.xz*.02;
@@ -2874,7 +2903,7 @@ function frame(now) {
     projMatrix,
     1.05,
     aspect,
-    1.0,
+    4.0,
     Math.max(CONFIG.worldWidth, CONFIG.worldDepth) * 1.4
   );
   const lookDir = [
@@ -2996,6 +3025,17 @@ function frame(now) {
   bindGeom(waterProg, waterBuf, WATER_ATTRIBS);
   setUniformMat4(waterProg.u('uVP'), viewProj);
   setUniform1f(waterProg.u('uLevel'), CONFIG.waterLevel);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, terrainClipTex);
+  setUniform1i(waterProg.u('uClipTex'), 2);
+  gl.uniform4f(
+    waterProg.u('uClipMap'),
+    CONFIG.worldWidth / 2,
+    CONFIG.worldDepth / 2,
+    terrainClipCols,
+    terrainClipRows
+  );
+  gl.activeTexture(gl.TEXTURE0);
   setUniform3f(waterProg.u('uEye'), eye);
   setUniform3f(waterProg.u('uSunDir'), sky.sunDir);
   setUniform3f(waterProg.u('uSunColor'), sky.sunColor);
