@@ -723,7 +723,7 @@
         </button>
         <button class="sp-row" id="rainBtn">
             <span class="sp-label">Rain</span>
-            <span class="sp-value" id="rainState">OFF</span>
+            <span class="sp-value" id="rainState">AUTO</span>
         </button>
         <button class="sp-row" id="povBtn">
             <span class="sp-label">Camera</span>
@@ -3010,11 +3010,20 @@
                 { minX: CHX_local - CHW/2, maxX: CHX_local + CHW/2,   minY: by+FLOOR_Y,               maxY: by+chimneyTop + 5,   minZ: CHZ_local - CHD/2,    maxZ: CHZ_local + CHD/2    },
             ];
 
+            const shMaxX = (CW / 2 + OVH) + WALL_THICK;
+            const shMaxZ = CD / 2 + OVH;
+
             return {
                 cx, cz,
                 cosR:  Math.cos(rotationY),
                 sinR:  Math.sin(rotationY),
-                boxes: localBoxes
+                boxes: localBoxes,
+                shelter: {
+                    minX: -shMaxX, maxX: shMaxX,
+                    minZ: -shMaxZ, maxZ: shMaxZ,
+                    topY: by + roofTop + 5,
+                    reach: Math.hypot(shMaxX, shMaxZ)
+                }
             };
         }
 
@@ -3467,13 +3476,34 @@
         const RAIN_SPEED  = 420;
         const RAIN_STREAK = 18;
         const RAIN_WIND   = { x: 60, z: 30 };
+        const RAIN_MODES  = ['auto', 'on', 'off'];
+        const RAIN_DRY_SPAN = [90, 240];
+        const RAIN_WET_SPAN = [45, 120];
+        const RAIN_SHOWCASE = 20;
 
-        let rainEnabled = false;
+        function rainSpan(r) { return r[0] + Math.random() * (r[1] - r[0]); }
+
+        let rainMode = 'auto';
+        let rainActive = false;
+        let rainTimer = rainSpan(RAIN_DRY_SPAN);
         let rainLines = null;
         let rainPositions = null;
         let rainStreaks = null;
         let rainSpeeds = null;
         const _rainAnchor = new THREE.Vector3();
+        const _rainShelters = [];
+
+        function collectRainShelters(ax, az) {
+            _rainShelters.length = 0;
+            for (let i = 0; i < CABIN_COLLIDERS.length; i++) {
+                const c = CABIN_COLLIDERS[i];
+                if (!c.shelter) continue;
+                const ddx = c.cx - ax, ddz = c.cz - az;
+                const reach = RAIN_RADIUS + c.shelter.reach;
+                if (ddx * ddx + ddz * ddz > reach * reach) continue;
+                _rainShelters.push(c);
+            }
+        }
 
         function seedRainDrops() {
             camera.getWorldPosition(_rainAnchor);
@@ -3516,21 +3546,44 @@
             scene.add(rainLines);
         }
 
-        function toggleRain() {
-            rainEnabled = !rainEnabled;
-            if (rainEnabled) {
+        function setRainActive(on) {
+            rainActive = on;
+            if (on) {
                 if (!rainLines) buildRain(); else seedRainDrops();
                 rainLines.visible = true;
             } else if (rainLines) {
                 rainLines.visible = false;
             }
-            document.getElementById('rainState').textContent = rainEnabled ? 'ON' : 'OFF';
+        }
+
+        function startRainShowcase() {
+            if (rainMode !== 'auto') return;
+            setRainActive(true);
+            rainTimer = RAIN_SHOWCASE;
+        }
+
+        function toggleRain() {
+            rainMode = RAIN_MODES[(RAIN_MODES.indexOf(rainMode) + 1) % RAIN_MODES.length];
+            if (rainMode === 'auto') {
+                setRainActive(false);
+                rainTimer = rainSpan(RAIN_DRY_SPAN);
+            } else {
+                setRainActive(rainMode === 'on');
+            }
+            document.getElementById('rainState').textContent = rainMode.toUpperCase();
         }
 
         // Drops hold world positions; the spawn box travels with the camera and
         // each drop wraps back into it, so the field reads as world-space rain.
         function updateRain(deltaTime) {
-            if (!rainEnabled || !rainLines) return;
+            if (rainMode === 'auto') {
+                rainTimer -= deltaTime;
+                if (rainTimer <= 0) {
+                    setRainActive(!rainActive);
+                    rainTimer = rainSpan(rainActive ? RAIN_WET_SPAN : RAIN_DRY_SPAN);
+                }
+            }
+            if (!rainActive || !rainLines) return;
             camera.getWorldPosition(_rainAnchor);
             const x0 = _rainAnchor.x - RAIN_RADIUS;
             const y0 = _rainAnchor.y - RAIN_BOTTOM;
@@ -3539,6 +3592,8 @@
             const spanY  = RAIN_TOP + RAIN_BOTTOM;
             const wx = RAIN_WIND.x * deltaTime;
             const wz = RAIN_WIND.z * deltaTime;
+            collectRainShelters(_rainAnchor.x, _rainAnchor.z);
+            const shelterCount = _rainShelters.length;
             for (let i = 0; i < RAIN_COUNT; i++) {
                 const o6 = i * 6, o3 = i * 3;
                 let x = rainPositions[o6]     + wx - x0;
@@ -3548,6 +3603,19 @@
                 y -= Math.floor(y / spanY)  * spanY;
                 z -= Math.floor(z / spanXZ) * spanXZ;
                 x += x0; y += y0; z += z0;
+                for (let k = 0; k < shelterCount; k++) {
+                    const c = _rainShelters[k], sh = c.shelter;
+                    if (y >= sh.topY) continue;
+                    const ddx = x - c.cx, ddz = z - c.cz;
+                    const lx = ddx * c.cosR - ddz * c.sinR;
+                    if (lx < sh.minX || lx > sh.maxX) continue;
+                    const lz = ddx * c.sinR + ddz * c.cosR;
+                    if (lz < sh.minZ || lz > sh.maxZ) continue;
+                    x = x0 + Math.random() * spanXZ;
+                    y = y0 + spanY;
+                    z = z0 + Math.random() * spanXZ;
+                    break;
+                }
                 rainPositions[o6]     = x;
                 rainPositions[o6 + 1] = y;
                 rainPositions[o6 + 2] = z;
@@ -5030,6 +5098,8 @@
         toggleSettings();
 
         initializeWorld();
+
+        startRainShowcase();
 
         renderer.setAnimationLoop(animate);
 </script>
