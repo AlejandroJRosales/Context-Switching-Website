@@ -721,6 +721,10 @@
             <span class="sp-label">Graphics</span>
             <span class="sp-value" id="graphicsState">HIGH</span>
         </button>
+        <button class="sp-row" id="rainBtn">
+            <span class="sp-label">Rain</span>
+            <span class="sp-value" id="rainState">OFF</span>
+        </button>
         <button class="sp-row" id="povBtn">
             <span class="sp-label">Camera</span>
             <span class="sp-value" id="povState">1ST PERSON</span>
@@ -947,6 +951,7 @@
             ['graphicsBtn',  toggleGraphics],
             ['povBtn',       cyclePov],
             ['sphereVisBtn', toggleSphereVis],
+            ['rainBtn',      toggleRain],
             ['nnVisBtn',     toggleNNVis],
         ].forEach(([id, fn]) => document.getElementById(id).addEventListener('click', fn));
 
@@ -3453,6 +3458,107 @@
         }
 
         // ============================================================================
+        // RAIN
+        // ============================================================================
+        const RAIN_COUNT  = 3000;
+        const RAIN_RADIUS = 600;
+        const RAIN_TOP    = 500;
+        const RAIN_BOTTOM = 400;
+        const RAIN_SPEED  = 420;
+        const RAIN_STREAK = 18;
+        const RAIN_WIND   = { x: 60, z: 30 };
+
+        let rainEnabled = false;
+        let rainLines = null;
+        let rainPositions = null;
+        let rainStreaks = null;
+        let rainSpeeds = null;
+        const _rainAnchor = new THREE.Vector3();
+
+        function seedRainDrops() {
+            camera.getWorldPosition(_rainAnchor);
+            const spanY = RAIN_TOP + RAIN_BOTTOM;
+            for (let i = 0; i < RAIN_COUNT; i++) {
+                const s = RAIN_SPEED * (0.75 + Math.random() * 0.5);
+                rainSpeeds[i] = s;
+                const k = RAIN_STREAK / Math.hypot(RAIN_WIND.x, s, RAIN_WIND.z);
+                const o3 = i * 3;
+                rainStreaks[o3]     = -RAIN_WIND.x * k;
+                rainStreaks[o3 + 1] =  s * k;
+                rainStreaks[o3 + 2] = -RAIN_WIND.z * k;
+                const x = _rainAnchor.x + (Math.random() * 2 - 1) * RAIN_RADIUS;
+                const y = _rainAnchor.y - RAIN_BOTTOM + Math.random() * spanY;
+                const z = _rainAnchor.z + (Math.random() * 2 - 1) * RAIN_RADIUS;
+                const o6 = i * 6;
+                rainPositions[o6]     = x;
+                rainPositions[o6 + 1] = y;
+                rainPositions[o6 + 2] = z;
+                rainPositions[o6 + 3] = x + rainStreaks[o3];
+                rainPositions[o6 + 4] = y + rainStreaks[o3 + 1];
+                rainPositions[o6 + 5] = z + rainStreaks[o3 + 2];
+            }
+        }
+
+        function buildRain() {
+            rainPositions = new Float32Array(RAIN_COUNT * 6);
+            rainStreaks   = new Float32Array(RAIN_COUNT * 3);
+            rainSpeeds    = new Float32Array(RAIN_COUNT);
+            seedRainDrops();
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+            rainLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+                color: 0x6d8fa6,
+                transparent: true,
+                opacity: 0.45,
+                depthWrite: false
+            }));
+            rainLines.frustumCulled = false;
+            scene.add(rainLines);
+        }
+
+        function toggleRain() {
+            rainEnabled = !rainEnabled;
+            if (rainEnabled) {
+                if (!rainLines) buildRain(); else seedRainDrops();
+                rainLines.visible = true;
+            } else if (rainLines) {
+                rainLines.visible = false;
+            }
+            document.getElementById('rainState').textContent = rainEnabled ? 'ON' : 'OFF';
+        }
+
+        // Drops hold world positions; the spawn box travels with the camera and
+        // each drop wraps back into it, so the field reads as world-space rain.
+        function updateRain(deltaTime) {
+            if (!rainEnabled || !rainLines) return;
+            camera.getWorldPosition(_rainAnchor);
+            const x0 = _rainAnchor.x - RAIN_RADIUS;
+            const y0 = _rainAnchor.y - RAIN_BOTTOM;
+            const z0 = _rainAnchor.z - RAIN_RADIUS;
+            const spanXZ = RAIN_RADIUS * 2;
+            const spanY  = RAIN_TOP + RAIN_BOTTOM;
+            const wx = RAIN_WIND.x * deltaTime;
+            const wz = RAIN_WIND.z * deltaTime;
+            for (let i = 0; i < RAIN_COUNT; i++) {
+                const o6 = i * 6, o3 = i * 3;
+                let x = rainPositions[o6]     + wx - x0;
+                let y = rainPositions[o6 + 1] - rainSpeeds[i] * deltaTime - y0;
+                let z = rainPositions[o6 + 2] + wz - z0;
+                x -= Math.floor(x / spanXZ) * spanXZ;
+                y -= Math.floor(y / spanY)  * spanY;
+                z -= Math.floor(z / spanXZ) * spanXZ;
+                x += x0; y += y0; z += z0;
+                rainPositions[o6]     = x;
+                rainPositions[o6 + 1] = y;
+                rainPositions[o6 + 2] = z;
+                rainPositions[o6 + 3] = x + rainStreaks[o3];
+                rainPositions[o6 + 4] = y + rainStreaks[o3 + 1];
+                rainPositions[o6 + 5] = z + rainStreaks[o3 + 2];
+            }
+            rainLines.geometry.attributes.position.needsUpdate = true;
+        }
+
+        // ============================================================================
         // REUSABLE ANIMATION & RENDERING
         // ============================================================================
         const _mat4  = new THREE.Matrix4();
@@ -4909,6 +5015,7 @@
             }
 
             updateWater((timestamp || performance.now()) * 0.001);
+            updateRain(deltaTime);
 
             renderer.render(scene, camera);
         }
