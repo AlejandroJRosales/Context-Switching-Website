@@ -1030,10 +1030,11 @@
         scene.fog = new THREE.Fog(0x87CEEB, _fogEnd * 0.4, _fogEnd);
 
         const canvas = document.getElementById('canvas');
+        const CAMERA_NEAR = 4.0;
         const camera = new THREE.PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
-            0.1,
+            CAMERA_NEAR,
             _fogEnd
         );
         const renderer = window.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -3295,6 +3296,9 @@
         const WATER_NORMAL_SIZE = 256;
         const WATER_NORMAL_CELLS = 8;
         const WATER_NORMAL_STRENGTH = 6.0;
+        const WATER_DEPTH_OFFSET_FACTOR = 1.0;
+        const WATER_DEPTH_OFFSET_UNITS  = 1.0;
+        const WATER_SEGMENTS = 64;
 
         let _waterNormalA = null, _waterNormalB = null, _waterEnvMap = null;
 
@@ -3373,7 +3377,7 @@
                 waterPlane.material.dispose();
                 waterPlane = null;
             }
-            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, 1, 1);
+            const geometry = new THREE.PlaneGeometry(CONFIG.worldWidth, CONFIG.worldHeight, WATER_SEGMENTS, WATER_SEGMENTS);
             if (!_waterNormalA) {
                 _waterNormalA = buildWaterNormalTexture(WATER_NORMAL_SIZE, WATER_NORMAL_CELLS, WATER_NORMAL_STRENGTH);
                 _waterNormalB = _waterNormalA.clone();
@@ -3398,6 +3402,9 @@
                 opacity: 0.90,
                 depthWrite: false,
                 side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: WATER_DEPTH_OFFSET_FACTOR,
+                polygonOffsetUnits: WATER_DEPTH_OFFSET_UNITS,
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.rotation.x = -Math.PI / 2;
