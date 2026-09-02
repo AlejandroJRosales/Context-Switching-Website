@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Ecosystem Simulation</title>
 
-    <!-- This code was constructed to allow you, the player to copy and paste the code. Make this code yours and have fun! -->
+    <!-- This code was constructed to allow you to copy and paste the code. Make this code yours and have fun! -->
 
     <style>
         * {
@@ -702,7 +702,7 @@
     <div id="settings-panel">
         <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
-            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world. Read more about the architecture of their brains <a class="sp-link" href="https://www.contextswitching.org/neuro/mat"><u>here</u></a>.
+            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world.</a>.
         </div>
         <button class="sp-row">
             <span class="sp-label">Creator</span>
@@ -757,10 +757,6 @@
             <span class="sp-label">VR</span>
             <span class="sp-value" id="vrBtnText">Not Supported</span>
         </button>
-        <button class="sp-row" id="fpsCapBtn">
-            <span class="sp-label">Frame Cap</span>
-            <span class="sp-value" id="fpsCapState">60</span>
-        </button>
         <div class="sp-row-scale sp-row-seed">
             <label for="seed-input">World Seed</label>
             <input id="seed-input" type="text" inputmode="numeric" autocomplete="off"
@@ -792,6 +788,12 @@
     <script type="module">
         import * as THREE from 'three';
 
+        const initialDeer = 20;
+        const initialHumans = 5;
+        const initialPlants = 300;
+        const initialPlayerSpeed = 60;
+        const initialPlayerJumpForce = 60;
+
         // ============================================================================
         // CONFIGURATION
         // ============================================================================
@@ -802,26 +804,22 @@
         let hudCleared = false;
         let immersiveOn = false;
         const CONFIG = {
-            isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-            isDeviceTilt: window.DeviceOrientationEvent !== undefined,
-            initialDeer: Math.trunc(Number(20 * scale)),
-            initialWolves: Math.trunc(Number(5 * scale)),
-            initialPlants: Math.trunc(Number(300 * scale)),
+            initialDeer: Math.trunc(initialDeer * scale),
+            initialHumans: Math.trunc(initialHumans * scale),
+            initialPlants: Math.trunc(initialPlants * scale),
             probSpawnPlant: 0.03,
             scale: scale,
-            worldWidth: Math.trunc(Number(850 * scale)),
-            worldHeight: Math.trunc(Number(600 * scale)),
-            maxDrawDistance: Math.trunc(Number(3000 * scale))
+            worldWidth: Math.trunc(850 * scale),
+            worldHeight: Math.trunc(600 * scale),
+            maxDrawDistance: Math.trunc(3000 * scale)
         };
 
         // ====================================================================
-        // PERF INFRASTRUCTURE
+        // PERFORMANCE INFRASTRUCTURE
         // ====================================================================
         let targetFPS = 60;
         let _lastRenderTs = -1e9;
-
         let terrainVersion = 0;
-
         const BRAIN_UPDATE_INTERVAL = 30;
 
         function markAttr(attr, floatCount) {
@@ -852,9 +850,8 @@
         const player = {
             position: new THREE.Vector3(400, 50, 330),
             velocity: new THREE.Vector3(0, 0, 0),
-            speed: 60 * Math.log1p(scale),
-            sprintSpeed: 160 * Math.log1p(scale),
-            jumpForce: 60 * Math.log1p(scale),
+            speed: initialPlayerSpeed * Math.log1p(scale),
+            jumpForce: initialPlayerJumpForce * Math.log1p(scale),
             isJumping: false,
             isCreative: false,
             creativeLiftTarget: null,
@@ -865,13 +862,6 @@
         };
 
         document.getElementById('settings-btn').addEventListener('click', toggleSettings);
-        const FPS_CAP_OPTIONS = [30, 60, 120, 0];
-        document.getElementById('fpsCapBtn').addEventListener('click', function() {
-            const i = FPS_CAP_OPTIONS.indexOf(targetFPS);
-            targetFPS = FPS_CAP_OPTIONS[(i + 1) % FPS_CAP_OPTIONS.length];
-            document.getElementById('fpsCapState').textContent =
-                targetFPS === 0 ? 'UNCAPPED' : String(targetFPS);
-        });
         document.getElementById('scale-slider').addEventListener('input', function() {
             pendingScale = parseFloat(this.value);
             document.getElementById('scaleDisplay').textContent = pendingScale;
@@ -972,16 +962,15 @@
         }
 
         function onReset() {
-            CONFIG.initialDeer = Math.trunc(20 * pendingScale);
-            CONFIG.initialWolves = Math.trunc(5 * pendingScale);
-            CONFIG.initialPlants = Math.trunc(200 * pendingScale);
-            CONFIG.worldWidth = Math.trunc(850 * pendingScale);
-            CONFIG.worldHeight = Math.trunc(600 * pendingScale);
-            CONFIG.maxDrawDistance = Math.trunc(2000 * pendingScale);
+            CONFIG.initialDeer = Math.trunc(initialDeer * pendingScale);
+            CONFIG.initialHumans = Math.trunc(initialHumans * pendingScale);
+            CONFIG.initialPlants = Math.trunc(initialPlants * pendingScale);
+            CONFIG.worldWidth = Math.trunc(worldWidth * pendingScale);
+            CONFIG.worldHeight = Math.trunc(worldHeight * pendingScale);
+            CONFIG.maxDrawDistance = Math.trunc(maxDrawDistance * pendingScale);
             CONFIG.scale = pendingScale;
-            player.speed = 80 * Math.log1p(pendingScale);
-            player.sprintSpeed = 160 * Math.log1p(pendingScale);
-            player.jumpForce = 60 * Math.log1p(pendingScale);
+            player.speed = initialPlayerSpeed * Math.log1p(pendingScale);
+            player.jumpForce = initialPlayerJumpForce * Math.log1p(pendingScale);
             const newFogEnd = Math.min(CONFIG.maxDrawDistance, 8000 + pendingScale * 200);
             scene.fog.near = newFogEnd * 0.4;
             scene.fog.far  = newFogEnd;
@@ -4681,7 +4670,7 @@
             }
 
             spawnAnimals(CONFIG.initialDeer, 'sheep', physicalGroundY + 15);
-            spawnAnimals(CONFIG.initialWolves, 'human', physicalGroundY + 22);
+            spawnAnimals(CONFIG.initialHumans, 'human', physicalGroundY + 22);
 
             vrCameraRig.position.copy(player.position);
             camera.position.set(0, 0, 0);
@@ -4700,10 +4689,10 @@
         }
 
         function updateStats() {
-            let sheep = 0, wolves = 0;
+            let sheep = 0, humans = 0;
             for (const a of animals) {
                 if (!a.alive) continue;
-                if (a.type === 'sheep') sheep++; else wolves++;
+                if (a.type === 'sheep') sheep++; else humans++;
             }
             if (!updateStats._els) {
                 updateStats._els = {
@@ -4715,7 +4704,7 @@
             }
             const _els = updateStats._els;
             setTextIfChanged(_els.deer,  String(sheep));
-            setTextIfChanged(_els.human, String(wolves));
+            setTextIfChanged(_els.human, String(humans));
             let alivePlants = 0;
             for (const p of plants) if (p.alive) alivePlants++;
             setTextIfChanged(_els.plant, String(alivePlants));
@@ -4799,27 +4788,19 @@
 
         function updatePlayer(deltaTime) {
             _moveVector.set(0, 0, 0);
-
             const sinY = Math.sin(player.yaw);
             const cosY = Math.cos(player.yaw);
             const rightX =  cosY;
             const rightZ = -sinY;
-
             const kFwd   = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0);
             const kRight = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
-
             const jFwd   = -controls.joystickY;
             const jRight =  controls.joystickX;
-
             let fwd   = kFwd + jFwd;
             let right = kRight + jRight;
             const mag = Math.hypot(fwd, right);
             if (mag > 1) { fwd /= mag; right /= mag; }
-
-            const currentSpeed = player.isCreative
-                ? player.sprintSpeed
-                : (keys['shift'] ? player.sprintSpeed : player.speed);
-
+            const currentSpeed = player.speed;
             if (player.isCreative) {
                 const cosPitch = Math.cos(player.pitch);
                 _moveVector.x = (-sinY * cosPitch * fwd + rightX * right) * currentSpeed * deltaTime;
@@ -4829,7 +4810,6 @@
                 _moveVector.x = (-sinY * fwd + rightX * right) * currentSpeed * deltaTime;
                 _moveVector.z = (-cosY * fwd + rightZ * right) * currentSpeed * deltaTime;
             }
-
             player.position.add(_moveVector);
 
             if (player.isCreative) {
@@ -4982,10 +4962,10 @@
         }
 
         function updateVRHud() {
-            let sheep = 0, wolves = 0;
-            for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else wolves++; }
+            let sheep = 0, humans = 0;
+            for (const a of animals) { if (!a.alive) continue; if (a.type === 'sheep') sheep++; else humans++; }
             document.getElementById('vr-stats').textContent =
-                `🐑 ${sheep}  🧍${wolves}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
+                `🐑 ${sheep}  🧍${humans}  🌱${plants.filter(p=>p.alive).length}  Day ${Math.floor(ticks/(24*60))}`;
         }
 
         function resizeRenderer() {
