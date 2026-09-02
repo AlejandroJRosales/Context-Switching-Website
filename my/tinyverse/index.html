@@ -140,7 +140,6 @@ body {
   <div id="info"></div>
   <button id="gear">=</button>
   <div id="btns">
-    <button class="btn" id="qualityBtn">QUAL: H</button>
     <button class="btn" id="flyBtn">FLY: 0</button>
     <button class="btn" id="rainBtn">RAIN: /</button>
     <button class="btn" id="audioBtn">AUDIO: 0</button>
@@ -373,16 +372,15 @@ function buildCreatures() {
       push(...p1, ...n1, 1);
     }
   }
-  const highDetail = CONFIG.quality === 'H' ? 1 : 0;
-  const rings = highDetail ? 8 : 6,
-    segs = highDetail ? 10 : 7;
+  const rings = 8,
+    segs = 10;
   const bodyRadius = 0.5,
     bodyHalf = 0.9;
   tube(bodyRadius, bodyHalf, segs);
   sphere(0, 0, bodyHalf, bodyRadius, 1, rings, segs);
   sphere(0, 0, -bodyHalf, bodyRadius, 1, rings, segs);
   sphere(0, 0.35, bodyHalf + 0.55, 0.45, 1, rings, segs);
-  horn(0.45, 1.6, 0.95, 0.16, -0.55, highDetail ? 8 : 6);
+  horn(0.45, 1.6, 0.95, 0.16, -0.55, 8);
   const vertexData = new Float32Array(verts);
   creatureGeoBuf = gl.createBuffer();
   bindBuffer(GL_ARRAY_BUFFER, creatureGeoBuf);
@@ -774,7 +772,7 @@ let terrainBuf = null,
   terrainIdxCount = 0;
 
 function buildTerrainCache() {
-  const step = CONFIG.quality === 'H' ? 8 : 16;
+  const step = 8;
   const width = CONFIG.worldWidth,
     depth = CONFIG.worldDepth;
   const pad = step * 2;
@@ -896,8 +894,8 @@ function uploadTerrainClip(data, cols, rows) {
 }
 
 function buildTerrain() {
-  const segmentsX = CONFIG.quality === 'H' ? 160 : 96;
-  const segmentsZ = CONFIG.quality === 'H' ? 120 : 72;
+  const segmentsX = 160;
+  const segmentsZ = 120;
   const width = CONFIG.worldWidth,
     depth = CONFIG.worldDepth;
   const vertices = new Float32Array((segmentsX + 1) * (segmentsZ + 1) * 6);
@@ -975,20 +973,11 @@ const TERRAIN_ATTRIBS = [
 
 
 // shadows
-function shadowSizeForQuality() {
-  return CONFIG.quality === 'H' ? 1024 : 256;
-}
-
-function shadowRefreshForQuality() {
-  return CONFIG.quality === 'H' ? 5 : 30;
-}
-
 const SHADOW_GLSL = `
 uniform sampler2D uShadowMap;
 uniform mat4 uLightVP;
 uniform float uShadowTexel;
 uniform float uShadowMode;
-uniform float uShadowEnabled;
 float unpackDepth(vec4 c){
   return dot(c, vec4(1.0, 1.0/255.0, 1.0/65025.0, 1.0/16581375.0));
 }
@@ -997,7 +986,6 @@ float sampleShadowDepth(vec2 uv){
   return mix(c.r, unpackDepth(c), uShadowMode);
 }
 float shadowFactor(vec3 worldPos, float ndotl){
-  if (uShadowEnabled < .5) return 1.0;
   vec4 lp=uLightVP*vec4(worldPos, 1.0);
   vec3 proj=lp.xyz/lp.w;
   proj=proj*.5+.5;
@@ -1109,10 +1097,6 @@ function shadowRadiusForWorld() {
   return Math.max(CONFIG.worldWidth, CONFIG.worldDepth) / 2;
 }
 
-function shadowsEnabled() {
-  return CONFIG.quality === 'H';
-}
-
 function updateLightVP(sunDir, focusX, focusZ) {
   const halfExtent = SHADOW_RADIUS;
   const distance = Math.max(CONFIG.worldWidth, CONFIG.worldDepth);
@@ -1138,7 +1122,7 @@ function updateLightVP(sunDir, focusX, focusZ) {
 }
 
 function renderShadowPass() {
-  if (!SHADOW.ready || !shadowsEnabled()) return;
+  if (!SHADOW.ready) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.framebuffer);
   gl.viewport(0, 0, SHADOW.size, SHADOW.size);
   gl.clearColor(1, 1, 1, 1);
@@ -1195,7 +1179,6 @@ function bindShadowUniforms(prog) {
   setUniformMat4(prog.u('uLightVP'), SHADOW.lightVP);
   setUniform1f(prog.u('uShadowTexel'), 1.0 / SHADOW.size);
   setUniform1f(prog.u('uShadowMode'), SHADOW.packed ? 1.0 : 0.0);
-  setUniform1f(prog.u('uShadowEnabled'), shadowsEnabled() ? 1.0 : 0.0);
   gl.activeTexture(gl.TEXTURE0);
 }
 
@@ -1941,7 +1924,6 @@ function frame(now) {
   setUniform1f(waterProg.u('uTime'), simTime);
   setUniform3f(waterProg.u('uFogColor'), sky.fog);
   setUniform1f(waterProg.u('uFogDist'), fogDist);
-  setUniform1f(waterProg.u('uHighQ'), CONFIG.quality === 'H' ? 1.0 : 0.0);
   setUniform3f(waterProg.u('uAmbient'), sky.ambient);
   setUniform3f(waterProg.u('uSkyTop'), sky.skyTop);
   drawArraysPass(GL_TRIANGLES, 0, 6);
@@ -2664,7 +2646,6 @@ function playNoise(freqStart, freqEnd, resonance, volume, duration, lowpass) {
 const CONFIG = {
   worldScale: 20,
   plantSpawnChance: 0.04,
-  quality: 'H',
   seed: (Math.random() * 1e9) | 0
 };
 
@@ -2714,8 +2695,8 @@ const GL_STATIC_DRAW = gl.STATIC_DRAW;
 const GL_TRIANGLES = gl.TRIANGLES;
 
 const SHADOW = {
-  size: shadowSizeForQuality(),
-  refreshInterval: shadowRefreshForQuality(),
+  size: 1024,
+  refreshInterval: 5,
   depthExt:
     gl.getExtension('WEBGL_depth_texture') ||
     gl.getExtension('WEBKIT_WEBGL_depth_texture') ||
@@ -2813,14 +2794,14 @@ precision highp float; varying highp vec3 vW;
 uniform sampler2D uClipTex; uniform vec4 uClipMap;
 uniform highp vec3 uEye; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTime;
 uniform vec3 uMoonDir; uniform vec3 uMoonColor;
-uniform vec3 uFogColor; uniform float uFogDist; uniform float uHighQ;
+uniform vec3 uFogColor; uniform float uFogDist;
 uniform vec3 uAmbient; uniform vec3 uSkyTop;
 ${FOG_GLSL}
 void main(){
   vec2 clipG=(vW.xz+uClipMap.xy)/(uClipMap.xy*2.0)*(uClipMap.zw-1.0);
   if (texture2D(uClipTex, (clipG+0.5)/uClipMap.zw).r > 0.5) discard;
   float d=length(uEye-vW);
-  float detail=clamp(1.0-d/uFogDist, .0, 1.0)*uHighQ;
+  float detail=clamp(1.0-d/uFogDist, .0, 1.0);
   vec2 p=vW.xz*.02;
   float n1=sin(p.x*1.3+uTime*.8)+cos(p.y*1.7-uTime*.6);
   float n2=sin((p.x+p.y)*2.1+uTime*1.1);
@@ -3100,17 +3081,6 @@ on(window, 'keyup', (e) => {
     }
   });
 })();
-
-byId('qualityBtn').addEventListener('click', function () {
-  CONFIG.quality = CONFIG.quality === 'H' ? 'L' : 'H';
-  this.textContent = 'QUAL: ' + CONFIG.quality;
-  SHADOW.size = shadowSizeForQuality(CONFIG.quality);
-  SHADOW.refreshInterval = shadowRefreshForQuality(CONFIG.quality);
-  initShadow();
-  shadowFrame = 0;
-  resize();
-  buildTerrain();
-});
 
 byId('flyBtn').addEventListener('click', function () {
   camera.fly = !camera.fly;
