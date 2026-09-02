@@ -702,7 +702,7 @@
     <div id="settings-panel">
         <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
-            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world.</a>.
+            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world.
         </div>
         <button class="sp-row">
             <span class="sp-label">Creator</span>
@@ -715,6 +715,9 @@
         <button class="sp-row" id="immersiveBtn">
             <span class="sp-label">Immersive</span>
             <span class="sp-value" id="immersiveState">OFF</span>
+        </button>
+        <button class="sp-row" id="generateNewEcosystemBtn">
+            <span class="sp-label">New Ecosystem</span>
         </button>
         <div id="sp-more">
         <button class="sp-row">
@@ -1195,6 +1198,16 @@
                 engine.setFog(CONFIG.fogEnd());
             }
 
+            // Rolls a fresh numeric seed (same digits-only format seed-input
+            // enforces), syncs it into the field, then rebuilds the world.
+            generateNewEcosystem() {
+                const seed = String(Math.floor(Math.random() * 1e12));
+                this.pendingSeed = seed;
+                document.getElementById('seed-input').value = seed;
+                this.reset();
+                world.initialize();
+            }
+
             updateFullscreenBtn(vrActive) {
                 const fsBtn = document.getElementById('fullscreenBtn');
                 const fsState = document.getElementById('fsState');
@@ -1255,6 +1268,7 @@
                     ['clearHudBtn',  () => this.clearHud()],
                     ['immersiveBtn', () => this.toggleImmersive()],
                     ['resetBtn',     () => this.reset()],
+                    ['generateNewEcosystemBtn', () => this.generateNewEcosystem()],
                     ['closeSPBtn',   () => this.toggleSettings()],
                     ['moreSPBtn',    () => this.toggleMore()],
                     ['flyBtn',       () => player.toggleCreative()],
