@@ -899,6 +899,7 @@
                 this.SHADOW_RADIUS = 3000;
                 this.SHADOW_FOLLOW_STEP = 250;
                 this.SHADOW_MAX_INTERVAL = 50;
+                this.SHADOW_MAP_SIZE = 3000;
                 this.LIGHT_OFFSET = new THREE.Vector3(400, 800, 300);
                 this.shadowAnchor = new THREE.Vector3(Infinity, 0, Infinity);
                 this.shadowLastRefresh = -1e9;
@@ -932,8 +933,8 @@
 
                 this.sun = new THREE.DirectionalLight(0xffffff, 0.5);
                 this.sun.castShadow = true;
-                this.sun.shadow.mapSize.width = 3000;
-                this.sun.shadow.mapSize.height = 3000;
+                this.sun.shadow.mapSize.width = this.SHADOW_MAP_SIZE;
+                this.sun.shadow.mapSize.height = this.SHADOW_MAP_SIZE;
                 this.sun.shadow.camera.left   = -this.SHADOW_RADIUS;
                 this.sun.shadow.camera.right  =  this.SHADOW_RADIUS;
                 this.sun.shadow.camera.top    =  this.SHADOW_RADIUS;
@@ -1638,36 +1639,10 @@
                 }
                 return n;
             }
-
-            *query(x, z, r) {
-                const cs = this.cellSize;
-                const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
-                const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
-                for (let cy = cy0; cy <= cy1; cy++) {
-                    for (let cx = cx0; cx <= cx1; cx++) {
-                        const k = this._key(
-                            ((cx % this.cols) + this.cols) % this.cols,
-                            ((cy % this.rows) + this.rows) % this.rows
-                        );
-                        const bucket = this.cells.get(k);
-                        if (bucket) yield* bucket;
-                    }
-                }
-            }
         }
 
         // ============================================================================
-        // TWO-LOBE NETWORK
-        //
-        // Topology (all sparse at LOBE_SPARSITY):
-        //   Input maskIA ->  Lobe A (GRU nodes, hidden state h_A)
-        //   Input maskIB ->  Lobe B (sigmoid nodes)
-        //   Lobe AmaskAB ->  Lobe B (directed; creates intentional cycle with B->A)
-        //   Lobe BmaskBA ->  Lobe A (feeds into GRU update of each A node)
-        //   Lobe AmaskAO ->  Output (softmax, 9 actions)
-        //   Lobe BmaskBO ->  Output
-        //
-        // GRU cell (simplified - single gate + self-recurrence, no full reset/update gate):
+        // MATH + BRAIN FACTORY
         // ============================================================================
         class MathTools {
             distSq(x1, y1, x2, y2) {
@@ -1676,6 +1651,10 @@
 
             clamp(value, minimum, maximum) {
                 return Math.max(Math.min(value, maximum), minimum);
+            }
+
+            wrap(value, size) {
+                return ((value % size) + size) % size;
             }
 
             sigmoid(x) {
@@ -1752,6 +1731,19 @@
             }
         }
 
+        // ============================================================================
+        // TWO-LOBE NETWORK
+        //
+        // Topology (all sparse at LOBE_SPARSITY):
+        //   Input maskIA ->  Lobe A (GRU nodes, hidden state h_A)
+        //   Input maskIB ->  Lobe B (sigmoid nodes)
+        //   Lobe AmaskAB ->  Lobe B (directed; creates intentional cycle with B->A)
+        //   Lobe BmaskBA ->  Lobe A (feeds into GRU update of each A node)
+        //   Lobe AmaskAO ->  Output (softmax, 9 actions)
+        //   Lobe BmaskBO ->  Output
+        //
+        // GRU cell (simplified - single gate + self-recurrence, no full reset/update gate):
+        // ============================================================================
         class DenseNetwork {
             constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
                 this.inputDims    = inputDims;
@@ -1780,7 +1772,6 @@
                     this.lobeSizeA = brains.randLobeSize();
                     this.lobeSizeB = brains.randLobeSize();
                 }
-                this.lobeSize = this.lobeSizeA;
 
                 const NA = this.lobeSizeA;
                 const NB = this.lobeSizeB;
@@ -2070,6 +2061,13 @@
         }
 
         class Animal extends Entity {
+            static ACTION_STAY = 8;
+            static MOVE_TIMESTEP = 0.016;
+            static MOVE_DIRS = [
+                [1, 0], [-1, 0], [0, 1], [0, -1],
+                [1, 1], [1, -1], [-1, 1], [-1, -1]
+            ];
+
             constructor(position, type) {
                 super(position, type);
                 this.speed = type === 'human' ? 35 : 25;
@@ -2119,8 +2117,6 @@
                 this.outputIdx = 0;
                 this.facingAngle = 0;
                 this.prevHealth = this.health;
-                this.prevWaterNeed = this.waterNeed;
-                this.prevFoodNeed = this.foodNeed;
                 this.prevWaterNeed = this.waterNeed;
                 this.prevFoodNeed = this.foodNeed;
                 this._inputs = new Float32Array(15);
@@ -2265,12 +2261,12 @@
 
             move() {
                 const lift = this.type === 'sheep' ? 9 : 15;
-                if (this.outputIdx !== 8) {
-                    const s = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
-                    const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
-                    const cc = DIRS[this.outputIdx];
-                    this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
-                    this.position.z = ((this.position.z + cc[1]*0.016) % CONFIG.worldHeight + CONFIG.worldHeight) % CONFIG.worldHeight;
+                if (this.outputIdx !== Animal.ACTION_STAY) {
+                    const speed = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
+                    const step = speed * Animal.MOVE_TIMESTEP;
+                    const dir = Animal.MOVE_DIRS[this.outputIdx];
+                    this.position.x = tools.wrap(this.position.x + dir[0] * step, CONFIG.worldWidth);
+                    this.position.z = tools.wrap(this.position.z + dir[1] * step, CONFIG.worldHeight);
                 }
                 const g = terrain.heightAt(this.position.x, this.position.z);
                 const floatY = water.level - water.FLOAT_DEPTH;
@@ -2284,7 +2280,7 @@
                 this.foodNeed  += this.foodIncrement;
                 this.lookForMate = (now - this.lastChildTime) >= this.childGracePeriod;
                 this.reproductionNeed = this.lookForMate
-                    ? this.reproductionNeed + this.waterIncrement
+                    ? this.reproductionNeed + this.reproductionNeed
                     : 0;
                 this.health -= ((now - this.tob) / 10000) * this.ageDepl
                              + this.waterNeed * 0.0001
@@ -2334,8 +2330,9 @@
                 const hi = Math.min(1.1, 1 + mm);
                 const rand = () => lo + Math.random() * (hi - lo);
 
+                const mother = this.sex === 'female' ? this : partner;
                 const child = new Animal(
-                    [this.position.x, this.position.y, this.position.z + (this.type === 'sheep' ? 10 : 20)],
+                    [mother.position.x, mother.position.y, mother.position.z + (this.type === 'sheep' ? 10 : 20)],
                     this.type
                 );
                 child.isAdult = false;
@@ -3059,8 +3056,8 @@
                     }
                     this.velocity.y = 0;
                 } else {
-                    this.position.x = ((this.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
-                    this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+                    this.position.x = tools.wrap(this.position.x, CONFIG.worldWidth);
+                    this.position.z = tools.wrap(this.position.z, CONFIG.worldHeight);
                     this.velocity.y -= 400 * (this.isSubmerged() ? this.WATER_FALL_FACTOR : 1) * deltaTime;
                     this.position.y += this.velocity.y * deltaTime;
                     const groundAtPlayer = terrain.heightAt(this.position.x, this.position.z) + 35;
@@ -3319,8 +3316,8 @@
                     this.velocity.y = 0;
                 }
 
-                this.position.x = ((this.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
-                this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
+                this.position.x = tools.wrap(this.position.x, CONFIG.worldWidth);
+                this.position.z = tools.wrap(this.position.z, CONFIG.worldHeight);
 
                 this.mesh.position.copy(this.position);
                 this.mesh.rotation.y = this.yaw;
@@ -4925,9 +4922,7 @@
                 const target = labels.locked || labels.current;
 
                 let rayAnimals;
-                if (labels.sphereVisMode === 'single') {
-                    rayAnimals = (target && target.alive) ? [target] : [];
-                } else if (labels.sphereVisMode === 'all') {
+                if (labels.sphereVisMode === 'all') {
                     rayAnimals = animals.filter(a => a.alive);
                     if (rayAnimals.length > this.MAX) rayAnimals.length = this.MAX;
                 } else {
@@ -5001,6 +4996,9 @@
         // WORLD STATE + MAIN LOOP
         // ============================================================================
         class World {
+            static CONTACT_QUERY_RADIUS = 20;
+            static CONTACT_DIST_SQ = 200;
+
             constructor() {
                 this.animals = [];
                 this.plants = [];
@@ -5014,14 +5012,11 @@
 
                 this.grid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 160);
                 this.plantGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
-                this.waterGrid = new SpatialGrid(CONFIG.worldWidth, CONFIG.worldHeight, 30);
-                this.waterGridDirty = true;
 
                 this._qLocate = [];
                 this._qHunt   = [];
                 this._qMate   = [];
                 this._qPlant  = [];
-                this._qWater  = [];
             }
 
             spawnAnimals(count, type, y) {
@@ -5098,20 +5093,10 @@
 
                 water.createPlane();
                 water.locations = water.deriveLocations(water.level);
-                this.waterGridDirty = true;
 
                 pebbleRenderer.place();
 
-                for (let i = 0; i < CONFIG.initialPlants; i++) {
-                    const px = Math.random() * CONFIG.worldWidth;
-                    const pz = Math.random() * CONFIG.worldHeight;
-                    const p = new Plant([
-                        px, terrain.heightAt(px, pz) + 3,
-                        pz
-                    ]);
-                    this.plants.push(p);
-                    this.entities.push(p);
-                }
+                for (let i = 0; i < CONFIG.initialPlants; i++) this.spawnPlant();
 
                 this.spawnAnimals(CONFIG.initialDeer, 'sheep', CONFIG.groundY + 15);
                 this.spawnAnimals(CONFIG.initialHumans, 'human', CONFIG.groundY + 22);
@@ -5132,12 +5117,28 @@
                 cat.playerLastPos.copy(player.position);
             }
 
-            rebuildWaterGrid() {
-                this.waterGrid.clear();
-                for (const w of water.locations) {
-                    this.waterGrid.insert({ position: { x: w[0], z: w[1] }, _raw: w });
+            spawnPlant() {
+                const px = Math.random() * CONFIG.worldWidth;
+                const pz = Math.random() * CONFIG.worldHeight;
+                const p = new Plant([px, terrain.heightAt(px, pz) + 3, pz]);
+                this.plants.push(p);
+                this.entities.push(p);
+            }
+
+            tryMate(a, px, pz) {
+                if (a.sex !== 'male') return;
+                const n = this.grid.queryInto(this._qMate, px, pz, World.CONTACT_QUERY_RADIUS);
+                for (let i = 0; i < n; i++) {
+                    const other = this._qMate[i];
+                    if (other !== a && other.alive && other.type === a.type &&
+                        other.sex === 'female' && other.lookForMate &&
+                        tools.distSq(px, pz, other.position.x, other.position.z) < World.CONTACT_DIST_SQ) {
+                        const child = a.mate(other);
+                        this.animals.push(child);
+                        this.entities.push(child);
+                        return;
+                    }
                 }
-                this.waterGridDirty = false;
             }
 
             handleCollisions() {
@@ -5146,56 +5147,28 @@
                     for (const p of this.plants) if (p.alive) this.plantGrid.insert(p);
                 }
 
-                if (this.waterGridDirty) this.rebuildWaterGrid();
-
                 for (const a of this.animals) {
                     if (!a.alive) continue;
                     const px = a.position.x, pz = a.position.z;
 
                     if (a.type === 'human') {
-                        const nHunt = this.grid.queryInto(this._qHunt, px, pz, 20);
+                        const nHunt = this.grid.queryInto(this._qHunt, px, pz, World.CONTACT_QUERY_RADIUS);
                         for (let i = 0; i < nHunt; i++) {
                             const other = this._qHunt[i];
                             if (other.alive && other.type === 'sheep' &&
-                                tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
+                                tools.distSq(px, pz, other.position.x, other.position.z) < World.CONTACT_DIST_SQ) {
                                 other.attacked(a);
                             }
                         }
-                        if (a.lookForMate && a.sex === 'female') {
-                            const nMate = this.grid.queryInto(this._qMate, px, pz, 20);
-                            for (let i = 0; i < nMate; i++) {
-                                const other = this._qMate[i];
-                                if (other !== a && other.alive && other.type === 'human' &&
-                                    other.sex === 'male' && other.lookForMate &&
-                                    tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
-                                    const child = a.mate(other);
-                                    this.animals.push(child);
-                                    this.entities.push(child);
-                                    break;
-                                }
-                            }
-                        }
+                        if (a.lookForMate) this.tryMate(a, px, pz);
                     } else {
-                        if (a.lookForMate) {
-                            const nMate = this.grid.queryInto(this._qMate, px, pz, 20);
-                            for (let i = 0; i < nMate; i++) {
-                                const other = this._qMate[i];
-                                if (other !== a && other.alive && other.type === a.type &&
-                                    other.sex === 'male' && other.lookForMate &&
-                                    tools.distSq(px, pz, other.position.x, other.position.z) < 200) {
-                                    const child = a.mate(other);
-                                    this.animals.push(child);
-                                    this.entities.push(child);
-                                    break;
-                                }
-                            }
-                        }
+                        if (a.lookForMate) this.tryMate(a, px, pz);
 
-                        const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, 20);
+                        const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, World.CONTACT_QUERY_RADIUS);
                         for (let i = 0; i < nPlant; i++) {
                             const plant = this._qPlant[i];
                             if (plant.alive &&
-                                tools.distSq(px, pz, plant.position.x, plant.position.z) < 200) {
+                                tools.distSq(px, pz, plant.position.x, plant.position.z) < World.CONTACT_DIST_SQ) {
                                 a.eatPlant(plant);
                             }
                         }
@@ -5205,6 +5178,60 @@
                         a.drinkWater();
                     }
                 }
+            }
+
+            updateVrPlayer(deltaTime, now) {
+                vr.poll();
+
+                if (vr.moveX !== 0 || vr.moveY !== 0) {
+                    const speed = player.speed;
+                    const move = vr._move.set(
+                        vr.moveX * speed * deltaTime,
+                        0,
+                        vr.moveY * speed * deltaTime
+                    );
+                    vr._rot.makeRotationY(player.yaw);
+                    move.applyMatrix4(vr._rot);
+                    player.position.add(move);
+                    player.position.x = tools.wrap(player.position.x, CONFIG.worldWidth);
+                    player.position.z = tools.wrap(player.position.z, CONFIG.worldHeight);
+                }
+
+                vr.snapCooldown -= deltaTime;
+                if (vr.turnX !== 0 && vr.snapCooldown <= 0) {
+                    player.yaw += vr.turnX * (Math.PI / 6);
+                    vr.snapCooldown = 0.3;
+                }
+
+                if (vr.jumpPressed && !player.isJumping) {
+                    player.velocity.y = player.currentJumpForce();
+                    player.isJumping = true;
+                }
+                vr.jumpPressed = false;
+
+                if (vr.resetPressed) { this.initialize(); }
+                vr.resetPressed = false;
+
+                player.velocity.y -= 400 * deltaTime;
+                player.position.y += player.velocity.y * deltaTime;
+
+                const vrGroundAtPlayer = terrain.heightAt(player.position.x, player.position.z) + 35;
+                if (player.position.y < vrGroundAtPlayer) {
+                    player.position.y = vrGroundAtPlayer;
+                    player.velocity.y = 0;
+                    player.isJumping = false;
+                }
+
+                if (player.velocity.y < 0) {
+                    player.isJumping = false;
+                }
+
+                player.velocity.y = cabins.resolve(player.position, 10, 20, player.velocity.y);
+
+                vr.rig.position.copy(player.position);
+                vr.rig.rotation.y = player.yaw;
+
+                if (now % 1000 < 50) vr.updateHud();
             }
 
             animate(timestamp, frame) {
@@ -5218,60 +5245,8 @@
                 const deltaTime = Math.min((now - this.lastTime) / 1000, 0.1);
                 this.lastTime = now;
 
-                const inVR = engine.renderer.xr.isPresenting;
-                if (inVR) {
-                    vr.poll();
-
-                    if (vr.moveX !== 0 || vr.moveY !== 0) {
-                        const speed = player.speed;
-                        const move = vr._move.set(
-                            vr.moveX * speed * deltaTime,
-                            0,
-                            vr.moveY * speed * deltaTime
-                        );
-                        vr._rot.makeRotationY(player.yaw);
-                        move.applyMatrix4(vr._rot);
-                        player.position.add(move);
-                        player.position.x = ((player.position.x % CONFIG.worldWidth) + CONFIG.worldWidth) % CONFIG.worldWidth;
-                        player.position.z = ((player.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
-                    }
-
-                    vr.snapCooldown -= deltaTime;
-                    if (vr.turnX !== 0 && vr.snapCooldown <= 0) {
-                        player.yaw += vr.turnX * (Math.PI / 6);
-                        vr.snapCooldown = 0.3;
-                    }
-
-                    if (vr.jumpPressed && !player.isJumping) {
-                        player.velocity.y = player.currentJumpForce();
-                        player.isJumping = true;
-                    }
-                    vr.jumpPressed = false;
-
-                    if (vr.resetPressed) { this.initialize(); }
-                    vr.resetPressed = false;
-
-                    player.velocity.y -= 400 * deltaTime;
-                    player.position.y += player.velocity.y * deltaTime;
-
-                    const vrGroundAtPlayer = terrain.heightAt(player.position.x, player.position.z) + 35;
-                    if (player.position.y < vrGroundAtPlayer) {
-                        player.position.y = vrGroundAtPlayer;
-                        player.velocity.y = 0;
-                        player.isJumping = false;
-                    }
-
-                    if (player.velocity.y < 0) {
-                        player.isJumping = false;
-                    }
-
-                    player.velocity.y = cabins.resolve(player.position, 10, 20, player.velocity.y);
-
-                    vr.rig.position.copy(player.position);
-                    vr.rig.rotation.y = player.yaw;
-
-                    if (now % 1000 < 50) vr.updateHud();
-
+                if (engine.renderer.xr.isPresenting) {
+                    this.updateVrPlayer(deltaTime, now);
                 } else {
                     player.update(deltaTime);
                 }
@@ -5306,16 +5281,7 @@
                 }
                 if (anyRemoved) this.entities = [...this.animals, ...this.plants, ...this.waters];
 
-                if (Math.random() < CONFIG.probSpawnPlant) {
-                    const px = Math.random() * CONFIG.worldWidth;
-                    const pz = Math.random() * CONFIG.worldHeight;
-                    const p = new Plant([
-                        px, terrain.heightAt(px, pz) + 3,
-                        pz
-                    ]);
-                    this.plants.push(p);
-                    this.entities.push(p);
-                }
+                if (Math.random() < CONFIG.probSpawnPlant) this.spawnPlant();
 
                 animalRenderer.update(this.animals, deltaTime);
                 plantRenderer.update(this.plants);
