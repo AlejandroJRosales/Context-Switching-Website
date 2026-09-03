@@ -3576,11 +3576,14 @@
                     ridgeAdd: 0.0,
                     waterCoverage: 0.3,
                     waterLevelOverride: null,
+                    lakeDepthBoost: 5,
+                    lakeDepthFalloff: 0.10,
                 };
                 this.seed = { ox: 0, oz: 0, seed: 1337, f: 0 };
                 this.grassColor = new THREE.Color(0x2d5016);
                 this.rockColor  = new THREE.Color(0x6e6e6e);
                 this.mesh = null;
+                this.lakeRef = null;
             }
 
             amplitude() {
@@ -3671,7 +3674,7 @@
                 return t * t * (3 - 2 * t);
             }
 
-            heightAt(wx, wz) {
+            baseHeightAt(wx, wz) {
                 const T = this.params;
                 const s = this.seed.f;
                 const u = wx / CONFIG.worldWidth;
@@ -3694,6 +3697,21 @@
                 }
                 const lift = mtn * T.mountainGain;
                 return CONFIG.groundY + h01 * this.amplitude() * (1 + lift);
+            }
+
+            lakeCarve(h) {
+                const ref = this.lakeRef;
+                if (ref === null) return h;
+                const boost = this.params.lakeDepthBoost;
+                if (boost <= 0) return h;
+                const d = ref - h;
+                if (d <= 0) return h;
+                const soft = Math.max(1e-3, this.params.lakeDepthFalloff * this.amplitude());
+                return h - boost * (d * d) / (d + soft);
+            }
+
+            heightAt(wx, wz) {
+                return this.lakeCarve(this.baseHeightAt(wx, wz));
             }
 
             create() {
@@ -3794,7 +3812,7 @@
                 for (let iz = 0; iz < N; iz++) {
                     const wz = (iz / (N - 1)) * CONFIG.worldHeight;
                     for (let ix = 0; ix < N; ix++) {
-                        samples[k++] = terrain.heightAt((ix / (N - 1)) * CONFIG.worldWidth, wz);
+                        samples[k++] = terrain.baseHeightAt((ix / (N - 1)) * CONFIG.worldWidth, wz);
                     }
                 }
                 samples.sort();
@@ -4975,7 +4993,9 @@
                 cabins.clear();
 
                 terrain.initSeed();
+                terrain.lakeRef = null;
                 water.level = water.computeLevel();
+                terrain.lakeRef = water.level;
 
                 const num_cabins = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
                 const cabinScale = 1.75;
