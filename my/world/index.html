@@ -725,7 +725,7 @@
         </button >
         <button class="sp-row">
             <span class="sp-label">Code</span>
-            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">3.0.12.3</a></span>
+            <span class="sp-label" id="code-link"><a class="sp-link" href="https://raw.githubusercontent.com/AlejandroJRosales/Context-Switching-Website/refs/heads/master/my/world/index.html">3.0.12.2</a></span>
         </button>
         <button class="sp-row" id="immersiveBtn">
             <span class="sp-label">Immersive</span>
@@ -2073,6 +2073,8 @@
             constructor(position, type) {
                 super(position, type);
                 this.speed = type === 'human' ? 35 : 25;
+                this.WATER_SPEED_FACTOR = 0.45;
+                this.submerged = false;
                 this.startHealth = type === 'human' ? 120 : 100;
                 this.health = this.startHealth;
                 this.maxHealth = this.health;
@@ -2257,10 +2259,14 @@
                 this.outputIdx = this.brain.think(inp);
             }
 
+            isSubmerged() {
+                return this.submerged;
+            }
+
             move() {
                 const lift = this.type === 'sheep' ? 9 : 15;
                 if (this.outputIdx !== 8) {
-                    const s = this.speed;
+                    const s = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
                     const DIRS = [[s,0],[-s,0],[0,s],[0,-s],[s,s],[s,-s],[-s,s],[-s,-s]];
                     const cc = DIRS[this.outputIdx];
                     this.position.x = ((this.position.x + cc[0]*0.016) % CONFIG.worldWidth  + CONFIG.worldWidth)  % CONFIG.worldWidth;
@@ -2269,6 +2275,7 @@
                 const g = terrain.heightAt(this.position.x, this.position.z);
                 const floatY = water.level - water.FLOAT_DEPTH;
                 this.floating = g < floatY;
+                this.submerged = g < water.level;
                 this.position.y = (this.floating ? floatY : g) + lift;
             }
 
@@ -2919,6 +2926,7 @@
                 this.speed = CONFIG.playerSpeed();
                 this.WATER_SPEED_FACTOR = 0.45;
                 this.WATER_JUMP_FACTOR  = 0.5;
+                this.WATER_FALL_FACTOR  = 0.35;
                 this.WATER_FEET_OFFSET  = 35;
                 this.jumpForce = CONFIG.playerJumpForce();
                 this.isJumping = false;
@@ -3053,7 +3061,7 @@
                 } else {
                     this.position.x = ((this.position.x % CONFIG.worldWidth)  + CONFIG.worldWidth)  % CONFIG.worldWidth;
                     this.position.z = ((this.position.z % CONFIG.worldHeight) + CONFIG.worldHeight) % CONFIG.worldHeight;
-                    this.velocity.y -= 400 * deltaTime;
+                    this.velocity.y -= 400 * (this.isSubmerged() ? this.WATER_FALL_FACTOR : 1) * deltaTime;
                     this.position.y += this.velocity.y * deltaTime;
                     const groundAtPlayer = terrain.heightAt(this.position.x, this.position.z) + 35;
                     if (this.position.y < groundAtPlayer) {
@@ -3156,6 +3164,7 @@
                 this.wanderTimer = 0;
                 this.playerHasMoved = false;
                 this.playerLastPos = new THREE.Vector3();
+                this.WATER_SPEED_FACTOR = 0.45;
 
                 this.position.copy(player.position);
                 this.position.z += 5;
@@ -3255,8 +3264,13 @@
                 return group;
             }
 
+            isSubmerged() {
+                return terrain.heightAt(this.position.x, this.position.z) < water.level;
+            }
+
             update(deltaTime) {
                 this.animTime += deltaTime;
+                const waterFactor = this.isSubmerged() ? this.WATER_SPEED_FACTOR : 1;
 
                 const px = player.position.x;
                 const pz = player.position.z;
@@ -3272,7 +3286,7 @@
                 let speed = 0;
 
                 if (distToPlayer + 50 > followDist) {
-                    speed = distToPlayer > 80 ? 250 : 25;
+                    speed = (distToPlayer > 80 ? 250 : 25) * waterFactor;
                     const dxRounded = Math.round(dx / 10) * 10;
                     const dzRounded = Math.round(dz / 10) * 10;
                     const angle = Math.atan2(dxRounded, dzRounded);
@@ -3287,7 +3301,7 @@
                     );
                     this.yaw = player.yaw;
                 } else if (distToPlayer < 12) {
-                    speed = 20;
+                    speed = 20 * waterFactor;
                     const angle = Math.atan2(-dx, -dz);
                     this.yaw += (angle - this.yaw) * Math.min(1, deltaTime * 5);
                     this.position.x += Math.sin(this.yaw) * speed * deltaTime;
