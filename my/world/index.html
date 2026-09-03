@@ -33,6 +33,20 @@
             height: 100%;
         }
 
+        /* Sits above the canvas but below every UI layer (all of which come later
+           in the DOM and are positioned), so only the 3D view is tinted. */
+        #water-tint {
+            position: fixed;
+            inset: 0;
+            display: none;
+            pointer-events: none;
+            background: rgba(12, 59, 106, 0.28);
+        }
+
+        #water-tint.show {
+            display: block;
+        }
+
         #asp-nn-wrapper {
             margin-top: 0;
             padding-top: 0;
@@ -614,6 +628,7 @@
 </head>
 <body>
     <canvas id="canvas"></canvas>
+    <div id="water-tint"></div>
 
     <div id="vr-overlay">
         <div id="vr-hud">
@@ -1417,7 +1432,7 @@
 
                 if (isDouble) {
                     if (!player.isCreative && !player.isJumping) {
-                        player.velocity.y = player.jumpForce;
+                        player.velocity.y = player.currentJumpForce();
                         player.isJumping = true;
                     }
                     this.lastTapTime = 0;
@@ -1437,7 +1452,7 @@
                     if (e.key === ' ') {
                         e.preventDefault();
                         if (!player.isJumping) {
-                            player.velocity.y = player.jumpForce;
+                            player.velocity.y = player.currentJumpForce();
                             player.isJumping = true;
                         }
                     }
@@ -2902,6 +2917,9 @@
                 this.position = new THREE.Vector3(400, 50, 330);
                 this.velocity = new THREE.Vector3(0, 0, 0);
                 this.speed = CONFIG.playerSpeed();
+                this.WATER_SPEED_FACTOR = 0.45;
+                this.WATER_JUMP_FACTOR  = 0.5;
+                this.WATER_FEET_OFFSET  = 35;
                 this.jumpForce = CONFIG.playerJumpForce();
                 this.isJumping = false;
                 this.isCreative = false;
@@ -2988,6 +3006,15 @@
                 }
             }
 
+            isSubmerged() {
+                return !this.isCreative &&
+                    (this.position.y - this.WATER_FEET_OFFSET) < water.level;
+            }
+
+            currentJumpForce() {
+                return this.isSubmerged() ? this.jumpForce * this.WATER_JUMP_FACTOR : this.jumpForce;
+            }
+
             update(deltaTime) {
                 this._moveVector.set(0, 0, 0);
                 const sinY = Math.sin(this.yaw);
@@ -3002,7 +3029,7 @@
                 let right = kRight + jRight;
                 const mag = Math.hypot(fwd, right);
                 if (mag > 1) { fwd /= mag; right /= mag; }
-                const currentSpeed = this.speed;
+                const currentSpeed = this.isSubmerged() ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
                 if (this.isCreative) {
                     const cosPitch = Math.cos(this.pitch);
                     this._moveVector.x = (-sinY * cosPitch * fwd + rightX * right) * currentSpeed * deltaTime;
@@ -3084,6 +3111,9 @@
 
                 const creativeIndicator = document.getElementById('creativeIndicator');
                 if (creativeIndicator) creativeIndicator.style.display = this.isCreative ? 'inline' : 'none';
+
+                const waterTint = document.getElementById('water-tint');
+                if (waterTint) waterTint.classList.toggle('show', this.position.y < water.level);
             }
 
             pickTarget() {
@@ -4149,6 +4179,9 @@
                 const spanY  = this.TOP + this.BOTTOM;
                 const wx = this.WIND.x * deltaTime;
                 const wz = this.WIND.z * deltaTime;
+                // Drops end at the water surface. If the whole spawn box sits below it
+                // (camera deep underwater) the clip is disabled so drops aren't pinned to the top.
+                const waterY = water.level < y0 + spanY ? water.level : -Infinity;
                 this.collectShelters(this.anchor.x, this.anchor.z);
                 const shelterCount = this.shelters.length;
                 for (let i = 0; i < this.COUNT; i++) {
@@ -4160,6 +4193,11 @@
                     y -= Math.floor(y / spanY)  * spanY;
                     z -= Math.floor(z / spanXZ) * spanXZ;
                     x += x0; y += y0; z += z0;
+                    if (y < waterY) {
+                        x = x0 + Math.random() * spanXZ;
+                        y = y0 + spanY;
+                        z = z0 + Math.random() * spanXZ;
+                    }
                     for (let k = 0; k < shelterCount; k++) {
                         const c = this.shelters[k], sh = c.shelter;
                         if (y >= sh.topY) continue;
@@ -5191,7 +5229,7 @@
                     }
 
                     if (vr.jumpPressed && !player.isJumping) {
-                        player.velocity.y = player.jumpForce;
+                        player.velocity.y = player.currentJumpForce();
                         player.isJumping = true;
                     }
                     vr.jumpPressed = false;
