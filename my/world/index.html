@@ -2376,6 +2376,7 @@
                 this.health = Math.min(this.health + nutrition, this.maxHealth);
                 this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
                 plant.health -= 1;
+                plantRenderer.touch(plant);
                 if (plant.health <= 0) plant.alive = false;
             }
 
@@ -2392,15 +2393,20 @@
                 this.maxHealth = 10;
                 this.position.y = terrain.heightAt(this.position.x, this.position.z) - 3;
                 this._terrainVer = perf.terrainVersion;
+                this._slot = -1;
+                plantRenderer.add(this);
             }
 
-            remove() {  }
+            remove() { plantRenderer.remove(this); }
 
             update() {
                 if (this._terrainVer !== perf.terrainVersion) {
                     this._terrainVer = perf.terrainVersion;
                     this.position.y = terrain.heightAt(this.position.x, this.position.z) - 3;
+                    plantRenderer.touch(this);
                 }
+                // spawned past MAX_INSTANCES: retry each tick so a freed slot gets adopted
+                if (this._slot < 0) plantRenderer.add(this);
             }
         }
 
@@ -2696,6 +2702,16 @@
                 this.stemArr = null;
                 this.leafArrs = null;
                 this.arrOwner = null;
+
+                // dirty-list bookkeeping for plants
+                this.slots      = new Array(this.MAX_INSTANCES).fill(null);
+                this.count      = 0;
+                this.lastCount  = -1;
+                this.dirty      = [];
+                this.dirtyFlag  = new Uint8Array(this.MAX_INSTANCES);
+                this.MAX_RUNS   = 32;
+                this._sortBuf   = [];
+                this._runs      = [];
             }
 
             init() {
@@ -2716,6 +2732,8 @@
                     mesh.frustumCulled = false;
                     engine.scene.add(mesh);
                 }
+                this.arrOwner  = null;
+                this.lastCount = -1;
             }
 
             refreshArrays() {
@@ -2730,46 +2748,150 @@
                 ];
             }
 
+            add(p) {
+                if (p._slot >= 0) return;
+                if (this.count >= this.MAX_INSTANCES) { p._slot = -1; return; }
+                const slot = this.count++;
+                this.slots[slot] = p;
+                p._slot = slot;
+                this.markDirty(slot);
+            }
+
+            remove(p) {
+                const slot = p._slot;
+                if (slot === undefined || slot < 0) return;
+                const last = --this.count;
+                if (slot !== last) {
+                    const moved = this.slots[last];
+                    this.slots[slot] = moved;
+                    moved._slot = slot;
+                    this.markDirty(slot);
+                }
+                this.slots[last] = null;
+                p._slot = -1;
+            }
+
+            touch(p) {
+                const slot = p._slot;
+                if (slot === undefined || slot < 0) return;
+                this.markDirty(slot);
+            }
+
+            markDirty(slot) {
+                if (this.dirtyFlag[slot]) return;
+                this.dirtyFlag[slot] = 1;
+                this.dirty.push(slot);
+            }
+
+            rebuild(plants) {
+                this.slots.fill(null);
+                this.dirtyFlag.fill(0);
+                this.dirty.length = 0;
+                this.count = 0;
+                this.lastCount = -1;
+                for (const p of plants) {
+                    p._slot = -1;
+                    if (p.alive) this.add(p);
+                }
+            }
+
+            writeSlot(slot) {
+                const p = this.slots[slot];
+                if (!p) return;
+
+                const h = p.health / p.maxHealth;
+                const groundY = p.position.y;
+                const px = p.position.x, pz = p.position.z;
+                const o = slot * 16;
+
+                this.stemArr[o]      = h;
+                this.stemArr[o + 5]  = h;
+                this.stemArr[o + 10] = h;
+                this.stemArr[o + 12] = px;
+                this.stemArr[o + 13] = groundY + 5 * h;
+                this.stemArr[o + 14] = pz;
+                this.stemArr[o + 15] = 1;
+
+                const leafY = groundY + 7 * h;
+                for (let li = 0; li < 4; li++) {
+                    const off = this.LEAF_OFFSETS_XZ[li];
+                    const a = this.leafArrs[li];
+                    a[o]      = h;
+                    a[o + 5]  = h;
+                    a[o + 10] = h;
+                    a[o + 12] = px + off.x;
+                    a[o + 13] = leafY;
+                    a[o + 14] = pz + off.y;
+                    a[o + 15] = 1;
+                }
+            }
+
             update(plants) {
                 if (!this.meshes) return;
-                if (this.arrOwner !== this.meshes) this.refreshArrays();
-
-                let idx = 0;
-                for (const p of plants) {
-                    if (!p.alive) continue;
-                    if (idx >= this.MAX_INSTANCES) break;
-
-                    const h = p.health / p.maxHealth;
-                    const groundY = p.position.y;
-                    const px = p.position.x, pz = p.position.z;
-                    const o = idx * 16;
-
-                    this.stemArr[o]      = h;
-                    this.stemArr[o + 5]  = h;
-                    this.stemArr[o + 10] = h;
-                    this.stemArr[o + 12] = px;
-                    this.stemArr[o + 13] = groundY + 5 * h;
-                    this.stemArr[o + 14] = pz;
-                    this.stemArr[o + 15] = 1;
-
-                    const leafY = groundY + 7 * h;
-                    for (let li = 0; li < 4; li++) {
-                        const off = this.LEAF_OFFSETS_XZ[li];
-                        const a = this.leafArrs[li];
-                        a[o]      = h;
-                        a[o + 5]  = h;
-                        a[o + 10] = h;
-                        a[o + 12] = px + off.x;
-                        a[o + 13] = leafY;
-                        a[o + 14] = pz + off.y;
-                        a[o + 15] = 1;
-                    }
-
-                    idx++;
+                if (this.arrOwner !== this.meshes) {
+                    this.refreshArrays();
+                    this.rebuild(plants);
                 }
 
+                const count = this.count;
+                if (count !== this.lastCount) {
+                    this.lastCount = count;
+                    for (let i = 0; i < this.meshList.length; i++) this.meshList[i].count = count;
+                }
+
+                const dirty = this.dirty;
+                if (dirty.length === 0) return;
+
+                for (let i = 0; i < dirty.length; i++) {
+                    const slot = dirty[i];
+                    this.dirtyFlag[slot] = 0;
+                    if (slot < count) this.writeSlot(slot);
+                }
+                this.uploadDirty(dirty, count);
+                dirty.length = 0;
+            }
+
+            uploadDirty(dirty, count) {
+                const sorted = this._sortBuf;
+                sorted.length = 0;
+                for (let i = 0; i < dirty.length; i++) {
+                    if (dirty[i] < count) sorted.push(dirty[i]);
+                }
+                if (sorted.length === 0) return;
+                sorted.sort((a, b) => a - b);
+
+                const runs = this._runs;
+                runs.length = 0;
+                let start = sorted[0], prev = sorted[0];
+                for (let i = 1; i < sorted.length; i++) {
+                    const s = sorted[i];
+                    if (s <= prev + 1) { prev = s; continue; }
+                    runs.push(start, prev);
+                    start = s; prev = s;
+                }
+                runs.push(start, prev);
+
+                const nRuns    = runs.length / 2;
+                const spanFrom = runs[0];
+                const spanTo   = runs[runs.length - 1];
+                const useSpan  = nRuns > this.MAX_RUNS;
+
                 for (let i = 0; i < this.meshList.length; i++) {
-                    perf.instances(this.meshList[i], idx);
+                    const attr = this.meshList[i].instanceMatrix;
+                    if (attr.addUpdateRange) {
+                        attr.clearUpdateRanges();
+                        if (useSpan) {
+                            attr.addUpdateRange(spanFrom * 16, (spanTo - spanFrom + 1) * 16);
+                        } else {
+                            for (let r = 0; r < runs.length; r += 2) {
+                                attr.addUpdateRange(runs[r] * 16, (runs[r + 1] - runs[r] + 1) * 16);
+                            }
+                        }
+                    } else {
+                        attr.updateRange.offset = spanFrom * 16;
+                        attr.updateRange.count  = (spanTo - spanFrom + 1) * 16;
+                    }
+                    attr.needsUpdate = true;
                 }
             }
 
