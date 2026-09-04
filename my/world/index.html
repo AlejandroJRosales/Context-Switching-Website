@@ -641,7 +641,7 @@
 
     <div class="hud">
         <div class="hud-header">
-            <span id="deerCount">0</span>🐑
+            <span id="sheepCount">0</span>🐑
             <span id="humanCount">0</span>🧍
             <span id="plantCount">0</span>🌱
             Day <span id="dayCount">0</span>
@@ -717,7 +717,7 @@
     <div id="settings-panel">
         <div class="sp-game-title">🌿 Ecosystem Simulation</div>
         <div class=" sp-game-desc sp-game-desc-bright">
-            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world.
+            A simulation where animals roam, eat, drink, and reproduce without any explicit rules. Their brain allows them to explore, experience, make choices, and learn in their procedurally generated world. You also have a cat companion named Nibbler.
         </div>
         <button class="sp-row">
             <span class="sp-label">Creator</span>
@@ -767,9 +767,9 @@
             <span class="sp-label">Vitals Board</span>
             <span class="sp-value" id="nnVisState">OFF</span>
         </button>
-        <button class="sp-row" id="sphereVisBtn">
+        <button class="sp-row" id="rayVisBtn">
             <span class="sp-label">Vision Rays</span>
-            <span class="sp-value" id="sphereVisState">SINGLE</span>
+            <span class="sp-value" id="rayVisState">SINGLE</span>
         </button>
         <button class="sp-row" id="vrBtn" style="position:relative; overflow:hidden;">
             <span class="sp-label">VR</span>
@@ -812,7 +812,7 @@
         class WorldConfig {
             constructor(scale = 20) {
                 this.BASE = {
-                    deer: 20,
+                    sheep: 20,
                     humans: 5,
                     plants: 300,
                     playerSpeed: 60,
@@ -829,7 +829,7 @@
             applyScale(scale) {
                 const B = this.BASE;
                 this.scale = scale;
-                this.initialDeer = Math.trunc(B.deer * scale);
+                this.initialSheep = Math.trunc(B.sheep * scale);
                 this.initialHumans = Math.trunc(B.humans * scale);
                 this.initialPlants = Math.trunc(B.plants * scale);
                 this.worldWidth = Math.trunc(B.worldWidth * scale);
@@ -1152,13 +1152,13 @@
                 if (this.hudCleared) { labels.panel.classList.remove('visible'); labels.locked = null; }
                 document.getElementById('nnVisState').textContent = this.hudCleared ? 'OFF' : 'ON';
                 document.getElementById('hudState').textContent = this.hudCleared ? 'OFF' : 'ON';
-                if (this.hudCleared && typeof labels.sphereVisMode !== 'undefined') {
-                    labels.sphereVisMode = 'off';
-                    document.getElementById('sphereVisState').textContent = 'OFF';
+                if (this.hudCleared && typeof labels.rayVisMode !== 'undefined') {
+                    labels.rayVisMode = 'off';
+                    document.getElementById('rayVisState').textContent = 'OFF';
                     if (typeof visionRays.lines !== 'undefined') visionRays.lines.visible = false;
-                } else if (!this.hudCleared && typeof labels.sphereVisMode !== 'undefined') {
-                    labels.sphereVisMode = 'single';
-                    document.getElementById('sphereVisState').textContent = 'SINGLE';
+                } else if (!this.hudCleared && typeof labels.rayVisMode !== 'undefined') {
+                    labels.rayVisMode = 'single';
+                    document.getElementById('rayVisState').textContent = 'SINGLE';
                     if (typeof visionRays.lines !== 'undefined') visionRays.lines.visible = true;
                 }
             }
@@ -1250,13 +1250,13 @@
                 }
                 if (!this._els) {
                     this._els = {
-                        deer:   document.getElementById('deerCount'),
+                        sheep:   document.getElementById('sheepCount'),
                         human:  document.getElementById('humanCount'),
                         plant:  document.getElementById('plantCount'),
                         day:    document.getElementById('dayCount'),
                     };
                 }
-                perf.setText(this._els.deer,  String(sheep));
+                perf.setText(this._els.sheep,  String(sheep));
                 perf.setText(this._els.human, String(humans));
                 let alivePlants = 0;
                 for (const p of world.plants) if (p.alive) alivePlants++;
@@ -1290,7 +1290,7 @@
                     ['flyBtn',       () => player.toggleCreative()],
                     ['graphicsBtn',  () => graphics.toggle()],
                     ['povBtn',       () => pov.cycle()],
-                    ['sphereVisBtn', () => labels.toggleSphereVis()],
+                    ['rayVisBtn', () => labels.toggleRayVis()],
                     ['rainBtn',      () => rain.toggle()],
                     ['nnVisBtn',     () => nnOverlay.toggle()],
                 ].forEach(([id, fn]) => document.getElementById(id).addEventListener('click', fn));
@@ -2095,9 +2095,9 @@
                 this.childGracePeriod = (15 + Math.random() * 15) * 1000;
                 this.lookForMate = false;
 
-                this.waterIncrement = this.health * 0.0001;
-                this.foodIncrement  = this.health * 0.0001;
-                this.ageDepl        = this.health * 0.00001;
+                this.waterIncrement = this.health * 0.000001;
+                this.foodIncrement  = this.health * 0.000003;
+                this.ageDepl        = this.health * 0.000001;
 
                 this.memPredatorX = 0; this.memPredatorZ = 0; this.hasPredator = false;
                 this.memFoodX = 0;     this.memFoodZ = 0;     this.hasFood = false;
@@ -2282,9 +2282,9 @@
                 this.reproductionNeed = this.lookForMate
                     ? this.reproductionNeed + this.reproductionNeed
                     : 0;
-                this.health -= ((now - this.tob) / 10000) * this.ageDepl
-                             + this.waterNeed * 0.0001
-                             + this.foodNeed  * 0.0001;
+                this.health -= ((now - this.tob) / 1000) * this.ageDepl
+                             + this.waterNeed * 0.001
+                             + this.foodNeed  * 0.003;
                 this.avoidNeed = 0;
                 if (this.health <= 1) { this.alive = false; return; }
 
@@ -2925,9 +2925,12 @@
                 this.WATER_JUMP_FACTOR  = 0.5;
                 this.WATER_FALL_FACTOR  = 0.35;
                 this.WATER_FEET_OFFSET  = 35;
+                this.WATER_DRAG           = 4;
+                this.WATER_FLOAT_OFFSET   = 5;
                 this.jumpForce = CONFIG.playerJumpForce();
                 this.isJumping = false;
                 this.isCreative = false;
+                this.swimming = false;
                 this.creativeLiftTarget = null;
                 this.yaw = Math.PI;
                 this.pitch = -0.3;
@@ -3016,6 +3019,18 @@
                     (this.position.y - this.WATER_FEET_OFFSET) < water.level;
             }
 
+            updateSwimState() {
+                if (this.isCreative) { this.swimming = false; return false; }
+                const bedY = terrain.heightAt(this.position.x, this.position.z);
+                if (bedY + this.WATER_FEET_OFFSET >= water.level)      this.swimming = false;
+                else if (this.position.y < water.level)                this.swimming = true;
+                return this.swimming;
+            }
+
+            isSwimming() {
+                return this.swimming;
+            }
+
             currentJumpForce() {
                 return this.isSubmerged() ? this.jumpForce * this.WATER_JUMP_FACTOR : this.jumpForce;
             }
@@ -3035,7 +3050,8 @@
                 const mag = Math.hypot(fwd, right);
                 if (mag > 1) { fwd /= mag; right /= mag; }
                 const currentSpeed = this.isSubmerged() ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
-                if (this.isCreative) {
+                const swimming = this.updateSwimState();
+                if (this.isCreative || swimming) {
                     const cosPitch = Math.cos(this.pitch);
                     this._moveVector.x = (-sinY * cosPitch * fwd + rightX * right) * currentSpeed * deltaTime;
                     this._moveVector.y =  Math.sin(this.pitch) * fwd             * currentSpeed * deltaTime;
@@ -3058,8 +3074,18 @@
                 } else {
                     this.position.x = tools.wrap(this.position.x, CONFIG.worldWidth);
                     this.position.z = tools.wrap(this.position.z, CONFIG.worldHeight);
-                    this.velocity.y -= 400 * (this.isSubmerged() ? this.WATER_FALL_FACTOR : 1) * deltaTime;
-                    this.position.y += this.velocity.y * deltaTime;
+                    if (swimming) {
+                        this.velocity.y *= Math.max(0, 1 - this.WATER_DRAG * deltaTime);
+                        this.position.y += this.velocity.y * deltaTime;
+                        const floatY = water.level + this.WATER_FLOAT_OFFSET;
+                        if (this.position.y > floatY) {
+                            this.position.y = floatY;
+                            if (this.velocity.y > 0) this.velocity.y = 0;
+                        }
+                    } else {
+                        this.velocity.y -= 400 * (this.isSubmerged() ? this.WATER_FALL_FACTOR : 1) * deltaTime;
+                        this.position.y += this.velocity.y * deltaTime;
+                    }
                     const groundAtPlayer = terrain.heightAt(this.position.x, this.position.z) + 35;
                     if (this.position.y < groundAtPlayer) {
                         this.position.y = groundAtPlayer;
@@ -3162,6 +3188,9 @@
                 this.playerHasMoved = false;
                 this.playerLastPos = new THREE.Vector3();
                 this.WATER_SPEED_FACTOR = 0.45;
+                this.WATER_FEET_OFFSET  = 11;
+                this.WATER_FLOAT_LIFT   = -1.5;
+                this.swimming = false;
 
                 this.position.copy(player.position);
                 this.position.z += 5;
@@ -3265,6 +3294,13 @@
                 return terrain.heightAt(this.position.x, this.position.z) < water.level;
             }
 
+            updateSwimState() {
+                const bedY = terrain.heightAt(this.position.x, this.position.z);
+                this.swimming = (bedY + this.WATER_FEET_OFFSET < water.level) &&
+                    (this.position.y < water.level || player.isSwimming());
+                return this.swimming;
+            }
+
             update(deltaTime) {
                 this.animTime += deltaTime;
                 const waterFactor = this.isSubmerged() ? this.WATER_SPEED_FACTOR : 1;
@@ -3291,11 +3327,16 @@
                     this.position.x += Math.sin(this.yaw) * speed * deltaTime;
                     this.position.z += Math.cos(this.yaw) * speed * deltaTime;
                 } else if (distToPlayer > catchUpDist) {
+                    const warpX = px - Math.sin(player.yaw) * followDist;
+                    const warpZ = pz - Math.cos(player.yaw) * followDist;
                     this.position.set(
-                        px - Math.sin(player.yaw) * followDist,
-                        CONFIG.groundY + 2,
-                        pz - Math.cos(player.yaw) * followDist
+                        warpX,
+                        player.isSwimming()
+                            ? player.position.y - player.WATER_FEET_OFFSET
+                            : water.groundOrFloat(warpX, warpZ, 2, 1.5),
+                        warpZ
                     );
+                    this.velocity.y = 0;
                     this.yaw = player.yaw;
                 } else if (distToPlayer < 12) {
                     speed = 20 * waterFactor;
@@ -3308,12 +3349,21 @@
                     this.yaw += (faceAngle - this.yaw) * Math.min(1, deltaTime * 2);
                 }
 
-                this.velocity.y -= 400 * deltaTime;
-                this.position.y += this.velocity.y * deltaTime;
-                const catGround = water.groundOrFloat(this.position.x, this.position.z, 2, 1.5);
-                if (this.position.y <= catGround + 33) {
-                    this.position.y = catGround;
+                if (this.updateSwimState()) {
+                    const bedY   = terrain.heightAt(this.position.x, this.position.z);
+                    const floatY = water.level + this.WATER_FLOAT_LIFT;
+                    const wanted = player.isSwimming() ? player.position.y : floatY;
+                    const targetY = Math.min(floatY, Math.max(bedY, wanted));
+                    this.position.y += (targetY - this.position.y) * Math.min(1, deltaTime * 3);
                     this.velocity.y = 0;
+                } else {
+                    this.velocity.y -= 400 * deltaTime;
+                    this.position.y += this.velocity.y * deltaTime;
+                    const catGround = water.groundOrFloat(this.position.x, this.position.z, 2, 1.5);
+                    if (this.position.y <= catGround + 33) {
+                        this.position.y = catGround;
+                        this.velocity.y = 0;
+                    }
                 }
 
                 this.position.x = tools.wrap(this.position.x, CONFIG.worldWidth);
@@ -4243,7 +4293,7 @@
                 this.current = null;
                 this.locked = null;
                 this.enabled = true;
-                this.sphereVisMode = 'single';
+                this.rayVisMode = 'single';
                 this._nnLabelEl = undefined;
 
                 this.panel     = document.getElementById('animal-stat-panel');
@@ -4381,12 +4431,12 @@
                 this.sprites.clear();
             }
 
-            toggleSphereVis() {
+            toggleRayVis() {
                 const modes = ['off', 'single', 'all'];
-                this.sphereVisMode = modes[(modes.indexOf(this.sphereVisMode) + 1) % modes.length];
-                const state = document.getElementById('sphereVisState');
-                if (state) state.textContent = this.sphereVisMode === 'off' ? 'OFF' : this.sphereVisMode === 'single' ? 'SINGLE' : 'ALL';
-                visionRays.lines.visible = this.sphereVisMode !== 'off';
+                this.rayVisMode = modes[(modes.indexOf(this.rayVisMode) + 1) % modes.length];
+                const state = document.getElementById('rayVisState');
+                if (state) state.textContent = this.rayVisMode === 'off' ? 'OFF' : this.rayVisMode === 'single' ? 'SINGLE' : 'ALL';
+                visionRays.lines.visible = this.rayVisMode !== 'off';
             }
 
             updateTarget() {
@@ -4401,7 +4451,7 @@
                 }
 
                 if (typeof visionRays.lines !== 'undefined') {
-                    visionRays.lines.visible = this.sphereVisMode !== 'off' && !!(this.current || this.locked || this.sphereVisMode === 'all');
+                    visionRays.lines.visible = this.rayVisMode !== 'off' && !!(this.current || this.locked || this.rayVisMode === 'all');
                 }
 
                 if (target && target.alive && (target.type === 'sheep' || target.type === 'human')) {
@@ -4922,7 +4972,7 @@
                 const target = labels.locked || labels.current;
 
                 let rayAnimals;
-                if (labels.sphereVisMode === 'all') {
+                if (labels.rayVisMode === 'all') {
                     rayAnimals = animals.filter(a => a.alive);
                     if (rayAnimals.length > this.MAX) rayAnimals.length = this.MAX;
                 } else {
@@ -5098,7 +5148,7 @@
 
                 for (let i = 0; i < CONFIG.initialPlants; i++) this.spawnPlant();
 
-                this.spawnAnimals(CONFIG.initialDeer, 'sheep', CONFIG.groundY + 15);
+                this.spawnAnimals(CONFIG.initialSheep, 'sheep', CONFIG.groundY + 15);
                 this.spawnAnimals(CONFIG.initialHumans, 'human', CONFIG.groundY + 22);
 
                 vr.rig.position.copy(player.position);
