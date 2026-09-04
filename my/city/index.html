@@ -88,7 +88,7 @@
 
 <div id="panel">
   <div id="card">
-    <h1>City Walk</h1>
+    <h1>City</h1>
     <p>Enter an address. Buildings within a few blocks are pulled from OpenStreetMap and extruded.</p>
     <div id="row">
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
@@ -107,6 +107,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 let storedPlace = localStorage.getItem('lastPlace') ? JSON.parse(localStorage.getItem('lastPlace')) : null;
+if (storedPlace) {
+  document.getElementById('addr').value = storedPlace.label;
+}
 
 const RADIUS_LADDER  = [600, 350, 200];   // half-extent tried in order, meters
 const DEFAULT_LEVELS = 3;       // when a building has no height info at all
@@ -699,7 +702,7 @@ async function load(query) {
 
     hudEl.textContent =
       place.label.split(',').slice(0, 3).join(',').trim() +
-      `${count} buildings \*` + (skipped ? `${skipped} skipped` : '');
+      `${count} buildings (${skipped ? `${skipped} skipped` : ''})`;
 
     panel.classList.add('hidden');
     say('');
