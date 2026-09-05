@@ -123,13 +123,88 @@ const JUMP_SPEED     = 30.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
-const OVERPASS_TIMEOUT_MS = 30000;
+const OVERPASS_TIMEOUT_MS = 50000;
+const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
 const NOMINATIM_URL  = 'https://nominatim.openstreetmap.org/search';
+
+
+// ---------------------------------------------------------------- layer tables
+
+// Flat layers all sit on the ground plane, so they get a fixed stacking order
+// in y rather than fighting over the same depth.
+const LAYER_Y = { area: 0.010, water: 0.018, road: 0.032, path: 0.048 };
+
+const ROAD_WIDTH = {
+  motorway: 14, trunk: 13, primary: 12, secondary: 10, tertiary: 9,
+  motorway_link: 7, trunk_link: 7, primary_link: 6.5, secondary_link: 6, tertiary_link: 6,
+  residential: 7, unclassified: 6.5, living_street: 6, service: 4.5, road: 6.5,
+  pedestrian: 6, track: 3.5, footway: 2, path: 1.8, cycleway: 2.2, steps: 1.6, bridleway: 2
+};
+const PATH_KINDS = new Set(['pedestrian', 'track', 'footway', 'path', 'cycleway', 'steps', 'bridleway']);
+const ROAD_COLOR = 0x3f4247;
+const PATH_COLOR = 0x8c8578;
+
+// leisure / landuse / natural values worth painting on the ground
+const AREA_COLOR = {
+  water: 0x3d6b85, wetland: 0x4f6b58, basin: 0x3d6b85, reservoir: 0x3d6b85,
+  park: 0x53753f, garden: 0x5c8046, grass: 0x5c8046, village_green: 0x5c8046,
+  recreation_ground: 0x578040, pitch: 0x4f7f45, playground: 0x8a7a55, golf_course: 0x578040,
+  forest: 0x3c5a33, wood: 0x3c5a33, meadow: 0x6d8a4c, farmland: 0x8f8a5e,
+  cemetery: 0x5d6a54, allotments: 0x6a7847, scrub: 0x5b6b45, sand: 0xc4b48c,
+  orchard: 0x5f7f45, greenfield: 0x6d8a4c
+};
+
+const WATERWAY_WIDTH = { river: 14, canal: 9, stream: 3, ditch: 1.6, drain: 1.6 };
+
+const BARRIER = {
+  wall:           { h: 2.0, t: 0.36, color: 0xb5ad9f },
+  city_wall:      { h: 4.0, t: 0.80, color: 0xb5ad9f },
+  retaining_wall: { h: 1.4, t: 0.50, color: 0xb5ad9f },
+  fence:          { h: 1.7, t: 0.10, color: 0x8a8272 },
+  hedge:          { h: 1.6, t: 0.80, color: 0x44653a }
+};
+
+// fallbacks when a building carries a material but no colour
+const WALL_MATERIAL_COLOR = {
+  brick: 0xd9a58a, red_brick: 0xd39177, brick_block: 0xd9a58a,
+  concrete: 0xdedcd6, cement_block: 0xd8d4cb, stone: 0xd8d1c2, sandstone: 0xe3c9a3,
+  limestone: 0xe6e0cd, marble: 0xf0ece6, granite: 0xc8c5c2,
+  glass: 0xbcd6e6, mirror: 0xc8dce8, metal: 0xcfd4d9, steel: 0xc7ccd2,
+  wood: 0xd0a878, timber_framing: 0xdcc39c, plaster: 0xeae4d8, stucco: 0xe6dccb,
+  plastic: 0xdedad0, tiles: 0xd9c3ae, vinyl_siding: 0xe4e0d5, asbestos: 0xdad7cf
+};
+const ROOF_MATERIAL_COLOR = {
+  roof_tiles: 0xb0654a, tiles: 0xb0654a, clay: 0xb96b4e, terracotta: 0xb96b4e,
+  slate: 0x7b828d, shingle: 0x8a7f70, asphalt: 0x6a6a6c, tar_paper: 0x5f5f63,
+  bitumen: 0x5f5f63, gravel: 0xa39d8c, concrete: 0xc0bcb3, metal: 0xafb5bb,
+  copper: 0x7fb3a0, zinc: 0xa8afb5, eternit: 0xb2afa8, thatch: 0xc0a56d,
+  glass: 0xb6d0dc, wood: 0xbb9268
+};
+
+// what we can actually build on top of a footprint; everything else stays flat
+const ROOF_SHAPE = {
+  gabled: 'gabled', gable: 'gabled', gambrel: 'gabled', round: 'gabled',
+  hipped: 'hipped', 'half-hipped': 'hipped', mansard: 'hipped',
+  pyramidal: 'pyramidal', dome: 'pyramidal', onion: 'pyramidal',
+  skillion: 'skillion', 'lean_to': 'skillion', monopitch: 'skillion'
+};
+
+const TREE_ROW_SPACING = 9;     // meters between trees sampled along a tree_row
+const SIGN_COLS  = 8;           // sign atlas layout
+const SIGN_CELL_W = 256;
+const SIGN_CELL_H = 48;
+const SIGN_MAX   = 192;
+
+// Only ask Overpass for the land cover and barrier values we actually paint.
+const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|greenfield'
+  + '|village_green|recreation_ground|basin|reservoir';
+const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
+const BARRIER_RE = Object.keys(BARRIER).join('|');
 
 
 const panel  = document.getElementById('panel');
@@ -170,7 +245,7 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-let cityMesh = null;
+const layers = [];   // every mesh built for the current place
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -234,11 +309,27 @@ async function fetchBuildings(lat, lon) {
 
     if (cache.has(bbox)) return { json: cache.get(bbox), radius };
 
-    const q = `[out:json][timeout:30];(way["building"](${bbox});relation["building"](${bbox}););out geom;`;
+    // One trip for every layer we render. `out geom` gives ways and relation
+    // members their coordinates inline, and nodes their own lat/lon.
+    const q = `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT}];(` +
+      `way["building"](${bbox});relation["building"](${bbox});` +
+      `way["highway"](${bbox});` +
+      `way["natural"="water"](${bbox});relation["natural"="water"](${bbox});` +
+      `way["waterway"](${bbox});` +
+      `way["landuse"~"^(${LANDUSE_RE})$"](${bbox});relation["landuse"~"^(${LANDUSE_RE})$"](${bbox});` +
+      `way["leisure"~"^(${LEISURE_RE})$"](${bbox});relation["leisure"~"^(${LEISURE_RE})$"](${bbox});` +
+      `way["natural"="wetland"](${bbox});way["natural"="scrub"](${bbox});way["natural"="sand"](${bbox});` +
+      `way["natural"="tree_row"](${bbox});` +
+      `way["barrier"~"^(${BARRIER_RE})$"](${bbox});` +
+      `node["natural"="tree"](${bbox});` +
+      `node["amenity"](${bbox});node["shop"](${bbox});` +
+      `node["highway"="street_lamp"](${bbox});` +
+      `node["emergency"="fire_hydrant"](${bbox});` +
+      `);out geom;`;
 
     for (const url of OVERPASS_MIRRORS) {
       const host = new URL(url).hostname;
-      say(`Fetching buildings within ${radius} m from ${host}…`);
+      say(`Fetching map data within ${radius} m from ${host}…`);
       try {
         const json = await overpassTry(url, q);
         cache.set(bbox, json);
@@ -305,38 +396,167 @@ function makeProjector(lat0, lon0) {
   return (lat, lon) => [(lon - lon0) * kx, -(lat - lat0) * kz];
 }
 
-// Pull outer rings out of the Overpass response as arrays of [x, z] plus tags.
-function ringsFrom(json, project) {
-  const out = [];
+// Ways carry their own geometry; relations expose it per member. Outer rings
+// only — inner rings (courtyards) are still ignored.
+function geometriesOf(el) {
+  if (el.type === 'way' && el.geometry) return [el.geometry];
+  if (el.type === 'relation' && el.members) {
+    return el.members.filter(m => m.role === 'outer' && m.geometry).map(m => m.geometry);
+  }
+  return [];
+}
+
+// Project, de-dupe consecutive points, and for rings drop the repeated closing
+// point. Returns [x, z] pairs.
+function cleanPts(geom, project, closed) {
+  const p = [];
+  for (const n of geom) {
+    const q = project(n.lat, n.lon);
+    const last = p[p.length - 1];
+    if (!last || Math.abs(last[0] - q[0]) > 1e-4 || Math.abs(last[1] - q[1]) > 1e-4) p.push(q);
+  }
+  if (closed && p.length > 2) {
+    const a = p[0], b = p[p.length - 1];
+    if (Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4) p.pop();
+  }
+  return p;
+}
+
+function areaKindOf(tags) {
+  for (const key of ['leisure', 'landuse', 'natural', 'amenity']) {
+    const v = tags[key];
+    if (v && AREA_COLOR[v] != null) return v;
+  }
+  return null;
+}
+
+// Sort the response into the layers the builders consume. Everything is plain
+// arrays and numbers so the whole thing survives a JSON round trip into
+// localStorage.
+function featuresFrom(json, project) {
+  const f = {
+    buildings: [], roads: [], areas: [], waterways: [],
+    trees: [], barriers: [], pois: [], props: []
+  };
 
   for (const el of json.elements || []) {
-    if (el.type === 'way' && el.geometry) {
-      out.push({ pts: el.geometry.map(n => project(n.lat, n.lon)), tags: el.tags });
-    } else if (el.type === 'relation' && el.members) {
-      for (const mem of el.members) {
-        // v1 renders outer rings only; inner rings (courtyards) are ignored
-        if (mem.role === 'outer' && mem.geometry) {
-          out.push({ pts: mem.geometry.map(n => project(n.lat, n.lon)), tags: el.tags });
+    const tags = el.tags || {};
+
+    if (el.type === 'node') {
+      const [x, z] = project(el.lat, el.lon);
+      if (tags.natural === 'tree') { f.trees.push({ x, z, tags }); continue; }
+      if (tags.highway === 'street_lamp') { f.props.push({ x, z, kind: 'lamp' }); continue; }
+      if (tags.emergency === 'fire_hydrant') { f.props.push({ x, z, kind: 'hydrant' }); continue; }
+      if (tags.amenity === 'bench') { f.props.push({ x, z, kind: 'bench' }); continue; }
+      if (tags.amenity || tags.shop) {
+        const label = signLabel(tags);
+        if (label) f.pois.push({ x, z, label });
+      }
+      continue;
+    }
+
+    if (tags.building) {
+      for (const g of geometriesOf(el)) {
+        const pts = cleanPts(g, project, true);
+        if (pts.length >= 3) f.buildings.push({ pts, tags });
+      }
+      continue;
+    }
+
+    if (tags.highway && ROAD_WIDTH[tags.highway]) {
+      const pts = cleanPts(el.geometry || [], project, false);
+      if (pts.length >= 2) f.roads.push({ pts, kind: tags.highway, width: parseLength(tags.width) });
+      continue;
+    }
+
+    if (tags.barrier && BARRIER[tags.barrier]) {
+      const pts = cleanPts(el.geometry || [], project, false);
+      if (pts.length >= 2) f.barriers.push({ pts, kind: tags.barrier, height: parseLength(tags.height) });
+      continue;
+    }
+
+    if (tags.natural === 'tree_row') {
+      const pts = cleanPts(el.geometry || [], project, false);
+      if (pts.length >= 2) {
+        // walk the line and drop a tree every few meters
+        let carry = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
+          const seg = Math.hypot(x1 - x0, z1 - z0);
+          if (seg < 1e-3) continue;
+          for (let d = TREE_ROW_SPACING - carry; d < seg; d += TREE_ROW_SPACING) {
+            const t = d / seg;
+            f.trees.push({ x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, tags });
+          }
+          carry = (carry + seg) % TREE_ROW_SPACING;
         }
+      }
+      continue;
+    }
+
+    if (tags.waterway && WATERWAY_WIDTH[tags.waterway]) {
+      const pts = cleanPts(el.geometry || [], project, false);
+      if (pts.length >= 2) {
+        f.waterways.push({ pts, width: parseLength(tags.width) ?? WATERWAY_WIDTH[tags.waterway] });
+      }
+      continue;
+    }
+
+    const kind = areaKindOf(tags);
+    if (kind) {
+      for (const g of geometriesOf(el)) {
+        const pts = cleanPts(g, project, true);
+        if (pts.length >= 3) f.areas.push({ pts, kind });
       }
     }
   }
 
-  // close, de-dupe consecutive points, drop degenerate rings
-  const clean = [];
-  for (const r of out) {
-    const p = [];
-    for (const q of r.pts) {
-      const last = p[p.length - 1];
-      if (!last || Math.abs(last[0] - q[0]) > 1e-4 || Math.abs(last[1] - q[1]) > 1e-4) p.push(q);
-    }
-    if (p.length > 2) {
-      const a = p[0], b = p[p.length - 1];
-      if (Math.abs(a[0] - b[0]) < 1e-4 && Math.abs(a[1] - b[1]) < 1e-4) p.pop();
-    }
-    if (p.length >= 3) clean.push({ pts: p, tags: r.tags });
-  }
-  return clean;
+  // big areas first so a pitch inside a park still reads on top of it
+  f.areas.sort((a, b) => Math.abs(ringArea(b.pts)) - Math.abs(ringArea(a.pts)));
+  return f;
+}
+
+// "convenience" -> "Convenience". Used when a POI has a type but no name.
+function prettify(v) {
+  return String(v).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+
+function signLabel(tags) {
+  if (!tags) return null;
+  if (tags.name) return tags.name;
+  if (tags.brand) return tags.brand;
+  if (tags.operator) return tags.operator;
+  if (tags.shop && tags.shop !== 'yes') return prettify(tags.shop);
+  if (tags.amenity && tags.amenity !== 'yes') return prettify(tags.amenity);
+  return null;
+}
+
+const _col = new THREE.Color();
+
+// OSM colour values are free text. Take hex and CSS names, ignore the rest
+// rather than letting Color.setStyle warn and hand back the previous colour.
+function cssColor(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase().replace(/\s+/g, '');
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/.test(s)) return _col.setStyle(s).getHex();
+  if (THREE.Color.NAMES[s] !== undefined) return THREE.Color.NAMES[s];
+  return null;
+}
+
+function wallColorOf(tags) {
+  if (!tags) return null;
+  return cssColor(tags['building:colour'])
+    ?? cssColor(tags.colour)
+    ?? WALL_MATERIAL_COLOR[tags['building:material']]
+    ?? WALL_MATERIAL_COLOR[tags['building:facade:material']]
+    ?? null;
+}
+
+function roofColorOf(tags) {
+  if (!tags) return null;
+  return cssColor(tags['roof:colour'])
+    ?? ROOF_MATERIAL_COLOR[tags['roof:material']]
+    ?? null;
 }
 
 function ringArea(pts) {
@@ -349,17 +569,256 @@ function ringArea(pts) {
 
 // ---------------------------------------------------------------- build
 
-function buildCity(rings) {
+// ---------------------------------------------------------------- geometry helpers
+
+// Table hexes are authored the way they should look, so they go through the
+// same sRGB -> working space conversion a material colour would get.
+function rgb(hex) {
+  _col.setHex(hex);
+  return [_col.r, _col.g, _col.b];
+}
+
+function newBuf() { return { pos: [], col: [] }; }
+
+// `ref` is the direction the face should end up pointing. Winding is fixed to
+// match it, which saves getting vertex order right by hand everywhere.
+function pushTri(b, p0, p1, p2, c, ref) {
+  const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
+  const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
+  const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+  const order = (nx * ref[0] + ny * ref[1] + nz * ref[2]) < 0 ? [p0, p2, p1] : [p0, p1, p2];
+  for (const p of order) { b.pos.push(p[0], p[1], p[2]); b.col.push(c[0], c[1], c[2]); }
+}
+
+function pushQuad(b, p0, p1, p2, p3, c, ref) {
+  pushTri(b, p0, p1, p2, c, ref);
+  pushTri(b, p0, p2, p3, c, ref);
+}
+
+function bufGeom(b) {
+  if (!b.pos.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function tint(g, c) {
+  const n = g.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c[0]; arr[i * 3 + 1] = c[1]; arr[i * 3 + 2] = c[2]; }
+  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return g;
+}
+
+// mergeGeometries refuses a mix of indexed and non-indexed inputs, so every
+// group is flattened before it gets there.
+function nonIndexed(g) {
+  if (!g.index) return g;
+  const flat = g.toNonIndexed();
+  g.dispose();
+  return flat;
+}
+
+const UP = [0, 1, 0];
+
+function pushDisc(b, x, y, z, r, c) {
+  const N = 6;
+  for (let k = 0; k < N; k++) {
+    const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2;
+    pushTri(b, [x, y, z],
+      [x + Math.cos(a0) * r, y, z + Math.sin(a0) * r],
+      [x + Math.cos(a1) * r, y, z + Math.sin(a1) * r], c, UP);
+  }
+}
+
+// Flat strip down a polyline, with a small patch at each interior joint so
+// corners do not open up. Good enough without mitring.
+function ribbon(b, pts, width, y, c) {
+  const h = Math.max(width, 0.6) / 2;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
+    const dx = x1 - x0, dz = z1 - z0;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.05) continue;
+    const nx = -dz / len * h, nz = dx / len * h;
+    pushQuad(b,
+      [x0 + nx, y, z0 + nz], [x1 + nx, y, z1 + nz],
+      [x1 - nx, y, z1 - nz], [x0 - nx, y, z0 - nz], c, UP);
+    if (i > 0) pushDisc(b, x0, y, z0, h, c);
+  }
+}
+
+// Filled polygon lying on the ground. Same XY-shape convention as the
+// building extrusions: a shape point (px, py) lands at world (px, 0, -py).
+function areaGeom(pts, y, c) {
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0][0], -pts[0][1]);
+  for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], -pts[i][1]);
+  shape.closePath();
+  let g;
+  try { g = new THREE.ShapeGeometry(shape, 1); } catch (e) { return null; }
+  if (!g.attributes.position || g.attributes.position.count < 3) { g.dispose(); return null; }
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, y, 0);
+  g.deleteAttribute('uv');
+  return tint(nonIndexed(g), c);
+}
+
+function bounds(pts) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [x, z] of pts) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+// ---------------------------------------------------------------- roofs
+
+// Oriented box around a footprint, taking the longest edge as the long axis.
+// Fine for the rectangular houses that carry roof:shape; anything less
+// rectangular is rejected by the area-fit test at the call site.
+function obbOf(pts) {
+  let bi = 0, bl = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const d = Math.hypot(pts[j][0] - pts[i][0], pts[j][1] - pts[i][1]);
+    if (d > bl) { bl = d; bi = i; }
+  }
+  if (bl <= 0) return null;
+  const j = (bi + 1) % pts.length;
+  let ux = (pts[j][0] - pts[bi][0]) / bl, uz = (pts[j][1] - pts[bi][1]) / bl;
+  let vx = -uz, vz = ux;
+
+  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (const [x, z] of pts) {
+    const a = x * ux + z * uz, b = x * vx + z * vz;
+    if (a < minU) minU = a; if (a > maxU) maxU = a;
+    if (b < minV) minV = b; if (b > maxV) maxV = b;
+  }
+  let hu = (maxU - minU) / 2, hv = (maxV - minV) / 2;
+  const cu = (minU + maxU) / 2, cv = (minV + maxV) / 2;
+  const cx = cu * ux + cv * vx, cz = cu * uz + cv * vz;
+
+  if (hv > hu) {   // keep u as the long axis
+    const tx = ux, tz = uz;
+    ux = vx; uz = vz; vx = -tx; vz = -tz;
+    const t = hu; hu = hv; hv = t;
+  }
+  if (hu < 0.5 || hv < 0.5) return null;
+  return { cx, cz, ux, uz, vx, vz, hu, hv, area: 4 * hu * hv };
+}
+
+// Roof volume between `wallTop` and `top`, built on the oriented box.
+function roofOf(b, o, wallTop, top, shape, c) {
+  const p = (du, dv, y) => [o.cx + o.ux * du + o.vx * dv, y, o.cz + o.uz * du + o.vz * dv];
+
+  const A = p(-o.hu, -o.hv, wallTop);   // corners of the eaves rectangle
+  const B = p( o.hu, -o.hv, wallTop);
+  const C = p( o.hu,  o.hv, wallTop);
+  const D = p(-o.hu,  o.hv, wallTop);
+
+  if (shape === 'pyramidal') {
+    const apex = p(0, 0, top);
+    pushTri(b, A, B, apex, c, [0, 1, 0]);
+    pushTri(b, B, C, apex, c, [0, 1, 0]);
+    pushTri(b, C, D, apex, c, [0, 1, 0]);
+    pushTri(b, D, A, apex, c, [0, 1, 0]);
+    return;
+  }
+
+  if (shape === 'skillion') {
+    const Chi = p( o.hu, o.hv, top), Dhi = p(-o.hu, o.hv, top);
+    pushQuad(b, A, B, Chi, Dhi, c, [0, 1, 0]);          // the slope
+    pushTri(b, B, C, Chi, c, [o.ux, 0, o.uz]);          // triangular ends
+    pushTri(b, A, Dhi, D, c, [-o.ux, 0, -o.uz]);
+    pushQuad(b, C, D, Dhi, Chi, c, [o.vx, 0, o.vz]);    // the raised wall
+    return;
+  }
+
+  // gabled and hipped share the two long slopes; hipped just pulls the ridge
+  // in from each end, which turns the gable walls into triangles.
+  const inset = shape === 'hipped' ? Math.min(o.hv, o.hu * 0.9) : 0;
+  const R0 = p(-o.hu + inset, 0, top);
+  const R1 = p( o.hu - inset, 0, top);
+
+  pushQuad(b, A, B, R1, R0, c, [0, 1, 0]);   // the two long slopes
+  pushQuad(b, C, D, R0, R1, c, [0, 1, 0]);
+  pushTri(b, B, C, R1, c, [o.ux, 0, o.uz]);  // gable wall, or hip when inset
+  pushTri(b, D, A, R0, c, [-o.ux, 0, -o.uz]);
+}
+
+// ---------------------------------------------------------------- build
+
+function clearLayers() {
+  for (const m of layers) {
+    scene.remove(m);
+    if (m.geometry) m.geometry.dispose();
+    if (m.material) {
+      if (m.material.map) m.material.map.dispose();
+      m.material.dispose();
+    }
+  }
+  layers.length = 0;
+}
+
+function addLayer(geoms, material) {
+  if (!geoms.length) return null;
+  let merged;
+  try {
+    merged = mergeGeometries(geoms, false);
+  } catch (e) {
+    merged = null;
+  }
+  for (const g of geoms) g.dispose();
+  if (!merged) return null;
+  merged.computeBoundingSphere();
+  const mesh = new THREE.Mesh(merged, material);
+  scene.add(mesh);
+  layers.push(mesh);
+  return mesh;
+}
+
+function litMaterial() { return new THREE.MeshLambertMaterial({ vertexColors: true }); }
+
+function buildCity(features) {
+  clearLayers();
+
   const geoms = [];
-  const walls = [];   // { pts, minX, maxX, minZ, maxZ } in world XZ
+  const roofBuf = newBuf();
+  const walls = [];   // { pts, minX, maxX, minZ, maxZ, base, top, tags } in world XZ
   let skipped = 0;
 
-  for (const ring of rings) {
-    if (Math.abs(ringArea(ring.pts)) < 4) { skipped++; continue; }   // slivers, map noise
+  for (const ring of features.buildings) {
+    const foot = Math.abs(ringArea(ring.pts));
+    if (foot < 4) { skipped++; continue; }   // slivers, map noise
 
-    const top = heightOf(ring.tags);
-    const base = Math.min(minHeightOf(ring.tags), top - 0.5);
-    const depth = top - base;
+    const tags = ring.tags || {};
+    const top = heightOf(tags);
+    const base = Math.min(minHeightOf(tags), top - 0.5);
+    if (!(top - base > 0.5)) { skipped++; continue; }
+
+    // A pitched roof eats the top of the extrusion; the walls stop at the
+    // eaves and the roof volume covers the rest.
+    let roofShape = ROOF_SHAPE[tags['roof:shape']] || null;
+    let obb = null, wallTop = top;
+    if (roofShape) {
+      obb = obbOf(ring.pts);
+      // the oriented box stands in for the footprint, so only use it when the
+      // two are close in area
+      if (!obb || foot / obb.area < 0.72) roofShape = null;
+    }
+    if (roofShape) {
+      let rh = parseLength(tags['roof:height'])
+        ?? (parseLength(tags['roof:levels']) ?? 0) * METERS_PER_LVL;
+      if (!rh) rh = Math.min(Math.max(obb.hv * 0.55, 1.2), 7);
+      rh = Math.min(rh, (top - base) - 1.0);
+      if (rh >= 0.6) wallTop = top - rh; else roofShape = null;
+    }
+
+    const depth = wallTop - base;
     if (!(depth > 0.5)) { skipped++; continue; }
 
     // Shape lives in XY; after rotateX(-90) a shape point (px, py) lands at
@@ -379,45 +838,366 @@ function buildCity(rings) {
     g.rotateX(-Math.PI / 2);
     if (base > 0) g.translate(0, base, 0);
 
-    // subtle per-building tint so facades read apart while walking
-    const t = 0.72 + Math.random() * 0.24;
-    const n = g.attributes.position.count;
-    const col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      col[i * 3]     = 0.80 * t;
-      col[i * 3 + 1] = 0.78 * t;
-      col[i * 3 + 2] = 0.74 * t;
+    // a tagged colour or material is used as-is, with only a slight jitter;
+    // everything else keeps the subtle random tint so facades read apart
+    const named = wallColorOf(tags);
+    let wc;
+    if (named != null) {
+      const c = rgb(named), s = 0.9 + Math.random() * 0.12;
+      wc = [c[0] * s, c[1] * s, c[2] * s];
+    } else {
+      const t = 0.72 + Math.random() * 0.24;
+      wc = [0.80 * t, 0.78 * t, 0.74 * t];
     }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    tint(g, wc);
     g.deleteAttribute('uv');
-
     geoms.push(g);
 
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const [x, z] of ring.pts) {
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    if (roofShape) {
+      const rcHex = roofColorOf(tags);
+      const rc = rcHex != null ? rgb(rcHex) : [wc[0] * 0.72, wc[1] * 0.70, wc[2] * 0.68];
+      roofOf(roofBuf, obb, wallTop, top, roofShape, rc);
     }
-    walls.push({ pts: ring.pts, minX, maxX, minZ, maxZ, base, top });
+
+    const bb = bounds(ring.pts);
+    // the eaves are the surface you can stand on, so collision stops there
+    walls.push({ pts: ring.pts, ...bb, base, top: wallTop, tags });
   }
 
-  if (cityMesh) {
-    scene.remove(cityMesh);
-    cityMesh.geometry.dispose();
-    cityMesh.material.dispose();
-    cityMesh = null;
+  const count = geoms.length;
+  const roofGeom = bufGeom(roofBuf);
+  if (roofGeom) geoms.push(roofGeom);
+  addLayer(geoms, litMaterial());
+
+  buildGround(features);
+  buildTrees(features.trees);
+  const barrierBoxes = buildBarriers(features.barriers);
+  buildProps(features.props);
+  buildSigns(collectSigns(walls, features.pois));
+
+  buildGrid(walls.concat(barrierBoxes));
+  return { count, skipped };
+}
+
+// Roads, paths, water and land cover, all flat on the ground plane.
+function buildGround(features) {
+  const geoms = [];
+  const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
+
+  for (const a of features.areas) {
+    const hex = AREA_COLOR[a.kind];
+    if (hex == null) continue;
+    const wet = a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir';
+    const g = areaGeom(a.pts, wet ? LAYER_Y.water : LAYER_Y.area, rgb(hex));
+    if (g) geoms.push(g);
   }
 
-  if (geoms.length) {
-    const merged = mergeGeometries(geoms, false);
-    for (const g of geoms) g.dispose();
-    merged.computeBoundingSphere();
-    cityMesh = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true }));
-    scene.add(cityMesh);
+  const waterC = rgb(AREA_COLOR.water);
+  for (const w of features.waterways) ribbon(waterBuf, w.pts, w.width, LAYER_Y.water, waterC);
+
+  const roadC = rgb(ROAD_COLOR), pathC = rgb(PATH_COLOR);
+  for (const r of features.roads) {
+    const isPath = PATH_KINDS.has(r.kind);
+    const width = r.width ?? ROAD_WIDTH[r.kind];
+    if (isPath) ribbon(pathBuf, r.pts, width, LAYER_Y.path, pathC);
+    else ribbon(roadBuf, r.pts, width, LAYER_Y.road, roadC);
   }
 
-  buildGrid(walls);
-  return { count: geoms.length, skipped };
+  for (const buf of [waterBuf, roadBuf, pathBuf]) {
+    const g = bufGeom(buf);
+    if (g) geoms.push(g);
+  }
+  addLayer(geoms, litMaterial());
+}
+
+// One instanced trunk and one instanced crown for the whole scene.
+function buildTrees(trees) {
+  if (!trees || !trees.length) return;
+
+  const trunkG = new THREE.CylinderGeometry(0.14, 0.2, 1, 6);
+  trunkG.translate(0, 0.5, 0);
+  const crownG = new THREE.IcosahedronGeometry(1, 0);
+  const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x6b5136 }), trees.length);
+  const crown = new THREE.InstancedMesh(crownG, new THREE.MeshLambertMaterial({ color: 0xffffff }), trees.length);
+
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const pos = new THREE.Vector3();
+  const scl = new THREE.Vector3();
+  const c = new THREE.Color();
+
+  for (let i = 0; i < trees.length; i++) {
+    const t = trees[i];
+    const tags = t.tags || null;
+    const h = Math.min(Math.max(parseLength(tags && tags.height) ?? (4.5 + Math.random() * 4), 2), 30);
+    const crownR = Math.min(Math.max((parseLength(tags && tags.diameter_crown) ?? h * 0.55) / 2, 0.6), h * 0.45);
+    const trunkH = h - crownR * 1.5;
+
+    e.set(0, Math.random() * Math.PI * 2, 0);
+    q.setFromEuler(e);
+
+    pos.set(t.x, 0, t.z);
+    scl.set(1, Math.max(trunkH, 0.5), 1);
+    trunk.setMatrixAt(i, m.compose(pos, q, scl));
+
+    pos.set(t.x, Math.max(trunkH, 0.5) + crownR * 0.55, t.z);
+    scl.set(crownR, crownR * 1.15, crownR);
+    crown.setMatrixAt(i, m.compose(pos, q, scl));
+    crown.setColorAt(i, c.setHSL(0.24 + Math.random() * 0.07, 0.42, 0.20 + Math.random() * 0.09));
+  }
+
+  trunk.instanceMatrix.needsUpdate = true;
+  crown.instanceMatrix.needsUpdate = true;
+  if (crown.instanceColor) crown.instanceColor.needsUpdate = true;
+  trunk.frustumCulled = false;
+  crown.frustumCulled = false;
+  scene.add(trunk); layers.push(trunk);
+  scene.add(crown); layers.push(crown);
+}
+
+// Walls, fences and hedges. Each segment is also handed back as a thin
+// footprint so the collision grid treats it like any other ring.
+function buildBarriers(list) {
+  const geoms = [], boxes = [];
+  if (!list) return boxes;
+
+  for (const b of list) {
+    const spec = BARRIER[b.kind];
+    if (!spec) continue;
+    const h = Math.min(Math.max(b.height ?? spec.h, 0.4), 12);
+    const c = rgb(spec.color);
+
+    for (let i = 0; i < b.pts.length - 1; i++) {
+      const [x0, z0] = b.pts[i], [x1, z1] = b.pts[i + 1];
+      const dx = x1 - x0, dz = z1 - z0;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.2) continue;
+
+      const g = new THREE.BoxGeometry(len, h, spec.t);
+      g.deleteAttribute('uv');
+      g.rotateY(Math.atan2(-dz, dx));
+      g.translate((x0 + x1) / 2, h / 2, (z0 + z1) / 2);
+      geoms.push(tint(nonIndexed(g), c));
+
+      const t = Math.max(spec.t, 0.25) / 2;
+      const nx = -dz / len * t, nz = dx / len * t;
+      const pts = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
+      boxes.push({ pts, ...bounds(pts), base: 0, top: h, tags: null });
+    }
+  }
+
+  addLayer(geoms, litMaterial());
+  return boxes;
+}
+
+function box(w, h, d, x, y, z, yaw, c) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  g.deleteAttribute('uv');
+  if (yaw) g.rotateY(yaw);
+  g.translate(x, y, z);
+  return tint(nonIndexed(g), c);
+}
+
+function cyl(rt, rb, h, x, y, z, c) {
+  const g = new THREE.CylinderGeometry(rt, rb, h, 6);
+  g.deleteAttribute('uv');
+  g.translate(x, y + h / 2, z);
+  return tint(nonIndexed(g), c);
+}
+
+// Street lamps, benches and hydrants. Decoration only — none of it collides.
+function buildProps(list) {
+  const geoms = [];
+  if (!list) return;
+
+  const post = rgb(0x50545c), lampHead = rgb(0xf5ead0);
+  const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
+
+  for (const p of list) {
+    if (p.kind === 'lamp') {
+      geoms.push(cyl(0.07, 0.11, 4.6, p.x, 0, p.z, post));
+      geoms.push(box(0.5, 0.18, 0.28, p.x, 4.7, p.z, 0, lampHead));
+    } else if (p.kind === 'bench') {
+      const yaw = Math.random() * Math.PI * 2;
+      const s = Math.sin(yaw), co = Math.cos(yaw);
+      geoms.push(box(1.7, 0.09, 0.5, p.x, 0.46, p.z, yaw, wood));
+      geoms.push(box(1.7, 0.38, 0.07, p.x - s * 0.21, 0.68, p.z - co * 0.21, yaw, wood));
+      geoms.push(box(0.07, 0.44, 0.44, p.x + co * 0.72, 0.22, p.z - s * 0.72, yaw, iron));
+      geoms.push(box(0.07, 0.44, 0.44, p.x - co * 0.72, 0.22, p.z + s * 0.72, yaw, iron));
+    } else if (p.kind === 'hydrant') {
+      geoms.push(cyl(0.13, 0.16, 0.62, p.x, 0, p.z, hydrant));
+      geoms.push(cyl(0.09, 0.13, 0.12, p.x, 0.62, p.z, hydrant));
+    }
+  }
+
+  addLayer(geoms, litMaterial());
+}
+
+// ---------------------------------------------------------------- signage
+
+// Outward-facing normal and midpoint of one footprint edge. Winding is not
+// guaranteed, so the normal is checked against the ring itself.
+function edgeOutward(pts, i) {
+  const j = (i + 1) % pts.length;
+  const [x0, z0] = pts[i], [x1, z1] = pts[j];
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  if (len < 1e-4) return null;
+  let nx = (z1 - z0) / len, nz = -(x1 - x0) / len;
+  const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+  if (pointInRing(pts, mx + nx * 0.2, mz + nz * 0.2)) { nx = -nx; nz = -nz; }
+  return { mx, mz, nx, nz, len };
+}
+
+function longestEdge(pts) {
+  let bi = -1, bl = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const d = Math.hypot(pts[j][0] - pts[i][0], pts[j][1] - pts[i][1]);
+    if (d > bl) { bl = d; bi = i; }
+  }
+  return bi < 0 ? null : edgeOutward(pts, bi);
+}
+
+function edgeNearest(pts, x, z) {
+  let bi = -1, best = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const [xi, zi] = pts[i], [xj, zj] = pts[j];
+    const dx = xj - xi, dz = zj - zi;
+    const l2 = dx * dx + dz * dz;
+    let t = l2 > 0 ? ((x - xi) * dx + (z - zi) * dz) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const px = xi + dx * t, pz = zi + dz * t;
+    const d = (x - px) * (x - px) + (z - pz) * (z - pz);
+    if (d < best) { best = d; bi = i; }
+  }
+  return bi < 0 ? null : edgeOutward(pts, bi);
+}
+
+function placeSign(edge, text, kind, eaves) {
+  if (!edge || !text) return null;
+  const h = kind === 'number' ? 0.3 : 0.55;
+  const y = kind === 'number'
+    ? Math.min(2.1, eaves - 0.25)
+    : Math.min(3.1, eaves - 0.45);
+  if (y - h / 2 < 0.3) return null;
+  if (edge.len < (kind === 'number' ? 0.8 : 1.6)) return null;
+  return {
+    x: edge.mx + edge.nx * 0.07, y, z: edge.mz + edge.nz * 0.07,
+    nx: edge.nx, nz: edge.nz, h, text: String(text), kind
+  };
+}
+
+// A building's own name and house number go on its longest wall; a POI node
+// goes on the wall of the building it sits in (or the nearest one).
+function collectSigns(walls, pois) {
+  const names = [], numbers = [];
+
+  for (const w of walls) {
+    const tags = w.tags;
+    if (!tags) continue;
+    const label = signLabel(tags);
+    if (label) {
+      const s = placeSign(longestEdge(w.pts), label, 'name', w.top);
+      if (s) names.push(s);
+    }
+    if (tags['addr:housenumber']) {
+      const s = placeSign(longestEdge(w.pts), tags['addr:housenumber'], 'number', w.top);
+      if (s) numbers.push(s);
+    }
+  }
+
+  const REACH = 15;
+  for (const p of pois || []) {
+    let hit = null, best = Infinity;
+    for (const w of walls) {
+      if (p.x < w.minX - REACH || p.x > w.maxX + REACH ||
+          p.z < w.minZ - REACH || p.z > w.maxZ + REACH) continue;
+      const inside = pointInRing(w.pts, p.x, p.z);
+      const c = closestOnRing(w.pts, p.x, p.z);
+      const d = inside ? 0 : c.d;
+      if (d < best) { best = d; hit = w; }
+      if (inside) break;
+    }
+    if (!hit) continue;
+    const s = placeSign(edgeNearest(hit.pts, p.x, p.z), p.label, 'name', hit.top);
+    if (s) names.push(s);
+  }
+
+  return names.concat(numbers).slice(0, SIGN_MAX);
+}
+
+// Every label is drawn into one atlas canvas, so all the signs in a city are
+// a single textured mesh. Each plane is only as wide as the text it uses.
+function buildSigns(signs) {
+  if (!signs.length) return;
+
+  const rows = Math.ceil(signs.length / SIGN_COLS);
+  const cv = document.createElement('canvas');
+  cv.width = SIGN_COLS * SIGN_CELL_W;
+  cv.height = rows * SIGN_CELL_H;
+  const ctx = cv.getContext('2d');
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  const buf = { pos: [], uv: [] };
+  const PAD = 10;
+
+  for (let i = 0; i < signs.length; i++) {
+    const s = signs[i];
+    const ox = (i % SIGN_COLS) * SIGN_CELL_W;
+    const oy = ((i / SIGN_COLS) | 0) * SIGN_CELL_H;
+
+    let text = s.text;
+    let size = s.kind === 'number' ? 30 : 26;
+    ctx.font = `${size}px "Iowan Old Style", Palatino, Georgia, serif`;
+    const maxW = SIGN_CELL_W - PAD * 2;
+    let w = ctx.measureText(text).width;
+    if (w > maxW) {
+      size = Math.max(13, Math.floor(size * maxW / w));
+      ctx.font = `${size}px "Iowan Old Style", Palatino, Georgia, serif`;
+      w = ctx.measureText(text).width;
+      while (w > maxW && text.length > 2) {          // still too long: clip it
+        text = text.slice(0, -2) + '\u2026';
+        w = ctx.measureText(text).width;
+      }
+    }
+
+    const used = Math.min(SIGN_CELL_W, Math.ceil(w + PAD * 2));
+    ctx.fillStyle = s.kind === 'number' ? '#e8e4dc' : '#1b1f27';
+    ctx.fillRect(ox, oy, used, SIGN_CELL_H);
+    ctx.fillStyle = s.kind === 'number' ? '#20242c' : '#e8e4dc';
+    ctx.fillText(text, ox + PAD, oy + SIGN_CELL_H / 2);
+
+    const u0 = ox / cv.width, u1 = (ox + used) / cv.width;
+    const v1 = 1 - oy / cv.height, v0 = 1 - (oy + SIGN_CELL_H) / cv.height;
+
+    // right = up x normal, so the quad faces along (nx, 0, nz)
+    const rx = s.nz, rz = -s.nx;
+    const hw = s.h * (used / SIGN_CELL_H) / 2, hh = s.h / 2;
+    const bl = [s.x - rx * hw, s.y - hh, s.z - rz * hw];
+    const br = [s.x + rx * hw, s.y - hh, s.z + rz * hw];
+    const tr = [s.x + rx * hw, s.y + hh, s.z + rz * hw];
+    const tl = [s.x - rx * hw, s.y + hh, s.z - rz * hw];
+
+    buf.pos.push(...bl, ...br, ...tr, ...bl, ...tr, ...tl);
+    buf.uv.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(buf.uv, 2));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex }));
+  scene.add(mesh);
+  layers.push(mesh);
 }
 
 // ---------------------------------------------------------------- collision
@@ -729,22 +1509,32 @@ async function load(query) {
   try {
     say('Looking up the address…');
     const place = await geocode(query);
-    let rings = [];
 
-    if (storedPlace === null || place.label != storedPlace.label) {
-        const { json, radius } = await fetchBuildings(place.lat, place.lon);
+    let features = null;
+    let radius = storedPlace ? storedPlace.radius : RADIUS_LADDER[0];
+    const cached = (storedPlace && place.label === storedPlace.label)
+      ? localStorage.getItem('lastFeatures')
+      : null;
+
+    if (cached) {
+        features = JSON.parse(cached);
+    } else {
+        const fetched = await fetchBuildings(place.lat, place.lon);
+        radius = fetched.radius;
 
         say('Building geometry…');
         const project = makeProjector(place.lat, place.lon);
-        rings = ringsFrom(json, project);
-        localStorage.setItem('lastPlace', JSON.stringify({ label: place.label, lat: place.lat, lon: place.lon, radius }));
-        localStorage.setItem('lastRings', JSON.stringify(rings));
-    } else {
-        rings = JSON.parse(localStorage.getItem('lastRings'));
-        const radius = storedPlace.radius;
+        features = featuresFrom(fetched.json, project);
+        try {
+            localStorage.setItem('lastPlace', JSON.stringify({ label: place.label, lat: place.lat, lon: place.lon, radius }));
+            localStorage.setItem('lastFeatures', JSON.stringify(features));
+        } catch (e) {
+            // over quota: the scene is already built from what we have
+            localStorage.removeItem('lastFeatures');
+        }
     }
 
-    const { count, skipped } = buildCity(rings);
+    const { count, skipped } = buildCity(features);
 
     if (!count) {
       say(`That spot has no mapped buildings within ${radius} m. Try somewhere more built up.`, true);
