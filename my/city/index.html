@@ -117,11 +117,12 @@ const DEFAULT_LEVELS = 3;       // when a building has no height info at all
 const METERS_PER_LVL = 3.2;
 const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
-const WALK_SPEED     = 50.0;
+const WALK_SPEED     = 40.0;
 const RUN_SPEED      = 100.0;
-const JUMP_SPEED     = 100.0;
+const JUMP_SPEED     = 30.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
+const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
 const OVERPASS_TIMEOUT_MS = 30000;
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
@@ -257,12 +258,16 @@ async function fetchBuildings(lat, lon) {
 
 // ---------------------------------------------------------------- parsing
 
-// "24", "24 m", "78'", "23.5 metres" -> meters, or null
+// "24", "24 m", "78'", "7'4\"", "23.5 metres" -> meters, or null
 function parseLength(raw) {
   if (raw == null) return null;
   const s = String(raw).trim();
-  const feet = s.match(/^([\d.]+)\s*(?:'|ft|feet)$/i);
-  if (feet) return parseFloat(feet[1]) * 0.3048;
+  // feet, with an optional inches part: 78', 7'4", 7 ft 4 in
+  const imp = s.match(/^([\d.]+)\s*(?:'|ft|feet)\s*(?:([\d.]+)\s*(?:"|''|in|inch(?:es)?)\s*)?$/i);
+  if (imp) {
+    const v = parseFloat(imp[1]) * 0.3048 + (imp[2] ? parseFloat(imp[2]) * 0.0254 : 0);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
   const m = s.match(/^([\d.]+)/);
   if (!m) return null;
   const v = parseFloat(m[1]);
@@ -271,11 +276,20 @@ function parseLength(raw) {
 
 function heightOf(tags) {
   if (!tags) return DEFAULT_LEVELS * METERS_PER_LVL;
-  const direct = parseLength(tags.height) ?? parseLength(tags['building:height']);
+  // these are all ground-to-tallest-point already, so they win outright.
+  // est_height sits below the surveyed tags but above any levels guess.
+  const direct = parseLength(tags.height)
+    ?? parseLength(tags['building:height'])
+    ?? parseLength(tags.est_height);
   if (direct) return direct;
   // levels can be "4", "4.5", or occasionally "2;3"; take the first number
   const lv = parseLength(tags['building:levels']);
-  if (lv) return lv * METERS_PER_LVL;
+  if (lv) {
+    // roof:height/roof:levels describe the roof alone, stacked on the walls
+    const roof = parseLength(tags['roof:height'])
+      ?? (parseLength(tags['roof:levels']) ?? 0) * METERS_PER_LVL;
+    return lv * METERS_PER_LVL + roof;
+  }
   return DEFAULT_LEVELS * METERS_PER_LVL;
 }
 
@@ -384,7 +398,7 @@ function buildCity(rings) {
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
     }
-    walls.push({ pts: ring.pts, minX, maxX, minZ, maxZ });
+    walls.push({ pts: ring.pts, minX, maxX, minZ, maxZ, base, top });
   }
 
   if (cityMesh) {
@@ -460,6 +474,8 @@ function closestOnRing(pts, x, z) {
 // Push the player circle out of any footprint it overlaps. A few passes so
 // inside corners settle instead of ping-ponging between two walls.
 function resolveCollisions(pos) {
+  const feetY = pos.y - EYE_HEIGHT;
+
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
     const cx = Math.floor(pos.x / GRID_CELL), cz = Math.floor(pos.z / GRID_CELL);
@@ -474,6 +490,9 @@ function resolveCollisions(pos) {
           if (seen.has(idx)) continue;
           seen.add(idx);
           const w = gridWalls[idx];
+          // footprints are 2D, so gate them by the slab they actually occupy:
+          // feet above the roof or head below the base means nothing to hit
+          if (feetY >= w.top - LAND_EPS || pos.y <= w.base) continue;
           const r = PLAYER_RADIUS;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
@@ -499,6 +518,31 @@ function resolveCollisions(pos) {
     }
     if (!moved) break;
   }
+}
+
+// The surface the feet pass down through between `fromFeet` and `toFeet`, or 0
+// for the street. Only roofs the feet were already above are eligible, so
+// walking under an overhang never snaps you up onto it.
+function supportAt(x, z, fromFeet, toFeet) {
+  let best = 0;
+  const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
+
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oz = -1; oz <= 1; oz++) {
+      const bucket = grid.get(cellKey(cx + ox, cz + oz));
+      if (!bucket) continue;
+
+      for (const idx of bucket) {
+        const w = gridWalls[idx];
+        if (w.top <= best) continue;                 // already have something higher
+        if (w.top > fromFeet + LAND_EPS) continue;   // roof is above us, not under us
+        if (w.top < toFeet) continue;                // still falling toward it
+        if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+        if (pointInRing(w.pts, x, z)) best = w.top;
+      }
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------- controls
@@ -632,20 +676,32 @@ function step(dt) {
     player.pos.z += (fwd.z * mz + right.z * mx) * speed * dt;
   }
 
+  // resolve horizontally before the vertical step, so the roof lookup below
+  // runs on a position that is already clear of any footprint
+  resolveCollisions(player.pos);
+
   if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
     player.vel.y = JUMP_SPEED;
     player.grounded = false;
   }
   jumpQueued = false;
   player.vel.y -= GRAVITY * dt;
-  player.pos.y += player.vel.y * dt;
-  if (player.pos.y <= EYE_HEIGHT) {
-    player.pos.y = EYE_HEIGHT;
-    player.vel.y = 0;
-    player.grounded = true;
-  }
 
-  // resolveCollisions(player.pos);
+  const fromFeet = player.pos.y - EYE_HEIGHT;
+  player.pos.y += player.vel.y * dt;
+  const toFeet = player.pos.y - EYE_HEIGHT;
+
+  // grounded is re-decided every frame now, so stepping off a roof edge drops
+  // you instead of leaving a stale flag that would allow a mid-air jump
+  player.grounded = false;
+  if (player.vel.y <= 0) {
+    const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet);
+    if (toFeet <= floorY) {
+      player.pos.y = floorY + EYE_HEIGHT;
+      player.vel.y = 0;
+      player.grounded = true;
+    }
+  }
 
   camera.position.copy(player.pos);
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
