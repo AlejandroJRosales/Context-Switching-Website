@@ -164,11 +164,11 @@ var navbar =
 				</a>
 				<div class="dropdown-menu topics-dropdown-menu" aria-labelledby="navbarDropdown">
 					<a class="dropdown-item" href="/my/aboutme">About Me</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/resume">Resume</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="/my/cv">CV</a>
+					<a class="dropdown-item" href="/my/resume">Resume</a>
+					<a class="dropdown-item" href="/my/cv">CV</a>
 					<a class="dropdown-item" href="/my/researchandwork">Research and Projects</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
-					<a class="dropdown-item" target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales">GitHub</a>
+					<a class="dropdown-item" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
+					<a class="dropdown-item" href="https://github.com/AlejandroJRosales">GitHub</a>
 					<a class="dropdown-item" href="/my/world/">Ecosystem Simulation</a>
 				</div>
 			</li>
@@ -203,7 +203,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">Linked <i class="fa-brands fa-linkedin fa-lg" style="color: #ffffff;"></i></a>
+					<a href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">Linked <i class="fa-brands fa-linkedin fa-lg" style="color: #ffffff;"></i></a>
 				</p>
 			</div>
 			<!-- Grid column -->
@@ -211,7 +211,7 @@ var footer =
 			<!-- Grid column -->
 			<div class="col-md-2 mb-3">
 				<p>
-					<a target="_blank" rel="noopener noreferrer" href="https://github.com/AlejandroJRosales"><i class="fa-brands fa-github fa-lg" style="color: #ffffff;"></i> GitHub</a>
+					<a href="https://github.com/AlejandroJRosales"><i class="fa-brands fa-github fa-lg" style="color: #ffffff;"></i> GitHub</a>
 				</p>
 			</div>
 			<!-- Grid column -->
