@@ -132,6 +132,33 @@ const OVERPASS_MIRRORS = [
 ];
 const NOMINATIM_URL  = 'https://nominatim.openstreetmap.org/search';
 
+// USGS orthoimagery from The National Map. Public domain, no key, no quota.
+// Courtesy credit: "USGS, USDA, The National Map: Orthoimagery."
+//
+// Two sources, tried in order. NAIP Plus is a dynamic image service whose
+// mosaic averages 0.3 m per pixel and includes high-resolution urban
+// orthoimagery, rendered to whatever size we ask for. The basemap tile cache
+// is the fallback: it stops at 1:9,028 (zoom 16), which is about 2.4
+// Mercator-metres per pixel, so roughly 1.8 m on the ground at mid latitudes
+// — the source of the mush this replaces.
+const ORTHO_URL   = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
+const ORTHO_M_PX  = 0.5;          // ground metres per pixel to ask for
+const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
+const ORTHO_TIMEOUT_MS = 12000;   // a big export takes the server a while
+
+const IMAGERY_URL      = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile';
+const IMAGERY_MAX_Z    = 16;
+const IMAGERY_MIN_Z    = 12;
+const IMAGERY_TILE_PX  = 256;
+const IMAGERY_MAX_TILES = 100;
+const IMAGERY_TIMEOUT_MS = 8000;
+const IMAGERY_Y        = 0.004;   // beneath every painted ground layer
+
+// The flat layers are all within a few centimetres of each other, which the
+// depth buffer cannot resolve at any distance, so each one also gets a depth
+// bias. Higher wins, and the base ground plane sits at 0.
+const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5 };
+
 
 // ---------------------------------------------------------------- layer tables
 
@@ -231,7 +258,9 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fb4c8);
 scene.fog = new THREE.Fog(0x9fb4c8, 120, 900);
 
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 2000);
+// near stays inside PLAYER_RADIUS so nothing clips, but 0.1 against a far
+// of 2000 leaves far too little depth precision for coplanar ground layers
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25, 2000);
 
 scene.add(new THREE.HemisphereLight(0xbdd3e6, 0x4a4640, 1.5));
 const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
@@ -781,7 +810,17 @@ function addLayer(geoms, material) {
   return mesh;
 }
 
-function litMaterial() { return new THREE.MeshLambertMaterial({ vertexColors: true }); }
+function litMaterial(bias) {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  if (bias) {
+    // pull this layer towards the viewer in depth-buffer units, which stays
+    // effective however far away the polygon is
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -bias;
+    m.polygonOffsetUnits = -bias;
+  }
+  return m;
+}
 
 function buildCity(features) {
   clearLayers();
@@ -879,9 +918,11 @@ function buildCity(features) {
   return { count, skipped };
 }
 
-// Roads, paths, water and land cover, all flat on the ground plane.
+// Roads, paths, water and land cover, all flat on the ground plane. These go
+// out as one mesh per layer rather than one merged mesh, because each needs
+// its own depth bias to stop them fighting each other at a distance.
 function buildGround(features) {
-  const geoms = [];
+  const areaGeoms = [], waterGeoms = [];
   const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
 
   for (const a of features.areas) {
@@ -889,11 +930,13 @@ function buildGround(features) {
     if (hex == null) continue;
     const wet = a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir';
     const g = areaGeom(a.pts, wet ? LAYER_Y.water : LAYER_Y.area, rgb(hex));
-    if (g) geoms.push(g);
+    if (g) (wet ? waterGeoms : areaGeoms).push(g);
   }
 
   const waterC = rgb(AREA_COLOR.water);
   for (const w of features.waterways) ribbon(waterBuf, w.pts, w.width, LAYER_Y.water, waterC);
+  const wg = bufGeom(waterBuf);
+  if (wg) waterGeoms.push(wg);
 
   const roadC = rgb(ROAD_COLOR), pathC = rgb(PATH_COLOR);
   for (const r of features.roads) {
@@ -902,12 +945,12 @@ function buildGround(features) {
     if (isPath) ribbon(pathBuf, r.pts, width, LAYER_Y.path, pathC);
     else ribbon(roadBuf, r.pts, width, LAYER_Y.road, roadC);
   }
+  const rg = bufGeom(roadBuf), pg = bufGeom(pathBuf);
 
-  for (const buf of [waterBuf, roadBuf, pathBuf]) {
-    const g = bufGeom(buf);
-    if (g) geoms.push(g);
-  }
-  addLayer(geoms, litMaterial());
+  addLayer(areaGeoms, litMaterial(LAYER_BIAS.area));
+  addLayer(waterGeoms, litMaterial(LAYER_BIAS.water));
+  if (rg) addLayer([rg], litMaterial(LAYER_BIAS.road));
+  if (pg) addLayer([pg], litMaterial(LAYER_BIAS.path));
 }
 
 // One instanced trunk and one instanced crown for the whole scene.
@@ -1032,6 +1075,150 @@ function buildProps(list) {
   }
 
   addLayer(geoms, litMaterial());
+}
+
+// ---------------------------------------------------------------- imagery
+
+// Standard slippy-tile maths. ArcGIS serves these as /tile/{z}/{row}/{col},
+// which is z/y/x rather than the usual z/x/y.
+function tileOf(lat, lon, z) {
+  const n = 2 ** z;
+  const rad = lat * Math.PI / 180;
+  return {
+    x: (lon + 180) / 360 * n,
+    y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n
+  };
+}
+function tileLon(x, z) { return x / 2 ** z * 360 - 180; }
+function tileLat(y, z) {
+  return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
+}
+
+// Resolves with the image or null, never rejects, so a missing tile leaves a
+// hole rather than failing the whole mosaic. crossOrigin matters: without it
+// the pixels are tainted and WebGL refuses to use them as a texture.
+function loadImage(url, timeoutMs) {
+  return new Promise(resolve => {
+    const img = new Image();
+    let settled = false;
+    const finish = v => { if (!settled) { settled = true; resolve(v); } };
+    img.crossOrigin = 'anonymous';
+    img.onload = () => finish(img);
+    img.onerror = () => finish(null);
+    if (timeoutMs) setTimeout(() => finish(null), timeoutMs);
+    img.src = url;
+  });
+}
+
+// Web Mercator metres, which is what the image service wants for its bbox.
+function mercator(lat, lon) {
+  const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137;
+  return [lon * Math.PI / 180 * 6378137, y];
+}
+
+// One export request covering the whole area, at whatever resolution we ask
+// for rather than whatever the tile cache happens to hold.
+async function fetchOrtho(lat, lon, radius, project) {
+  const dLat = radius / 110540;
+  const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
+  const north = lat + dLat, south = lat - dLat;
+  const west = lon - dLon, east = lon + dLon;
+
+  const [minX, minY] = mercator(south, west);
+  const [maxX, maxY] = mercator(north, east);
+
+  // the export is rendered in Mercator, so the requested size has to match
+  // that box's aspect or the service stretches the result to fit
+  const cap = Math.min(ORTHO_MAX_PX, renderer.capabilities.maxTextureSize);
+  let w = Math.min(cap, Math.round(2 * radius / ORTHO_M_PX));
+  let h = Math.min(cap, Math.round(w * (maxY - minY) / (maxX - minX)));
+  w = Math.round(h * (maxX - minX) / (maxY - minY));
+  if (!(w > 0 && h > 0)) return null;
+
+  const url = `${ORTHO_URL}?bbox=${minX},${minY},${maxX},${maxY}`
+    + `&bboxSR=3857&imageSR=3857&size=${w},${h}`
+    + `&format=jpg&interpolation=RSP_BilinearInterpolation&f=image`;
+
+  const img = await loadImage(url, ORTHO_TIMEOUT_MS);
+  if (!img) return null;
+
+  const [westX, northZ] = project(north, west);
+  const [eastX, southZ] = project(south, east);
+  return { source: img, westX, eastX, northZ, southZ, w, h, kind: 'ortho' };
+}
+
+// Stitch the tiles covering the loaded radius into one canvas.
+async function fetchImagery(lat, lon, radius, project) {
+  const dLat = radius / 110540;
+  const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
+
+  // start at the deepest cached level and back off if the box needs too many
+  let z = IMAGERY_MAX_Z, x0, x1, y0, y1;
+  for (;;) {
+    const nw = tileOf(lat + dLat, lon - dLon, z);
+    const se = tileOf(lat - dLat, lon + dLon, z);
+    x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
+    y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) <= IMAGERY_MAX_TILES) break;
+    if (z <= IMAGERY_MIN_Z) return null;   // too much ground to cover sensibly
+    z--;
+  }
+
+  const cols = x1 - x0 + 1, rows = y1 - y0 + 1;
+  const cv = document.createElement('canvas');
+  cv.width = cols * IMAGERY_TILE_PX;
+  cv.height = rows * IMAGERY_TILE_PX;
+  const ctx = cv.getContext('2d');
+
+  let got = 0;
+  const jobs = [];
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      jobs.push(loadImage(`${IMAGERY_URL}/${z}/${ty}/${tx}`, 0).then(img => {
+        if (!img) return;
+        ctx.drawImage(img, (tx - x0) * IMAGERY_TILE_PX, (ty - y0) * IMAGERY_TILE_PX,
+          IMAGERY_TILE_PX, IMAGERY_TILE_PX);
+        got++;
+      }));
+    }
+  }
+
+  // whatever has arrived when the timer runs out is what gets used
+  await Promise.race([
+    Promise.all(jobs),
+    new Promise(done => setTimeout(done, IMAGERY_TIMEOUT_MS))
+  ]);
+  if (!got) return null;
+
+  // The corners go through the game's own projector rather than a Mercator
+  // inverse, so the photo lines up with the buildings even where that
+  // projection is not quite true to scale.
+  const [westX, northZ] = project(tileLat(y0, z), tileLon(x0, z));
+  const [eastX, southZ] = project(tileLat(y1 + 1, z), tileLon(x1 + 1, z));
+  return { source: cv, westX, eastX, northZ, southZ, z, got, total: cols * rows, kind: 'tiles' };
+}
+
+// One textured quad under the scene. v runs north at the top of the canvas,
+// which is what the default flipY already gives us.
+function buildImagery(img) {
+  if (!img) return;
+  const g = new THREE.PlaneGeometry(img.eastX - img.westX, img.southZ - img.northZ);
+  g.rotateX(-Math.PI / 2);
+  g.translate((img.westX + img.eastX) / 2, IMAGERY_Y, (img.northZ + img.southZ) / 2);
+
+  const tex = new THREE.Texture(img.source);
+  tex.needsUpdate = true;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const mat = new THREE.MeshLambertMaterial({ map: tex });
+  mat.polygonOffset = true;                       // see LAYER_BIAS
+  mat.polygonOffsetFactor = -LAYER_BIAS.imagery;
+  mat.polygonOffsetUnits = -LAYER_BIAS.imagery;
+
+  const mesh = new THREE.Mesh(g, mat);
+  scene.add(mesh);
+  layers.push(mesh);
 }
 
 // ---------------------------------------------------------------- signage
@@ -1540,6 +1727,17 @@ async function load(query) {
       say(`That spot has no mapped buildings within ${radius} m. Try somewhere more built up.`, true);
       busy = false; goEl.disabled = false;
       return;
+    }
+
+    try {
+        say('Fetching aerial imagery…');
+        const proj = makeProjector(place.lat, place.lon);
+        // the tile cache is the fallback when the image service has nothing
+        // here, or cannot be reached
+        buildImagery(await fetchOrtho(place.lat, place.lon, radius, proj)
+          ?? await fetchImagery(place.lat, place.lon, radius, proj));
+    } catch (e) {
+        // no imagery over this spot, or the service is down; the scene stands
     }
 
     player.pos.set(0, EYE_HEIGHT, 0);
