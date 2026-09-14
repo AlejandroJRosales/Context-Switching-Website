@@ -178,7 +178,7 @@ let creatureProg = null,
   creatureGeoCount = 0,
   creatureInstBuf = null;
 
-const CREATURE_STRIDE = 10;
+const CREATURE_STRIDE = 9;
 
 const MAX_CREATURES = 1000;
 
@@ -200,7 +200,7 @@ function creatureGroundY(x, z) {
   return Math.max(terrainHeight(x, z), CONFIG.waterLevel) + CREATURE_GROUND_OFFSET;
 }
 
-function hslToRgbInto(species, i, h, s, l) {
+function hslToRgbInto(sex, i, h, s, l) {
   let r, g, b;
   if (s === 0) {
     r = g = b = l;
@@ -215,8 +215,8 @@ function hslToRgbInto(species, i, h, s, l) {
       if (hue < 2 / 3) return p + (q - p) * (2 / 3 - hue) * 6;
       return p;
     };
-    r = species === 1 ? hueToChannel(h + 1 / 3) : 0;
-    g = species === 1 ? hueToChannel(h) : 0;
+    r = sex === SEX_MALE ? hueToChannel(h + 1 / 3) : 0;
+    g = sex === SEX_MALE ? hueToChannel(h) : 0;
     b = hueToChannel(h - 1 / 3);
   }
   creatures.colorR[i] = r;
@@ -237,21 +237,15 @@ function geneDecode(i) {
   const h = (cod0 + cod1) / 126;
   const s = 0.35 + (0.65 * (cod2 + cod3)) / 126;
   const l = 0.3 + (0.45 * (cod4 + cod5)) / 126;
-  hslToRgbInto(creatures.species[i], i, h, s, l);
   creatures.sex[i] = cod6 < 32 ? SEX_FEMALE : SEX_MALE;
+  hslToRgbInto(creatures.sex[i], i, h, s, l);
 }
 
-function geneRandom(i, species) {
+function geneRandom(i) {
   const base = i * GENE_LEN;
   const g = creatures.gene;
-  let hueMin, hueMax;
-  if (species) {
-    hueMin = -0.04;
-    hueMax = 0.06;
-  } else {
-    hueMin = 0.22;
+  const hueMin = 0.22,
     hueMax = 0.42;
-  }
   const targetHue = hueMin + (hueMax - hueMin) * RNG();
   let hueTotal = Math.round(((targetHue + 1) % 1) * 126);
   let codonA = Math.min(63, Math.max(0, (hueTotal * RNG()) | 0));
@@ -442,9 +436,7 @@ function creatureSpawn(i) {
   creatures.age[i] = 0;
   creatures.generation[i] = 0;
   creatures.isAlive[i] = 1;
-  const isPredator = RNG() < 0.2;
-  creatures.species[i] = isPredator ? 1 : 0;
-  geneRandom(i, creatures.species[i]);
+  geneRandom(i);
   wanderInit(i);
   behaviorInit(i, RNG() * MATE_COOLDOWN);
 }
@@ -492,7 +484,6 @@ function creatureCopy(dst, src) {
   creatures.size[dst] = creatures.size[src];
   creatures.energy[dst] = creatures.energy[src];
   creatures.hydration[dst] = creatures.hydration[src];
-  creatures.species[dst] = creatures.species[src];
   creatures.sex[dst] = creatures.sex[src];
   creatures.colorR[dst] = creatures.colorR[src];
   creatures.colorG[dst] = creatures.colorG[src];
@@ -550,7 +541,6 @@ function creatureBirth(motherIdx, fatherIdx) {
       ? creatures.generation[motherIdx]
       : creatures.generation[fatherIdx];
   creatures.generation[child] = (olderGen + 1) & 0xffff;
-  creatures.species[child] = creatures.species[motherIdx];
   creatures.size[child] =
     (creatures.size[motherIdx] + creatures.size[fatherIdx]) * 0.5 * (0.9 + RNG() * 0.2);
   const childBase = child * GENE_LEN,
@@ -597,7 +587,7 @@ function updateCreatures(dt) {
     } else {
       creatures.heading[i] += creatures.wanderTurn[i] * WANDER_TURN_SCALE * dt * (1 - 0.7 * rest);
     }
-    const maxSpeed = creatures.species[i] ? 40 : 30;
+    const maxSpeed = 30;
     const targetSpeed = throttle * maxSpeed * (1 - 0.85 * rest);
     creatures.speed[i] += (targetSpeed - creatures.speed[i]) * Math.min(1, dt * 3);
     const curX = creatures.x[i],
@@ -646,25 +636,14 @@ function updateCreatures(dt) {
         creatures.senseTimer[i] = 0;
       }
     }
-    if (!creatures.species[i]) {
-      const reach = 16 + creatures.size[i];
-      scanNearestPlant(nextX, nextZ, reach);
-      if (nearestPlantIdx !== -1) {
-        creatures.energy[i] = Math.min(1, creatures.energy[i] + 0.35);
-        plantRemove(nearestPlantIdx);
-        rebuildPlantGrid();
-        creatures.targetKind[i] = TARGET_NONE;
-        creatures.senseTimer[i] = 0;
-      }
-    } else {
-      const reach = 20 + creatures.size[i];
-      scanNearestPrey(nextX, nextZ, reach, i);
-      if (nearestPreyIdx !== -1) {
-        creatures.energy[i] = Math.min(1, creatures.energy[i] + 0.5);
-        creatureRemove(nearestPreyIdx);
-        creatures.targetKind[i] = TARGET_NONE;
-        creatures.senseTimer[i] = 0;
-      }
+    const reach = 16 + creatures.size[i];
+    scanNearestPlant(nextX, nextZ, reach);
+    if (nearestPlantIdx !== -1) {
+      creatures.energy[i] = Math.min(1, creatures.energy[i] + 0.35);
+      plantRemove(nearestPlantIdx);
+      rebuildPlantGrid();
+      creatures.targetKind[i] = TARGET_NONE;
+      creatures.senseTimer[i] = 0;
     }
     if (creatures.energy[i] > 1) creatures.energy[i] = 1;
     if (
@@ -694,8 +673,7 @@ function uploadCreatures() {
     creatureInstData[offset + 5] = creatures.colorG[i];
     creatureInstData[offset + 6] = creatures.colorB[i];
     creatureInstData[offset + 7] = creatures.facing[i];
-    creatureInstData[offset + 8] = creatures.species[i];
-    creatureInstData[offset + 9] = creatures.sex[i];
+    creatureInstData[offset + 8] = creatures.sex[i];
   }
   bindBuffer(GL_ARRAY_BUFFER, creatureInstBuf);
   setBufferData(
@@ -1135,8 +1113,7 @@ const DEPTH_CREATURE_INST_ATTRIBS = [
   ['aInstPos', 3, CREATURE_STRIDE * 4, 0],
   ['aInstScale', 1, CREATURE_STRIDE * 4, 12],
   ['aInstHeading', 1, CREATURE_STRIDE * 4, 28],
-  ['aInstSpecies', 1, CREATURE_STRIDE * 4, 32],
-  ['aInstSex', 1, CREATURE_STRIDE * 4, 36]
+  ['aInstSex', 1, CREATURE_STRIDE * 4, 32]
 ];
 
 function renderShadowPass() {
@@ -1270,13 +1247,10 @@ function gridScanRange(px, pz, reach) {
 
 let nearestMateIdx = -1;
 
-let nearestPreyIdx = -1;
-
 function scanNearestMate(px, pz, reach, self) {
   nearestMateIdx = -1;
   let bestDist2 = reach * reach;
-  const species = creatures.species[self],
-    sex = creatures.sex[self];
+  const sex = creatures.sex[self];
   gridScanRange(px, pz, reach);
   for (let scanZ = scanRowMin; scanZ <= scanRowMax; scanZ++) {
     for (let scanX = scanColMin; scanX <= scanColMax; scanX++) {
@@ -1285,7 +1259,6 @@ function scanNearestMate(px, pz, reach, self) {
         if (
           other !== self &&
           creatures.isAlive[other] &&
-          creatures.species[other] === species &&
           creatures.sex[other] !== sex &&
           mateReady(other)
         ) {
@@ -1295,29 +1268,6 @@ function scanNearestMate(px, pz, reach, self) {
           if (dist2 < bestDist2) {
             bestDist2 = dist2;
             nearestMateIdx = other;
-          }
-        }
-        other = creatureGrid.cellNext[other];
-      }
-    }
-  }
-}
-
-function scanNearestPrey(px, pz, reach, self) {
-  nearestPreyIdx = -1;
-  let bestDist2 = reach * reach;
-  gridScanRange(px, pz, reach);
-  for (let scanZ = scanRowMin; scanZ <= scanRowMax; scanZ++) {
-    for (let scanX = scanColMin; scanX <= scanColMax; scanX++) {
-      let other = creatureGrid.cellHead[scanZ * creatureGrid.cols + scanX];
-      while (other !== -1) {
-        if (other !== self && creatures.isAlive[other] && !creatures.species[other]) {
-          const relX = creatures.x[other] - px,
-            relZ = creatures.z[other] - pz,
-            dist2 = relX * relX + relZ * relZ;
-          if (dist2 < bestDist2) {
-            bestDist2 = dist2;
-            nearestPreyIdx = other;
           }
         }
         other = creatureGrid.cellNext[other];
@@ -1353,8 +1303,7 @@ function scanNearestPlant(px, pz, maxDist) {
 const TARGET_NONE = 0,
   TARGET_PLANT = 1,
   TARGET_WATER = 2,
-  TARGET_MATE = 3,
-  TARGET_PREY = 4;
+  TARGET_MATE = 3;
 
 const SENSE_INTERVAL = 0.3;
 
@@ -1362,11 +1311,6 @@ const FORAGE_SENSE_RADIUS = VISION_RADIUS,
   FORAGE_TURN_RATE = 2.6,
   FORAGE_SPEED = 0.85,
   FORAGE_HUNGER = 0.9;
-
-const HUNT_SENSE_RADIUS = VISION_RADIUS,
-  HUNT_TURN_RATE = 2.9,
-  HUNT_SPEED = 1,
-  HUNT_HUNGER = 0.9;
 
 function behaviorInit(i, cooldown) {
   creatures.targetKind[i] = TARGET_NONE;
@@ -1382,17 +1326,7 @@ function mateReady(i) {
 
 function senseTick(i) {
   creatures.senseTimer[i] = SENSE_INTERVAL * (0.75 + RNG() * 0.5);
-  if (creatures.species[i]) {
-    if (creatures.energy[i] < HUNT_HUNGER) {
-      scanNearestPrey(creatures.x[i], creatures.z[i], HUNT_SENSE_RADIUS, i);
-      if (nearestPreyIdx !== -1) {
-        creatures.targetX[i] = creatures.x[nearestPreyIdx];
-        creatures.targetZ[i] = creatures.z[nearestPreyIdx];
-        creatures.targetKind[i] = TARGET_PREY;
-        return;
-      }
-    }
-  } else if (creatures.energy[i] < FORAGE_HUNGER) {
+  if (creatures.energy[i] < FORAGE_HUNGER) {
     scanNearestPlant(creatures.x[i], creatures.z[i], FORAGE_SENSE_RADIUS);
     if (nearestPlantIdx !== -1) {
       creatures.targetX[i] = plants.x[nearestPlantIdx];
@@ -1520,15 +1454,10 @@ attribute float aHorn;
 attribute vec3 aInstPos;
 attribute float aInstScale;
 attribute float aInstHeading;
-attribute float aInstSpecies;
 attribute float aInstSex;
 mat3 instRot;
 vec3 instDeform(){
   vec3 lp=mix(aPos, ${HORN_BASE_GLSL}, aHorn*(1.0-aInstSex));
-  float pred=aInstSpecies;
-  lp.z*=mix(1.0, 1.6, pred);
-  lp.x*=mix(1.0, .8, pred);
-  lp.y*=mix(1.0, .85, pred);
   float s=sin(aInstHeading), c=cos(aInstHeading);
   instRot=mat3(c,.0,-s, .0,1.0,.0, s,.0,c);
   return instRot*(lp*aInstScale);
@@ -1614,8 +1543,7 @@ const CREATURE_INST_ATTRIBS = [
   ['aInstScale', 1, CREATURE_STRIDE * 4, 12],
   ['aInstColor', 3, CREATURE_STRIDE * 4, 16],
   ['aInstHeading', 1, CREATURE_STRIDE * 4, 28],
-  ['aInstSpecies', 1, CREATURE_STRIDE * 4, 32],
-  ['aInstSex', 1, CREATURE_STRIDE * 4, 36]
+  ['aInstSex', 1, CREATURE_STRIDE * 4, 32]
 ];
 
 // UI - HUD, buttons, pause/reset, frame loop
@@ -1917,14 +1845,12 @@ function drawRainPass(sky, right) {
 }
 
 function updateInfoPanel() {
-  let herbivores = 0,
-    females = 0,
+  let females = 0,
     energySum = 0,
     speedSum = 0,
     ageSum = 0,
     maxGeneration = 0;
   for (let i = 0; i < creatures.count; i++) {
-    if (!creatures.species[i]) herbivores++;
     if (creatures.sex[i] === SEX_FEMALE) females++;
     energySum += creatures.energy[i];
     speedSum += creatures.speed[i];
@@ -1935,7 +1861,7 @@ function updateInfoPanel() {
     `3.0.2 FPS ${fps} seed ${CONFIG.seed}\n` +
     `scale ${CONFIG.worldScale} waterLevel ${CONFIG.waterLevel}\n` +
     `tri ${terrainIdxCount / 3} shadowRef ${SHADOW.refreshInterval} shadowSize ${SHADOW.size}\n` +
-    `${creatures.count}C ${herbivores}H/${creatures.count - herbivores}R (${females}F/${creatures.count - females}M) ${plants.count}P\n` +
+    `${creatures.count}C (${females}F/${creatures.count - females}M) ${plants.count}P\n` +
     `avg energy ${(energySum / Math.max(1, creatures.count)).toFixed(2)} avg speed ${(speedSum / Math.max(1, creatures.count)).toFixed(1)}\n` +
     `max gen ${maxGeneration} avg age ${(ageSum / Math.max(1, creatures.count)).toFixed(0)}s ${simClock(simTime)}`;
 }
@@ -2843,7 +2769,6 @@ const creatures = {
   size: new Float32Array(MAX_CREATURES),
   energy: new Float32Array(MAX_CREATURES),
   hydration: new Float32Array(MAX_CREATURES),
-  species: new Uint8Array(MAX_CREATURES),
   sex: new Uint8Array(MAX_CREATURES),
   colorR: new Float32Array(MAX_CREATURES),
   colorG: new Float32Array(MAX_CREATURES),
@@ -2890,16 +2815,14 @@ const TARGET_TURN_RATE = new Float32Array([
   0,
   FORAGE_TURN_RATE,
   DRINK_TURN_RATE,
-  MATE_TURN_RATE,
-  HUNT_TURN_RATE
+  MATE_TURN_RATE
 ]);
 
 const TARGET_THROTTLE = new Float32Array([
   0,
   FORAGE_SPEED,
   DRINK_SPEED,
-  MATE_SPEED,
-  HUNT_SPEED
+  MATE_SPEED
 ]);
 
 // player
