@@ -37,7 +37,7 @@ function addDynamicHTML() {
 	$(".nav-placeholder").html(navbar);
 	$(".footer-placeholder").html(footer);
 	$(".table-of-contents-collapsible-div").html(tableOfContentsCollapsible);
-	$(".oneai-div").html(oneaiDiv);
+	// $(".oneai-div").html(oneaiDiv);
 	$(".explore-placeholder").html(exploreSection);
 }
 
