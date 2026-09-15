@@ -175,11 +175,11 @@ function generateTableOfContents() {
 		tableOfContentsStr += '</ul>'
 	}
 	tableOfContentsStr +=  '<li><a class="sliding-link" id="contents-link" href="#related-articles">Related Articles</a></li>';
-	//
 
 	// var topLinks = '<br><button id="dark-mode-toggle-btn-ignore" onclick="toggleDarkMode()"><i class="fas fa-moon fa-moon-ignore fa-2xl dark-mode-toggle-btn-ignore"></i></button><br><br></div><a id="top-of-page-li contents-link" href="/">Home</a><br><br>'
+	var topLinks = '<a class="sliding-link" id="top-of-page-li contents-link" href="#nav-placeholder">Top of Page</a><br>'
 	$(".table-of-contents").append('<div class="reveal fade-left"><h5>Contents</h5><hr class="section-seperator"><br>' + tableOfContentsStr + '</div>');
-	$(".table-of-contents-collapsible").append('<h5>Contents</h5><br>' + tableOfContentsStr);
+	$(".table-of-contents-collapsible").append('<h5>Contents</h5>' + topLinks + '<br>' + tableOfContentsStr);
 }
 
 $(function () {
