@@ -16,7 +16,7 @@ var titleSection =
 var exploreSection =
 	`
 <div>
-  <h3 class="explore-section"><i class="fa-regular fa-compass fa-beat-fade fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;<a href="/explore">Explore</a>
+  <h3 class="explore-section"><i class="fa-regular fa-compass fa-lg homepage-icon" style="color: #ffffff;"></i>&nbsp;<a href="/explore">Explore</a>
     <div class="explore-text-box">
       <p class="homepage-info">
         Explore more topics!

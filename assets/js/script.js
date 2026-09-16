@@ -31,7 +31,13 @@ $(function () {
 	applyModeStyle();
 	reveal();
 	generateTableOfContents();
+	applyLinkStyle();
 });
+
+function applyLinkStyle() {
+	var linkColor = localStorage.getItem('isDarkMode') === 'true' ? "white" : "black";
+	$("a").not(".navbar a, footer a, #collapse a").css({ "color": linkColor });
+}
 
 function addDynamicHTML() {
 	$(".nav-placeholder").html(navbar);
@@ -352,6 +358,7 @@ function applyModeStyle() {
 		$(".card-footer").css({ "background": "rgb(41,41,41)" });
 		// clean up
 		$("#related-articles").css({ "color": "white" });
+		applyLinkStyle();
 		
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid white important" });
 	}
@@ -381,6 +388,7 @@ function applyModeStyle() {
 		// $("hr.section-line-seperator").css({ "border-top": "1px solid rgba(0,0,0,.1) !important" });
 		// clean up
 		$("#related-articles").css({ "color": "black" });
+		applyLinkStyle();
 	}
 }
 

@@ -9,7 +9,7 @@ var titleRevealed = false;
 var delayInMilliseconds = 500; //1 second
 var currViewStatic = true;
 // must be in order they appear in the DOM
-// var slidingIconsNames = [".sliding-pinned", ".sliding-new", ".sliding-explore"];
+// var slidingIconsNames = [".sliding-new", ".sliding-explore", ".sliding-random"];
 var slidingIcons = document.querySelectorAll(".sliding-icon");
 var sectionIconsLen = slidingIcons.length;
 var sectionIcons = document.querySelectorAll(".section-icon");
@@ -122,21 +122,21 @@ window.addEventListener('click', function(e) {
 function handleScroll() {
 	// displayHeight = $(window).height();
 
-	// elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
-	// elementVisible = displayHeight + elVisibleOffset;
-	// if (elementTop + elementVisible < windowHeight && currViewStatic) {
-	// 	$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
-	// 	$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
-	// 	currViewStatic = false;
-	// }
-	// if (elementTop + elementVisible > windowHeight && !currViewStatic) {
-	// 	$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
-	// 	$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
-	// 	for (var j = 0; j < sectionIconsLen; j++) {
-	// 		slidingIcons[j].classList.remove("underline");
-	// 	}
-	// 	currViewStatic = true;
-	// }
+	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
+	elementVisible = displayHeight + elVisibleOffset;
+	if (elementTop + elementVisible < windowHeight && currViewStatic) {
+		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
+		$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
+		currViewStatic = false;
+	}
+	if (elementTop + elementVisible > windowHeight && !currViewStatic) {
+		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
+		$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
+		for (var j = 0; j < sectionIconsLen; j++) {
+			slidingIcons[j].classList.remove("underline");
+		}
+		currViewStatic = true;
+	}
 	slidingIconSizeUpdate();
 	reveal();
 }
@@ -202,6 +202,7 @@ function applyModeStyle() {
 		$(".sliding-icon-label").css({ "color": "white" });
 		$(".sliding-icon-update-label").css({ "color": "white" });
 		$(".dedication-container").css({ "color": "white" });
+		$("a").css({ "color": "white" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -225,6 +226,8 @@ function applyModeStyle() {
 		$(".sliding-icon-label").css({ "color": "black" });
 		$(".sliding-icon-update-label").css({ "color": "white" });
 		$(".dedication-container").css({ "color": "black" });
+		$("a").css({ "color": "black" });
+		$(".navbar a, footer a").css({ "color": "white" });
 	}
 }
 
@@ -241,3 +244,46 @@ function toggleDarkMode() {
 	}
 	applyModeStyle();
 }
+
+var randomTopics = [
+	"/cs/algorithmicanalysis",
+	"/cs/bbqcnn",
+	"/cs/highdimquantumfm",
+	"/cs/multilevelcongitionforai",
+	"/cs/quantumcnn",
+	"/cs/quantumcomputingtheory",
+	"/cs/quantumec",
+	"/cs/quantumsvm",
+	"/cs/theoryofcomputation",
+	"/general/bioinformaticsfunctionalgenomics",
+	"/general/deontologyconsequentialismvirtueethics",
+	"/general/epigeneticsandinheritance",
+	"/math/abstractalgebra",
+	"/math/axiomaticsettheory",
+	"/math/chernclasses",
+	"/math/differentialmanifolds",
+	"/math/graphtheory",
+	"/math/hiddenmarkovprocesses",
+	"/math/informationtheory",
+	"/neuro/anatomyhistologyhippocampus",
+	"/neuro/connectionsinhumanstructuralconnectome",
+	"/neuro/mat",
+	"/neuro/memoryformation",
+	"/neuro/multistorememory",
+	"/neuro/thalamicnuclei",
+	"/neuro/topologicalneuroscience",
+	"/phys/comptificationandscatteringinads",
+	"/phys/qfandadsmaldacenaconjecture",
+	"/phys/quantummechanics",
+	"/phys/topologicalqft"
+];
+
+function goToRandomTopic(e) {
+	e.preventDefault();
+	var idx = Math.floor(Math.random() * randomTopics.length);
+	window.location.href = randomTopics[idx];
+}
+
+$(function () {
+	$("#random-topic-btn").on("click", goToRandomTopic);
+});
