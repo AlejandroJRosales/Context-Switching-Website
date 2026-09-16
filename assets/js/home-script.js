@@ -122,20 +122,23 @@ window.addEventListener('click', function(e) {
 function handleScroll() {
 	// displayHeight = $(window).height();
 
-	elementTop = $(".homepage-static-buttons")[0].getBoundingClientRect().top;
-	elementVisible = displayHeight + elVisibleOffset;
-	if (elementTop + elementVisible < windowHeight && currViewStatic) {
-		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
-		$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
-		currViewStatic = false;
-	}
-	if (elementTop + elementVisible > windowHeight && !currViewStatic) {
-		$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
-		$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
-		for (var j = 0; j < sectionIconsLen; j++) {
-			slidingIcons[j].classList.remove("underline");
+	var staticButtons = $(".homepage-static-buttons")[0];
+	if (staticButtons) {
+		elementTop = staticButtons.getBoundingClientRect().top;
+		elementVisible = displayHeight + elVisibleOffset;
+		if (elementTop + elementVisible < windowHeight && currViewStatic) {
+			$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'hidden' });
+			$(".homepage-sliding-section").css({ 'display': 'block', 'visibility': 'visible' });
+			currViewStatic = false;
 		}
-		currViewStatic = true;
+		if (elementTop + elementVisible > windowHeight && !currViewStatic) {
+			$(".home-nav-bttn").css({ 'display': 'block', 'visibility': 'visible' });
+			$(".homepage-sliding-section").css({ 'display': 'none', 'visibility': 'hidden' });
+			for (var j = 0; j < sectionIconsLen; j++) {
+				slidingIcons[j].classList.remove("underline");
+			}
+			currViewStatic = true;
+		}
 	}
 	slidingIconSizeUpdate();
 	reveal();
