@@ -206,6 +206,7 @@ function applyModeStyle() {
 		$(".sliding-icon-update-label").css({ "color": "white" });
 		$(".dedication-container").css({ "color": "white" });
 		$("a").css({ "color": "white" });
+		$(".dropdown-item").css({ "color": "black" });
 	}
 	else {
 		$("body").css({ "background-color": "rgb(255, 255, 255)" });
@@ -231,6 +232,7 @@ function applyModeStyle() {
 		$(".dedication-container").css({ "color": "black" });
 		$("a").css({ "color": "black" });
 		$(".navbar a, footer a").css({ "color": "white" });
+		$(".dropdown-item").css({ "color": "black" });
 	}
 }
 
