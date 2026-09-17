@@ -54,6 +54,7 @@
     color: rgba(232, 228, 220, 0.55);
     text-shadow: 0 1px 2px rgba(0,0,0,0.6);
     pointer-events: none; z-index: 5;
+    white-space: pre-line;
   }
   #dot {
     position: fixed; left: 50%; top: 50%;
@@ -73,6 +74,76 @@
     position: absolute; left: 50%; top: 50%;
     width: 46px; height: 46px; margin: -23px 0 0 -23px;
     background: rgba(232, 228, 220, 0.28); border-radius: 50%;
+  }
+  #pad {
+    position: fixed; left: 18px; bottom: 62px;
+    width: 104px; height: 104px;
+    border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 50%;
+    background: rgba(16, 19, 26, 0.32);
+    touch-action: none; z-index: 6; display: none;
+  }
+  #pad.on { display: block; }
+  #padknob {
+    position: absolute; left: 50%; top: 50%;
+    width: 44px; height: 44px; margin: -22px 0 0 -22px;
+    background: rgba(232, 228, 220, 0.28); border-radius: 50%;
+    pointer-events: none;
+  }
+  #fly, #gear, #climb button {
+    padding: 12px 18px;
+    background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
+    border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 3px;
+    font: 400 13px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    touch-action: manipulation; cursor: pointer;
+  }
+  #fly {
+    position: fixed; right: 18px; bottom: 62px; width: 74px;
+    z-index: 6; display: none;
+  }
+  #fly.on { display: block; }
+  #fly.flying, #climb button.held {
+    background: rgba(232, 228, 220, 0.85); color: #10131a;
+    border-color: transparent;
+  }
+  #climb {
+    position: fixed; right: 18px; bottom: 118px; width: 74px;
+    flex-direction: column; gap: 8px;
+    z-index: 6; display: none;
+  }
+  #climb.on { display: flex; }
+  #climb button { width: 100%; font-size: 15px; padding: 10px 0; }
+  #gear {
+    position: fixed; right: 18px; top: 16px;
+    z-index: 7; display: none;
+  }
+  #gear.on { display: block; }
+  #settings {
+    position: fixed; right: 18px; top: 62px;
+    width: min(262px, calc(100vw - 36px)); padding: 14px;
+    background: rgba(12, 15, 21, 0.86);
+    border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
+    z-index: 7; display: none;
+  }
+  #settings.on { display: block; }
+  #settings h2 {
+    margin: 0 0 9px;
+    font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(232, 228, 220, 0.45);
+  }
+  #settings h2.second { margin-top: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button {
+    padding: 7px 10px;
+    background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
+    border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 3px;
+    font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .chips button.sel {
+    background: rgba(232, 228, 220, 0.85); color: #10131a;
+    border-color: transparent;
   }
 </style>
 <script type="importmap">
@@ -102,6 +173,16 @@
 <div id="dot"></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
+<div id="pad"><div id="padknob"></div></div>
+<button id="fly">Fly</button>
+<div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
+<button id="gear">Settings</button>
+<div id="settings">
+  <h2>Time of day</h2>
+  <div class="chips" id="times"></div>
+  <h2 class="second">Weather</h2>
+  <div class="chips" id="skies"></div>
+</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -242,6 +323,16 @@ const hudEl  = document.getElementById('hud');
 const dotEl  = document.getElementById('dot');
 const stickEl = document.getElementById('stick');
 const knobEl  = document.getElementById('knob');
+const padEl     = document.getElementById('pad');
+const padKnobEl = document.getElementById('padknob');
+const flyEl     = document.getElementById('fly');
+const climbEl   = document.getElementById('climb');
+const upEl      = document.getElementById('up');
+const downEl    = document.getElementById('down');
+const gearEl     = document.getElementById('gear');
+const settingsEl = document.getElementById('settings');
+const timesEl    = document.getElementById('times');
+const skiesEl    = document.getElementById('skies');
 
 function say(msg, isError) {
   statEl.textContent = msg;
@@ -1584,7 +1675,9 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 addEventListener('mousemove', e => {
-  if (!active) return;
+  // the pad is dragged with the cursor free, and this file keeps `active`
+  // true without pointer lock, so a pad drag would otherwise also look
+  if (!active || padId !== null) return;
   player.yaw   -= e.movementX * 0.0022;
   player.pitch -= e.movementY * 0.0022;
   const lim = Math.PI / 2 - 0.01;
@@ -1593,7 +1686,7 @@ addEventListener('mousemove', e => {
 });
 
 addEventListener('keydown', e => {
-  if (e.code === 'Escape' && !active) panel.classList.remove('hidden');
+  if (e.code === 'Escape' && !active) { panel.classList.remove('hidden'); showControls(false); }
 });
 
 // ---------------------------------------------------------------- touch
@@ -1670,6 +1763,179 @@ if (IS_TOUCH) {
   el.addEventListener('pointercancel', endTouch);
 }
 
+// ------------------------------------------------------------ pad and fly
+
+// A fixed stick, unlike the floating touch one above. It listens on its own
+// element and takes any pointer type, so it also works on a desktop, where
+// the canvas stick never appears and pointer lock is not held while the
+// cursor is on the control.
+const PAD_RADIUS = 40;            // px of travel for full tilt
+const padMove = { x: 0, z: 0 };
+let padId = null;
+let flying = false;
+
+function padAt(e) {
+  const r = padEl.getBoundingClientRect();
+  let dx = e.clientX - (r.left + r.width / 2);
+  let dy = e.clientY - (r.top + r.height / 2);
+  const d = Math.hypot(dx, dy);
+  if (d > PAD_RADIUS) { dx *= PAD_RADIUS / d; dy *= PAD_RADIUS / d; }
+  padKnobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+  padMove.x =  dx / PAD_RADIUS;
+  padMove.z = -dy / PAD_RADIUS;
+  wake();
+}
+
+padEl.addEventListener('pointerdown', e => {
+  if (padId !== null) return;
+  padId = e.pointerId;
+  // capture, so a drag that leaves the circle keeps steering instead of
+  // sticking at whatever tilt it had when it crossed the edge
+  padEl.setPointerCapture(padId);
+  padAt(e);
+});
+
+padEl.addEventListener('pointermove', e => { if (e.pointerId === padId) padAt(e); });
+
+const endPad = e => {
+  if (e.pointerId !== padId) return;
+  padId = null;
+  padMove.x = padMove.z = 0;
+  padKnobEl.style.transform = 'translate(0px, 0px)';
+  wake();
+};
+padEl.addEventListener('pointerup', endPad);
+padEl.addEventListener('pointercancel', endPad);
+
+// Altitude while flying, held rather than clicked, so it reads like the rest
+// of the movement input instead of stepping the player up a fixed amount.
+let climb = 0;
+
+function holdClimb(btn, dir) {
+  btn.addEventListener('pointerdown', e => {
+    // capture, so a finger that slides off the button still releases it
+    btn.setPointerCapture(e.pointerId);
+    climb = dir;
+    btn.classList.add('held');
+    wake();
+  });
+  const release = () => {
+    if (climb === dir) climb = 0;
+    btn.classList.remove('held');
+    btn.blur();
+    wake();
+  };
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+}
+holdClimb(upEl, 1);
+holdClimb(downEl, -1);
+
+flyEl.addEventListener('click', () => {
+  flying = !flying;
+  flyEl.classList.toggle('flying', flying);
+  climbEl.classList.toggle('on', flying);
+  climb = 0;
+  upEl.classList.remove('held');
+  downEl.classList.remove('held');
+  // otherwise the button keeps keyboard focus and the next space bar presses
+  // it again instead of jumping
+  flyEl.blur();
+  player.vel.y = 0;
+  player.grounded = false;   // re-decided on the next step either way
+  wake();
+});
+
+// ------------------------------------------------------------- settings
+
+// Presets stand in for the live clock and the live forecast. Where the
+// forecast gave a sunrise and sunset, the hours are read off today's own sun,
+// so Morning means the same place on the arc in December as in June. Without
+// one they fall back to fixed hours.
+const TIMES = ['Live', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
+const FALLBACK_HOURS = {
+  Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
+};
+
+// cloud is what the sky and the sun intensity read; kind is the fog branch.
+// Rain, Snow and Storm differ only in how much light they take out until
+// there is something drawing precipitation.
+const SKIES = {
+  Live:     null,
+  Clear:    { label: 'Clear',         kind: 'clear',  cloud: 0   },
+  Cloudy:   { label: 'Partly cloudy', kind: 'cloudy', cloud: 45  },
+  Overcast: { label: 'Overcast',      kind: 'cloudy', cloud: 100 },
+  Fog:      { label: 'Fog',           kind: 'fog',    cloud: 100 },
+  Rain:     { label: 'Rain',          kind: 'rain',   cloud: 90  },
+  Snow:     { label: 'Snow',          kind: 'snow',   cloud: 85  },
+  Storm:    { label: 'Thunderstorm',  kind: 'storm',  cloud: 100 }
+};
+
+let timePreset = 'Live';
+let skyPreset  = 'Live';
+
+// hours past local midnight for a named preset
+function presetHour(name) {
+  if (weather) {
+    const rise = weather.sunrise / 60;
+    const day  = weather.sunset / 60 - rise;
+    if (name === 'Dawn')      return rise;
+    if (name === 'Morning')   return rise + day * 0.25;
+    if (name === 'Noon')      return rise + day * 0.5;
+    if (name === 'Afternoon') return rise + day * 0.75;
+    if (name === 'Sunset')    return weather.sunset / 60;
+    if (name === 'Night')     return (rise + day * 0.5 + 12) % 24;
+  }
+  return FALLBACK_HOURS[name];
+}
+
+// the instant the sky is drawn for: the real one, or today at the preset hour.
+// Shifting the true instant rather than building a date keeps the declination
+// and the longitude term correct.
+function skyInstant() {
+  if (timePreset === 'Live') return new Date();
+  const d = cityNow();
+  const now = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  return new Date(Date.now() + (presetHour(timePreset) - now) * 3600000);
+}
+
+// what the sky is built from: a preset if one is picked, else the forecast
+function conditions() {
+  return SKIES[skyPreset] || weather;
+}
+
+function chips(host, names, pick) {
+  for (const name of names) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.addEventListener('click', () => {
+      pick(name);
+      for (const other of host.children) other.classList.toggle('sel', other === b);
+      b.blur();
+      updateSky();
+      refreshHud();
+    });
+    if (name === 'Live') b.classList.add('sel');
+    host.appendChild(b);
+  }
+}
+
+chips(timesEl, TIMES, n => { timePreset = n; });
+chips(skiesEl, Object.keys(SKIES), n => { skyPreset = n; });
+
+gearEl.addEventListener('click', () => {
+  settingsEl.classList.toggle('on');
+  gearEl.blur();
+});
+
+function showControls(on) {
+  padEl.classList.toggle('on', on);
+  flyEl.classList.toggle('on', on);
+  climbEl.classList.toggle('on', on && flying);
+  gearEl.classList.toggle('on', on);
+  if (!on) settingsEl.classList.remove('on');
+}
+
 const fwd = new THREE.Vector3();
 const right = new THREE.Vector3();
 
@@ -1683,40 +1949,54 @@ function step(dt) {
   if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft'))  mx -= 1;
   if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
+  if (padId !== null)   { mx += padMove.x;   mz += padMove.z; }
 
   const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
-  if (len > 0 && active) {
+  // the pad drives without `active`: on a desktop it is used with the
+  // cursor free, which is exactly when pointer lock is not held
+  if (len > 0 && (active || padId !== null)) {
     const scale = Math.min(len, 1) / len;   // cap at 1, keep partial stick tilt
     mx *= scale; mz *= scale;
     player.pos.x += (fwd.x * mz + right.x * mx) * speed * dt;
     player.pos.z += (fwd.z * mz + right.z * mx) * speed * dt;
   }
 
-  // resolve horizontally before the vertical step, so the roof lookup below
-  // runs on a position that is already clear of any footprint
-  resolveCollisions(player.pos);
-
-  if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
-    player.vel.y = JUMP_SPEED;
+  if (flying) {
+    // footprint collision is off while flying: the rings have no top, so
+    // keeping it on would push you sideways out of a building you are
+    // hundreds of metres above
+    jumpQueued = false;
+    player.vel.y = 0;
     player.grounded = false;
-  }
-  jumpQueued = false;
-  player.vel.y -= GRAVITY * dt;
+    player.pos.y += climb * speed * dt;
+    player.pos.y = Math.max(player.pos.y, EYE_HEIGHT);   // stay out of the ground
+  } else {
+    // resolve horizontally before the vertical step, so the roof lookup below
+    // runs on a position that is already clear of any footprint
+    resolveCollisions(player.pos);
 
-  const fromFeet = player.pos.y - EYE_HEIGHT;
-  player.pos.y += player.vel.y * dt;
-  const toFeet = player.pos.y - EYE_HEIGHT;
+    if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
+      player.vel.y = JUMP_SPEED;
+      player.grounded = false;
+    }
+    jumpQueued = false;
+    player.vel.y -= GRAVITY * dt;
 
-  // grounded is re-decided every frame now, so stepping off a roof edge drops
-  // you instead of leaving a stale flag that would allow a mid-air jump
-  player.grounded = false;
-  if (player.vel.y <= 0) {
-    const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet);
-    if (toFeet <= floorY) {
-      player.pos.y = floorY + EYE_HEIGHT;
-      player.vel.y = 0;
-      player.grounded = true;
+    const fromFeet = player.pos.y - EYE_HEIGHT;
+    player.pos.y += player.vel.y * dt;
+    const toFeet = player.pos.y - EYE_HEIGHT;
+
+    // grounded is re-decided every frame now, so stepping off a roof edge drops
+    // you instead of leaving a stale flag that would allow a mid-air jump
+    player.grounded = false;
+    if (player.vel.y <= 0) {
+      const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet);
+      if (toFeet <= floorY) {
+        player.pos.y = floorY + EYE_HEIGHT;
+        player.vel.y = 0;
+        player.grounded = true;
+      }
     }
   }
 
@@ -1739,7 +2019,7 @@ function wake() {
 }
 
 function movementHeld() {
-  return stickId !== null || jumpQueued ||
+  return stickId !== null || padId !== null || climb !== 0 || jumpQueued ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space');
@@ -1764,7 +2044,7 @@ function frame(now) {
     sceneDirty = false;
   }
 
-  const settled = !posed && player.grounded && player.vel.y === 0;
+  const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
   if (settled && !movementHeld()) {
     last = -1;           // sleep until wake()
     return;
@@ -1779,6 +2059,252 @@ function invalidate() {
 }
 wake();
 
+// ------------------------------------------------------------- weather
+
+// Open-Meteo. No key, no sign-up, CORS open, free for non-commercial use.
+// timezone=auto resolves the coordinates to their own zone, so every
+// timestamp that comes back is that city's wall clock and utc_offset_seconds
+// is the offset that produced it, DST included.
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
+const WEATHER_TIMEOUT_MS = 8000;
+
+// WMO 4677 codes. label is what the HUD shows, kind is the coarse group to
+// branch on if sky colour, fog or particles get driven off this later.
+const WMO = {
+  0:  ['Clear',              'clear'],
+  1:  ['Mainly clear',       'clear'],
+  2:  ['Partly cloudy',      'cloudy'],
+  3:  ['Overcast',           'cloudy'],
+  45: ['Fog',                'fog'],
+  48: ['Rime fog',           'fog'],
+  51: ['Light drizzle',      'rain'],
+  53: ['Drizzle',            'rain'],
+  55: ['Heavy drizzle',      'rain'],
+  56: ['Freezing drizzle',   'rain'],
+  57: ['Freezing drizzle',   'rain'],
+  61: ['Light rain',         'rain'],
+  63: ['Rain',               'rain'],
+  65: ['Heavy rain',         'rain'],
+  66: ['Freezing rain',      'rain'],
+  67: ['Freezing rain',      'rain'],
+  71: ['Light snow',         'snow'],
+  73: ['Snow',               'snow'],
+  75: ['Heavy snow',         'snow'],
+  77: ['Snow grains',        'snow'],
+  80: ['Light showers',      'rain'],
+  81: ['Showers',            'rain'],
+  82: ['Violent showers',    'rain'],
+  85: ['Snow showers',       'snow'],
+  86: ['Heavy snow showers', 'snow'],
+  95: ['Thunderstorm',       'storm'],
+  96: ['Thunderstorm, hail', 'storm'],
+  99: ['Thunderstorm, hail', 'storm']
+};
+
+// null until a place loads, and stays null if the request fails
+let weather = null;
+
+async function fetchWeather(lat, lon) {
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    current: 'temperature_2m,apparent_temperature,relative_humidity_2m,is_day,' +
+             'precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m',
+    hourly: 'temperature_2m,weather_code,cloud_cover,precipitation_probability,wind_speed_10m',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset',
+    forecast_days: '3',
+    timezone: 'auto',
+    temperature_unit: 'fahrenheit',
+    wind_speed_unit: 'mph',
+    precipitation_unit: 'inch'
+  });
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), WEATHER_TIMEOUT_MS);
+  let json;
+  try {
+    const res = await fetch(`${WEATHER_URL}?${params}`, { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Weather service returned ${res.status}.`);
+    json = await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const c = json.current, d = json.daily;
+  const [label, kind] = WMO[c.weather_code] || ['Unknown', 'clear'];
+
+  return {
+    offset:   json.utc_offset_seconds,     // city time minus UTC, in seconds
+    zone:     json.timezone_abbreviation,
+    code:     c.weather_code, label, kind,
+    tempF:    c.temperature_2m,
+    feelsF:   c.apparent_temperature,
+    humidity: c.relative_humidity_2m,      // percent
+    cloud:    c.cloud_cover,               // percent
+    precip:   c.precipitation,             // inches in the last hour
+    windMph:  c.wind_speed_10m,
+    windFrom: c.wind_direction_10m,        // degrees the wind blows from
+    isDay:    c.is_day === 1,
+    highF:    d.temperature_2m_max[0],
+    lowF:     d.temperature_2m_min[0],
+    sunrise:  clockMinutes(d.sunrise[0]),  // minutes past local midnight
+    sunset:   clockMinutes(d.sunset[0]),
+    hourly:   json.hourly,                 // raw arrays, local wall clock
+    daily:    d
+  };
+}
+
+// Open-Meteo returns "2026-09-17T07:12" with no offset on the string, so read
+// the digits rather than handing it to Date, which would treat it as browser
+// local time.
+function clockMinutes(iso) {
+  return +iso.slice(11, 13) * 60 + +iso.slice(14, 16);
+}
+
+// Wall clock in the loaded city right now. The epoch is shifted by the city's
+// offset, so read this with the getUTC* getters only. The plain getters would
+// apply the browser's own offset a second time.
+function cityNow() {
+  return new Date(Date.now() + (weather ? weather.offset : 0) * 1000);
+}
+
+// minutes past local midnight, fractional. This is the value to drive a sun
+// angle from: sunrise and sunset above are in the same units.
+function cityMinutes() {
+  const d = cityNow();
+  return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60;
+}
+
+function clockText(date) {
+  const d = new Date(date.getTime() + (weather ? weather.offset : 0) * 1000);
+  const h = d.getUTCHours();
+  return `${(h + 11) % 12 + 1}:${String(d.getUTCMinutes()).padStart(2, '0')}` +
+         ` ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function weatherText() {
+  if (!weather) return '';
+  return `${clockText(skyInstant())} ${weather.zone}  ${Math.round(weather.tempF)}\u00b0F ` +
+         `${conditions().label}, wind ${Math.round(weather.windMph)} mph, ` +
+         `high ${Math.round(weather.highF)} low ${Math.round(weather.lowF)}`;
+}
+
+// ----------------------------------------------------------------- sky
+
+// Where the real sun is, for the loaded coordinates at a given instant. Low
+// precision NOAA equations, good to roughly a tenth of a degree, which is
+// finer than the lighting resolves.
+//
+// This wants the true UTC instant, not cityNow(): the hour angle already
+// carries longitude, so a zone-shifted clock would apply the offset twice.
+// Returned as east/north/up components of a unit vector plus the altitude in
+// degrees, so no azimuth round trip is needed to point the light.
+function solarVector(lat, lon, date) {
+  const R = Math.PI / 180;
+  const d = date.getTime() / 86400000 - 10957.5;      // days since J2000.0
+
+  const L = (280.460 + 0.9856474 * d) * R;            // mean longitude
+  const g = (357.528 + 0.9856003 * d) * R;            // mean anomaly
+  const lam = L + 1.915 * R * Math.sin(g) + 0.020 * R * Math.sin(2 * g);
+  const eps = (23.439 - 0.0000004 * d) * R;           // obliquity
+
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  const ra  = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
+
+  // Greenwich mean sidereal time, hours, then local, then the hour angle
+  const gmst = 18.697374558 + 24.06570982441908 * d;
+  const lst  = (gmst * 15 + lon) * R;
+  const H    = lst - ra;
+
+  const phi = lat * R;
+  const up    =  Math.sin(dec) * Math.sin(phi) + Math.cos(dec) * Math.cos(H) * Math.cos(phi);
+  const north =  Math.sin(dec) * Math.cos(phi) - Math.cos(dec) * Math.cos(H) * Math.sin(phi);
+  const east  = -Math.cos(dec) * Math.sin(H);
+
+  return { east, north, up, altDeg: Math.asin(up) / R };
+}
+
+// Sun altitude in degrees, then sky/fog colour, sun colour, sun intensity.
+// The top row is the palette the scene shipped with, so a clear midday sky
+// lands on the original look and everything else moves away from it.
+const SKY = [
+  [-12, 0x05070f, 0x2a3a5c, 0.00],
+  [ -6, 0x101a2e, 0x46587c, 0.00],
+  [ -2, 0x34405e, 0xc27a52, 0.06],
+  [  0, 0x6e6b74, 0xff8c46, 0.35],
+  [  4, 0x98979f, 0xffb271, 0.85],
+  [ 12, 0x9fb0c4, 0xffe0bb, 1.35],
+  [ 30, 0x9fb4c8, 0xfff2dd, 1.60]
+];
+
+const skyCol   = new THREE.Color();
+const sunCol   = new THREE.Color();
+const scratch  = new THREE.Color();
+const OVERCAST = new THREE.Color(0x8b8f96);
+const FOGGY    = new THREE.Color(0xb9bcc0);
+
+// fills skyCol and sunCol, returns the clear-sky intensity for that altitude
+function sampleSky(alt) {
+  let i = 0;
+  while (i < SKY.length - 2 && alt > SKY[i + 1][0]) i++;
+  const a = SKY[i], b = SKY[i + 1];
+  const t = Math.min(Math.max((alt - a[0]) / (b[0] - a[0]), 0), 1);
+  skyCol.setHex(a[1]).lerp(scratch.setHex(b[1]), t);
+  sunCol.setHex(a[2]).lerp(scratch.setHex(b[2]), t);
+  return a[3] + (b[3] - a[3]) * t;
+}
+
+let site = null;        // coordinates of the loaded place, for the sun
+let skyMinute = -1;     // minute the sky was last rebuilt for
+
+function updateSky() {
+  if (!site) return;
+
+  const s = solarVector(site.lat, site.lon, skyInstant());
+  let power = sampleSky(s.altDeg);
+
+  // cloud and fog only matter while there is daylight to flatten, so both
+  // effects fade out through twilight rather than greying the night sky
+  const day = Math.min(Math.max((s.altDeg + 6) / 12, 0), 1);
+  const c = conditions();
+  const cloud = c ? c.cloud / 100 : 0;
+  const foggy = c && c.kind === 'fog';
+
+  skyCol.lerp(OVERCAST, cloud * 0.65 * day);
+  if (foggy) skyCol.lerp(FOGGY, 0.6 * day);
+  power *= 1 - 0.7 * cloud - (foggy ? 0.2 : 0);
+
+  // below the horizon the light is off, so its position stays true rather
+  // than being clamped to the skyline
+  sun.position.set(s.east, s.up, -s.north).multiplyScalar(100);
+  sun.color.copy(sunCol);
+  sun.intensity = Math.max(power, 0);
+
+  scene.background.copy(skyCol);
+  scene.fog.color.copy(skyCol);
+  invalidate();
+}
+
+let hudPlace = '';
+let clockTimer = null;
+
+function refreshHud() {
+  hudEl.textContent = hudPlace + (weather ? '\n' + weatherText() : '');
+}
+
+function tick() {
+  refreshHud();   // DOM only, no invalidate needed for the clock itself
+  // the sun moves a quarter of a degree a minute, so rebuilding the sky
+  // any faster than that would wake the renderer for nothing
+  const m = Math.floor(Date.now() / 60000);
+  if (m !== skyMinute) { skyMinute = m; updateSky(); }
+}
+
+function startClock() {
+  if (clockTimer) clearInterval(clockTimer);
+  clockTimer = setInterval(tick, 1000);
+}
+
 // ---------------------------------------------------------------- load
 
 let busy = false;
@@ -1791,6 +2317,10 @@ async function load(query) {
   try {
     say('Looking up the address…');
     const place = await geocode(query);
+
+    // runs alongside the Overpass fetch below; a missing forecast should
+    // never stop the city from loading
+    const pendingWeather = fetchWeather(place.lat, place.lon).catch(() => null);
 
     let features = null;
     let radius = storedPlace ? storedPlace.radius : RADIUS_LADDER[0];
@@ -1840,6 +2370,12 @@ async function load(query) {
         // no imagery over this spot, or the service is down; the scene stands
     }
 
+    weather = await pendingWeather;
+    site = { lat: place.lat, lon: place.lon };
+    skyMinute = Math.floor(Date.now() / 60000);
+    updateSky();    // the sun runs off the coordinates alone, forecast or not
+    startClock();
+
     player.pos.set(0, EYE_HEIGHT, 0);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
@@ -1857,11 +2393,13 @@ async function load(query) {
       // purely a warm-up; the first render does the same work if this fails
     }
 
-    hudEl.textContent =
+    hudPlace =
       `${count} buildings for ${place.label.split(',').slice(0, 3).join(',').trim()}` +
       ` (${skipped ? `${skipped} skipped` : '0 skipped'})`;
+    refreshHud();
 
     panel.classList.add('hidden');
+    showControls(true);
     say('');
     if (IS_TOUCH) active = true;
     else renderer.domElement.requestPointerLock();
