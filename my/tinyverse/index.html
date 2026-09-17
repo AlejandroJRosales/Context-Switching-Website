@@ -608,12 +608,14 @@ const creatureNext = new Int32Array(MAX_CREATURES),
 
 let creatureCount = 0,
   plantCount = 0,
+  plantsDirty = 1,
   baseCreatures = 100,
   creatureHead = null,
   plantHead = null;
 
 // scan results shared by every nearest-target search
-let foundIdx = -1,
+let scanSelf = -1,
+  foundIdx = -1,
   foundX = 0,
   foundZ = 0,
   foundDist2 = 0;
@@ -624,13 +626,25 @@ const gridInit = () => {
   plantHead = new Int32Array(CELLS[1] * CELLS[1]);
 };
 
+const gridLink = (head, next, F, i) => {
+  const cell = gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
+  next[i] = head[cell];
+  head[cell] = i;
+};
+
+const gridUnlink = (head, next, F, i) => {
+  const cell = gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
+  let j = head[cell];
+  if (j === i) head[cell] = next[i];
+  else {
+    while (j !== -1 && next[j] !== i) j = next[j];
+    if (j !== -1) next[j] = next[i];
+  }
+};
+
 const gridRebuild = (head, next, F, count) => {
   head.fill(-1);
-  for (let i = 0; i < count; i++) {
-    const cell = gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
-    next[i] = head[cell];
-    head[cell] = i;
-  }
+  for (let i = 0; i < count; i++) gridLink(head, next, F, i);
 };
 
 const scanNearest = (F, head, next, px, pz, reach, accept) => {
@@ -666,10 +680,12 @@ const anyPlant = () => true;
 
 const scanPlants = (px, pz, reach) => scanNearest(P, plantHead, plantNext, px, pz, reach, anyPlant);
 
-const scanMates = (px, pz, reach, self) =>
-  scanNearest(C, creatureHead, creatureNext, px, pz, reach, (j) =>
-    j !== self && C[ALIVE][j] && C[SEX][j] !== C[SEX][self] && mateReady(j)
-  );
+const otherMate = (j) => j !== scanSelf && C[ALIVE][j] && C[SEX][j] !== C[SEX][scanSelf] && mateReady(j);
+
+const scanMates = (px, pz, reach, self) => {
+  scanSelf = self;
+  return scanNearest(C, creatureHead, creatureNext, px, pz, reach, otherMate);
+};
 
 const scanWater = (px, pz) => {
   const g = FIELD;
@@ -683,7 +699,10 @@ const scanWater = (px, pz) => {
 };
 
 const uploadInstances = (buf, data, F, stride, count) => {
-  for (let i = 0; i < count; i++) for (let k = 0; k < stride; k++) data[i * stride + k] = F[k][i];
+  for (let k = 0; k < stride; k++) {
+    const f = F[k];
+    for (let i = 0; i < count; i++) data[i * stride + k] = f[i];
+  }
   upload(ARRAY_BUFFER, buf, data.subarray(0, count * stride), DYNAMIC_DRAW);
 };
 
@@ -830,7 +849,7 @@ const compactCreatures = () => {
   for (let read = 0; read < creatureCount; read++) {
     if (!C[ALIVE][read]) continue;
     if (write !== read) {
-      for (const field of C) field[write] = field[read];
+      for (let k = 0; k < CREATURE_FIELDS; k++) C[k][write] = C[k][read];
       GENES.copyWithin(write * GENE_LEN, read * GENE_LEN, (read + 1) * GENE_LEN);
     }
     write++;
@@ -861,7 +880,6 @@ const adjustPopulation = (delta) => {
 
 const updateCreatures = (dt) => {
   gridRebuild(creatureHead, creatureNext, C, creatureCount);
-  gridRebuild(plantHead, plantNext, P, plantCount);
   plantsGrow(dt);
   const limit = worldSize / 2 - WORLD_EDGE_MARGIN;
   for (let i = 0; i < creatureCount; i++) {
@@ -914,7 +932,6 @@ const updateCreatures = (dt) => {
     if (scanPlants(x, z, 16 + C[SIZE][i])) {
       C[ENERGY][i] = Math.min(1, C[ENERGY][i] + 0.35);
       plantRemove(foundIdx);
-      gridRebuild(plantHead, plantNext, P, plantCount);
       retarget(i);
     }
     if (C[ENERGY][i] > 1) C[ENERGY][i] = 1;
@@ -935,16 +952,25 @@ const plantPlace = (x, z) => {
   P[Y][plantCount] = y;
   P[Z][plantCount] = z;
   P[SEED][plantCount] = RNG() * 6.28;
+  gridLink(plantHead, plantNext, P, plantCount);
   plantCount++;
+  plantsDirty = 1;
 };
 
 const plantRemove = (i) => {
   plantCount--;
-  for (const field of P) field[i] = field[plantCount];
+  gridUnlink(plantHead, plantNext, P, i);
+  if (i !== plantCount) {
+    gridUnlink(plantHead, plantNext, P, plantCount);
+    for (let k = 0; k < PLANT_FIELDS; k++) P[k][i] = P[k][plantCount];
+    gridLink(plantHead, plantNext, P, i);
+  }
+  plantsDirty = 1;
 };
 
 const spawnPlants = () => {
   plantCount = 0;
+  plantHead.fill(-1);
   const seed = clamp(scaled(800), 10, MAX_PLANTS);
   for (let tries = 0; plantCount < seed && tries < seed * 4; ) {
     tries++;
@@ -975,7 +1001,6 @@ const adjustPlants = (delta) => {
   } else {
     for (let k = 0; k < -delta && plantCount > 0; k++) plantRemove(plantCount - 1);
   }
-  gridRebuild(plantHead, plantNext, P, plantCount);
 };
 
 // RAIN / WEATHER
@@ -1886,7 +1911,10 @@ const frame = (now) => {
   }
   updateCreatures(dt);
   uploadInstances(CREATURE_INST[0], creatureInst, C, CREATURE_STRIDE, creatureCount);
-  uploadInstances(PLANT_INST[0], plantInst, P, PLANT_STRIDE, plantCount);
+  if (plantsDirty) {
+    uploadInstances(PLANT_INST[0], plantInst, P, PLANT_STRIDE, plantCount);
+    plantsDirty = 0;
+  }
   rainResolve(dt, simTime);
   rainVolume(rainIntensity, 0.02);
   rainUpdate(dt);
