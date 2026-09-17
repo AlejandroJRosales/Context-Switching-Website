@@ -2148,6 +2148,8 @@
                 this.focusZ = this.position.z;
                 this.tob = Date.now();
 
+                this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
+
                 this.mesh = null;
             }
 
@@ -2347,7 +2349,7 @@
                     this.position.x = tools.wrap(this.position.x + dir[0] * step, CONFIG.worldWidth);
                     this.position.z = tools.wrap(this.position.z + dir[1] * step, CONFIG.worldHeight);
                 }
-                const g = terrain.heightAt(this.position.x, this.position.z);
+                const g = terrain.heightAtFor(this, this.position.x, this.position.z);
                 const floatY = water.level - water.FLOAT_DEPTH;
                 this.floating = g < floatY;
                 this.submerged = g < water.level;
@@ -2498,6 +2500,10 @@
         // INSTANCED MESH RENDERER (animals)
         // ============================================================================
         class AnimalRenderer {
+            // Segments per rounded corner. three.js defaults to 12, which put ~830 tris
+            // on every 3-unit leg; 4 keeps the silhouette and cuts ~62% of body/leg tris.
+            static ROUNDED_CURVE_SEGMENTS = 4;
+
             constructor() {
                 this.MAX_INSTANCES = 12000;
                 this.TICKS_PER_DAY  = 24 * 60;
@@ -2612,6 +2618,7 @@
                 shape.quadraticCurveTo(-w, -h, -w + radius, -h);
                 const geometry = new THREE.ExtrudeGeometry(shape, {
                     depth, bevelEnabled: true,
+                    curveSegments: AnimalRenderer.ROUNDED_CURVE_SEGMENTS,
                     bevelThickness: radius * 0.5, bevelSize: radius * 0.7, bevelSegments: 3
                 });
                 geometry.center();
@@ -2621,7 +2628,7 @@
             init() {
                 for (const type of ['sheep', 'human']) {
                     if (this.meshes[type]) {
-                        for (const part of Object.values(this.meshes[type])) engine.scene.remove(part);
+                        for (const part of Object.values(this.meshes[type])) { engine.scene.remove(part); part.dispose(); }
                     }
                     const geomSet = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
                     const geom = geomSet[type];
@@ -2800,7 +2807,7 @@
 
             init() {
                 if (this.meshes) {
-                    for (const mesh of Object.values(this.meshes)) engine.scene.remove(mesh);
+                    for (const mesh of Object.values(this.meshes)) { engine.scene.remove(mesh); mesh.dispose(); }
                 }
                 const geos = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
                 this.meshes = {
@@ -3025,7 +3032,7 @@
 
             init() {
                 if (this.meshes) {
-                    for (const mesh of this.meshes) engine.scene.remove(mesh);
+                    for (const mesh of this.meshes) { engine.scene.remove(mesh); mesh.dispose(); }
                 }
                 const geos = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
                 this.meshes = geos.map((geo, i) => {
@@ -3753,7 +3760,15 @@
             }
 
             clear() {
-                for (const c of this.objects) engine.scene.remove(c);
+                const mats = new Set();
+                for (const c of this.objects) {
+                    engine.scene.remove(c);
+                    c.traverse(o => {
+                        if (o.geometry) o.geometry.dispose();
+                        if (o.material) mats.add(o.material);
+                    });
+                }
+                for (const m of mats) m.dispose();
                 this.objects = [];
                 this.colliders = [];
             }
@@ -3814,6 +3829,10 @@
             resolve(pos, radius, halfH, velocityY) {
                 for (const cabin of this.colliders) {
                     const dx = pos.x - cabin.cx, dz = pos.z - cabin.cz;
+                    // Every box lies inside the shelter rectangle, so a body farther than
+                    // reach + radius*sqrt(2) cannot overlap any of them.
+                    const far = cabin.shelter.reach + radius * 1.5;
+                    if (dx * dx + dz * dz > far * far) continue;
                     const lx = dx * cabin.cosR - dz * cabin.sinR;
                     const lz = dx * cabin.sinR + dz * cabin.cosR;
 
@@ -4009,6 +4028,15 @@
                 return this.lakeCarve(this.baseHeightAt(wx, wz));
             }
 
+            // Exact per-entity memo: reuses the last height while the entity sits at
+            // the same x/z and the terrain has not been rebuilt since.
+            heightAtFor(ent, wx, wz) {
+                if (ent._hx === wx && ent._hz === wz && ent._hv === perf.terrainVersion) return ent._h;
+                const h = this.heightAt(wx, wz);
+                ent._hx = wx; ent._hz = wz; ent._hv = perf.terrainVersion; ent._h = h;
+                return h;
+            }
+
             create() {
                 const segX = graphics.mode === 'low' ? 175 : 350;
                 const segY = graphics.mode === 'low' ? 130 : 260;
@@ -4066,6 +4094,7 @@
             rebuild() {
                 if (!this.mesh) return;
                 this.mesh.geometry.dispose();
+                this.mesh.material.dispose();
                 engine.scene.remove(this.mesh);
                 this.mesh = this.create();
                 engine.scene.add(this.mesh);
@@ -4567,13 +4596,14 @@
             }
 
             update(animals) {
-                this.seen.clear();
+                const trackSprites = this.sprites.size > 0;
+                if (trackSprites) this.seen.clear();
 
                 let targetFound = false;
 
                 for (const a of animals) {
                     if (!a.alive) continue;
-                    this.seen.add(a);
+                    if (trackSprites) this.seen.add(a);
 
                     const isTarget = (a === this.locked);
                     if (!isTarget || !this.enabled) continue;
@@ -4581,7 +4611,6 @@
                     targetFound = true;
 
                     const gen = a.generation ?? 0;
-                    console.log(a.health);
                     perf.setText(this.hpEl,    a.health.toFixed(1));
                     perf.setText(this.foodEl,  a.foodNeed.toFixed(1));
                     perf.setText(this.waterEl, a.waterNeed.toFixed(1));
@@ -4618,7 +4647,7 @@
                     this.panel.classList.remove('visible');
                 }
 
-                for (const [animal, sprite] of this.sprites) {
+                if (trackSprites) for (const [animal, sprite] of this.sprites) {
                     if (!this.seen.has(animal)) {
                         engine.scene.remove(sprite);
                         if (sprite.material.map) sprite.material.map.dispose();
@@ -4844,7 +4873,7 @@
                 while (this.group.children.length) {
                     const c = this.group.children[0];
                     this.group.remove(c);
-                    if (c.geometry && c !== this._nodeGeo && c !== this._loopGeo) c.geometry.dispose();
+                    if (c.geometry && c.geometry !== this._nodeGeo && c.geometry !== this._loopGeo) c.geometry.dispose();
                     if (c.material) c.material.dispose();
                 }
                 this._nodeMeshes = { in: [], a: [], b: [], out: [] };
@@ -5389,7 +5418,11 @@
                 this.waters.forEach(w => w.remove());
                 this.entities = []; this.animals = []; this.plants = []; this.waters = [];
                 water.locations = [];
-                if (terrain.mesh) engine.scene.remove(terrain.mesh);
+                if (terrain.mesh) {
+                    engine.scene.remove(terrain.mesh);
+                    terrain.mesh.geometry.dispose();
+                    terrain.mesh.material.dispose();
+                }
 
                 cabins.clear();
 
@@ -5528,7 +5561,7 @@
                         }
                     }
 
-                    if (terrain.heightAt(px, pz) < water.level) {
+                    if (terrain.heightAtFor(a, px, pz) < water.level) {
                         a.drinkWater();
                     }
                 }
