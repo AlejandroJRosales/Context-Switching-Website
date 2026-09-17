@@ -280,7 +280,9 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  invalidate();   // setSize clears the drawing buffer, so redraw even if the pose is unchanged
 });
+renderer.domElement.addEventListener('webglcontextrestored', () => invalidate());
 
 
 const cache = new Map();
@@ -615,8 +617,11 @@ function pushTri(b, p0, p1, p2, c, ref) {
   const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
   const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
   const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-  const order = (nx * ref[0] + ny * ref[1] + nz * ref[2]) < 0 ? [p0, p2, p1] : [p0, p1, p2];
-  for (const p of order) { b.pos.push(p[0], p[1], p[2]); b.col.push(c[0], c[1], c[2]); }
+  // flip by swapping the last two corners; no temporary array per triangle
+  const flip = (nx * ref[0] + ny * ref[1] + nz * ref[2]) < 0;
+  const q1 = flip ? p2 : p1, q2 = flip ? p1 : p2;
+  b.pos.push(p0[0], p0[1], p0[2], q1[0], q1[1], q1[2], q2[0], q2[1], q2[2]);
+  b.col.push(c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]);
 }
 
 function pushQuad(b, p0, p1, p2, p3, c, ref) {
@@ -782,8 +787,12 @@ function roofOf(b, o, wallTop, top, shape, c) {
 // ---------------------------------------------------------------- build
 
 function clearLayers() {
+  invalidate();
   for (const m of layers) {
     scene.remove(m);
+    // instanceMatrix / instanceColor live on the mesh, not the geometry, and
+    // three only frees their GL buffers when the mesh itself is disposed
+    if (m.isInstancedMesh) m.dispose();
     if (m.geometry) m.geometry.dispose();
     if (m.material) {
       if (m.material.map) m.material.map.dispose();
@@ -807,6 +816,7 @@ function addLayer(geoms, material) {
   const mesh = new THREE.Mesh(merged, material);
   scene.add(mesh);
   layers.push(mesh);
+  invalidate();
   return mesh;
 }
 
@@ -912,9 +922,9 @@ function buildCity(features) {
   buildTrees(features.trees);
   const barrierBoxes = buildBarriers(features.barriers);
   buildProps(features.props);
-  buildSigns(collectSigns(walls, features.pois));
-
+  // grid first, so the POI-to-wall search in collectSigns can use it
   buildGrid(walls.concat(barrierBoxes));
+  buildSigns(collectSigns(walls, features.pois));
   return { count, skipped };
 }
 
@@ -997,6 +1007,7 @@ function buildTrees(trees) {
   crown.frustumCulled = false;
   scene.add(trunk); layers.push(trunk);
   scene.add(crown); layers.push(crown);
+  invalidate();
 }
 
 // Walls, fences and hedges. Each segment is also handed back as a thin
@@ -1141,6 +1152,9 @@ async function fetchOrtho(lat, lon, radius, project) {
 
   const img = await loadImage(url, ORTHO_TIMEOUT_MS);
   if (!img) return null;
+  // decode now, off the main thread, instead of synchronously inside the
+  // first texImage2D
+  try { await img.decode(); } catch (e) { /* already usable after onload */ }
 
   const [westX, northZ] = project(north, west);
   const [eastX, southZ] = project(south, east);
@@ -1219,6 +1233,7 @@ function buildImagery(img) {
   const mesh = new THREE.Mesh(g, mat);
   scene.add(mesh);
   layers.push(mesh);
+  invalidate();
 }
 
 // ---------------------------------------------------------------- signage
@@ -1295,10 +1310,33 @@ function collectSigns(walls, pois) {
     }
   }
 
+  // Candidates come from the collision grid (walls occupy indices
+  // 0..walls.length-1 there). Sorting the indices keeps the original wall
+  // order, so ties and the early `break` resolve exactly as a full scan would.
   const REACH = 15;
+  const cand = [];
+  const mark = new Uint32Array(walls.length);
+  let stamp = 0;
   for (const p of pois || []) {
     let hit = null, best = Infinity;
-    for (const w of walls) {
+    stamp++;
+    cand.length = 0;
+    const cx0 = Math.floor((p.x - REACH) / GRID_CELL), cx1 = Math.floor((p.x + REACH) / GRID_CELL);
+    const cz0 = Math.floor((p.z - REACH) / GRID_CELL), cz1 = Math.floor((p.z + REACH) / GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cz = cz0; cz <= cz1; cz++) {
+        const bucket = grid.get(cellKey(cx, cz));
+        if (!bucket) continue;
+        for (const idx of bucket) {
+          if (idx >= walls.length || mark[idx] === stamp) continue;
+          mark[idx] = stamp;
+          cand.push(idx);
+        }
+      }
+    }
+    cand.sort((a, b) => a - b);
+    for (const idx of cand) {
+      const w = walls[idx];
       if (p.x < w.minX - REACH || p.x > w.maxX + REACH ||
           p.z < w.minZ - REACH || p.z > w.maxZ + REACH) continue;
       const inside = pointInRing(w.pts, p.x, p.z);
@@ -1385,6 +1423,7 @@ function buildSigns(signs) {
   const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex }));
   scene.add(mesh);
   layers.push(mesh);
+  invalidate();
 }
 
 // ---------------------------------------------------------------- collision
@@ -1526,9 +1565,10 @@ let active = false;
 
 addEventListener('keydown', e => {
   keys.add(e.code);
+  wake();
   if (e.code === 'Space' && active) e.preventDefault();
 });
-addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('keyup', e => { keys.delete(e.code); wake(); });
 
 renderer.domElement.addEventListener('click', () => {
   if (IS_TOUCH) return;
@@ -1540,6 +1580,7 @@ document.addEventListener('pointerlockchange', () => {
   active = document.pointerLockElement === renderer.domElement;
   dotEl.classList.toggle('on', active);
   if (!active) keys.clear();
+  wake();
 });
 
 addEventListener('mousemove', e => {
@@ -1548,6 +1589,7 @@ addEventListener('mousemove', e => {
   player.pitch -= e.movementY * 0.0022;
   const lim = Math.PI / 2 - 0.01;
   player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
+  wake();
 });
 
 addEventListener('keydown', e => {
@@ -1567,6 +1609,8 @@ const touchMove = { x: 0, z: 0 };
 let stickId = null, stickCx = 0, stickCy = 0;
 let lookId = null, lookX = 0, lookY = 0;
 let lastTapAt = 0, jumpQueued = false;
+// knob offset is written to the DOM once per frame, not once per pointermove
+let knobDx = 0, knobDy = 0, knobDirty = false;
 
 if (IS_TOUCH) {
   const el = renderer.domElement;
@@ -1588,6 +1632,7 @@ if (IS_TOUCH) {
       if (now - lastTapAt < TAP_GAP_MS) { jumpQueued = true; lastTapAt = 0; }
       else lastTapAt = now;
     }
+    wake();
   });
 
   el.addEventListener('pointermove', e => {
@@ -1595,7 +1640,7 @@ if (IS_TOUCH) {
       let dx = e.clientX - stickCx, dy = e.clientY - stickCy;
       const d = Math.hypot(dx, dy);
       if (d > STICK_RADIUS) { dx *= STICK_RADIUS / d; dy *= STICK_RADIUS / d; }
-      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+      knobDx = dx; knobDy = dy; knobDirty = true;
       touchMove.x =  dx / STICK_RADIUS;
       touchMove.z = -dy / STICK_RADIUS;
     } else if (e.pointerId === lookId) {
@@ -1604,17 +1649,22 @@ if (IS_TOUCH) {
       const lim = Math.PI / 2 - 0.01;
       player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
       lookX = e.clientX; lookY = e.clientY;
+    } else {
+      return;
     }
+    wake();
   });
 
   const endTouch = e => {
     if (e.pointerId === stickId) {
       stickId = null;
       touchMove.x = touchMove.z = 0;
+      knobDirty = false;
       stickEl.classList.remove('on');
     } else if (e.pointerId === lookId) {
       lookId = null;
     }
+    wake();
   };
   el.addEventListener('pointerup', endTouch);
   el.addEventListener('pointercancel', endTouch);
@@ -1674,15 +1724,60 @@ function step(dt) {
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 }
 
-let last = performance.now();
+// The loop only runs while something can change what is on screen: held
+// movement input, the player in the air or still settling, or a pose / scene
+// change since the last drawn frame. Otherwise it stops scheduling itself and
+// input, resize, or a new scene wakes it again. A still scene is never redrawn.
+let last = -1;
+let rafId = 0;
+let sceneDirty = true;
+const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
+let drawnYaw = NaN, drawnPitch = NaN;
+
+function wake() {
+  if (!rafId) rafId = requestAnimationFrame(frame);
+}
+
+function movementHeld() {
+  return stickId !== null || jumpQueued ||
+    keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
+    keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
+    keys.has('Space');
+}
+
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  rafId = 0;
+  // first frame after a sleep: no elapsed time to integrate
+  const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
   last = now;
   step(dt);
-  renderer.render(scene, camera);
-  requestAnimationFrame(frame);
+
+  if (knobDirty) {
+    knobEl.style.transform = `translate(${knobDx}px, ${knobDy}px)`;
+    knobDirty = false;
+  }
+
+  const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
+  if (posed || sceneDirty) {
+    renderer.render(scene, camera);
+    drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch;
+    sceneDirty = false;
+  }
+
+  const settled = !posed && player.grounded && player.vel.y === 0;
+  if (settled && !movementHeld()) {
+    last = -1;           // sleep until wake()
+    return;
+  }
+  rafId = requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+
+// anything that adds to, removes from, or re-textures the scene calls this
+function invalidate() {
+  sceneDirty = true;
+  wake();
+}
+wake();
 
 // ---------------------------------------------------------------- load
 
@@ -1713,11 +1808,16 @@ async function load(query) {
         const project = makeProjector(place.lat, place.lon);
         features = featuresFrom(fetched.json, project);
         try {
-            localStorage.setItem('lastPlace', JSON.stringify({ label: place.label, lat: place.lat, lon: place.lon, radius }));
+            // keep the in-memory copy in step with storage, so a later load in
+            // this session compares against the place that is actually cached
+            storedPlace = { label: place.label, lat: place.lat, lon: place.lon, radius };
+            localStorage.setItem('lastPlace', JSON.stringify(storedPlace));
             localStorage.setItem('lastFeatures', JSON.stringify(features));
         } catch (e) {
-            // over quota: the scene is already built from what we have
+            // over quota: the scene is already built from what we have. Without
+            // cached features there is nothing a later label match could reuse.
             localStorage.removeItem('lastFeatures');
+            storedPlace = null;
         }
     }
 
@@ -1744,6 +1844,18 @@ async function load(query) {
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
     resolveCollisions(player.pos);   // in case the address lands inside a footprint
+
+    // Compile shaders (in parallel where the driver supports it) and upload
+    // textures now, so the first walkable frame does not stall on them.
+    say('Preparing scene…');
+    camera.position.copy(player.pos);
+    camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    try {
+      await renderer.compileAsync(scene, camera);
+      for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
+    } catch (e) {
+      // purely a warm-up; the first render does the same work if this fails
+    }
 
     hudEl.textContent =
       `${count} buildings for ${place.label.split(',').slice(0, 3).join(',').trim()}` +
