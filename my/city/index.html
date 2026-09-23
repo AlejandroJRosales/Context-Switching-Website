@@ -198,12 +198,35 @@ const DEFAULT_LEVELS = 3;       // when a building has no height info at all
 const METERS_PER_LVL = 3.2;
 const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
-const WALK_SPEED     = 40.0;
-const RUN_SPEED      = 100.0;
+const WALK_SPEED     = 10.0;
+const RUN_SPEED      = 20.0;
 const JUMP_SPEED     = 30.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
+const HEAD_CLEAR     = 0.15;    // top of the head above the eye
+const SUBSTEP        = 0.25;    // max horizontal move per collision pass; kept under
+                                // PLAYER_RADIUS so a fast step cannot skip a thin wall
+
+// Enterable buildings. Every footprint becomes a hollow shell: wall pieces of
+// real thickness around each ring, one doorway cut out of the outer ring, and
+// floor / ceiling / roof caps triangulated from the footprint.
+const WALL_T         = 0.3;     // exterior wall thickness, meters, measured inward
+const WALL_T_MIN     = 0.06;    // thinnest a wall is retried at when mitres fold
+const MITER_MAX      = 4;       // a sharp corner's mitre is clamped to this many thicknesses
+const DOOR_W         = 1.2;
+const DOOR_MIN_W     = 0.9;     // comfortably wider than 2 * PLAYER_RADIUS
+const DOOR_H         = 2.2;
+const PIER           = 0.35;    // solid wall kept beside a doorway when there is room
+const PIER_MIN       = 0.12;
+const FRAME_W        = 0.09;    // painted frame around the opening, flush with the wall
+const FLOOR_Y        = 0.055;   // interior floor, just above every painted ground layer
+const CEIL_GAP       = 0.02;    // ceiling hangs this far under the roof cap
+const ENTRANCE_REACH = 1.2;     // an entrance node this close to an edge belongs to it
+const ROAD_NEAR      = 35;      // a road or path within this of a wall counts as its street
+const ROAD_FAR       = 300;     // fallback search for the nearest road of any kind
+const ROAD_CELL      = 32;
+const FEATURES_VERSION = 2;     // bump when featuresFrom changes shape; drops stale caches
 const OVERPASS_TIMEOUT_MS = 50000;
 const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
 const OVERPASS_MIRRORS = [
@@ -238,7 +261,7 @@ const IMAGERY_Y        = 0.004;   // beneath every painted ground layer
 // The flat layers are all within a few centimetres of each other, which the
 // depth buffer cannot resolve at any distance, so each one also gets a depth
 // bias. Higher wins, and the base ground plane sits at 0.
-const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5 };
+const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
 
 
 // ---------------------------------------------------------------- layer tables
@@ -447,6 +470,7 @@ async function fetchBuildings(lat, lon) {
       `node["amenity"](${bbox});node["shop"](${bbox});` +
       `node["highway"="street_lamp"](${bbox});` +
       `node["emergency"="fire_hydrant"](${bbox});` +
+      `node["entrance"](${bbox});` +
       `);out geom;`;
 
     for (const url of OVERPASS_MIRRORS) {
@@ -519,13 +543,39 @@ function makeProjector(lat0, lon0) {
 }
 
 // Ways carry their own geometry; relations expose it per member. Outer rings
-// only — inner rings (courtyards) are still ignored.
+// only; buildingPolysOf below adds the inner rings for buildings.
 function geometriesOf(el) {
   if (el.type === 'way' && el.geometry) return [el.geometry];
   if (el.type === 'relation' && el.members) {
     return el.members.filter(m => m.role === 'outer' && m.geometry).map(m => m.geometry);
   }
   return [];
+}
+
+function closedGeom(g) {
+  if (!g || g.length < 4) return false;
+  const a = g[0], b = g[g.length - 1];
+  return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
+}
+
+// Building polygons as { pts, holes? }. A multipolygon's inner members become
+// courtyards of whichever outer ring contains them. Only inner ways that close
+// on themselves are used; split inner rings would need stitching first.
+function buildingPolysOf(el, project) {
+  const polys = geometriesOf(el)
+    .map(g => ({ pts: cleanPts(g, project, true), holes: [] }))
+    .filter(p => p.pts.length >= 3);
+  if (el.type === 'relation' && el.members) {
+    for (const m of el.members) {
+      if (m.role !== 'inner' || !closedGeom(m.geometry)) continue;
+      const h = cleanPts(m.geometry, project, true);
+      if (h.length < 3) continue;
+      const host = polys.find(p => pointInRing(p.pts, h[0][0], h[0][1]));
+      if (host) host.holes.push(h);
+    }
+  }
+  for (const p of polys) if (!p.holes.length) delete p.holes;
+  return polys;
 }
 
 // Project, de-dupe consecutive points, and for rings drop the repeated closing
@@ -558,7 +608,7 @@ function areaKindOf(tags) {
 function featuresFrom(json, project) {
   const f = {
     buildings: [], roads: [], areas: [], waterways: [],
-    trees: [], barriers: [], pois: [], props: []
+    trees: [], barriers: [], pois: [], props: [], entrances: []
   };
 
   for (const el of json.elements || []) {
@@ -566,6 +616,8 @@ function featuresFrom(json, project) {
 
     if (el.type === 'node') {
       const [x, z] = project(el.lat, el.lon);
+      // entrances feed door placement only; the node may still be a POI too
+      if (tags.entrance) f.entrances.push({ x, z, main: tags.entrance === 'main' });
       if (tags.natural === 'tree') { f.trees.push({ x, z, tags }); continue; }
       if (tags.highway === 'street_lamp') { f.props.push({ x, z, kind: 'lamp' }); continue; }
       if (tags.emergency === 'fire_hydrant') { f.props.push({ x, z, kind: 'hydrant' }); continue; }
@@ -578,9 +630,8 @@ function featuresFrom(json, project) {
     }
 
     if (tags.building) {
-      for (const g of geometriesOf(el)) {
-        const pts = cleanPts(g, project, true);
-        if (pts.length >= 3) f.buildings.push({ pts, tags });
+      for (const p of buildingPolysOf(el, project)) {
+        f.buildings.push(p.holes ? { pts: p.pts, holes: p.holes, tags } : { pts: p.pts, tags });
       }
       continue;
     }
@@ -923,16 +974,411 @@ function litMaterial(bias) {
   return m;
 }
 
+// ---------------------------------------------------------------- building shells
+//
+// A building is no longer one extruded solid. Each footprint becomes:
+//
+//   footprint ─┬─ wall pieces     thick quads along every edge of every ring
+//              ├─ doorway         a gap in one outer-ring piece, lintel above
+//              ├─ floor           triangulated footprint at the base
+//              └─ ceiling / roof  the same triangulation under and on the eaves
+//
+// The same wall pieces are pushed to the collision grid as small 4-point
+// rings, so what you see and what you bump into are one list of quads.
+//
+// Rings are wound so the left-hand normal of every edge points into the wall
+// material: outer rings positive, courtyard rings negative (ringArea sense).
+
+function dedupeRing(pts) {
+  const out = [];
+  for (const p of pts) {
+    const q = out[out.length - 1];
+    if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.02) out.push(p);
+  }
+  while (out.length > 2) {
+    const a = out[0], b = out[out.length - 1];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 0.02) break;
+    out.pop();
+  }
+  return out;
+}
+
+function orientRing(pts, positive) {
+  return (ringArea(pts) > 0) === positive ? pts : pts.slice().reverse();
+}
+
+// Inner outline of a wall of thickness t along `pts`, mitred at every vertex
+// so neighbouring pieces meet without gaps or overlaps. For edge i, a0/a1 are
+// how far along the edge the inner corners sit relative to the outer ones;
+// the edge is only usable if its inner side still runs forwards.
+function offsetRing(pts, t) {
+  const n = pts.length, E = new Array(n), inner = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const dx = pts[j][0] - pts[i][0], dz = pts[j][1] - pts[i][1];
+    const L = Math.hypot(dx, dz);
+    E[i] = { i, L, ux: dx / L, uz: dz / L, nx: -dz / L, nz: dx / L, a0: 0, a1: 0 };
+  }
+  for (let i = 0; i < n; i++) {
+    const e0 = E[(i - 1 + n) % n], e1 = E[i];
+    const d = 1 + e0.nx * e1.nx + e0.nz * e1.nz;
+    let mx, mz;
+    if (d < 0.05) { mx = e1.nx * t; mz = e1.nz * t; }   // edge doubles back on itself
+    else { mx = (e0.nx + e1.nx) / d * t; mz = (e0.nz + e1.nz) / d * t; }
+    const ml = Math.hypot(mx, mz), cap = MITER_MAX * t;
+    if (ml > cap) { mx *= cap / ml; mz *= cap / ml; }
+    inner[i] = [pts[i][0] + mx, pts[i][1] + mz];
+  }
+  let ok = true;
+  for (let i = 0; i < n; i++) {
+    const e = E[i], j = (i + 1) % n;
+    e.a0 = (inner[i][0] - pts[i][0]) * e.ux + (inner[i][1] - pts[i][1]) * e.uz;
+    e.a1 = (inner[j][0] - pts[j][0]) * e.ux + (inner[j][1] - pts[j][1]) * e.uz;
+    if (e.L + e.a1 - e.a0 < 0.02) ok = false;
+  }
+  return { pts, inner, E, t, ok };
+}
+
+// Full thickness where the ring allows it, thinner for footprints whose short
+// edges would fold the mitred inner outline over itself.
+function wallRing(pts) {
+  let R = offsetRing(pts, WALL_T);
+  while (!R.ok && R.t * 0.5 >= WALL_T_MIN) R = offsetRing(pts, R.t * 0.5);
+  return R;
+}
+
+function alongEdge(R, i, d) {
+  const e = R.E[i], p = R.pts[i];
+  return [p[0] + e.ux * d, p[1] + e.uz * d];
+}
+
+// Point on the inner side of edge i facing outer distance d.
+function innerAt(R, i, d) {
+  const e = R.E[i], qi = R.inner[i], qj = R.inner[(i + 1) % R.pts.length];
+  const s = (d - e.a0) / (e.L + e.a1 - e.a0);
+  return [qi[0] + (qj[0] - qi[0]) * s, qi[1] + (qj[1] - qi[1]) * s];
+}
+
+// Point in a footprint, courtyards excluded.
+function pointInShell(s, x, z) {
+  if (!pointInRing(s.pts, x, z)) return false;
+  for (const h of s.holes) if (pointInRing(h, x, z)) return false;
+  return true;
+}
+
+// One earcut pass per building, shared by floor, ceiling and roof caps.
+function capOf(outer, holes) {
+  const v2 = r => r.map(p => new THREE.Vector2(p[0], p[1]));
+  let tris;
+  try { tris = THREE.ShapeUtils.triangulateShape(v2(outer), holes.map(v2)); } catch (e) { return null; }
+  if (!tris || !tris.length) return null;
+  return { verts: outer.concat(...holes), tris };
+}
+
+function pushCap(b, cap, y, c, ref) {
+  const v = cap.verts;
+  for (const [i, j, k] of cap.tris) {
+    pushTri(b, [v[i][0], y, v[i][1]], [v[j][0], y, v[j][1]], [v[k][0], y, v[k][1]], c, ref);
+  }
+}
+
+// Vertical quad over the XZ segment a..c between heights y0 and y1.
+function vquad(b, a, c, y0, y1, col, ref) {
+  if (y1 - y0 < 1e-3 || Math.hypot(c[0] - a[0], c[1] - a[1]) < 1e-3) return;
+  pushQuad(b, [a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], y1, c[1]], [a[0], y1, a[1]], col, ref);
+}
+
+function pushSolid(solids, pts, base, top) {
+  solids.push({ pts, ...bounds(pts), base, top, tags: null });
+}
+
+// ---------------------------------------------------------------- door placement
+
+// Uniform grid over any list of { minX, maxX, minZ, maxZ }.
+function gridOf(items, cell) {
+  const g = new Map();
+  for (let i = 0; i < items.length; i++) {
+    const w = items[i];
+    const x0 = Math.floor(w.minX / cell), x1 = Math.floor(w.maxX / cell);
+    const z0 = Math.floor(w.minZ / cell), z1 = Math.floor(w.maxZ / cell);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cz = z0; cz <= z1; cz++) {
+        const k = cellKey(cx, cz);
+        let bucket = g.get(k);
+        if (!bucket) g.set(k, bucket = []);
+        bucket.push(i);
+      }
+    }
+  }
+  return g;
+}
+
+// Every road and path segment, bucketed once per city. Paths weigh a little
+// less, so a door prefers the footway in front of a house over the street
+// behind its garden.
+function roadIndex(roads) {
+  const segs = [];
+  for (const r of roads || []) {
+    const half = (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2;
+    const wgt = PATH_KINDS.has(r.kind) ? 0.75 : 1;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+      segs.push({ x0, z0, x1, z1, half, wgt,
+        minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1) });
+    }
+  }
+  return { segs, grid: gridOf(segs, ROAD_CELL) };
+}
+
+// Weighted distance from (x, z) to the edge of the nearest road within maxR,
+// and the road-centre point it was measured to. Null when nothing is in range.
+function nearestRoad(idx, x, z, maxR) {
+  let best = Infinity, bx = 0, bz = 0;
+  const cx0 = Math.floor((x - maxR) / ROAD_CELL), cx1 = Math.floor((x + maxR) / ROAD_CELL);
+  const cz0 = Math.floor((z - maxR) / ROAD_CELL), cz1 = Math.floor((z + maxR) / ROAD_CELL);
+  for (let cx = cx0; cx <= cx1; cx++) {
+    for (let cz = cz0; cz <= cz1; cz++) {
+      const bucket = idx.grid.get(cellKey(cx, cz));
+      if (!bucket) continue;
+      for (const k of bucket) {
+        const s = idx.segs[k];
+        const dx = s.x1 - s.x0, dz = s.z1 - s.z0;
+        const l2 = dx * dx + dz * dz;
+        let t = l2 > 0 ? ((x - s.x0) * dx + (z - s.z0) * dz) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = s.x0 + dx * t, pz = s.z0 + dz * t;
+        const raw = Math.hypot(x - px, z - pz);
+        if (raw > maxR + s.half) continue;
+        const d = Math.max(0, raw - s.half) * s.wgt;
+        if (d < best) { best = d; bx = px; bz = pz; }
+      }
+    }
+  }
+  return best < Infinity ? { d: best, x: bx, z: bz } : null;
+}
+
+function pointIndex(list) {
+  const items = list.map(p => ({ ...p, minX: p.x, maxX: p.x, minZ: p.z, maxZ: p.z }));
+  return { items, grid: gridOf(items, ROAD_CELL) };
+}
+
+// Would a doorway here open straight into a neighbouring building? Terraces
+// and shared party walls fail this, so doors go to the street side instead.
+function blockedAt(self, x, z) {
+  const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
+  if (!bucket) return false;
+  for (const idx of bucket) {
+    if (idx === self.index) continue;
+    const s = shells[idx];
+    if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+    if (pointInShell(s, x, z)) return true;
+  }
+  return false;
+}
+
+// Where along edge i a doorway can be centred, and how wide it gets. The range
+// keeps clear of the mitred corners so both piers stay proper quads; a short
+// wall trades pier width, then door width, before it is ruled out.
+function doorSpan(R, i) {
+  const e = R.E[i];
+  const lo0 = Math.max(e.a0, 0), hi0 = e.L + Math.min(e.a1, 0);
+  const span = hi0 - lo0;
+  if (span < DOOR_MIN_W) return null;
+  let w = Math.min(DOOR_W, span - 2 * PIER_MIN);
+  if (w < DOOR_MIN_W) w = Math.min(DOOR_W, span);
+  const pier = Math.min(PIER, (span - w) / 2);
+  return { lo: lo0 + pier + w / 2, hi: hi0 - pier - w / 2, w };
+}
+
+// Outward probe point a little in front of the wall at distance d along edge i.
+function probeOut(R, i, d, off) {
+  const e = R.E[i], p = alongEdge(R, i, d);
+  return [p[0] - e.nx * off, p[1] - e.nz * off];
+}
+
+// Stages 2-4 of door selection over candidates carrying a probe point:
+// nearest road or path close by, else whichever faces the nearest road at
+// any distance, else the longest wall. Ties keep the lowest edge index.
+function pickByRoads(cands, s, roads) {
+  let best = null, bestD = Infinity;
+  for (const k of cands) {
+    const r = nearestRoad(roads, k.probe[0], k.probe[1], ROAD_NEAR);
+    if (r && r.d < bestD) { bestD = r.d; best = k; }
+  }
+  if (best) return best;
+
+  const far = nearestRoad(roads, (s.minX + s.maxX) / 2, (s.minZ + s.maxZ) / 2, ROAD_FAR);
+  if (far) {
+    for (const k of cands) {
+      const d = Math.hypot(k.probe[0] - far.x, k.probe[1] - far.z);
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
+  }
+
+  for (const k of cands) if (k.len > -bestD) { bestD = -k.len; best = k; }
+  return best;
+}
+
+// A door is { edge, d0, d1 } on one outer edge, or, for footprints made of
+// edges too short to hold one (round towers traced in small steps), a run of
+// consecutive edges opened whole: { run: Set, first, last }.
+function chooseDoor(s, R, roads, ents) {
+  const cands = [];
+  for (let i = 0; i < R.pts.length; i++) {
+    const sp = doorSpan(R, i);
+    if (!sp) continue;
+    const c = (sp.lo + sp.hi) / 2;
+    cands.push({ i, lo: sp.lo, hi: sp.hi, w: sp.w, c, len: R.E[i].L, probe: probeOut(R, i, c, 1.0) });
+  }
+  const open = cands.filter(k => { const p = probeOut(R, k.i, k.c, 0.5); return !blockedAt(s, p[0], p[1]); });
+  const pool = open.length ? open : cands;
+  const make = (k, c) => {
+    c = Math.min(Math.max(c, k.lo), k.hi);
+    return { edge: k.i, d0: c - k.w / 2, d1: c + k.w / 2 };
+  };
+
+  if (pool.length) {
+    // 1. a mapped entrance on (or right against) one of the usable walls
+    let best = null, bestS = Infinity, bestC = 0;
+    const cx0 = Math.floor((s.minX - ENTRANCE_REACH) / ROAD_CELL), cx1 = Math.floor((s.maxX + ENTRANCE_REACH) / ROAD_CELL);
+    const cz0 = Math.floor((s.minZ - ENTRANCE_REACH) / ROAD_CELL), cz1 = Math.floor((s.maxZ + ENTRANCE_REACH) / ROAD_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cz = cz0; cz <= cz1; cz++) {
+        const bucket = ents.grid.get(cellKey(cx, cz));
+        if (!bucket) continue;
+        for (const idx of bucket) {
+          const en = ents.items[idx];
+          for (const k of pool) {
+            const e = R.E[k.i], p = R.pts[k.i];
+            let t = (en.x - p[0]) * e.ux + (en.z - p[1]) * e.uz;
+            t = t < 0 ? 0 : t > e.L ? e.L : t;
+            const d = Math.hypot(en.x - (p[0] + e.ux * t), en.z - (p[1] + e.uz * t));
+            if (d > ENTRANCE_REACH) continue;
+            const score = d - (en.main ? 10 : 0);
+            if (score < bestS) { bestS = score; best = k; bestC = t; }
+          }
+        }
+      }
+    }
+    if (best) return make(best, bestC);
+
+    // 2-4. roads, then geometry
+    const k = pickByRoads(pool, s, roads);
+    return make(k, k.c);
+  }
+
+  // No single wall fits a door. Open a run of consecutive edges instead,
+  // starting from the one the road logic prefers.
+  const n = R.pts.length;
+  const all = [];
+  for (let i = 0; i < n; i++) all.push({ i, len: R.E[i].L, probe: probeOut(R, i, R.E[i].L / 2, 1.0) });
+  const start = pickByRoads(all, s, roads).i;
+  const run = new Set([start]);
+  let len = R.E[start].L, last = start;
+  while (len < DOOR_W && run.size < n - 2) {
+    last = (last + 1) % n;
+    run.add(last);
+    len += R.E[last].L;
+  }
+  return { run, first: start, last };
+}
+
+// ---------------------------------------------------------------- wall pieces
+
+// One solid stretch of wall: painted outside, plastered inside, one collider.
+function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
+  vquad(ctx.buf, o0, o1, y0, y1, ctx.wc, out);
+  vquad(ctx.buf, i0, i1, y0, y1, ctx.iw, inn);
+  pushSolid(ctx.solids, [o0, o1, i1, i0], y0, y1);
+}
+
+// The wall over an opening, from the door head up to the eaves. The bottom
+// FRAME_W of its outside face is painted as the frame's head.
+function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
+  if (wallTop - doorTop < 1e-3) return;
+  const frameTop = Math.min(doorTop + FRAME_W, wallTop);
+  vquad(ctx.buf, o0, o1, doorTop, frameTop, ctx.trim, out);
+  vquad(ctx.buf, o0, o1, frameTop, wallTop, ctx.wc, out);
+  vquad(ctx.buf, i0, i1, doorTop, wallTop, ctx.iw, inn);
+  pushQuad(ctx.buf, [o0[0], doorTop, o0[1]], [o1[0], doorTop, o1[1]],
+    [i1[0], doorTop, i1[1]], [i0[0], doorTop, i0[1]], ctx.trim, [0, -1, 0]);
+  pushSolid(ctx.solids, [o0, o1, i1, i0], doorTop, wallTop);
+}
+
+// Walls for one ring. `door` is null for courtyard rings.
+function ringWalls(ctx, R, door, base, wallTop, doorTop) {
+  const n = R.pts.length;
+  const frameTop = Math.min(doorTop + FRAME_W, wallTop);
+
+  for (let i = 0; i < n; i++) {
+    const e = R.E[i], j = (i + 1) % n;
+    const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
+    const out = [-e.nx, 0, -e.nz], inn = [e.nx, 0, e.nz];
+
+    if (door && door.run && door.run.has(i)) {
+      lintelPiece(ctx, p0, p1, q0, q1, doorTop, wallTop, out, inn);
+      continue;
+    }
+    if (!door || door.run || door.edge !== i) {
+      wallPiece(ctx, p0, p1, q0, q1, base, wallTop, out, inn);
+      continue;
+    }
+
+    // the door edge: pier | opening | pier, with the lintel above the opening
+    const { d0, d1 } = door;
+    const D0 = alongEdge(R, i, d0), D1 = alongEdge(R, i, d1);
+    const X0 = innerAt(R, i, d0), X1 = innerAt(R, i, d1);
+    const fl = Math.min(FRAME_W, d0), fr = Math.min(FRAME_W, e.L - d1);
+
+    if (d0 > 1e-3) {
+      const P = alongEdge(R, i, d0 - fl);
+      vquad(ctx.buf, p0, P, base, wallTop, ctx.wc, out);
+      vquad(ctx.buf, P, D0, base, frameTop, ctx.trim, out);
+      vquad(ctx.buf, P, D0, frameTop, wallTop, ctx.wc, out);
+      vquad(ctx.buf, q0, X0, base, wallTop, ctx.iw, inn);
+      pushSolid(ctx.solids, [p0, D0, X0, q0], base, wallTop);
+    }
+    if (e.L - d1 > 1e-3) {
+      const P = alongEdge(R, i, d1 + fr);
+      vquad(ctx.buf, D1, P, base, frameTop, ctx.trim, out);
+      vquad(ctx.buf, D1, P, frameTop, wallTop, ctx.wc, out);
+      vquad(ctx.buf, P, p1, base, wallTop, ctx.wc, out);
+      vquad(ctx.buf, X1, q1, base, wallTop, ctx.iw, inn);
+      pushSolid(ctx.solids, [D1, p1, q1, X1], base, wallTop);
+    }
+    // jambs: the cut faces of the wall, which also close off a neighbouring
+    // piece's end when the opening runs right up to a corner
+    vquad(ctx.buf, D0, X0, base, doorTop, ctx.trim, [e.ux, 0, e.uz]);
+    vquad(ctx.buf, D1, X1, base, doorTop, ctx.trim, [-e.ux, 0, -e.uz]);
+    lintelPiece(ctx, D0, D1, X0, X1, doorTop, wallTop, out, inn);
+  }
+
+  if (door && door.run) {
+    const ef = R.E[door.first], el = R.E[door.last];
+    const s = door.first, t = (door.last + 1) % n;
+    vquad(ctx.buf, R.pts[s], R.inner[s], base, doorTop, ctx.trim, [ef.ux, 0, ef.uz]);
+    vquad(ctx.buf, R.pts[t], R.inner[t], base, doorTop, ctx.trim, [-el.ux, 0, -el.uz]);
+  }
+}
+
+// ---------------------------------------------------------------- build
+
 function buildCity(features) {
   clearLayers();
 
-  const geoms = [];
-  const roofBuf = newBuf();
-  const walls = [];   // { pts, minX, maxX, minZ, maxZ, base, top, tags } in world XZ
+  const buf = newBuf();        // walls, jambs, roof caps, ceilings
+  const roofBuf = newBuf();    // pitched roofs
+  const floorBuf = newBuf();   // interior floors, depth-biased over the ground paint
+  const list = [];
   let skipped = 0;
 
+  // Pass 1: the shell record of every building, so door placement can ask
+  // whether a wall backs onto a neighbour before any geometry exists.
   for (const ring of features.buildings) {
-    const foot = Math.abs(ringArea(ring.pts));
+    const outer = orientRing(dedupeRing(ring.pts), true);
+    if (outer.length < 3) { skipped++; continue; }
+    const foot = Math.abs(ringArea(outer));
     if (foot < 4) { skipped++; continue; }   // slivers, map noise
 
     const tags = ring.tags || {};
@@ -940,12 +1386,12 @@ function buildCity(features) {
     const base = Math.min(minHeightOf(tags), top - 0.5);
     if (!(top - base > 0.5)) { skipped++; continue; }
 
-    // A pitched roof eats the top of the extrusion; the walls stop at the
-    // eaves and the roof volume covers the rest.
+    // A pitched roof eats the top of the walls; the walls stop at the eaves
+    // and the roof volume covers the rest.
     let roofShape = ROOF_SHAPE[tags['roof:shape']] || null;
     let obb = null, wallTop = top;
     if (roofShape) {
-      obb = obbOf(ring.pts);
+      obb = obbOf(outer);
       // the oriented box stands in for the footprint, so only use it when the
       // two are close in area
       if (!obb || foot / obb.area < 0.72) roofShape = null;
@@ -957,65 +1403,79 @@ function buildCity(features) {
       rh = Math.min(rh, (top - base) - 1.0);
       if (rh >= 0.6) wallTop = top - rh; else roofShape = null;
     }
+    if (!(wallTop - base > 0.5)) { skipped++; continue; }
 
-    const depth = wallTop - base;
-    if (!(depth > 0.5)) { skipped++; continue; }
+    const holes = (ring.holes || [])
+      .map(h => orientRing(dedupeRing(h), false))
+      .filter(h => h.length >= 3 && Math.abs(ringArea(h)) >= 1);
+    const cap = capOf(outer, holes);
+    if (!cap) { skipped++; continue; }   // self-intersecting ring; earcut gave up
 
-    // Shape lives in XY; after rotateX(-90) a shape point (px, py) lands at
-    // world (px, 0, -py) and the extrusion runs along +Y.
-    const shape = new THREE.Shape();
-    shape.moveTo(ring.pts[0][0], -ring.pts[0][1]);
-    for (let i = 1; i < ring.pts.length; i++) shape.lineTo(ring.pts[i][0], -ring.pts[i][1]);
-    shape.closePath();
+    list.push({
+      pts: outer, holes, ...bounds(outer), cap,
+      base, top: wallTop, ceil: wallTop - CEIL_GAP, floor: base > 0.05 ? base : 0,
+      roofTop: top, roofShape, obb, tags, door: null, doorTop: 0, index: list.length
+    });
+  }
+  shells = list;
+  shellGrid = gridOf(list, GRID_CELL);
 
-    let g;
-    try {
-      g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 1 });
-    } catch (e) {
-      skipped++;   // self-intersecting ring; earcut gave up
-      continue;
-    }
-    g.rotateX(-Math.PI / 2);
-    if (base > 0) g.translate(0, base, 0);
+  // Pass 2: geometry and colliders.
+  const roads = roadIndex(features.roads);
+  const ents = pointIndex(features.entrances || []);
+  const iw = rgb(0xe4ded2), floorC = rgb(0x8f7358), ceilC = rgb(0xf1eee8), trim = rgb(0x4e3d30);
+  const solids = [];
 
+  for (const s of list) {
+    const tags = s.tags;
     // a tagged colour or material is used as-is, with only a slight jitter;
     // everything else keeps the subtle random tint so facades read apart
     const named = wallColorOf(tags);
     let wc;
     if (named != null) {
-      const c = rgb(named), s = 0.9 + Math.random() * 0.12;
-      wc = [c[0] * s, c[1] * s, c[2] * s];
+      const c = rgb(named), k = 0.9 + Math.random() * 0.12;
+      wc = [c[0] * k, c[1] * k, c[2] * k];
     } else {
       const t = 0.72 + Math.random() * 0.24;
       wc = [0.80 * t, 0.78 * t, 0.74 * t];
     }
-    tint(g, wc);
-    g.deleteAttribute('uv');
-    geoms.push(g);
 
-    if (roofShape) {
+    const wallH = s.top - s.base;
+    let doorH = Math.min(DOOR_H, wallH - 0.3);
+    if (doorH < EYE_HEIGHT + HEAD_CLEAR + 0.25) doorH = wallH;   // too low for a lintel
+    s.doorTop = s.base + doorH;
+
+    const R = wallRing(s.pts);
+    s.door = chooseDoor(s, R, roads, ents);
+
+    const ctx = { buf, solids, wc, iw, trim };
+    ringWalls(ctx, R, s.door, s.base, s.top, s.doorTop);
+    for (const h of s.holes) ringWalls(ctx, wallRing(h), null, s.base, s.top, s.doorTop);
+
+    pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);             // flat roof / eaves cap
+    pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);        // seen from inside
+    pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
+    if (s.base > 0.05) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);   // raised: underside
+
+    if (s.roofShape) {
       const rcHex = roofColorOf(tags);
       const rc = rcHex != null ? rgb(rcHex) : [wc[0] * 0.72, wc[1] * 0.70, wc[2] * 0.68];
-      roofOf(roofBuf, obb, wallTop, top, roofShape, rc);
+      roofOf(roofBuf, s.obb, s.top, s.roofTop, s.roofShape, rc);
     }
-
-    const bb = bounds(ring.pts);
-    // the eaves are the surface you can stand on, so collision stops there
-    walls.push({ pts: ring.pts, ...bb, base, top: wallTop, tags });
   }
 
-  const count = geoms.length;
-  const roofGeom = bufGeom(roofBuf);
-  if (roofGeom) geoms.push(roofGeom);
+  const count = list.length;
+  const geoms = [bufGeom(buf), bufGeom(roofBuf)].filter(Boolean);
   addLayer(geoms, litMaterial());
+  const fg = bufGeom(floorBuf);
+  if (fg) addLayer([fg], litMaterial(LAYER_BIAS.floor));
 
   buildGround(features);
   buildTrees(features.trees);
   const barrierBoxes = buildBarriers(features.barriers);
   buildProps(features.props);
-  // grid first, so the POI-to-wall search in collectSigns can use it
-  buildGrid(walls.concat(barrierBoxes));
-  buildSigns(collectSigns(walls, features.pois));
+  buildGrid(solids.concat(barrierBoxes));
+  buildSigns(collectSigns(list, features.pois));
   return { count, skipped };
 }
 
@@ -1339,7 +1799,7 @@ function edgeOutward(pts, i) {
   let nx = (z1 - z0) / len, nz = -(x1 - x0) / len;
   const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
   if (pointInRing(pts, mx + nx * 0.2, mz + nz * 0.2)) { nx = -nx; nz = -nz; }
-  return { mx, mz, nx, nz, len };
+  return { i, mx, mz, nx, nz, len };
 }
 
 function longestEdge(pts) {
@@ -1368,18 +1828,31 @@ function edgeNearest(pts, x, z) {
   return bi < 0 ? null : edgeOutward(pts, bi);
 }
 
-function placeSign(edge, text, kind, eaves) {
+// `lift` is the lowest the sign may hang, used to keep it above a doorway.
+function placeSign(edge, text, kind, eaves, lift) {
   if (!edge || !text) return null;
   const h = kind === 'number' ? 0.3 : 0.55;
-  const y = kind === 'number'
+  let y = kind === 'number'
     ? Math.min(2.1, eaves - 0.25)
     : Math.min(3.1, eaves - 0.45);
+  if (lift && y - h / 2 < lift) {
+    y = lift + h / 2;
+    if (y + h / 2 > eaves - 0.05) return null;
+  }
   if (y - h / 2 < 0.3) return null;
   if (edge.len < (kind === 'number' ? 0.8 : 1.6)) return null;
   return {
     x: edge.mx + edge.nx * 0.07, y, z: edge.mz + edge.nz * 0.07,
     nx: edge.nx, nz: edge.nz, h, text: String(text), kind
   };
+}
+
+// Signs are centred on their wall, so one on the door wall clears the door head.
+function doorLift(w, edge) {
+  const d = w.door;
+  if (!d || !edge) return 0;
+  const on = d.run ? d.run.has(edge.i) : d.edge === edge.i;
+  return on ? w.doorTop + 0.12 : 0;
 }
 
 // A building's own name and house number go on its longest wall; a POI node
@@ -1391,19 +1864,20 @@ function collectSigns(walls, pois) {
     const tags = w.tags;
     if (!tags) continue;
     const label = signLabel(tags);
+    const edge = longestEdge(w.pts);
     if (label) {
-      const s = placeSign(longestEdge(w.pts), label, 'name', w.top);
+      const s = placeSign(edge, label, 'name', w.top, doorLift(w, edge));
       if (s) names.push(s);
     }
     if (tags['addr:housenumber']) {
-      const s = placeSign(longestEdge(w.pts), tags['addr:housenumber'], 'number', w.top);
+      const s = placeSign(edge, tags['addr:housenumber'], 'number', w.top, doorLift(w, edge));
       if (s) numbers.push(s);
     }
   }
 
-  // Candidates come from the collision grid (walls occupy indices
-  // 0..walls.length-1 there). Sorting the indices keeps the original wall
-  // order, so ties and the early `break` resolve exactly as a full scan would.
+  // Candidates come from the shell grid, whose indices are positions in
+  // `walls`. Sorting them keeps the original order, so ties and the early
+  // `break` resolve exactly as a full scan would.
   const REACH = 15;
   const cand = [];
   const mark = new Uint32Array(walls.length);
@@ -1416,7 +1890,7 @@ function collectSigns(walls, pois) {
     const cz0 = Math.floor((p.z - REACH) / GRID_CELL), cz1 = Math.floor((p.z + REACH) / GRID_CELL);
     for (let cx = cx0; cx <= cx1; cx++) {
       for (let cz = cz0; cz <= cz1; cz++) {
-        const bucket = grid.get(cellKey(cx, cz));
+        const bucket = shellGrid.get(cellKey(cx, cz));
         if (!bucket) continue;
         for (const idx of bucket) {
           if (idx >= walls.length || mark[idx] === stamp) continue;
@@ -1430,14 +1904,15 @@ function collectSigns(walls, pois) {
       const w = walls[idx];
       if (p.x < w.minX - REACH || p.x > w.maxX + REACH ||
           p.z < w.minZ - REACH || p.z > w.maxZ + REACH) continue;
-      const inside = pointInRing(w.pts, p.x, p.z);
+      const inside = pointInShell(w, p.x, p.z);
       const c = closestOnRing(w.pts, p.x, p.z);
       const d = inside ? 0 : c.d;
       if (d < best) { best = d; hit = w; }
       if (inside) break;
     }
     if (!hit) continue;
-    const s = placeSign(edgeNearest(hit.pts, p.x, p.z), p.label, 'name', hit.top);
+    const edge = edgeNearest(hit.pts, p.x, p.z);
+    const s = placeSign(edge, p.label, 'name', hit.top, doorLift(hit, edge));
     if (s) names.push(s);
   }
 
@@ -1518,28 +1993,28 @@ function buildSigns(signs) {
 }
 
 // ---------------------------------------------------------------- collision
+//
+// Two broadphase grids over the same cells:
+//   grid / gridWalls   solids: building wall pieces, lintels, barrier boxes.
+//                      Small rings, pushed against sideways, stood on from above.
+//   shellGrid / shells whole footprints: roof you can land on, raised floors,
+//                      ceilings you bump your head on, sign placement. Never
+//                      pushed against, so the inside of a building is open space.
 
 let grid = new Map();
 let gridWalls = [];
+let shellGrid = new Map();
+let shells = [];
+let solidStamp = new Uint32Array(0);
+let stampNo = 0;
 
 function cellKey(cx, cz) { return cx + ',' + cz; }
 
-function buildGrid(walls) {
-  grid = new Map();
-  gridWalls = walls;
-  for (let i = 0; i < walls.length; i++) {
-    const w = walls[i];
-    const x0 = Math.floor(w.minX / GRID_CELL), x1 = Math.floor(w.maxX / GRID_CELL);
-    const z0 = Math.floor(w.minZ / GRID_CELL), z1 = Math.floor(w.maxZ / GRID_CELL);
-    for (let cx = x0; cx <= x1; cx++) {
-      for (let cz = z0; cz <= z1; cz++) {
-        const k = cellKey(cx, cz);
-        let bucket = grid.get(k);
-        if (!bucket) grid.set(k, bucket = []);
-        bucket.push(i);
-      }
-    }
-  }
+function buildGrid(solids) {
+  gridWalls = solids;
+  grid = gridOf(solids, GRID_CELL);
+  solidStamp = new Uint32Array(solids.length);
+  stampNo = 0;
 }
 
 function pointInRing(pts, x, z) {
@@ -1568,15 +2043,18 @@ function closestOnRing(pts, x, z) {
   return near;
 }
 
-// Push the player circle out of any footprint it overlaps. A few passes so
-// inside corners settle instead of ping-ponging between two walls.
+// Push the player circle out of any solid it overlaps. Solids are wall pieces
+// a few tenths of a meter thick, so the caller moves in SUBSTEP increments and
+// the circle can never jump clean over one. A few passes so inside corners
+// settle instead of ping-ponging between two pieces.
 function resolveCollisions(pos) {
-  const feetY = pos.y - EYE_HEIGHT;
+  const feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR;
+  const r = PLAYER_RADIUS;
 
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 4; pass++) {
     let moved = false;
     const cx = Math.floor(pos.x / GRID_CELL), cz = Math.floor(pos.z / GRID_CELL);
-    const seen = new Set();
+    if (++stampNo >= 0xffffffff) { solidStamp.fill(0); stampNo = 1; }
 
     for (let ox = -1; ox <= 1; ox++) {
       for (let oz = -1; oz <= 1; oz++) {
@@ -1584,20 +2062,19 @@ function resolveCollisions(pos) {
         if (!bucket) continue;
 
         for (const idx of bucket) {
-          if (seen.has(idx)) continue;
-          seen.add(idx);
+          if (solidStamp[idx] === stampNo) continue;
+          solidStamp[idx] = stampNo;
           const w = gridWalls[idx];
-          // footprints are 2D, so gate them by the slab they actually occupy:
-          // feet above the roof or head below the base means nothing to hit
-          if (feetY >= w.top - LAND_EPS || pos.y <= w.base) continue;
-          const r = PLAYER_RADIUS;
+          // gate by the slab the piece occupies: feet above its top or head
+          // below its base (walking under a lintel) means nothing to hit
+          if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
           const inside = pointInRing(w.pts, pos.x, pos.z);
           const c = closestOnRing(w.pts, pos.x, pos.z);
 
           if (inside) {
-            // walk out to the nearest wall, then clear it by the player radius
+            // walk out to the nearest face, then clear it by the player radius
             let dx = c.x - pos.x, dz = c.z - pos.z;
             const len = Math.hypot(dx, dz) || 1;
             pos.x = c.x + (dx / len) * r;
@@ -1617,25 +2094,88 @@ function resolveCollisions(pos) {
   }
 }
 
+// Horizontal move with collision, cut into steps no longer than SUBSTEP.
+function moveAndCollide(pos, dx, dz) {
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / SUBSTEP));
+  for (let k = 0; k < n; k++) {
+    pos.x += dx / n;
+    pos.z += dz / n;
+    resolveCollisions(pos);
+  }
+}
+
 // The surface the feet pass down through between `fromFeet` and `toFeet`, or 0
-// for the street. Only roofs the feet were already above are eligible, so
-// walking under an overhang never snaps you up onto it.
+// for the street. Only surfaces the feet were already above are eligible, so
+// walking about inside a building never snaps you up onto its roof.
 function supportAt(x, z, fromFeet, toFeet) {
   let best = 0;
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
+  const ok = y => y > best && y <= fromFeet + LAND_EPS && y >= toFeet;
 
   for (let ox = -1; ox <= 1; ox++) {
     for (let oz = -1; oz <= 1; oz++) {
-      const bucket = grid.get(cellKey(cx + ox, cz + oz));
-      if (!bucket) continue;
+      const key = cellKey(cx + ox, cz + oz);
 
-      for (const idx of bucket) {
-        const w = gridWalls[idx];
-        if (w.top <= best) continue;                 // already have something higher
-        if (w.top > fromFeet + LAND_EPS) continue;   // roof is above us, not under us
-        if (w.top < toFeet) continue;                // still falling toward it
-        if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
-        if (pointInRing(w.pts, x, z)) best = w.top;
+      const bucket = grid.get(key);           // wall and barrier tops
+      if (bucket) {
+        for (const idx of bucket) {
+          const w = gridWalls[idx];
+          if (!ok(w.top)) continue;
+          if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+          if (pointInRing(w.pts, x, z)) best = w.top;
+        }
+      }
+
+      const sb = shellGrid.get(key);          // roofs, and floors of raised buildings
+      if (sb) {
+        for (const idx of sb) {
+          const w = shells[idx];
+          const roof = ok(w.top), floor = w.floor > 0 && ok(w.floor);
+          if (!roof && !floor) continue;
+          if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+          if (!pointInShell(w, x, z)) continue;
+          if (roof) best = w.top;
+          else best = w.floor;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+// The lowest overhead surface the head passes up through between `fromHead`
+// and `toHead`, or Infinity: interior ceilings, the underside of a raised
+// building, and the lintel over a doorway.
+function ceilingAt(x, z, fromHead, toHead) {
+  let best = Infinity;
+  const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
+  const ok = y => y < best && y >= fromHead - LAND_EPS && y < toHead;
+
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oz = -1; oz <= 1; oz++) {
+      const key = cellKey(cx + ox, cz + oz);
+
+      const bucket = grid.get(key);
+      if (bucket) {
+        for (const idx of bucket) {
+          const w = gridWalls[idx];
+          if (w.base <= 0.05 || !ok(w.base)) continue;
+          if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+          if (pointInRing(w.pts, x, z)) best = w.base;
+        }
+      }
+
+      const sb = shellGrid.get(key);
+      if (sb) {
+        for (const idx of sb) {
+          const w = shells[idx];
+          const ceil = ok(w.ceil), under = w.base > 0.05 && ok(w.base);
+          if (!ceil && !under) continue;
+          if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
+          if (!pointInShell(w, x, z)) continue;
+          if (under) best = w.base;         // the lower of the two when both apply
+          else best = w.ceil;
+        }
       }
     }
   }
@@ -1953,28 +2493,30 @@ function step(dt) {
 
   const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
+  let dx = 0, dz = 0;
   // the pad drives without `active`: on a desktop it is used with the
   // cursor free, which is exactly when pointer lock is not held
   if (len > 0 && (active || padId !== null)) {
     const scale = Math.min(len, 1) / len;   // cap at 1, keep partial stick tilt
     mx *= scale; mz *= scale;
-    player.pos.x += (fwd.x * mz + right.x * mx) * speed * dt;
-    player.pos.z += (fwd.z * mz + right.z * mx) * speed * dt;
+    dx = (fwd.x * mz + right.x * mx) * speed * dt;
+    dz = (fwd.z * mz + right.z * mx) * speed * dt;
   }
 
   if (flying) {
-    // footprint collision is off while flying: the rings have no top, so
-    // keeping it on would push you sideways out of a building you are
-    // hundreds of metres above
+    // collision is off while flying, so you can drift through walls and
+    // roofs to look around; it takes over again when you land
     jumpQueued = false;
+    player.pos.x += dx;
+    player.pos.z += dz;
     player.vel.y = 0;
     player.grounded = false;
     player.pos.y += climb * speed * dt;
     player.pos.y = Math.max(player.pos.y, EYE_HEIGHT);   // stay out of the ground
   } else {
     // resolve horizontally before the vertical step, so the roof lookup below
-    // runs on a position that is already clear of any footprint
-    resolveCollisions(player.pos);
+    // runs on a position that is already clear of every wall
+    moveAndCollide(player.pos, dx, dz);
 
     if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
       player.vel.y = JUMP_SPEED;
@@ -1985,6 +2527,13 @@ function step(dt) {
 
     const fromFeet = player.pos.y - EYE_HEIGHT;
     player.pos.y += player.vel.y * dt;
+    if (player.vel.y > 0) {
+      // a jump indoors stops at the ceiling instead of carrying on through it
+      // and landing on the roof
+      const c = ceilingAt(player.pos.x, player.pos.z,
+        fromFeet + EYE_HEIGHT + HEAD_CLEAR, player.pos.y + HEAD_CLEAR);
+      if (c < Infinity) { player.pos.y = c - HEAD_CLEAR; player.vel.y = 0; }
+    }
     const toFeet = player.pos.y - EYE_HEIGHT;
 
     // grounded is re-decided every frame now, so stepping off a roof edge drops
@@ -2324,7 +2873,8 @@ async function load(query) {
 
     let features = null;
     let radius = storedPlace ? storedPlace.radius : RADIUS_LADDER[0];
-    const cached = (storedPlace && place.label === storedPlace.label)
+    const cached = (storedPlace && place.label === storedPlace.label &&
+                    storedPlace.v === FEATURES_VERSION)
       ? localStorage.getItem('lastFeatures')
       : null;
 
@@ -2340,7 +2890,7 @@ async function load(query) {
         try {
             // keep the in-memory copy in step with storage, so a later load in
             // this session compares against the place that is actually cached
-            storedPlace = { label: place.label, lat: place.lat, lon: place.lon, radius };
+            storedPlace = { label: place.label, lat: place.lat, lon: place.lon, radius, v: FEATURES_VERSION };
             localStorage.setItem('lastPlace', JSON.stringify(storedPlace));
             localStorage.setItem('lastFeatures', JSON.stringify(features));
         } catch (e) {
@@ -2379,7 +2929,7 @@ async function load(query) {
     player.pos.set(0, EYE_HEIGHT, 0);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
-    resolveCollisions(player.pos);   // in case the address lands inside a footprint
+    resolveCollisions(player.pos);   // in case the address lands inside a wall
 
     // Compile shaders (in parallel where the driver supports it) and upload
     // textures now, so the first walkable frame does not stall on them.
