@@ -75,20 +75,6 @@
     width: 46px; height: 46px; margin: -23px 0 0 -23px;
     background: rgba(232, 228, 220, 0.28); border-radius: 50%;
   }
-  #pad {
-    position: fixed; left: 18px; bottom: 62px;
-    width: 104px; height: 104px;
-    border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 50%;
-    background: rgba(16, 19, 26, 0.32);
-    touch-action: none; z-index: 6; display: none;
-  }
-  #pad.on { display: block; }
-  #padknob {
-    position: absolute; left: 50%; top: 50%;
-    width: 44px; height: 44px; margin: -22px 0 0 -22px;
-    background: rgba(232, 228, 220, 0.28); border-radius: 50%;
-    pointer-events: none;
-  }
   #fly, #gear, #climb button {
     padding: 12px 18px;
     background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
@@ -173,7 +159,6 @@
 <div id="dot"></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
-<div id="pad"><div id="padknob"></div></div>
 <button id="fly">Fly</button>
 <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
 <button id="gear">Settings</button>
@@ -346,8 +331,6 @@ const hudEl  = document.getElementById('hud');
 const dotEl  = document.getElementById('dot');
 const stickEl = document.getElementById('stick');
 const knobEl  = document.getElementById('knob');
-const padEl     = document.getElementById('pad');
-const padKnobEl = document.getElementById('padknob');
 const flyEl     = document.getElementById('fly');
 const climbEl   = document.getElementById('climb');
 const upEl      = document.getElementById('up');
@@ -2215,9 +2198,7 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 addEventListener('mousemove', e => {
-  // the pad is dragged with the cursor free, and this file keeps `active`
-  // true without pointer lock, so a pad drag would otherwise also look
-  if (!active || padId !== null) return;
+  if (!active) return;
   player.yaw   -= e.movementX * 0.0022;
   player.pitch -= e.movementY * 0.0022;
   const lim = Math.PI / 2 - 0.01;
@@ -2303,49 +2284,9 @@ if (IS_TOUCH) {
   el.addEventListener('pointercancel', endTouch);
 }
 
-// ------------------------------------------------------------ pad and fly
+// ------------------------------------------------------------ fly
 
-// A fixed stick, unlike the floating touch one above. It listens on its own
-// element and takes any pointer type, so it also works on a desktop, where
-// the canvas stick never appears and pointer lock is not held while the
-// cursor is on the control.
-const PAD_RADIUS = 40;            // px of travel for full tilt
-const padMove = { x: 0, z: 0 };
-let padId = null;
 let flying = false;
-
-function padAt(e) {
-  const r = padEl.getBoundingClientRect();
-  let dx = e.clientX - (r.left + r.width / 2);
-  let dy = e.clientY - (r.top + r.height / 2);
-  const d = Math.hypot(dx, dy);
-  if (d > PAD_RADIUS) { dx *= PAD_RADIUS / d; dy *= PAD_RADIUS / d; }
-  padKnobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-  padMove.x =  dx / PAD_RADIUS;
-  padMove.z = -dy / PAD_RADIUS;
-  wake();
-}
-
-padEl.addEventListener('pointerdown', e => {
-  if (padId !== null) return;
-  padId = e.pointerId;
-  // capture, so a drag that leaves the circle keeps steering instead of
-  // sticking at whatever tilt it had when it crossed the edge
-  padEl.setPointerCapture(padId);
-  padAt(e);
-});
-
-padEl.addEventListener('pointermove', e => { if (e.pointerId === padId) padAt(e); });
-
-const endPad = e => {
-  if (e.pointerId !== padId) return;
-  padId = null;
-  padMove.x = padMove.z = 0;
-  padKnobEl.style.transform = 'translate(0px, 0px)';
-  wake();
-};
-padEl.addEventListener('pointerup', endPad);
-padEl.addEventListener('pointercancel', endPad);
 
 // Altitude while flying, held rather than clicked, so it reads like the rest
 // of the movement input instead of stepping the player up a fixed amount.
@@ -2469,7 +2410,6 @@ gearEl.addEventListener('click', () => {
 });
 
 function showControls(on) {
-  padEl.classList.toggle('on', on);
   flyEl.classList.toggle('on', on);
   climbEl.classList.toggle('on', on && flying);
   gearEl.classList.toggle('on', on);
@@ -2489,14 +2429,11 @@ function step(dt) {
   if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft'))  mx -= 1;
   if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
-  if (padId !== null)   { mx += padMove.x;   mz += padMove.z; }
 
   const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
   let dx = 0, dz = 0;
-  // the pad drives without `active`: on a desktop it is used with the
-  // cursor free, which is exactly when pointer lock is not held
-  if (len > 0 && (active || padId !== null)) {
+  if (len > 0 && active) {
     const scale = Math.min(len, 1) / len;   // cap at 1, keep partial stick tilt
     mx *= scale; mz *= scale;
     dx = (fwd.x * mz + right.x * mx) * speed * dt;
@@ -2568,7 +2505,7 @@ function wake() {
 }
 
 function movementHeld() {
-  return stickId !== null || padId !== null || climb !== 0 || jumpQueued ||
+  return stickId !== null || climb !== 0 || jumpQueued ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space');
