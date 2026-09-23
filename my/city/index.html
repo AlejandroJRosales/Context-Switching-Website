@@ -324,7 +324,7 @@
   <div id="card">
     <h1>City</h1>
     <p>City rebuilds any real address from OpenStreetMap buildings, streets, water, and trees so you can walk it in first person, and fills it with people whose two-lobe spiking neural network brains learn from their own hunger, thirst, and health instead of following scripts, to see what behavior emerges when real places meet adaptive minds.</p>
-    <p>Enter a custom address or select a location from the list of addresses. Buildings within a few blocks are pulled from OpenStreetMap and extruded.</p>
+    <p>Enter an address or select one from the list. Buildings within a few blocks are pulled from OpenStreetMap and extruded.</p>
     <div id="row">
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
@@ -2417,6 +2417,8 @@ const NPC_RADIUS     = 0.3;      // collision circle; under PLAYER_RADIUS so eve
 const NPC_COLLIDE_H  = 1.35;     // collision column height; under the lowest lintel (1.4 m) so no door refuses them
 const NPC_WADE       = 0.55;     // how far a human sinks into painted water
 const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
+const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
+const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
 const WATER_CELL     = 1;        // water raster resolution, metres
 
 // ----- shared helpers the Arena classes expect by name
@@ -2928,9 +2930,19 @@ class Animal extends Entity {
 
     this.generation = 0;
 
-    const heightParams = { human: [1.0, 0.13], sheep: [1.0, 0.10] };
-    const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
-    this.heightScale = brains.randNormal(hMean, hStd);
+    if (type === 'human') {
+      // City: height is drawn from a normal in metres (unclamped Box-Muller, cut at
+      // 4 std), then mapped to heightScale. Rig height, feet to top of head, in
+      // Arena units is 32.3 * hs + 6.25 (footLift 15hs + 6.25, head top 13hs + 4.3hs).
+      let u; do { u = Math.random(); } while (u === 0);
+      const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+      const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
+      this.heightScale = (metres / NPC_UNIT - 6.25) / 32.3;
+    } else {
+      const heightParams = { sheep: [1.0, 0.10] };
+      const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
+      this.heightScale = brains.randNormal(hMean, hStd);
+    }
 
     this.waterNeed = Math.random() * 0.05;
     this.foodNeed = Math.random() * 0.05;
