@@ -185,7 +185,7 @@ const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
 const WALK_SPEED     = 10.0;
 const RUN_SPEED      = 20.0;
-const JUMP_SPEED     = 30.0;
+const JUMP_SPEED     = 7.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
@@ -1991,7 +1991,10 @@ let shells = [];
 let solidStamp = new Uint32Array(0);
 let stampNo = 0;
 
-function cellKey(cx, cz) { return cx + ',' + cz; }
+// Integer key, so a lookup builds no string: every NPC queries these grids
+// each frame. Unique while |cx|, |cz| < 8192 cells, and small enough to stay
+// a V8 small integer.
+function cellKey(cx, cz) { return (cx + 8192) * 16384 + (cz + 8192); }
 
 function buildGrid(solids) {
   gridWalls = solids;
@@ -2030,9 +2033,11 @@ function closestOnRing(pts, x, z) {
 // a few tenths of a meter thick, so the caller moves in SUBSTEP increments and
 // the circle can never jump clean over one. A few passes so inside corners
 // settle instead of ping-ponging between two pieces.
-function resolveCollisions(pos) {
-  const feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR;
-  const r = PLAYER_RADIUS;
+// NPCs pass their own radius and body column; the defaults are the player's.
+// Returns whether anything was pushed.
+function resolveCollisions(pos, r = PLAYER_RADIUS,
+                           feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR) {
+  let pushed = false;
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
@@ -2074,7 +2079,9 @@ function resolveCollisions(pos) {
       }
     }
     if (!moved) break;
+    pushed = true;
   }
+  return pushed;
 }
 
 // Horizontal move with collision, cut into steps no longer than SUBSTEP.
@@ -2164,6 +2171,3168 @@ function ceilingAt(x, z, fromHead, toHead) {
   }
   return best;
 }
+
+// ---------------------------------------------------------------- NPCs
+
+//
+
+// Human NPCs, ported unchanged in behaviour from AIEcosystemArena: the same
+
+// Animal (stats, needs, perception, 19 inputs, 9 moves, reward, mating), the
+
+// same two-lobe DenseNetwork per individual, and the same instanced
+
+// AnimalRenderer. What is new is only the ground they stand on: the Arena's
+
+// toroidal terrain and cabin boxes are swapped for this city's wall pieces,
+
+// building shells and painted water. Lines that differ from the Arena are
+
+// marked "City:".
+
+//
+
+// The Arena works in its own units (a human is ~38 units tall). NPC_UNIT turns
+
+// those into metres at the few places distance meets the city: movement step,
+
+// body lift, eye height, vision range, contact radius and mesh scale. Stats
+
+// themselves (speed 35, health 120, ...) stay in Arena units.
+
+
+
+const NPC_POPULATION = 80;       // humans spawned per loaded city: the one knob
+
+
+
+const NPC_UNIT       = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
+
+const NPC_RADIUS     = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
+
+const NPC_COLLIDE_H  = 1.35;     // collision column height; under the lowest lintel (1.4 m) so no door refuses them
+
+const NPC_WADE       = 0.55;     // how far a human sinks into painted water
+
+const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
+
+const WATER_CELL     = 1;        // water raster resolution, metres
+
+
+
+// ----- shared helpers the Arena classes expect by name
+
+
+
+class MathTools {
+
+  distSq(x1, y1, x2, y2) {
+
+    return (x2 - x1) ** 2 + (y2 - y1) ** 2;
+
+  }
+
+
+
+  clamp(value, minimum, maximum) {
+
+    return Math.max(Math.min(value, maximum), minimum);
+
+  }
+
+
+
+  wrap(value, size) {
+
+    return ((value % size) + size) % size;
+
+  }
+
+
+
+  sigmoid(x) {
+
+    x = Math.max(-500, Math.min(500, x));
+
+    return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
+
+  }
+
+
+
+  softmax(vector) {
+
+    const max = Math.max(...vector);
+
+    const exps = vector.map(v => Math.exp(v - max));
+
+    const sum = exps.reduce((a, b) => a + b, 0);
+
+    return exps.map(exp => exp / sum);
+
+  }
+
+
+
+  random(min = 0, max = 1) {
+
+    return Math.random() * (max - min) + min;
+
+  }
+
+
+
+  getMeanVariance(inputs) {
+
+    let mean = 0;
+
+    for (let i = 0; i < inputs.length; i++) mean += inputs[i];
+
+    mean /= inputs.length;
+
+
+
+    let variance = 0;
+
+    for (let i = 0; i < inputs.length; i++) {
+
+      const diff = inputs[i] - mean;
+
+      variance += diff * diff;
+
+    }
+
+    variance /= inputs.length;
+
+    return { mean, variance };
+
+  }
+
+}
+
+
+
+class SpatialGrid {
+
+  constructor(worldW, worldH, cellSize) {
+
+    this.cellSize = cellSize;
+
+    this.cols = Math.ceil(worldW / cellSize);
+
+    this.rows = Math.ceil(worldH / cellSize);
+
+    this.cells = new Map();
+
+    this._pool = [];
+
+    this._usedBuckets = [];
+
+  }
+
+
+
+  _key(cx, cy) { return cy * this.cols + cx; }
+
+
+
+  _cell(x, z) {
+
+    const cx = Math.floor(x / this.cellSize) % this.cols;
+
+    const cy = Math.floor(z / this.cellSize) % this.rows;
+
+    return this._key((cx + this.cols) % this.cols, (cy + this.rows) % this.rows);
+
+  }
+
+
+
+  clear() {
+
+    for (const bucket of this._usedBuckets) {
+
+      bucket.length = 0;
+
+      this._pool.push(bucket);
+
+    }
+
+    this._usedBuckets.length = 0;
+
+    this.cells.clear();
+
+  }
+
+
+
+  insert(entity) {
+
+    const k = this._cell(entity.position.x, entity.position.z);
+
+    let bucket = this.cells.get(k);
+
+    if (!bucket) {
+
+      bucket = this._pool.length > 0 ? this._pool.pop() : [];
+
+      this.cells.set(k, bucket);
+
+      this._usedBuckets.push(bucket);
+
+    }
+
+    bucket.push(entity);
+
+  }
+
+
+
+  queryInto(out, x, z, r) {
+
+    let n = 0;
+
+    const cs = this.cellSize;
+
+    const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
+
+    const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
+
+    for (let cy = cy0; cy <= cy1; cy++) {
+
+      for (let cx = cx0; cx <= cx1; cx++) {
+
+        const k = this._key(
+
+          ((cx % this.cols) + this.cols) % this.cols,
+
+          ((cy % this.rows) + this.rows) % this.rows
+
+        );
+
+        const bucket = this.cells.get(k);
+
+        if (!bucket) continue;
+
+        for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
+
+      }
+
+    }
+
+    return n;
+
+  }
+
+}
+
+
+
+class BrainFactory {
+
+  constructor() {
+
+    this.LOBE_SIZE_MIN = 4;
+
+    this.LOBE_SIZE_MAX = 10;
+
+    this.LOBE_SPARSITY = 0.20;
+
+  }
+
+
+
+  randLobeSize() {
+
+    return this.LOBE_SIZE_MIN + Math.floor(Math.random() * (this.LOBE_SIZE_MAX - this.LOBE_SIZE_MIN + 1));
+
+  }
+
+
+
+  makeSparseMask(inD, outD, sparsity) {
+
+    const mask = new Uint8Array(inD * outD);
+
+    const total = inD * outD;
+
+    const target = Math.max(1, Math.round(total * sparsity));
+
+    const indices = new Int32Array(total);
+
+    for (let i = 0; i < total; i++) indices[i] = i;
+
+    for (let i = 0; i < target; i++) {
+
+      const j = i + Math.floor(Math.random() * (total - i));
+
+      const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+
+      mask[indices[i]] = 1;
+
+    }
+
+    return mask;
+
+  }
+
+
+
+  makeMaskedWeights(inD, outD, mask) {
+
+    const limit = Math.sqrt(6.0 / (inD + outD));
+
+    const w = new Float32Array(inD * outD);
+
+    for (let k = 0; k < w.length; k++) {
+
+      if (mask[k]) w[k] = tools.random(-limit, limit);
+
+    }
+
+    return w;
+
+  }
+
+
+
+  randNormal(mean = 1.0, std = 0.12) {
+
+    let u, v;
+
+    do { u = Math.random(); } while (u === 0);
+
+    v = Math.random();
+
+    const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+
+    return Math.max(0.55, Math.min(1.55, mean + std * n));
+
+  }
+
+}
+
+
+
+// ----- two-lobe network (unchanged from the Arena)
+
+//
+
+//   Input -> Lobe A, Input -> Lobe B, A -> B, B -> A (one-step lag), A,B -> Output
+
+//   Both lobes are leaky integrate-and-fire with a refractory period; output is
+
+//   a softmax over 9 actions.
+
+class DenseNetwork {
+
+  constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
+
+    this.inputDims    = inputDims;
+
+    this.outputDims   = 9;
+
+    this.learningRate = learningRate;
+
+    this.momentum     = momentum;
+
+    this.weightDecay  = weightDecay;
+
+    this.cost         = 0.0;
+
+    this.lastCost     = 0.0;
+
+    this.costHistoryLen = 0;
+
+    this.output       = null;
+
+    this.normCount    = 0;
+
+    this.EMA          = 0.001;
+
+
+
+    this.runningMean   = new Float32Array(inputDims);
+
+    this.runningVar    = new Float32Array(inputDims).fill(1);
+
+    this._standardized = new Float32Array(inputDims);
+
+
+
+    const I  = inputDims;
+
+    const O  = this.outputDims;
+
+
+
+    if (masks) {
+
+      this.lobeSizeA = masks.lobeSizeA;
+
+      this.lobeSizeB = masks.lobeSizeB;
+
+    } else {
+
+      this.lobeSizeA = brains.randLobeSize();
+
+      this.lobeSizeB = brains.randLobeSize();
+
+    }
+
+
+
+    const NA = this.lobeSizeA;
+
+    const NB = this.lobeSizeB;
+
+
+
+    if (masks) {
+
+      this.maskIA = masks.maskIA;
+
+      this.maskIB = masks.maskIB;
+
+      this.maskAB = masks.maskAB;
+
+      this.maskBA = masks.maskBA;
+
+      this.maskAO = masks.maskAO;
+
+      this.maskBO = masks.maskBO;
+
+    } else {
+
+      this.maskIA = brains.makeSparseMask(I,  NA, brains.LOBE_SPARSITY);
+
+      this.maskIB = brains.makeSparseMask(I,  NB, brains.LOBE_SPARSITY);
+
+      this.maskAB = brains.makeSparseMask(NA, NB, brains.LOBE_SPARSITY);
+
+      this.maskBA = brains.makeSparseMask(NB, NA, brains.LOBE_SPARSITY);
+
+      this.maskAO = brains.makeSparseMask(NA, O,  brains.LOBE_SPARSITY);
+
+      this.maskBO = brains.makeSparseMask(NB, O,  brains.LOBE_SPARSITY);
+
+    }
+
+
+
+    this.wIA = brains.makeMaskedWeights(I,  NA, this.maskIA);
+
+    this.wIB = brains.makeMaskedWeights(I,  NB, this.maskIB);
+
+    this.wAB = brains.makeMaskedWeights(NA, NB, this.maskAB);
+
+    this.wBA = brains.makeMaskedWeights(NB, NA, this.maskBA);
+
+    this.wAO = brains.makeMaskedWeights(NA, O,  this.maskAO);
+
+    this.wBO = brains.makeMaskedWeights(NB, O,  this.maskBO);
+
+
+
+    this.wSelf = new Float32Array(NA);
+
+    const selfLimit = Math.sqrt(6.0 / (NA + NA));
+
+    for (let i = 0; i < NA; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
+
+
+
+    this.biasA  = new Float32Array(NA);
+
+    this.biasB  = new Float32Array(NB);
+
+    this.biasO  = new Float32Array(O);
+
+
+
+    this.vIA    = new Float32Array(I  * NA);
+
+    this.vIB    = new Float32Array(I  * NB);
+
+    this.vAB    = new Float32Array(NA * NB);
+
+    this.vBA    = new Float32Array(NB * NA);
+
+    this.vAO    = new Float32Array(NA * O);
+
+    this.vBO    = new Float32Array(NB * O);
+
+    this.vSelf  = new Float32Array(NA);
+
+    this.vBiasA = new Float32Array(NA);
+
+    this.vBiasB = new Float32Array(NB);
+
+    this.vBiasO = new Float32Array(O);
+
+
+
+    this.hA = new Float32Array(NA);
+
+
+
+    this.hB = new Float32Array(NB);
+
+
+
+    this.lifLeak   = 0.85;
+
+    this.lifThresh = 0.25;
+
+    this.lifReset  = -0.1;
+
+
+
+    this.refracA = new Uint8Array(NA);
+
+    this.refracB = new Uint8Array(NB);
+
+    this.REFRAC_PERIOD = 3;
+
+
+
+    this.actA = new Float32Array(NA);
+
+    this.actB = new Float32Array(NB);
+
+    this.actO = new Float32Array(O);
+
+
+
+    this.layerDims = [I, NA, NB, O];
+
+
+
+    this.activations = [this.actA, this.actB, this.actO];
+
+  }
+
+
+
+  getMasks() {
+
+    return {
+
+      lobeSizeA: this.lobeSizeA, lobeSizeB: this.lobeSizeB,
+
+      maskIA: this.maskIA, maskIB: this.maskIB,
+
+      maskAB: this.maskAB, maskBA: this.maskBA,
+
+      maskAO: this.maskAO, maskBO: this.maskBO,
+
+    };
+
+  }
+
+
+
+  propagate(inp) {
+
+    const NA = this.lobeSizeA;
+
+    const NB = this.lobeSizeB;
+
+    const I = this.inputDims;
+
+    const O = this.outputDims;
+
+    const actA = this.actA;
+
+    const actB = this.actB;
+
+    const actO = this.actO;
+
+    const hA   = this.hA;
+
+
+
+    const refracA  = this.refracA;
+
+    const lifLeak  = this.lifLeak;
+
+    const lifTh    = this.lifThresh;
+
+    const lifRst   = this.lifReset;
+
+    const refracPd = this.REFRAC_PERIOD;
+
+    for (let i = 0; i < NA; i++) {
+
+      if (refracA[i] > 0) {
+
+        refracA[i]--;
+
+        hA[i] = lifRst;
+
+        actA[i] = 0.0;
+
+        continue;
+
+      }
+
+
+
+      hA[i] *= lifLeak;
+
+
+
+      let net = this.biasA[i] + this.wSelf[i] * hA[i];
+
+      for (let j = 0; j < I; j++) {
+
+        const k = j * NA + i;
+
+        if (this.maskIA[k]) net += this.wIA[k] * inp[j];
+
+      }
+
+      for (let k = 0; k < NB; k++) {
+
+        const idx = k * NA + i;
+
+        if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
+
+      }
+
+      hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
+
+
+
+      if (hA[i] >= lifTh) {
+
+        actA[i] = 1.0;
+
+        hA[i]   = lifRst;
+
+        refracA[i] = refracPd;
+
+      } else {
+
+        const vRel = hA[i] - lifTh;
+
+        actA[i] = vRel >= 0
+
+          ? 1 / (1 + Math.exp(-vRel))
+
+          : Math.exp(vRel) / (1 + Math.exp(vRel));
+
+      }
+
+    }
+
+
+
+    const hB      = this.hB;
+
+    const refracB = this.refracB;
+
+    for (let i = 0; i < NB; i++) {
+
+      if (refracB[i] > 0) {
+
+        refracB[i]--;
+
+        hB[i] = lifRst;
+
+        actB[i] = 0.0;
+
+        continue;
+
+      }
+
+
+
+      hB[i] *= lifLeak;
+
+
+
+      let net = this.biasB[i];
+
+      for (let j = 0; j < I; j++) {
+
+        const k = j * NB + i;
+
+        if (this.maskIB[k]) net += this.wIB[k] * inp[j];
+
+      }
+
+      for (let k = 0; k < NA; k++) {
+
+        const idx = k * NB + i;
+
+        if (this.maskAB[idx]) net += this.wAB[idx] * actA[k];
+
+      }
+
+      hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
+
+
+
+      if (hB[i] >= lifTh) {
+
+        actB[i] = 1.0;
+
+        hB[i]   = lifRst;
+
+        refracB[i] = refracPd;
+
+      } else {
+
+        const vRel = hB[i] - lifTh;
+
+        actB[i] = vRel >= 0
+
+          ? 1 / (1 + Math.exp(-vRel))
+
+          : Math.exp(vRel) / (1 + Math.exp(vRel));
+
+      }
+
+    }
+
+
+
+    for (let i = 0; i < O; i++) {
+
+      let net = this.biasO[i];
+
+      for (let k = 0; k < NA; k++) {
+
+        const idxA = k * O + i;
+
+        if (this.maskAO[idxA]) net += this.wAO[idxA] * actA[k];
+
+      }
+
+      for (let k = 0; k < NB; k++) {
+
+        const idxB = k * O + i;
+
+        if (this.maskBO[idxB]) net += this.wBO[idxB] * actB[k];
+
+      }
+
+      actO[i] = net;
+
+    }
+
+
+
+    let maxV = actO[0];
+
+    for (let i = 1; i < O; i++) if (actO[i] > maxV) maxV = actO[i];
+
+    let sum = 0;
+
+    for (let i = 0; i < O; i++) { actO[i] = Math.exp(actO[i] - maxV); sum += actO[i]; }
+
+    for (let i = 0; i < O; i++) actO[i] /= sum;
+
+
+
+    return actO;
+
+  }
+
+
+
+  think(inputs) {
+
+    this.normCount++;
+
+    const standardized = this._standardized;
+
+
+
+    for (let i = 0; i < inputs.length; i++) {
+
+      const delta = inputs[i] - this.runningMean[i];
+
+      this.runningMean[i] += this.EMA * delta;
+
+      this.runningVar[i] = (1 - this.EMA) * this.runningVar[i] + this.EMA * delta * delta;
+
+      let s = delta / Math.sqrt(this.runningVar[i] + 1e-8);
+
+      standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s;
+
+    }
+
+
+
+    const values = this.propagate(standardized);
+
+    let bestIdx = 0, bestVal = values[0];
+
+    for (let j = 1; j < values.length; j++) {
+
+      if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
+
+    }
+
+    this.output = bestIdx;
+
+    return bestIdx;
+
+  }
+
+
+
+  getAdaptiveLr() {
+
+    if (this.costHistoryLen > 0 && this.cost < this.lastCost) {
+
+      this.learningRate = Math.max(0.00001, Math.min(0.01, this.learningRate * 1.0005));
+
+    } else {
+
+      this.learningRate = Math.max(0.00001, Math.min(0.01, this.learningRate * 0.9995));
+
+    }
+
+    this.lastCost = this.cost;
+
+    this.costHistoryLen = Math.min(this.costHistoryLen + 1, 100);
+
+    return this.learningRate;
+
+  }
+
+
+
+  // City: the Arena built these two helpers as arrow functions inside
+
+  // adjustWeights, i.e. two closures per call per NPC. Same maths, same order
+
+  // of Math.random() calls, hoisted to methods so the reward step allocates
+
+  // nothing.
+
+  _stepWeights(w, v, mask, len, mom, grad, wd1, r) {
+
+    for (let k = 0; k < len; k++) {
+
+      if (!mask[k]) continue;
+
+      const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
+
+      const vel = mom * v[k] - grad + noise;
+
+      v[k] = vel;
+
+      w[k] = w[k] * wd1 + vel;
+
+    }
+
+  }
+
+
+
+  _stepBias(b, v, len, mom, gradB, wdB) {
+
+    for (let k = 0; k < len; k++) {
+
+      const vel = mom * v[k] - gradB;
+
+      v[k] = vel;
+
+      b[k] = b[k] * wdB + vel;
+
+    }
+
+  }
+
+
+
+  adjustWeights(reward) {
+
+    this.cost = reward;
+
+    const r   = Math.max(-1, Math.min(1, reward));
+
+    const lr  = this.getAdaptiveLr();
+
+    const mom = this.momentum;
+
+    const wd1 = 1 - this.weightDecay;
+
+    const wdB = 1 - this.weightDecay * 0.1;
+
+
+
+    const chosenProb = this.actO[this.output] ?? 0.5;
+
+    const policyGrad = r * (1 - chosenProb);
+
+    const grad  = lr * policyGrad;
+
+    const gradB = lr * 0.1 * policyGrad;
+
+
+
+    const NA = this.lobeSizeA;
+
+    const NB = this.lobeSizeB;
+
+    const I = this.inputDims;
+
+    const O = this.outputDims;
+
+
+
+    this._stepWeights(this.wIA, this.vIA, this.maskIA, I  * NA, mom, grad, wd1, r);
+
+    this._stepWeights(this.wIB, this.vIB, this.maskIB, I  * NB, mom, grad, wd1, r);
+
+    this._stepWeights(this.wAB, this.vAB, this.maskAB, NA * NB, mom, grad, wd1, r);
+
+    this._stepWeights(this.wBA, this.vBA, this.maskBA, NB * NA, mom, grad, wd1, r);
+
+    this._stepWeights(this.wAO, this.vAO, this.maskAO, NA * O,  mom, grad, wd1, r);
+
+    this._stepWeights(this.wBO, this.vBO, this.maskBO, NB * O,  mom, grad, wd1, r);
+
+
+
+    for (let k = 0; k < NA; k++) {
+
+      const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
+
+      const vel = mom * this.vSelf[k] - grad + noise;
+
+      this.vSelf[k] = vel;
+
+      this.wSelf[k] = this.wSelf[k] * wd1 + vel;
+
+    }
+
+
+
+    this._stepBias(this.biasA, this.vBiasA, NA, mom, gradB, wdB);
+
+    this._stepBias(this.biasB, this.vBiasB, NB, mom, gradB, wdB);
+
+    this._stepBias(this.biasO, this.vBiasO, O,  mom, gradB, wdB);
+
+  }
+
+}
+
+
+
+// ----- entities
+
+
+
+class Entity {
+
+  constructor(position, type) {
+
+    this.position = new THREE.Vector3(...position);
+
+    this.type = type;
+
+    this.mesh = null;
+
+    this.health = 300;
+
+    this.alive = true;
+
+  }
+
+
+
+  update(deltaTime) {}
+
+
+
+  remove() {
+
+    if (this.mesh) scene.remove(this.mesh);   // City: the scene is a module global here
+
+  }
+
+}
+
+
+
+class Animal extends Entity {
+
+  static ACTION_STAY = 8;
+
+  static MOVE_TIMESTEP = 0.016;
+
+  static MOVE_DIRS = [
+
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+
+    [1, 1], [1, -1], [-1, 1], [-1, -1]
+
+  ];
+
+  static FACING_ANGLES = [
+
+    Math.PI / 2, -Math.PI / 2, 0, Math.PI,
+
+    Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4,
+
+    null
+
+  ];
+
+  static FOV_H = { human: [0.90, 1.30], sheep: [2.10, 2.80] };
+
+  static FOV_V = { human: [0.25, 0.45], sheep: [0.20, 0.40] };
+
+  static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
+
+  static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
+
+  static EYE_OFFSET = { human: 12, sheep: 7 };
+
+  static INPUT_DIMS = 19;
+
+  static _hit = { d3sq: 0, sin: 0, cos: 0, elev: 0, dist: 0 };
+
+
+
+  constructor(position, type) {
+
+    super(position, type);
+
+    this.speed = type === 'human' ? 35 : 25;
+
+    this.WATER_SPEED_FACTOR = 0.45;
+
+    this.submerged = false;
+
+    this.startHealth = type === 'human' ? 120 : 100;
+
+    this.health = this.startHealth;
+
+    this.maxHealth = this.health;
+
+    this.visionDistance = tools.random(500, 2000) * NPC_UNIT;   // City: metres
+
+    this.visionDistSq = this.visionDistance * this.visionDistance;
+
+
+
+    const fh = Animal.FOV_H[type] ?? [1.0, 1.6];
+
+    const fv = Animal.FOV_V[type] ?? [0.20, 0.45];
+
+    this.setFov(tools.random(fh[0], fh[1]), tools.random(fv[0], fv[1]));
+
+    this.eyeOffset = Animal.EYE_OFFSET[type] ?? 8;
+
+
+
+    this.generation = 0;
+
+
+
+    const heightParams = { human: [1.0, 0.13], sheep: [1.0, 0.10] };
+
+    const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
+
+    this.heightScale = brains.randNormal(hMean, hStd);
+
+
+
+    this.waterNeed = Math.random() * 0.05;
+
+    this.foodNeed = Math.random() * 0.05;
+
+    this.reproductionNeed = Math.random() * 0.05;
+
+    this.avoidNeed = 0;
+
+
+
+    this.sex = Math.random() < 0.5 ? 'male' : 'female';
+
+    this.mutationMulti = 0.5;
+
+    this.lastChildTime = Date.now();
+
+    this.childGracePeriod = (15 + Math.random() * 15) * 1000;
+
+    this.lookForMate = false;
+
+
+
+    this.waterIncrement = this.health * 0.000001;
+
+    this.foodIncrement  = this.health * 0.000003;
+
+    this.ageDepl        = this.health * 0.000001;
+
+
+
+    this.memPredatorX = 0; this.memPredatorY = 0; this.memPredatorZ = 0; this.hasPredator = false;
+
+    this.memFoodX = 0;     this.memFoodY = 0;     this.memFoodZ = 0;     this.hasFood = false;
+
+    this.memWaterX = 0;    this.memWaterY = 0;    this.memWaterZ = 0;    this.hasWater = false;
+
+    this.memMateX = 0;     this.memMateY = 0;     this.memMateZ = 0;     this.hasMate = false;
+
+    this.priority = null;
+
+
+
+    this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodElev = 0;      this.rayFoodDist = 0;
+
+    this.rayWaterSin = 0;     this.rayWaterCos = 0;     this.rayWaterElev = 0;     this.rayWaterDist = 0;
+
+    this.rayPredatorSin = 0;  this.rayPredatorCos = 0;  this.rayPredatorElev = 0;  this.rayPredatorDist = 0;
+
+    this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateElev = 0;      this.rayMateDist = 0;
+
+
+
+    this.brain = new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001);
+
+    this.ACTION_HOLD   = 60;
+
+    this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD);
+
+    this.currentAction = 0;
+
+    this.outputIdx = 0;
+
+    this.facingAngle = 0;
+
+    this.prevHealth = this.health;
+
+    this.prevWaterNeed = this.waterNeed;
+
+    this.prevFoodNeed = this.foodNeed;
+
+    this._inputs = new Float32Array(Animal.INPUT_DIMS);
+
+
+
+    this.isAdult = true;
+
+    this.birthTick = 0;
+
+
+
+    this.animTime = Math.random() * Math.PI * 2;
+
+
+
+    this.focusX = this.position.x;
+
+    this.focusZ = this.position.z;
+
+    this.tob = Date.now();
+
+
+
+    this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
+
+
+
+    // City: last position known to be clear of every wall piece, for the
+
+    // collision fallback in NpcWorld.collide
+
+    this.freeX = this.position.x; this.freeZ = this.position.z;
+
+
+
+    this.mesh = null;
+
+  }
+
+
+
+  remove() {  }
+
+
+
+  setFov(h, v) {
+
+    this.fovH = tools.clamp(h, Animal.FOV_H_MIN, Animal.FOV_H_MAX);
+
+    this.fovV = tools.clamp(v, Animal.FOV_V_MIN, Animal.FOV_V_MAX);
+
+    this.cosFovH = Math.cos(this.fovH);
+
+    this.tanFovV = Math.tan(this.fovV);
+
+  }
+
+
+
+  // City: body-centre height above the feet, in Arena units, read off the
+
+  // AnimalRenderer rig (leg pivot + leg length). The Arena used a flat 15 / 9,
+
+  // which left the feet ~6 units under its terrain; on a flat street that shows.
+
+  footLift() {
+
+    const hs = this.heightScale ?? 1.0;
+
+    return this.type === 'sheep' ? 9 + 6.5 * hs : 15 * hs + 6.25;
+
+  }
+
+
+
+  eyeY() {
+
+    return this.position.y + this.eyeOffset * (this.heightScale ?? 1.0) * NPC_UNIT;   // City: metres
+
+  }
+
+
+
+  senseTarget(px, py, pz, ax, az, cosH, tanV, tx, ty, tz) {
+
+    const dx = tx - px, dy = ty - py, dz = tz - pz;
+
+    const h2 = dx * dx + dz * dz;
+
+    if (h2 === 0) return false;
+
+    const d3sq = h2 + dy * dy;
+
+    if (d3sq > this.visionDistSq) return false;
+
+    const h = Math.sqrt(h2);
+
+    if ((dx * ax + dz * az) < cosH * h) return false;
+
+    if (Math.abs(dy) > tanV * h) return false;
+
+    const d3 = Math.sqrt(d3sq);
+
+    const hit = Animal._hit;
+
+    hit.d3sq = d3sq;
+
+    hit.sin  = dx / h;
+
+    hit.cos  = dz / h;
+
+    hit.elev = dy / d3;
+
+    hit.dist = Math.min(1, d3 / this.visionDistance);
+
+    return true;
+
+  }
+
+
+
+  outOfRange(mx, my, mz) {
+
+    const dx = mx - this.position.x;
+
+    const dy = my - this.eyeY();
+
+    const dz = mz - this.position.z;
+
+    return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
+
+  }
+
+
+
+  locate(grid, waterLocations) {
+
+    const px = this.position.x, pz = this.position.z;
+
+    const py = this.eyeY();
+
+    const vd = this.visionDistSq;
+
+    const ax = Math.sin(this.facingAngle), az = Math.cos(this.facingAngle);
+
+    const cosH = this.cosFovH, tanV = this.tanFovV;
+
+    const hit = Animal._hit;
+
+    const isSheep = this.type === 'sheep';
+
+    let bestPredDist = Infinity, bestFoodDist = Infinity,
+
+      bestMateDist = Infinity, bestWaterDist = Infinity;
+
+
+
+    const _n = grid.queryInto(world._qLocate, px, pz, this.visionDistance);
+
+    for (let _i = 0; _i < _n; _i++) {
+
+      const obj = world._qLocate[_i];
+
+      if (obj === this) continue;
+
+      const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
+
+
+
+      if (isSheep) {
+
+        if (obj.type === 'human') {
+
+          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+
+          if (hit.d3sq < bestPredDist) {
+
+            bestPredDist = hit.d3sq;
+
+            this.memPredatorX = ox; this.memPredatorY = oy; this.memPredatorZ = oz;
+
+            this.hasPredator = true; this.avoidNeed = 0.5;
+
+            this.rayPredatorSin = hit.sin;   this.rayPredatorCos  = hit.cos;
+
+            this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
+
+          }
+
+        } else if (obj.type === 'sheep' && this.sex !== obj.sex) {
+
+          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+
+          if (hit.d3sq < bestMateDist) {
+
+            bestMateDist = hit.d3sq;
+
+            this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
+
+            this.hasMate = true;
+
+            this.rayMateSin = hit.sin;   this.rayMateCos  = hit.cos;
+
+            this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
+
+          }
+
+        }
+
+      } else {
+
+        if (obj.type === 'sheep') {
+
+          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+
+          if (hit.d3sq < bestFoodDist) {
+
+            bestFoodDist = hit.d3sq;
+
+            this.memFoodX = ox; this.memFoodY = oy; this.memFoodZ = oz;
+
+            this.hasFood = true;
+
+            this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
+
+            this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
+
+          }
+
+        } else if (obj.type === 'human' && this.sex !== obj.sex) {
+
+          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+
+          if (hit.d3sq < bestMateDist) {
+
+            bestMateDist = hit.d3sq;
+
+            this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
+
+            this.hasMate = true;
+
+            this.rayMateSin = hit.sin;   this.rayMateCos  = hit.cos;
+
+            this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
+
+          }
+
+        }
+
+      }
+
+    }
+
+
+
+    if (isSheep) {
+
+      for (const plant of world.plants) {
+
+        if (!plant.alive) continue;
+
+        const qx = plant.position.x - px, qz = plant.position.z - pz;
+
+        if (qx * qx + qz * qz > vd) continue;
+
+        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
+
+            plant.position.x, plant.position.y, plant.position.z)) continue;
+
+        if (hit.d3sq < bestFoodDist) {
+
+          bestFoodDist = hit.d3sq;
+
+          this.memFoodX = plant.position.x;
+
+          this.memFoodY = plant.position.y;
+
+          this.memFoodZ = plant.position.z;
+
+          this.hasFood = true;
+
+          this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
+
+          this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
+
+        }
+
+      }
+
+    }
+
+
+
+    const wy = water.level;
+
+    for (const wl of waterLocations) {
+
+      const qx = wl[0] - px, qz = wl[1] - pz;
+
+      if (qx * qx + qz * qz > vd) continue;
+
+      if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, wl[0], wy, wl[1])) continue;
+
+      if (hit.d3sq < bestWaterDist) {
+
+        bestWaterDist = hit.d3sq;
+
+        this.memWaterX = wl[0]; this.memWaterY = wy; this.memWaterZ = wl[1];
+
+        this.hasWater = true;
+
+        this.rayWaterSin = hit.sin;   this.rayWaterCos  = hit.cos;
+
+        this.rayWaterElev = hit.elev; this.rayWaterDist = hit.dist;
+
+      }
+
+    }
+
+
+
+    if (this.hasPredator && this.outOfRange(this.memPredatorX, this.memPredatorY, this.memPredatorZ)) {
+
+      this.hasPredator = false;
+
+      this.rayPredatorSin = 0; this.rayPredatorCos = 0;
+
+      this.rayPredatorElev = 0; this.rayPredatorDist = 0;
+
+    }
+
+    if (this.hasFood && this.outOfRange(this.memFoodX, this.memFoodY, this.memFoodZ)) {
+
+      this.hasFood = false;
+
+      this.rayFoodSin = 0; this.rayFoodCos = 0;
+
+      this.rayFoodElev = 0; this.rayFoodDist = 0;
+
+    }
+
+    if (this.hasWater && this.outOfRange(this.memWaterX, this.memWaterY, this.memWaterZ)) {
+
+      this.hasWater = false;
+
+      this.rayWaterSin = 0; this.rayWaterCos = 0;
+
+      this.rayWaterElev = 0; this.rayWaterDist = 0;
+
+    }
+
+    if (this.hasMate && this.outOfRange(this.memMateX, this.memMateY, this.memMateZ)) {
+
+      this.hasMate = false;
+
+      this.rayMateSin = 0; this.rayMateCos = 0;
+
+      this.rayMateElev = 0; this.rayMateDist = 0;
+
+    }
+
+  }
+
+
+
+  think(grid, waterLocations) {
+
+    this.locate(grid, waterLocations);
+
+    const inp = this._inputs;
+
+
+
+    inp[0]  = this.hasFood     ? this.rayFoodSin      : 0;
+
+    inp[1]  = this.hasFood     ? this.rayFoodCos      : 0;
+
+    inp[2]  = this.hasFood     ? this.rayFoodElev     : 0;
+
+    inp[3]  = this.hasFood     ? this.rayFoodDist     : 0;
+
+    inp[4]  = this.hasWater    ? this.rayWaterSin     : 0;
+
+    inp[5]  = this.hasWater    ? this.rayWaterCos     : 0;
+
+    inp[6]  = this.hasWater    ? this.rayWaterElev    : 0;
+
+    inp[7]  = this.hasWater    ? this.rayWaterDist    : 0;
+
+    inp[8]  = this.hasPredator ? this.rayPredatorSin  : 0;
+
+    inp[9]  = this.hasPredator ? this.rayPredatorCos  : 0;
+
+    inp[10] = this.hasPredator ? this.rayPredatorElev : 0;
+
+    inp[11] = this.hasPredator ? this.rayPredatorDist : 0;
+
+    inp[12] = this.hasMate     ? this.rayMateSin      : 0;
+
+    inp[13] = this.hasMate     ? this.rayMateCos      : 0;
+
+    inp[14] = this.hasMate     ? this.rayMateElev     : 0;
+
+    inp[15] = this.hasMate     ? this.rayMateDist     : 0;
+
+    inp[16] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
+
+    inp[17] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
+
+    inp[18] = this.health > 0 ? this.health / this.maxHealth : 0;
+
+
+
+    this.outputIdx = this.brain.think(inp);
+
+  }
+
+
+
+  isSubmerged() {
+
+    return this.submerged;
+
+  }
+
+
+
+  move() {
+
+    const lift = this.footLift() * NPC_UNIT;   // City: feet on the street, metres
+
+    if (this.outputIdx !== Animal.ACTION_STAY) {
+
+      const facing = Animal.FACING_ANGLES[this.outputIdx];
+
+      if (facing !== null && facing !== undefined) this.facingAngle = facing;
+
+      const speed = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
+
+      const step = speed * Animal.MOVE_TIMESTEP * NPC_UNIT;   // City: metres
+
+      const dir = Animal.MOVE_DIRS[this.outputIdx];
+
+      // City: the loaded area has an edge, not a torus, so clamp instead of
+
+      // wrapping (a wrap would teleport across the map into whatever is there)
+
+      this.position.x = tools.clamp(this.position.x + dir[0] * step, world.minX, world.maxX);
+
+      this.position.z = tools.clamp(this.position.z + dir[1] * step, world.minZ, world.maxZ);
+
+    }
+
+    const g = terrain.heightAtFor(this, this.position.x, this.position.z);
+
+    const floatY = water.level - water.FLOAT_DEPTH;
+
+    this.floating = g < floatY;
+
+    this.submerged = g < water.level;
+
+    this.position.y = (this.floating ? floatY : g) + lift;
+
+  }
+
+
+
+  update(now, grid, waterLocations, animalIndex) {
+
+    this.waterNeed += this.waterIncrement;
+
+    this.foodNeed  += this.foodIncrement;
+
+    this.lookForMate = (now - this.lastChildTime) >= this.childGracePeriod;
+
+    this.reproductionNeed = this.lookForMate
+
+      ? this.reproductionNeed + this.reproductionNeed
+
+      : 0;
+
+    this.health -= ((now - this.tob) / 1000) * this.ageDepl
+
+                 + this.waterNeed * 0.0001
+
+                 + this.foodNeed  * 0.0001;
+
+    this.avoidNeed = 0;
+
+    if (this.health <= 1) { this.alive = false; return; }
+
+
+
+    this.actionTimer--;
+
+    if (this.actionTimer <= 0) {
+
+      this.think(grid, waterLocations);
+
+      this.actionTimer   = this.ACTION_HOLD;
+
+    }
+
+
+
+    if (world.ticks % perf.BRAIN_UPDATE_INTERVAL === animalIndex % perf.BRAIN_UPDATE_INTERVAL) {
+
+      const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
+
+      const waterDelta  = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05);
+
+      const foodDelta   = (this.prevFoodNeed  - this.foodNeed)  / (this.startHealth * 0.05);
+
+
+
+      const waterUrgency = Math.min(1, this.waterNeed / 50);
+
+      const foodUrgency  = Math.min(1, this.foodNeed  / 50);
+
+
+
+      let reward = healthDelta * 0.5
+
+                 + waterDelta  * (0.25 + 0.25 * waterUrgency)
+
+                 + foodDelta   * (0.25 + 0.25 * foodUrgency);
+
+
+
+      reward = Math.max(-1, Math.min(1, reward));
+
+      this.brain.adjustWeights(reward);
+
+      this.prevHealth = this.health;
+
+      this.prevWaterNeed = this.waterNeed;
+
+      this.prevFoodNeed = this.foodNeed;
+
+    }
+
+    this.move();
+
+  }
+
+
+
+  attacked(predator) {
+
+    this.health -= this.startHealth * 0.1;
+
+    if (this.health <= 1) {
+
+      this.alive = false;
+
+      predator.health += this.startHealth;
+
+      predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+
+    }
+
+  }
+
+
+
+  mate(partner) {
+
+    const mm = this.mutationMulti;
+
+    const lo = Math.max(0.1, 1 - mm);
+
+    const hi = Math.min(1.1, 1 + mm);
+
+    const rand = () => lo + Math.random() * (hi - lo);
+
+
+
+    const mother = this.sex === 'female' ? this : partner;
+
+    const child = new Animal(
+
+      [mother.position.x, mother.position.y,
+
+       mother.position.z + (this.type === 'sheep' ? 10 : 20) * NPC_UNIT],   // City: metres
+
+      this.type
+
+    );
+
+    child.isAdult = false;
+
+    child.birthTick = world.ticks;
+
+
+
+    child.speed = ((this.speed + partner.speed) / 2) * rand();
+
+    child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
+
+    child.visionDistSq = child.visionDistance * child.visionDistance;
+
+    child.setFov(
+
+      ((this.fovH + partner.fovH) / 2) * rand(),
+
+      ((this.fovV + partner.fovV) / 2) * rand()
+
+    );
+
+    child.eyeOffset = (this.eyeOffset + partner.eyeOffset) / 2;
+
+    child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
+
+                          * (0.9 + Math.random() * 0.2);
+
+
+
+    const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
+
+    child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + brains.randNormal(0, 0.04)));
+
+
+
+    const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
+
+    child.brain = new DenseNetwork(
+
+      ParentBrain.inputDims,
+
+      null,
+
+      ((this.brain.learningRate + partner.brain.learningRate) / 2)
+
+        * (0.5 + Math.random()),
+
+      ParentBrain.momentum,
+
+      ParentBrain.weightDecay,
+
+      ParentBrain.getMasks()
+
+    );
+
+
+
+    child.generation = Math.max(this.generation, partner.generation) + 1;
+
+
+
+    const now = Date.now();
+
+    this.lastChildTime = now;
+
+    this.lookForMate = false;
+
+    this.reproductionNeed = 0;
+
+    partner.lastChildTime = now;
+
+    partner.lookForMate = false;
+
+    partner.reproductionNeed = 0;
+
+
+
+    return child;
+
+  }
+
+
+
+  eatPlant(plant) {
+
+    const nutrition = plant.maxHealth * 5;
+
+    this.health = Math.min(this.health + nutrition, this.maxHealth);
+
+    this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
+
+    plant.health -= 1;
+
+    plantRenderer.touch(plant);
+
+    if (plant.health <= 0) plant.alive = false;
+
+  }
+
+
+
+  drinkWater() {
+
+    this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 25);
+
+    this.health = Math.min(this.health + this.waterIncrement * 25, this.maxHealth);
+
+  }
+
+}
+
+
+
+// ----- instanced renderer (Arena rig; scaled to metres by NPC_UNIT)
+
+
+
+class AnimalRenderer {
+
+  // Segments per rounded corner. three.js defaults to 12, which put ~830 tris
+
+  // on every 3-unit leg; 4 keeps the silhouette and cuts ~62% of body/leg tris.
+
+  static ROUNDED_CURVE_SEGMENTS = 4;
+
+
+
+  constructor() {
+
+    this.MAX_INSTANCES = 12000;
+
+    this.TICKS_PER_DAY  = 24 * 60;
+
+    this.MATURITY_TICKS = 3 * this.TICKS_PER_DAY;
+
+    this.MIN_SCALE      = 0.25;
+
+
+
+    this.TYPES      = ['sheep', 'human'];
+
+    this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
+
+    this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
+
+    this.legAngles  = { legFL: 0, legFR: 0, legBL: 0, legBR: 0 };
+
+
+
+    this.GEOMETRIES = {
+
+      sheep: {
+
+        body: AnimalRenderer.roundedBox(12, 12, 25, 2.5),
+
+        head: new THREE.SphereGeometry(7, 15, 15),
+
+        leg:  AnimalRenderer.roundedBox(3, 13, 3, 1)
+
+      },
+
+      human: {
+
+        body: AnimalRenderer.roundedBox(8, 17, 4, 1.2),
+
+        head: new THREE.SphereGeometry(4.3, 15, 15),
+
+        leg:  AnimalRenderer.roundedBox(2, 12.5, 2, 0.7)
+
+      }
+
+    };
+
+
+
+    this.GEOMETRIES_LOW = {
+
+      sheep: {
+
+        body: new THREE.BoxGeometry(12, 12, 25),
+
+        head: new THREE.BoxGeometry(14, 14, 14),
+
+        leg:  new THREE.BoxGeometry(3, 13, 3)
+
+      },
+
+      human: {
+
+        body: new THREE.BoxGeometry(8, 17, 6),
+
+        head: new THREE.BoxGeometry(8.6, 8.6, 8.6),
+
+        leg:  new THREE.BoxGeometry(2, 12.5, 2)
+
+      }
+
+    };
+
+
+
+    this.MATERIALS = {
+
+      sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+
+      human: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })
+
+    };
+
+
+
+    this.SEX_COLORS = {
+
+      sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
+
+      human: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
+
+    };
+
+
+
+    this.PART_OFFSETS = {
+
+      sheep: {
+
+        head:  new THREE.Vector3(0, 5, 15),
+
+        legFL: new THREE.Vector3(-5, -8,  8),
+
+        legFR: new THREE.Vector3( 5, -8,  8),
+
+        legBL: new THREE.Vector3(-5, -8, -8),
+
+        legBR: new THREE.Vector3( 5, -8, -8),
+
+      },
+
+      human: {
+
+        head:  new THREE.Vector3(0, 13, 0),
+
+        legFL: new THREE.Vector3(-6, 2, 0),
+
+        legFR: new THREE.Vector3( 6, 2, 0),
+
+        legBL: new THREE.Vector3(-2, -15, 0),
+
+        legBR: new THREE.Vector3( 2, -15, 0),
+
+      },
+
+    };
+
+
+
+    this.PIVOT_OFFSETS = {
+
+      human: {
+
+        legFL: new THREE.Vector3(-6,  8.25, 0),
+
+        legFR: new THREE.Vector3( 6,  8.25, 0),
+
+        legBL: new THREE.Vector3(-2, -8.75, 0),
+
+        legBR: new THREE.Vector3( 2, -8.75, 0),
+
+      },
+
+      sheep: {
+
+        legFL: new THREE.Vector3(-5,  0,  8),
+
+        legFR: new THREE.Vector3( 5,  0,  8),
+
+        legBL: new THREE.Vector3(-5,  0, -8),
+
+        legBR: new THREE.Vector3( 5,  0, -8),
+
+      },
+
+    };
+
+
+
+    this.DIRECTION_ANGLES = [
+
+      Math.PI / 2, -Math.PI / 2, 0, Math.PI,
+
+      Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
+
+      null
+
+    ];
+
+
+
+    this.meshes = {};
+
+    this.renderCache = { sheep: null, human: null };
+
+
+
+    this._mat4      = new THREE.Matrix4();
+
+    this._local     = new THREE.Vector3();
+
+    this._world     = new THREE.Vector3();
+
+    this._quat      = new THREE.Quaternion();
+
+    this._yAxis     = new THREE.Vector3(0, 1, 0);
+
+    this._scale     = new THREE.Vector3(1, 1, 1);
+
+    this._quatLeg   = new THREE.Quaternion();
+
+    this._quatFinal = new THREE.Quaternion();
+
+    this._xAxis     = new THREE.Vector3(1, 0, 0);
+
+    this._pivot     = new THREE.Vector3();
+
+  }
+
+
+
+  static roundedBox(width, height, depth, radius = 2) {
+
+    const shape = new THREE.Shape();
+
+    const w = width / 2, h = height / 2;
+
+    shape.moveTo(-w + radius, -h);
+
+    shape.lineTo(w - radius, -h);
+
+    shape.quadraticCurveTo(w, -h, w, -h + radius);
+
+    shape.lineTo(w, h - radius);
+
+    shape.quadraticCurveTo(w, h, w - radius, h);
+
+    shape.lineTo(-w + radius, h);
+
+    shape.quadraticCurveTo(-w, h, -w, h - radius);
+
+    shape.lineTo(-w, -h + radius);
+
+    shape.quadraticCurveTo(-w, -h, -w + radius, -h);
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+
+      depth, bevelEnabled: true,
+
+      curveSegments: AnimalRenderer.ROUNDED_CURVE_SEGMENTS,
+
+      bevelThickness: radius * 0.5, bevelSize: radius * 0.7, bevelSegments: 3
+
+    });
+
+    geometry.center();
+
+    return geometry;
+
+  }
+
+
+
+  init() {
+
+    for (const type of ['sheep', 'human']) {
+
+      if (this.meshes[type]) {
+
+        for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
+
+      }
+
+      const geomSet = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
+
+      const geom = geomSet[type];
+
+      const mat  = this.MATERIALS[type];
+
+      this.meshes[type] = {
+
+        body:  new THREE.InstancedMesh(geom.body, mat, this.MAX_INSTANCES),
+
+        head:  new THREE.InstancedMesh(geom.head, mat, this.MAX_INSTANCES),
+
+        legFL: new THREE.InstancedMesh(geom.leg,  mat, this.MAX_INSTANCES),
+
+        legFR: new THREE.InstancedMesh(geom.leg,  mat, this.MAX_INSTANCES),
+
+        legBL: new THREE.InstancedMesh(geom.leg,  mat, this.MAX_INSTANCES),
+
+        legBR: new THREE.InstancedMesh(geom.leg,  mat, this.MAX_INSTANCES),
+
+      };
+
+      for (const mesh of Object.values(this.meshes[type])) {
+
+        mesh.castShadow = true;
+
+        mesh.frustumCulled = false;
+
+        scene.add(mesh);
+
+      }
+
+    }
+
+  }
+
+
+
+  cacheFor(type, im) {
+
+    let c = this.renderCache[type];
+
+    if (!c || c.owner !== im) {
+
+      c = { owner: im, list: Object.values(im), colKeys: [] };
+
+      this.renderCache[type] = c;
+
+    }
+
+    return c;
+
+  }
+
+
+
+  update(animals, deltaTime) {
+
+    for (const type of this.TYPES) {
+
+      const im      = this.meshes[type];
+
+      const offsets = this.PART_OFFSETS[type];
+
+      const colors  = this.SEX_COLORS[type];
+
+      if (!im) continue;
+
+      const cache = this.cacheFor(type, im);
+
+      let idx = 0;
+
+      let colorsDirty = false;
+
+
+
+      for (const a of animals) {
+
+        if (!a.alive || a.type !== type) continue;
+
+        if (idx >= this.MAX_INSTANCES) break;
+
+
+
+        if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
+
+
+
+        const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
+
+        const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
+
+        const k = s * NPC_UNIT;                         // City: rig scale in metres
+
+        const hs = a.heightScale ?? 1.0;
+
+        this._scale.set(k, k * hs, k);
+
+
+
+        const angle = this.DIRECTION_ANGLES[a.outputIdx];
+
+        if (angle !== null && angle !== undefined) {
+
+          a.facingAngle = angle;
+
+          this._quat.setFromAxisAngle(this._yAxis, angle);
+
+        } else {
+
+          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
+
+        }
+
+
+
+        const col = colors[a.sex];
+
+        if (cache.colKeys[idx] !== col) {
+
+          cache.colKeys[idx] = col;
+
+          for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
+
+            im[this.PART_NAMES[pi]].setColorAt(idx, col);
+
+          }
+
+          colorsDirty = true;
+
+        }
+
+
+
+        const isIdle = a.outputIdx === 8;
+
+        const walkFreq = type === 'sheep' ? 6.5 : 5.0;
+
+        const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65);
+
+        const t = a.animTime * walkFreq;
+
+
+
+        const sinT = Math.sin(t);
+
+        this.legAngles.legFL =  sinT;
+
+        this.legAngles.legFR = -sinT;
+
+        this.legAngles.legBL = -sinT;
+
+        this.legAngles.legBR =  sinT;
+
+        const legAngles = this.legAngles;
+
+
+
+        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
+
+        this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
+
+        this._mat4.compose(this._world, this._quat, this._scale);
+
+        im.body.setMatrixAt(idx, this._mat4);
+
+
+
+        this._local.copy(offsets.head);
+
+        if (type === 'human') this._local.y *= hs;
+
+        this._local.multiplyScalar(k).applyQuaternion(this._quat).add(this._world);
+
+        this._mat4.compose(this._local, this._quat, this._scale);
+
+        im.head.setMatrixAt(idx, this._mat4);
+
+
+
+        const limbHalf = type === 'sheep' ? 9 : 6.25;
+
+
+
+        for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
+
+          const part = this.LIMB_NAMES[pi];
+
+          const swing = legAngles[part] * walkAmp;
+
+          this._quatLeg.setFromAxisAngle(this._xAxis, swing);
+
+          this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
+
+
+
+          this._pivot.copy(this.PIVOT_OFFSETS[type][part]);
+
+          if (type === 'human') this._pivot.y *= hs;
+
+          this._pivot.multiplyScalar(k).applyQuaternion(this._quat).add(this._world);
+
+
+
+          this._local.set(0, -limbHalf * k, 0).applyQuaternion(this._quatFinal);
+
+          this._local.add(this._pivot);
+
+
+
+          this._mat4.compose(this._local, this._quatFinal, this._scale);
+
+          im[part].setMatrixAt(idx, this._mat4);
+
+        }
+
+
+
+        idx++;
+
+      }
+
+
+
+      for (let mi = 0; mi < cache.list.length; mi++) {
+
+        const mesh = cache.list[mi];
+
+        perf.instances(mesh, idx);
+
+        if (colorsDirty) perf.instanceColors(mesh, idx);
+
+      }
+
+    }
+
+  }
+
+
+
+  setGraphics(shadowsOn) {
+
+    for (const type of ['sheep', 'human']) {
+
+      const im = this.meshes[type];
+
+      if (!im) continue;
+
+      const geomSet = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
+
+      const geom = geomSet[type];
+
+      const partGeoms = { body: geom.body, head: geom.head, legFL: geom.leg, legFR: geom.leg, legBL: geom.leg, legBR: geom.leg };
+
+      for (const [part, newGeom] of Object.entries(partGeoms)) {
+
+        const mesh = im[part];
+
+        if (!mesh) continue;
+
+        mesh.geometry = newGeom;
+
+        mesh.castShadow = shadowsOn;
+
+      }
+
+    }
+
+  }
+
+}
+
+
+
+// ----- City adapters: the Arena's perf / graphics / terrain / water singletons
+
+
+
+const perf = {
+
+  BRAIN_UPDATE_INTERVAL: 30,
+
+  terrainVersion: 0,             // the city ground never reshapes
+
+  instances(mesh, n) {
+
+    mesh.count = n;
+
+    mesh.visible = n > 0;        // an empty type (sheep, for now) costs no draw call
+
+    mesh.instanceMatrix.needsUpdate = true;
+
+  },
+
+  instanceColors(mesh, n) {
+
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+  }
+
+};
+
+
+
+// Rounded rig on desktop, 12-triangle boxes on touch screens.
+
+const graphics = {
+
+  get mode() { return matchMedia('(pointer: coarse)').matches ? 'low' : 'high'; }
+
+};
+
+
+
+// Painted water, rasterised once per city into a 1 m mask so every "am I in
+
+// water" question is one array read. Roads and paths are stamped dry on top,
+
+// matching what is drawn (a road ribbon covers the river under a bridge).
+
+const water = {
+
+  level: 0,
+
+  FLOAT_DEPTH: 1,                // deeper than NPC_WADE: humans wade, never float
+
+  locations: [],                 // [x, z] points the Arena's perception looks for
+
+  mask: new Uint8Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
+
+
+
+  wetAt(x, z) {
+
+    const c = Math.floor((x - this.x0) / WATER_CELL);
+
+    const r = Math.floor((z - this.z0) / WATER_CELL);
+
+    if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return false;
+
+    return this.mask[r * this.cols + c] === 1;
+
+  },
+
+
+
+  build(features, minX, minZ, maxX, maxZ) {
+
+    this.x0 = minX; this.z0 = minZ;
+
+    this.cols = Math.ceil((maxX - minX) / WATER_CELL);
+
+    this.rows = Math.ceil((maxZ - minZ) / WATER_CELL);
+
+    this.mask = new Uint8Array(this.cols * this.rows);
+
+
+
+    for (const a of features.areas) {
+
+      if (a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir') this.fillRing(a.pts);
+
+    }
+
+    for (const w of features.waterways) this.stampLine(w.pts, w.width / 2, 1);
+
+    for (const r of features.roads) this.stampLine(r.pts, (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2, 0);
+
+
+
+    // perception targets: a coarse sample of the wet cells, capped so the
+
+    // per-think scan stays short
+
+    const pts = [];
+
+    const every = 10;
+
+    for (let r = every >> 1; r < this.rows; r += every) {
+
+      for (let c = every >> 1; c < this.cols; c += every) {
+
+        if (this.mask[r * this.cols + c]) {
+
+          pts.push([this.x0 + (c + 0.5) * WATER_CELL, this.z0 + (r + 0.5) * WATER_CELL]);
+
+        }
+
+      }
+
+    }
+
+    const cap = 400;
+
+    const stride = Math.max(1, Math.ceil(pts.length / cap));
+
+    this.locations = stride === 1 ? pts : pts.filter((_, i) => i % stride === 0);
+
+  },
+
+
+
+  // scanline fill, even-odd, one crossing list per row
+
+  fillRing(pts) {
+
+    let zMin = Infinity, zMax = -Infinity;
+
+    for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
+
+    const r0 = Math.max(0, Math.floor((zMin - this.z0) / WATER_CELL));
+
+    const r1 = Math.min(this.rows - 1, Math.floor((zMax - this.z0) / WATER_CELL));
+
+    const xs = [];
+
+    for (let r = r0; r <= r1; r++) {
+
+      const zc = this.z0 + (r + 0.5) * WATER_CELL;
+
+      xs.length = 0;
+
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+
+        const [xi, zi] = pts[i], [xj, zj] = pts[j];
+
+        if ((zi > zc) !== (zj > zc)) xs.push(xi + (zc - zi) * (xj - xi) / (zj - zi));
+
+      }
+
+      xs.sort((a, b) => a - b);
+
+      const row = r * this.cols;
+
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+
+        const c0 = Math.max(0, Math.ceil((xs[k] - this.x0) / WATER_CELL - 0.5));
+
+        const c1 = Math.min(this.cols - 1, Math.floor((xs[k + 1] - this.x0) / WATER_CELL - 0.5));
+
+        for (let c = c0; c <= c1; c++) this.mask[row + c] = 1;
+
+      }
+
+    }
+
+  },
+
+
+
+  // every cell whose centre is within `half` of the polyline gets `v`
+
+  stampLine(pts, half, v) {
+
+    for (let i = 0; i < pts.length - 1; i++) {
+
+      const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
+
+      const dx = x1 - x0, dz = z1 - z0, l2 = dx * dx + dz * dz;
+
+      const c0 = Math.max(0, Math.floor((Math.min(x0, x1) - half - this.x0) / WATER_CELL));
+
+      const c1 = Math.min(this.cols - 1, Math.floor((Math.max(x0, x1) + half - this.x0) / WATER_CELL));
+
+      const r0 = Math.max(0, Math.floor((Math.min(z0, z1) - half - this.z0) / WATER_CELL));
+
+      const r1 = Math.min(this.rows - 1, Math.floor((Math.max(z0, z1) + half - this.z0) / WATER_CELL));
+
+      for (let r = r0; r <= r1; r++) {
+
+        const zc = this.z0 + (r + 0.5) * WATER_CELL;
+
+        for (let c = c0; c <= c1; c++) {
+
+          const xc = this.x0 + (c + 0.5) * WATER_CELL;
+
+          let t = l2 > 0 ? ((xc - x0) * dx + (zc - z0) * dz) / l2 : 0;
+
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+
+          const ex = xc - (x0 + dx * t), ez = zc - (z0 + dz * t);
+
+          if (ex * ex + ez * ez <= half * half) this.mask[r * this.cols + c] = v;
+
+        }
+
+      }
+
+    }
+
+  }
+
+};
+
+
+
+// The street is flat at 0; water reads as a shallow dip so the Arena's
+
+// submerged / drink / slow-down logic runs unchanged.
+
+const terrain = {
+
+  heightAt(x, z) { return water.wetAt(x, z) ? -NPC_WADE : 0; },
+
+
+
+  heightAtFor(ent, wx, wz) {
+
+    if (ent._hx === wx && ent._hz === wz && ent._hv === perf.terrainVersion) return ent._h;
+
+    const h = this.heightAt(wx, wz);
+
+    ent._hx = wx; ent._hz = wz; ent._hv = perf.terrainVersion; ent._h = h;
+
+    return h;
+
+  }
+
+};
+
+
+
+// ----- city geometry queries for NPC placement (same grids the player uses)
+
+
+
+// Does a circle of radius r, with a column from feetY to headY, touch any wall
+
+// piece or barrier? Read-only twin of resolveCollisions.
+
+function solidOverlap(x, z, r, feetY, headY) {
+
+  const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
+
+  for (let ox = -1; ox <= 1; ox++) {
+
+    for (let oz = -1; oz <= 1; oz++) {
+
+      const bucket = grid.get(cellKey(cx + ox, cz + oz));
+
+      if (!bucket) continue;
+
+      for (const idx of bucket) {
+
+        const w = gridWalls[idx];
+
+        if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
+
+        if (x < w.minX - r || x > w.maxX + r || z < w.minZ - r || z > w.maxZ + r) continue;
+
+        if (pointInRing(w.pts, x, z)) return true;
+
+        if (closestOnRing(w.pts, x, z).d < r) return true;
+
+      }
+
+    }
+
+  }
+
+  return false;
+
+}
+
+
+
+// Index of the building footprint containing (x, z), or -1 outdoors.
+
+function shellAt(x, z) {
+
+  const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
+
+  if (!bucket) return -1;
+
+  for (const idx of bucket) {
+
+    const s = shells[idx];
+
+    if (x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;
+
+    if (pointInShell(s, x, z)) return idx;
+
+  }
+
+  return -1;
+
+}
+
+
+
+// ----- the NPC world: the Arena's World loop, minus what City already owns
+
+// (player, weather, terrain mesh, cabins). Stepped from frame(), never its own loop.
+
+
+
+class NpcWorld {
+
+  static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
+
+  static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
+
+
+
+  constructor() {
+
+    this.animals = [];
+
+    this.plants = [];              // none in the city yet; sheep read this
+
+    this.ticks = 0;
+
+    this.ready = false;
+
+    this.minX = 0; this.maxX = 0; this.minZ = 0; this.maxZ = 0;
+
+
+
+    this.grid = null;
+
+    this.plantGrid = null;
+
+
+
+    this._qLocate = [];
+
+    this._qHunt   = [];
+
+    this._qMate   = [];
+
+    this._qPlant  = [];
+
+  }
+
+
+
+  clear() {
+
+    this.animals.length = 0;
+
+    this.plants.length = 0;
+
+    this.ready = false;
+
+    animalRenderer.update(this.animals, 0);   // zero instances, meshes hidden
+
+  }
+
+
+
+  initialize(features, radius) {
+
+    this.animals.length = 0;
+
+    this.plants.length = 0;
+
+    this.ticks = 0;
+
+    this.minX = -radius; this.maxX = radius;
+
+    this.minZ = -radius; this.maxZ = radius;
+
+
+
+    const span = 2 * radius + 1;
+
+    this.grid = new SpatialGrid(span, span, 160 * NPC_UNIT);
+
+    this.plantGrid = new SpatialGrid(span, span, 30 * NPC_UNIT);
+
+
+
+    water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
+
+    animalRenderer.init();
+
+    this.spawnHumans(NPC_POPULATION, features.roads || []);
+
+    this.ready = true;
+
+    // write matrices and instance colours now, so the shader variant with
+
+    // instance colour is the one compileAsync warms up during load
+
+    animalRenderer.update(this.animals, 0);
+
+  }
+
+
+
+  // A standing spot: inside the loaded area, dry, outdoors, clear of walls.
+
+  isOpen(x, z) {
+
+    const m = 1;
+
+    if (x < this.minX + m || x > this.maxX - m || z < this.minZ + m || z > this.maxZ - m) return false;
+
+    if (water.wetAt(x, z)) return false;
+
+    if (shellAt(x, z) >= 0) return false;
+
+    return !solidOverlap(x, z, NPC_RADIUS + 0.15, 0, NPC_COLLIDE_H);
+
+  }
+
+
+
+  // Sidewalks first (either side of a street, or along a footpath), with a
+
+  // share of open-ground picks so parks and plazas are not left empty. Street
+
+  // length weights the pick, so busy blocks get more people than a cul-de-sac.
+
+  spawnHumans(count, roads) {
+
+    const segs = [];
+
+    let total = 0;
+
+    for (const r of roads) {
+
+      const half = (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2;
+
+      const path = PATH_KINDS.has(r.kind);
+
+      for (let i = 0; i < r.pts.length - 1; i++) {
+
+        const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+
+        const len = Math.hypot(x1 - x0, z1 - z0);
+
+        if (len < 1) continue;
+
+        total += len;
+
+        segs.push({ x0, z0, x1, z1, len, half, path, cum: total });
+
+      }
+
+    }
+
+
+
+    const placed = [];
+
+    let gap = NPC_SPAWN_GAP;
+
+    const maxTries = count * 80;
+
+    for (let tries = 1; placed.length < 2 * count && tries <= maxTries; tries++) {
+
+      if (tries % (count * 20) === 0) gap *= 0.5;   // crowded map: loosen the spacing
+
+
+
+      let x, z;
+
+      if (segs.length && Math.random() < 0.8) {
+
+        const target = Math.random() * total;
+
+        let lo = 0, hi = segs.length - 1;
+
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (segs[mid].cum < target) lo = mid + 1; else hi = mid; }
+
+        const s = segs[lo];
+
+        const t = Math.random();
+
+        const nx = -(s.z1 - s.z0) / s.len, nz = (s.x1 - s.x0) / s.len;
+
+        const off = s.path
+
+          ? (Math.random() * 2 - 1) * s.half * 0.6
+
+          : (Math.random() < 0.5 ? -1 : 1) * (s.half + 1 + Math.random() * 2);
+
+        x = s.x0 + (s.x1 - s.x0) * t + nx * off;
+
+        z = s.z0 + (s.z1 - s.z0) * t + nz * off;
+
+      } else {
+
+        x = this.minX + Math.random() * (this.maxX - this.minX);
+
+        z = this.minZ + Math.random() * (this.maxZ - this.minZ);
+
+      }
+
+
+
+      if (!this.isOpen(x, z)) continue;
+
+      let crowded = false;
+
+      for (let i = 0; i < placed.length; i += 2) {
+
+        const dx = placed[i] - x, dz = placed[i + 1] - z;
+
+        if (dx * dx + dz * dz < gap * gap) { crowded = true; break; }
+
+      }
+
+      if (crowded) continue;
+
+
+
+      placed.push(x, z);
+
+      const a = new Animal([x, 0, z], 'human');
+
+      a.facingAngle = Animal.FACING_ANGLES[Math.floor(Math.random() * 8)];
+
+      a.position.y = terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
+
+      this.animals.push(a);
+
+    }
+
+  }
+
+
+
+  tryMate(a, px, pz) {
+
+    if (a.sex !== 'male') return;
+
+    const n = this.grid.queryInto(this._qMate, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+
+    for (let i = 0; i < n; i++) {
+
+      const other = this._qMate[i];
+
+      if (other !== a && other.alive && other.type === a.type &&
+
+          other.sex === 'female' && other.lookForMate &&
+
+          tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
+
+        const child = a.mate(other);
+
+        // City: the Arena drops the child a step from the mother. If that
+
+        // step is into a wall, or across one into a different building
+
+        // (possibly a sealed one), it is born where she stands instead.
+
+        const cp = child.position, mp = other.position;
+
+        if (solidOverlap(cp.x, cp.z, NPC_RADIUS, 0, NPC_COLLIDE_H) ||
+
+            shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
+
+          cp.x = mp.x; cp.z = mp.z;
+
+        }
+
+        child.freeX = cp.x; child.freeZ = cp.z;
+
+        this.animals.push(child);
+
+        return;
+
+      }
+
+    }
+
+  }
+
+
+
+  handleCollisions() {
+
+    if (this.ticks % 3 === 0) {
+
+      this.plantGrid.clear();
+
+      for (const p of this.plants) if (p.alive) this.plantGrid.insert(p);
+
+    }
+
+
+
+    for (const a of this.animals) {
+
+      if (!a.alive) continue;
+
+      const px = a.position.x, pz = a.position.z;
+
+
+
+      if (a.type === 'human') {
+
+        const nHunt = this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+
+        for (let i = 0; i < nHunt; i++) {
+
+          const other = this._qHunt[i];
+
+          if (other.alive && other.type === 'sheep' &&
+
+              tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
+
+            other.attacked(a);
+
+          }
+
+        }
+
+        if (a.lookForMate) this.tryMate(a, px, pz);
+
+      } else {
+
+        if (a.lookForMate) this.tryMate(a, px, pz);
+
+
+
+        const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+
+        for (let i = 0; i < nPlant; i++) {
+
+          const plant = this._qPlant[i];
+
+          if (plant.alive &&
+
+              tools.distSq(px, pz, plant.position.x, plant.position.z) < NpcWorld.CONTACT_DIST_SQ) {
+
+            a.eatPlant(plant);
+
+          }
+
+        }
+
+      }
+
+
+
+      if (terrain.heightAtFor(a, px, pz) < water.level) {
+
+        a.drinkWater();
+
+      }
+
+    }
+
+  }
+
+
+
+  // City's wall pieces in place of cabins.resolve: the same push-out the
+
+  // player gets, with an NPC-sized circle and column. A single pass per frame
+
+  // is safe because an NPC moves ~2.5 cm a frame, far under SUBSTEP. If the
+
+  // push-out still leaves the circle wedged, it goes back to the last clear
+
+  // spot, so no NPC can end a frame inside geometry.
+
+  collide(a) {
+
+    if (a.outputIdx === Animal.ACTION_STAY) return;   // standing still: nothing moved
+
+    const p = a.position;
+
+    if (resolveCollisions(p, NPC_RADIUS, 0, NPC_COLLIDE_H) &&
+
+        solidOverlap(p.x, p.z, NPC_RADIUS * 0.8, 0, NPC_COLLIDE_H)) {
+
+      p.x = a.freeX; p.z = a.freeZ;
+
+    }
+
+    a.freeX = p.x; a.freeZ = p.z;
+
+  }
+
+
+
+  // One simulation tick. Called once per rendered frame from frame(); returns
+
+  // whether anything was simulated, so frame() knows to draw and stay awake.
+
+  step(dt) {
+
+    if (!this.ready || this.animals.length === 0) return false;
+
+    const now = Date.now();
+
+
+
+    if (this.ticks % 3 === 0) {
+
+      this.grid.clear();
+
+      for (const a of this.animals) if (a.alive) this.grid.insert(a);
+
+    }
+
+
+
+    for (let ai = 0; ai < this.animals.length; ai++) {
+
+      const a = this.animals[ai];
+
+      if (a.alive) {
+
+        a.update(now, this.grid, water.locations, ai);
+
+        if (a.alive) this.collide(a);
+
+      }
+
+    }
+
+
+
+    this.handleCollisions();
+
+
+
+    for (let i = this.animals.length - 1; i >= 0; i--) {
+
+      if (!this.animals[i].alive) { this.animals[i].remove(); this.animals.splice(i, 1); }
+
+    }
+
+
+
+    animalRenderer.update(this.animals, dt);
+
+    this.ticks++;
+
+    return true;
+
+  }
+
+}
+
+
+
+const tools          = new MathTools();
+
+const brains         = new BrainFactory();
+
+const animalRenderer = new AnimalRenderer();
+
+const world          = new NpcWorld();
+
+
 
 // ---------------------------------------------------------------- controls
 
@@ -2524,17 +5693,18 @@ function frame(now) {
   }
 
   const rainDue = rainTick(dt, now);
+  const npcDue = world.step(dt);   // one NPC tick per frame; false when none are alive
   const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
-  if (posed || sceneDirty || rainDue) {
+  if (posed || sceneDirty || rainDue || npcDue) {
     renderer.render(scene, camera);
     drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch;
     sceneDirty = false;
     rainDrawn = now;
   }
 
-  // falling rain keeps the loop alive; a still scene with no rain sleeps
+  // falling rain and living NPCs keep the loop alive; a still scene sleeps
   const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
-  if (settled && !movementHeld() && !rainAnimating()) {
+  if (settled && !movementHeld() && !rainAnimating() && !npcDue) {
     last = -1;           // sleep until wake()
     return;
   }
@@ -3103,6 +6273,8 @@ async function load(query) {
     }
 
     const { count, skipped } = buildCity(features);
+    if (count) world.initialize(features, radius);
+    else world.clear();
 
     if (!count) {
       say(`That spot has no mapped buildings within ${radius} m. Try somewhere more built up.`, true);
