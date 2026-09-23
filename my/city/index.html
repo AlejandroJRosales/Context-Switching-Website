@@ -681,7 +681,11 @@ async function fetchBuildings(lat, lon) {
 
     for (const url of OVERPASS_MIRRORS) {
       const host = new URL(url).hostname;
-      say(`Fetching map data within ${radius} m from ${host}…`);
+      // a failed mirror is reported here while the next one is tried; the
+      // 'Failed to load' message and Try again come once every attempt is spent
+      say(lastErr
+        ? `${lastErr.message}. Trying ${host} within ${radius} m…`
+        : `Fetching map data within ${radius} m from ${host}…`, !!lastErr);
       try {
         const json = await overpassTry(url, q);
         cache.set(bbox, json);
@@ -5591,13 +5595,15 @@ async function load(query) {
       ` (${skipped ? `${skipped} skipped` : '0 skipped'})`;
     refreshHud();
 
+    goEl.textContent = 'Load';   // back from 'Try again' once a load succeeds
     panel.classList.add('hidden');
     showControls(true);
     say('');
     if (IS_TOUCH) active = true;
     else renderer.domElement.requestPointerLock();
   } catch (err) {
-    say(err.message || String(err), true);
+    say(`Failed to load. ${err.message || String(err)}`, true);
+    goEl.textContent = 'Try again';
   }
 
   busy = false;
