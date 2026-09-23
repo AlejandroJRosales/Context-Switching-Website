@@ -2936,12 +2936,12 @@ class Animal extends Entity {
 
     if (type === 'human') {
       // City: height is drawn from a normal in metres (unclamped Box-Muller, cut at
-      // 4 std), then mapped to heightScale. Rig height, feet to top of head, in
-      // Arena units is 32.3 * hs + 6.25 (footLift 15hs + 6.25, head top 13hs + 4.3hs).
+      // 4 std), then mapped to heightScale. The rig scales uniformly, so feet to top
+      // of head is 38.55 * hs Arena units (footLift 21.25hs, head top 13hs + 4.3hs).
       let u; do { u = Math.random(); } while (u === 0);
       const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
       const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
-      this.heightScale = (metres / NPC_UNIT - 6.25) / 32.3;
+      this.heightScale = metres / (38.55 * NPC_UNIT);
     } else {
       const heightParams = { sheep: [1.0, 0.10] };
       const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
@@ -3017,7 +3017,7 @@ class Animal extends Entity {
   // which left the feet ~6 units under its terrain; on a flat street that shows.
   footLift() {
     const hs = this.heightScale ?? 1.0;
-    return this.type === 'sheep' ? 9 + 6.5 * hs : 15 * hs + 6.25;
+    return this.type === 'sheep' ? 9 + 6.5 * hs : 21.25 * hs;   // City: human rig scales uniformly
   }
 
   eyeY() {
@@ -3514,7 +3514,12 @@ class AnimalRenderer {
         const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
         const k = s * NPC_UNIT;                         // City: rig scale in metres
         const hs = a.heightScale ?? 1.0;
-        this._scale.set(k, k * hs, k);
+        // City: humans scale uniformly by heightScale (every part, offset and the
+        // limb hang), so a short NPC is a smaller copy of the rig rather than one
+        // squashed in y with a flattened head and legs pulled off the body
+        const kp = type === 'human' ? k * hs : k;       // part offsets and limb hang
+        if (type === 'human') this._scale.set(kp, kp, kp);
+        else this._scale.set(k, k * hs, k);
 
         const angle = this.DIRECTION_ANGLES[a.outputIdx];
         if (angle !== null && angle !== undefined) {
@@ -3551,8 +3556,7 @@ class AnimalRenderer {
         im.body.setMatrixAt(idx, this._mat4);
 
         this._local.copy(offsets.head);
-        if (type === 'human') this._local.y *= hs;
-        this._local.multiplyScalar(k).applyQuaternion(this._quat).add(this._world);
+        this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
         this._mat4.compose(this._local, this._quat, this._scale);
         im.head.setMatrixAt(idx, this._mat4);
 
@@ -3565,10 +3569,9 @@ class AnimalRenderer {
           this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
 
           this._pivot.copy(this.PIVOT_OFFSETS[type][part]);
-          if (type === 'human') this._pivot.y *= hs;
-          this._pivot.multiplyScalar(k).applyQuaternion(this._quat).add(this._world);
+          this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
 
-          this._local.set(0, -limbHalf * k, 0).applyQuaternion(this._quatFinal);
+          this._local.set(0, -limbHalf * kp, 0).applyQuaternion(this._quatFinal);
           this._local.add(this._pivot);
 
           this._mat4.compose(this._local, this._quatFinal, this._scale);
