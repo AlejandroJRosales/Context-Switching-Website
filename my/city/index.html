@@ -2523,15 +2523,18 @@ function frame(now) {
     knobDirty = false;
   }
 
+  const rainDue = rainTick(dt, now);
   const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
-  if (posed || sceneDirty) {
+  if (posed || sceneDirty || rainDue) {
     renderer.render(scene, camera);
     drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch;
     sceneDirty = false;
+    rainDrawn = now;
   }
 
+  // falling rain keeps the loop alive; a still scene with no rain sleeps
   const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
-  if (settled && !movementHeld()) {
+  if (settled && !movementHeld() && !rainAnimating()) {
     last = -1;           // sleep until wake()
     return;
   }
@@ -2768,7 +2771,268 @@ function updateSky() {
 
   scene.background.copy(skyCol);
   scene.fog.color.copy(skyCol);
+  syncRain(day);
   invalidate();
+}
+
+// ---------------------------------------------------------------- rain
+//
+// One LineSegments draw: two vertices per drop, preallocated once at the
+// largest count this device gets. Every drop's position is a pure function of
+// time in the vertex shader, wrapped into a box that follows the camera, so
+// the CPU only writes a handful of uniforms per frame and drops recycle
+// themselves as they fall out of the box or the player walks on. Intensity
+// changes move the draw range, never the buffers.
+//
+// Shelter: a small height map of the roofs around the player, re-rasterized
+// from the building shells whenever the player crosses a ROOF_MAP_SNAP grid
+// line. The fragment shader drops any part of a streak below the roof over
+// it, so rain lands on roofs, never falls through into rooms, and is still
+// seen through a doorway from inside.
+//
+// Driven by conditions(), the same source the sky reads, so the Weather
+// presets and the live forecast both work. Built when rain starts and fully
+// disposed when it stops.
+
+const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
+const RAIN_SPAN = 44;           // box width and depth around the camera, meters
+const RAIN_HEIGHT = 26;         // box height, centred a little above the eye
+const RAIN_FPS_IDLE = 30;       // redraw cap while rain is the only thing moving
+const RAIN_TIME_WRAP = 600;     // seconds; keeps the shader's float time small
+const ROOF_MAP_N    = 128;      // texels per side of the shelter map
+const ROOF_MAP_SIZE = 56;       // meters per side; the rain box plus snap slack
+const ROOF_MAP_SNAP = 4;        // re-rasterize when the player crosses this grid
+
+// relative intensity for a WMO code, when no measured rate is available
+const RAIN_BY_CODE = {
+  51: 0.25, 53: 0.4, 55: 0.55, 56: 0.3, 57: 0.5,
+  61: 0.4, 63: 0.65, 65: 1, 66: 0.45, 67: 0.8,
+  80: 0.45, 81: 0.7, 82: 1, 95: 0.85, 96: 0.9, 99: 1
+};
+
+let rain = null;                // { mesh, uniforms, roof, ... } while raining
+let rainTime = 0;
+let rainDrawn = 0;              // timestamp of the last frame drawn for rain alone
+
+// 0 when it is not raining, else 0..1. A measured rate wins over the code;
+// about 0.3 in/h is already heavy rain.
+function rainState() {
+  const c = conditions();
+  if (!c || (c.kind !== 'rain' && c.kind !== 'storm')) return null;
+  const code = c.code ?? (c.kind === 'storm' ? 95 : 63);
+  let i = RAIN_BY_CODE[code] ?? 0.6;
+  if (c.precip > 0) i = Math.min(Math.max(c.precip / 0.3, 0.12), 1);
+  const drizzle = code >= 51 && code <= 57;
+  return { intensity: i, drizzle, storm: c.kind === 'storm' };
+}
+
+function makeRain() {
+  const n = RAIN_MAX;
+  const seed = new Float32Array(n * 2 * 4);    // x, y phase, z, speed factor
+  const tip = new Float32Array(n * 2);         // 0 = head of the drop, 1 = tail
+  for (let i = 0; i < n; i++) {
+    const sx = Math.random(), sy = Math.random(), sz = Math.random();
+    const sp = 0.8 + Math.random() * 0.4;
+    for (let k = 0; k < 2; k++) {
+      const o = (i * 2 + k) * 4;
+      seed[o] = sx; seed[o + 1] = sy; seed[o + 2] = sz; seed[o + 3] = sp;
+      tip[i * 2 + k] = k;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  // position is required by three but unused; seed carries everything
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+  g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
+  g.setAttribute('tip', new THREE.BufferAttribute(tip, 1));
+  // the box follows the camera, so bounds never matter; skip frustum culling
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
+
+  const roofData = new Float32Array(ROOF_MAP_N * ROOF_MAP_N).fill(-1e4);
+  const roof = new THREE.DataTexture(roofData, ROOF_MAP_N, ROOF_MAP_N, THREE.RedFormat, THREE.FloatType);
+  roof.minFilter = roof.magFilter = THREE.NearestFilter;
+  roof.needsUpdate = true;
+
+  const uniforms = {
+    uRoof:     { value: roof },
+    uRoofArea: { value: new THREE.Vector3(0, 0, ROOF_MAP_SIZE) },   // x0, z0, size
+    uTime:   { value: 0 },
+    uCenter: { value: new THREE.Vector3() },
+    uBox:    { value: new THREE.Vector3(RAIN_SPAN, RAIN_HEIGHT, RAIN_SPAN) },
+    uVel:    { value: new THREE.Vector3(0, -8, 0) },   // per unit speed factor
+    uLen:    { value: 0.09 },                          // streak = velocity * this
+    uColor:  { value: new THREE.Color(0xc4ccd6) },
+    uAlpha:  { value: 0.5 }
+  };
+
+  const m = new THREE.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      attribute vec4 seed;
+      attribute float tip;
+      uniform float uTime, uLen;
+      uniform vec3 uCenter, uBox, uVel;
+      varying float vA;
+      varying vec3 vP;
+      void main() {
+        vec3 v = uVel * vec3(1.0, seed.w, 1.0);
+        vec3 corner = uCenter - uBox * vec3(0.5, 0.4, 0.5);
+        vec3 p = vec3(seed.x, seed.y, seed.z) * uBox + v * uTime;
+        p = mod(p - corner, uBox) + corner;
+        // fade at the sides and ends of the box so wrapping never pops
+        vec2 d = abs(p.xz - uCenter.xz) / (uBox.xz * 0.5);
+        float yEdge = (p.y - corner.y) / uBox.y;
+        vA = (1.0 - smoothstep(0.6, 1.0, max(d.x, d.y)))
+           * smoothstep(0.0, 0.08, yEdge) * (1.0 - smoothstep(0.85, 1.0, yEdge))
+           * mix(1.0, 0.0, tip) * (0.6 + 0.4 * seed.w);
+        p -= v * uLen * (0.7 + 0.6 * fract(seed.x * 57.3)) * tip;
+        vP = p;
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uAlpha;
+      uniform sampler2D uRoof;
+      uniform vec3 uRoofArea;
+      varying float vA;
+      varying vec3 vP;
+      void main() {
+        vec2 uv = (vP.xz - uRoofArea.xy) / uRoofArea.z;
+        if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x < 1.0 && uv.y < 1.0 &&
+            vP.y < texture2D(uRoof, uv).r) discard;   // under a roof
+        gl_FragColor = vec4(uColor, uAlpha * vA);
+        #include <colorspace_fragment>
+      }`
+  });
+
+  const mesh = new THREE.LineSegments(g, m);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 10;      // after the opaque city, over the ground
+  scene.add(mesh);
+  return { mesh, uniforms, roof, roofData, roofShells: null, roofCx: NaN, roofCz: NaN, mark: null };
+}
+
+function disposeRain() {
+  if (!rain) return;
+  scene.remove(rain.mesh);
+  rain.mesh.geometry.dispose();
+  rain.mesh.material.dispose();
+  rain.roof.dispose();
+  rain = null;
+  invalidate();
+}
+
+// Start, retune or stop the rain from the current conditions. Called wherever
+// the sky is rebuilt, so presets, forecast changes and new places all land here.
+function syncRain(daylight) {
+  const st = rainState();
+  if (!st) { disposeRain(); return; }
+  if (!rain) rain = makeRain();
+
+  const u = rain.uniforms;
+  const i = st.intensity;
+  const count = Math.round(RAIN_MAX * (0.15 + 0.85 * i));
+  rain.mesh.geometry.setDrawRange(0, count * 2);
+
+  // drizzle falls slowly in short strokes; real rain is 6-9 m/s
+  const fall = st.drizzle ? 3 + 1.5 * i : 6.5 + 2.5 * i;
+  // wind is a nudge, not a gale: a fraction of the reported speed, capped
+  let wx = 0, wz = 0;
+  if (weather && weather.windMph != null) {
+    const toward = (weather.windFrom + 180) * Math.PI / 180;
+    const s = Math.min(weather.windMph * 0.447 * 0.3 * (st.storm ? 1.5 : 1), 4);
+    wx = Math.sin(toward) * s;       // +x east
+    wz = -Math.cos(toward) * s;      // -z north
+  }
+  u.uVel.value.set(wx, -fall, wz);
+  u.uLen.value = st.drizzle ? 0.05 : 0.08 + 0.03 * i;
+  u.uAlpha.value = (st.drizzle ? 0.3 : 0.42 + 0.2 * i) * (0.35 + 0.65 * daylight);
+  invalidate();
+}
+
+// Height of a shell's roof over (x, z), which is inside its footprint: the
+// eaves for a flat roof, else the surface roofOf builds on the oriented box.
+function roofHeightAt(s, x, z) {
+  if (!s.roofShape) return s.top;
+  const o = s.obb;
+  const dx = x - o.cx, dz = z - o.cz;
+  const u = Math.abs(dx * o.ux + dz * o.uz), v = dx * o.vx + dz * o.vz;
+  const av = Math.abs(v);
+  let f;
+  if (s.roofShape === 'skillion') f = (v + o.hv) / (2 * o.hv);
+  else if (s.roofShape === 'pyramidal') f = Math.min(1 - u / o.hu, 1 - av / o.hv);
+  else {
+    f = 1 - av / o.hv;
+    if (s.roofShape === 'hipped') {
+      const inset = Math.min(o.hv, o.hu * 0.9);
+      f = Math.min(f, (o.hu - u) / inset);
+    }
+  }
+  f = f < 0 ? 0 : f > 1 ? 1 : f;
+  return s.top + (s.roofTop - s.top) * f;
+}
+
+// Fill the shelter map centred on (cx, cz) from the shells in reach. Only the
+// texels inside each shell's bounds are tested, and shells come from the same
+// broadphase grid the collision uses.
+function rasterRoofs(cx, cz) {
+  const N = ROOF_MAP_N, cell = ROOF_MAP_SIZE / N;
+  const x0 = cx - ROOF_MAP_SIZE / 2, z0 = cz - ROOF_MAP_SIZE / 2;
+  const data = rain.roofData;
+  data.fill(-1e4);
+
+  if (!rain.mark || rain.mark.length !== shells.length) rain.mark = new Uint8Array(shells.length);
+  const mark = rain.mark;
+  mark.fill(0);
+  const gx0 = Math.floor(x0 / GRID_CELL), gx1 = Math.floor((x0 + ROOF_MAP_SIZE) / GRID_CELL);
+  const gz0 = Math.floor(z0 / GRID_CELL), gz1 = Math.floor((z0 + ROOF_MAP_SIZE) / GRID_CELL);
+  for (let gx = gx0; gx <= gx1; gx++) {
+    for (let gz = gz0; gz <= gz1; gz++) {
+      const bucket = shellGrid.get(cellKey(gx, gz));
+      if (!bucket) continue;
+      for (const idx of bucket) {
+        if (mark[idx]) continue;
+        mark[idx] = 1;
+        const s = shells[idx];
+        const i0 = Math.max(0, Math.floor((s.minX - x0) / cell)), i1 = Math.min(N - 1, Math.floor((s.maxX - x0) / cell));
+        const j0 = Math.max(0, Math.floor((s.minZ - z0) / cell)), j1 = Math.min(N - 1, Math.floor((s.maxZ - z0) / cell));
+        for (let j = j0; j <= j1; j++) {
+          const z = z0 + (j + 0.5) * cell;
+          for (let i = i0; i <= i1; i++) {
+            const x = x0 + (i + 0.5) * cell;
+            if (!pointInShell(s, x, z)) continue;
+            const h = roofHeightAt(s, x, z);
+            const k = j * N + i;
+            if (h > data[k]) data[k] = h;
+          }
+        }
+      }
+    }
+  }
+
+  rain.roof.needsUpdate = true;
+  rain.uniforms.uRoofArea.value.set(x0, z0, ROOF_MAP_SIZE);
+  rain.roofCx = cx; rain.roofCz = cz; rain.roofShells = shells;
+}
+
+// Per frame, from frame(). Returns true when the rain needs a redraw even if
+// nothing else changed.
+function rainTick(dt, now) {
+  if (!rain) return false;
+  const cx = Math.round(player.pos.x / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
+  const cz = Math.round(player.pos.z / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
+  if (cx !== rain.roofCx || cz !== rain.roofCz || rain.roofShells !== shells) rasterRoofs(cx, cz);
+
+  rainTime = (rainTime + dt) % RAIN_TIME_WRAP;
+  rain.uniforms.uTime.value = rainTime;
+  rain.uniforms.uCenter.value.copy(player.pos);
+  return now - rainDrawn >= 1000 / RAIN_FPS_IDLE;
+}
+
+// Whether the loop has to keep running for the rain's sake.
+function rainAnimating() {
+  return rain !== null;
 }
 
 let hudPlace = '';
