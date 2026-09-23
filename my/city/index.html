@@ -120,6 +120,7 @@
   }
   #settings h2.second { margin-top: 16px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #picks { margin-top: 12px; }
   .chips button {
     padding: 7px 10px;
     background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
@@ -327,6 +328,7 @@
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
     </div>
+    <div class="chips" id="picks"></div>
     <p id="status"></p>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc to return here.</p>
     <p>1.0.0</p>
@@ -401,7 +403,7 @@ if (storedPlace) {
 const RADIUS_LADDER  = [500, 350, 200];   // half-extent tried in order, meters
 const DEFAULT_LEVELS = 3;       // when a building has no height info at all
 const METERS_PER_LVL = 3.2;
-const EYE_HEIGHT     = 1.5;
+const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
 const WALK_SPEED     = 10.0;
 const RUN_SPEED      = 20.0;
@@ -2407,7 +2409,7 @@ function ceilingAt(x, z, fromHead, toHead) {
 // body lift, eye height, vision range, contact radius and mesh scale. Stats
 // themselves (speed 35, health 120, ...) stay in Arena units.
 
-const NPC_POPULATION = 200;       // humans spawned per loaded city: the one knob
+const NPC_POPULATION = 220;       // humans spawned per loaded city: the one knob
 
 const NPC_UNIT       = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
 const NPC_RADIUS     = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
@@ -5590,6 +5592,27 @@ async function load(query) {
 }
 
 goEl.addEventListener('click', () => load(addrEl.value));
+
+// Suggested places: dense, well-mapped US downtowns (the ground imagery is
+// USGS, so it only covers the US). A tap fills the address and loads it.
+const PICKS = [
+  ['Times Square, New York',       'Times Square, New York, NY'],
+  ['Union Square, San Francisco',  'Union Square, San Francisco, CA'],
+  ['Pike Place Market, Seattle',   'Pike Place Market, Seattle, WA'],
+  ['The Loop, Chicago',            'Millennium Park, Chicago, IL'],
+  ['French Quarter, New Orleans',  'Jackson Square, New Orleans, LA']
+];
+const picksEl = document.getElementById('picks');
+for (const [label, query] of PICKS) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.addEventListener('click', () => {
+    addrEl.value = query;
+    b.blur();
+    load(query);
+  });
+  picksEl.appendChild(b);
+}
 addrEl.addEventListener('keydown', e => { if (e.key === 'Enter') load(addrEl.value); });
 addrEl.focus();
 
