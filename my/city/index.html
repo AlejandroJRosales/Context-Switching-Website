@@ -3563,6 +3563,47 @@ function shellAt(x, z) {
   return -1;
 }
 
+// Is (x, z) within m of any building footprint's outline? A doorway has no
+// wall piece, so the solid test alone lets a point sit right in the opening.
+function nearShell(x, z, m) {
+  const cx0 = Math.floor((x - m) / GRID_CELL), cx1 = Math.floor((x + m) / GRID_CELL);
+  const cz0 = Math.floor((z - m) / GRID_CELL), cz1 = Math.floor((z + m) / GRID_CELL);
+  for (let gx = cx0; gx <= cx1; gx++) {
+    for (let gz = cz0; gz <= cz1; gz++) {
+      const bucket = shellGrid.get(cellKey(gx, gz));
+      if (!bucket) continue;
+      for (const idx of bucket) {
+        const s = shells[idx];
+        if (x < s.minX - m || x > s.maxX + m || z < s.minZ - m || z > s.maxZ + m) continue;
+        if (closestOnRing(s.pts, x, z).d < m) return true;
+      }
+    }
+  }
+  return false;
+}
+
+const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint edge
+
+// Nearest outdoor, dry spot the player fits at, clear of footprint edges,
+// searching rings outward from (x, z). Falls back to (x, z) if nothing
+// within maxR qualifies.
+function outdoorSpawn(x, z, maxR = 200) {
+  const r = PLAYER_RADIUS + 0.1;
+  const ok = (px, pz) => shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
+                         !nearShell(px, pz, SPAWN_CLEAR) &&
+                         !solidOverlap(px, pz, r, 0, EYE_HEIGHT + HEAD_CLEAR);
+  if (ok(x, z)) return [x, z];
+  for (let d = 0.5; d <= maxR; d += 0.5) {
+    const n = Math.max(8, Math.ceil(2 * Math.PI * d / 0.5));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 2 * Math.PI;
+      const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+      if (ok(px, pz)) return [px, pz];
+    }
+  }
+  return [x, z];
+}
+
 // NPC WORLD
 // The Arena's World loop minus what City owns (player, weather, terrain,
 // cabins). Stepped from frame().
@@ -5365,10 +5406,12 @@ async function load(query) {
     updateSky();    // the sun runs off the coordinates alone, forecast or not
     startClock();
 
-    player.pos.set(0, EYE_HEIGHT, 0);
+    // the geocoded point is often inside the addressed building, so step out
+    const [sx, sz] = outdoorSpawn(0, 0);
+    player.pos.set(sx, EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
-    resolveCollisions(player.pos);   // in case the address lands inside a wall
+    resolveCollisions(player.pos);   // settle against any wall the search brushed
 
     // Compile shaders and upload textures now so the first frame does not stall.
     say('Preparing scene…');
