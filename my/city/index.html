@@ -3781,13 +3781,12 @@ const animalRenderer = new AnimalRenderer();
 const world          = new NpcWorld();
 
 // HEALTH BARS
-// Health, food and water over each nearby person's head, one sprite each.
-// Sprites come from a fixed pool handed to the nearest NPCs in range, so the
-// cost stays flat as the population grows. Food and water are drawn as how
+// Health, food and water over every person's head, one sprite each, with
+// that person's brain above it. A slot follows its person until they die,
+// then goes back for reuse, so the slot count tracks the population. Food
+// and water are drawn as how
 // full the person is (1 - need), on the same 0..100 need scale the brain
 // reads; health is health / maxHealth.
-const BAR_RANGE  = 25;     // metres from the camera
-const BAR_MAX    = 40;     // sprites in the pool
 const BAR_STEPS  = 40;     // redraw only when a bar moves a whole step
 const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
 const BAR_W_M    = 0.8;    // sprite size in metres (canvas is 2:1)
@@ -3956,25 +3955,26 @@ function brainActivity(b, a) {
 
 class HealthBars {
   constructor() {
-    this.pool = [];
-    this.near = [];
-    this.wanted = new Set();
-    for (let i = 0; i < BAR_MAX; i++) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 192; canvas.height = 96;
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const mat = new THREE.SpriteMaterial({
-        map: tex, transparent: true, depthWrite: false, toneMapped: false
-      });
-      const sprite = new THREE.Sprite(mat);
-      sprite.scale.set(BAR_W_M, BAR_H_M, 1);
-      sprite.center.set(0.5, 0);   // anchor the bottom edge above the head
-      sprite.visible = false;
-      scene.add(sprite);
-      this.pool.push({ sprite, canvas, ctx: canvas.getContext('2d'), tex, key: '',
-                       a: null, brain: null, brainFor: null });
-    }
+    this.bars = new Map();     // person -> slot (stats sprite and brain)
+    this.spare = [];           // hidden slots, reused before making new ones
+    this.seen = new Set();
+  }
+
+  makeBar() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 192; canvas.height = 96;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false, toneMapped: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(BAR_W_M, BAR_H_M, 1);
+    sprite.center.set(0.5, 0);   // anchor the bottom edge above the head
+    sprite.visible = false;
+    scene.add(sprite);
+    return { sprite, canvas, ctx: canvas.getContext('2d'), tex, key: '',
+             brain: null, brainFor: null };
   }
 
   // Top of the head in metres: feet (pivot minus foot lift) plus rig height.
@@ -4035,42 +4035,24 @@ class HealthBars {
     slot.tex.needsUpdate = true;
   }
 
-  // Slots stay with the same person while they remain among the nearest, so
-  // neither the bar canvas nor the brain is rebuilt just because the
-  // distance order shuffled.
+  // Every living person gets a stats sprite and, above it, their brain. A
+  // reused slot keeps its brain only if it belongs to the same network.
   update(animals) {
-    const cx = camera.position.x, cz = camera.position.z;
-    const r2 = BAR_RANGE * BAR_RANGE;
-    const near = this.near, wanted = this.wanted;
-    near.length = 0;
-    wanted.clear();
-    for (const a of animals) {
-      if (!a.alive) continue;
-      const dx = a.position.x - cx, dz = a.position.z - cz;
-      const d = dx * dx + dz * dz;
-      if (d <= r2) near.push({ a, d });
-    }
-    if (near.length > BAR_MAX) near.sort((p, q) => p.d - q.d);
-    const n = Math.min(near.length, BAR_MAX);
-    for (let i = 0; i < n; i++) wanted.add(near[i].a);
-
-    const free = [];
-    for (const slot of this.pool) {
-      if (slot.a && wanted.has(slot.a)) { wanted.delete(slot.a); continue; }
-      slot.a = null;
-      slot.sprite.visible = false;
-      if (slot.brain) slot.brain.group.visible = false;
-      free.push(slot);
-    }
-    for (const a of wanted) { const slot = free.pop(); slot.a = a; slot.key = ''; }
-
-    const now = Date.now();
     const spin = performance.now() / 1000 * BRAIN_SPIN;
+    const now = Date.now();
     const q = v => Math.round(Math.max(0, Math.min(1, v)) * BAR_STEPS);
     const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];   // health has no memory slot
-    for (const slot of this.pool) {
-      const a = slot.a;
-      if (!a) continue;
+    const seen = this.seen;
+    seen.clear();
+    for (const a of animals) {
+      if (!a.alive || a.type !== 'human') continue;
+      seen.add(a);
+      let bar = this.bars.get(a);
+      if (!bar) {
+        bar = this.spare.pop() || this.makeBar();
+        bar.key = '';
+        this.bars.set(a, bar);
+      }
       vals[0] = q(a.health / a.maxHealth);
       vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
       vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
@@ -4079,26 +4061,34 @@ class HealthBars {
       arrows[1] = this.heading(a, a.hasFood,  a.rayFoodSin,  a.rayFoodCos);
       arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
       arrows[3] = this.heading(a, a.hasMate,  a.rayMateSin,  a.rayMateCos);
-      this.draw(slot, vals, arrows);
+      this.draw(bar, vals, arrows);
       const barY = this.headTop(a) + BAR_ABOVE;
-      slot.sprite.position.set(a.position.x, barY, a.position.z);
-      slot.sprite.visible = true;
+      bar.sprite.position.set(a.position.x, barY, a.position.z);
+      bar.sprite.visible = true;
 
       const nn = a.brain;
-      if (!nn || !nn.maskIA) { if (slot.brain) slot.brain.group.visible = false; continue; }
-      if (slot.brainFor !== nn) {
-        if (slot.brain) disposeBrain(slot.brain);
-        slot.brain = buildBrain(nn);
-        slot.brainFor = nn;
+      if (!nn || !nn.maskIA) { if (bar.brain) bar.brain.group.visible = false; continue; }
+      if (bar.brainFor !== nn) {
+        if (bar.brain) disposeBrain(bar.brain);
+        bar.brain = buildBrain(nn);
+        bar.brainFor = nn;
       }
-      const b = slot.brain;
+      const b = bar.brain;
       brainActivity(b, a);
       b.group.position.set(a.position.x, barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE, a.position.z);
       b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
       b.group.visible = true;
     }
+    for (const [a, bar] of this.bars) {
+      if (seen.has(a)) continue;
+      bar.sprite.visible = false;
+      if (bar.brain) bar.brain.group.visible = false;
+      this.bars.delete(a);
+      this.spare.push(bar);
+    }
   }
 }
+
 const healthBars = new HealthBars();
 
 
