@@ -133,8 +133,7 @@
     border-color: transparent;
   }
 
-  /* NPC stat panel, from the ecosystem sim. City: restyled to match #settings
-     and #hud (dark glass, cream text, monospace, small-caps labels). */
+  /* NPC stat panel from the ecosystem sim, restyled to match #settings / #hud */
   #animal-stat-panel {
     display: none;
     position: fixed;
@@ -152,7 +151,7 @@
     overflow: hidden;
   }
   #animal-stat-panel.visible { display: flex; flex-direction: column; }
-  /* too narrow to sit beside the gear: drop below its row, like #settings */
+  /* narrow: drop below the gear's row */
   @media (max-width: 500px) {
     #animal-stat-panel { top: max(62px, calc(env(safe-area-inset-top) + 46px)); }
   }
@@ -161,7 +160,7 @@
   #asp-left-col { display: flex; flex-direction: column; flex-shrink: 0; }
   #asp-stats-section { min-width: 0; flex-shrink: 0; }
 
-  /* section labels, same as #settings h2 */
+  /* labels, as #settings h2 */
   .asp-generation, .asp-mem-label, #asp-nn-wrapper #asp-nn-label {
     margin: 0 0 9px;
     font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
@@ -314,9 +313,8 @@ const HEAD_CLEAR     = 0.15;    // top of the head above the eye
 const SUBSTEP        = 0.25;    // max horizontal move per collision pass; kept under
                                 // PLAYER_RADIUS so a fast step cannot skip a thin wall
 
-// Enterable buildings. Every footprint becomes a hollow shell: wall pieces of
-// real thickness around each ring, one doorway cut out of the outer ring, and
-// floor / ceiling / roof caps triangulated from the footprint.
+// Enterable buildings: each footprint becomes a hollow shell of thick wall
+// pieces, one doorway, and floor/ceiling/roof caps.
 const WALL_T         = 0.3;     // exterior wall thickness, meters, measured inward
 const WALL_T_MIN     = 0.06;    // thinnest a wall is retried at when mitres fold
 const MITER_MAX      = 4;       // a sharp corner's mitre is clamped to this many thicknesses
@@ -342,15 +340,10 @@ const OVERPASS_MIRRORS = [
 ];
 const NOMINATIM_URL  = 'https://nominatim.openstreetmap.org/search';
 
-// USGS orthoimagery from The National Map. Public domain, no key, no quota.
-// Courtesy credit: "USGS, USDA, The National Map: Orthoimagery."
-//
-// Two sources, tried in order. NAIP Plus is a dynamic image service whose
-// mosaic averages 0.3 m per pixel and includes high-resolution urban
-// orthoimagery, rendered to whatever size we ask for. The basemap tile cache
-// is the fallback: it stops at 1:9,028 (zoom 16), which is about 2.4
-// Mercator-metres per pixel, so roughly 1.8 m on the ground at mid latitudes
-// — the source of the mush this replaces.
+// USGS National Map orthoimagery: public domain, no key.
+// Credit: "USGS, USDA, The National Map: Orthoimagery."
+// Primary: NAIP Plus image service (~0.3 m/px, any size). Fallback: the basemap
+// tile cache, which tops out at zoom 16 (~1.8 m/px on the ground).
 const ORTHO_URL   = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
 const ORTHO_M_PX  = 0.5;          // ground metres per pixel to ask for
 const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
@@ -364,16 +357,14 @@ const IMAGERY_MAX_TILES = 100;
 const IMAGERY_TIMEOUT_MS = 8000;
 const IMAGERY_Y        = 0.004;   // beneath every painted ground layer
 
-// The flat layers are all within a few centimetres of each other, which the
-// depth buffer cannot resolve at any distance, so each one also gets a depth
-// bias. Higher wins, and the base ground plane sits at 0.
+// Flat layers sit centimetres apart, below depth-buffer resolution, so each
+// gets a depth bias. Higher wins; the base ground plane is 0.
 const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
 
 
-// ---------------------------------------------------------------- layer tables
+// LAYER TABLES
 
-// Flat layers all sit on the ground plane, so they get a fixed stacking order
-// in y rather than fighting over the same depth.
+// Flat layers get a fixed stacking order in y instead of fighting over depth.
 const LAYER_Y = { area: 0.010, water: 0.018, road: 0.032, path: 0.048 };
 
 const ROAD_WIDTH = {
@@ -437,7 +428,7 @@ const SIGN_CELL_W = 256;
 const SIGN_CELL_H = 48;
 const SIGN_MAX   = 192;
 
-// Only ask Overpass for the land cover and barrier values we actually paint.
+// Ask Overpass only for the land cover and barrier values we paint.
 const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|greenfield'
   + '|village_green|recreation_ground|basin|reservoir';
 const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
@@ -476,8 +467,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fb4c8);
 scene.fog = new THREE.Fog(0x9fb4c8, 120, 900);
 
-// near stays inside PLAYER_RADIUS so nothing clips, but 0.1 against a far
-// of 2000 leaves far too little depth precision for coplanar ground layers
+// near stays inside PLAYER_RADIUS; 0.1 would starve depth precision for the
+// coplanar ground layers
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25, 2000);
 
 scene.add(new THREE.HemisphereLight(0xbdd3e6, 0x4a4640, 1.5));
@@ -518,8 +509,7 @@ async function geocode(query) {
   };
 }
 
-// One attempt against one mirror. Errors tagged `fatal` stop the whole search
-// (the query itself is wrong, so no mirror or radius will help).
+// One attempt against one mirror. `fatal` errors (a bad query) end the search.
 async function overpassTry(url, query) {
   const host = new URL(url).hostname;
   const ctrl = new AbortController();
@@ -544,9 +534,8 @@ async function overpassTry(url, query) {
   }
 }
 
-// Try every mirror at the widest radius, then shrink and try them all again.
-// 429 is a real rate limit; 504 usually means the box was too heavy; the
-// ladder covers both without asking the user to guess which one happened.
+// Every mirror at the widest radius, then shrink and repeat. Covers both 429
+// (rate limit) and 504 (box too heavy).
 async function fetchBuildings(lat, lon) {
   let lastErr = null;
 
@@ -558,8 +547,7 @@ async function fetchBuildings(lat, lon) {
 
     if (cache.has(bbox)) return { json: cache.get(bbox), radius };
 
-    // One trip for every layer we render. `out geom` gives ways and relation
-    // members their coordinates inline, and nodes their own lat/lon.
+    // One trip for every layer. `out geom` inlines way/member coordinates.
     const q = `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT}];(` +
       `way["building"](${bbox});relation["building"](${bbox});` +
       `way["highway"](${bbox});` +
@@ -579,8 +567,7 @@ async function fetchBuildings(lat, lon) {
 
     for (const url of OVERPASS_MIRRORS) {
       const host = new URL(url).hostname;
-      // a failed mirror is reported here while the next one is tried; the
-      // 'Failed to load' message and Try again come once every attempt is spent
+      // report each failed mirror; 'Failed to load' waits until all are spent
       say(lastErr
         ? `${lastErr.message}. Trying ${host} within ${radius} m…`
         : `Fetching map data within ${radius} m from ${host}…`, !!lastErr);
@@ -601,7 +588,7 @@ async function fetchBuildings(lat, lon) {
   );
 }
 
-// ---------------------------------------------------------------- parsing
+// PARSING
 
 // "24", "24 m", "78'", "7'4\"", "23.5 metres" -> meters, or null
 function parseLength(raw) {
@@ -621,8 +608,8 @@ function parseLength(raw) {
 
 function heightOf(tags) {
   if (!tags) return DEFAULT_LEVELS * METERS_PER_LVL;
-  // these are all ground-to-tallest-point already, so they win outright.
-  // est_height sits below the surveyed tags but above any levels guess.
+  // these are ground-to-top already, so they win; est_height ranks below them
+  // but above a levels guess
   const direct = parseLength(tags.height)
     ?? parseLength(tags['building:height'])
     ?? parseLength(tags.est_height);
@@ -650,8 +637,7 @@ function makeProjector(lat0, lon0) {
   return (lat, lon) => [(lon - lon0) * kx, -(lat - lat0) * kz];
 }
 
-// Ways carry their own geometry; relations expose it per member. Outer rings
-// only; buildingPolysOf below adds the inner rings for buildings.
+// Outer rings of ways and relations; buildingPolysOf adds inner rings.
 function geometriesOf(el) {
   if (el.type === 'way' && el.geometry) return [el.geometry];
   if (el.type === 'relation' && el.members) {
@@ -666,9 +652,8 @@ function closedGeom(g) {
   return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
 }
 
-// Building polygons as { pts, holes? }. A multipolygon's inner members become
-// courtyards of whichever outer ring contains them. Only inner ways that close
-// on themselves are used; split inner rings would need stitching first.
+// Building polygons as { pts, holes? }. Closed inner ways become courtyards
+// of the outer ring that contains them; split inner rings are skipped.
 function buildingPolysOf(el, project) {
   const polys = geometriesOf(el)
     .map(g => ({ pts: cleanPts(g, project, true), holes: [] }))
@@ -686,8 +671,7 @@ function buildingPolysOf(el, project) {
   return polys;
 }
 
-// Project, de-dupe consecutive points, and for rings drop the repeated closing
-// point. Returns [x, z] pairs.
+// Project, drop repeated points and the closing point. Returns [x, z] pairs.
 function cleanPts(geom, project, closed) {
   const p = [];
   for (const n of geom) {
@@ -710,9 +694,7 @@ function areaKindOf(tags) {
   return null;
 }
 
-// Sort the response into the layers the builders consume. Everything is plain
-// arrays and numbers so the whole thing survives a JSON round trip into
-// localStorage.
+// Sort the response into builder layers, as plain JSON for localStorage.
 function featuresFrom(json, project) {
   const f = {
     buildings: [], roads: [], areas: [], waterways: [],
@@ -797,7 +779,7 @@ function featuresFrom(json, project) {
   return f;
 }
 
-// "convenience" -> "Convenience". Used when a POI has a type but no name.
+// "convenience" -> "Convenience", for a POI with a type but no name.
 function prettify(v) {
   return String(v).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -814,8 +796,8 @@ function signLabel(tags) {
 
 const _col = new THREE.Color();
 
-// OSM colour values are free text. Take hex and CSS names, ignore the rest
-// rather than letting Color.setStyle warn and hand back the previous colour.
+// OSM colours are free text: accept hex and CSS names, ignore the rest so
+// Color.setStyle does not warn and keep the previous colour.
 function cssColor(raw) {
   if (raw == null) return null;
   const s = String(raw).trim().toLowerCase().replace(/\s+/g, '');
@@ -848,12 +830,12 @@ function ringArea(pts) {
   return a / 2;
 }
 
-// ---------------------------------------------------------------- build
+// BUILD
 
-// ---------------------------------------------------------------- geometry helpers
+// GEOMETRY HELPERS
 
-// Table hexes are authored the way they should look, so they go through the
-// same sRGB -> working space conversion a material colour would get.
+// Table hexes are authored as displayed, so convert them from sRGB like
+// material colours.
 function rgb(hex) {
   _col.setHex(hex);
   return [_col.r, _col.g, _col.b];
@@ -861,13 +843,12 @@ function rgb(hex) {
 
 function newBuf() { return { pos: [], col: [] }; }
 
-// `ref` is the direction the face should end up pointing. Winding is fixed to
-// match it, which saves getting vertex order right by hand everywhere.
+// `ref` is the direction the face should point; winding is fixed to match.
 function pushTri(b, p0, p1, p2, c, ref) {
   const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
   const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
   const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-  // flip by swapping the last two corners; no temporary array per triangle
+  // flip by swapping the last two corners, no per-triangle array
   const flip = (nx * ref[0] + ny * ref[1] + nz * ref[2]) < 0;
   const q1 = flip ? p2 : p1, q2 = flip ? p1 : p2;
   b.pos.push(p0[0], p0[1], p0[2], q1[0], q1[1], q1[2], q2[0], q2[1], q2[2]);
@@ -896,8 +877,7 @@ function tint(g, c) {
   return g;
 }
 
-// mergeGeometries refuses a mix of indexed and non-indexed inputs, so every
-// group is flattened before it gets there.
+// mergeGeometries rejects mixed indexed/non-indexed input, so flatten all.
 function nonIndexed(g) {
   if (!g.index) return g;
   const flat = g.toNonIndexed();
@@ -917,8 +897,7 @@ function pushDisc(b, x, y, z, r, c) {
   }
 }
 
-// Flat strip down a polyline, with a small patch at each interior joint so
-// corners do not open up. Good enough without mitring.
+// Flat strip along a polyline, with a patch at each joint instead of mitres.
 function ribbon(b, pts, width, y, c) {
   const h = Math.max(width, 0.6) / 2;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -934,8 +913,7 @@ function ribbon(b, pts, width, y, c) {
   }
 }
 
-// Filled polygon lying on the ground. Same XY-shape convention as the
-// building extrusions: a shape point (px, py) lands at world (px, 0, -py).
+// Filled ground polygon. Shape point (px, py) lands at world (px, 0, -py).
 function areaGeom(pts, y, c) {
   const shape = new THREE.Shape();
   shape.moveTo(pts[0][0], -pts[0][1]);
@@ -959,11 +937,10 @@ function bounds(pts) {
   return { minX, maxX, minZ, maxZ };
 }
 
-// ---------------------------------------------------------------- roofs
+// ROOFS
 
-// Oriented box around a footprint, taking the longest edge as the long axis.
-// Fine for the rectangular houses that carry roof:shape; anything less
-// rectangular is rejected by the area-fit test at the call site.
+// Oriented box around a footprint, long axis on the longest edge. The call
+// site rejects footprints whose area does not fit it.
 function obbOf(pts) {
   let bi = 0, bl = -1;
   for (let i = 0; i < pts.length; i++) {
@@ -1022,8 +999,7 @@ function roofOf(b, o, wallTop, top, shape, c) {
     return;
   }
 
-  // gabled and hipped share the two long slopes; hipped just pulls the ridge
-  // in from each end, which turns the gable walls into triangles.
+  // gabled and hipped share the long slopes; hipped pulls the ridge in
   const inset = shape === 'hipped' ? Math.min(o.hv, o.hu * 0.9) : 0;
   const R0 = p(-o.hu + inset, 0, top);
   const R1 = p( o.hu - inset, 0, top);
@@ -1034,14 +1010,13 @@ function roofOf(b, o, wallTop, top, shape, c) {
   pushTri(b, D, A, R0, c, [-o.ux, 0, -o.uz]);
 }
 
-// ---------------------------------------------------------------- build
+// BUILD
 
 function clearLayers() {
   invalidate();
   for (const m of layers) {
     scene.remove(m);
-    // instanceMatrix / instanceColor live on the mesh, not the geometry, and
-    // three only frees their GL buffers when the mesh itself is disposed
+    // instance buffers live on the mesh; three frees them only on mesh dispose
     if (m.isInstancedMesh) m.dispose();
     if (m.geometry) m.geometry.dispose();
     if (m.material) {
@@ -1073,8 +1048,7 @@ function addLayer(geoms, material) {
 function litMaterial(bias) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   if (bias) {
-    // pull this layer towards the viewer in depth-buffer units, which stays
-    // effective however far away the polygon is
+    // depth-buffer bias toward the viewer, effective at any distance
     m.polygonOffset = true;
     m.polygonOffsetFactor = -bias;
     m.polygonOffsetUnits = -bias;
@@ -1082,20 +1056,17 @@ function litMaterial(bias) {
   return m;
 }
 
-// ---------------------------------------------------------------- building shells
+// BUILDING SHELLS
 //
-// A building is no longer one extruded solid. Each footprint becomes:
+// Each footprint becomes:
+//   wall pieces     thick quads along every ring edge
+//   doorway         a gap in one outer-ring piece, lintel above
+//   floor           triangulated footprint at the base
+//   ceiling / roof  the same triangulation at the eaves
 //
-//   footprint ─┬─ wall pieces     thick quads along every edge of every ring
-//              ├─ doorway         a gap in one outer-ring piece, lintel above
-//              ├─ floor           triangulated footprint at the base
-//              └─ ceiling / roof  the same triangulation under and on the eaves
-//
-// The same wall pieces are pushed to the collision grid as small 4-point
-// rings, so what you see and what you bump into are one list of quads.
-//
-// Rings are wound so the left-hand normal of every edge points into the wall
-// material: outer rings positive, courtyard rings negative (ringArea sense).
+// The wall pieces double as collision rings, so visuals and collision match.
+// Winding: each edge's left normal points into the wall (outer rings positive,
+// courtyards negative).
 
 function dedupeRing(pts) {
   const out = [];
@@ -1115,10 +1086,8 @@ function orientRing(pts, positive) {
   return (ringArea(pts) > 0) === positive ? pts : pts.slice().reverse();
 }
 
-// Inner outline of a wall of thickness t along `pts`, mitred at every vertex
-// so neighbouring pieces meet without gaps or overlaps. For edge i, a0/a1 are
-// how far along the edge the inner corners sit relative to the outer ones;
-// the edge is only usable if its inner side still runs forwards.
+// Mitred inner outline of a wall of thickness t along `pts`. a0/a1 place the
+// inner corners along edge i; an edge whose inner side reverses is unusable.
 function offsetRing(pts, t) {
   const n = pts.length, E = new Array(n), inner = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -1147,8 +1116,7 @@ function offsetRing(pts, t) {
   return { pts, inner, E, t, ok };
 }
 
-// Full thickness where the ring allows it, thinner for footprints whose short
-// edges would fold the mitred inner outline over itself.
+// Full thickness where possible, thinner where short edges would fold it.
 function wallRing(pts) {
   let R = offsetRing(pts, WALL_T);
   while (!R.ok && R.t * 0.5 >= WALL_T_MIN) R = offsetRing(pts, R.t * 0.5);
@@ -1200,7 +1168,7 @@ function pushSolid(solids, pts, base, top) {
   solids.push({ pts, ...bounds(pts), base, top, tags: null });
 }
 
-// ---------------------------------------------------------------- door placement
+// DOOR PLACEMENT
 
 // Uniform grid over any list of { minX, maxX, minZ, maxZ }.
 function gridOf(items, cell) {
@@ -1221,9 +1189,8 @@ function gridOf(items, cell) {
   return g;
 }
 
-// Every road and path segment, bucketed once per city. Paths weigh a little
-// less, so a door prefers the footway in front of a house over the street
-// behind its garden.
+// Road and path segments, bucketed once per city. Paths weigh less, so a
+// door prefers the front footway over the street behind the garden.
 function roadIndex(roads) {
   const segs = [];
   for (const r of roads || []) {
@@ -1238,8 +1205,8 @@ function roadIndex(roads) {
   return { segs, grid: gridOf(segs, ROAD_CELL) };
 }
 
-// Weighted distance from (x, z) to the edge of the nearest road within maxR,
-// and the road-centre point it was measured to. Null when nothing is in range.
+// Weighted distance from (x, z) to the nearest road edge within maxR, plus
+// the road point measured to. Null when none is in range.
 function nearestRoad(idx, x, z, maxR) {
   let best = Infinity, bx = 0, bz = 0;
   const cx0 = Math.floor((x - maxR) / ROAD_CELL), cx1 = Math.floor((x + maxR) / ROAD_CELL);
@@ -1270,8 +1237,7 @@ function pointIndex(list) {
   return { items, grid: gridOf(items, ROAD_CELL) };
 }
 
-// Would a doorway here open straight into a neighbouring building? Terraces
-// and shared party walls fail this, so doors go to the street side instead.
+// Would a doorway here open into a neighbour (terraces, party walls)?
 function blockedAt(self, x, z) {
   const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return false;
@@ -1284,9 +1250,8 @@ function blockedAt(self, x, z) {
   return false;
 }
 
-// Where along edge i a doorway can be centred, and how wide it gets. The range
-// keeps clear of the mitred corners so both piers stay proper quads; a short
-// wall trades pier width, then door width, before it is ruled out.
+// Where on edge i a doorway can be centred, and its width. Stays clear of
+// the mitred corners; short walls give up pier width, then door width.
 function doorSpan(R, i) {
   const e = R.E[i];
   const lo0 = Math.max(e.a0, 0), hi0 = e.L + Math.min(e.a1, 0);
@@ -1304,9 +1269,8 @@ function probeOut(R, i, d, off) {
   return [p[0] - e.nx * off, p[1] - e.nz * off];
 }
 
-// Stages 2-4 of door selection over candidates carrying a probe point:
-// nearest road or path close by, else whichever faces the nearest road at
-// any distance, else the longest wall. Ties keep the lowest edge index.
+// Door selection stages 2-4: nearest road close by, else facing the nearest
+// road at any distance, else the longest wall. Ties keep the lowest edge.
 function pickByRoads(cands, s, roads) {
   let best = null, bestD = Infinity;
   for (const k of cands) {
@@ -1328,9 +1292,8 @@ function pickByRoads(cands, s, roads) {
   return best;
 }
 
-// A door is { edge, d0, d1 } on one outer edge, or, for footprints made of
-// edges too short to hold one (round towers traced in small steps), a run of
-// consecutive edges opened whole: { run: Set, first, last }.
+// A door is { edge, d0, d1 } on one outer edge, or, when every edge is too
+// short (e.g. round towers), a run of whole edges: { run: Set, first, last }.
 function chooseDoor(s, R, roads, ents) {
   const cands = [];
   for (let i = 0; i < R.pts.length; i++) {
@@ -1376,8 +1339,7 @@ function chooseDoor(s, R, roads, ents) {
     return make(k, k.c);
   }
 
-  // No single wall fits a door. Open a run of consecutive edges instead,
-  // starting from the one the road logic prefers.
+  // No wall fits a door: open a run of edges from the road-preferred one.
   const n = R.pts.length;
   const all = [];
   for (let i = 0; i < n; i++) all.push({ i, len: R.E[i].L, probe: probeOut(R, i, R.E[i].L / 2, 1.0) });
@@ -1392,7 +1354,7 @@ function chooseDoor(s, R, roads, ents) {
   return { run, first: start, last };
 }
 
-// ---------------------------------------------------------------- wall pieces
+// WALL PIECES
 
 // One solid stretch of wall: painted outside, plastered inside, one collider.
 function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
@@ -1401,8 +1363,8 @@ function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
   pushSolid(ctx.solids, [o0, o1, i1, i0], y0, y1);
 }
 
-// The wall over an opening, from the door head up to the eaves. The bottom
-// FRAME_W of its outside face is painted as the frame's head.
+// Wall over an opening, door head to eaves; its bottom FRAME_W outside is
+// the frame head.
 function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   if (wallTop - doorTop < 1e-3) return;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
@@ -1433,7 +1395,7 @@ function ringWalls(ctx, R, door, base, wallTop, doorTop) {
       continue;
     }
 
-    // the door edge: pier | opening | pier, with the lintel above the opening
+    // door edge: pier | opening | pier, lintel above
     const { d0, d1 } = door;
     const D0 = alongEdge(R, i, d0), D1 = alongEdge(R, i, d1);
     const X0 = innerAt(R, i, d0), X1 = innerAt(R, i, d1);
@@ -1455,8 +1417,7 @@ function ringWalls(ctx, R, door, base, wallTop, doorTop) {
       vquad(ctx.buf, X1, q1, base, wallTop, ctx.iw, inn);
       pushSolid(ctx.solids, [D1, p1, q1, X1], base, wallTop);
     }
-    // jambs: the cut faces of the wall, which also close off a neighbouring
-    // piece's end when the opening runs right up to a corner
+    // jambs: the wall's cut faces, also closing a neighbour at a corner
     vquad(ctx.buf, D0, X0, base, doorTop, ctx.trim, [e.ux, 0, e.uz]);
     vquad(ctx.buf, D1, X1, base, doorTop, ctx.trim, [-e.ux, 0, -e.uz]);
     lintelPiece(ctx, D0, D1, X0, X1, doorTop, wallTop, out, inn);
@@ -1470,7 +1431,7 @@ function ringWalls(ctx, R, door, base, wallTop, doorTop) {
   }
 }
 
-// ---------------------------------------------------------------- build
+// BUILD
 
 function buildCity(features) {
   clearLayers();
@@ -1481,8 +1442,7 @@ function buildCity(features) {
   const list = [];
   let skipped = 0;
 
-  // Pass 1: the shell record of every building, so door placement can ask
-  // whether a wall backs onto a neighbour before any geometry exists.
+  // Pass 1: every shell record, so door placement can check neighbours.
   for (const ring of features.buildings) {
     const outer = orientRing(dedupeRing(ring.pts), true);
     if (outer.length < 3) { skipped++; continue; }
@@ -1494,14 +1454,12 @@ function buildCity(features) {
     const base = Math.min(minHeightOf(tags), top - 0.5);
     if (!(top - base > 0.5)) { skipped++; continue; }
 
-    // A pitched roof eats the top of the walls; the walls stop at the eaves
-    // and the roof volume covers the rest.
+    // A pitched roof starts at the eaves; the walls stop there.
     let roofShape = ROOF_SHAPE[tags['roof:shape']] || null;
     let obb = null, wallTop = top;
     if (roofShape) {
       obb = obbOf(outer);
-      // the oriented box stands in for the footprint, so only use it when the
-      // two are close in area
+      // use the oriented box only when its area is close to the footprint's
       if (!obb || foot / obb.area < 0.72) roofShape = null;
     }
     if (roofShape) {
@@ -1536,8 +1494,7 @@ function buildCity(features) {
 
   for (const s of list) {
     const tags = s.tags;
-    // a tagged colour or material is used as-is, with only a slight jitter;
-    // everything else keeps the subtle random tint so facades read apart
+    // tagged colour/material as-is with slight jitter; else a random tint
     const named = wallColorOf(tags);
     let wc;
     if (named != null) {
@@ -1587,9 +1544,8 @@ function buildCity(features) {
   return { count, skipped };
 }
 
-// Roads, paths, water and land cover, all flat on the ground plane. These go
-// out as one mesh per layer rather than one merged mesh, because each needs
-// its own depth bias to stop them fighting each other at a distance.
+// Roads, paths, water and land cover on the ground plane, one mesh per
+// layer so each gets its own depth bias.
 function buildGround(features) {
   const areaGeoms = [], waterGeoms = [];
   const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
@@ -1669,8 +1625,8 @@ function buildTrees(trees) {
   invalidate();
 }
 
-// Walls, fences and hedges. Each segment is also handed back as a thin
-// footprint so the collision grid treats it like any other ring.
+// Walls, fences and hedges. Each segment also returns a thin footprint for
+// the collision grid.
 function buildBarriers(list) {
   const geoms = [], boxes = [];
   if (!list) return boxes;
@@ -1719,7 +1675,7 @@ function cyl(rt, rb, h, x, y, z, c) {
   return tint(nonIndexed(g), c);
 }
 
-// Street lamps, benches and hydrants. Decoration only — none of it collides.
+// Street lamps, benches and hydrants. Decoration only, no collision.
 function buildProps(list) {
   const geoms = [];
   if (!list) return;
@@ -1747,10 +1703,9 @@ function buildProps(list) {
   addLayer(geoms, litMaterial());
 }
 
-// ---------------------------------------------------------------- imagery
+// IMAGERY
 
-// Standard slippy-tile maths. ArcGIS serves these as /tile/{z}/{row}/{col},
-// which is z/y/x rather than the usual z/x/y.
+// Slippy-tile maths. ArcGIS serves /tile/{z}/{row}/{col}, i.e. z/y/x.
 function tileOf(lat, lon, z) {
   const n = 2 ** z;
   const rad = lat * Math.PI / 180;
@@ -1764,9 +1719,8 @@ function tileLat(y, z) {
   return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
 }
 
-// Resolves with the image or null, never rejects, so a missing tile leaves a
-// hole rather than failing the whole mosaic. crossOrigin matters: without it
-// the pixels are tainted and WebGL refuses to use them as a texture.
+// Resolves with the image or null, never rejects, so a missing tile is just
+// a hole. crossOrigin keeps the pixels untainted for WebGL.
 function loadImage(url, timeoutMs) {
   return new Promise(resolve => {
     const img = new Image();
@@ -1780,14 +1734,13 @@ function loadImage(url, timeoutMs) {
   });
 }
 
-// Web Mercator metres, which is what the image service wants for its bbox.
+// Web Mercator metres, as the image service's bbox expects.
 function mercator(lat, lon) {
   const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137;
   return [lon * Math.PI / 180 * 6378137, y];
 }
 
-// One export request covering the whole area, at whatever resolution we ask
-// for rather than whatever the tile cache happens to hold.
+// One export request for the whole area at the resolution we ask for.
 async function fetchOrtho(lat, lon, radius, project) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
@@ -1797,8 +1750,7 @@ async function fetchOrtho(lat, lon, radius, project) {
   const [minX, minY] = mercator(south, west);
   const [maxX, maxY] = mercator(north, east);
 
-  // the export is rendered in Mercator, so the requested size has to match
-  // that box's aspect or the service stretches the result to fit
+  // match the Mercator box's aspect or the service stretches the image
   const cap = Math.min(ORTHO_MAX_PX, renderer.capabilities.maxTextureSize);
   let w = Math.min(cap, Math.round(2 * radius / ORTHO_M_PX));
   let h = Math.min(cap, Math.round(w * (maxY - minY) / (maxX - minX)));
@@ -1811,8 +1763,7 @@ async function fetchOrtho(lat, lon, radius, project) {
 
   const img = await loadImage(url, ORTHO_TIMEOUT_MS);
   if (!img) return null;
-  // decode now, off the main thread, instead of synchronously inside the
-  // first texImage2D
+  // decode off the main thread, not inside the first texImage2D
   try { await img.decode(); } catch (e) { /* already usable after onload */ }
 
   const [westX, northZ] = project(north, west);
@@ -1825,7 +1776,7 @@ async function fetchImagery(lat, lon, radius, project) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
 
-  // start at the deepest cached level and back off if the box needs too many
+  // start at the deepest level; back off if it needs too many tiles
   let z = IMAGERY_MAX_Z, x0, x1, y0, y1;
   for (;;) {
     const nw = tileOf(lat + dLat, lon - dLon, z);
@@ -1856,23 +1807,21 @@ async function fetchImagery(lat, lon, radius, project) {
     }
   }
 
-  // whatever has arrived when the timer runs out is what gets used
+  // use whatever has arrived when the timer runs out
   await Promise.race([
     Promise.all(jobs),
     new Promise(done => setTimeout(done, IMAGERY_TIMEOUT_MS))
   ]);
   if (!got) return null;
 
-  // The corners go through the game's own projector rather than a Mercator
-  // inverse, so the photo lines up with the buildings even where that
-  // projection is not quite true to scale.
+  // Corners go through the game's projector, not a Mercator inverse, so the
+  // photo lines up with the buildings.
   const [westX, northZ] = project(tileLat(y0, z), tileLon(x0, z));
   const [eastX, southZ] = project(tileLat(y1 + 1, z), tileLon(x1 + 1, z));
   return { source: cv, westX, eastX, northZ, southZ, z, got, total: cols * rows, kind: 'tiles' };
 }
 
-// One textured quad under the scene. v runs north at the top of the canvas,
-// which is what the default flipY already gives us.
+// Textured ground quad. Canvas top is north, which default flipY gives.
 function buildImagery(img) {
   if (!img) return;
   const g = new THREE.PlaneGeometry(img.eastX - img.westX, img.southZ - img.northZ);
@@ -1895,10 +1844,10 @@ function buildImagery(img) {
   invalidate();
 }
 
-// ---------------------------------------------------------------- signage
+// SIGNAGE
 
-// Outward-facing normal and midpoint of one footprint edge. Winding is not
-// guaranteed, so the normal is checked against the ring itself.
+// Outward normal and midpoint of a footprint edge; winding is not
+// guaranteed, so the normal is checked against the ring.
 function edgeOutward(pts, i) {
   const j = (i + 1) % pts.length;
   const [x0, z0] = pts[i], [x1, z1] = pts[j];
@@ -1955,7 +1904,7 @@ function placeSign(edge, text, kind, eaves, lift) {
   };
 }
 
-// Signs are centred on their wall, so one on the door wall clears the door head.
+// Signs are centred, so one on the door wall clears the door head.
 function doorLift(w, edge) {
   const d = w.door;
   if (!d || !edge) return 0;
@@ -1963,8 +1912,8 @@ function doorLift(w, edge) {
   return on ? w.doorTop + 0.12 : 0;
 }
 
-// A building's own name and house number go on its longest wall; a POI node
-// goes on the wall of the building it sits in (or the nearest one).
+// A building's name and number go on its longest wall; a POI goes on the
+// wall of the building it is in (or the nearest one).
 function collectSigns(walls, pois) {
   const names = [], numbers = [];
 
@@ -1983,9 +1932,8 @@ function collectSigns(walls, pois) {
     }
   }
 
-  // Candidates come from the shell grid, whose indices are positions in
-  // `walls`. Sorting them keeps the original order, so ties and the early
-  // `break` resolve exactly as a full scan would.
+  // Candidates come from the shell grid as indices into `walls`; sorting keeps
+  // ties and the early `break` identical to a full scan.
   const REACH = 15;
   const cand = [];
   const mark = new Uint32Array(walls.length);
@@ -2027,8 +1975,8 @@ function collectSigns(walls, pois) {
   return names.concat(numbers).slice(0, SIGN_MAX);
 }
 
-// Every label is drawn into one atlas canvas, so all the signs in a city are
-// a single textured mesh. Each plane is only as wide as the text it uses.
+// All labels share one atlas canvas, so a city's signs are one mesh. Each
+// plane is as wide as its text.
 function buildSigns(signs) {
   if (!signs.length) return;
 
@@ -2072,7 +2020,7 @@ function buildSigns(signs) {
     const u0 = ox / cv.width, u1 = (ox + used) / cv.width;
     const v1 = 1 - oy / cv.height, v0 = 1 - (oy + SIGN_CELL_H) / cv.height;
 
-    // right = up x normal, so the quad faces along (nx, 0, nz)
+    // right = up x normal, so the quad faces (nx, 0, nz)
     const rx = s.nz, rz = -s.nx;
     const hw = s.h * (used / SIGN_CELL_H) / 2, hh = s.h / 2;
     const bl = [s.x - rx * hw, s.y - hh, s.z - rz * hw];
@@ -2100,14 +2048,13 @@ function buildSigns(signs) {
   invalidate();
 }
 
-// ---------------------------------------------------------------- collision
+// COLLISION
 //
 // Two broadphase grids over the same cells:
-//   grid / gridWalls   solids: building wall pieces, lintels, barrier boxes.
-//                      Small rings, pushed against sideways, stood on from above.
-//   shellGrid / shells whole footprints: roof you can land on, raised floors,
-//                      ceilings you bump your head on, sign placement. Never
-//                      pushed against, so the inside of a building is open space.
+//   grid / gridWalls   solids (wall pieces, lintels, barriers): pushed against,
+//                      stood on.
+//   shellGrid / shells whole footprints: roofs, raised floors, ceilings, sign
+//                      placement. Never pushed against, so interiors are open.
 
 let grid = new Map();
 let gridWalls = [];
@@ -2116,9 +2063,8 @@ let shells = [];
 let solidStamp = new Uint32Array(0);
 let stampNo = 0;
 
-// Integer key, so a lookup builds no string: every NPC queries these grids
-// each frame. Unique while |cx|, |cz| < 8192 cells, and small enough to stay
-// a V8 small integer.
+// Integer key so lookups build no string (every NPC queries these each
+// frame). Unique while |cx|, |cz| < 8192; stays a V8 small integer.
 function cellKey(cx, cz) { return (cx + 8192) * 16384 + (cz + 8192); }
 
 function buildGrid(solids) {
@@ -2154,11 +2100,9 @@ function closestOnRing(pts, x, z) {
   return near;
 }
 
-// Push the player circle out of any solid it overlaps. Solids are wall pieces
-// a few tenths of a meter thick, so the caller moves in SUBSTEP increments and
-// the circle can never jump clean over one. A few passes so inside corners
-// settle instead of ping-ponging between two pieces.
-// NPCs pass their own radius and body column; the defaults are the player's.
+// Push a circle out of any overlapping solid. Callers move in SUBSTEP
+// increments so thin walls cannot be skipped; a few passes settle corners.
+// Defaults are the player's; NPCs pass their own radius and column.
 // Returns whether anything was pushed.
 function resolveCollisions(pos, r = PLAYER_RADIUS,
                            feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR) {
@@ -2166,9 +2110,8 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
-    // gridOf files every solid under each cell its bounds touch, so only the
-    // cells the circle's own box touches can hold a solid that passes the
-    // bounds test below: usually 1 cell, at most 4, rather than a fixed 3x3.
+    // solids are filed under every cell they touch, so only the circle's own
+    // cells matter: usually 1, at most 4
     const cx0 = Math.floor((pos.x - r) / GRID_CELL), cx1 = Math.floor((pos.x + r) / GRID_CELL);
     const cz0 = Math.floor((pos.z - r) / GRID_CELL), cz1 = Math.floor((pos.z + r) / GRID_CELL);
     if (++stampNo >= 0xffffffff) { solidStamp.fill(0); stampNo = 1; }
@@ -2182,8 +2125,7 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
           if (solidStamp[idx] === stampNo) continue;
           solidStamp[idx] = stampNo;
           const w = gridWalls[idx];
-          // gate by the slab the piece occupies: feet above its top or head
-          // below its base (walking under a lintel) means nothing to hit
+          // skip pieces the body column is fully above or below (e.g. a lintel)
           if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
@@ -2191,7 +2133,7 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
           const c = closestOnRing(w.pts, pos.x, pos.z);
 
           if (inside) {
-            // walk out to the nearest face, then clear it by the player radius
+            // out through the nearest face, then clear it by the radius
             let dx = c.x - pos.x, dz = c.z - pos.z;
             const len = Math.hypot(dx, dz) || 1;
             pos.x = c.x + (dx / len) * r;
@@ -2223,9 +2165,9 @@ function moveAndCollide(pos, dx, dz) {
   }
 }
 
-// The surface the feet pass down through between `fromFeet` and `toFeet`, or 0
-// for the street. Only surfaces the feet were already above are eligible, so
-// walking about inside a building never snaps you up onto its roof.
+// Surface the feet pass down through between `fromFeet` and `toFeet`, or 0
+// for the street. Only surfaces the feet started above count, so walking
+// indoors never snaps you onto the roof.
 function supportAt(x, z, fromFeet, toFeet) {
   let best = 0;
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
@@ -2262,9 +2204,8 @@ function supportAt(x, z, fromFeet, toFeet) {
   return best;
 }
 
-// The lowest overhead surface the head passes up through between `fromHead`
-// and `toHead`, or Infinity: interior ceilings, the underside of a raised
-// building, and the lintel over a doorway.
+// Lowest overhead surface the head passes up through, or Infinity:
+// ceilings, raised-building undersides, door lintels.
 function ceilingAt(x, z, fromHead, toHead) {
   let best = Infinity;
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
@@ -2301,20 +2242,15 @@ function ceilingAt(x, z, fromHead, toHead) {
   return best;
 }
 
-// ---------------------------------------------------------------- NPCs
+// NPCS
 //
-// Human NPCs, ported unchanged in behaviour from AIEcosystemArena: the same
-// Animal (stats, needs, perception, 19 inputs, 9 moves, reward, mating), the
-// same two-lobe DenseNetwork per individual, and the same instanced
-// AnimalRenderer. What is new is only the ground they stand on: the Arena's
-// toroidal terrain and cabin boxes are swapped for this city's wall pieces,
-// building shells and painted water. Lines that differ from the Arena are
-// marked "City:".
+// Human NPCs ported from AIEcosystemArena with unchanged behaviour: Animal
+// (19 inputs, 9 moves), a two-lobe DenseNetwork each, instanced AnimalRenderer.
+// Only the world differs: city walls, shells and painted water replace the
+// Arena's torus terrain and cabins. Differences are marked "City:".
 //
-// The Arena works in its own units (a human is ~38 units tall). NPC_UNIT turns
-// those into metres at the few places distance meets the city: movement step,
-// body lift, eye height, vision range, contact radius and mesh scale. Stats
-// themselves (speed 35, health 120, ...) stay in Arena units.
+// Stats stay in Arena units (a human is ~38 tall); NPC_UNIT converts to metres
+// where distance meets the city: step, lift, eye height, vision, contact, mesh.
 
 const NPC_POPULATION = 500;       // humans spawned per loaded city: the one knob
 
@@ -2327,7 +2263,8 @@ const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's heigh
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
 const WATER_CELL     = 1;        // water raster resolution, metres
 
-// ----- shared helpers the Arena classes expect by name
+// SHARED HELPERS
+// Helpers the Arena classes expect by name.
 
 class MathTools {
   distSq(x1, y1, x2, y2) {
@@ -2474,11 +2411,11 @@ class BrainFactory {
   }
 }
 
-// ----- two-lobe network (unchanged from the Arena)
+// TWO-LOBE NETWORK
+// Unchanged from the Arena.
 //
-//   Input -> Lobe A, Input -> Lobe B, A -> B, B -> A (one-step lag), A,B -> Output
-//   Both lobes are leaky integrate-and-fire with a refractory period; output is
-//   a softmax over 9 actions.
+//   Input -> A, Input -> B, A -> B, B -> A (one-step lag), A,B -> Output
+//   Leaky integrate-and-fire lobes with refractory period; softmax over 9 actions.
 class DenseNetwork {
   constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
     this.inputDims    = inputDims;
@@ -2720,10 +2657,8 @@ class DenseNetwork {
     return this.learningRate;
   }
 
-  // City: the Arena built these two helpers as arrow functions inside
-  // adjustWeights, i.e. two closures per call per NPC. Same maths, same order
-  // of Math.random() calls, hoisted to methods so the reward step allocates
-  // nothing.
+  // City: hoisted from per-call closures in adjustWeights. Same maths and
+  // Math.random() order, no allocation.
   _stepWeights(w, v, mask, len, mom, grad, wd1, r) {
     for (let k = 0; k < len; k++) {
       if (!mask[k]) continue;
@@ -2780,7 +2715,7 @@ class DenseNetwork {
   }
 }
 
-// ----- entities
+// ENTITIES
 
 class Entity {
   constructor(position, type) {
@@ -2837,9 +2772,8 @@ class Animal extends Entity {
     this.generation = 0;
 
     if (type === 'human') {
-      // City: height is drawn from a normal in metres (unclamped Box-Muller, cut at
-      // 4 std), then mapped to heightScale. The rig scales uniformly, so feet to top
-      // of head is 38.55 * hs Arena units (footLift 21.25hs, head top 13hs + 4.3hs).
+      // City: height ~ normal in metres (Box-Muller, cut at 4 std), mapped to
+      // heightScale. Feet to head top = 38.55 * hs Arena units.
       let u; do { u = Math.random(); } while (u === 0);
       const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
       const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
@@ -2898,8 +2832,7 @@ class Animal extends Entity {
 
     this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
 
-    // City: last position known to be clear of every wall piece, for the
-    // collision fallback in NpcWorld.collide
+    // City: last wall-clear position, the fallback in NpcWorld.collide
     this.freeX = this.position.x; this.freeZ = this.position.z;
 
     this.mesh = null;
@@ -2914,9 +2847,8 @@ class Animal extends Entity {
     this.tanFovV = Math.tan(this.fovV);
   }
 
-  // City: body-centre height above the feet, in Arena units, read off the
-  // AnimalRenderer rig (leg pivot + leg length). The Arena used a flat 15 / 9,
-  // which left the feet ~6 units under its terrain; on a flat street that shows.
+  // City: body-centre height above the feet in Arena units, from the rig (leg
+  // pivot + leg length). The Arena's flat 15 / 9 sank feet ~6 units.
   footLift() {
     const hs = this.heightScale ?? 1.0;
     return this.type === 'sheep' ? 9 + 6.5 * hs : 21.25 * hs;   // City: human rig scales uniformly
@@ -3106,8 +3038,7 @@ class Animal extends Entity {
       const speed = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
       const step = speed * Animal.MOVE_TIMESTEP * NPC_UNIT;   // City: metres
       const dir = Animal.MOVE_DIRS[this.outputIdx];
-      // City: the loaded area has an edge, not a torus, so clamp instead of
-      // wrapping (a wrap would teleport across the map into whatever is there)
+      // City: clamp to the loaded area; the Arena's torus wrap would teleport
       this.position.x = tools.clamp(this.position.x + dir[0] * step, world.minX, world.maxX);
       this.position.z = tools.clamp(this.position.z + dir[1] * step, world.minZ, world.maxZ);
     }
@@ -3235,11 +3166,12 @@ class Animal extends Entity {
   }
 }
 
-// ----- instanced renderer (Arena rig; scaled to metres by NPC_UNIT)
+// INSTANCED RENDERER
+// Arena rig, scaled to metres by NPC_UNIT.
 
 class AnimalRenderer {
-  // Segments per rounded corner. three.js defaults to 12, which put ~830 tris
-  // on every 3-unit leg; 4 keeps the silhouette and cuts ~62% of body/leg tris.
+  // Segments per rounded corner. The default 12 put ~830 tris on each leg;
+  // 4 keeps the silhouette with ~62% fewer tris.
   static ROUNDED_CURVE_SEGMENTS = 4;
 
   constructor() {
@@ -3416,9 +3348,8 @@ class AnimalRenderer {
         const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
         const k = s * NPC_UNIT;                         // City: rig scale in metres
         const hs = a.heightScale ?? 1.0;
-        // City: humans scale uniformly by heightScale (every part, offset and the
-        // limb hang), so a short NPC is a smaller copy of the rig rather than one
-        // squashed in y with a flattened head and legs pulled off the body
+        // City: humans scale uniformly by heightScale, so a short NPC is a smaller
+        // copy of the rig, not a y-squash
         const kp = type === 'human' ? k * hs : k;       // part offsets and limb hang
         if (type === 'human') this._scale.set(kp, kp, kp);
         else this._scale.set(k, k * hs, k);
@@ -3508,15 +3439,15 @@ class AnimalRenderer {
   }
 }
 
-// ----- City adapters: the Arena's perf / graphics / terrain / water singletons
+// CITY ADAPTERS
+// Stand-ins for the Arena's perf / graphics / terrain / water singletons.
 
 const perf = {
   BRAIN_UPDATE_INTERVAL: 30,
   terrainVersion: 0,             // the city ground never reshapes
-  // The buffers hold MAX_INSTANCES slots, but only the first n are drawn or
-  // rewritten this frame, so only those go to the GPU. Without a range three
-  // re-sends the whole array (12000 x 64 bytes per mesh) on every upload.
-  // three clears the range after each upload, so it is set afresh here.
+  // Only the first n of MAX_INSTANCES slots are drawn, so upload only those;
+  // without a range three re-sends all 12000 x 64 bytes per mesh. three clears
+  // the range after each upload, so set it every frame.
   instances(mesh, n) {
     mesh.count = n;
     mesh.visible = n > 0;        // an empty type (sheep, for now) costs no draw call
@@ -3545,9 +3476,8 @@ const graphics = {
   get mode() { return matchMedia('(pointer: coarse)').matches ? 'low' : 'high'; }
 };
 
-// Painted water, rasterised once per city into a 1 m mask so every "am I in
-// water" question is one array read. Roads and paths are stamped dry on top,
-// matching what is drawn (a road ribbon covers the river under a bridge).
+// Painted water rasterised once per city into a 1 m mask. Roads and paths
+// are stamped dry on top, matching the render (bridges).
 const water = {
   level: 0,
   FLOAT_DEPTH: 1,                // deeper than NPC_WADE: humans wade, never float
@@ -3573,8 +3503,7 @@ const water = {
     for (const w of features.waterways) this.stampLine(w.pts, w.width / 2, 1);
     for (const r of features.roads) this.stampLine(r.pts, (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2, 0);
 
-    // perception targets: a coarse sample of the wet cells, capped so the
-    // per-think scan stays short
+    // perception targets: coarse, capped sample of wet cells
     const pts = [];
     const every = 10;
     for (let r = every >> 1; r < this.rows; r += every) {
@@ -3636,8 +3565,8 @@ const water = {
   }
 };
 
-// The street is flat at 0; water reads as a shallow dip so the Arena's
-// submerged / drink / slow-down logic runs unchanged.
+// Street is flat at 0; water is a shallow dip so the Arena's submerged,
+// drink and slow-down logic runs unchanged.
 const terrain = {
   heightAt(x, z) { return water.wetAt(x, z) ? -NPC_WADE : 0; },
 
@@ -3649,10 +3578,11 @@ const terrain = {
   }
 };
 
-// ----- city geometry queries for NPC placement (same grids the player uses)
+// CITY GEOMETRY QUERIES
+// For NPC placement, on the same grids the player uses.
 
-// Does a circle of radius r, with a column from feetY to headY, touch any wall
-// piece or barrier? Read-only twin of resolveCollisions.
+// Does a circle of radius r, column feetY..headY, touch any solid?
+// Read-only twin of resolveCollisions.
 function solidOverlap(x, z, r, feetY, headY) {
   // only the cells the circle's box touches, as in resolveCollisions
   const cx0 = Math.floor((x - r) / GRID_CELL), cx1 = Math.floor((x + r) / GRID_CELL);
@@ -3685,8 +3615,9 @@ function shellAt(x, z) {
   return -1;
 }
 
-// ----- the NPC world: the Arena's World loop, minus what City already owns
-// (player, weather, terrain mesh, cabins). Stepped from frame(), never its own loop.
+// NPC WORLD
+// The Arena's World loop minus what City owns (player, weather, terrain,
+// cabins). Stepped from frame().
 
 class NpcWorld {
   static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
@@ -3718,7 +3649,7 @@ class NpcWorld {
     this.syncPopulation();
   }
 
-  // Rewrites the HUD only when births or deaths changed the count.
+  // Refresh the HUD only when the count changes.
   syncPopulation() {
     if (this.animals.length === this.shownPop) return;
     this.shownPop = this.animals.length;
@@ -3741,8 +3672,7 @@ class NpcWorld {
     animalRenderer.init();
     this.spawnHumans(NPC_POPULATION, features.roads || []);
     this.ready = true;
-    // write matrices and instance colours now, so the shader variant with
-    // instance colour is the one compileAsync warms up during load
+    // write instance data now so compileAsync warms the instance-colour shader
     animalRenderer.update(this.animals, 0);
   }
 
@@ -3755,9 +3685,8 @@ class NpcWorld {
     return !solidOverlap(x, z, NPC_RADIUS + 0.15, 0, NPC_COLLIDE_H);
   }
 
-  // Sidewalks first (either side of a street, or along a footpath), with a
-  // share of open-ground picks so parks and plazas are not left empty. Street
-  // length weights the pick, so busy blocks get more people than a cul-de-sac.
+  // Mostly sidewalks (street sides, footpaths), plus some open ground for
+  // parks and plazas. Picks are weighted by street length.
   spawnHumans(count, roads) {
     const segs = [];
     let total = 0;
@@ -3822,9 +3751,8 @@ class NpcWorld {
           other.sex === 'female' && other.lookForMate &&
           tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
         const child = a.mate(other);
-        // City: the Arena drops the child a step from the mother. If that
-        // step is into a wall, or across one into a different building
-        // (possibly a sealed one), it is born where she stands instead.
+        // City: if the Arena's one-step offset would put the child in or through
+        // a wall, it is born at the mother's spot.
         const cp = child.position, mp = other.position;
         if (solidOverlap(cp.x, cp.z, NPC_RADIUS, 0, NPC_COLLIDE_H) ||
             shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
@@ -3876,11 +3804,9 @@ class NpcWorld {
     }
   }
 
-  // City's wall pieces in place of cabins.resolve: the same push-out the
-  // player gets, with an NPC-sized circle and column. A single pass per frame
-  // is safe because an NPC moves ~2.5 cm a frame, far under SUBSTEP. If the
-  // push-out still leaves the circle wedged, it goes back to the last clear
-  // spot, so no NPC can end a frame inside geometry.
+  // Replaces cabins.resolve: the player's push-out with NPC-sized circle and
+  // column. One pass is enough at ~2.5 cm per frame. If still wedged, revert to
+  // the last clear spot.
   collide(a) {
     if (a.outputIdx === Animal.ACTION_STAY) return;   // standing still: nothing moved
     const p = a.position;
@@ -3891,8 +3817,7 @@ class NpcWorld {
     a.freeX = p.x; a.freeZ = p.z;
   }
 
-  // One simulation tick. Called once per rendered frame from frame(); returns
-  // whether anything was simulated, so frame() knows to draw and stay awake.
+  // One tick per rendered frame; returns whether anything was simulated.
   step(dt) {
     if (!this.ready || this.animals.length === 0) return false;
     const now = Date.now();
@@ -3930,14 +3855,12 @@ const brains         = new BrainFactory();
 const animalRenderer = new AnimalRenderer();
 const world          = new NpcWorld();
 
-// ---------------------------------------------------------------- NPC stat panel
+// NPC STAT PANEL
 //
-// The ecosystem sim's #animal-stat-panel: vitals, the four memory slots with
-// bearing arrows, and the live 3D brain of whichever NPC you look at.
-// StatLabelSystem and NNVisualizer3D are ported from the sim; lines that
-// differ are marked "City:". The sim's per-animal stat sprites were never
-// created there (the map stayed empty), so that bookkeeping is left out, as
-// is the vision-ray toggle, which belongs to a system City does not have.
+// The sim's #animal-stat-panel: vitals, four memory slots with bearing arrows,
+// and the live brain of the NPC you look at. StatLabelSystem and NNVisualizer3D
+// are ported; differences are marked "City:". The sim's unused stat sprites and
+// the vision-ray toggle are left out.
 
         class NNVisualizer3D {
             static FRAME_MS = 1000 / 30;
@@ -4311,9 +4234,8 @@ const world          = new NpcWorld();
             }
 
             _animate() {
-                // Nothing to draw (no brain yet, or the stat panel is hidden
-                // and the canvas has no size): stop instead of waking every
-                // vsync. update() restarts the loop when a brain is shown.
+                // Nothing to draw (no brain, or hidden canvas): stop rather than wake every
+                // vsync. update() restarts it.
                 this._raf = null;
                 if (!this.nn || !this._syncSize()) return;
                 this._raf = requestAnimationFrame(this._animate);
@@ -4337,8 +4259,8 @@ const world          = new NpcWorld();
                 this.renderer.render(this.scene, this.camera);
             }
         }
-// City: the sim's NNOverlay also owned a floating sprite that updateSprite()
-// only ever hid; only the part the panel uses is kept.
+// City: only the part of the sim's NNOverlay the panel uses (its sprite was
+// only ever hidden).
 class NNOverlay {
   constructor() {
     this.initialized = null;
@@ -4376,7 +4298,7 @@ class StatLabelSystem {
     this.memMateTxt    = document.getElementById('asp-mem-mate-dist');
     this.memMateArrow  = document.getElementById('asp-mem-mate-arrow');
 
-    // City: scratch for the look-at pick (the sim kept these on Player)
+    // City: scratch for the look-at pick
     this._ray    = new THREE.Ray();
     this._sphere = new THREE.Sphere();
     this._hitPt  = new THREE.Vector3();
@@ -4389,7 +4311,7 @@ class StatLabelSystem {
     if (txt.className !== cls) txt.className = cls;
   }
 
-  // City: positions are metres here, so this reads out whole metres
+  // City: whole metres
   dist(a, mx, my, mz) {
     const dx = mx - a.position.x;
     const dy = my - a.eyeY();
@@ -4486,9 +4408,8 @@ class StatLabelSystem {
     this.locked = null;
   }
 
-  // City: the sim's Player.pickTarget, moved here since City's player is a
-  // plain object. Same rule: the nearest NPC whose sphere the view ray hits,
-  // with the sim's 15-unit sphere converted to metres.
+  // City: the sim's Player.pickTarget. Nearest NPC whose sphere the view ray
+  // hits; the 15-unit sphere is in metres here.
   pickTarget() {
     camera.getWorldPosition(this._ray.origin);
     camera.getWorldDirection(this._ray.direction);
@@ -4520,10 +4441,9 @@ class StatLabelSystem {
     }
   }
 
-  // City: the sim unlocked on a document click, or on a touchend that was not
-  // its joystick or camera touch. City's stick and look-drag are pointer
-  // events on the canvas, so one capture-phase pointerup covers mouse and
-  // touch, and it runs before the canvas handler clears stickId / lookId.
+  // City: stick and look-drag are canvas pointer events, so one capture-phase
+  // pointerup covers mouse and touch, before the canvas handler clears
+  // stickId / lookId.
   bind() {
     document.addEventListener('pointerup', (e) => {
       if (!this.locked || !this.panel.classList.contains('visible')) return;
@@ -4538,7 +4458,7 @@ const nnOverlay = new NNOverlay();
 const labels    = new StatLabelSystem();
 
 
-// ---------------------------------------------------------------- controls
+// CONTROLS
 
 const player = {
   pos: new THREE.Vector3(0, EYE_HEIGHT, 0),
@@ -4550,8 +4470,7 @@ const player = {
 const keys = new Set();
 let active = false;   // in play: panel closed, input accepted
 let locked = false;   // mouse pointer lock held; mouse look only runs while locked
-// Which kind of pointer last pressed something, so a load started by a tap
-// does not grab the mouse pointer.
+// Last pointer type, so a tap-started load does not grab pointer lock.
 let lastPointerType = 'mouse';
 addEventListener('pointerdown', e => { lastPointerType = e.pointerType; }, true);
 
@@ -4592,11 +4511,10 @@ addEventListener('keydown', e => {
   }
 });
 
-// ---------------------------------------------------------------- touch
+// TOUCH
 
-// Left half of the screen is a floating stick; right half is look-drag, and a
-// double tap there jumps. Touch and mouse/keyboard input are both always on,
-// so a touchscreen computer can use either.
+// Left half: floating stick. Right half: look-drag, double tap jumps. Touch
+// and keyboard/mouse are always both live.
 const STICK_RADIUS = 55;          // px of travel for full tilt
 const TAP_GAP_MS   = 300;
 
@@ -4605,7 +4523,7 @@ let stickId = null, stickCx = 0, stickCy = 0;
 let lookId = null, lookX = 0, lookY = 0;
 let lastTapAt = 0, jumpQueued = false;
 labels.bind();
-// knob offset is written to the DOM once per frame, not once per pointermove
+// knob offset is written once per frame, not per pointermove
 let knobDx = 0, knobDy = 0, knobDirty = false;
 
 {
@@ -4666,17 +4584,16 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
   el.addEventListener('pointercancel', endTouch);
 }
 
-// ------------------------------------------------------------ fly
+// FLY
 
 let flying = false;
 
-// Altitude while flying, held rather than clicked, so it reads like the rest
-// of the movement input instead of stepping the player up a fixed amount.
+// Held altitude input while flying, like the rest of movement.
 let climb = 0;
 
 function holdClimb(btn, dir) {
   btn.addEventListener('pointerdown', e => {
-    // capture, so a finger that slides off the button still releases it
+    // capture, so sliding off the button still releases it
     btn.setPointerCapture(e.pointerId);
     climb = dir;
     btn.classList.add('held');
@@ -4701,33 +4618,30 @@ function toggleFly() {
   climb = 0;
   upEl.classList.remove('held');
   downEl.classList.remove('held');
-  // otherwise the button keeps keyboard focus and the next space bar presses
-  // it again instead of jumping
+  // drop focus, or the next space press re-clicks the button
   flyEl.blur();
   player.vel.y = 0;
   player.grounded = false;   // re-decided on the next step either way
   wake();
 }
 flyEl.addEventListener('click', toggleFly);
-// F does the same as the button on desktop; repeats from a held key are ignored
+// F toggles like the button; key repeat is ignored
 addEventListener('keydown', e => {
   if (e.code === 'KeyF' && !e.repeat && active) toggleFly();
 });
 
-// ------------------------------------------------------------- settings
+// SETTINGS
 
-// Presets stand in for the live clock and the live forecast. Where the
-// forecast gave a sunrise and sunset, the hours are read off today's own sun,
-// so Morning means the same place on the arc in December as in June. Without
-// one they fall back to fixed hours.
+// Presets replace the live clock and forecast. With a forecast sunrise and
+// sunset, hours are read off today's sun, so Morning sits at the same point on
+// the arc all year; otherwise fixed hours.
 const TIMES = ['Live', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
 const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
 };
 
-// cloud is what the sky and the sun intensity read; kind is the fog branch.
-// Rain, Snow and Storm differ only in how much light they take out until
-// there is something drawing precipitation.
+// cloud drives sky and sun intensity; kind picks the fog branch. Rain, Snow
+// and Storm differ only in light until precipitation is drawn.
 const SKIES = {
   Live:     null,
   Clear:    { label: 'Clear',         kind: 'clear',  cloud: 0   },
@@ -4757,9 +4671,8 @@ function presetHour(name) {
   return FALLBACK_HOURS[name];
 }
 
-// the instant the sky is drawn for: the real one, or today at the preset hour.
-// Shifting the true instant rather than building a date keeps the declination
-// and the longitude term correct.
+// the instant the sky is drawn for: now, or today at the preset hour.
+// Shifting the real instant keeps declination and longitude correct.
 function skyInstant() {
   if (timePreset === 'Live') return new Date();
   const d = cityNow();
@@ -4830,21 +4743,19 @@ function step(dt) {
   }
 
   if (flying) {
-    // collision is off while flying, so you can drift through walls and
-    // roofs to look around; it takes over again when you land
+    // no collision while flying; it resumes on landing
     jumpQueued = false;
     player.pos.x += dx;
     player.pos.z += dz;
     player.vel.y = 0;
     player.grounded = false;
-    // keyboard: space climbs, shift descends; combined with the touch buttons
+    // keyboard: space up, shift down; added to the touch buttons
     const keyClimb = active ? (keys.has('Space') ? 1 : 0) - (shiftHeld ? 1 : 0) : 0;
     const vy = Math.max(-1, Math.min(1, climb + keyClimb));
     player.pos.y += vy * speed * dt;
     player.pos.y = Math.max(player.pos.y, EYE_HEIGHT);   // stay out of the ground
   } else {
-    // resolve horizontally before the vertical step, so the roof lookup below
-    // runs on a position that is already clear of every wall
+    // horizontal first, so the roof lookup runs from a wall-clear position
     moveAndCollide(player.pos, dx, dz);
 
     if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
@@ -4857,16 +4768,14 @@ function step(dt) {
     const fromFeet = player.pos.y - EYE_HEIGHT;
     player.pos.y += player.vel.y * dt;
     if (player.vel.y > 0) {
-      // a jump indoors stops at the ceiling instead of carrying on through it
-      // and landing on the roof
+      // indoors, a jump stops at the ceiling instead of reaching the roof
       const c = ceilingAt(player.pos.x, player.pos.z,
         fromFeet + EYE_HEIGHT + HEAD_CLEAR, player.pos.y + HEAD_CLEAR);
       if (c < Infinity) { player.pos.y = c - HEAD_CLEAR; player.vel.y = 0; }
     }
     const toFeet = player.pos.y - EYE_HEIGHT;
 
-    // grounded is re-decided every frame now, so stepping off a roof edge drops
-    // you instead of leaving a stale flag that would allow a mid-air jump
+    // re-decided each frame, so walking off a roof edge falls with no mid-air jump
     player.grounded = false;
     if (player.vel.y <= 0) {
       const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet);
@@ -4882,10 +4791,9 @@ function step(dt) {
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 }
 
-// The loop only runs while something can change what is on screen: held
-// movement input, the player in the air or still settling, or a pose / scene
-// change since the last drawn frame. Otherwise it stops scheduling itself and
-// input, resize, or a new scene wakes it again. A still scene is never redrawn.
+// The loop runs only while something can change the image: held input, the
+// player airborne or settling, or a pose/scene change. Otherwise it sleeps
+// until input, resize, or a new scene wakes it.
 let last = -1;
 let rafId = 0;
 let sceneDirty = true;
@@ -4926,7 +4834,7 @@ function frame(now) {
     rainDrawn = now;
   }
 
-  // falling rain and living NPCs keep the loop alive; a still scene sleeps
+  // falling rain and live NPCs keep the loop awake
   const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
   if (settled && !movementHeld() && !rainAnimating() && !npcDue) {
     last = -1;           // sleep until wake()
@@ -4935,24 +4843,22 @@ function frame(now) {
   rafId = requestAnimationFrame(frame);
 }
 
-// anything that adds to, removes from, or re-textures the scene calls this
+// call after adding, removing, or re-texturing anything
 function invalidate() {
   sceneDirty = true;
   wake();
 }
 wake();
 
-// ------------------------------------------------------------- weather
+// WEATHER
 
-// Open-Meteo. No key, no sign-up, CORS open, free for non-commercial use.
-// timezone=auto resolves the coordinates to their own zone, so every
-// timestamp that comes back is that city's wall clock and utc_offset_seconds
-// is the offset that produced it, DST included.
+// Open-Meteo: no key, CORS open, free for non-commercial use.
+// timezone=auto returns timestamps in the city's wall clock, with
+// utc_offset_seconds (DST included).
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 const WEATHER_TIMEOUT_MS = 8000;
 
-// WMO 4677 codes. label is what the HUD shows, kind is the coarse group to
-// branch on if sky colour, fog or particles get driven off this later.
+// WMO 4677 codes. label is shown in the HUD; kind is the coarse group.
 const WMO = {
   0:  ['Clear',              'clear'],
   1:  ['Mainly clear',       'clear'],
@@ -5037,22 +4943,18 @@ async function fetchWeather(lat, lon) {
   };
 }
 
-// Open-Meteo returns "2026-09-17T07:12" with no offset on the string, so read
-// the digits rather than handing it to Date, which would treat it as browser
-// local time.
+// Open-Meteo times carry no offset, so parse the digits; Date would read
+// them as browser-local.
 function clockMinutes(iso) {
   return +iso.slice(11, 13) * 60 + +iso.slice(14, 16);
 }
 
-// Wall clock in the loaded city right now. The epoch is shifted by the city's
-// offset, so read this with the getUTC* getters only. The plain getters would
-// apply the browser's own offset a second time.
+// City wall clock now. The epoch is pre-shifted, so use getUTC* only.
 function cityNow() {
   return new Date(Date.now() + (weather ? weather.offset : 0) * 1000);
 }
 
-// minutes past local midnight, fractional. This is the value to drive a sun
-// angle from: sunrise and sunset above are in the same units.
+// fractional minutes past local midnight, same units as sunrise/sunset
 function cityMinutes() {
   const d = cityNow();
   return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60;
@@ -5072,16 +4974,13 @@ function weatherText() {
          `high ${Math.round(weather.highF)} low ${Math.round(weather.lowF)}`;
 }
 
-// ----------------------------------------------------------------- sky
+// SKY
 
-// Where the real sun is, for the loaded coordinates at a given instant. Low
-// precision NOAA equations, good to roughly a tenth of a degree, which is
-// finer than the lighting resolves.
+// Sun position for the loaded coordinates at an instant. Low-precision NOAA
+// equations, ~0.1 degree, finer than the lighting shows.
 //
-// This wants the true UTC instant, not cityNow(): the hour angle already
-// carries longitude, so a zone-shifted clock would apply the offset twice.
-// Returned as east/north/up components of a unit vector plus the altitude in
-// degrees, so no azimuth round trip is needed to point the light.
+// Takes the true UTC instant, not cityNow(): the hour angle already includes
+// longitude. Returns east/north/up of a unit vector plus altitude in degrees.
 function solarVector(lat, lon, date) {
   const R = Math.PI / 180;
   const d = date.getTime() / 86400000 - 10957.5;      // days since J2000.0
@@ -5094,7 +4993,7 @@ function solarVector(lat, lon, date) {
   const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
   const ra  = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
 
-  // Greenwich mean sidereal time, hours, then local, then the hour angle
+  // GMST hours, then local sidereal time, then hour angle
   const gmst = 18.697374558 + 24.06570982441908 * d;
   const lst  = (gmst * 15 + lon) * R;
   const H    = lst - ra;
@@ -5107,9 +5006,8 @@ function solarVector(lat, lon, date) {
   return { east, north, up, altDeg: Math.asin(up) / R };
 }
 
-// Sun altitude in degrees, then sky/fog colour, sun colour, sun intensity.
-// The top row is the palette the scene shipped with, so a clear midday sky
-// lands on the original look and everything else moves away from it.
+// Sun altitude (degrees), sky/fog colour, sun colour, sun intensity. The
+// top row is the original palette, so clear midday matches the old look.
 const SKY = [
   [-12, 0x05070f, 0x2a3a5c, 0.00],
   [ -6, 0x101a2e, 0x46587c, 0.00],
@@ -5146,8 +5044,7 @@ function updateSky() {
   const s = solarVector(site.lat, site.lon, skyInstant());
   let power = sampleSky(s.altDeg);
 
-  // cloud and fog only matter while there is daylight to flatten, so both
-  // effects fade out through twilight rather than greying the night sky
+  // cloud and fog fade out through twilight, so night is not greyed
   const day = Math.min(Math.max((s.altDeg + 6) / 12, 0), 1);
   const c = conditions();
   const cloud = c ? c.cloud / 100 : 0;
@@ -5157,8 +5054,7 @@ function updateSky() {
   if (foggy) skyCol.lerp(FOGGY, 0.6 * day);
   power *= 1 - 0.7 * cloud - (foggy ? 0.2 : 0);
 
-  // below the horizon the light is off, so its position stays true rather
-  // than being clamped to the skyline
+  // below the horizon the light is off, so its position stays true
   sun.position.set(s.east, s.up, -s.north).multiplyScalar(100);
   sun.color.copy(sunCol);
   sun.intensity = Math.max(power, 0);
@@ -5169,24 +5065,18 @@ function updateSky() {
   invalidate();
 }
 
-// ---------------------------------------------------------------- rain
+// RAIN
 //
-// One LineSegments draw: two vertices per drop, preallocated once at the
-// largest count this device gets. Every drop's position is a pure function of
-// time in the vertex shader, wrapped into a box that follows the camera, so
-// the CPU only writes a handful of uniforms per frame and drops recycle
-// themselves as they fall out of the box or the player walks on. Intensity
-// changes move the draw range, never the buffers.
+// One LineSegments draw, two vertices per drop, preallocated at the device's
+// max count. Positions are a pure function of time in the vertex shader,
+// wrapped in a camera-following box, so the CPU only sets uniforms. Intensity
+// moves the draw range, never the buffers.
 //
-// Shelter: a small height map of the roofs around the player, re-rasterized
-// from the building shells whenever the player crosses a ROOF_MAP_SNAP grid
-// line. The fragment shader drops any part of a streak below the roof over
-// it, so rain lands on roofs, never falls through into rooms, and is still
-// seen through a doorway from inside.
+// Shelter: a roof height map around the player, rebuilt from the shells on
+// crossing a ROOF_MAP_SNAP line. The fragment shader cuts streaks below the
+// roof, so rain lands on roofs and stays visible through doorways.
 //
-// Driven by conditions(), the same source the sky reads, so the Weather
-// presets and the live forecast both work. Built when rain starts and fully
-// disposed when it stops.
+// Driven by conditions() like the sky; built on rain start, disposed on stop.
 
 const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
 const RAIN_SPAN = 44;           // box width and depth around the camera, meters
@@ -5208,8 +5098,7 @@ let rain = null;                // { mesh, uniforms, roof, ... } while raining
 let rainTime = 0;
 let rainDrawn = 0;              // timestamp of the last frame drawn for rain alone
 
-// 0 when it is not raining, else 0..1. A measured rate wins over the code;
-// about 0.3 in/h is already heavy rain.
+// 0 when dry, else 0..1. A measured rate beats the code; ~0.3 in/h is heavy.
 function rainState() {
   const c = conditions();
   if (!c || (c.kind !== 'rain' && c.kind !== 'storm')) return null;
@@ -5234,11 +5123,11 @@ function makeRain() {
     }
   }
   const g = new THREE.BufferGeometry();
-  // position is required by three but unused; seed carries everything
+  // three requires position; seed carries everything
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
   g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
   g.setAttribute('tip', new THREE.BufferAttribute(tip, 1));
-  // the box follows the camera, so bounds never matter; skip frustum culling
+  // the box follows the camera, so skip frustum culling
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
   const roofData = new Float32Array(ROOF_MAP_N * ROOF_MAP_N).fill(-1e4);
@@ -5274,7 +5163,7 @@ function makeRain() {
         vec3 corner = uCenter - uBox * vec3(0.5, 0.4, 0.5);
         vec3 p = vec3(seed.x, seed.y, seed.z) * uBox + v * uTime;
         p = mod(p - corner, uBox) + corner;
-        // fade at the sides and ends of the box so wrapping never pops
+        // fade at the box edges so wrapping never pops
         vec2 d = abs(p.xz - uCenter.xz) / (uBox.xz * 0.5);
         float yEdge = (p.y - corner.y) / uBox.y;
         vA = (1.0 - smoothstep(0.6, 1.0, max(d.x, d.y)))
@@ -5317,8 +5206,8 @@ function disposeRain() {
   invalidate();
 }
 
-// Start, retune or stop the rain from the current conditions. Called wherever
-// the sky is rebuilt, so presets, forecast changes and new places all land here.
+// Start, retune or stop rain from current conditions. Called wherever the
+// sky is rebuilt.
 function syncRain(daylight) {
   const st = rainState();
   if (!st) { disposeRain(); return; }
@@ -5331,7 +5220,7 @@ function syncRain(daylight) {
 
   // drizzle falls slowly in short strokes; real rain is 6-9 m/s
   const fall = st.drizzle ? 3 + 1.5 * i : 6.5 + 2.5 * i;
-  // wind is a nudge, not a gale: a fraction of the reported speed, capped
+  // wind is a capped fraction of the reported speed
   let wx = 0, wz = 0;
   if (weather && weather.windMph != null) {
     const toward = (weather.windFrom + 180) * Math.PI / 180;
@@ -5345,8 +5234,8 @@ function syncRain(daylight) {
   invalidate();
 }
 
-// Height of a shell's roof over (x, z), which is inside its footprint: the
-// eaves for a flat roof, else the surface roofOf builds on the oriented box.
+// Roof height of a shell over (x, z) inside it: the eaves if flat, else
+// the roofOf surface on the oriented box.
 function roofHeightAt(s, x, z) {
   if (!s.roofShape) return s.top;
   const o = s.obb;
@@ -5367,9 +5256,8 @@ function roofHeightAt(s, x, z) {
   return s.top + (s.roofTop - s.top) * f;
 }
 
-// Fill the shelter map centred on (cx, cz) from the shells in reach. Only the
-// texels inside each shell's bounds are tested, and shells come from the same
-// broadphase grid the collision uses.
+// Fill the shelter map around (cx, cz), testing only texels inside each
+// shell's bounds; shells come from the collision grid.
 function rasterRoofs(cx, cz) {
   const N = ROOF_MAP_N, cell = ROOF_MAP_SIZE / N;
   const x0 = cx - ROOF_MAP_SIZE / 2, z0 = cz - ROOF_MAP_SIZE / 2;
@@ -5410,8 +5298,7 @@ function rasterRoofs(cx, cz) {
   rain.roofCx = cx; rain.roofCz = cz; rain.roofShells = shells;
 }
 
-// Per frame, from frame(). Returns true when the rain needs a redraw even if
-// nothing else changed.
+// Per frame; true when rain needs a redraw regardless.
 function rainTick(dt, now) {
   if (!rain) return false;
   const cx = Math.round(player.pos.x / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
@@ -5442,8 +5329,8 @@ function refreshHud() {
 
 function tick() {
   refreshHud();   // DOM only, no invalidate needed for the clock itself
-  // the sun moves a quarter of a degree a minute, so rebuilding the sky
-  // any faster than that would wake the renderer for nothing
+  // the sun moves 0.25 degree a minute; rebuilding faster wakes the renderer
+  // for nothing
   const m = Math.floor(Date.now() / 60000);
   if (m !== skyMinute) { skyMinute = m; updateSky(); }
 }
@@ -5453,7 +5340,7 @@ function startClock() {
   clockTimer = setInterval(tick, 1000);
 }
 
-// ---------------------------------------------------------------- load
+// LOAD
 
 let busy = false;
 
@@ -5466,8 +5353,7 @@ async function load(query) {
     say('Looking up the address…');
     const place = await geocode(query);
 
-    // runs alongside the Overpass fetch below; a missing forecast should
-    // never stop the city from loading
+    // parallel with Overpass; a failed forecast never blocks the load
     const pendingWeather = fetchWeather(place.lat, place.lon).catch(() => null);
 
     let features = null;
@@ -5487,26 +5373,23 @@ async function load(query) {
         const project = makeProjector(place.lat, place.lon);
         features = featuresFrom(fetched.json, project);
         try {
-            // keep the in-memory copy in step with storage, so a later load in
-            // this session compares against the place that is actually cached
+            // keep the in-memory copy matching storage for later loads this session
             storedPlace = { label: place.label, lat: place.lat, lon: place.lon, radius, v: FEATURES_VERSION };
             localStorage.setItem('lastPlace', JSON.stringify(storedPlace));
             localStorage.setItem('lastFeatures', JSON.stringify(features));
         } catch (e) {
-            // over quota: the scene is already built from what we have. Without
-            // cached features there is nothing a later label match could reuse.
+            // over quota: the scene is built; without cached features a later label
+            // match has nothing to reuse
             localStorage.removeItem('lastFeatures');
             storedPlace = null;
         }
     }
 
-    // The imagery depends only on the place and radius, so request it now and
-    // let it download while buildCity runs, instead of starting it after.
-    // A failure here is swallowed the same way as before: no ground photo.
+    // Imagery depends only on place and radius, so fetch it during buildCity.
+    // Failure just means no ground photo.
     const pendingImagery = (async () => {
       const proj = makeProjector(place.lat, place.lon);
-      // the tile cache is the fallback when the image service has nothing
-      // here, or cannot be reached
+      // tile cache fallback when the image service has nothing or is down
       return await fetchOrtho(place.lat, place.lon, radius, proj)
         ?? await fetchImagery(place.lat, place.lon, radius, proj);
     })().catch(() => null);
@@ -5525,7 +5408,7 @@ async function load(query) {
         say('Fetching aerial imagery…');
         buildImagery(await pendingImagery);
     } catch (e) {
-        // no imagery over this spot, or the service is down; the scene stands
+        // no imagery here or the service is down; the scene stands
     }
 
     weather = await pendingWeather;
@@ -5539,8 +5422,7 @@ async function load(query) {
     player.yaw = 0; player.pitch = 0;
     resolveCollisions(player.pos);   // in case the address lands inside a wall
 
-    // Compile shaders (in parallel where the driver supports it) and upload
-    // textures now, so the first walkable frame does not stall on them.
+    // Compile shaders and upload textures now so the first frame does not stall.
     say('Preparing scene…');
     camera.position.copy(player.pos);
     camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
@@ -5548,7 +5430,7 @@ async function load(query) {
       await renderer.compileAsync(scene, camera);
       for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
     } catch (e) {
-      // purely a warm-up; the first render does the same work if this fails
+      // warm-up only; the first render does the same work if this fails
     }
 
     hudBuildings = count;
@@ -5575,8 +5457,8 @@ async function load(query) {
 
 goEl.addEventListener('click', () => load(addrEl.value));
 
-// Suggested places: dense, well-mapped US downtowns (the ground imagery is
-// USGS, so it only covers the US). A tap fills the address and loads it.
+// Suggested places: dense, well-mapped US downtowns (imagery is US-only).
+// A tap fills the address and loads it.
 const PICKS = [
   ['New York, NY',       'New York, NY'],
   ['Union Square, San Francisco',  'Union Square, San Francisco, CA'],
