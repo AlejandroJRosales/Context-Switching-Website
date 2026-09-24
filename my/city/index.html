@@ -3170,10 +3170,6 @@ class Animal extends Entity {
 // Arena rig, scaled to metres by NPC_UNIT.
 
 class AnimalRenderer {
-  // Segments per rounded corner. The default 12 put ~830 tris on each leg;
-  // 4 keeps the silhouette with ~62% fewer tris.
-  static ROUNDED_CURVE_SEGMENTS = 4;
-
   constructor() {
     this.MAX_INSTANCES = 12000;
     this.TICKS_PER_DAY  = 24 * 60;
@@ -3186,19 +3182,6 @@ class AnimalRenderer {
     this.legAngles  = { legFL: 0, legFR: 0, legBL: 0, legBR: 0 };
 
     this.GEOMETRIES = {
-      sheep: {
-        body: AnimalRenderer.roundedBox(12, 12, 25, 2.5),
-        head: new THREE.SphereGeometry(7, 15, 15),
-        leg:  AnimalRenderer.roundedBox(3, 13, 3, 1)
-      },
-      human: {
-        body: AnimalRenderer.roundedBox(8, 17, 4, 1.2),
-        head: new THREE.SphereGeometry(4.3, 15, 15),
-        leg:  AnimalRenderer.roundedBox(2, 12.5, 2, 0.7)
-      }
-    };
-
-    this.GEOMETRIES_LOW = {
       sheep: {
         body: new THREE.BoxGeometry(12, 12, 25),
         head: new THREE.BoxGeometry(14, 14, 14),
@@ -3274,34 +3257,12 @@ class AnimalRenderer {
     this._pivot     = new THREE.Vector3();
   }
 
-  static roundedBox(width, height, depth, radius = 2) {
-    const shape = new THREE.Shape();
-    const w = width / 2, h = height / 2;
-    shape.moveTo(-w + radius, -h);
-    shape.lineTo(w - radius, -h);
-    shape.quadraticCurveTo(w, -h, w, -h + radius);
-    shape.lineTo(w, h - radius);
-    shape.quadraticCurveTo(w, h, w - radius, h);
-    shape.lineTo(-w + radius, h);
-    shape.quadraticCurveTo(-w, h, -w, h - radius);
-    shape.lineTo(-w, -h + radius);
-    shape.quadraticCurveTo(-w, -h, -w + radius, -h);
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-      depth, bevelEnabled: true,
-      curveSegments: AnimalRenderer.ROUNDED_CURVE_SEGMENTS,
-      bevelThickness: radius * 0.5, bevelSize: radius * 0.7, bevelSegments: 3
-    });
-    geometry.center();
-    return geometry;
-  }
-
   init() {
     for (const type of ['sheep', 'human']) {
       if (this.meshes[type]) {
         for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
       }
-      const geomSet = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
-      const geom = geomSet[type];
+      const geom = this.GEOMETRIES[type];
       const mat  = this.MATERIALS[type];
       this.meshes[type] = {
         body:  new THREE.InstancedMesh(geom.body, mat, this.MAX_INSTANCES),
@@ -3426,21 +3387,13 @@ class AnimalRenderer {
     for (const type of ['sheep', 'human']) {
       const im = this.meshes[type];
       if (!im) continue;
-      const geomSet = graphics.mode === 'low' ? this.GEOMETRIES_LOW : this.GEOMETRIES;
-      const geom = geomSet[type];
-      const partGeoms = { body: geom.body, head: geom.head, legFL: geom.leg, legFR: geom.leg, legBL: geom.leg, legBR: geom.leg };
-      for (const [part, newGeom] of Object.entries(partGeoms)) {
-        const mesh = im[part];
-        if (!mesh) continue;
-        mesh.geometry = newGeom;
-        mesh.castShadow = shadowsOn;
-      }
+      for (const mesh of Object.values(im)) mesh.castShadow = shadowsOn;
     }
   }
 }
 
 // CITY ADAPTERS
-// Stand-ins for the Arena's perf / graphics / terrain / water singletons.
+// Stand-ins for the Arena's perf / terrain / water singletons.
 
 const perf = {
   BRAIN_UPDATE_INTERVAL: 30,
@@ -3469,11 +3422,6 @@ const perf = {
     el._lastTxt = str;
     el.textContent = str;
   }
-};
-
-// Rounded rig on desktop, 12-triangle boxes on touch screens.
-const graphics = {
-  get mode() { return matchMedia('(pointer: coarse)').matches ? 'low' : 'high'; }
 };
 
 // Painted water rasterised once per city into a 1 m mask. Roads and paths
