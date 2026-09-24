@@ -109,7 +109,7 @@
     width: min(262px, calc(100vw - 36px)); padding: 14px;
     background: rgba(12, 15, 21, 0.86);
     border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
-    z-index: 7; display: none;
+    z-index: 9; display: none;
   }
   #settings.on { display: block; }
   #settings h2 {
@@ -133,181 +133,79 @@
     border-color: transparent;
   }
 
-  /* NPC stat panel, from the ecosystem sim */
-        #asp-nn-wrapper {
-            margin-top: 0;
-            padding-top: 0;
-            padding-left: 4px;
-            flex: 1 1 0;
-            min-width: 0;
-            overflow: visible;
-        }
-        #asp-nn-wrapper canvas {
-            display: block;
-            width: 100%;
-            border-radius: 3px;
-            background: rgba(0, 0, 0, 0.6);
-        }
+  /* NPC stat panel, from the ecosystem sim. City: restyled to match #settings
+     and #hud (dark glass, cream text, monospace, small-caps labels). */
+  #animal-stat-panel {
+    display: none;
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top));
+    left: max(18px, env(safe-area-inset-left));
+    width: min(390px, calc(100vw - 36px));
+    box-sizing: border-box;
+    padding: 14px;
+    background: rgba(12, 15, 21, 0.86);
+    border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
+    font: 400 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    color: rgba(232, 228, 220, 0.75);
+    z-index: 8;           /* below the address menu (z 10) */
+    pointer-events: auto;
+    overflow: hidden;
+  }
+  #animal-stat-panel.visible { display: flex; flex-direction: column; }
+  /* too narrow to sit beside the gear: drop below its row, like #settings */
+  @media (max-width: 500px) {
+    #animal-stat-panel { top: max(62px, calc(env(safe-area-inset-top) + 46px)); }
+  }
 
-        #nnCanvas3D { width: 100%; height: 115px; cursor: grab; pointer-events: auto; }
-        #nnCanvas3D:active { cursor: grabbing; }
+  #asp-top-row { display: flex; align-items: stretch; gap: 16px; overflow: hidden; }
+  #asp-left-col { display: flex; flex-direction: column; flex-shrink: 0; }
+  #asp-stats-section { min-width: 0; flex-shrink: 0; }
 
-        #asp-nn-wrapper #asp-nn-label {
-            margin-top: 3px;
-            font-size: 8px;
-            text-align: center;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: rgba(0, 255, 0, 0.5);
-        }
+  /* section labels, same as #settings h2 */
+  .asp-generation, .asp-mem-label, #asp-nn-wrapper #asp-nn-label {
+    margin: 0 0 9px;
+    font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(232, 228, 220, 0.45);
+  }
+  .asp-generation.born { color: rgba(232, 228, 220, 0.75); }
 
-        #animal-stat-panel {
-            display: none;
-            position: fixed;
-            top: max(40px, calc(env(safe-area-inset-top) + 36px));
-            left: max(10px, env(safe-area-inset-left));
-            width: min(370px, calc(100vw - 20px));
-            max-width: calc(100vw - 20px);
-            background: rgba(0, 0, 0, 0.72);
-            border: 1px solid rgba(0, 255, 0, 0.35);
-            border-radius: 6px;
-            padding: 8px 6px 6px;
-            z-index: 15;
-            pointer-events: auto;
-            font-size: 10px;
-            color: rgba(0, 255, 0, 0.85);
-            overflow: hidden;
-        }
+  .asp-stat-line { margin-bottom: 4px; color: rgba(232, 228, 220, 0.75); white-space: nowrap; }
 
-        #animal-stat-panel.visible {
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            gap: 0;
-        }
+  #asp-memories { flex-shrink: 0; display: flex; flex-direction: column; }
+  .asp-mem-row {
+    display: flex; align-items: center; gap: 5px;
+    height: 1.4em; margin-bottom: 4px;
+  }
+  .asp-mem-icon { width: 16px; flex-shrink: 0; }
+  .asp-mem-text {
+    color: rgba(232, 228, 220, 0.45);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .asp-mem-text.active { color: rgba(232, 228, 220, 0.75); }
+  .asp-mem-tag {
+    margin-left: auto; font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; opacity: 0.7; white-space: nowrap; flex-shrink: 0;
+  }
+  .asp-mem-arrow { width: 12px; height: 12px; flex-shrink: 0; display: none; }
+  .asp-mem-arrow.active { display: block; }
+  .asp-mem-arrow svg { width: 100%; height: 100%; overflow: visible; }
+  .asp-mem-dist {
+    font-size: 12px; white-space: nowrap; margin-left: 2px;
+    color: rgba(232, 228, 220, 0.45);
+  }
+  .asp-mem-dist.active { color: rgba(232, 228, 220, 0.75); }
 
-        #asp-top-row {
-            display: flex;
-            flex-direction: row;
-            align-items: stretch;
-            gap: 10px;
-            overflow: hidden;
-        }
-
-        #asp-left-col {
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-
-        #asp-stats-section {
-            width: 100%;
-            min-width: 0;
-            flex-shrink: 0;
-        }
-
-        .asp-generation {
-            font-size: 8px;
-            color: rgba(0, 255, 0, 0.8);
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .asp-generation.born {
-            color: rgba(0, 255, 0, 0.5);
-        }
-
-        .asp-stat-line {
-            font-size: 10px;
-            margin-bottom: 2px;
-            color: rgba(0, 255, 0, 0.8);
-        }
-
-        #asp-memories {
-            padding-left: 4px;
-            flex-shrink: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        #asp-memories .asp-mem-label {
-            width: 100%;
-            margin-bottom: 1px;
-        }
-        #asp-memories .asp-mem-row {
-            flex: 0 0 auto;
-        }
-
-        .asp-mem-label {
-            font-size: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: rgba(0, 255, 0, 0.85);
-            margin-bottom: 3px;
-        }
-
-        .asp-mem-row {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-bottom: 2px;
-            font-size: 9px;
-        }
-
-        .asp-mem-icon {
-            width: 14px;
-            flex-shrink: 0;
-        }
-
-        .asp-mem-text {
-            color: rgba(0, 255, 0, 0.6);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .asp-mem-text.active {
-            color: rgba(0, 255, 0, 0.85);
-        }
-
-        .asp-mem-tag {
-            margin-left: auto;
-            font-size: 7px;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-            opacity: 0.7;
-            white-space: nowrap;
-            flex-shrink: 0;
-        }
-
-        .asp-mem-arrow {
-            width: 12px;
-            height: 12px;
-            flex-shrink: 0;
-            display: none;
-        }
-        .asp-mem-arrow.active {
-            display: block;
-        }
-
-        .asp-mem-arrow svg {
-            width: 100%;
-            height: 100%;
-            overflow: visible;
-        }
-
-        .asp-mem-dist {
-            font-size: 8px;
-            color: rgba(0, 255, 0, 0.5);
-            letter-spacing: 0.3px;
-            white-space: nowrap;
-            margin-left: 2px;
-        }
-        .asp-mem-dist.active {
-            color: rgba(0, 255, 0, 0.85);
-        }
-        /* City: the sim's body font, and below the address menu (z 10) */
-        #animal-stat-panel { font-family: 'Courier New', monospace; z-index: 8; }
+  #asp-nn-wrapper { flex: 1 1 0; min-width: 0; overflow: visible; }
+  #asp-nn-wrapper canvas {
+    display: block; width: 100%;
+    background: rgba(16, 19, 26, 0.45);
+    border: 1px solid rgba(232, 228, 220, 0.12); border-radius: 3px;
+    box-sizing: border-box;
+  }
+  #nnCanvas3D { height: 115px; cursor: grab; pointer-events: auto; }
+  #nnCanvas3D:active { cursor: grabbing; }
+  #asp-nn-wrapper #asp-nn-label { margin: 6px 0 0; text-align: center; }
 </style>
 <script type="importmap">
 {
@@ -3799,6 +3697,7 @@ class NpcWorld {
     this.plants = [];              // none in the city yet; sheep read this
     this.ticks = 0;
     this.ready = false;
+    this.shownPop = -1;            // population last written to the HUD
     this.minX = 0; this.maxX = 0; this.minZ = 0; this.maxZ = 0;
 
     this.grid = null;
@@ -3816,6 +3715,14 @@ class NpcWorld {
     this.ready = false;
     animalRenderer.update(this.animals, 0);   // zero instances, meshes hidden
     labels.clearAll();
+    this.syncPopulation();
+  }
+
+  // Rewrites the HUD only when births or deaths changed the count.
+  syncPopulation() {
+    if (this.animals.length === this.shownPop) return;
+    this.shownPop = this.animals.length;
+    refreshHud();
   }
 
   initialize(features, radius) {
@@ -4012,6 +3919,7 @@ class NpcWorld {
     animalRenderer.update(this.animals, dt);
     labels.update(this.animals);
     if (this.ticks % 2 === 0) labels.updateTarget();
+    this.syncPopulation();
     this.ticks++;
     return true;
   }
@@ -4786,7 +4694,7 @@ function holdClimb(btn, dir) {
 holdClimb(upEl, 1);
 holdClimb(downEl, -1);
 
-flyEl.addEventListener('click', () => {
+function toggleFly() {
   flying = !flying;
   flyEl.classList.toggle('flying', flying);
   climbEl.classList.toggle('on', flying);
@@ -4799,6 +4707,11 @@ flyEl.addEventListener('click', () => {
   player.vel.y = 0;
   player.grounded = false;   // re-decided on the next step either way
   wake();
+}
+flyEl.addEventListener('click', toggleFly);
+// F does the same as the button on desktop; repeats from a held key are ignored
+addEventListener('keydown', e => {
+  if (e.code === 'KeyF' && !e.repeat && active) toggleFly();
 });
 
 // ------------------------------------------------------------- settings
@@ -4904,7 +4817,9 @@ function step(dt) {
   if (keys.has('KeyA') || keys.has('ArrowLeft'))  mx -= 1;
   if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
 
-  const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? RUN_SPEED : WALK_SPEED;
+  const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  // while flying, shift means down rather than run
+  const speed = (shiftHeld && !flying) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
   let dx = 0, dz = 0;
   if (len > 0 && active) {
@@ -4922,7 +4837,10 @@ function step(dt) {
     player.pos.z += dz;
     player.vel.y = 0;
     player.grounded = false;
-    player.pos.y += climb * speed * dt;
+    // keyboard: space climbs, shift descends; combined with the touch buttons
+    const keyClimb = active ? (keys.has('Space') ? 1 : 0) - (shiftHeld ? 1 : 0) : 0;
+    const vy = Math.max(-1, Math.min(1, climb + keyClimb));
+    player.pos.y += vy * speed * dt;
     player.pos.y = Math.max(player.pos.y, EYE_HEIGHT);   // stay out of the ground
   } else {
     // resolve horizontally before the vertical step, so the roof lookup below
@@ -4982,7 +4900,8 @@ function movementHeld() {
   return stickId !== null || climb !== 0 || jumpQueued ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
-    keys.has('Space');
+    keys.has('Space') ||
+    (flying && (keys.has('ShiftLeft') || keys.has('ShiftRight')));
 }
 
 function frame(now) {
@@ -5510,11 +5429,15 @@ function rainAnimating() {
   return rain !== null;
 }
 
-let hudPlace = '';
+let hudPlace = '';      // "for <place> (N skipped)"; empty until a place loads
+let hudBuildings = 0;
 let clockTimer = null;
 
 function refreshHud() {
-  hudEl.textContent = hudPlace + (weather ? '\n' + weatherText() : '');
+  const line = hudPlace
+    ? `${hudBuildings} buildings, ${world.animals.length} population ${hudPlace}`
+    : '';
+  hudEl.textContent = line + (weather ? '\n' + weatherText() : '');
 }
 
 function tick() {
@@ -5628,8 +5551,9 @@ async function load(query) {
       // purely a warm-up; the first render does the same work if this fails
     }
 
+    hudBuildings = count;
     hudPlace =
-      `${count} buildings for ${place.label.split(',').slice(0, 3).join(',').trim()}` +
+      `for ${place.label.split(',').slice(0, 3).join(',').trim()}` +
       ` (${skipped ? `${skipped} skipped` : '0 skipped'})`;
     refreshHud();
 
