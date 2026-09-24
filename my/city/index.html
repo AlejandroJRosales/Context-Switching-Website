@@ -182,7 +182,7 @@
     </div>
     <p id="status"></p>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
-    <p>1.0.0.3</p>
+    <p>1.0.0.2</p>
   </div>
 </div>
 <div id="dot"></div>
@@ -2173,6 +2173,7 @@ const NPC_WADE       = 0.55;     // how far a human sinks into painted water
 const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
 const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
+const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
 const WATER_CELL     = 1;        // water raster resolution, metres
 
 // SHARED HELPERS
@@ -3157,6 +3158,34 @@ class AnimalRenderer {
     this.meshes = {};
     this.renderCache = { sheep: null, human: null };
 
+    // LOW DETAIL
+    // Past NPC_LOD_DIST a body is one instance of a merged, rest-pose mesh
+    // instead of six animated parts: one matrix per NPC instead of six, no
+    // leg maths, and fewer boxes. Same material and sex tint as the full rig,
+    // and the boxes sit where the rig's parts sit at rest, so the swap only
+    // stops the legs. Units are rig units, origin at the body centre, like
+    // the body mesh, so the far instance uses the body's matrix unchanged.
+    const boxAt = (w, h, d, x, y, z) => {
+      const g = new THREE.BoxGeometry(w, h, d);
+      g.translate(x, y, z);
+      return g;
+    };
+    this.FAR_GEOMETRIES = {
+      human: mergeGeometries([
+        boxAt(8.6, 8.6, 8.6, 0, 13, 0),       // head
+        boxAt(14, 17, 6, 0, 0, 0),            // torso with both arms
+        boxAt(6, 12.5, 2, 0, -15, 0)          // both legs as one block
+      ], false),
+      sheep: mergeGeometries([
+        boxAt(12, 12, 25, 0, 0, 0),           // body
+        boxAt(14, 14, 14, 0, 5, 15),          // head
+        boxAt(13, 13, 3, 0, -9,  8),          // front legs as one bar
+        boxAt(13, 13, 3, 0, -9, -8)           // back legs as one bar
+      ], false)
+    };
+    this.far = {};                            // type -> InstancedMesh
+    this.farColKeys = { sheep: [], human: [] };
+
     this._mat4      = new THREE.Matrix4();
     this._local     = new THREE.Vector3();
     this._world     = new THREE.Vector3();
@@ -3174,6 +3203,13 @@ class AnimalRenderer {
       if (this.meshes[type]) {
         for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
       }
+      if (this.far[type]) { scene.remove(this.far[type]); this.far[type].dispose(); }
+      const far = new THREE.InstancedMesh(this.FAR_GEOMETRIES[type], this.MATERIALS[type], this.MAX_INSTANCES);
+      far.castShadow = true;
+      far.frustumCulled = false;
+      scene.add(far);
+      this.far[type] = far;
+      this.farColKeys[type] = [];
       const geom = this.GEOMETRIES[type];
       const mat  = this.MATERIALS[type];
       this.meshes[type] = {
@@ -3208,12 +3244,15 @@ class AnimalRenderer {
       const colors  = this.SEX_COLORS[type];
       if (!im) continue;
       const cache = this.cacheFor(type, im);
-      let idx = 0;
-      let colorsDirty = false;
+      const far = this.far[type], farColKeys = this.farColKeys[type];
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+      let idx = 0, fidx = 0;
+      let colorsDirty = false, farColorsDirty = false;
 
       for (const a of animals) {
         if (!a.alive || a.type !== type) continue;
-        if (idx >= this.MAX_INSTANCES) break;
+        if (idx + fidx >= this.MAX_INSTANCES) break;
 
         if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
 
@@ -3235,7 +3274,24 @@ class AnimalRenderer {
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
         }
 
+        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
+        this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
+        this._mat4.compose(this._world, this._quat, this._scale);
+
         const col = colors[a.sex];
+        const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
+        if (ex * ex + ey * ey + ez * ez > lod2) {
+          // low detail: the body's matrix on the merged rest-pose mesh
+          far.setMatrixAt(fidx, this._mat4);
+          if (farColKeys[fidx] !== col) {
+            farColKeys[fidx] = col;
+            far.setColorAt(fidx, col);
+            farColorsDirty = true;
+          }
+          fidx++;
+          continue;
+        }
+
         if (cache.colKeys[idx] !== col) {
           cache.colKeys[idx] = col;
           for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
@@ -3256,9 +3312,6 @@ class AnimalRenderer {
         this.legAngles.legBR =  sinT;
         const legAngles = this.legAngles;
 
-        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
-        this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
-        this._mat4.compose(this._world, this._quat, this._scale);
         im.body.setMatrixAt(idx, this._mat4);
 
         this._local.copy(offsets.head);
@@ -3292,6 +3345,8 @@ class AnimalRenderer {
         perf.instances(mesh, idx);
         if (colorsDirty) perf.instanceColors(mesh, idx);
       }
+      perf.instances(far, fidx);
+      if (farColorsDirty) perf.instanceColors(far, fidx);
     }
   }
 
@@ -3300,6 +3355,7 @@ class AnimalRenderer {
       const im = this.meshes[type];
       if (!im) continue;
       for (const mesh of Object.values(im)) mesh.castShadow = shadowsOn;
+      if (this.far[type]) this.far[type].castShadow = shadowsOn;
     }
   }
 }
@@ -3796,6 +3852,19 @@ const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];   // health, fo
 const BAR_ICONS  = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];   // as the stat panel
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
+// LOW-DETAIL STATS AND BRAINS
+// Past NPC_LOD_DIST (the same switch as the bodies) a person's stats sprite
+// and brain are hidden and replaced by two shared InstancedMeshes, one draw
+// call each for the whole crowd: the four bars as flat camera-facing strips
+// (no icons, arrows, backing or canvas), and the brain as two spheres, one per
+// lobe, brightening with the share of that lobe's neurons firing. Bar layout
+// and lobe positions follow the full versions, so the swap keeps their place.
+const FAR_STAT_MAX   = 12000;  // people with low-detail stats, as AnimalRenderer.MAX_INSTANCES
+const BAR_CANVAS_W   = 192, BAR_CANVAS_H = 96;   // the full sprite's canvas, for matching the layout
+const BAR_PX         = BAR_W_M / BAR_CANVAS_W;   // metres per canvas pixel
+const LOBE_RADIUS    = 0.7;    // layout units, a little past the lobe's node ring (0.55)
+const LOBE_COLS      = [0x00e5ff, 0xaaff00];     // lobe A, lobe B, as the full brain's nodes
+
 // BRAINS OVER HEADS
 // The ecosystem sim's NNVisualizer3D layout, rebuilt as two draw calls per
 // brain (one InstancedMesh for nodes, one LineSegments for edges and self
@@ -3958,6 +4027,52 @@ class HealthBars {
     this.bars = new Map();     // person -> slot (stats sprite and brain)
     this.spare = [];           // hidden slots, reused before making new ones
     this.seen = new Set();
+
+    // Row layout of the full sprite (see draw), in canvas pixels from the top.
+    const rows = BAR_ICONS.length, pad = 4, gap = 3;
+    const rh = (BAR_CANVAS_H - 2 * pad - (rows - 1) * gap) / rows;
+    this.farBarX = -BAR_W_M / 2 + (pad + 24) * BAR_PX;               // left edge of a bar
+    this.farBarW = (BAR_CANVAS_W - (pad + 24) - 22 - pad) * BAR_PX;  // full-bar width
+    this.farBarH = rh * 0.62 * BAR_PX;
+    this.farRowY = [];                                               // row centre above the sprite bottom
+    for (let i = 0; i < rows; i++) this.farRowY.push(BAR_H_M - (pad + i * (rh + gap) + rh / 2) * BAR_PX);
+
+    const barGeo = new THREE.PlaneGeometry(1, 1);
+    barGeo.translate(0.5, 0, 0);                                     // left-anchored, so scale.x is the fill
+    const barMat = new THREE.MeshBasicMaterial({ toneMapped: false, side: THREE.DoubleSide });
+    this.farBars = new THREE.InstancedMesh(barGeo, barMat, FAR_STAT_MAX * rows);
+    const c = new THREE.Color();
+    for (let j = 0; j < FAR_STAT_MAX * rows; j++) this.farBars.setColorAt(j, c.set(BAR_COLORS[j % rows]));
+    this.farBars.instanceColor.needsUpdate = true;
+    this.farBars.frustumCulled = false;
+    this.farBars.count = 0;
+    this.farBars.visible = false;
+    scene.add(this.farBars);
+
+    const lobeGeo = new THREE.IcosahedronGeometry(LOBE_RADIUS * BRAIN_SCALE, 0);
+    this.farLobes = new THREE.InstancedMesh(lobeGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), FAR_STAT_MAX * 2);
+    this.farLobes.setColorAt(0, c.set(0));                           // allocates instanceColor
+    this.farLobes.frustumCulled = false;
+    this.farLobes.count = 0;
+    this.farLobes.visible = false;
+    scene.add(this.farLobes);
+    this.lobeBase = LOBE_COLS.map(h => new THREE.Color(h));
+
+    this._m = new THREE.Matrix4();
+    this._p = new THREE.Vector3();
+    this._s = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
+    this._right = new THREE.Vector3();
+    this._up = new THREE.Vector3();
+    this._c = new THREE.Color();
+  }
+
+  // Share of a lobe's neurons firing this tick (the full brain's firing rule).
+  firing(act) {
+    if (!act || !act.length) return 0;
+    let n = 0;
+    for (let i = 0; i < act.length; i++) if (act[i] >= 1.0) n++;
+    return n / act.length;
   }
 
   makeBar() {
@@ -4044,6 +4159,16 @@ class HealthBars {
     const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];   // health has no memory slot
     const seen = this.seen;
     seen.clear();
+
+    // low detail faces the camera like the sprites do: camera right and up
+    const cam = camera.position, cq = camera.quaternion;
+    this._right.set(1, 0, 0).applyQuaternion(cq);
+    this._up.set(0, 1, 0).applyQuaternion(cq);
+    const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+    const rows = BAR_ICONS.length;
+    const lobeOff = 1.1 * BRAIN_SCALE;                // lobe centres above/below the brain centre
+    let nf = 0;                                       // people drawn in low detail
+
     for (const a of animals) {
       if (!a.alive || a.type !== 'human') continue;
       seen.add(a);
@@ -4053,6 +4178,44 @@ class HealthBars {
         bar.key = '';
         this.bars.set(a, bar);
       }
+
+      const barY = this.headTop(a) + BAR_ABOVE;
+      const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;   // as the bodies, so both swap together
+      if (ex * ex + ey * ey + ez * ez > lod2) {
+        bar.sprite.visible = false;
+        if (bar.brain) bar.brain.group.visible = false;
+        if (nf >= FAR_STAT_MAX) continue;
+
+        const fill = [
+          a.health / a.maxHealth,
+          1 - Math.min(a.foodNeed, 100) / 100,
+          1 - Math.min(a.waterNeed, 100) / 100,
+          (now - a.lastChildTime) / a.childGracePeriod
+        ];
+        for (let i = 0; i < rows; i++) {
+          const f = Math.max(0, Math.min(1, fill[i]));
+          const dx = this.farBarX, dy = this.farRowY[i];
+          this._p.set(a.position.x + this._right.x * dx + this._up.x * dy,
+                      barY         + this._right.y * dx + this._up.y * dy,
+                      a.position.z + this._right.z * dx + this._up.z * dy);
+          this._s.set(Math.max(f * this.farBarW, 1e-4), this.farBarH, 1);
+          this.farBars.setMatrixAt(nf * rows + i, this._m.compose(this._p, cq, this._s));
+        }
+
+        const nn = a.brain;
+        const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+        const fire = [this.firing(nn && nn.actA), this.firing(nn && nn.actB)];
+        for (let l = 0; l < 2; l++) {
+          this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
+          this._s.set(1, 1, 1);
+          this.farLobes.setMatrixAt(nf * 2 + l, this._m.compose(this._p, this._q, this._s));
+          const k = BRAIN_DIM + (1 - BRAIN_DIM) * fire[l];
+          this.farLobes.setColorAt(nf * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
+        }
+        nf++;
+        continue;
+      }
+
       vals[0] = q(a.health / a.maxHealth);
       vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
       vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
@@ -4062,7 +4225,6 @@ class HealthBars {
       arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
       arrows[3] = this.heading(a, a.hasMate,  a.rayMateSin,  a.rayMateCos);
       this.draw(bar, vals, arrows);
-      const barY = this.headTop(a) + BAR_ABOVE;
       bar.sprite.position.set(a.position.x, barY, a.position.z);
       bar.sprite.visible = true;
 
@@ -4086,6 +4248,10 @@ class HealthBars {
       this.bars.delete(a);
       this.spare.push(bar);
     }
+
+    perf.instances(this.farBars, nf * rows);
+    perf.instances(this.farLobes, nf * 2);
+    perf.instanceColors(this.farLobes, nf * 2);
   }
 }
 
