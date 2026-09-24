@@ -407,7 +407,7 @@ const METERS_PER_LVL = 3.2;
 const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
 const WALK_SPEED     = 10.0;
-const RUN_SPEED      = 20.0;
+const RUN_SPEED      = 15.0;
 const JUMP_SPEED     = 7.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
@@ -4620,7 +4620,12 @@ const player = {
   grounded: true
 };
 const keys = new Set();
-let active = false;
+let active = false;   // in play: panel closed, input accepted
+let locked = false;   // mouse pointer lock held; mouse look only runs while locked
+// Which kind of pointer last pressed something, so a load started by a tap
+// does not grab the mouse pointer.
+let lastPointerType = 'mouse';
+addEventListener('pointerdown', e => { lastPointerType = e.pointerType; }, true);
 
 addEventListener('keydown', e => {
   keys.add(e.code);
@@ -4629,21 +4634,20 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys.delete(e.code); wake(); });
 
-renderer.domElement.addEventListener('click', () => {
-  if (IS_TOUCH) return;
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse') return;
   if (!panel.classList.contains('hidden')) return;
   renderer.domElement.requestPointerLock();
 });
 
 document.addEventListener('pointerlockchange', () => {
-  active = document.pointerLockElement === renderer.domElement;
-  dotEl.classList.toggle('on', active);
-  if (!active) keys.clear();
+  locked = document.pointerLockElement === renderer.domElement;
+  if (!locked) keys.clear();
   wake();
 });
 
 addEventListener('mousemove', e => {
-  if (!active) return;
+  if (!locked) return;
   player.yaw   -= e.movementX * 0.0022;
   player.pitch -= e.movementY * 0.0022;
   const lim = Math.PI / 2 - 0.01;
@@ -4652,15 +4656,19 @@ addEventListener('mousemove', e => {
 });
 
 addEventListener('keydown', e => {
-  if (e.code === 'Escape' && !active) { panel.classList.remove('hidden'); showControls(false); }
+  if (e.code === 'Escape' && !locked && active) {
+    active = false;
+    dotEl.classList.remove('on');
+    panel.classList.remove('hidden');
+    showControls(false);
+  }
 });
 
 // ---------------------------------------------------------------- touch
 
 // Left half of the screen is a floating stick; right half is look-drag, and a
-// double tap there jumps. There is no pointer lock on mobile, so `active` is
-// set by hand when the panel closes.
-const IS_TOUCH = true;
+// double tap there jumps. Touch and mouse/keyboard input are both always on,
+// so a touchscreen computer can use either.
 const STICK_RADIUS = 55;          // px of travel for full tilt
 const TAP_GAP_MS   = 300;
 
@@ -4672,7 +4680,7 @@ labels.bind();
 // knob offset is written to the DOM once per frame, not once per pointermove
 let knobDx = 0, knobDy = 0, knobDirty = false;
 
-if (IS_TOUCH) {
+{
   const el = renderer.domElement;
 
   el.addEventListener('pointerdown', e => {
@@ -5602,8 +5610,9 @@ async function load(query) {
     panel.classList.add('hidden');
     showControls(true);
     say('');
-    if (IS_TOUCH) active = true;
-    else renderer.domElement.requestPointerLock();
+    active = true;
+    dotEl.classList.add('on');
+    if (lastPointerType === 'mouse') renderer.domElement.requestPointerLock();
   } catch (err) {
     say(`Failed to load. ${err.message || String(err)}`, true);
     goEl.textContent = 'Try again';
@@ -5636,9 +5645,9 @@ for (const [label, query] of PICKS) {
 addrEl.addEventListener('keydown', e => { if (e.key === 'Enter') load(addrEl.value); });
 addrEl.focus();
 
-if (IS_TOUCH) {
-  document.getElementById('keys').textContent =
-    'Left half to walk, drag the right half to look, double tap to jump.';
+if (navigator.maxTouchPoints > 0) {
+  document.getElementById('keys').textContent +=
+    ' On touch: left half to walk, drag the right half to look, double tap to jump.';
 }
 </script>
 </body>
