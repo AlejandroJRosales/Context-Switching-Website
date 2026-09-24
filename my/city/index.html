@@ -46,29 +46,31 @@
   #go:disabled { opacity: 0.45; cursor: default; }
   #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; color: #9a958b; }
   #status.error { margin-top: 16px; color: #d98b7a; }
-  #modes { margin-top: 14px; }
-  #immersive {
-    display: inline-flex; align-items: center; gap: 10px;
+  .switch + .switch { margin-top: 10px; }
+  #leave { margin-top: 16px; }
+  .switch {
+    display: flex; width: fit-content; align-items: center; gap: 10px;
     padding: 0; background: none; border: 0;
-    color: #9a958b; font: inherit; font-size: 14px;
+    color: rgba(232, 228, 220, 0.75);
+    font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
     cursor: pointer; touch-action: manipulation;
   }
-  #immersive:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
-  #immersive .track {
+  .switch:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
+  .switch .track {
     position: relative; flex: none; box-sizing: border-box;
     width: 38px; height: 22px; border-radius: 11px;
     background: #191d26; border: 1px solid #2c323f;
     transition: background 0.15s, border-color 0.15s;
   }
-  #immersive .thumb {
+  .switch .thumb {
     position: absolute; left: 2px; top: 2px;
     width: 16px; height: 16px; border-radius: 50%;
     background: #9a958b;
     transition: transform 0.15s, background 0.15s;
   }
-  #immersive.on .track { background: #e8e4dc; border-color: transparent; }
-  #immersive.on .thumb { transform: translateX(16px); background: #10131a; }
-  #immersive.on { color: #e8e4dc; }
+  .switch.on .track { background: #e8e4dc; border-color: transparent; }
+  .switch.on .thumb { transform: translateX(16px); background: #10131a; }
+  .switch.on { color: #e8e4dc; }
   #keys { margin: 28px 0 0; font-size: 13px; color: #6f6b64; }
 
   #hud {
@@ -174,6 +176,15 @@
     overflow: hidden;
   }
   #animal-stat-panel.visible { display: flex; flex-direction: column; }
+  #asp-close {
+    position: absolute; top: 4px; right: 4px; z-index: 1;
+    width: 26px; height: 26px; padding: 0;
+    background: none; border: 0; border-radius: 3px;
+    color: rgba(232, 228, 220, 0.55);
+    font: 400 18px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    cursor: pointer; touch-action: manipulation;
+  }
+  #asp-close:hover { color: #e8e4dc; }
   /* narrow: drop below the gear's row */
   @media (max-width: 500px) {
     #animal-stat-panel { top: max(62px, calc(env(safe-area-inset-top) + 46px)); }
@@ -250,9 +261,8 @@
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
     </div>
-    <div id="modes"><button id="immersive" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button></div>
     <p id="status"></p>
-    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc to return here.</p>
+    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
     <p>1.0.0.2</p>
   </div>
 </div>
@@ -260,6 +270,7 @@
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
     <div id="animal-stat-panel">
+        <button id="asp-close" aria-label="Close stats">×</button>
         <div id="asp-top-row">
             <div id="asp-left-col">
                 <div id="asp-stats-section">
@@ -311,6 +322,10 @@
   <div class="chips" id="times"></div>
   <h2 class="second">Weather</h2>
   <div class="chips" id="skies"></div>
+  <h2 class="second">Display</h2>
+  <button id="immersive" class="switch" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button>
+  <button id="statsToggle" class="switch on" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Stats panel</button>
+  <div class="chips" id="leave"><button id="tomenu">Back to intro</button></div>
 </div>
 
 <script type="module">
@@ -329,7 +344,7 @@ const EYE_HEIGHT     = 1;
 const PLAYER_RADIUS  = 0.35;
 const WALK_SPEED     = 10.0;
 const RUN_SPEED      = 15.0;
-const JUMP_SPEED     = 5.0;
+const JUMP_SPEED     = 7.0;
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
@@ -3611,11 +3626,37 @@ const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint ed
 // Nearest outdoor, dry spot the player fits at, clear of footprint edges,
 // searching rings outward from (x, z). Falls back to (x, z) if nothing
 // within maxR qualifies.
+function spawnOk(px, pz) {
+  return shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
+         !nearShell(px, pz, SPAWN_CLEAR) &&
+         !solidOverlap(px, pz, PLAYER_RADIUS + 0.1, 0, EYE_HEIGHT + HEAD_CLEAR);
+}
+
+const STREET_STEP = 2;   // metres between candidate points along a street
+
+// Nearest point on a street (a vehicle road, not a footway or path) to
+// (x, z) that passes the same checks as outdoorSpawn. Null when the map has
+// no street or none of them qualify.
+function streetSpawn(roads, x, z) {
+  const cands = [];
+  for (const r of roads || []) {
+    if (PATH_KINDS.has(r.kind)) continue;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / STREET_STEP));
+      for (let k = 0; k <= n; k++) {
+        const px = x0 + (x1 - x0) * k / n, pz = z0 + (z1 - z0) * k / n;
+        cands.push({ px, pz, d: (px - x) ** 2 + (pz - z) ** 2 });
+      }
+    }
+  }
+  cands.sort((a, b) => a.d - b.d);
+  for (const c of cands) if (spawnOk(c.px, c.pz)) return [c.px, c.pz];
+  return null;
+}
+
 function outdoorSpawn(x, z, maxR = 200) {
-  const r = PLAYER_RADIUS + 0.1;
-  const ok = (px, pz) => shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
-                         !nearShell(px, pz, SPAWN_CLEAR) &&
-                         !solidOverlap(px, pz, r, 0, EYE_HEIGHT + HEAD_CLEAR);
+  const ok = spawnOk;
   if (ok(x, z)) return [x, z];
   for (let d = 0.5; d <= maxR; d += 0.5) {
     const n = Math.max(8, Math.ceil(2 * Math.PI * d / 0.5));
@@ -4292,6 +4333,7 @@ class StatLabelSystem {
     this.current = null;
     this.locked = null;
     this.enabled = true;
+    this.dismissed = null;   // closed with the x; not re-locked until the view leaves it
     this._nnLabelEl = undefined;
 
     this.panel     = document.getElementById('animal-stat-panel');
@@ -4445,8 +4487,8 @@ class StatLabelSystem {
   updateTarget() {
     const target = this.pickTarget();
     this.current = (target && target.alive) ? target : null;
-
-    if (this.current !== null && this.current !== this.locked) {
+    if (this.dismissed && this.current !== this.dismissed) this.dismissed = null;
+    if (this.current !== null && this.current !== this.locked && this.current !== this.dismissed) {
       this.locked = this.current;
     }
     if (this.locked && !this.locked.alive) {
@@ -4469,6 +4511,22 @@ class StatLabelSystem {
 
 const nnOverlay = new NNOverlay();
 const labels    = new StatLabelSystem();
+
+document.getElementById('asp-close').addEventListener('click', e => {
+  e.currentTarget.blur();
+  labels.dismissed = labels.locked;
+  labels.locked = null;
+  labels.panel.classList.remove('visible');
+});
+
+const statsToggleEl = document.getElementById('statsToggle');
+statsToggleEl.addEventListener('click', () => {
+  labels.enabled = !labels.enabled;
+  statsToggleEl.classList.toggle('on', labels.enabled);
+  statsToggleEl.setAttribute('aria-checked', String(labels.enabled));
+  statsToggleEl.blur();
+  if (!labels.enabled) labels.panel.classList.remove('visible');
+});
 
 
 // CONTROLS
@@ -4503,6 +4561,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   if (!locked) keys.clear();
+  // The Esc that releases pointer lock never reaches the page, so losing the
+  // lock in play is what opens settings.
+  if (!locked && active) settingsEl.classList.add('on');
   wake();
 });
 
@@ -4515,13 +4576,17 @@ addEventListener('mousemove', e => {
   wake();
 });
 
+function returnToIntro() {
+  if (!active) return;
+  if (locked) document.exitPointerLock();
+  active = false;
+  dotEl.classList.remove('on');
+  panel.classList.remove('hidden');
+  showControls(false);
+}
+
 addEventListener('keydown', e => {
-  if (e.code === 'Escape' && !locked && active) {
-    active = false;
-    dotEl.classList.remove('on');
-    panel.classList.remove('hidden');
-    showControls(false);
-  }
+  if (e.code === 'Escape' && !locked && active) settingsEl.classList.add('on');
 });
 
 // TOUCH
@@ -4716,6 +4781,11 @@ function chips(host, names, pick) {
 
 chips(timesEl, TIMES, n => { timePreset = n; });
 chips(skiesEl, Object.keys(SKIES), n => { skyPreset = n; });
+
+document.getElementById('tomenu').addEventListener('click', e => {
+  e.currentTarget.blur();
+  returnToIntro();
+});
 
 gearEl.addEventListener('click', () => {
   settingsEl.classList.toggle('on');
@@ -5430,8 +5500,8 @@ async function load(query) {
     updateSky();    // the sun runs off the coordinates alone, forecast or not
     startClock();
 
-    // the geocoded point is often inside the addressed building, so step out
-    const [sx, sz] = outdoorSpawn(0, 0);
+    // start on the street nearest the geocoded point; open ground if there is none
+    const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
     player.pos.set(sx, EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
