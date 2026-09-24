@@ -182,7 +182,7 @@
     </div>
     <p id="status"></p>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
-    <p>1.0.0.2</p>
+    <p>1.0.0.3-opt</p>
   </div>
 </div>
 <div id="dot"></div>
@@ -2174,6 +2174,30 @@ const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding 
 const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
 const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
+const NPC_BODY_R      = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
+const NPC_STATS_R     = 0.7;     // metres: bounding sphere around the stats sprite and brain
+const NPC_STATS_UP    = 0.55;    // metres from the sprite bottom to that sphere's centre
+
+// VIEW CULL
+// Bodies, stats and brains off-screen are skipped: not written to the
+// instance buffers and not updated, like megaverse's CREATURE_CULL frustum
+// test (sphere against the six planes, rejected only when fully outside).
+// The frustum is rebuilt from the camera at the start of each renderer pass.
+const npcFrustum = new THREE.Frustum();
+const _npcVP     = new THREE.Matrix4();
+const _npcSphere = new THREE.Sphere();
+
+function updateNpcFrustum() {
+  camera.updateMatrixWorld();   // step() moved the camera since the last render
+  _npcVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  npcFrustum.setFromProjectionMatrix(_npcVP);
+}
+
+function npcOnScreen(x, y, z, r) {
+  _npcSphere.center.set(x, y, z);
+  _npcSphere.radius = r;
+  return npcFrustum.intersectsSphere(_npcSphere);
+}
 const WATER_CELL     = 1;        // water raster resolution, metres
 
 // SHARED HELPERS
@@ -3238,6 +3262,7 @@ class AnimalRenderer {
   }
 
   update(animals, deltaTime) {
+    updateNpcFrustum();
     for (const type of this.TYPES) {
       const im      = this.meshes[type];
       const offsets = this.PART_OFFSETS[type];
@@ -3273,6 +3298,8 @@ class AnimalRenderer {
         } else {
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
         }
+        // off-screen: nothing drawn (facing above still updates, the sim reads it)
+        if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
 
         const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
         this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
@@ -4161,6 +4188,7 @@ class HealthBars {
     seen.clear();
 
     // low detail faces the camera like the sprites do: camera right and up
+    updateNpcFrustum();
     const cam = camera.position, cq = camera.quaternion;
     this._right.set(1, 0, 0).applyQuaternion(cq);
     this._up.set(0, 1, 0).applyQuaternion(cq);
@@ -4180,6 +4208,11 @@ class HealthBars {
       }
 
       const barY = this.headTop(a) + BAR_ABOVE;
+      if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) {
+        bar.sprite.visible = false;
+        if (bar.brain) bar.brain.group.visible = false;
+        continue;
+      }
       const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;   // as the bodies, so both swap together
       if (ex * ex + ey * ey + ez * ez > lod2) {
         bar.sprite.visible = false;
