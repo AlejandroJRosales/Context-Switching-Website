@@ -46,6 +46,29 @@
   #go:disabled { opacity: 0.45; cursor: default; }
   #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; color: #9a958b; }
   #status.error { margin-top: 16px; color: #d98b7a; }
+  #modes { margin-top: 14px; }
+  #immersive {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 0; background: none; border: 0;
+    color: #9a958b; font: inherit; font-size: 14px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  #immersive:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
+  #immersive .track {
+    position: relative; flex: none; box-sizing: border-box;
+    width: 38px; height: 22px; border-radius: 11px;
+    background: #191d26; border: 1px solid #2c323f;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #immersive .thumb {
+    position: absolute; left: 2px; top: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #9a958b;
+    transition: transform 0.15s, background 0.15s;
+  }
+  #immersive.on .track { background: #e8e4dc; border-color: transparent; }
+  #immersive.on .thumb { transform: translateX(16px); background: #10131a; }
+  #immersive.on { color: #e8e4dc; }
   #keys { margin: 28px 0 0; font-size: 13px; color: #6f6b64; }
 
   #hud {
@@ -227,6 +250,7 @@
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
     </div>
+    <div id="modes"><button id="immersive" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button></div>
     <p id="status"></p>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc to return here.</p>
     <p>1.0.0.2</p>
@@ -5446,7 +5470,45 @@ async function load(query) {
   goEl.disabled = false;
 }
 
-goEl.addEventListener('click', () => load(addrEl.value));
+// IMMERSIVE
+
+// Fullscreen and the landscape lock both need a user gesture, so they are
+// requested straight from the toggle and load taps, not after load()'s awaits.
+// Neither exists on iPhone Safari and the lock is refused on desktop; both
+// fail quietly and the game runs as normal.
+const immersiveEl = document.getElementById('immersive');
+let immersive = false;
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function enterImmersive() {
+  if (!immersive) return;
+  const root = document.documentElement;   // whole page, so the HUD and controls stay visible
+  const req = root.requestFullscreen || root.webkitRequestFullscreen;
+  const pending = (!fullscreenElement() && req) ? req.call(root, { navigationUI: 'hide' }) : null;
+  Promise.resolve(pending).then(() => {
+    // browsers that allow the lock only allow it while fullscreen
+    if (screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape');
+  }).catch(() => {});
+}
+
+function exitImmersive() {
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (fullscreenElement() && exit) Promise.resolve(exit.call(document)).catch(() => {});
+}
+
+immersiveEl.addEventListener('click', () => {
+  immersive = !immersive;
+  immersiveEl.classList.toggle('on', immersive);
+  immersiveEl.setAttribute('aria-checked', String(immersive));
+  immersiveEl.blur();
+  if (immersive) enterImmersive(); else exitImmersive();
+});
+
+goEl.addEventListener('click', () => { enterImmersive(); load(addrEl.value); });
 
 // Suggested places: dense, well-mapped US downtowns (imagery is US-only).
 // A tap fills the address and loads it.
@@ -5462,11 +5524,16 @@ for (const [label, query] of PICKS) {
   b.addEventListener('click', () => {
     addrEl.value = query;
     b.blur();
+    enterImmersive();
     load(query);
   });
   picksEl.appendChild(b);
 }
-addrEl.addEventListener('keydown', e => { if (e.key === 'Enter') load(addrEl.value); });
+addrEl.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  enterImmersive();
+  load(addrEl.value);
+});
 addrEl.focus();
 
 if (navigator.maxTouchPoints > 0) {
