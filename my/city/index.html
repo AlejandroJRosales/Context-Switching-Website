@@ -2268,12 +2268,16 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
-    const cx = Math.floor(pos.x / GRID_CELL), cz = Math.floor(pos.z / GRID_CELL);
+    // gridOf files every solid under each cell its bounds touch, so only the
+    // cells the circle's own box touches can hold a solid that passes the
+    // bounds test below: usually 1 cell, at most 4, rather than a fixed 3x3.
+    const cx0 = Math.floor((pos.x - r) / GRID_CELL), cx1 = Math.floor((pos.x + r) / GRID_CELL);
+    const cz0 = Math.floor((pos.z - r) / GRID_CELL), cz1 = Math.floor((pos.z + r) / GRID_CELL);
     if (++stampNo >= 0xffffffff) { solidStamp.fill(0); stampNo = 1; }
 
-    for (let ox = -1; ox <= 1; ox++) {
-      for (let oz = -1; oz <= 1; oz++) {
-        const bucket = grid.get(cellKey(cx + ox, cz + oz));
+    for (let gx = cx0; gx <= cx1; gx++) {
+      for (let gz = cz0; gz <= cz1; gz++) {
+        const bucket = grid.get(cellKey(gx, gz));
         if (!bucket) continue;
 
         for (const idx of bucket) {
@@ -3611,13 +3615,25 @@ class AnimalRenderer {
 const perf = {
   BRAIN_UPDATE_INTERVAL: 30,
   terrainVersion: 0,             // the city ground never reshapes
+  // The buffers hold MAX_INSTANCES slots, but only the first n are drawn or
+  // rewritten this frame, so only those go to the GPU. Without a range three
+  // re-sends the whole array (12000 x 64 bytes per mesh) on every upload.
+  // three clears the range after each upload, so it is set afresh here.
   instances(mesh, n) {
     mesh.count = n;
     mesh.visible = n > 0;        // an empty type (sheep, for now) costs no draw call
-    mesh.instanceMatrix.needsUpdate = true;
+    if (n === 0) return;         // not drawn, so nothing to send
+    const attr = mesh.instanceMatrix;
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, n * 16);
+    attr.needsUpdate = true;
   },
   instanceColors(mesh, n) {
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    const attr = mesh.instanceColor;
+    if (!attr || n === 0) return;
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, n * 3);
+    attr.needsUpdate = true;
   },
   setText(el, str) {
     if (!el || el._lastTxt === str) return;
@@ -3740,10 +3756,12 @@ const terrain = {
 // Does a circle of radius r, with a column from feetY to headY, touch any wall
 // piece or barrier? Read-only twin of resolveCollisions.
 function solidOverlap(x, z, r, feetY, headY) {
-  const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
-  for (let ox = -1; ox <= 1; ox++) {
-    for (let oz = -1; oz <= 1; oz++) {
-      const bucket = grid.get(cellKey(cx + ox, cz + oz));
+  // only the cells the circle's box touches, as in resolveCollisions
+  const cx0 = Math.floor((x - r) / GRID_CELL), cx1 = Math.floor((x + r) / GRID_CELL);
+  const cz0 = Math.floor((z - r) / GRID_CELL), cz1 = Math.floor((z + r) / GRID_CELL);
+  for (let gx = cx0; gx <= cx1; gx++) {
+    for (let gz = cz0; gz <= cz1; gz++) {
+      const bucket = grid.get(cellKey(gx, gz));
       if (!bucket) continue;
       for (const idx of bucket) {
         const w = gridWalls[idx];
@@ -4084,6 +4102,7 @@ const world          = new NpcWorld();
                 this.nn = nn;
                 this.outputIdx = animal.outputIdx ?? 0;
                 this._updateActivations();
+                if (this._raf === null) this._raf = requestAnimationFrame(this._animate);
             }
 
             clear() {
@@ -4384,15 +4403,16 @@ const world          = new NpcWorld();
             }
 
             _animate() {
+                // Nothing to draw (no brain yet, or the stat panel is hidden
+                // and the canvas has no size): stop instead of waking every
+                // vsync. update() restarts the loop when a brain is shown.
+                this._raf = null;
+                if (!this.nn || !this._syncSize()) return;
                 this._raf = requestAnimationFrame(this._animate);
-
-                if (!this.nn) return;
 
                 const _t = performance.now();
                 if (_t - (this._lastDraw || 0) < NNVisualizer3D.FRAME_MS) return;
                 this._lastDraw = _t;
-
-                if (!this._syncSize()) return;
 
                 if (!this._drag) this._targetRotY += 0.004;
 
@@ -5557,6 +5577,17 @@ async function load(query) {
         }
     }
 
+    // The imagery depends only on the place and radius, so request it now and
+    // let it download while buildCity runs, instead of starting it after.
+    // A failure here is swallowed the same way as before: no ground photo.
+    const pendingImagery = (async () => {
+      const proj = makeProjector(place.lat, place.lon);
+      // the tile cache is the fallback when the image service has nothing
+      // here, or cannot be reached
+      return await fetchOrtho(place.lat, place.lon, radius, proj)
+        ?? await fetchImagery(place.lat, place.lon, radius, proj);
+    })().catch(() => null);
+
     const { count, skipped } = buildCity(features);
     if (count) world.initialize(features, radius);
     else world.clear();
@@ -5569,11 +5600,7 @@ async function load(query) {
 
     try {
         say('Fetching aerial imagery…');
-        const proj = makeProjector(place.lat, place.lon);
-        // the tile cache is the fallback when the image service has nothing
-        // here, or cannot be reached
-        buildImagery(await fetchOrtho(place.lat, place.lon, radius, proj)
-          ?? await fetchImagery(place.lat, place.lon, radius, proj));
+        buildImagery(await pendingImagery);
     } catch (e) {
         // no imagery over this spot, or the service is down; the scene stands
     }
