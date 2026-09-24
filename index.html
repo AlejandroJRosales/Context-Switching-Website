@@ -46,29 +46,31 @@
   #go:disabled { opacity: 0.45; cursor: default; }
   #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; color: #9a958b; }
   #status.error { margin-top: 16px; color: #d98b7a; }
-  #modes { margin-top: 14px; }
-  #immersive {
-    display: inline-flex; align-items: center; gap: 10px;
+  .switch + .switch { margin-top: 10px; }
+  #leave { margin-top: 16px; }
+  .switch {
+    display: flex; width: fit-content; align-items: center; gap: 10px;
     padding: 0; background: none; border: 0;
-    color: #9a958b; font: inherit; font-size: 14px;
+    color: rgba(232, 228, 220, 0.75);
+    font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
     cursor: pointer; touch-action: manipulation;
   }
-  #immersive:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
-  #immersive .track {
+  .switch:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
+  .switch .track {
     position: relative; flex: none; box-sizing: border-box;
     width: 38px; height: 22px; border-radius: 11px;
     background: #191d26; border: 1px solid #2c323f;
     transition: background 0.15s, border-color 0.15s;
   }
-  #immersive .thumb {
+  .switch .thumb {
     position: absolute; left: 2px; top: 2px;
     width: 16px; height: 16px; border-radius: 50%;
     background: #9a958b;
     transition: transform 0.15s, background 0.15s;
   }
-  #immersive.on .track { background: #e8e4dc; border-color: transparent; }
-  #immersive.on .thumb { transform: translateX(16px); background: #10131a; }
-  #immersive.on { color: #e8e4dc; }
+  .switch.on .track { background: #e8e4dc; border-color: transparent; }
+  .switch.on .thumb { transform: translateX(16px); background: #10131a; }
+  .switch.on { color: #e8e4dc; }
   #keys { margin: 28px 0 0; font-size: 13px; color: #6f6b64; }
 
   #hud {
@@ -156,78 +158,6 @@
     border-color: transparent;
   }
 
-  /* NPC stat panel from the ecosystem sim, restyled to match #settings / #hud */
-  #animal-stat-panel {
-    display: none;
-    position: fixed;
-    top: max(16px, env(safe-area-inset-top));
-    left: max(18px, env(safe-area-inset-left));
-    width: min(390px, calc(100vw - 36px));
-    box-sizing: border-box;
-    padding: 14px;
-    background: rgba(12, 15, 21, 0.86);
-    border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
-    font: 400 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
-    color: rgba(232, 228, 220, 0.75);
-    z-index: 8;           /* below the address menu (z 10) */
-    pointer-events: auto;
-    overflow: hidden;
-  }
-  #animal-stat-panel.visible { display: flex; flex-direction: column; }
-  /* narrow: drop below the gear's row */
-  @media (max-width: 500px) {
-    #animal-stat-panel { top: max(62px, calc(env(safe-area-inset-top) + 46px)); }
-  }
-
-  #asp-top-row { display: flex; align-items: stretch; gap: 16px; overflow: hidden; }
-  #asp-left-col { display: flex; flex-direction: column; flex-shrink: 0; }
-  #asp-stats-section { min-width: 0; flex-shrink: 0; }
-
-  /* labels, as #settings h2 */
-  .asp-generation, .asp-mem-label, #asp-nn-wrapper #asp-nn-label {
-    margin: 0 0 9px;
-    font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: rgba(232, 228, 220, 0.45);
-  }
-  .asp-generation.born { color: rgba(232, 228, 220, 0.75); }
-
-  .asp-stat-line { margin-bottom: 4px; color: rgba(232, 228, 220, 0.75); white-space: nowrap; }
-
-  #asp-memories { flex-shrink: 0; display: flex; flex-direction: column; }
-  .asp-mem-row {
-    display: flex; align-items: center; gap: 5px;
-    height: 1.4em; margin-bottom: 4px;
-  }
-  .asp-mem-icon { width: 16px; flex-shrink: 0; }
-  .asp-mem-text {
-    color: rgba(232, 228, 220, 0.45);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .asp-mem-text.active { color: rgba(232, 228, 220, 0.75); }
-  .asp-mem-tag {
-    margin-left: auto; font-size: 10px; letter-spacing: 0.08em;
-    text-transform: uppercase; opacity: 0.7; white-space: nowrap; flex-shrink: 0;
-  }
-  .asp-mem-arrow { width: 12px; height: 12px; flex-shrink: 0; display: none; }
-  .asp-mem-arrow.active { display: block; }
-  .asp-mem-arrow svg { width: 100%; height: 100%; overflow: visible; }
-  .asp-mem-dist {
-    font-size: 12px; white-space: nowrap; margin-left: 2px;
-    color: rgba(232, 228, 220, 0.45);
-  }
-  .asp-mem-dist.active { color: rgba(232, 228, 220, 0.75); }
-
-  #asp-nn-wrapper { flex: 1 1 0; min-width: 0; overflow: visible; }
-  #asp-nn-wrapper canvas {
-    display: block; width: 100%;
-    background: rgba(16, 19, 26, 0.45);
-    border: 1px solid rgba(232, 228, 220, 0.12); border-radius: 3px;
-    box-sizing: border-box;
-  }
-  #nnCanvas3D { height: 115px; cursor: grab; pointer-events: auto; }
-  #nnCanvas3D:active { cursor: grabbing; }
-  #asp-nn-wrapper #asp-nn-label { margin: 6px 0 0; text-align: center; }
 </style>
 <script type="importmap">
 {
@@ -250,59 +180,14 @@
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
     </div>
-    <div id="modes"><button id="immersive" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button></div>
     <p id="status"></p>
-    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc to return here.</p>
+    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
     <p>1.0.0.2</p>
   </div>
 </div>
 <div id="dot"></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
-    <div id="animal-stat-panel">
-        <div id="asp-top-row">
-            <div id="asp-left-col">
-                <div id="asp-stats-section">
-                    <div class="asp-generation" id="asp-generation">Generation 0</div>
-                    <div class="asp-stat-line">❤️ <span id="asp-hp-val">100.0</span></div>
-                    <div class="asp-stat-line">🍽️ <span id="asp-food-val">100.0</span></div>
-                    <div class="asp-stat-line">💧 <span id="asp-water-val">100.0</span></div>
-                    <div class="asp-stat-line" id="asp-age-line" style="display:none">🚼 <span id="asp-age-val">0.0</span></div>
-                </div>
-            </div>
-            <div id="asp-memories">
-                <div class="asp-mem-label">Memory <span style="opacity:0.4;font-size:8px;letter-spacing:0.5px"></span></div>
-                <div class="asp-mem-row" id="asp-mem-predator">
-                    <span class="asp-mem-icon">⚠️</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-predator-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e74c3c" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e74c3c"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-predator-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-food">
-                    <span class="asp-mem-icon">🍽️</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-food-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#e67e22" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#e67e22"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-food-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-water">
-                    <span class="asp-mem-icon">💧</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-water-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#3498db" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#3498db"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-water-dist"></span>
-                </div>
-                <div class="asp-mem-row" id="asp-mem-mate">
-                    <span class="asp-mem-icon">💞</span>
-
-                    <span class="asp-mem-arrow" id="asp-mem-mate-arrow"><svg viewBox="-6 -6 12 12"><line x1="0" y1="4" x2="0" y2="-4" stroke="#9b59b6" stroke-width="1.5" stroke-linecap="round"/><polygon points="0,-6 -2.5,-2 2.5,-2" fill="#9b59b6"/></svg></span>
-                    <span class="asp-mem-dist" id="asp-mem-mate-dist"></span>
-                </div>
-            </div>
-            <div id="asp-nn-wrapper">
-                <div class="asp-mem-label">Brain</div>
-                <canvas id="nnCanvas3D"></canvas>
-            </div>
-        </div>
-    </div>
 <button id="fly">Fly</button>
 <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
 <button id="gear">=</button>
@@ -311,6 +196,9 @@
   <div class="chips" id="times"></div>
   <h2 class="second">Weather</h2>
   <div class="chips" id="skies"></div>
+  <h2 class="second">Display</h2>
+  <button id="immersive" class="switch" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button>
+  <div class="chips" id="leave"><button id="tomenu">Back to intro</button></div>
 </div>
 
 <script type="module">
@@ -2285,6 +2173,31 @@ const NPC_WADE       = 0.55;     // how far a human sinks into painted water
 const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
 const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
+const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
+const NPC_BODY_R      = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
+const NPC_STATS_R     = 0.7;     // metres: bounding sphere around the stats sprite and brain
+const NPC_STATS_UP    = 0.55;    // metres from the sprite bottom to that sphere's centre
+
+// VIEW CULL
+// Bodies, stats and brains off-screen are skipped: not written to the
+// instance buffers and not updated, like megaverse's CREATURE_CULL frustum
+// test (sphere against the six planes, rejected only when fully outside).
+// The frustum is rebuilt from the camera at the start of each renderer pass.
+const npcFrustum = new THREE.Frustum();
+const _npcVP     = new THREE.Matrix4();
+const _npcSphere = new THREE.Sphere();
+
+function updateNpcFrustum() {
+  camera.updateMatrixWorld();   // step() moved the camera since the last render
+  _npcVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  npcFrustum.setFromProjectionMatrix(_npcVP);
+}
+
+function npcOnScreen(x, y, z, r) {
+  _npcSphere.center.set(x, y, z);
+  _npcSphere.radius = r;
+  return npcFrustum.intersectsSphere(_npcSphere);
+}
 const WATER_CELL     = 1;        // water raster resolution, metres
 
 // SHARED HELPERS
@@ -3269,6 +3182,34 @@ class AnimalRenderer {
     this.meshes = {};
     this.renderCache = { sheep: null, human: null };
 
+    // LOW DETAIL
+    // Past NPC_LOD_DIST a body is one instance of a merged, rest-pose mesh
+    // instead of six animated parts: one matrix per NPC instead of six, no
+    // leg maths, and fewer boxes. Same material and sex tint as the full rig,
+    // and the boxes sit where the rig's parts sit at rest, so the swap only
+    // stops the legs. Units are rig units, origin at the body centre, like
+    // the body mesh, so the far instance uses the body's matrix unchanged.
+    const boxAt = (w, h, d, x, y, z) => {
+      const g = new THREE.BoxGeometry(w, h, d);
+      g.translate(x, y, z);
+      return g;
+    };
+    this.FAR_GEOMETRIES = {
+      human: mergeGeometries([
+        boxAt(8.6, 8.6, 8.6, 0, 13, 0),       // head
+        boxAt(14, 17, 6, 0, 0, 0),            // torso with both arms
+        boxAt(6, 12.5, 2, 0, -15, 0)          // both legs as one block
+      ], false),
+      sheep: mergeGeometries([
+        boxAt(12, 12, 25, 0, 0, 0),           // body
+        boxAt(14, 14, 14, 0, 5, 15),          // head
+        boxAt(13, 13, 3, 0, -9,  8),          // front legs as one bar
+        boxAt(13, 13, 3, 0, -9, -8)           // back legs as one bar
+      ], false)
+    };
+    this.far = {};                            // type -> InstancedMesh
+    this.farColKeys = { sheep: [], human: [] };
+
     this._mat4      = new THREE.Matrix4();
     this._local     = new THREE.Vector3();
     this._world     = new THREE.Vector3();
@@ -3286,6 +3227,13 @@ class AnimalRenderer {
       if (this.meshes[type]) {
         for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
       }
+      if (this.far[type]) { scene.remove(this.far[type]); this.far[type].dispose(); }
+      const far = new THREE.InstancedMesh(this.FAR_GEOMETRIES[type], this.MATERIALS[type], this.MAX_INSTANCES);
+      far.castShadow = true;
+      far.frustumCulled = false;
+      scene.add(far);
+      this.far[type] = far;
+      this.farColKeys[type] = [];
       const geom = this.GEOMETRIES[type];
       const mat  = this.MATERIALS[type];
       this.meshes[type] = {
@@ -3314,18 +3262,22 @@ class AnimalRenderer {
   }
 
   update(animals, deltaTime) {
+    updateNpcFrustum();
     for (const type of this.TYPES) {
       const im      = this.meshes[type];
       const offsets = this.PART_OFFSETS[type];
       const colors  = this.SEX_COLORS[type];
       if (!im) continue;
       const cache = this.cacheFor(type, im);
-      let idx = 0;
-      let colorsDirty = false;
+      const far = this.far[type], farColKeys = this.farColKeys[type];
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+      let idx = 0, fidx = 0;
+      let colorsDirty = false, farColorsDirty = false;
 
       for (const a of animals) {
         if (!a.alive || a.type !== type) continue;
-        if (idx >= this.MAX_INSTANCES) break;
+        if (idx + fidx >= this.MAX_INSTANCES) break;
 
         if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
 
@@ -3346,8 +3298,27 @@ class AnimalRenderer {
         } else {
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
         }
+        // off-screen: nothing drawn (facing above still updates, the sim reads it)
+        if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
+
+        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
+        this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
+        this._mat4.compose(this._world, this._quat, this._scale);
 
         const col = colors[a.sex];
+        const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
+        if (ex * ex + ey * ey + ez * ez > lod2) {
+          // low detail: the body's matrix on the merged rest-pose mesh
+          far.setMatrixAt(fidx, this._mat4);
+          if (farColKeys[fidx] !== col) {
+            farColKeys[fidx] = col;
+            far.setColorAt(fidx, col);
+            farColorsDirty = true;
+          }
+          fidx++;
+          continue;
+        }
+
         if (cache.colKeys[idx] !== col) {
           cache.colKeys[idx] = col;
           for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
@@ -3368,9 +3339,6 @@ class AnimalRenderer {
         this.legAngles.legBR =  sinT;
         const legAngles = this.legAngles;
 
-        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
-        this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
-        this._mat4.compose(this._world, this._quat, this._scale);
         im.body.setMatrixAt(idx, this._mat4);
 
         this._local.copy(offsets.head);
@@ -3404,6 +3372,8 @@ class AnimalRenderer {
         perf.instances(mesh, idx);
         if (colorsDirty) perf.instanceColors(mesh, idx);
       }
+      perf.instances(far, fidx);
+      if (farColorsDirty) perf.instanceColors(far, fidx);
     }
   }
 
@@ -3412,6 +3382,7 @@ class AnimalRenderer {
       const im = this.meshes[type];
       if (!im) continue;
       for (const mesh of Object.values(im)) mesh.castShadow = shadowsOn;
+      if (this.far[type]) this.far[type].castShadow = shadowsOn;
     }
   }
 }
@@ -3611,11 +3582,37 @@ const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint ed
 // Nearest outdoor, dry spot the player fits at, clear of footprint edges,
 // searching rings outward from (x, z). Falls back to (x, z) if nothing
 // within maxR qualifies.
+function spawnOk(px, pz) {
+  return shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
+         !nearShell(px, pz, SPAWN_CLEAR) &&
+         !solidOverlap(px, pz, PLAYER_RADIUS + 0.1, 0, EYE_HEIGHT + HEAD_CLEAR);
+}
+
+const STREET_STEP = 2;   // metres between candidate points along a street
+
+// Nearest point on a street (a vehicle road, not a footway or path) to
+// (x, z) that passes the same checks as outdoorSpawn. Null when the map has
+// no street or none of them qualify.
+function streetSpawn(roads, x, z) {
+  const cands = [];
+  for (const r of roads || []) {
+    if (PATH_KINDS.has(r.kind)) continue;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / STREET_STEP));
+      for (let k = 0; k <= n; k++) {
+        const px = x0 + (x1 - x0) * k / n, pz = z0 + (z1 - z0) * k / n;
+        cands.push({ px, pz, d: (px - x) ** 2 + (pz - z) ** 2 });
+      }
+    }
+  }
+  cands.sort((a, b) => a.d - b.d);
+  for (const c of cands) if (spawnOk(c.px, c.pz)) return [c.px, c.pz];
+  return null;
+}
+
 function outdoorSpawn(x, z, maxR = 200) {
-  const r = PLAYER_RADIUS + 0.1;
-  const ok = (px, pz) => shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
-                         !nearShell(px, pz, SPAWN_CLEAR) &&
-                         !solidOverlap(px, pz, r, 0, EYE_HEIGHT + HEAD_CLEAR);
+  const ok = spawnOk;
   if (ok(x, z)) return [x, z];
   for (let d = 0.5; d <= maxR; d += 0.5) {
     const n = Math.max(8, Math.ceil(2 * Math.PI * d / 0.5));
@@ -3658,7 +3655,7 @@ class NpcWorld {
     this.plants.length = 0;
     this.ready = false;
     animalRenderer.update(this.animals, 0);   // zero instances, meshes hidden
-    labels.clearAll();
+    healthBars.update(this.animals);   // no one left: every bar hidden
     this.syncPopulation();
   }
 
@@ -3681,7 +3678,6 @@ class NpcWorld {
     this.plantGrid = new SpatialGrid(span, span, 30 * NPC_UNIT);
 
     water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
-    labels.clearAll();
     animalRenderer.init();
     this.spawnHumans(NPC_POPULATION, features.roads || []);
     this.ready = true;
@@ -3855,8 +3851,7 @@ class NpcWorld {
     }
 
     animalRenderer.update(this.animals, dt);
-    labels.update(this.animals);
-    if (this.ticks % 2 === 0) labels.updateTarget();
+    healthBars.update(this.animals);
     this.syncPopulation();
     this.ticks++;
     return true;
@@ -3868,607 +3863,432 @@ const brains         = new BrainFactory();
 const animalRenderer = new AnimalRenderer();
 const world          = new NpcWorld();
 
-// NPC STAT PANEL
-//
-// The sim's #animal-stat-panel: vitals, four memory slots with bearing arrows,
-// and the live brain of the NPC you look at. StatLabelSystem and NNVisualizer3D
-// are ported; differences are marked "City:". The sim's unused stat sprites and
-// the vision-ray toggle are left out.
+// HEALTH BARS
+// Health, food and water over every person's head, one sprite each, with
+// that person's brain above it. A slot follows its person until they die,
+// then goes back for reuse, so the slot count tracks the population. Food
+// and water are drawn as how
+// full the person is (1 - need), on the same 0..100 need scale the brain
+// reads; health is health / maxHealth.
+const BAR_STEPS  = 40;     // redraw only when a bar moves a whole step
+const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
+const BAR_W_M    = 0.8;    // sprite size in metres (canvas is 2:1)
+const BAR_H_M    = 0.4;
+const BAR_ABOVE  = 0.18;   // metres between head top and sprite bottom
+const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];   // health, food, water, mate (as the stat panel)
+const BAR_ICONS  = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];   // as the stat panel
+const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-        class NNVisualizer3D {
-            static FRAME_MS = 1000 / 30;
+// LOW-DETAIL STATS AND BRAINS
+// Past NPC_LOD_DIST (the same switch as the bodies) a person's stats sprite
+// and brain are hidden and replaced by two shared InstancedMeshes, one draw
+// call each for the whole crowd: the four bars as flat camera-facing strips
+// (no icons, arrows, backing or canvas), and the brain as two spheres, one per
+// lobe, brightening with the share of that lobe's neurons firing. Bar layout
+// and lobe positions follow the full versions, so the swap keeps their place.
+const FAR_STAT_MAX   = 12000;  // people with low-detail stats, as AnimalRenderer.MAX_INSTANCES
+const BAR_CANVAS_W   = 192, BAR_CANVAS_H = 96;   // the full sprite's canvas, for matching the layout
+const BAR_PX         = BAR_W_M / BAR_CANVAS_W;   // metres per canvas pixel
+const LOBE_RADIUS    = 0.7;    // layout units, a little past the lobe's node ring (0.55)
+const LOBE_COLS      = [0x00e5ff, 0xaaff00];     // lobe A, lobe B, as the full brain's nodes
 
-            constructor(canvasEl) {
-                this.canvas  = canvasEl;
-                this.nn      = null;
-                this.outputIdx = 0;
+// BRAINS OVER HEADS
+// The ecosystem sim's NNVisualizer3D layout, rebuilt as two draw calls per
+// brain (one InstancedMesh for nodes, one LineSegments for edges and self
+// loops) so a pool of them can sit in the main scene. Unlit, so they read at
+// night. Only nodes whose firing state changed touch the GPU buffers.
+const BRAIN_SCALE  = 0.11;   // layout units -> metres (layout is ~6.2 x 4.2 units)
+const BRAIN_HALF_H = 2.1;    // layout units from centre to top/bottom
+const BRAIN_ABOVE  = 0.06;   // metres between the bars' top and the brain's bottom
+const BRAIN_SPIN   = 0.6;    // rad/s about the brain's own vertical
+const BRAIN_TILT   = 0.18;   // rad, as the panel's resting tilt
+const BRAIN_DIM    = 0.3;    // colour scale for a quiet node
+const BRAIN_IN_GROUPS  = [4, 4, 4, 4, 3];
+const BRAIN_GROUP_COLS = [0xe67e22, 0x3498db, 0xe74c3c, 0x9b59b6, 0x2ecc71];
+const BRAIN_NODE_GEO = new THREE.SphereGeometry(0.13, 8, 6);
+const brainNodeMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+const brainLineMat = new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, toneMapped: false
+});
+const _bCol = new THREE.Color(), _bMat = new THREE.Matrix4();
 
-                this.renderer = new THREE.WebGLRenderer({
-                    canvas: canvasEl,
-                    antialias: true,
-                    alpha: true,
-                });
-                this.renderer.setPixelRatio(1);
-                this.renderer.setClearColor(0x000000, 0);
-                this._syncSize();
+function buildBrain(nn) {
+  const I = nn.inputDims, NA = nn.lobeSizeA, NB = nn.lobeSizeB, O = nn.outputDims;
+  const spread = (count, radius) => Array.from({ length: count }, (_, i) => {
+    const ang = (i / count) * Math.PI * 2;
+    return new THREE.Vector3(0, Math.cos(ang) * radius, Math.sin(ang) * radius);
+  });
+  const posIn = [], inCol = [];
+  const G = BRAIN_IN_GROUPS.length;
+  for (let g = 0; g < G; g++) {
+    const ga = (g / G) * Math.PI * 2 - Math.PI / 2;
+    const gy = Math.cos(ga) * 1.5, gz = Math.sin(ga) * 1.5;
+    for (let k = 0; k < BRAIN_IN_GROUPS[g]; k++) {
+      const ka = (k / BRAIN_IN_GROUPS[g]) * Math.PI * 2;
+      posIn.push(new THREE.Vector3(Math.cos(ka) * 0.30, gy + Math.sin(ka) * 0.30, gz));
+      inCol.push(BRAIN_GROUP_COLS[g % BRAIN_GROUP_COLS.length]);
+    }
+  }
+  while (posIn.length < I) { posIn.push(new THREE.Vector3()); inCol.push(0xe67e22); }
+  posIn.length = I; inCol.length = I;
+  const posA = spread(NA, 0.55), posB = spread(NB, 0.55), posOut = spread(O, 0.90);
+  posIn.forEach(p => p.x += -2.8);
+  posA.forEach(p => p.y += 1.1);
+  posB.forEach(p => p.y -= 1.1);
+  posOut.forEach(p => p.x += 2.8);
 
-                this.scene  = new THREE.Scene();
-                this.camera = new THREE.PerspectiveCamera(40, canvasEl.clientWidth / canvasEl.clientHeight, 0.1, 100);
-                this.camera.position.set(0, 0, 9);
-
-                this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-                const dl = new THREE.DirectionalLight(0xffffff, 0.8);
-                dl.position.set(4, 6, 8);
-                this.scene.add(dl);
-
-                this.group = new THREE.Group();
-                this.scene.add(this.group);
-
-                this._nodeMeshes = { in: [], a: [], b: [], out: [] };
-                this._edges = [];
-                this._selfLoops = [];
-
-                this._rotY = 0;
-                this._rotX = 0.18;
-
-                this._drag = false;
-                this._lastMX = 0; this._lastMY = 0;
-                this._targetRotY = 0;
-                this._targetRotX = 0.18;
-                this._setupDrag();
-
-                this.COL_IN  = new THREE.Color(0xe67e22);
-                this.COL_A   = new THREE.Color(0x00e5ff);
-                this.COL_B   = new THREE.Color(0xaaff00);
-                this.COL_OUT = new THREE.Color(0x00ff88);
-                this.COL_OUT_ACTIVE = new THREE.Color(0xff4444);
-
-                const GROUP_COLS = [0xe67e22, 0x3498db, 0xe74c3c, 0x9b59b6, 0x2ecc71];
-                this.IN_GROUPS = [4, 4, 4, 4, 3];
-                this._inputGroupCols = [];
-                for (let g = 0; g < this.IN_GROUPS.length; g++)
-                    for (let k = 0; k < this.IN_GROUPS[g]; k++)
-                        this._inputGroupCols.push(new THREE.Color(GROUP_COLS[g % GROUP_COLS.length]));
-
-                this._nodeGeo     = new THREE.SphereGeometry(0.13, 12, 8);
-                this._loopGeo     = new THREE.TorusGeometry(0.20, 0.025, 6, 18);
-                this._builtFor    = null;
-
-                this._raf = null;
-                this._animate = this._animate.bind(this);
-                this._animate();
-            }
-
-            update(animal) {
-                if (!animal || !animal.brain || !animal.brain.maskIA) return;
-                const nn = animal.brain;
-                if (nn !== this._builtFor) this._build(nn);
-                this.nn = nn;
-                this.outputIdx = animal.outputIdx ?? 0;
-                this._updateActivations();
-                if (this._raf === null) this._raf = requestAnimationFrame(this._animate);
-            }
-
-            clear() {
-                this.nn = null;
-                this._clearScene();
-                this.renderer.render(this.scene, this.camera);
-            }
-
-            dispose() {
-                cancelAnimationFrame(this._raf);
-                this.renderer.dispose();
-            }
-
-            _syncSize() {
-                const cw = this.canvas.clientWidth;
-                const ch = this.canvas.clientHeight;
-                if (cw === 0 && ch === 0) return false;
-                const w = cw || 260;
-                const h = ch || 220;
-                if (w === this._lastW && h === this._lastH) return true;
-                this._lastW = w; this._lastH = h;
-                this.renderer.setSize(w, h, false);
-                if (this.camera) {
-                    this.camera.aspect = w / h;
-                    this.camera.updateProjectionMatrix();
-                }
-                return true;
-            }
-
-            _setupDrag() {
-                const el = this.canvas;
-                el.addEventListener('click', e => e.stopPropagation());
-                el.addEventListener('mousedown', e => {
-                    e.stopPropagation();
-                    this._drag = true;
-                    this._lastMX = e.clientX; this._lastMY = e.clientY;
-                }, { passive: true });
-                window.addEventListener('mouseup', () => { this._drag = false; });
-                window.addEventListener('mousemove', e => {
-                    if (!this._drag) return;
-                    const dx = e.clientX - this._lastMX;
-                    const dy = e.clientY - this._lastMY;
-                    this._lastMX = e.clientX; this._lastMY = e.clientY;
-                    this._targetRotY += dx * 0.012;
-                    this._targetRotX += dy * 0.012;
-                    this._targetRotX = Math.max(-1.1, Math.min(1.1, this._targetRotX));
-                });
-                el.addEventListener('touchstart', e => {
-                    e.stopPropagation();
-                    if (e.touches.length === 1) {
-                        this._drag = true;
-                        this._lastMX = e.touches[0].clientX;
-                        this._lastMY = e.touches[0].clientY;
-                    }
-                }, { passive: true });
-                el.addEventListener('touchend', e => {
-                    e.stopPropagation();
-                    this._drag = false;
-                }, { passive: true });
-                el.addEventListener('touchcancel', e => {
-                    e.stopPropagation();
-                    this._drag = false;
-                }, { passive: true });
-                el.addEventListener('touchmove', e => {
-                    e.stopPropagation();
-                    if (!this._drag || e.touches.length !== 1) return;
-                    const dx = e.touches[0].clientX - this._lastMX;
-                    const dy = e.touches[0].clientY - this._lastMY;
-                    this._lastMX = e.touches[0].clientX;
-                    this._lastMY = e.touches[0].clientY;
-                    this._targetRotY += dx * 0.012;
-                    this._targetRotX += dy * 0.012;
-                    this._targetRotX = Math.max(-1.1, Math.min(1.1, this._targetRotX));
-                }, { passive: true });
-            }
-
-            _clearScene() {
-                while (this.group.children.length) {
-                    const c = this.group.children[0];
-                    this.group.remove(c);
-                    if (c.geometry && c.geometry !== this._nodeGeo && c.geometry !== this._loopGeo) c.geometry.dispose();
-                    if (c.material) c.material.dispose();
-                }
-                this._nodeMeshes = { in: [], a: [], b: [], out: [] };
-                this._edges = [];
-                this._selfLoops = [];
-            }
-
-            _build(nn) {
-                this._clearScene();
-                this._builtFor = nn;
-
-                const NA = nn.lobeSizeA;
-                const NB = nn.lobeSizeB;
-                const I = nn.inputDims;
-                const O = nn.outputDims;
-
-                const spread = (count, radius) => {
-                    return Array.from({ length: count }, (_, i) => {
-                        const angle = (i / count) * Math.PI * 2;
-                        return new THREE.Vector3(0, Math.cos(angle) * radius, Math.sin(angle) * radius);
-                    });
-                };
-
-                const posIn = [];
-                const G = this.IN_GROUPS.length;
-                for (let g = 0; g < G; g++) {
-                    const ga = (g / G) * Math.PI * 2 - Math.PI / 2;
-                    const gx = 0, gy = Math.cos(ga) * 1.5, gz = Math.sin(ga) * 1.5;
-                    const cnt = this.IN_GROUPS[g];
-                    for (let k = 0; k < cnt; k++) {
-                        const ka = (k / cnt) * Math.PI * 2;
-                        posIn.push(new THREE.Vector3(
-                            gx + Math.cos(ka) * 0.30,
-                            gy + Math.sin(ka) * 0.30,
-                            gz
-                        ));
-                    }
-                }
-                while (posIn.length < I) posIn.push(new THREE.Vector3(0, 0, 0));
-                const posA   = spread(NA, 0.55);
-                const posB   = spread(NB, 0.55);
-                const posOut = spread(O, 0.90);
-
-                const X_IN = -2.8, X_MID = 0.0, X_OUT = 2.8;
-                const Y_A = +1.1, Y_B = -1.1;
-                posIn.forEach(p  => p.x += X_IN);
-                posA.forEach(p   => { p.x += X_MID; p.y += Y_A; });
-                posB.forEach(p   => { p.x += X_MID; p.y += Y_B; });
-                posOut.forEach(p => p.x += X_OUT);
-
-                const makeMat = (col, emissive) => new THREE.MeshStandardMaterial({
-                    color: col, emissive: emissive ?? col,
-                    emissiveIntensity: 0.1,
-                    roughness: 0.4, metalness: 0.3,
-                    transparent: true, opacity: 0.85,
-                });
-
-                for (let i = 0; i < I; i++) {
-                    const col = this._inputGroupCols[i] ?? this.COL_IN;
-                    const mat = makeMat(col);
-                    const mesh = new THREE.Mesh(this._nodeGeo, mat);
-                    mesh.position.copy(posIn[i]);
-                    this.group.add(mesh);
-                    this._nodeMeshes.in.push(mesh);
-                }
-                for (let i = 0; i < NA; i++) {
-                    const mat = makeMat(this.COL_A);
-                    const mesh = new THREE.Mesh(this._nodeGeo, mat);
-                    mesh.position.copy(posA[i]);
-                    this.group.add(mesh);
-                    this._nodeMeshes.a.push(mesh);
-
-                    const lmat = new THREE.MeshStandardMaterial({
-                        color: this.COL_A, emissive: this.COL_A,
-                        emissiveIntensity: 0.4,
-                        transparent: true, opacity: 0.55,
-                    });
-                    const loop = new THREE.Mesh(this._loopGeo, lmat);
-                    loop.position.copy(posA[i]);
-                    loop.position.y += 0.28;
-                    loop.rotation.x = Math.PI / 2;
-                    this.group.add(loop);
-                    this._selfLoops.push(loop);
-                }
-                for (let i = 0; i < NB; i++) {
-                    const mat = makeMat(this.COL_B);
-                    const mesh = new THREE.Mesh(this._nodeGeo, mat);
-                    mesh.position.copy(posB[i]);
-                    this.group.add(mesh);
-                    this._nodeMeshes.b.push(mesh);
-                }
-                for (let i = 0; i < O; i++) {
-                    const mat = makeMat(this.COL_OUT);
-                    const mesh = new THREE.Mesh(this._nodeGeo, mat);
-                    mesh.position.copy(posOut[i]);
-                    this.group.add(mesh);
-                    this._nodeMeshes.out.push(mesh);
-                }
-
-                const addStraight = (pA, pB, weight, srcRole, si, tgtRole, ti) => {
-                    const geo = new THREE.BufferGeometry().setFromPoints([pA, pB]);
-                    const pos = weight >= 0
-                        ? new THREE.Color(0x50a0ff)
-                        : new THREE.Color(0xff5050);
-                    const mat = new THREE.LineBasicMaterial({
-                        color: pos, transparent: true, opacity: 0.18,
-                    });
-                    const line = new THREE.Line(geo, mat);
-                    this.group.add(line);
-                    this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.18, weight });
-                };
-
-                const addCurvedZ = (pA, pB, weight, zBias, srcRole, si, tgtRole, ti) => {
-                    const mid = pA.clone().lerp(pB, 0.5);
-                    mid.z += zBias;
-                    const curve = new THREE.QuadraticBezierCurve3(pA, mid, pB);
-                    const pts   = curve.getPoints(16);
-                    const geo   = new THREE.BufferGeometry().setFromPoints(pts);
-                    const col   = weight >= 0
-                        ? new THREE.Color(0x50a0ff)
-                        : new THREE.Color(0xff5050);
-                    const mat = new THREE.LineBasicMaterial({
-                        color: col, transparent: true, opacity: 0.22,
-                    });
-                    const line = new THREE.Line(geo, mat);
-                    this.group.add(line);
-                    this._edges.push({ line, mat, srcRole, si, tgtRole, ti, baseOp: 0.22, weight });
-
-                    const dir = pB.clone().sub(mid).normalize();
-                    const aGeo = new THREE.ConeGeometry(0.04, 0.12, 5);
-                    const aMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55 });
-                    const arrow = new THREE.Mesh(aGeo, aMat);
-                    arrow.position.copy(pB);
-                    const quat = new THREE.Quaternion().setFromUnitVectors(
-                        new THREE.Vector3(0, 1, 0), dir
-                    );
-                    arrow.quaternion.copy(quat);
-                    this.group.add(arrow);
-                    this._edges.push({ line: arrow, mat: aMat, srcRole, si, tgtRole, ti, baseOp: 0.55, weight, isArrow: true });
-                };
-
-                for (let i = 0; i < I; i++) for (let j = 0; j < NA; j++) {
-                    const k = i * NA + j;
-                    if (nn.maskIA[k]) addStraight(posIn[i], posA[j], nn.wIA[k], 'in', i, 'a', j);
-                }
-                for (let i = 0; i < I; i++) for (let j = 0; j < NB; j++) {
-                    const k = i * NB + j;
-                    if (nn.maskIB[k]) addStraight(posIn[i], posB[j], nn.wIB[k], 'in', i, 'b', j);
-                }
-                for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
-                    const k = i * NB + j;
-                    if (nn.maskAB[k]) addCurvedZ(posA[i], posB[j], nn.wAB[k],  0.70, 'a', i, 'b', j);
-                }
-                for (let i = 0; i < NB; i++) for (let j = 0; j < NA; j++) {
-                    const k = i * NA + j;
-                    if (nn.maskBA[k]) addCurvedZ(posB[i], posA[j], nn.wBA[k], -0.70, 'b', i, 'a', j);
-                }
-                for (let i = 0; i < NA; i++) for (let j = 0; j < O; j++) {
-                    const k = i * O + j;
-                    if (nn.maskAO[k]) addStraight(posA[i], posOut[j], nn.wAO[k], 'a', i, 'out', j);
-                }
-                for (let i = 0; i < NB; i++) for (let j = 0; j < O; j++) {
-                    const k = i * O + j;
-                    if (nn.maskBO[k]) addStraight(posB[i], posOut[j], nn.wBO[k], 'b', i, 'out', j);
-                }
-            }
-
-            _isFiring(role, idx) {
-                if (!this.nn) return 0;
-                switch (role) {
-                    case 'in':  return Math.abs(this.nn._standardized?.[idx] ?? 0) > 0.5 ? 1 : 0;
-                    case 'a':   return (this.nn.actA[idx] ?? 0) >= 1.0 ? 1 : 0;
-                    case 'b':   return (this.nn.actB[idx] ?? 0) >= 1.0 ? 1 : 0;
-                    case 'out': return (idx === this.outputIdx) ? 1 : 0;
-                }
-                return 0;
-            }
-
-            _updateActivations() {
-                if (!this.nn) return;
-
-                const applyNode = (mesh, firing, baseCol, fireCol) => {
-                    if (firing) {
-                        mesh.material.color.copy(fireCol ?? baseCol);
-                        mesh.material.emissive.copy(fireCol ?? baseCol);
-                        mesh.material.emissiveIntensity = 1;
-                        mesh.material.opacity = 1.0;
-                        mesh.scale.setScalar(1.6);
-                    } else {
-                        mesh.material.color.copy(baseCol);
-                        mesh.material.emissive.copy(baseCol);
-                        mesh.material.emissiveIntensity = 0.05;
-                        mesh.material.opacity = 0.28;
-                        mesh.scale.setScalar(1.0);
-                    }
-                };
-
-                for (let i = 0; i < this._nodeMeshes.in.length; i++) {
-                    const col = this._inputGroupCols[i] ?? this.COL_IN;
-                    applyNode(this._nodeMeshes.in[i], this._isFiring('in', i), col, col);
-                }
-                for (let i = 0; i < this._nodeMeshes.a.length; i++)
-                    applyNode(this._nodeMeshes.a[i], this._isFiring('a', i), this.COL_A, this.COL_A);
-                for (let i = 0; i < this._nodeMeshes.b.length; i++)
-                    applyNode(this._nodeMeshes.b[i], this._isFiring('b', i), this.COL_B, this.COL_B);
-                for (let i = 0; i < this._nodeMeshes.out.length; i++) {
-                    const firing = (i === this.outputIdx);
-                    applyNode(this._nodeMeshes.out[i], firing, this.COL_OUT, this.COL_OUT_ACTIVE);
-                }
-
-                for (const e of this._edges) {
-                    const firing = this._isFiring(e.srcRole, e.si) === 1;
-                    e.mat.opacity = firing
-                        ? (e.isArrow ? 0.9 : 0.75)
-                        : e.baseOp;
-                }
-            }
-
-            _animate() {
-                // Nothing to draw (no brain, or hidden canvas): stop rather than wake every
-                // vsync. update() restarts it.
-                this._raf = null;
-                if (!this.nn || !this._syncSize()) return;
-                this._raf = requestAnimationFrame(this._animate);
-
-                const _t = performance.now();
-                if (_t - (this._lastDraw || 0) < NNVisualizer3D.FRAME_MS) return;
-                this._lastDraw = _t;
-
-                if (!this._drag) this._targetRotY += 0.004;
-
-                this._rotY += (this._targetRotY - this._rotY) * 0.08;
-                this._rotX += (this._targetRotX - this._rotX) * 0.08;
-
-                this.group.rotation.y = this._rotY;
-                this.group.rotation.x = this._rotX;
-
-                for (const loop of this._selfLoops) {
-                    loop.rotation.z += 0.03;
-                }
-
-                this.renderer.render(this.scene, this.camera);
-            }
-        }
-// City: only the part of the sim's NNOverlay the panel uses (its sprite was
-// only ever hidden).
-class NNOverlay {
-  constructor() {
-    this.initialized = null;
-    this.visualizer = null;
+  const oA = I, oB = I + NA, oOut = I + NA + NB, total = oOut + O;
+  const nodePos = [...posIn, ...posA, ...posB, ...posOut];
+  const baseCol = [], fireCol = [];
+  for (let k = 0; k < total; k++) {
+    const hex = k < oA ? inCol[k] : k < oB ? 0x00e5ff : k < oOut ? 0xaaff00 : 0x00ff88;
+    baseCol.push(new THREE.Color(hex));
+    fireCol.push(new THREE.Color(k >= oOut ? 0xff4444 : hex));
+  }
+  const mesh = new THREE.InstancedMesh(BRAIN_NODE_GEO, brainNodeMat, total);
+  for (let k = 0; k < total; k++) {
+    mesh.setMatrixAt(k, _bMat.makeTranslation(nodePos[k].x, nodePos[k].y, nodePos[k].z));
+    mesh.setColorAt(k, _bCol.copy(baseCol[k]).multiplyScalar(BRAIN_DIM));
   }
 
-  initVisualizer() {
-    this.initialized = true;
-    const canvas3D = document.getElementById('nnCanvas3D');
-    nnOverlay.visualizer = new NNVisualizer3D(canvas3D);
+  const verts = [], cols = [], outEdges = Array.from({ length: total }, () => []);
+  const pushSeg = (p, q, c, op) => {
+    verts.push(p.x, p.y, p.z, q.x, q.y, q.z);
+    cols.push(c.r, c.g, c.b, op, c.r, c.g, c.b, op);
+  };
+  const edgeCol = w => new THREE.Color(w >= 0 ? 0x50a0ff : 0xff5050);
+  const straight = (src, pa, pb, w) => {
+    const start = verts.length / 3;
+    pushSeg(pa, pb, edgeCol(w), 0.18);
+    outEdges[src].push({ start, end: start + 2, baseOp: 0.18 });
+  };
+  const curved = (src, pa, pb, w, zBias) => {
+    const mid = pa.clone().lerp(pb, 0.5); mid.z += zBias;
+    const pts = new THREE.QuadraticBezierCurve3(pa, mid, pb).getPoints(16);
+    const c = edgeCol(w), start = verts.length / 3;
+    for (let i = 0; i < pts.length - 1; i++) pushSeg(pts[i], pts[i + 1], c, 0.22);
+    outEdges[src].push({ start, end: verts.length / 3, baseOp: 0.22 });
+  };
+  for (let i = 0; i < I; i++) for (let j = 0; j < NA; j++) {
+    const k = i * NA + j; if (nn.maskIA[k]) straight(i, posIn[i], posA[j], nn.wIA[k]);
+  }
+  for (let i = 0; i < I; i++) for (let j = 0; j < NB; j++) {
+    const k = i * NB + j; if (nn.maskIB[k]) straight(i, posIn[i], posB[j], nn.wIB[k]);
+  }
+  for (let i = 0; i < NA; i++) for (let j = 0; j < NB; j++) {
+    const k = i * NB + j; if (nn.maskAB[k]) curved(oA + i, posA[i], posB[j], nn.wAB[k], 0.70);
+  }
+  for (let i = 0; i < NB; i++) for (let j = 0; j < NA; j++) {
+    const k = i * NA + j; if (nn.maskBA[k]) curved(oB + i, posB[i], posA[j], nn.wBA[k], -0.70);
+  }
+  for (let i = 0; i < NA; i++) for (let j = 0; j < O; j++) {
+    const k = i * O + j; if (nn.maskAO[k]) straight(oA + i, posA[i], posOut[j], nn.wAO[k]);
+  }
+  for (let i = 0; i < NB; i++) for (let j = 0; j < O; j++) {
+    const k = i * O + j; if (nn.maskBO[k]) straight(oB + i, posB[i], posOut[j], nn.wBO[k]);
+  }
+  // lobe A self loops: the panel's torus, as a ring of segments above each node
+  const loopCol = new THREE.Color(0x00e5ff), R = 0.20, SEG = 12;
+  for (const p of posA) {
+    for (let i = 0; i < SEG; i++) {
+      const a0 = i / SEG * Math.PI * 2, a1 = (i + 1) / SEG * Math.PI * 2;
+      pushSeg(new THREE.Vector3(p.x + Math.cos(a0) * R, p.y + 0.28, p.z + Math.sin(a0) * R),
+              new THREE.Vector3(p.x + Math.cos(a1) * R, p.y + 0.28, p.z + Math.sin(a1) * R),
+              loopCol, 0.55);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  const colorAttr = new THREE.Float32BufferAttribute(cols, 4);
+  geo.setAttribute('color', colorAttr);
+  const lines = new THREE.LineSegments(geo, brainLineMat);
+
+  const group = new THREE.Group();
+  group.add(mesh, lines);
+  group.scale.setScalar(BRAIN_SCALE);
+  group.visible = false;
+  scene.add(group);
+  return { group, mesh, lines, colorAttr, outEdges, nodePos, baseCol, fireCol,
+           fire: new Int8Array(total).fill(-1), total, oA, oB, oOut,
+           phase: Math.random() * Math.PI * 2 };
+}
+
+function disposeBrain(b) {
+  scene.remove(b.group);
+  b.lines.geometry.dispose();
+  b.mesh.dispose();
+}
+
+// Same firing rules as the sim's NNVisualizer3D._isFiring / _updateActivations.
+function brainActivity(b, a) {
+  const nn = a.brain, out = a.outputIdx ?? 0;
+  const arr = b.colorAttr.array;
+  let dirty = false;
+  for (let k = 0; k < b.total; k++) {
+    let f;
+    if (k < b.oA)        f = Math.abs(nn._standardized?.[k] ?? 0) > 0.5;
+    else if (k < b.oB)   f = (nn.actA[k - b.oA] ?? 0) >= 1.0;
+    else if (k < b.oOut) f = (nn.actB[k - b.oB] ?? 0) >= 1.0;
+    else                 f = (k - b.oOut) === out;
+    const v = f ? 1 : 0;
+    if (b.fire[k] === v) continue;
+    b.fire[k] = v;
+    dirty = true;
+    const sc = f ? 1.6 : 1.0, p = b.nodePos[k];
+    b.mesh.setMatrixAt(k, _bMat.makeScale(sc, sc, sc).setPosition(p.x, p.y, p.z));
+    b.mesh.setColorAt(k, f ? b.fireCol[k] : _bCol.copy(b.baseCol[k]).multiplyScalar(BRAIN_DIM));
+    for (const e of b.outEdges[k]) {
+      const op = f ? 0.75 : e.baseOp;
+      for (let vi = e.start; vi < e.end; vi++) arr[vi * 4 + 3] = op;
+    }
+  }
+  if (dirty) {
+    b.mesh.instanceMatrix.needsUpdate = true;
+    b.mesh.instanceColor.needsUpdate = true;
+    b.colorAttr.needsUpdate = true;
   }
 }
 
-class StatLabelSystem {
+class HealthBars {
   constructor() {
-    this.current = null;
-    this.locked = null;
-    this.enabled = true;
-    this._nnLabelEl = undefined;
+    this.bars = new Map();     // person -> slot (stats sprite and brain)
+    this.spare = [];           // hidden slots, reused before making new ones
+    this.seen = new Set();
 
-    this.panel     = document.getElementById('animal-stat-panel');
-    this.genEl     = document.getElementById('asp-generation');
-    this.hpEl      = document.getElementById('asp-hp-val');
-    this.foodEl    = document.getElementById('asp-food-val');
-    this.waterEl   = document.getElementById('asp-water-val');
-    this.ageLineEl = document.getElementById('asp-age-line');
-    this.ageEl     = document.getElementById('asp-age-val');
+    // Row layout of the full sprite (see draw), in canvas pixels from the top.
+    const rows = BAR_ICONS.length, pad = 4, gap = 3;
+    const rh = (BAR_CANVAS_H - 2 * pad - (rows - 1) * gap) / rows;
+    this.farBarX = -BAR_W_M / 2 + (pad + 24) * BAR_PX;               // left edge of a bar
+    this.farBarW = (BAR_CANVAS_W - (pad + 24) - 22 - pad) * BAR_PX;  // full-bar width
+    this.farBarH = rh * 0.62 * BAR_PX;
+    this.farRowY = [];                                               // row centre above the sprite bottom
+    for (let i = 0; i < rows; i++) this.farRowY.push(BAR_H_M - (pad + i * (rh + gap) + rh / 2) * BAR_PX);
 
-    this.memPredTxt    = document.getElementById('asp-mem-predator-dist');
-    this.memPredArrow  = document.getElementById('asp-mem-predator-arrow');
-    this.memFoodTxt    = document.getElementById('asp-mem-food-dist');
-    this.memFoodArrow  = document.getElementById('asp-mem-food-arrow');
-    this.memWaterTxt   = document.getElementById('asp-mem-water-dist');
-    this.memWaterArrow = document.getElementById('asp-mem-water-arrow');
-    this.memMateTxt    = document.getElementById('asp-mem-mate-dist');
-    this.memMateArrow  = document.getElementById('asp-mem-mate-arrow');
+    const barGeo = new THREE.PlaneGeometry(1, 1);
+    barGeo.translate(0.5, 0, 0);                                     // left-anchored, so scale.x is the fill
+    const barMat = new THREE.MeshBasicMaterial({ toneMapped: false, side: THREE.DoubleSide });
+    this.farBars = new THREE.InstancedMesh(barGeo, barMat, FAR_STAT_MAX * rows);
+    const c = new THREE.Color();
+    for (let j = 0; j < FAR_STAT_MAX * rows; j++) this.farBars.setColorAt(j, c.set(BAR_COLORS[j % rows]));
+    this.farBars.instanceColor.needsUpdate = true;
+    this.farBars.frustumCulled = false;
+    this.farBars.count = 0;
+    this.farBars.visible = false;
+    scene.add(this.farBars);
 
-    // City: scratch for the look-at pick
-    this._ray    = new THREE.Ray();
-    this._sphere = new THREE.Sphere();
-    this._hitPt  = new THREE.Vector3();
+    const lobeGeo = new THREE.IcosahedronGeometry(LOBE_RADIUS * BRAIN_SCALE, 0);
+    this.farLobes = new THREE.InstancedMesh(lobeGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), FAR_STAT_MAX * 2);
+    this.farLobes.setColorAt(0, c.set(0));                           // allocates instanceColor
+    this.farLobes.frustumCulled = false;
+    this.farLobes.count = 0;
+    this.farLobes.visible = false;
+    scene.add(this.farLobes);
+    this.lobeBase = LOBE_COLS.map(h => new THREE.Color(h));
+
+    this._m = new THREE.Matrix4();
+    this._p = new THREE.Vector3();
+    this._s = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
+    this._right = new THREE.Vector3();
+    this._up = new THREE.Vector3();
+    this._c = new THREE.Color();
   }
 
-  setMemSlot(txt, active, label) {
-    if (!txt) return;
-    perf.setText(txt, active ? label : '');
-    const cls = 'asp-mem-dist' + (active ? ' active' : '');
-    if (txt.className !== cls) txt.className = cls;
+  // Share of a lobe's neurons firing this tick (the full brain's firing rule).
+  firing(act) {
+    if (!act || !act.length) return 0;
+    let n = 0;
+    for (let i = 0; i < act.length; i++) if (act[i] >= 1.0) n++;
+    return n / act.length;
   }
 
-  // City: whole metres
-  dist(a, mx, my, mz) {
-    const dx = mx - a.position.x;
-    const dy = my - a.eyeY();
-    const dz = mz - a.position.z;
-    return Math.round(Math.sqrt(dx * dx + dy * dy + dz * dz));
+  makeBar() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 192; canvas.height = 96;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false, toneMapped: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(BAR_W_M, BAR_H_M, 1);
+    sprite.center.set(0.5, 0);   // anchor the bottom edge above the head
+    sprite.visible = false;
+    scene.add(sprite);
+    return { sprite, canvas, ctx: canvas.getContext('2d'), tex, key: '',
+             brain: null, brainFor: null };
   }
 
-  setArrow(a, arrow, active, sin, cos) {
-    if (!active) {
-      if (arrow._active !== false) { arrow._active = false; arrow.classList.remove('active'); }
-      return;
+  // Top of the head in metres: feet (pivot minus foot lift) plus rig height.
+  headTop(a) {
+    const hs = a.heightScale ?? 1.0;
+    if (a.type !== 'human') return a.eyeY() + 0.15;
+    return a.position.y + (38.55 * hs - a.footLift()) * NPC_UNIT;
+  }
+
+  // Memory arrow heading, as the stat panel's setArrow: relative to the
+  // person's facing, up = straight ahead. Snapped; -1 when nothing is remembered.
+  heading(a, has, sin, cos) {
+    if (!has) return -1;
+    const rel = Math.atan2(sin, cos) - a.facingAngle;
+    const k = Math.round(-rel / (2 * Math.PI) * ARROW_STEPS);
+    return ((k % ARROW_STEPS) + ARROW_STEPS) % ARROW_STEPS;
+  }
+
+  // The stat panel's SVG arrow (shaft 4..-4, head to -6 in a 12-unit box).
+  arrow(ctx, x, y, size, step, color) {
+    const u = size / 12;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(step / ARROW_STEPS * 2 * Math.PI);
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 1.5 * u; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 4 * u); ctx.lineTo(0, -4 * u); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -6 * u); ctx.lineTo(-2.5 * u, -2 * u); ctx.lineTo(2.5 * u, -2 * u);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  draw(slot, vals, arrows) {
+    const key = vals.join(',') + ';' + arrows.join(',');
+    if (slot.key === key) return;
+    slot.key = key;
+    const { ctx, canvas } = slot;
+    const W = canvas.width, H = canvas.height;
+    const rows = BAR_ICONS.length;
+    const pad = 4, gap = 3, rh = (H - 2 * pad - (rows - 1) * gap) / rows;
+    const iconW = 24, arrowW = 22;
+    const bx = pad + iconW, bw = W - bx - arrowW - pad;
+    const bh = rh * 0.62;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(12, 15, 21, 0.7)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = `${Math.round(rh * 0.8)}px ${EMOJI_FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < rows; i++) {
+      const cy = pad + i * (rh + gap) + rh / 2;
+      ctx.fillText(BAR_ICONS[i], pad + iconW / 2, cy);
+      ctx.fillStyle = 'rgba(232, 228, 220, 0.12)';
+      ctx.fillRect(bx, cy - bh / 2, bw, bh);
+      ctx.fillStyle = BAR_COLORS[i];
+      ctx.fillRect(bx, cy - bh / 2, bw * vals[i] / BAR_STEPS, bh);
+      if (arrows[i] >= 0) this.arrow(ctx, W - pad - arrowW / 2, cy, rh * 0.9, arrows[i], BAR_COLORS[i]);
     }
-    const worldAngle = Math.atan2(sin, cos);
-    const relAngle = worldAngle - a.facingAngle;
-    const deg = Math.round(-relAngle * (180 / Math.PI));
-    if (!arrow._svg) arrow._svg = arrow.querySelector('svg');
-    if (arrow._deg !== deg) {
-      arrow._deg = deg;
-      arrow._svg.style.transform = 'rotate(' + deg + 'deg)';
-    }
-    if (arrow._active !== true) { arrow._active = true; arrow.classList.add('active'); }
+    slot.tex.needsUpdate = true;
   }
 
-  updateMemories(a) {
-    this.setMemSlot(this.memPredTxt, a.hasPredator,
-      a.hasPredator ? String(this.dist(a, a.memPredatorX, a.memPredatorY, a.memPredatorZ)) : 'no threat');
-    this.setArrow(a, this.memPredArrow, a.hasPredator, a.rayPredatorSin, a.rayPredatorCos);
-
-    this.setMemSlot(this.memFoodTxt, a.hasFood,
-      a.hasFood ? String(this.dist(a, a.memFoodX, a.memFoodY, a.memFoodZ)) : 'no food');
-    this.setArrow(a, this.memFoodArrow, a.hasFood, a.rayFoodSin, a.rayFoodCos);
-
-    this.setMemSlot(this.memWaterTxt, a.hasWater,
-      a.hasWater ? String(this.dist(a, a.memWaterX, a.memWaterY, a.memWaterZ)) : 'no water');
-    this.setArrow(a, this.memWaterArrow, a.hasWater, a.rayWaterSin, a.rayWaterCos);
-
-    this.setMemSlot(this.memMateTxt, a.hasMate,
-      a.hasMate ? String(this.dist(a, a.memMateX, a.memMateY, a.memMateZ)) : 'no mate');
-    this.setArrow(a, this.memMateArrow, a.hasMate, a.rayMateSin, a.rayMateCos);
-  }
-
+  // Every living person gets a stats sprite and, above it, their brain. A
+  // reused slot keeps its brain only if it belongs to the same network.
   update(animals) {
-    let targetFound = false;
+    const spin = performance.now() / 1000 * BRAIN_SPIN;
+    const now = Date.now();
+    const q = v => Math.round(Math.max(0, Math.min(1, v)) * BAR_STEPS);
+    const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];   // health has no memory slot
+    const seen = this.seen;
+    seen.clear();
+
+    // low detail faces the camera like the sprites do: camera right and up
+    updateNpcFrustum();
+    const cam = camera.position, cq = camera.quaternion;
+    this._right.set(1, 0, 0).applyQuaternion(cq);
+    this._up.set(0, 1, 0).applyQuaternion(cq);
+    const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+    const rows = BAR_ICONS.length;
+    const lobeOff = 1.1 * BRAIN_SCALE;                // lobe centres above/below the brain centre
+    let nf = 0;                                       // people drawn in low detail
 
     for (const a of animals) {
-      if (!a.alive) continue;
-
-      const isTarget = (a === this.locked);
-      if (!isTarget || !this.enabled) continue;
-
-      targetFound = true;
-
-      const gen = a.generation ?? 0;
-      perf.setText(this.hpEl,    a.health.toFixed(1));
-      perf.setText(this.foodEl,  a.foodNeed.toFixed(1));
-      perf.setText(this.waterEl, a.waterNeed.toFixed(1));
-
-      if (!a.isAdult) {
-        const agePct = Math.min(1, (world.ticks - a.birthTick) / animalRenderer.MATURITY_TICKS) * 100;
-        perf.setText(this.ageEl, agePct.toFixed(1));
-      } else {
-        perf.setText(this.ageEl, '100.0');
+      if (!a.alive || a.type !== 'human') continue;
+      seen.add(a);
+      let bar = this.bars.get(a);
+      if (!bar) {
+        bar = this.spare.pop() || this.makeBar();
+        bar.key = '';
+        this.bars.set(a, bar);
       }
-      if (this.ageLineEl.style.display !== '') this.ageLineEl.style.display = '';
 
-      perf.setText(this.genEl, 'Generation ' + gen);
-      const genCls = 'asp-generation' + (gen > 0 ? ' born' : '');
-      if (this.genEl.className !== genCls) this.genEl.className = genCls;
-
-      this.panel.classList.add('visible');
-
-      this.updateMemories(a);
-
-      if (!nnOverlay.visualizer) nnOverlay.initVisualizer();
-      if (nnOverlay.visualizer) {
-        try {
-          nnOverlay.visualizer.update(a);
-          if (this._nnLabelEl === undefined) {
-            this._nnLabelEl = document.getElementById('asp-nn-label');
-          }
-          perf.setText(this._nnLabelEl, 'Two-Lobe GRU Network');
-        } catch(e) {}
+      const barY = this.headTop(a) + BAR_ABOVE;
+      if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) {
+        bar.sprite.visible = false;
+        if (bar.brain) bar.brain.group.visible = false;
+        continue;
       }
-    }
+      const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;   // as the bodies, so both swap together
+      if (ex * ex + ey * ey + ez * ez > lod2) {
+        bar.sprite.visible = false;
+        if (bar.brain) bar.brain.group.visible = false;
+        if (nf >= FAR_STAT_MAX) continue;
 
-    if (!targetFound) {
-      this.panel.classList.remove('visible');
-    }
-  }
+        const fill = [
+          a.health / a.maxHealth,
+          1 - Math.min(a.foodNeed, 100) / 100,
+          1 - Math.min(a.waterNeed, 100) / 100,
+          (now - a.lastChildTime) / a.childGracePeriod
+        ];
+        for (let i = 0; i < rows; i++) {
+          const f = Math.max(0, Math.min(1, fill[i]));
+          const dx = this.farBarX, dy = this.farRowY[i];
+          this._p.set(a.position.x + this._right.x * dx + this._up.x * dy,
+                      barY         + this._right.y * dx + this._up.y * dy,
+                      a.position.z + this._right.z * dx + this._up.z * dy);
+          this._s.set(Math.max(f * this.farBarW, 1e-4), this.farBarH, 1);
+          this.farBars.setMatrixAt(nf * rows + i, this._m.compose(this._p, cq, this._s));
+        }
 
-  clearAll() {
-    this.panel.classList.remove('visible');
-    this.current = null;
-    this.locked = null;
-  }
-
-  // City: the sim's Player.pickTarget. Nearest NPC whose sphere the view ray
-  // hits; the 15-unit sphere is in metres here.
-  pickTarget() {
-    camera.getWorldPosition(this._ray.origin);
-    camera.getWorldDirection(this._ray.direction);
-
-    let closest = null;
-    let closestDist = Infinity;
-
-    for (const a of world.animals) {
-      if (!a.alive) continue;
-      this._sphere.set(a.position, 15 * NPC_UNIT);
-      const intersection = this._ray.intersectSphere(this._sphere, this._hitPt);
-      if (intersection) {
-        const dist = this._ray.origin.distanceTo(intersection);
-        if (dist < closestDist) { closest = a; closestDist = dist; }
+        const nn = a.brain;
+        const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+        const fire = [this.firing(nn && nn.actA), this.firing(nn && nn.actB)];
+        for (let l = 0; l < 2; l++) {
+          this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
+          this._s.set(1, 1, 1);
+          this.farLobes.setMatrixAt(nf * 2 + l, this._m.compose(this._p, this._q, this._s));
+          const k = BRAIN_DIM + (1 - BRAIN_DIM) * fire[l];
+          this.farLobes.setColorAt(nf * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
+        }
+        nf++;
+        continue;
       }
-    }
-    return closest;
-  }
 
-  updateTarget() {
-    const target = this.pickTarget();
-    this.current = (target && target.alive) ? target : null;
+      vals[0] = q(a.health / a.maxHealth);
+      vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
+      vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
+      // mate: how far through the post-birth grace period; full = lookForMate
+      vals[3] = q((now - a.lastChildTime) / a.childGracePeriod);
+      arrows[1] = this.heading(a, a.hasFood,  a.rayFoodSin,  a.rayFoodCos);
+      arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
+      arrows[3] = this.heading(a, a.hasMate,  a.rayMateSin,  a.rayMateCos);
+      this.draw(bar, vals, arrows);
+      bar.sprite.position.set(a.position.x, barY, a.position.z);
+      bar.sprite.visible = true;
 
-    if (this.current !== null && this.current !== this.locked) {
-      this.locked = this.current;
+      const nn = a.brain;
+      if (!nn || !nn.maskIA) { if (bar.brain) bar.brain.group.visible = false; continue; }
+      if (bar.brainFor !== nn) {
+        if (bar.brain) disposeBrain(bar.brain);
+        bar.brain = buildBrain(nn);
+        bar.brainFor = nn;
+      }
+      const b = bar.brain;
+      brainActivity(b, a);
+      b.group.position.set(a.position.x, barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE, a.position.z);
+      b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
+      b.group.visible = true;
     }
-    if (this.locked && !this.locked.alive) {
-      this.locked = null;
+    for (const [a, bar] of this.bars) {
+      if (seen.has(a)) continue;
+      bar.sprite.visible = false;
+      if (bar.brain) bar.brain.group.visible = false;
+      this.bars.delete(a);
+      this.spare.push(bar);
     }
-  }
 
-  // City: stick and look-drag are canvas pointer events, so one capture-phase
-  // pointerup covers mouse and touch, before the canvas handler clears
-  // stickId / lookId.
-  bind() {
-    document.addEventListener('pointerup', (e) => {
-      if (!this.locked || !this.panel.classList.contains('visible')) return;
-      if (e.pointerId === stickId || e.pointerId === lookId) return;
-      if (e.target && e.target.closest && e.target.closest('#animal-stat-panel')) return;
-      this.locked = null;
-    }, { capture: true });
+    perf.instances(this.farBars, nf * rows);
+    perf.instances(this.farLobes, nf * 2);
+    perf.instanceColors(this.farLobes, nf * 2);
   }
 }
 
-const nnOverlay = new NNOverlay();
-const labels    = new StatLabelSystem();
+const healthBars = new HealthBars();
 
 
 // CONTROLS
@@ -4503,6 +4323,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   if (!locked) keys.clear();
+  // The Esc that releases pointer lock never reaches the page, so losing the
+  // lock in play is what opens settings.
+  if (!locked && active) settingsEl.classList.add('on');
   wake();
 });
 
@@ -4515,13 +4338,17 @@ addEventListener('mousemove', e => {
   wake();
 });
 
+function returnToIntro() {
+  if (!active) return;
+  if (locked) document.exitPointerLock();
+  active = false;
+  dotEl.classList.remove('on');
+  panel.classList.remove('hidden');
+  showControls(false);
+}
+
 addEventListener('keydown', e => {
-  if (e.code === 'Escape' && !locked && active) {
-    active = false;
-    dotEl.classList.remove('on');
-    panel.classList.remove('hidden');
-    showControls(false);
-  }
+  if (e.code === 'Escape' && !locked && active) settingsEl.classList.add('on');
 });
 
 // TOUCH
@@ -4535,7 +4362,6 @@ const touchMove = { x: 0, z: 0 };
 let stickId = null, stickCx = 0, stickCy = 0;
 let lookId = null, lookX = 0, lookY = 0;
 let lastTapAt = 0, jumpQueued = false;
-labels.bind();
 // knob offset is written once per frame, not per pointermove
 let knobDx = 0, knobDy = 0, knobDirty = false;
 
@@ -4716,6 +4542,11 @@ function chips(host, names, pick) {
 
 chips(timesEl, TIMES, n => { timePreset = n; });
 chips(skiesEl, Object.keys(SKIES), n => { skyPreset = n; });
+
+document.getElementById('tomenu').addEventListener('click', e => {
+  e.currentTarget.blur();
+  returnToIntro();
+});
 
 gearEl.addEventListener('click', () => {
   settingsEl.classList.toggle('on');
@@ -5430,8 +5261,8 @@ async function load(query) {
     updateSky();    // the sun runs off the coordinates alone, forecast or not
     startClock();
 
-    // the geocoded point is often inside the addressed building, so step out
-    const [sx, sz] = outdoorSpawn(0, 0);
+    // start on the street nearest the geocoded point; open ground if there is none
+    const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
     player.pos.set(sx, EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
