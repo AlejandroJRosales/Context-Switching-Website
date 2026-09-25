@@ -1791,7 +1791,7 @@ function buildGround(features) {
   let rg = bufGeom(roadBuf), pg = bufGeom(pathBuf);
 
   // flat layers follow the ground; with no terrain they stay as built
-  const lay = gs => elevation.active ? gs.map(drape) : gs;
+  const lay = gs => elevation.active ? gs.map(drape).filter(Boolean) : gs;
   addLayer(lay(areaGeoms), litMaterial(LAYER_BIAS.area));
   addLayer(lay(waterGeoms), litMaterial(LAYER_BIAS.water));
   if (rg) addLayer(lay([rg]), litMaterial(LAYER_BIAS.road));
@@ -2095,9 +2095,13 @@ async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
 // Split a flat, non-indexed layer until no edge is longer than ELEV_STEP,
 // then lift every vertex by the ground under it. Longest-edge midpoint
 // splits cut a shared edge the same way from both sides, so no cracks.
+// Overpass returns whole ways, so a landuse or lake can run kilometres past
+// the loaded area; triangles wholly outside the height grid are dropped at
+// every split level, so only the part over the grid is subdivided.
 function drape(g) {
   const P = g.attributes.position.array, C = g.attributes.color.array;
   const E2 = ELEV_STEP * ELEV_STEP;
+  const L = elevation.half + ELEV_STEP;   // keep a cell of overhang past the grid
   let pos = new Float32Array(Math.max(1024, P.length * 2)), col = new Float32Array(pos.length), n = 0;
   // Depth-first stack of triangles, 18 numbers each: 3 corners of x, y, z, r, g, b.
   // A split replaces one slot with two, so depth, not count, sets the size.
@@ -2111,6 +2115,8 @@ function drape(g) {
     while (sp > 0) {
       const o = --sp * 18;
       const ax = S[o], az = S[o + 2], bx = S[o + 6], bz = S[o + 8], cx = S[o + 12], cz = S[o + 14];
+      if ((ax < -L && bx < -L && cx < -L) || (ax > L && bx > L && cx > L) ||
+          (az < -L && bz < -L && cz < -L) || (az > L && bz > L && cz > L)) continue;
       const ab = (ax - bx) ** 2 + (az - bz) ** 2;
       const bc = (bx - cx) ** 2 + (bz - cz) ** 2;
       const ca = (cx - ax) ** 2 + (cz - az) ** 2;
@@ -2142,6 +2148,7 @@ function drape(g) {
     }
   }
   g.dispose();
+  if (!n) return null;   // the whole layer lay outside the grid
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, n), 3));
   out.setAttribute('color', new THREE.BufferAttribute(col.slice(0, n), 3));
