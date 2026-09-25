@@ -163,6 +163,18 @@
   .pedal.held { background: rgba(232, 228, 220, 0.85); color: #10131a; border-color: transparent; }
   #gas   { right: 18px;  height: 132px; }
   #brake { right: 104px; height: 96px; }
+  #gas svg, #brake svg { display: block; margin: 0 auto; fill: currentColor; pointer-events: none; }
+  #gas svg   { width: 30px; height: 48px; }
+  #brake svg { width: 38px; height: 24px; }
+  #sprint svg, #jump svg, #fly svg { display: block; margin: 0 auto; fill: currentColor; pointer-events: none; }
+  #sprint svg { width: 34px; height: 34px; }
+  #jump svg   { width: 34px; height: 34px; }
+  #fly svg    { width: 26px; height: 26px; }
+  /* touch sprint on foot: same slot as gas; the fly/drive/climb stack sits above it */
+  #sprint { right: 18px; height: 132px; }
+  #jump   { right: 104px; height: 96px; }   /* brake's slot */
+  body.foot-touch #fly { bottom: 172px; }
+  body.foot-touch #car { bottom: 228px; }
   /* flick steering: the floating stick narrows to a horizontal track */
   #stick.flick { height: 46px; margin-top: -23px; border-radius: 23px; }
   #fly.flying, #climb button.held {
@@ -176,6 +188,10 @@
   }
   #climb.on { display: flex; }
   #climb button { width: 100%; font-size: 15px; padding: 10px 0; }
+  /* touch, flying: up takes the gas slot, down the brake slot */
+  body.foot-touch #climb button { position: fixed; bottom: 24px; width: 74px; }
+  body.foot-touch #up   { right: 18px;  height: 132px; }
+  body.foot-touch #down { right: 104px; height: 96px; }
   #gear {
     position: fixed; right: 18px; top: 16px;
     z-index: 7; display: none;
@@ -233,7 +249,7 @@
       <button id="go">Load</button>
     </div>
     <details id="more">
-      <summary>More</summary>
+      <summary>Build Options</summary>
       <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Car</button>
       <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Terrain</button>
       <button class="switch on" data-opt="people" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>People</button>
@@ -249,10 +265,12 @@
 <div id="dot"></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
-<button id="fly">Fly</button>
+<button id="fly" aria-label="Fly"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 36C6 20 20 8 44 6C42 12 38 15 32 16C38 17 39 20 35 23C31 25 27 25 23 25C28 27 28 30 24 32C18 35 11 36 4 36Z"/></svg></button>
 <button id="car">Drive</button>
-<button id="brake" class="pedal">Brake</button>
-<button id="gas" class="pedal">Gas</button>
+<button id="brake" class="pedal" aria-label="Brake"><svg viewBox="0 0 64 40" aria-hidden="true"><path fill-rule="evenodd" d="M6 4H58Q62 4 61 8L57 32Q56 36 52 36H12Q8 36 7 32L3 8Q2 4 6 4ZM13.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"/></svg></button>
+<button id="gas" class="pedal" aria-label="Gas"><svg viewBox="0 0 40 64" aria-hidden="true"><path fill-rule="evenodd" d="M18 4H32Q36 4 36 8V56Q36 60 32 60H8Q4 60 4 56V26Q4 23 6 21L16 6Q17 4 18 4ZM23.7 14a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M11.7 24a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M23.7 24a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M11.7 33a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M23.7 33a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M11.7 42a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M23.7 42a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M11.7 51a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M23.7 51a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"/></svg></button>
+<button id="sprint" class="pedal" aria-label="Sprint"><svg viewBox="0 0 100 100" aria-hidden="true"><path fill-rule="evenodd" d="M33.3 29L30.9 30.5L18.9 41.5L17.2 43.8L16.5 46.7L17 49.6L18.5 52.1L20.8 53.8L23.7 54.5L26.6 54L28.3 53.1L31.6 50.2L44.1 28.5L36 28.5ZM80.5 9.2L79.4 7.1L76.9 4.3L74.9 3L71.4 1.7L67.8 1.6L65.4 2L62.1 3.6L60.2 5.2L58.6 7.1L57.5 9.2L56.6 12.8L56.6 15.2L57 17.6L58.7 21.1L56.6 21.4L53.5 22.7L52.1 23.7L49.7 26.1L33.7 53.5L32.4 56.6L32 60L32.4 63.4L33.7 66.5L35.8 69.2L38.5 71.3L41.6 72.6L45 73L46.7 72.9L48.8 72.4L53.3 75.5L49.8 88.8L49.6 92.1L50.2 94.3L51.3 96.2L52.9 97.8L55.8 99.2L59.1 99.4L61.3 98.8L63.2 97.7L65.4 95.2L66.2 93.2L71.2 74.2L71.5 71.9L71.2 69.6L70.8 68.6L69.6 66.6L67.9 65.1L60.2 59.6L65.2 51L68.7 54.1L70.5 55.1L72.5 55.5L75.5 55.1L77.3 54.2L90.3 45.2L91.7 43.9L93.1 41.3L93.5 38.4L93.1 36.5L92.2 34.7L90.1 32.7L87.3 31.6L84.4 31.7L82.6 32.3L73.7 38.4L72.6 37.4L72.9 35.7L72.9 32.3L72 29L70.5 26.4L73.8 25.5L75.9 24.4L77.8 22.8L80 19.9L81 17.6L81.4 15.2L81.4 12.8ZM8.6 71.8L6.8 73.1L5.5 74.9L4.5 78.1L4.6 80.3L5.2 82.5L7.1 85.2L10 86.9L12.1 87.5L14.3 87.4L33.3 84.4L35.4 83.8L38.1 81.9L42.4 76.3L38.7 75.2L35 73.1L31.9 70L30.7 68.3L29.4 65.3L27.3 68.1L11.7 70.6Z"/></svg></button>
+<button id="jump" class="pedal" aria-label="Jump"><svg viewBox="0 0 623 712" aria-hidden="true"><path transform="matrix(1 0 0 -1 0 712)" d="M508 711 c-66 -13 -100 -86 -68 -143 45 -79 163 -60 181 29 13 66 -48 126 -113 114z M45 575 c-56 -14 -60 -94 -5 -112 9 -3 6 -5 48 31 l39 32 18 7 c10 4 36 16 58 25 22 9 41 17 41 18 1 1 -194 0 -199 -1z M356 575 c-8 -1 -21 -5 -31 -8 -8 -3 -17 -7 -59 -24 -27 -12 -88 -38 -100 -43 -4 -2 -10 -4 -12 -5 -4 -2 -16 -11 -33 -26 -16 -12 -44 -35 -62 -51 -41 -33 -45 -37 -50 -45 -28 -46 17 -101 68 -85 10 3 14 6 60 44 l44 37 -4 -8 c-32 -65 -27 -107 16 -130 5 -3 20 -8 99 -38 17 -6 31 -11 31 -12 0 0 12 -34 26 -76 30 -91 32 -94 48 -102 l5 -3 26 0 26 0 5 3 c12 5 23 22 26 37 3 16 4 13 -34 127 l-34 103 -4 2 c-3 1 -8 4 -12 6 -5 3 -16 9 -25 13 -9 5 -22 12 -29 16 l-13 7 1 4 c10 33 36 73 75 113 20 22 30 38 34 55 12 51 -34 98 -88 89z M395 326 c1 -1 14 -8 28 -16 l26 -13 29 -88 29 -88 5 -4 c27 -25 41 -30 64 -25 39 8 59 54 37 88 -5 8 -4 7 -86 77 l-75 65 -7 0 c-4 1 -16 2 -27 2 -11 1 -21 2 -22 3 -2 0 -2 0 -1 -1z"/></svg></button>
 <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
 <button id="gear">=</button>
 <div id="settings">
@@ -282,6 +300,9 @@ const PLAYER_RADIUS  = 0.35;
 const WALK_SPEED     = 10.0;
 const RUN_SPEED      = 15.0;
 const JUMP_SPEED     = 7.0;
+const CROUCH_SPEED   = 4.0;
+const CROUCH_DROP    = 0.45;    // metres the eye lowers when crouched
+const CROUCH_RATE    = 3.0;     // metres per second the eye moves into/out of a crouch
 const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
@@ -5307,7 +5328,7 @@ addEventListener('keydown', e => {
 
 // TOUCH
 
-// Left half: floating stick. Right half: look-drag, double tap jumps. Touch
+// Left half: floating stick. Right half: look-drag. Double tap on the stick crouches. Touch
 // and keyboard/mouse are always both live.
 const STICK_RADIUS = 55;          // px of travel for full tilt
 const FLICK_RADIUS = 10;          // px of flick-steering travel for full lock while driving
@@ -5316,7 +5337,9 @@ const TAP_GAP_MS   = 300;
 const touchMove = { x: 0, z: 0 };
 let stickId = null, stickCx = 0, stickCy = 0;
 let lookId = null, lookX = 0, lookY = 0;
-let lastTapAt = 0, jumpQueued = false;
+let jumpQueued = false;
+// double tap on the stick toggles crouch; crouchY eases the eye toward it
+let lastStickTapAt = 0, crouching = false, crouchY = 0;
 // knob offset is written once per frame, not per pointermove
 let knobDx = 0, knobDy = 0, knobDirty = false;
 
@@ -5334,12 +5357,14 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
       knobEl.style.transform = 'translate(0px, 0px)';
       stickEl.classList.toggle('flick', driving);
       stickEl.classList.add('on');
+      const now = performance.now();
+      if (now - lastStickTapAt < TAP_GAP_MS) {
+        if (!driving && !flying) crouching = !crouching;
+        lastStickTapAt = 0;
+      } else lastStickTapAt = now;
     } else if (lookId === null) {
       lookId = e.pointerId;
       lookX = e.clientX; lookY = e.clientY;
-      const now = performance.now();
-      if (now - lastTapAt < TAP_GAP_MS) { jumpQueued = true; lastTapAt = 0; }
-      else lastTapAt = now;
     }
     wake();
   });
@@ -5411,6 +5436,7 @@ holdClimb(downEl, -1);
 function toggleFly() {
   if (driving) return;
   flying = !flying;
+  crouching = false;
   flyEl.classList.toggle('flying', flying);
   climbEl.classList.toggle('on', flying);
   climb = 0;
@@ -5733,7 +5759,9 @@ function pushPlayerFromCar() {
 // once the car has stopped.
 const gasEl = document.getElementById('gas');
 const brakeEl = document.getElementById('brake');
-const pedal = { gas: false, brake: false };
+const sprintEl = document.getElementById('sprint');
+const jumpEl = document.getElementById('jump');
+const pedal = { gas: false, brake: false, sprint: false, jump: false };
 const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
 
 function holdPedal(btn, name) {
@@ -5754,9 +5782,34 @@ function holdPedal(btn, name) {
 }
 holdPedal(gasEl, 'gas');
 holdPedal(brakeEl, 'brake');
+holdPedal(sprintEl, 'sprint');
+holdPedal(jumpEl, 'jump');
+// a tap shorter than a frame still jumps
+jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
+
+// Touch sprint and jump, held like shift and space. Shown on foot in the gas pedal's slot;
+// hidden while flying (shift means down there) but the stack stays raised
+// so the fly button doesn't jump under the thumb.
+let footTouch = false, sprintShown = false;
+function updateSprintButton() {
+  const foot = active && !driving && touchUi();
+  if (foot !== footTouch) {
+    footTouch = foot;
+    document.body.classList.toggle('foot-touch', foot);
+  }
+  const show = foot && !flying;
+  if (show === sprintShown) return;
+  sprintShown = show;
+  for (const el of [sprintEl, jumpEl]) {
+    el.classList.toggle('on', show);
+    if (!show) el.classList.remove('held');
+  }
+  if (!show) pedal.sprint = pedal.jump = false;
+}
 
 let carBtnState = '';
 function updateCarButton() {
+  updateSprintButton();
   const state = !active ? '' : driving ? 'exit' : carNear() ? 'enter' : '';
   if (state === carBtnState) return;
   carBtnState = state;
@@ -5774,6 +5827,7 @@ function updateCarButton() {
 function enterCar() {
   if (driving || !carNear()) return;
   driving = true;
+  crouching = false; crouchY = 0;
   drive.camYaw = car.yaw;
   drive.lookYaw = 0; drive.lookPitch = 0; drive.lookAt = 0;
   drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;   // no look delta on entry
@@ -5989,7 +6043,8 @@ function step(dt) {
 
   const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
   // while flying, shift means down rather than run
-  const speed = (shiftHeld && !flying) ? RUN_SPEED : WALK_SPEED;
+  const speed = (crouching && !flying) ? CROUCH_SPEED :
+                ((shiftHeld || pedal.sprint) && !flying) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
   let dx = 0, dz = 0;
   if (len > 0 && active) {
@@ -6019,7 +6074,7 @@ function step(dt) {
     // out of the car's body, then settle against any wall that pushed into
     if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
 
-    if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
+    if (player.grounded && active && (keys.has('Space') || jumpQueued || pedal.jump)) {
       player.vel.y = JUMP_SPEED;
       player.grounded = false;
     }
@@ -6051,7 +6106,11 @@ function step(dt) {
     }
   }
 
+  const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
+  crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
+                               : Math.max(crouchTo, crouchY - CROUCH_RATE * dt);
   camera.position.copy(player.pos);
+  camera.position.y -= crouchY;
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   updateCarButton();
 }
@@ -6063,7 +6122,7 @@ let last = -1;
 let rafId = 0;
 let sceneDirty = true;
 const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
-let drawnYaw = NaN, drawnPitch = NaN;
+let drawnYaw = NaN, drawnPitch = NaN, drawnCrouch = NaN;
 
 // NPC ticks are capped at 60 Hz. The Arena's constants (MOVE_TIMESTEP, need
 // increments, ACTION_HOLD, BRAIN_UPDATE_INTERVAL) are per tick and were tuned
@@ -6080,7 +6139,7 @@ function wake() {
 }
 
 function movementHeld() {
-  return stickId !== null || climb !== 0 || jumpQueued || pedal.gas || pedal.brake ||
+  return stickId !== null || climb !== 0 || jumpQueued || pedal.gas || pedal.brake || pedal.jump ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space') ||
@@ -6113,11 +6172,12 @@ function frame(now) {
       npcElapsed = 0;
     }
   }
-  const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
+  const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch ||
+                crouchY !== drawnCrouch;
   if (posed || sceneDirty || rainDue || npcDue) {
     placeSkyBodies();
     renderer.render(scene, camera);
-    drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch;
+    drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
     sceneDirty = false;
     rainDrawn = now;
   }
@@ -7097,7 +7157,7 @@ addrEl.focus();
 
 if (navigator.maxTouchPoints > 0) {
   document.getElementById('keys').textContent +=
-    ' On touch: left half to walk, drag the right half to look, double tap to jump.';
+    ' On touch: left half to walk, drag the right half to look, double tap the stick to crouch.';
 }
 </script>
 </body>
