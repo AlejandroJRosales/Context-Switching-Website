@@ -188,9 +188,9 @@
   #sprint svg { width: 34px; height: 34px; }
   #jump svg   { width: 34px; height: 34px; }
   #fly svg    { width: 26px; height: 26px; }
-  /* touch sprint on foot: same slot as gas; the fly/drive/climb stack sits above it */
+  /* touch sprint on foot: the gas pedal's slot */
   #sprint { right: 18px; height: 132px; }
-  #jump   { right: 104px; height: 96px; }   /* brake's slot */
+  #jump   { right: 104px; height: 96px; }
   body.foot-touch #fly { bottom: 172px; }
   body.foot-touch #car { bottom: 228px; }
   /* flick steering: the floating stick narrows to a horizontal track */
@@ -217,14 +217,14 @@
   #gear.on { display: block; }
   #settings {
     position: fixed; right: 18px; top: 62px;
-    box-sizing: border-box;   /* width and max-height include the padding */
-    width: min(380px, calc(100vw - 36px)); padding: 14px;   /* wide enough for the Other row on one line */
+    box-sizing: border-box;
+    width: min(380px, calc(100vw - 36px)); padding: 14px;
     max-height: calc(100vh - 74px); max-height: calc(100dvh - 74px); overflow-y: auto;
     background: rgba(12, 15, 21, 0.86);
     border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
     z-index: 9; display: none;
   }
-  /* phones in landscape: beside the gear instead of under it, tighter spacing */
+  /* phones in landscape: beside the gear */
   @media (orientation: landscape) and (max-height: 500px) {
     #settings {
       top: 12px; right: 76px; padding: 8px 10px;
@@ -347,11 +347,9 @@ const GRAVITY        = 22.0;
 const GRID_CELL      = 24;      // collision broadphase cell size, meters
 const LAND_EPS       = 0.01;    // slack so a snapped-to roof still reads as clear
 const HEAD_CLEAR     = 0.15;    // top of the head above the eye
-const SUBSTEP        = 0.25;    // max horizontal move per collision pass; kept under
-                                // PLAYER_RADIUS so a fast step cannot skip a thin wall
+const SUBSTEP        = 0.25;    // max move per collision pass; under PLAYER_RADIUS so thin walls are not skipped
 
-// Enterable buildings: each footprint becomes a hollow shell of thick wall
-// pieces, one doorway, and floor/ceiling/roof caps.
+// Enterable buildings: thick-walled hollow shells with a doorway and floor/ceiling/roof caps.
 const WALL_T         = 0.3;     // exterior wall thickness, meters, measured inward
 const WALL_T_MIN     = 0.06;    // thinnest a wall is retried at when mitres fold
 const MITER_MAX      = 4;       // a sharp corner's mitre is clamped to this many thicknesses
@@ -377,10 +375,8 @@ const OVERPASS_MIRRORS = [
 ];
 const NOMINATIM_URL  = 'https://nominatim.openstreetmap.org/search';
 
-// USGS National Map orthoimagery: public domain, no key.
-// Credit: "USGS, USDA, The National Map: Orthoimagery."
-// Primary: NAIP Plus image service (~0.3 m/px, any size). Fallback: the basemap
-// tile cache, which tops out at zoom 16 (~1.8 m/px on the ground).
+// USGS orthoimagery, public domain, no key (credit: USGS, USDA, The National Map).
+// NAIP Plus (~0.3 m/px) first, else the basemap tiles (zoom 16, ~1.8 m/px).
 const ORTHO_URL   = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
 const ORTHO_M_PX  = 0.5;          // ground metres per pixel to ask for
 const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
@@ -394,8 +390,7 @@ const IMAGERY_MAX_TILES = 100;
 const IMAGERY_TIMEOUT_MS = 8000;
 const IMAGERY_Y        = 0.004;   // beneath every painted ground layer
 
-// Elevation: AWS Terrain Tiles (Terrarium PNGs, public dataset, no key).
-// Heights are packed in RGB: (R * 256 + G + B / 256) - 32768 metres.
+// Elevation: AWS Terrain Tiles (Terrarium, no key); height = R * 256 + G + B / 256 - 32768 m.
 // Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
 const TERRAIN_URL        = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
 const TERRAIN_MAX_Z      = 15;      // deepest level served (~3.7 m/px at 40 N)
@@ -410,14 +405,13 @@ const ELEV_MARGIN        = 100;     // metres of terrain past the loaded radius
 const STEP_UP            = 0.45;    // highest ledge walked onto without a jump (player and NPCs)
 const GROUND_SNAP        = 0.5;     // grounded feet follow a drop this small instead of falling
 
-// Flat layers sit centimetres apart, below depth-buffer resolution, so each
-// gets a depth bias. Higher wins; the base ground plane is 0.
+// Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
 const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
 
 
 // LAYER TABLES
 
-// Flat layers get a fixed stacking order in y instead of fighting over depth.
+// Fixed y stacking order for flat layers instead of depth fighting.
 const LAYER_Y = { area: 0.010, water: 0.018, road: 0.032, path: 0.048 };
 
 const ROAD_WIDTH = {
@@ -467,7 +461,6 @@ const ROOF_MATERIAL_COLOR = {
   glass: 0xb6d0dc, wood: 0xbb9268
 };
 
-// what we can actually build on top of a footprint; everything else stays flat
 const ROOF_SHAPE = {
   gabled: 'gabled', gable: 'gabled', gambrel: 'gabled', round: 'gabled',
   hipped: 'hipped', 'half-hipped': 'hipped', mansard: 'hipped',
@@ -476,7 +469,7 @@ const ROOF_SHAPE = {
 };
 
 const TREE_ROW_SPACING = 9;     // meters between trees sampled along a tree_row
-const SIGN_COLS  = 8;           // sign atlas layout
+const SIGN_COLS  = 8;
 const SIGN_CELL_W = 256;
 const SIGN_CELL_H = 48;
 const SIGN_MAX   = 192;
@@ -487,8 +480,7 @@ const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|gre
 const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
 const BARRIER_RE = Object.keys(BARRIER).join('|');
 
-// Places the city knows by purpose. Each kind lists the OSM tag values that
-// mean it; the first key/value hit (healthcare, amenity, shop) wins.
+// Places by purpose: the OSM tag values for each kind; first hit (healthcare, amenity, shop) wins.
 const PLACE_KINDS = {
   grocery:      { shop: ['supermarket', 'convenience', 'grocery', 'greengrocer', 'general',
                          'butcher', 'bakery', 'deli', 'health_food', 'farm'] },
@@ -502,7 +494,7 @@ const PLACE_KINDS = {
   fire_station: { amenity: ['fire_station'] }
 };
 const PLACE_KEYS = ['healthcare', 'amenity', 'shop'];
-const PLACE_OF = {};                     // "amenity=hospital" -> "hospital"
+const PLACE_OF = {};
 const PLACE_RE = { healthcare: [], amenity: [], shop: [] };
 for (const [kind, byKey] of Object.entries(PLACE_KINDS)) {
   for (const [key, vals] of Object.entries(byKey)) {
@@ -543,9 +535,7 @@ function say(msg, isError) {
 }
 
 // LOADING STEPS
-// What load() is doing, one row per stage. Fetches run side by side, so
-// several rows can be active at once. States: wait, active, done, off
-// (skipped or unavailable, the load goes on), error (the load stops).
+// One row per load() stage; parallel fetches can be active together. States: wait, active, done, off, error.
 const cardEl  = document.getElementById('card');
 const stepsEl = document.getElementById('steps');
 const LOAD_STEPS = [
@@ -602,8 +592,7 @@ const steps = {
     for (const id in this.rows) if (this.rows[id].className === 'active') this.stamp(id);
   },
 
-  // the load ended: stop the clock; a failed load leaves the list showing
-  // where it stopped, under the restored intro
+  // load ended: stop the clock; a failed load leaves the list showing where it stopped
   finish(ok) {
     clearInterval(this.timer);
     cardEl.classList.remove('loading');
@@ -626,8 +615,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fb4c8);
 scene.fog = new THREE.Fog(0x9fb4c8, 120, 900);
 
-// near stays inside PLAYER_RADIUS; 0.1 would starve depth precision for the
-// coplanar ground layers
+// near stays inside PLAYER_RADIUS; 0.1 would starve depth precision for the ground layers
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25, 2000);
 
 const HEMI_DAY   = 1.5;
@@ -638,15 +626,8 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
 sun.position.set(-0.5, 1, 0.4).multiplyScalar(100);
 scene.add(sun);
-// Night key light. A hemisphere light depends only on a face's up-component,
-// so with the sun down every wall got the same light whichever way it faced
-// and neighbouring buildings merged. A fixed low, off-axis direction gives
-// each facade orientation its own shade. Always in the scene (intensity 0 by
-// day) so the light count, and so the compiled shaders, never change.
-// Follows the real moon while it is up; below the horizon it falls back to
-// MOON_FALLBACK so facades still separate on moonless nights. The two blend
-// over the moon's first MOON_BLEND_DEG of altitude, so rising and setting
-// swing the light instead of snapping it.
+// Night key light: a fixed low direction so facades differ once the sun is down.
+// Always present (0 by day) so shaders never recompile; follows the moon while up, blending to MOON_FALLBACK below.
 const MOON_FALLBACK  = new THREE.Vector3(Math.sin(0.35), Math.tan(35 * Math.PI / 180), -Math.cos(0.35)).normalize();
 const MOON_BLEND_DEG = 5;
 const moon = new THREE.DirectionalLight(0xaebfe0, 0);
@@ -684,7 +665,7 @@ async function geocode(query) {
   };
 }
 
-// One attempt against one mirror. `fatal` errors (a bad query) end the search.
+// One attempt on one mirror; a `fatal` error (bad query) ends the search.
 async function overpassTry(url, query) {
   const host = new URL(url).hostname;
   const ctrl = new AbortController();
@@ -709,8 +690,7 @@ async function overpassTry(url, query) {
   }
 }
 
-// Every mirror at the widest radius, then shrink and repeat. Covers both 429
-// (rate limit) and 504 (box too heavy).
+// Every mirror at the widest radius, then shrink and repeat (covers 429 and 504).
 async function fetchBuildings(lat, lon, onNote = say) {
   let lastErr = null;
 
@@ -742,13 +722,11 @@ async function fetchBuildings(lat, lon, onNote = say) {
 
     for (const url of OVERPASS_MIRRORS) {
       const host = new URL(url).hostname;
-      // report each failed mirror; 'Failed to load' waits until all are spent
       onNote(lastErr
         ? `${lastErr.message}. Trying ${host} within ${radius} m…`
         : `Asking ${host} for everything within ${radius} m…`, !!lastErr);
       try {
-        // not kept: a dense area's parsed response runs to hundreds of MB,
-        // and load() keeps only the features derived from it
+        // not kept: a dense response runs to hundreds of MB; load() keeps only the features
         const json = await overpassTry(url, q);
         return { json, radius };
       } catch (err) {
@@ -784,13 +762,11 @@ function parseLength(raw) {
 
 function heightOf(tags) {
   if (!tags) return DEFAULT_LEVELS * METERS_PER_LVL;
-  // these are ground-to-top already, so they win; est_height ranks below them
-  // but above a levels guess
+  // these are ground-to-top already, so they win; est_height ranks above a levels guess
   const direct = parseLength(tags.height)
     ?? parseLength(tags['building:height'])
     ?? parseLength(tags.est_height);
   if (direct) return direct;
-  // levels can be "4", "4.5", or occasionally "2;3"; take the first number
   const lv = parseLength(tags['building:levels']);
   if (lv) {
     // roof:height/roof:levels describe the roof alone, stacked on the walls
@@ -813,7 +789,6 @@ function makeProjector(lat0, lon0) {
   return (lat, lon) => [(lon - lon0) * kx, -(lat - lat0) * kz];
 }
 
-// Outer rings of ways and relations; buildingPolysOf adds inner rings.
 function geometriesOf(el) {
   if (el.type === 'way' && el.geometry) return [el.geometry];
   if (el.type === 'relation' && el.members) {
@@ -828,8 +803,7 @@ function closedGeom(g) {
   return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
 }
 
-// Building polygons as { pts, holes? }. Closed inner ways become courtyards
-// of the outer ring that contains them; split inner rings are skipped.
+// Building polygons as { pts, holes? }; closed inner ways become courtyards, split ones are skipped.
 function buildingPolysOf(el, project) {
   const polys = geometriesOf(el)
     .map(g => ({ pts: cleanPts(g, project, true), holes: [] }))
@@ -847,7 +821,6 @@ function buildingPolysOf(el, project) {
   return polys;
 }
 
-// Project, drop repeated points and the closing point. Returns [x, z] pairs.
 function cleanPts(geom, project, closed) {
   const p = [];
   for (const n of geom) {
@@ -870,7 +843,6 @@ function areaKindOf(tags) {
   return null;
 }
 
-// Sort the response into builder layers, as plain JSON for localStorage.
 function featuresFrom(json, project) {
   const f = {
     buildings: [], roads: [], areas: [], waterways: [],
@@ -882,7 +854,6 @@ function featuresFrom(json, project) {
 
     if (el.type === 'node') {
       const [x, z] = project(el.lat, el.lon);
-      // entrances feed door placement only; the node may still be a POI too
       if (tags.entrance) f.entrances.push({ x, z, main: tags.entrance === 'main' });
       if (tags.natural === 'tree') { f.trees.push({ x, z, tags }); continue; }
       if (tags.highway === 'street_lamp') { f.props.push({ x, z, kind: 'lamp' }); continue; }
@@ -897,8 +868,7 @@ function featuresFrom(json, project) {
       continue;
     }
 
-    // A place mapped as an outline or campus sits at its bounds centre. A
-    // building already signs itself; a bare campus gets a POI sign.
+    // An outlined place sits at its bounds centre; a bare campus (no building) gets a POI sign.
     const pkind = placeKindOf(tags);
     if (pkind) {
       const c = centreOf(el, project);
@@ -931,7 +901,6 @@ function featuresFrom(json, project) {
     if (tags.natural === 'tree_row') {
       const pts = cleanPts(el.geometry || [], project, false);
       if (pts.length >= 2) {
-        // walk the line and drop a tree every few meters
         let carry = 0;
         for (let i = 0; i < pts.length - 1; i++) {
           const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
@@ -969,7 +938,6 @@ function featuresFrom(json, project) {
   return f;
 }
 
-// Bounds centre of a way or relation (from `out geom`), projected; or null.
 function centreOf(el, project) {
   const b = el.bounds;
   if (b) return project((b.minlat + b.maxlat) / 2, (b.minlon + b.maxlon) / 2);
@@ -982,7 +950,6 @@ function centreOf(el, project) {
   return null;
 }
 
-// "convenience" -> "Convenience", for a POI with a type but no name.
 function prettify(v) {
   return String(v).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -999,8 +966,7 @@ function signLabel(tags) {
 
 const _col = new THREE.Color();
 
-// OSM colours are free text: accept hex and CSS names, ignore the rest so
-// Color.setStyle does not warn and keep the previous colour.
+// OSM colours are free text: accept hex and CSS names only, so Color.setStyle never warns.
 function cssColor(raw) {
   if (raw == null) return null;
   const s = String(raw).trim().toLowerCase().replace(/\s+/g, '');
@@ -1037,8 +1003,7 @@ function ringArea(pts) {
 
 // GEOMETRY HELPERS
 
-// Table hexes are authored as displayed, so convert them from sRGB like
-// material colours.
+// Table hexes are authored as displayed, so convert from sRGB like material colours.
 function rgb(hex) {
   _col.setHex(hex);
   return [_col.r, _col.g, _col.b];
@@ -1051,7 +1016,6 @@ function pushTri(b, p0, p1, p2, c, ref) {
   const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
   const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
   const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-  // flip by swapping the last two corners, no per-triangle array
   const flip = (nx * ref[0] + ny * ref[1] + nz * ref[2]) < 0;
   const q1 = flip ? p2 : p1, q2 = flip ? p1 : p2;
   b.pos.push(p0[0], p0[1], p0[2], q1[0], q1[1], q1[2], q2[0], q2[1], q2[2]);
@@ -1100,7 +1064,6 @@ function pushDisc(b, x, y, z, r, c) {
   }
 }
 
-// Flat strip along a polyline, with a patch at each joint instead of mitres.
 function ribbon(b, pts, width, y, c) {
   const h = Math.max(width, 0.6) / 2;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -1116,7 +1079,6 @@ function ribbon(b, pts, width, y, c) {
   }
 }
 
-// Filled ground polygon. Shape point (px, py) lands at world (px, 0, -py).
 function areaGeom(pts, y, c) {
   const shape = new THREE.Shape();
   shape.moveTo(pts[0][0], -pts[0][1]);
@@ -1142,8 +1104,7 @@ function bounds(pts) {
 
 // ROOFS
 
-// Oriented box around a footprint, long axis on the longest edge. The call
-// site rejects footprints whose area does not fit it.
+// Oriented box around a footprint, long axis on the longest edge.
 function obbOf(pts) {
   let bi = 0, bl = -1;
   for (let i = 0; i < pts.length; i++) {
@@ -1166,7 +1127,7 @@ function obbOf(pts) {
   const cu = (minU + maxU) / 2, cv = (minV + maxV) / 2;
   const cx = cu * ux + cv * vx, cz = cu * uz + cv * vz;
 
-  if (hv > hu) {   // keep u as the long axis
+  if (hv > hu) {
     const tx = ux, tz = uz;
     ux = vx; uz = vz; vx = -tx; vz = -tz;
     const t = hu; hu = hv; hv = t;
@@ -1175,11 +1136,10 @@ function obbOf(pts) {
   return { cx, cz, ux, uz, vx, vz, hu, hv, area: 4 * hu * hv };
 }
 
-// Roof volume between `wallTop` and `top`, built on the oriented box.
 function roofOf(b, o, wallTop, top, shape, c) {
   const p = (du, dv, y) => [o.cx + o.ux * du + o.vx * dv, y, o.cz + o.uz * du + o.vz * dv];
 
-  const A = p(-o.hu, -o.hv, wallTop);   // corners of the eaves rectangle
+  const A = p(-o.hu, -o.hv, wallTop);
   const B = p( o.hu, -o.hv, wallTop);
   const C = p( o.hu,  o.hv, wallTop);
   const D = p(-o.hu,  o.hv, wallTop);
@@ -1195,21 +1155,20 @@ function roofOf(b, o, wallTop, top, shape, c) {
 
   if (shape === 'skillion') {
     const Chi = p( o.hu, o.hv, top), Dhi = p(-o.hu, o.hv, top);
-    pushQuad(b, A, B, Chi, Dhi, c, [0, 1, 0]);          // the slope
-    pushTri(b, B, C, Chi, c, [o.ux, 0, o.uz]);          // triangular ends
+    pushQuad(b, A, B, Chi, Dhi, c, [0, 1, 0]);
+    pushTri(b, B, C, Chi, c, [o.ux, 0, o.uz]);
     pushTri(b, A, Dhi, D, c, [-o.ux, 0, -o.uz]);
-    pushQuad(b, C, D, Dhi, Chi, c, [o.vx, 0, o.vz]);    // the raised wall
+    pushQuad(b, C, D, Dhi, Chi, c, [o.vx, 0, o.vz]);
     return;
   }
 
-  // gabled and hipped share the long slopes; hipped pulls the ridge in
   const inset = shape === 'hipped' ? Math.min(o.hv, o.hu * 0.9) : 0;
   const R0 = p(-o.hu + inset, 0, top);
   const R1 = p( o.hu - inset, 0, top);
 
-  pushQuad(b, A, B, R1, R0, c, [0, 1, 0]);   // the two long slopes
+  pushQuad(b, A, B, R1, R0, c, [0, 1, 0]);
   pushQuad(b, C, D, R0, R1, c, [0, 1, 0]);
-  pushTri(b, B, C, R1, c, [o.ux, 0, o.uz]);  // gable wall, or hip when inset
+  pushTri(b, B, C, R1, c, [o.ux, 0, o.uz]);
   pushTri(b, D, A, R0, c, [-o.ux, 0, -o.uz]);
 }
 
@@ -1251,7 +1210,6 @@ function addLayer(geoms, material) {
 function litMaterial(bias) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   if (bias) {
-    // depth-buffer bias toward the viewer, effective at any distance
     m.polygonOffset = true;
     m.polygonOffsetFactor = -bias;
     m.polygonOffsetUnits = -bias;
@@ -1260,16 +1218,8 @@ function litMaterial(bias) {
 }
 
 // BUILDING SHELLS
-//
-// Each footprint becomes:
-//   wall pieces     thick quads along every ring edge
-//   doorway         a gap in one outer-ring piece, lintel above
-//   floor           triangulated footprint at the base
-//   ceiling / roof  the same triangulation at the eaves
-//
-// The wall pieces double as collision rings, so visuals and collision match.
-// Winding: each edge's left normal points into the wall (outer rings positive,
-// courtyards negative).
+// Per footprint: thick wall pieces (also the collision rings), a doorway with lintel, floor, ceiling/roof.
+// Each edge's left normal points into the wall (outer rings positive, courtyards negative).
 
 function dedupeRing(pts) {
   const out = [];
@@ -1289,8 +1239,7 @@ function orientRing(pts, positive) {
   return (ringArea(pts) > 0) === positive ? pts : pts.slice().reverse();
 }
 
-// Mitred inner outline of a wall of thickness t along `pts`. a0/a1 place the
-// inner corners along edge i; an edge whose inner side reverses is unusable.
+// Mitred inner outline of a wall of thickness t; an edge whose inner side reverses is unusable.
 function offsetRing(pts, t) {
   const n = pts.length, E = new Array(n), inner = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -1319,7 +1268,6 @@ function offsetRing(pts, t) {
   return { pts, inner, E, t, ok };
 }
 
-// Full thickness where possible, thinner where short edges would fold it.
 function wallRing(pts) {
   let R = offsetRing(pts, WALL_T);
   while (!R.ok && R.t * 0.5 >= WALL_T_MIN) R = offsetRing(pts, R.t * 0.5);
@@ -1331,21 +1279,18 @@ function alongEdge(R, i, d) {
   return [p[0] + e.ux * d, p[1] + e.uz * d];
 }
 
-// Point on the inner side of edge i facing outer distance d.
 function innerAt(R, i, d) {
   const e = R.E[i], qi = R.inner[i], qj = R.inner[(i + 1) % R.pts.length];
   const s = (d - e.a0) / (e.L + e.a1 - e.a0);
   return [qi[0] + (qj[0] - qi[0]) * s, qi[1] + (qj[1] - qi[1]) * s];
 }
 
-// Point in a footprint, courtyards excluded.
 function pointInShell(s, x, z) {
   if (!pointInRing(s.pts, x, z)) return false;
   for (const h of s.holes) if (pointInRing(h, x, z)) return false;
   return true;
 }
 
-// One earcut pass per building, shared by floor, ceiling and roof caps.
 function capOf(outer, holes) {
   const v2 = r => r.map(p => new THREE.Vector2(p[0], p[1]));
   let tris;
@@ -1361,7 +1306,6 @@ function pushCap(b, cap, y, c, ref) {
   }
 }
 
-// Vertical quad over the XZ segment a..c between heights y0 and y1.
 function vquad(b, a, c, y0, y1, col, ref) {
   if (y1 - y0 < 1e-3 || Math.hypot(c[0] - a[0], c[1] - a[1]) < 1e-3) return;
   pushQuad(b, [a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], y1, c[1]], [a[0], y1, a[1]], col, ref);
@@ -1373,7 +1317,6 @@ function pushSolid(solids, pts, base, top) {
 
 // DOOR PLACEMENT
 
-// Uniform grid over any list of { minX, maxX, minZ, maxZ }.
 function gridOf(items, cell) {
   const g = new Map();
   for (let i = 0; i < items.length; i++) {
@@ -1392,8 +1335,7 @@ function gridOf(items, cell) {
   return g;
 }
 
-// Road and path segments, bucketed once per city. Paths weigh less, so a
-// door prefers the front footway over the street behind the garden.
+// Road and path segments, bucketed once per city. Paths weigh less, so a door prefers a front footway.
 function roadIndex(roads) {
   const segs = [];
   for (const r of roads || []) {
@@ -1408,8 +1350,7 @@ function roadIndex(roads) {
   return { segs, grid: gridOf(segs, ROAD_CELL) };
 }
 
-// Weighted distance from (x, z) to the nearest road edge within maxR, plus
-// the road point measured to. Null when none is in range.
+// Weighted distance to the nearest road edge within maxR, and the point measured to; null if none.
 function nearestRoad(idx, x, z, maxR) {
   let best = Infinity, bx = 0, bz = 0;
   const cx0 = Math.floor((x - maxR) / ROAD_CELL), cx1 = Math.floor((x + maxR) / ROAD_CELL);
@@ -1440,7 +1381,6 @@ function pointIndex(list) {
   return { items, grid: gridOf(items, ROAD_CELL) };
 }
 
-// Would a doorway here open into a neighbour (terraces, party walls)?
 function blockedAt(self, x, z) {
   const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return false;
@@ -1453,8 +1393,7 @@ function blockedAt(self, x, z) {
   return false;
 }
 
-// Where on edge i a doorway can be centred, and its width. Stays clear of
-// the mitred corners; short walls give up pier width, then door width.
+// Where on edge i a doorway can be centred, and its width, clear of the mitred corners.
 function doorSpan(R, i) {
   const e = R.E[i];
   const lo0 = Math.max(e.a0, 0), hi0 = e.L + Math.min(e.a1, 0);
@@ -1466,14 +1405,12 @@ function doorSpan(R, i) {
   return { lo: lo0 + pier + w / 2, hi: hi0 - pier - w / 2, w };
 }
 
-// Outward probe point a little in front of the wall at distance d along edge i.
 function probeOut(R, i, d, off) {
   const e = R.E[i], p = alongEdge(R, i, d);
   return [p[0] - e.nx * off, p[1] - e.nz * off];
 }
 
-// Door selection stages 2-4: nearest road close by, else facing the nearest
-// road at any distance, else the longest wall. Ties keep the lowest edge.
+// Door stages 2-4: nearest close road, else facing the nearest road, else the longest wall.
 function pickByRoads(cands, s, roads) {
   let best = null, bestD = Infinity;
   for (const k of cands) {
@@ -1495,8 +1432,7 @@ function pickByRoads(cands, s, roads) {
   return best;
 }
 
-// A door is { edge, d0, d1 } on one outer edge, or, when every edge is too
-// short (e.g. round towers), a run of whole edges: { run: Set, first, last }.
+// A door is { edge, d0, d1 } on one edge, or a run of whole edges { run, first, last } when all are too short.
 function chooseDoor(s, R, roads, ents) {
   const cands = [];
   for (let i = 0; i < R.pts.length; i++) {
@@ -1557,12 +1493,11 @@ function chooseDoor(s, R, roads, ents) {
   return { run, first: start, last };
 }
 
-// Doorway centred under a sign on edge i, or null when the wall is too short
-// for one or it would open into a neighbour.
+// Doorway centred under a sign on edge i; null if the wall is too short or it would open into a neighbour.
 function signDoor(s, i) {
   const R = s.R, sp = doorSpan(R, i);
   if (!sp) return null;
-  const c = Math.min(Math.max(R.E[i].L / 2, sp.lo), sp.hi);   // signs hang at mid-wall
+  const c = Math.min(Math.max(R.E[i].L / 2, sp.lo), sp.hi);
   const p = probeOut(R, i, c, 0.5);
   if (blockedAt(s, p[0], p[1])) return null;
   return { edge: i, d0: c - sp.w / 2, d1: c + sp.w / 2 };
@@ -1570,15 +1505,13 @@ function signDoor(s, i) {
 
 // WALL PIECES
 
-// One solid stretch of wall: painted outside, plastered inside, one collider.
 function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
   vquad(ctx.buf, o0, o1, y0, y1, ctx.wc, out);
   vquad(ctx.buf, i0, i1, y0, y1, ctx.iw, inn);
   pushSolid(ctx.solids, [o0, o1, i1, i0], y0, y1);
 }
 
-// Wall over an opening, door head to eaves; its bottom FRAME_W outside is
-// the frame head.
+// Wall over an opening, door head to eaves; its bottom FRAME_W is the frame head.
 function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   if (wallTop - doorTop < 1e-3) return;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
@@ -1590,9 +1523,7 @@ function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   pushSolid(ctx.solids, [o0, o1, i1, i0], doorTop, wallTop);
 }
 
-// Foundation under a ring on sloping ground, from the lowest ground up to
-// the floor. Outer face and collider only; the inside is under the floor.
-// Its top is the step up into a doorway on the low side.
+// Foundation on sloping ground, lowest ground up to the floor (outer face and collider only).
 function ringPlinth(ctx, R, foot, floor) {
   const n = R.pts.length;
   for (let i = 0; i < n; i++) {
@@ -1603,8 +1534,7 @@ function ringPlinth(ctx, R, foot, floor) {
   }
 }
 
-// Walls for one ring. `doors` holds at most one door per edge, or a single
-// run door; null for courtyard rings.
+// Walls for one ring; `doors` is at most one door per edge or a single run, null for courtyards.
 function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
   const n = R.pts.length;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
@@ -1669,7 +1599,7 @@ function buildCity(features) {
   clearLayers();
 
   const buf = newBuf();        // walls, jambs, roof caps, ceilings
-  const roofBuf = newBuf();    // pitched roofs
+  const roofBuf = newBuf();
   const floorBuf = newBuf();   // interior floors, depth-biased over the ground paint
   const list = [];
   let skipped = 0;
@@ -1709,9 +1639,7 @@ function buildCity(features) {
     const cap = capOf(outer, holes);
     if (!cap) { skipped++; continue; }   // self-intersecting ring; earcut gave up
 
-    // The floor goes at the highest ground under the footprint so the
-    // terrain never shows through it; a plinth runs down to the lowest.
-    // A raised part (min_height) keeps its height over that same ground.
+    // Floor at the highest ground under the footprint so terrain never shows through; plinth down to the lowest.
     const [gLo, gHi] = elevation.span(outer);
     const raised = base > 0.05;
     const b0 = base + gHi;
@@ -1728,7 +1656,6 @@ function buildCity(features) {
   shellGrid = gridOf(list, GRID_CELL);
   buildShellRaster(list);
 
-  // Door height and wall ring per shell, needed before signs claim walls.
   for (const s of list) {
     const wallH = s.top - s.base;
     let doorH = Math.min(DOOR_H, wallH - 0.3);
@@ -1737,8 +1664,7 @@ function buildCity(features) {
     s.R = wallRing(s.pts);
   }
 
-  // Signs first: each placed sign puts a doorway on the wall under it, one
-  // per wall however many signs share it.
+  // Signs first: each placed sign puts one doorway on the wall under it.
   const signs = [];
   for (const q of collectSigns(list, features.pois)) {
     if (signs.length >= SIGN_MAX) break;
@@ -1760,7 +1686,6 @@ function buildCity(features) {
 
   for (const s of list) {
     const tags = s.tags;
-    // tagged colour/material as-is with slight jitter; else a random tint
     const named = wallColorOf(tags);
     let wc;
     if (named != null) {
@@ -1796,8 +1721,8 @@ function buildCity(features) {
     }
     s.R = null; s.signDoors = null;
 
-    pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);             // flat roof / eaves cap
-    pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);        // seen from inside
+    pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);
+    pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);
     pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
     if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);   // raised: underside
 
@@ -1823,8 +1748,7 @@ function buildCity(features) {
   return { count, skipped };
 }
 
-// Roads, paths, water and land cover on the ground plane, one mesh per
-// layer so each gets its own depth bias.
+// Roads, paths, water and land cover, one mesh per layer for its own depth bias.
 function buildGround(features) {
   const areaGeoms = [], waterGeoms = [];
   const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
@@ -1859,7 +1783,6 @@ function buildGround(features) {
   if (pg) addLayer(lay([pg]), litMaterial(LAYER_BIAS.path));
 }
 
-// One instanced trunk and one instanced crown for the whole scene.
 function buildTrees(trees) {
   if (!trees || !trees.length) return;
 
@@ -1907,8 +1830,7 @@ function buildTrees(trees) {
   invalidate();
 }
 
-// Walls, fences and hedges. Each segment also returns a thin footprint for
-// the collision grid.
+// Walls, fences and hedges; each segment is also a thin collision footprint.
 function buildBarriers(list) {
   const geoms = [], boxes = [];
   if (!list) return boxes;
@@ -1931,7 +1853,6 @@ function buildBarriers(list) {
         const len = Math.hypot(dx, dz);
         if (len < 0.2) continue;
 
-        // foot at the lower end, top a full height over the middle
         const g0 = elevation.at(x0, z0), g1 = elevation.at(x1, z1);
         const base = Math.min(g0, g1), top = (g0 + g1) / 2 + h;
 
@@ -1968,7 +1889,6 @@ function cyl(rt, rb, h, x, y, z, c) {
   return tint(nonIndexed(g), c);
 }
 
-// Street lamps, benches and hydrants. Decoration only, no collision.
 function buildProps(list) {
   const geoms = [];
   if (!list) return;
@@ -1998,11 +1918,7 @@ function buildProps(list) {
 }
 
 // ELEVATION
-//
-// One height grid per city, relative to the loaded point, sampled every
-// ELEV_STEP metres over the radius plus ELEV_MARGIN. Everything that stood on
-// y = 0 now stands on elevation.at(x, z); with no terrain it returns 0 and
-// the city is flat as before.
+// One height grid per city every ELEV_STEP m; elevation.at(x, z) is 0 without terrain.
 const elevation = {
   active: false, half: 0, step: ELEV_STEP, n: 0, data: null, min: 0, max: 0,
 
@@ -2015,7 +1931,6 @@ const elevation = {
     this.active = false; this.data = null; this.n = 0; this.min = 0; this.max = 0;
   },
 
-  // Bilinear; clamps to the grid edge outside it.
   at(x, z) {
     if (!this.active) return 0;
     const n = this.n, last = n - 1;
@@ -2029,8 +1944,7 @@ const elevation = {
     return a + (b - a) * tz;
   },
 
-  // Lowest and highest ground under a footprint: its corners plus a grid of
-  // interior samples, so a knoll inside a big footprint is not missed.
+  // Lowest and highest ground under a footprint, from corners plus interior samples.
   span(pts) {
     if (!this.active) return [0, 0];
     let lo = Infinity, hi = -Infinity;
@@ -2046,9 +1960,7 @@ const elevation = {
   }
 };
 
-// Tiles covering the radius plus margin, decoded and resampled into the
-// grid. Null when any tile is missing or the pixels look tampered with, so a
-// partial or corrupt set never shapes the city; the caller stays flat.
+// Tiles resampled into the grid; null if any is missing or looks tampered with, so the city stays flat.
 async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
   const half = radius + ELEV_MARGIN;
   const kx = 111320 * Math.cos(lat * Math.PI / 180), kz = 110540;
@@ -2100,14 +2012,12 @@ async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
     raw[i] = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
   }
 
-  // Canvas readback can be noised (Safari and Firefox fingerprinting
-  // protection); one unit of red is 256 m, so noise shows as isolated spikes.
+  // Canvas readback can be noised by fingerprinting protection; it shows as isolated spikes.
   let spikes = 0;
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       const a = raw[i - 1], b = raw[i + 1], c = raw[i - W], d = raw[i + W];
-      // median of four: drop the extremes, average the middle two
       const med = (a + b + c + d - Math.min(a, b, c, d) - Math.max(a, b, c, d)) / 2;
       if (Math.abs(raw[i] - med) > TERRAIN_SPIKE_M) spikes++;
     }
@@ -2118,9 +2028,7 @@ async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
     return null;
   }
 
-  // Resample onto the local grid through the inverse of makeProjector.
-  // Terrarium carries bathymetry; sea level is the floor, so harbours stay
-  // at the water line instead of sinking.
+  // Resample through the inverse of makeProjector; sea level is the floor, so harbours stay at the waterline.
   const sample = (fx, fy) => {
     fx = Math.min(Math.max(fx, 0), W - 1.001);
     fy = Math.min(Math.max(fy, 0), H - 1.001);
@@ -2140,7 +2048,6 @@ async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
     }
   }
 
-  // relative to the loaded point, which is where the street starts at 0
   const t0 = tileOf(lat, lon, z);
   const origin = sample((t0.x - x0) * P - 0.5, (t0.y - y0) * P - 0.5);
   let min = Infinity, max = -Infinity;
@@ -2153,19 +2060,13 @@ async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
   return { half: (n - 1) * step / 2, step, n, data, min, max, z, tiles: total };
 }
 
-// Split a flat, non-indexed layer until no edge is longer than ELEV_STEP,
-// then lift every vertex by the ground under it. Longest-edge midpoint
-// splits cut a shared edge the same way from both sides, so no cracks.
-// Overpass returns whole ways, so a landuse or lake can run kilometres past
-// the loaded area; triangles wholly outside the height grid are dropped at
-// every split level, so only the part over the grid is subdivided.
+// Split edges longer than ELEV_STEP (longest-edge midpoints, so no cracks), drop triangles off the grid, lift to the ground.
 function drape(g) {
   const P = g.attributes.position.array, C = g.attributes.color.array;
   const E2 = ELEV_STEP * ELEV_STEP;
-  const L = elevation.half + ELEV_STEP;   // keep a cell of overhang past the grid
+  const L = elevation.half + ELEV_STEP;
   let pos = new Float32Array(Math.max(1024, P.length * 2)), col = new Float32Array(pos.length), n = 0;
-  // Depth-first stack of triangles, 18 numbers each: 3 corners of x, y, z, r, g, b.
-  // A split replaces one slot with two, so depth, not count, sets the size.
+  // Depth-first stack of triangles, 18 numbers each (3 corners of x, y, z, r, g, b).
   const DEPTH = 96, S = new Float64Array(18 * DEPTH);
 
   for (let t = 0; t < P.length; t += 9) {
@@ -2195,8 +2096,7 @@ function drape(g) {
         }
         continue;
       }
-      // Longest edge i-j splits at its midpoint q: one triangle has j moved
-      // to q, the other i; both keep the parent's winding.
+      // Split the longest edge i-j at its midpoint q; both halves keep the parent's winding.
       const i = m === ab ? 0 : m === bc ? 1 : 2, j = (i + 1) % 3;
       const o2 = o + 18;
       for (let c = 0; c < 18; c++) S[o2 + c] = S[o + c];
@@ -2209,7 +2109,7 @@ function drape(g) {
     }
   }
   g.dispose();
-  if (!n) return null;   // the whole layer lay outside the grid
+  if (!n) return null;
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, n), 3));
   out.setAttribute('color', new THREE.BufferAttribute(col.slice(0, n), 3));
@@ -2217,8 +2117,7 @@ function drape(g) {
   return out;
 }
 
-// Grid mesh over [-half, half] at ELEV_STEP, lifted onto the terrain; UVs
-// span the square. Flat terrain gives one quad.
+// Grid mesh over [-half, half] at ELEV_STEP, lifted onto the terrain; flat terrain gives one quad.
 function terrainGrid(westX, eastX, northZ, southZ, y) {
   const segX = elevation.active ? Math.max(1, Math.round((eastX - westX) / ELEV_STEP)) : 1;
   const segZ = elevation.active ? Math.max(1, Math.round((southZ - northZ) / ELEV_STEP)) : 1;
@@ -2233,8 +2132,7 @@ function terrainGrid(westX, eastX, northZ, southZ, y) {
   return g;
 }
 
-// Plain ground over the loaded area plus margin, so the terrain reads even
-// where there is no photo. The far plane drops beneath the lowest point.
+// Plain ground over the area plus margin; the far plane drops beneath the lowest point.
 function buildTerrainBase(radius) {
   ground.position.y = elevation.active ? elevation.min - 0.3 : 0;
   if (!elevation.active) return;
@@ -2262,8 +2160,7 @@ function tileLat(y, z) {
   return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
 }
 
-// Resolves with the image or null, never rejects, so a missing tile is just
-// a hole. crossOrigin keeps the pixels untainted for WebGL.
+// Resolves with the image or null, never rejects; crossOrigin keeps the pixels usable by WebGL.
 function loadImage(url, timeoutMs) {
   return new Promise(resolve => {
     const img = new Image();
@@ -2277,13 +2174,11 @@ function loadImage(url, timeoutMs) {
   });
 }
 
-// Web Mercator metres, as the image service's bbox expects.
 function mercator(lat, lon) {
   const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137;
   return [lon * Math.PI / 180 * 6378137, y];
 }
 
-// One export request for the whole area at the resolution we ask for.
 async function fetchOrtho(lat, lon, radius, project) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
@@ -2314,12 +2209,10 @@ async function fetchOrtho(lat, lon, radius, project) {
   return { source: img, westX, eastX, northZ, southZ, w, h, kind: 'ortho' };
 }
 
-// Stitch the tiles covering the loaded radius into one canvas.
 async function fetchImagery(lat, lon, radius, project, onNote = () => {}) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
 
-  // start at the deepest level; back off if it needs too many tiles
   let z = IMAGERY_MAX_Z, x0, x1, y0, y1;
   for (;;) {
     const nw = tileOf(lat + dLat, lon - dLon, z);
@@ -2327,7 +2220,7 @@ async function fetchImagery(lat, lon, radius, project, onNote = () => {}) {
     x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
     y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
     if ((x1 - x0 + 1) * (y1 - y0 + 1) <= IMAGERY_MAX_TILES) break;
-    if (z <= IMAGERY_MIN_Z) return null;   // too much ground to cover sensibly
+    if (z <= IMAGERY_MIN_Z) return null;
     z--;
   }
 
@@ -2351,21 +2244,18 @@ async function fetchImagery(lat, lon, radius, project, onNote = () => {}) {
     }
   }
 
-  // use whatever has arrived when the timer runs out
   await Promise.race([
     Promise.all(jobs),
     new Promise(done => setTimeout(done, IMAGERY_TIMEOUT_MS))
   ]);
   if (!got) return null;
 
-  // Corners go through the game's projector, not a Mercator inverse, so the
-  // photo lines up with the buildings.
+  // Corners go through the game's projector so the photo lines up with the buildings.
   const [westX, northZ] = project(tileLat(y0, z), tileLon(x0, z));
   const [eastX, southZ] = project(tileLat(y1 + 1, z), tileLon(x1 + 1, z));
   return { source: cv, westX, eastX, northZ, southZ, z, got, total: cols * rows, kind: 'tiles' };
 }
 
-// Textured ground quad. Canvas top is north, which default flipY gives.
 function buildImagery(img) {
   if (!img) return;
   const g = terrainGrid(img.westX, img.eastX, img.northZ, img.southZ, IMAGERY_Y);
@@ -2376,7 +2266,7 @@ function buildImagery(img) {
   tex.anisotropy = 4;
 
   const mat = new THREE.MeshLambertMaterial({ map: tex });
-  mat.polygonOffset = true;                       // see LAYER_BIAS
+  mat.polygonOffset = true;
   mat.polygonOffsetFactor = -LAYER_BIAS.imagery;
   mat.polygonOffsetUnits = -LAYER_BIAS.imagery;
 
@@ -2388,8 +2278,7 @@ function buildImagery(img) {
 
 // SIGNAGE
 
-// Outward normal and midpoint of a footprint edge; winding is not
-// guaranteed, so the normal is checked against the ring.
+// Outward normal and midpoint of a footprint edge (winding checked against the ring).
 function edgeOutward(pts, i) {
   const j = (i + 1) % pts.length;
   const [x0, z0] = pts[i], [x1, z1] = pts[j];
@@ -2427,8 +2316,7 @@ function edgeNearest(pts, x, z) {
   return bi < 0 ? null : edgeOutward(pts, bi);
 }
 
-// `lift` is the lowest the sign may hang, used to keep it above a doorway.
-// Heights are absolute; `ground` is the level the sign is measured up from.
+// `lift`: lowest the sign may hang (above a doorway); `ground`: level heights are measured from.
 function placeSign(edge, text, kind, eaves, lift, ground = 0) {
   if (!edge || !text) return null;
   const h = kind === 'number' ? 0.3 : 0.55;
@@ -2447,9 +2335,7 @@ function placeSign(edge, text, kind, eaves, lift, ground = 0) {
   };
 }
 
-// A building's name and number go on its longest wall; a POI goes on the
-// wall of the building it is in (or the nearest one). Returns placement
-// requests { w, edge, text, kind }, names first; buildCity places them.
+// Sign requests { w, edge, text, kind }: names on the longest wall, POIs on their building's wall.
 function collectSigns(walls, pois) {
   const names = [], numbers = [];
 
@@ -2463,8 +2349,7 @@ function collectSigns(walls, pois) {
     if (tags['addr:housenumber']) numbers.push({ w, edge, text: tags['addr:housenumber'], kind: 'number' });
   }
 
-  // Candidates come from the shell grid as indices into `walls`; sorting keeps
-  // ties and the early `break` identical to a full scan.
+  // Candidates from the shell grid; sorting keeps ties and the early break identical to a full scan.
   const REACH = 15;
   const cand = [];
   const mark = new Uint32Array(walls.length);
@@ -2505,8 +2390,7 @@ function collectSigns(walls, pois) {
   return names.concat(numbers);
 }
 
-// Text as it will be drawn in its atlas cell: font size, clipped text, and
-// the cell width used. Measured once, at placement, so overlaps can be found.
+// Text as drawn in its atlas cell (font size, clipped text, width), measured once at placement.
 const signMeasure = document.createElement('canvas').getContext('2d');
 const SIGN_FONT = '"Iowan Old Style", Palatino, Georgia, serif';
 function signMetrics(text, kind) {
@@ -2518,7 +2402,7 @@ function signMetrics(text, kind) {
     size = Math.max(13, Math.floor(size * maxW / w));
     signMeasure.font = `${size}px ${SIGN_FONT}`;
     w = signMeasure.measureText(text).width;
-    while (w > maxW && text.length > 2) {          // still too long: clip it
+    while (w > maxW && text.length > 2) {
       text = text.slice(0, -2) + '\u2026';
       w = signMeasure.measureText(text).width;
     }
@@ -2526,19 +2410,16 @@ function signMetrics(text, kind) {
   return { text, size, used: Math.min(SIGN_CELL_W, Math.ceil(w + PAD * 2)) };
 }
 
-// Do two signs share a wall plane and cover some of the same face?
 function signsOverlap(a, b) {
-  if (a.nx * b.nx + a.nz * b.nz < 0.9) return false;          // facing different ways
+  if (a.nx * b.nx + a.nz * b.nz < 0.9) return false;
   const dx = b.x - a.x, dz = b.z - a.z;
-  if (Math.abs(dx * a.nx + dz * a.nz) > 0.3) return false;    // different wall planes
-  const along = Math.abs(dx * a.nz - dz * a.nx);              // across the wall
+  if (Math.abs(dx * a.nx + dz * a.nz) > 0.3) return false;
+  const along = Math.abs(dx * a.nz - dz * a.nx);
   if (along >= a.hw + b.hw + 0.05) return false;
   return Math.abs(b.y - a.y) < (a.h + b.h) / 2 + 0.04;
 }
 
-// Measure a new sign and move it up past any sign already hanging where it
-// would; false when it runs out of wall under the eaves, or the same label
-// already hangs there.
+// Place a sign above any already on the wall; false if it runs out of wall or the label is already there.
 function fitSign(sg, placed, eaves) {
   sg.m = signMetrics(sg.text, sg.kind);
   sg.hw = sg.h * (sg.m.used / SIGN_CELL_H) / 2;
@@ -2552,8 +2433,7 @@ function fitSign(sg, placed, eaves) {
   return false;
 }
 
-// All labels share one atlas canvas, so a city's signs are one mesh. Each
-// plane is as wide as its text.
+// All labels share one atlas canvas, so a city's signs are one mesh.
 function buildSigns(signs) {
   if (!signs.length) return;
 
@@ -2583,7 +2463,6 @@ function buildSigns(signs) {
     const u0 = ox / cv.width, u1 = (ox + used) / cv.width;
     const v1 = 1 - oy / cv.height, v0 = 1 - (oy + SIGN_CELL_H) / cv.height;
 
-    // right = up x normal, so the quad faces (nx, 0, nz)
     const rx = s.nz, rz = -s.nx;
     const hw = s.hw, hh = s.h / 2;
     const bl = [s.x - rx * hw, s.y - hh, s.z - rz * hw];
@@ -2612,12 +2491,7 @@ function buildSigns(signs) {
 }
 
 // COLLISION
-//
-// Two broadphase grids over the same cells:
-//   grid / gridWalls   solids (wall pieces, lintels, barriers): pushed against,
-//                      stood on.
-//   shellGrid / shells whole footprints: roofs, raised floors, ceilings, sign
-//                      placement. Never pushed against, so interiors are open.
+// grid/gridWalls: solids pushed against and stood on. shellGrid/shells: footprints for roofs, floors, ceilings, signs.
 
 let grid = new Map();
 let gridWalls = [];
@@ -2625,12 +2499,7 @@ let shellGrid = new Map();
 let shells = [];
 
 // SHELL RASTER
-// shellAt runs for every moving NPC every tick (through terrain.baseAt), and
-// each call was a bucket walk plus point-in-polygon tests. The raster answers
-// most points with one typed-array read: a cell holds the one shell that
-// contains all of it, SHELL_OUT when it is inside none, or SHELL_AMBIG when a
-// ring edge touches it or two shells overlap it. Only SHELL_AMBIG cells take
-// the exact test, so shellAt returns what the exact test would everywhere.
+// shellAt in one typed-array read for most points; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
 const SHELL_CELL      = 1;          // raster resolution, metres (coarsened if the city is huge)
 const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
 const SHELL_OUT       = -1;
@@ -2640,8 +2509,7 @@ const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL
 let solidStamp = new Uint32Array(0);
 let stampNo = 0;
 
-// Integer key so lookups build no string (every NPC queries these each
-// frame). Unique while |cx|, |cz| < 8192; stays a V8 small integer.
+// Integer cell key, no string; unique while |cx|, |cz| < 8192.
 function cellKey(cx, cz) { return (cx + 8192) * 16384 + (cz + 8192); }
 
 function buildGrid(solids) {
@@ -2677,18 +2545,14 @@ function closestOnRing(pts, x, z) {
   return near;
 }
 
-// Push a circle out of any overlapping solid. Callers move in SUBSTEP
-// increments so thin walls cannot be skipped; a few passes settle corners.
-// Defaults are the player's; NPCs pass their own radius and column.
-// Returns whether anything was pushed.
+// Push a circle out of overlapping solids (callers substep so thin walls are not skipped); returns whether it pushed.
 function resolveCollisions(pos, r = PLAYER_RADIUS,
                            feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR, stepUp = 0) {
   let pushed = false;
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
-    // solids are filed under every cell they touch, so only the circle's own
-    // cells matter: usually 1, at most 4
+    // solids are filed under every cell they touch, so only the circle's own cells (1 to 4) matter
     const cx0 = Math.floor((pos.x - r) / GRID_CELL), cx1 = Math.floor((pos.x + r) / GRID_CELL);
     const cz0 = Math.floor((pos.z - r) / GRID_CELL), cz1 = Math.floor((pos.z + r) / GRID_CELL);
     if (++stampNo >= 0xffffffff) { solidStamp.fill(0); stampNo = 1; }
@@ -2702,20 +2566,16 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
           if (solidStamp[idx] === stampNo) continue;
           solidStamp[idx] = stampNo;
           const w = gridWalls[idx];
-          // skip pieces the body column is fully above or below (e.g. a lintel),
-          // or low enough to step onto
+          // skip pieces the column is fully above or below, or can step onto
           if (feetY + stepUp >= w.top - LAND_EPS || headY <= w.base) continue;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
-          // a point outside the piece's box cannot be inside its ring, so the
-          // crossing test only runs when it could matter (most hits are in the
-          // r-wide margin, where only the distance test decides)
+          // the crossing test only runs inside the piece's box; most hits are decided by distance
           const inside = pos.x >= w.minX && pos.x <= w.maxX && pos.z >= w.minZ && pos.z <= w.maxZ &&
                          pointInRing(w.pts, pos.x, pos.z);
           const c = closestOnRing(w.pts, pos.x, pos.z);
 
           if (inside) {
-            // out through the nearest face, then clear it by the radius
             let dx = c.x - pos.x, dz = c.z - pos.z;
             const len = Math.hypot(dx, dz) || 1;
             pos.x = c.x + (dx / len) * r;
@@ -2737,8 +2597,7 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
   return pushed;
 }
 
-// Horizontal move with collision, cut into steps no longer than SUBSTEP.
-// `stepUp` lets the player walk onto a ledge that low.
+// Horizontal move with collision in steps of at most SUBSTEP; `stepUp` walks onto low ledges.
 function moveAndCollide(pos, dx, dz, stepUp = 0) {
   const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / SUBSTEP));
   for (let k = 0; k < n; k++) {
@@ -2748,9 +2607,7 @@ function moveAndCollide(pos, dx, dz, stepUp = 0) {
   }
 }
 
-// Surface the feet pass down through between `fromFeet` and `toFeet`, or the
-// terrain. Only surfaces the feet started above (or within `stepUp` of)
-// count, so walking indoors never snaps you onto the roof.
+// Highest surface the feet pass down through (or the terrain); only ones they started above count.
 function supportAt(x, z, fromFeet, toFeet, stepUp = 0) {
   let best = elevation.at(x, z);
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
@@ -2760,7 +2617,7 @@ function supportAt(x, z, fromFeet, toFeet, stepUp = 0) {
     for (let oz = -1; oz <= 1; oz++) {
       const key = cellKey(cx + ox, cz + oz);
 
-      const bucket = grid.get(key);           // wall and barrier tops
+      const bucket = grid.get(key);
       if (bucket) {
         for (const idx of bucket) {
           const w = gridWalls[idx];
@@ -2770,7 +2627,7 @@ function supportAt(x, z, fromFeet, toFeet, stepUp = 0) {
         }
       }
 
-      const sb = shellGrid.get(key);          // roofs, and floors of raised buildings
+      const sb = shellGrid.get(key);
       if (sb) {
         for (const idx of sb) {
           const w = shells[idx];
@@ -2787,8 +2644,7 @@ function supportAt(x, z, fromFeet, toFeet, stepUp = 0) {
   return best;
 }
 
-// Lowest overhead surface the head passes up through, or Infinity:
-// ceilings, raised-building undersides, door lintels.
+// Lowest overhead surface the head passes up through, or Infinity.
 function ceilingAt(x, z, fromHead, toHead) {
   let best = Infinity;
   const g = elevation.at(x, z);
@@ -2817,7 +2673,7 @@ function ceilingAt(x, z, fromHead, toHead) {
           if (!ceil && !under) continue;
           if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
           if (!pointInShell(w, x, z)) continue;
-          if (under) best = w.base;         // the lower of the two when both apply
+          if (under) best = w.base;
           else best = w.ceil;
         }
       }
@@ -2827,67 +2683,41 @@ function ceilingAt(x, z, fromHead, toHead) {
 }
 
 // NPCS
-//
-// Human NPCs ported from AIEcosystemArena with unchanged behaviour: Animal
-// (19 inputs, a heading out), a two-lobe DenseNetwork each, instanced AnimalRenderer.
-// Only the world differs: city walls, shells and painted water replace the
-// Arena's torus terrain and cabins. Differences are marked "City:".
-//
-// Deer are the Arena's sheep: same stats, senses, diet, predator (humans)
-// and mating, with a deer rig in place of the sheep boxes. They have no brain:
-// Animal.thinkDeer runs the species.py deer AI (see DEER AI). The type name is
-// 'deer' throughout.
-//
-// Stats stay in Arena units (a human is ~38 tall); NPC_UNIT converts to metres
-// where distance meets the city: step, lift, eye height, vision, contact, mesh.
+// Ported from AIEcosystemArena, behaviour unchanged except where marked "City:". Deer are the Arena's sheep
+// run by the species.py AI (thinkDeer), no brain. Stats stay in Arena units; NPC_UNIT converts to metres.
 
 const NPC_POPULATION = 500;       // humans spawned per loaded city: the one knob
-const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // deer per loaded city: the Arena's 20:5 sheep-to-human ratio
-const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // plants per loaded city: the Arena's 300:5 plant-to-human ratio
-// Food carries water: sized so that an eater who eats enough to keep up with
-// its hunger gets this share of its water from food (about 30% for people),
-// the rest from drinking. Each unit of food need eaten removes
-// DIET_WATER_SHARE x (thirst rate / hunger rate) units of water need.
+const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // the Arena's 20:5 sheep-to-human ratio
+const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
+// Share of water that comes with food for an eater keeping up with hunger (~30% for people).
 const DIET_WATER_SHARE = 0.3;
 const PLANT_REGROW_P = 0.03;      // chance per tick of one new plant (the Arena's probSpawnPlant)
 const PLANT_SPOT_TRIES = 30;      // random samples per plant before that spawn is skipped
+const PLANT_SIGHT_CELL = 15;      // metres: plant cell for vision queries (NpcWorld.plantSight)
 // DEER AI (ported from species.py, Animal.search / think / move)
 const DEER_CRUISE      = 0.3;      // species.py: speed share when not fleeing
-// Deer sense and decide once per DEER_THINK_TICKS (20, a third of a second),
-// so their reaction lags; between decisions they keep to the last one,
-// checking each tick whether they have reached their target.
+// Deer decide once per DEER_THINK_TICKS (a third of a second) and keep that decision in between.
 const DEER_THINK_TICKS = 20;
-// A deer fleeing a predator within DEER_SPRINT_DIST sprints: this many times
-// the top running speed of any predator, the player's RUN_SPEED or the fastest
-// person, whichever is higher, burning this many times its walking energy
-// (food need) while it does. A predator farther off is fled at the deer's
-// normal full speed (species.py's flee), at normal energy.
+// A deer within DEER_SPRINT_DIST of a predator sprints (speed and energy below); farther off it flees at normal speed.
 const DEER_SPRINT_DIST   = 10;     // metres
-const DEER_SPRINT_OVER   = 1;      // was 2: half that, so a deer sprints only as fast as its fastest predator runs
+const DEER_SPRINT_OVER   = 1;      // sprint = this x the fastest predator's run
 const DEER_SPRINT_ENERGY = 2;
-// An NPC step longer than this is split into sub-steps, each checked against
-// the occupancy grid, so a sprinting deer cannot pass through a wall or skip
-// a doorway lane between ticks.
+// NPC steps longer than this are split so a sprinting deer cannot pass a wall.
 const NPC_SUBSTEP = 0.1;           // metres
-// GAIT
-// Legs cycle as fast as the body moves: one leg cycle carries the body
-// 4 L sin(swing) (two stances, each sweeping 2 L sin(swing)), so cadence is
-// speed over that. Capped where a faster swing no longer reads on screen; a
-// sprinting deer also lengthens its stride to a gallop swing.
+// GAIT: leg cadence follows body speed, capped at GAIT_MAX_HZ; a sprinting deer gallops.
 const GAIT_MAX_HZ       = 4;       // leg cycles per second, at most
 const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
 const DEER_EXPLORE_P   = 0.0001;   // species.py: chance per tick of a new random explore point
 const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
-// People turn toward the heading their brain picks at this rate instead of
-// snapping to it.
-const HUMAN_TURN_RATE   = 3;      // radians per second
+const DEER_GRACE_MULT = 4;        // deer wait this many times longer than people between births
+const NPC_MATURITY_TICKS = 3 * 24 * 60;   // ticks from birth to full size (72 s at 60 Hz); no mating before
+const HUMAN_TURN_RATE   = 3;      // radians per second people turn toward their brain's heading
 const DEER_GREEN_SHARE = 0.8;     // share of deer spawns drawn from green areas when the map has any
 const DEER_AREAS = new Set([      // land cover deer and plants spawn in
   'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'golf_course',
   'forest', 'wood', 'meadow', 'farmland', 'cemetery', 'scrub', 'orchard', 'greenfield', 'wetland'
 ]);
-// Feet to the top of each rig in Arena units, for the stats sprite. Deer use
-// a buck's antler tips for both sexes so every deer's stats sit at one height.
+// Feet to rig top in Arena units, for the stats sprite (deer use antler tips for both sexes).
 const NPC_RIG_TOP = { human: 38.55, deer: 35 };
 
 const NPC_UNIT       = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
@@ -2897,25 +2727,20 @@ const NPC_WADE       = 0.55;     // how far a human sinks into painted water
 const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
 const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
-// heightScale of the mean person. City people are NPC_HEIGHT_MEAN tall, not the
-// rig's 1.73 m, so other species take this factor too to stay in proportion.
+// heightScale of the mean person; other species use it too to stay in proportion.
 const NPC_HUMAN_HS    = NPC_HEIGHT_MEAN / (NPC_RIG_TOP.human * NPC_UNIT);
 const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
 const NPC_BODY_R      = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
 const NPC_STATS_R     = 0.7;     // metres: bounding sphere around the stats sprite and brain
 const NPC_STATS_UP    = 0.55;    // metres from the sprite bottom to that sphere's centre
 
-// VIEW CULL
-// Bodies, stats and brains off-screen are skipped: not written to the
-// instance buffers and not updated, like megaverse's CREATURE_CULL frustum
-// test (sphere against the six planes, rejected only when fully outside).
-// The frustum is rebuilt from the camera at the start of each renderer pass.
+// VIEW CULL: off-screen bodies, stats and brains are skipped (bounding sphere vs frustum).
 const npcFrustum = new THREE.Frustum();
 const _npcVP     = new THREE.Matrix4();
 const _npcSphere = new THREE.Sphere();
 
 function updateNpcFrustum() {
-  camera.updateMatrixWorld();   // step() moved the camera since the last render
+  camera.updateMatrixWorld();
   _npcVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   npcFrustum.setFromProjectionMatrix(_npcVP);
 }
@@ -2931,7 +2756,6 @@ const OCC_INV        = 1 / OCC_CELL;
 const OCC_CARVE_KEEP = 0.2;      // a doorway lane never clears a cell whose centre is this close to a raw solid
 
 // SHARED HELPERS
-// Helpers the Arena classes expect by name.
 
 class MathTools {
   distSq(x1, y1, x2, y2) {
@@ -2982,10 +2806,7 @@ class SpatialGrid {
     this.cellSize = cellSize;
     this.cols = Math.ceil(worldW / cellSize);
     this.rows = Math.ceil(worldH / cellSize);
-    // One bucket per cell in a flat array, made on first insert (a grid that
-    // is never filled, like plants for now, costs nothing). A lookup is an
-    // index, not a Map hash: locate reads hundreds of cells per call. Buckets
-    // stay allocated and are only emptied, so a rebuild allocates nothing.
+    // Flat array of buckets, made on first insert and only emptied on rebuild: lookups are indexes, rebuilds allocate nothing.
     this.cells = null;
     this._usedKeys = [];
   }
@@ -3022,7 +2843,7 @@ class SpatialGrid {
     const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
     const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
     for (let cy = cy0; cy <= cy1; cy++) {
-      const row = (((cy % rows) + rows) % rows) * cols;   // same wrap as before, once per row
+      const row = (((cy % rows) + rows) % rows) * cols;
       for (let cx = cx0; cx <= cx1; cx++) {
         const bucket = cells[row + ((cx % cols) + cols) % cols];
         if (bucket === null) continue;
@@ -3077,11 +2898,7 @@ class BrainFactory {
 }
 
 // TWO-LOBE NETWORK
-// Forward pass unchanged from the Arena; learning is City's three-factor
-// plasticity rule (tagSynapses + adjustWeights).
-//
-//   Input -> A, Input -> B, A -> B, B -> A (one-step lag), A,B -> Output
-//   Leaky integrate-and-fire lobes with refractory period; softmax over 9 actions.
+// Input -> A, Input -> B, A <-> B (B -> A lags a step), A,B -> Output; LIF lobes. Learning: tagSynapses + adjustWeights.
 class DenseNetwork {
   // Plasticity time constants, per think() step (~1 s at ACTION_HOLD 60).
   static TAG_DECAY     = 0.5;    // synaptic tag (eligibility) kept per step
@@ -3090,8 +2907,7 @@ class DenseNetwork {
 
   constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
     this.inputDims    = inputDims;
-    // Output neurons are a ring of preferred headings, 2 pi i / O. Their
-    // activity-weighted vector sum collapses to one heading in [0, 2 pi).
+    // Outputs are a ring of preferred headings; their weighted vector sum is the heading.
     this.outputDims   = 8;
     this.learningRate = learningRate;
     this.momentum     = momentum;
@@ -3100,7 +2916,7 @@ class DenseNetwork {
     this.lastCost     = 0.0;
     this.costHistoryLen = 0;
     this.output       = null;            // output neuron nearest the heading (display)
-    this.heading      = Math.random() * Math.PI * 2;   // last collapsed heading, radians
+    this.heading      = Math.random() * Math.PI * 2;
     this.normCount    = 0;
     this.EMA          = 0.001;
 
@@ -3153,8 +2969,7 @@ class DenseNetwork {
     this.biasB  = new Float32Array(NB);
     this.biasO  = new Float32Array(O);
 
-    // Plasticity state: one synaptic tag per synapse and bias, one activity
-    // average per neuron, and the tonic dopamine level.
+    // Plasticity state: tags per synapse and bias, activity average per neuron, tonic dopamine.
     this.eIA    = new Float32Array(I  * NA);
     this.eIB    = new Float32Array(I  * NB);
     this.eAB    = new Float32Array(NA * NB);
@@ -3196,7 +3011,7 @@ class DenseNetwork {
     this.prefSin = new Float32Array(O);
     this.prefCos = new Float32Array(O);
     for (let i = 0; i < O; i++) {
-      const phi = (i / O) * Math.PI * 2;      // same angle convention as facingAngle: (sin, cos) is (x, z)
+      const phi = (i / O) * Math.PI * 2;
       this.prefSin[i] = Math.sin(phi);
       this.prefCos[i] = Math.cos(phi);
     }
@@ -3335,13 +3150,11 @@ class DenseNetwork {
     this.prevB.set(this.actB);
     const values = this.propagate(standardized);
 
-    // Population vector: each output pulls toward its preferred heading by its
-    // (softmax) activity; the sum's angle is the heading, wrapped to [0, 2 pi).
-    // No class is picked, so a small change in activity is a small turn.
+    // Population vector: the heading is the angle of the activity-weighted sum, so small changes turn a little.
     const O = this.outputDims;
     let vx = 0, vz = 0;
     for (let i = 0; i < O; i++) { vx += values[i] * this.prefSin[i]; vz += values[i] * this.prefCos[i]; }
-    let heading = this.heading;              // perfectly balanced outputs: keep the last heading
+    let heading = this.heading;
     if (vx * vx + vz * vz > 1e-12) {
       heading = Math.atan2(vx, vz);
       if (heading < 0) heading += Math.PI * 2;
@@ -3363,16 +3176,8 @@ class DenseNetwork {
     return this.learningRate;
   }
 
-  // SYNAPTIC TAGGING (first two factors), once per think().
-  // Calcium-style rule: a postsynaptic neuron active above its own recent
-  // average (high Ca2+, CaMKII side) tags its active inputs for potentiation;
-  // below it (moderate Ca2+, calcineurin side) tags them for depression. Each
-  // synapse's tag is pre activity x that post factor, and decays, so it records
-  // which synapses took part in recent behaviour and in which direction.
-  // Pre is the activity that actually reached the synapse this step. Output
-  // neurons count as active by how well their preferred heading matches the
-  // heading taken (cosine tuning, floored at 0), so reward credits the ones
-  // that pulled that way.
+  // SYNAPTIC TAGGING, once per think(): each decaying tag = pre activity x (post activity - its recent average).
+  // Outputs count as active by how well their heading matches the one taken, so reward credits the ones that pulled that way.
   tagSynapses(inp, heading) {
     const NA = this.lobeSizeA, NB = this.lobeSizeB, I = this.inputDims, O = this.outputDims;
     const de = DenseNetwork.TAG_DECAY, g = 1 - de;
@@ -3406,7 +3211,7 @@ class DenseNetwork {
 
     for (let i = 0; i < NA; i++) {
       this.eSelf[i]  = this.eSelf[i]  * de + g * this.selfIn[i] * fA[i];
-      this.eBiasA[i] = this.eBiasA[i] * de + g * fA[i];   // intrinsic excitability
+      this.eBiasA[i] = this.eBiasA[i] * de + g * fA[i];
     }
     for (let i = 0; i < NB; i++) this.eBiasB[i] = this.eBiasB[i] * de + g * fB[i];
     for (let i = 0; i < O;  i++) this.eBiasO[i] = this.eBiasO[i] * de + g * fO[i];
@@ -3436,10 +3241,7 @@ class DenseNetwork {
     for (let k = 0; k < len; k++) b[k] = b[k] * wdB + gain * e[k];
   }
 
-  // THIRD FACTOR: dopamine. Reward against the tonic level the network has
-  // come to expect gives a phasic burst (positive) or dip (negative). A burst
-  // converts each synapse's tag into lasting change in the tag's direction; a
-  // dip reverses it. Untagged synapses only fluctuate and decay.
+  // THIRD FACTOR (dopamine): reward vs. its expected level turns tags into lasting change (burst) or reverses them (dip).
   adjustWeights(reward) {
     this.cost = reward;
     const r   = Math.max(-1, Math.min(1, reward));
@@ -3489,7 +3291,7 @@ class Entity {
   update(deltaTime) {}
 
   remove() {
-    if (this.mesh) scene.remove(this.mesh);   // City: the scene is a module global here
+    if (this.mesh) scene.remove(this.mesh);
   }
 }
 
@@ -3500,7 +3302,7 @@ class Animal extends Entity {
   static FOV_V = { human: [0.25, 0.45], deer: [0.20, 0.40] };
   static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
   static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
-  static EYE_OFFSET = { human: 12, deer: 10 };   // deer: the head's centre on the deer rig
+  static EYE_OFFSET = { human: 12, deer: 10 };
   static INPUT_DIMS = 19;
   static _hit = { d3sq: 0, sin: 0, cos: 0, elev: 0, dist: 0 };
 
@@ -3512,7 +3314,7 @@ class Animal extends Entity {
     this.startHealth = type === 'human' ? 120 : 100;
     this.health = this.startHealth;
     this.maxHealth = this.health;
-    this.visionDistance = tools.random(500, 2000) * NPC_UNIT;   // City: metres
+    this.visionDistance = tools.random(500, 2000) * NPC_UNIT;
     this.visionDistSq = this.visionDistance * this.visionDistance;
 
     const fh = Animal.FOV_H[type] ?? [1.0, 1.6];
@@ -3523,8 +3325,7 @@ class Animal extends Entity {
     this.generation = 0;
 
     if (type === 'human') {
-      // City: height ~ normal in metres (Box-Muller, cut at 4 std), mapped to
-      // heightScale. Feet to head top = 38.55 * hs Arena units.
+      // City: height ~ normal in metres (cut at 4 std), mapped to heightScale.
       let u; do { u = Math.random(); } while (u === 0);
       const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
       const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
@@ -3532,7 +3333,6 @@ class Animal extends Entity {
     } else {
       const heightParams = { deer: [1.0, 0.10] };
       const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
-      // City: sized against the people, who are scaled down to NPC_HEIGHT_MEAN
       this.heightScale = NPC_HUMAN_HS * brains.randNormal(hMean, hStd);
     }
 
@@ -3544,12 +3344,12 @@ class Animal extends Entity {
     this.sex = Math.random() < 0.5 ? 'male' : 'female';
     this.mutationMulti = 0.5;
     this.lastChildTime = Date.now();
-    this.childGracePeriod = (15 + Math.random() * 15) * 1000;
+    this.childGracePeriod = (15 + Math.random() * 15) * 1000 * (type === 'deer' ? DEER_GRACE_MULT : 1);
     this.lookForMate = false;
 
     this.waterIncrement = this.health * 0.000001;
     this.foodIncrement  = this.health * 0.000003;
-    this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;   // deer: species.py's additive mate need
+    this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;
     this.ageDepl        = this.health * 0.000001;
 
     this.memPredatorX = 0; this.memPredatorY = 0; this.memPredatorZ = 0; this.hasPredator = false;
@@ -3557,10 +3357,10 @@ class Animal extends Entity {
     this.memWaterX = 0;    this.memWaterY = 0;    this.memWaterZ = 0;    this.hasWater = false;
     this.memMateX = 0;     this.memMateY = 0;     this.memMateZ = 0;     this.hasMate = false;
     this.priority = null;          // deer: 'predator', 'food', 'water', 'mate', or null while exploring
-    this.focusX = 0; this.focusZ = 0;   // deer: species.py's coords_focused
-    this.speedScale = 1;           // deer: DEER_CRUISE unless sprinting; people always 1
-    this.sprinting = false;        // deer: fleeing a predator at the sprint speed
-    this.bumpScale = 1;            // deer: speed left after wall hits, as the car's; 1 again at each decision
+    this.focusX = 0; this.focusZ = 0;
+    this.speedScale = 1;
+    this.sprinting = false;
+    this.bumpScale = 1;
     if (type === 'deer') this.newExploreCoords();
 
     this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodElev = 0;      this.rayFoodDist = 0;
@@ -3568,14 +3368,11 @@ class Animal extends Entity {
     this.rayPredatorSin = 0;  this.rayPredatorCos = 0;  this.rayPredatorElev = 0;  this.rayPredatorDist = 0;
     this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateElev = 0;      this.rayMateDist = 0;
 
-    // City: deer run thinkDeer() (the species.py AI) every tick instead of a brain
     this.brain = type === 'deer' ? null : new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001);
     this.ACTION_HOLD   = type === 'deer' ? DEER_THINK_TICKS : 60;
     this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD);
     this.currentAction = 0;
-    // City: movement is a heading, radians, direction (sin, cos) in (x, z).
-    // People turn toward targetHeading (their brain's output) at
-    // HUMAN_TURN_RATE; deer set both every tick, pointing at their focus.
+    // City: heading in radians, direction (sin, cos) in (x, z); people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
     this.targetHeading = this.heading;
     this.moving = true;
@@ -3611,16 +3408,14 @@ class Animal extends Entity {
     this.tanFovV = Math.tan(this.fovV);
   }
 
-  // City: body-centre height above the feet in Arena units, from the rig (leg
-  // pivot + leg length). The Arena's flat 15 / 9 sank feet ~6 units. Both rigs
-  // scale uniformly with heightScale.
+  // City: body-centre height above the feet in Arena units, from the rig; scales with heightScale.
   footLift() {
     const hs = this.heightScale ?? 1.0;
-    return this.type === 'deer' ? 15 * hs : 21.25 * hs;   // deer: pivot 2 + leg 13 below the body centre
+    return this.type === 'deer' ? 15 * hs : 21.25 * hs;
   }
 
   eyeY() {
-    return this.position.y + this.eyeOffset * (this.heightScale ?? 1.0) * NPC_UNIT;   // City: metres
+    return this.position.y + this.eyeOffset * (this.heightScale ?? 1.0) * NPC_UNIT;
   }
 
   senseTarget(px, py, pz, ax, az, cosH, tanV, tx, ty, tz) {
@@ -3649,9 +3444,7 @@ class Animal extends Entity {
     return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
   }
 
-  // People's senses (deer use searchDeer): vision cone, the nearest deer or
-  // plant as food and nearest opposite-sex person as a mate, water; memories
-  // kept until out of range.
+  // People's senses: vision cone for food (deer, plants), opposite-sex mates and water; memories kept until out of range.
   locate(grid, waterLocations) {
     const px = this.position.x, pz = this.position.z;
     const py = this.eyeY();
@@ -3688,8 +3481,10 @@ class Animal extends Entity {
       }
     }
 
-    // City: plants are food for people too; the nearer of plant and deer wins
-    for (const plant of world.plants) {
+    // City: plants are food for people too (nearer of plant and deer wins), from the sight grid.
+    const nSight = world.plantSight.queryInto(world._qSight, px, pz, this.visionDistance);
+    for (let _i = 0; _i < nSight; _i++) {
+      const plant = world._qSight[_i];
       if (!plant.alive) continue;
       const qx = plant.position.x - px, qz = plant.position.z - pz;
       if (qx * qx + qz * qz > vd) continue;
@@ -3705,7 +3500,7 @@ class Animal extends Entity {
     }
 
     for (const wl of waterLocations) {
-      const wy = wl[2];   // City: the water surface's own height on the terrain
+      const wy = wl[2];
       const qx = wl[0] - px, qz = wl[1] - pz;
       if (qx * qx + qz * qz > vd) continue;
       if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, wl[0], wy, wl[1])) continue;
@@ -3764,31 +3559,12 @@ class Animal extends Entity {
     inp[17] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
     inp[18] = this.health > 0 ? this.health / this.maxHealth : 0;
 
-    this.targetHeading = this.brain.think(inp);   // City: a heading, not a class
+    this.targetHeading = this.brain.think(inp);
     this.moving = true;
   }
 
-  // DEER AI, ported from species.py (update_body, search, think, move), run
-  // as a decision once per DEER_THINK_TICKS and steering every tick:
-  // thinkDeer (once per DEER_THINK_TICKS, so reactions lag):
-  //   1. a chance of a new random explore point (update_body's per-frame
-  //      DEER_EXPLORE_P, compounded over the decision interval)
-  //   2. search: everything within vision distance, a plain circle as in
-  //      neighbors(); people (and the player in game mode) are predators and
-  //      set avoidNeed to Infinity, the nearest plant is food, the nearest
-  //      water point is water, the nearest opposite-sex deer is a mate.
-  //      Locations are what is in sight at this decision.
-  //   3. think: needs ranked highest first, predator (avoidNeed), food,
-  //      water, mate (ties keep that order, as Python's stable sort did); the
-  //      first with a known location becomes the priority and its location
-  //      the focus. Fleeing fixes an escape heading instead, straight away
-  //      from the nearest predator (the direction of species.py's
-  //      transpose_focused_coords, self + (self - predator)), and whether to
-  //      sprint.
-  // steerDeer (every tick):
-  //   4. move: along the escape heading when fleeing; otherwise straight at
-  //      the focus, stopping on it; at full speed (or the sprint) when
-  //      fleeing and DEER_CRUISE of it otherwise.
+  // DEER AI (species.py): thinkDeer, every DEER_THINK_TICKS, picks the highest need with a known location
+  // (predator, food, water, mate; ties in that order) and flees or heads for it; steerDeer moves every tick.
   thinkDeer(grid, waterLocations) {
     if (Math.random() <= 1 - Math.pow(1 - DEER_EXPLORE_P, DEER_THINK_TICKS)) this.newExploreCoords();
     this.searchDeer(grid, waterLocations);
@@ -3802,7 +3578,6 @@ class Animal extends Entity {
 
     const x = this.position.x, z = this.position.z;
     if (best === 'predator') {
-      // straight away from the nearest predator: toward self + (self - predator)
       const ax = x - this.memPredatorX, az = z - this.memPredatorZ;
       if (ax !== 0 || az !== 0) this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(ax, az));
     } else if (best === 'food')  { this.focusX = this.memFoodX;  this.focusZ = this.memFoodZ; }
@@ -3811,34 +3586,27 @@ class Animal extends Entity {
 
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
     this.sprinting = best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST;
-    this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;   // fleeing beyond sprint range: full speed
-    this.bumpScale = 1;                                        // back up to speed after any wall hit
+    this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
+    this.bumpScale = 1;
     if (best !== 'predator') this.aimAtFocus();
     this.moving = true;
   }
 
-  // Heading straight at the focus (kept if already on it).
   aimAtFocus() {
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
     if (dx !== 0 || dz !== 0) this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(dx, dz));
   }
 
-  // Every tick: carry out the last decision.
   steerDeer() {
-    // sprinting burns DEER_SPRINT_ENERGY times the walking energy: the base
-    // increment was added in update(), this adds the rest
+    // sprinting burns DEER_SPRINT_ENERGY times walking energy; update() added the base
     if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
-    // The heading set at the decision is kept between decisions (a wall hit
-    // may bend it, see moveDeer), so only arrival is checked here. Fleeing
-    // never "arrives": the deer runs until it decides again.
+    // the decision's heading holds until the next one; only arrival is checked (fleeing never arrives)
     if (this.priority === 'predator' || !this.moving) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
     const step = this.stepLength();
     if (dx * dx + dz * dz <= step * step) {
-      // at the focus: stand (eating, drinking or meeting a mate happens on
-      // contact). City: species.py divides by a zero-length vector here; an
-      // explore point that is reached is replaced, as the first species.py did.
+      // at the focus: stand (contact does the rest); a reached explore point is replaced
       if (this.priority === null) { this.newExploreCoords(); this.aimAtFocus(); }
       else this.moving = false;
     }
@@ -3873,7 +3641,9 @@ class Animal extends Entity {
       if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
     }
 
-    for (const plant of world.plants) {
+    const nSight = world.plantSight.queryInto(world._qSight, x, z, this.visionDistance);
+    for (let i = 0; i < nSight; i++) {
+      const plant = world._qSight[i];
       if (!plant.alive) continue;
       const ox = plant.position.x, oz = plant.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
@@ -3886,8 +3656,7 @@ class Animal extends Entity {
     }
   }
 
-  // Metres moved this tick. Deer sprint at DEER_SPRINT_OVER times the fastest
-  // predator's running speed; otherwise the Arena speed, scaled.
+  // Metres moved this tick: a sprint off the fastest predator, else the Arena speed.
   stepLength() {
     const ms = this.sprinting
       ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHumanMS)
@@ -3895,22 +3664,15 @@ class Animal extends Entity {
     return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * Animal.MOVE_TIMESTEP;
   }
 
-  // City: a deer's step against the exact building walls, handled as the car
-  // handles them (carPhysics / moveCar): sub-steps no longer than NPC_SUBSTEP,
-  // each pushed out of any wall piece by resolveCollisions; the push is the
-  // wall normal. Moving into the wall loses that share of speed (bumpScale *=
-  // 1 - dot^2, the car's speed rule), and a glancing hit (|heading . normal| <
-  // CAR_GLANCE) turns the heading CAR_ALIGN of the way along the wall per
-  // contact sub-step. The bent heading and lost speed hold until the deer
-  // decides again, so it glances off rather than pressing into the wall.
+  // City: deer collide like the car: substeps pushed out of walls, speed lost into the wall, glancing hits turn along it.
   moveDeer(step) {
     const p = this.position, w = Animal._wallPos;
     const feet = this._b ?? terrain.baseAt(p.x, p.z);
     const n = Math.max(1, Math.ceil(step / NPC_SUBSTEP));
-    const b0 = this.bumpScale || 1;                        // step was taken at this speed share
+    const b0 = this.bumpScale || 1;
     const d0 = step / n;
     for (let k = 0; k < n; k++) {
-      const d = d0 * (this.bumpScale / b0);               // later sub-steps slow with any loss taken so far
+      const d = d0 * (this.bumpScale / b0);
       let fx = Math.sin(this.heading), fz = Math.cos(this.heading);
       p.x = tools.clamp(p.x + fx * d, world.minX, world.maxX);
       p.z = tools.clamp(p.z + fz * d, world.minZ, world.maxZ);
@@ -3921,10 +3683,9 @@ class Animal extends Entity {
       const len = Math.hypot(px, pz);
       if (len < 1e-6) continue;
       const nx = px / len, nz = pz / len;
-      const dot = fx * nx + fz * nz;                       // heading . wall normal
-      if (dot < 0) this.bumpScale *= 1 - dot * dot;        // the speed driven into the wall is lost
+      const dot = fx * nx + fz * nz;
+      if (dot < 0) this.bumpScale *= 1 - dot * dot;
       if (Math.abs(dot) < CAR_GLANCE) {
-        // a glancing hit turns the body along the wall instead of pinning it
         let tx = -nz, tz = nx;
         if (tx * fx + tz * fz < 0) { tx = -tx; tz = -tz; }
         let dy = Math.atan2(tx, tz) - this.heading;
@@ -3934,8 +3695,7 @@ class Animal extends Entity {
     }
   }
 
-  // Records a sighting (0 predator, 1 food, 2 water, 3 mate) as a location,
-  // plus the direction and distance the vitals sprite's arrows read.
+  // Record a sighting (0 predator, 1 food, 2 water, 3 mate) and its direction for the arrows.
   seen(kind, ox, oy, oz) {
     const dx = ox - this.position.x, dz = oz - this.position.z;
     const h = Math.hypot(dx, dz) || 1;
@@ -3955,9 +3715,7 @@ class Animal extends Entity {
     }
   }
 
-  // species.py new_explore_coords: a random point in the world. City: drawn
-  // up to 10 times for an open outdoor spot, so the target is not inside a
-  // building or in water.
+  // species.py new_explore_coords; City: up to 10 draws for an open outdoor spot.
   newExploreCoords() {
     for (let k = 0; k < 10; k++) {
       this.focusX = world.minX + Math.random() * (world.maxX - world.minX);
@@ -3973,7 +3731,6 @@ class Animal extends Entity {
     return a < 0 ? a + Animal.TWO_PI : a;
   }
 
-  // `from` turned toward `to` by at most `maxStep` radians, the short way round.
   static turnToward(from, to, maxStep) {
     let d = (to - from) % Animal.TWO_PI;
     if (d > Math.PI) d -= Animal.TWO_PI;
@@ -3987,26 +3744,23 @@ class Animal extends Entity {
   }
 
   move() {
-    const lift = this.footLift() * NPC_UNIT;   // City: feet on the street, metres
+    const lift = this.footLift() * NPC_UNIT;
     if (this.moving) {
-      // City: people turn smoothly toward their brain's heading; deer already face their focus
       if (this.heading !== this.targetHeading) {
         this.heading = Animal.turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * Animal.MOVE_TIMESTEP);
       }
       this.facingAngle = this.heading;
-      const step = this.stepLength();                    // City: metres
+      const step = this.stepLength();
       const sx = Math.sin(this.heading) * step, sz = Math.cos(this.heading) * step;
       const n = Math.ceil(step / NPC_SUBSTEP);
       if (!this.brain) {
-        this.moveDeer(step);                             // City: deer glance off walls like the car
+        this.moveDeer(step);
       } else if (n <= 1) {
-        // a normal walking step: NpcWorld.collide settles it against walls
-        // City: clamp to the loaded area; the Arena's torus wrap would teleport
+        // walking step: NpcWorld.collide settles walls; City: clamp, not the Arena's torus wrap
         this.position.x = tools.clamp(this.position.x + sx, world.minX, world.maxX);
         this.position.z = tools.clamp(this.position.z + sz, world.minZ, world.maxZ);
       } else {
-        // a long (sprinting) step: sub-steps, each refused or slid along one
-        // axis at a blocked cell, as NpcWorld.collide does for a whole step
+        // sprinting step: sub-steps, each refused or slid along one axis at a blocked cell
         let x = this.position.x, z = this.position.z;
         for (let k = 0; k < n; k++) {
           const nx = tools.clamp(x + sx / n, world.minX, world.maxX);
@@ -4029,7 +3783,8 @@ class Animal extends Entity {
   update(now, grid, waterLocations, animalIndex) {
     this.waterNeed += this.waterIncrement;
     this.foodNeed  += this.foodIncrement;
-    this.lookForMate = (now - this.lastChildTime) >= this.childGracePeriod;
+    if (!this.isAdult && world.ticks - this.birthTick >= NPC_MATURITY_TICKS) this.isAdult = true;
+    this.lookForMate = this.isAdult && (now - this.lastChildTime) >= this.childGracePeriod;
     // people: the Arena's rule; deer: species.py's, one increment per tick
     const rn = this.reproductionNeed;
     this.reproductionNeed = !this.lookForMate ? 0
@@ -4041,8 +3796,7 @@ class Animal extends Entity {
     if (this.health <= 1) { this.alive = false; return; }
 
     if (!this.brain) {
-      // City: deer decide once per DEER_THINK_TICKS (staggered by the random start of
-      // actionTimer) and steer every tick
+      // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick
       if (--this.actionTimer <= 0) {
         this.thinkDeer(grid, waterLocations);
         this.actionTimer = this.ACTION_HOLD;
@@ -4085,9 +3839,7 @@ class Animal extends Entity {
     }
   }
 
-  // City: the water in `food` units of food eaten (see DIET_WATER_SHARE). By
-  // the amount eaten, not the hunger it met, since the water comes with the
-  // food either way.
+  // City: water eaten with `food` units of food (see DIET_WATER_SHARE).
   dietWater(food) {
     const perFood = DIET_WATER_SHARE * this.waterIncrement / this.foodIncrement;
     this.waterNeed = Math.max(0, this.waterNeed - food * perFood);
@@ -4102,7 +3854,7 @@ class Animal extends Entity {
     const mother = this.sex === 'female' ? this : partner;
     const child = new Animal(
       [mother.position.x, mother.position.y,
-       mother.position.z + (this.type === 'deer' ? 10 : 20) * NPC_UNIT],   // City: metres
+       mother.position.z + (this.type === 'deer' ? 10 : 20) * NPC_UNIT],
       this.type
     );
     child.isAdult = false;
@@ -4122,7 +3874,7 @@ class Animal extends Entity {
     const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
     child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + brains.randNormal(0, 0.04)));
 
-    if (this.brain && partner.brain) {                    // City: deer fawns have none, as their parents
+    if (this.brain && partner.brain) {
       const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
       child.brain = new DenseNetwork(
         ParentBrain.inputDims,
@@ -4165,21 +3917,18 @@ class Animal extends Entity {
 }
 
 // INSTANCED RENDERER
-// Arena rig, scaled to metres by NPC_UNIT.
 
 class AnimalRenderer {
   constructor() {
     this.MAX_INSTANCES = 12000;
-    this.TICKS_PER_DAY  = 24 * 60;
-    this.MATURITY_TICKS = 3 * this.TICKS_PER_DAY;
+    this.MATURITY_TICKS = NPC_MATURITY_TICKS;
     this.MIN_SCALE      = 0.25;
 
     this.TYPES      = ['deer', 'human'];
     this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
-    this.LIMB_SIGNS = [1, -1, -1, 1];   // swing direction per LIMB_NAMES entry
+    this.LIMB_SIGNS = [1, -1, -1, 1];
 
-    // A box in rig units, turned about x then z, then moved to (x, y, z).
     const boxAt = (w, h, d, x, y, z, rx = 0, rz = 0) => {
       const g = new THREE.BoxGeometry(w, h, d);
       if (rx) g.rotateX(rx);
@@ -4188,14 +3937,7 @@ class AnimalRenderer {
       return g;
     };
 
-    // DEER RIG
-    // Rig units (NPC_UNIT metres each), origin at the body centre, head toward
-    // +z. Deer heightScale carries NPC_HUMAN_HS, so heights are given against
-    // the mean person: back at 51% of their height, head top 72%, ear tips
-    // 79%, antler tips 91% (at NPC_HEIGHT_MEAN 1.15 m: 0.60, 0.83, 0.91 and
-    // 1.04 m). The head part carries the neck, snout and ears and is placed at
-    // PART_OFFSETS.deer.head like the sheep's head cube was. Antlers are their
-    // own mesh, drawn for bucks only.
+    // DEER RIG: rig units, origin at the body centre, head toward +z, sized against the mean person. Antlers: bucks only.
     const deerHead = mergeGeometries([
       boxAt(4.5, 8, 5,     0, 3.2, 1.5, 0.45),     // neck, leaning forward
       boxAt(5, 5, 7,       0, 7.8, 5),             // head
@@ -4238,8 +3980,7 @@ class AnimalRenderer {
       human: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
     };
 
-    // Male-only parts: one extra instanced mesh per type that has them, placed
-    // with the head's matrix, not sex-tinted.
+    // Male-only parts: one extra mesh per type, placed with the head's matrix.
     this.ANTLERS = {
       deer: { geom: deerAntlers, mat: new THREE.MeshStandardMaterial({ color: 0xcbb793 }) }
     };
@@ -4281,17 +4022,10 @@ class AnimalRenderer {
     this.LEG_LEN   = { deer: 13, human: 12.5 };     // leg box heights, rig units
 
     this.meshes = {};
-    this.antlers = {};                        // type -> InstancedMesh, bucks only
+    this.antlers = {};
     this.renderCache = { deer: null, human: null };
 
-    // LOW DETAIL
-    // Past NPC_LOD_DIST a body is one instance of a merged, rest-pose mesh
-    // instead of six animated parts: one matrix per NPC instead of six, no
-    // leg maths, and fewer boxes. Same material and sex tint as the full rig,
-    // and the boxes sit where the rig's parts sit at rest, so the swap only
-    // stops the legs. Units are rig units, origin at the body centre, like
-    // the body mesh, so the far instance uses the body's matrix unchanged.
-    // Antlers are left out at this distance.
+    // LOW DETAIL: past NPC_LOD_DIST a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
     const dh = this.PART_OFFSETS.deer.head;
     this.FAR_GEOMETRIES = {
       human: mergeGeometries([
@@ -4306,7 +4040,7 @@ class AnimalRenderer {
         boxAt(8.8, 13, 2.4, 0, -8.5, -10)                  // back legs as one bar
       ], false)
     };
-    this.far = {};                            // type -> InstancedMesh
+    this.far = {};
     this.farColKeys = { deer: [], human: [] };
 
     this._mat4      = new THREE.Matrix4();
@@ -4378,7 +4112,7 @@ class AnimalRenderer {
       if (!im) continue;
       const cache = this.cacheFor(type, im);
       const far = this.far[type], farColKeys = this.farColKeys[type];
-      const antlers = this.antlers[type];               // undefined for humans
+      const antlers = this.antlers[type];
       const walkSwing = this.WALK[type], legLen = this.LEG_LEN[type];
       const limbHalf = this.LIMB_HALF[type];
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
@@ -4393,34 +4127,30 @@ class AnimalRenderer {
 
         const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
         const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
-        const k = s * NPC_UNIT;                         // City: rig scale in metres
+        const k = s * NPC_UNIT;
         const hs = a.heightScale ?? 1.0;
-        // City: every rig scales uniformly by heightScale, so a small NPC is a
-        // smaller copy of the rig, not a y-squash
-        const kp = k * hs;                              // part offsets and limb hang
+        // City: rigs scale uniformly by heightScale
+        const kp = k * hs;
         this._scale.set(kp, kp, kp);
 
-        // gait: cadence from speed, so the feet keep pace with the ground
         const swing = a.sprinting ? GAIT_GALLOP_SWING : walkSwing;
         if (deltaTime && a.moving) {
-          const v = a.stepLength() / Animal.MOVE_TIMESTEP;            // m/s this tick
-          const perCycle = 4 * legLen * kp * Math.sin(swing);          // metres per leg cycle
+          const v = a.stepLength() / Animal.MOVE_TIMESTEP;
+          const perCycle = 4 * legLen * kp * Math.sin(swing);
           const hz = Math.min(GAIT_MAX_HZ, v / perCycle);
-          a.animTime += deltaTime * hz * 2 * Math.PI;                  // animTime is now the gait phase
+          a.animTime += deltaTime * hz * 2 * Math.PI;
         }
 
-        // off-screen: nothing drawn
         if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
         this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
 
-        const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
+        const groundOffset = a.footLift() * NPC_UNIT;
         this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
         this._mat4.compose(this._world, this._quat, this._scale);
 
         const col = colors[a.sex];
         const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
         if (ex * ex + ey * ey + ez * ez > lod2) {
-          // low detail: the body's matrix on the merged rest-pose mesh
           far.setMatrixAt(fidx, this._mat4);
           if (farColKeys[fidx] !== col) {
             farColKeys[fidx] = col;
@@ -4444,9 +4174,7 @@ class AnimalRenderer {
         const t = a.animTime;
 
         const sinT = Math.sin(t);
-        // FL and BR swing by +sinT * walkAmp, FR and BL by its negative, so the
-        // four leg quaternions about x are (+-sin(h), 0, 0, cos(h)) for one h:
-        // one sin/cos pair per NPC instead of four setFromAxisAngle calls
+        // FL/BR and FR/BL swing opposite: one sin/cos pair per NPC instead of four setFromAxisAngle calls
         const legH = sinT * walkAmp * 0.5;
         const legS = Math.sin(legH), legC = Math.cos(legH);
         const legSign = this.LIMB_SIGNS;
@@ -4457,7 +4185,7 @@ class AnimalRenderer {
         this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
         this._mat4.compose(this._local, this._quat, this._scale);
         im.head.setMatrixAt(idx, this._mat4);
-        if (antlers && a.sex === 'male') antlers.setMatrixAt(aidx++, this._mat4);   // rides the head
+        if (antlers && a.sex === 'male') antlers.setMatrixAt(aidx++, this._mat4);
 
         for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
           const part = this.LIMB_NAMES[pi];
@@ -4499,20 +4227,14 @@ class AnimalRenderer {
   }
 }
 
-// PLANTS
-// The Arena's Plant and PlantRenderer, what deer graze. A plant is a stem and
-// four leaves that shrink with its health (10 bites). Sizes stay in Arena
-// units and are scaled to metres by NPC_UNIT when written, so a full plant
-// stands ~0.23 m above the ground, the same size against a deer as a plant
-// was against a sheep.
+// PLANTS: the Arena's Plant and PlantRenderer; a stem and four leaves that shrink with health (10 bites).
 
 class Plant extends Entity {
   constructor(position) {
     super(position, 'plant');
     this.health = 10;
     this.maxHealth = 10;
-    // City: the ground under the plant, sunk 3 Arena units as in the Arena.
-    // The city ground never reshapes, so there is no terrain-version recheck.
+    // City: on the ground, sunk 3 Arena units as in the Arena.
     const x = this.position.x, z = this.position.z;
     this.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) - 3 * NPC_UNIT;
     this._slot = -1;
@@ -4548,7 +4270,6 @@ class PlantRenderer {
     this.leafArrs = null;
     this.arrOwner = null;
 
-    // dirty-list bookkeeping: only slots that changed are written and uploaded
     this.slots      = new Array(this.MAX_INSTANCES).fill(null);
     this.count      = 0;
     this.lastCount  = -1;
@@ -4646,7 +4367,7 @@ class PlantRenderer {
     const p = this.slots[slot];
     if (!p) return;
 
-    const U = NPC_UNIT;                                 // City: Arena units to metres
+    const U = NPC_UNIT;
     const h = p.health / p.maxHealth;
     const hs = h * U;
     const groundY = p.position.y;
@@ -4687,7 +4408,7 @@ class PlantRenderer {
       this.lastCount = count;
       for (let i = 0; i < this.meshList.length; i++) {
         this.meshList[i].count = count;
-        this.meshList[i].visible = count > 0;   // City: no plants, no draw calls
+        this.meshList[i].visible = count > 0;
       }
     }
 
@@ -4743,19 +4464,16 @@ class PlantRenderer {
   }
 }
 
-// CITY ADAPTERS
-// Stand-ins for the Arena's perf / terrain / water singletons.
+// CITY ADAPTERS: stand-ins for the Arena's perf / terrain / water singletons.
 
 const perf = {
   BRAIN_UPDATE_INTERVAL: 30,
-  terrainVersion: 0,             // the city ground never reshapes
-  // Only the first n of MAX_INSTANCES slots are drawn, so upload only those;
-  // without a range three re-sends all 12000 x 64 bytes per mesh. three clears
-  // the range after each upload, so set it every frame.
+  terrainVersion: 0,
+  // Upload only the first n instances (three clears the range after each upload, so set it every frame).
   instances(mesh, n) {
     mesh.count = n;
     mesh.visible = n > 0;        // an empty type or part (no bucks in view) costs no draw call
-    if (n === 0) return;         // not drawn, so nothing to send
+    if (n === 0) return;
     const attr = mesh.instanceMatrix;
     attr.clearUpdateRanges();
     attr.addUpdateRange(0, n * 16);
@@ -4775,9 +4493,7 @@ const perf = {
   }
 };
 
-// Grocery stores, hospitals and the rest, tied to the building each is in.
-// `entry` is the building's doorway (outer face) when it has one, so a
-// place indoors has a reachable point; outdoor places keep their own spot.
+// Grocery stores, hospitals and the rest; `entry` is the building's doorway, a reachable point.
 const places = {
   list: [],                      // { x, z, kind, name, building, entry }
   byKind: {},                    // kind -> [[x, z], ...] reachable points
@@ -4803,8 +4519,7 @@ const places = {
   }
 };
 
-// Painted water rasterised once per city into a 1 m mask. Roads and paths
-// are stamped dry on top, matching the render (bridges).
+// Painted water in a 1 m mask, roads stamped dry on top (bridges).
 const water = {
   level: 0,
   FLOAT_DEPTH: 1,                // deeper than NPC_WADE: humans wade, never float
@@ -4846,7 +4561,6 @@ const water = {
     this.locations = stride === 1 ? pts : pts.filter((_, i) => i % stride === 0);
   },
 
-  // scanline fill, even-odd, one crossing list per row
   fillRing(pts) {
     let zMin = Infinity, zMax = -Infinity;
     for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
@@ -4870,7 +4584,6 @@ const water = {
     }
   },
 
-  // every cell whose centre is within `half` of the polyline gets `v`
   stampLine(pts, half, v) {
     for (let i = 0; i < pts.length - 1; i++) {
       const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
@@ -4893,9 +4606,7 @@ const water = {
   }
 };
 
-// heightAt is relative to the ground under the NPC: water is a shallow dip
-// so the Arena's submerged, drink and slow-down logic runs unchanged.
-// baseAt is that ground: the floor indoors, else the terrain.
+// heightAt: water is a shallow dip relative to the ground; baseAt: the floor indoors, else terrain.
 const terrain = {
   heightAt(x, z) { return water.wetAt(x, z) ? -NPC_WADE : 0; },
 
@@ -4904,7 +4615,6 @@ const terrain = {
     return i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
   },
 
-  // relative height, cached with the base as ent._b
   heightAtFor(ent, wx, wz) {
     if (ent._hx === wx && ent._hz === wz && ent._hv === perf.terrainVersion) return ent._h;
     const h = this.heightAt(wx, wz);
@@ -4914,14 +4624,7 @@ const terrain = {
   }
 };
 
-// NPC OCCUPANCY GRID
-// Every solid an NPC's column can touch (base under NPC_COLLIDE_H, top above
-// the street, the same test resolveCollisions makes) is rasterized once per
-// city into a 1-bit-per-cell bitmap, grown by NPC_RADIUS so an NPC is a point
-// in it: a cell is blocked when its centre is inside a solid or within
-// NPC_RADIUS of one. Walkability is one typed-array read instead of polygon
-// tests. The player keeps exact wall-piece collision.
-// At 0.25 m and the largest radius (500 m) this is ~16M cells in ~2 MB.
+// NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell (~2 MB at 500 m), so walkability is one read.
 const occ = {
   bits: new Uint32Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
 
@@ -4940,7 +4643,6 @@ const occ = {
     this.rows = Math.ceil((maxZ - minZ) * OCC_INV);
     this.bits = new Uint32Array((this.cols * this.rows + 31) >>> 5);
 
-    // grown solid = its interior plus a capsule of NPC_RADIUS around each edge
     for (const w of gridWalls) {
       const gp = elevation.at((w.minX + w.maxX) / 2, (w.minZ + w.maxZ) / 2);
       if (w.top <= gp + LAND_EPS || w.base >= gp + NPC_COLLIDE_H) continue;
@@ -4966,7 +4668,6 @@ const occ = {
     this.bits[i >>> 5] |= 1 << (i & 31);
   },
 
-  // scanline fill, even-odd, cell centres; as water.fillRing
   fillRing(pts) {
     let zMin = Infinity, zMax = -Infinity;
     for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
@@ -4989,7 +4690,6 @@ const occ = {
     }
   },
 
-  // every cell whose centre is strictly within `half` of segment a-b
   stampSeg(a, b, half) {
     const [x0, z0] = a, [x1, z1] = b;
     const dx = x1 - x0, dz = z1 - z0, l2 = dx * dx + dz * dz, h2 = half * half;
@@ -5009,11 +4709,7 @@ const occ = {
     }
   },
 
-  // One 4-connected lane of cells cleared along a doorway's axis. At the
-  // narrowest doors (DOOR_MIN_W) the grown jambs leave a ~0.3 m gap, which at
-  // an oblique angle can sample as only a diagonal chain of free cells that a
-  // point stepping a few cm per tick cannot follow. Cells whose centre is
-  // within OCC_CARVE_KEEP of a raw solid stay blocked.
+  // Clear a 4-connected lane through a doorway so narrow doors stay passable; cells within OCC_CARVE_KEEP of a solid stay blocked.
   carve(ax, az, bx, bz) {
     const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) * OCC_INV * 4));
     let pc = 0, pr = 0;
@@ -5022,7 +4718,7 @@ const occ = {
       const r = Math.floor((az + (bz - az) * k / n - this.z0) * OCC_INV);
       if (k > 0) {
         if (c === pc && r === pr) continue;
-        if (c !== pc && r !== pr) this.unblock(c, pr);   // corner step: keep the lane 4-connected
+        if (c !== pc && r !== pr) this.unblock(c, pr);
       }
       this.unblock(c, r);
       pc = c; pr = r;
@@ -5032,20 +4728,17 @@ const occ = {
   unblock(c, r) {
     if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return;
     const x = this.x0 + (c + 0.5) * OCC_CELL, z = this.z0 + (r + 0.5) * OCC_CELL;
-    const f = terrain.baseAt(x, z) + STEP_UP;   // a low plinth under the door is a step
+    const f = terrain.baseAt(x, z) + STEP_UP;
     if (solidOverlap(x, z, OCC_CARVE_KEEP, f, f + NPC_COLLIDE_H)) return;
     const i = r * this.cols + c;
     this.bits[i >>> 5] &= ~(1 << (i & 31));
   }
 };
 
-// CITY GEOMETRY QUERIES
-// For NPC placement, on the same grids the player uses.
+// CITY GEOMETRY QUERIES (NPC placement, on the player's grids)
 
-// Does a circle of radius r, column feetY..headY, touch any solid?
-// Read-only twin of resolveCollisions.
+// Does a circle (radius r, column feetY..headY) touch any solid? Read-only resolveCollisions.
 function solidOverlap(x, z, r, feetY, headY) {
-  // only the cells the circle's box touches, as in resolveCollisions
   const cx0 = Math.floor((x - r) / GRID_CELL), cx1 = Math.floor((x + r) / GRID_CELL);
   const cz0 = Math.floor((z - r) / GRID_CELL), cz1 = Math.floor((z + r) / GRID_CELL);
   for (let gx = cx0; gx <= cx1; gx++) {
@@ -5057,7 +4750,7 @@ function solidOverlap(x, z, r, feetY, headY) {
         if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
         if (x < w.minX - r || x > w.maxX + r || z < w.minZ - r || z > w.maxZ + r) continue;
         if (x >= w.minX && x <= w.maxX && z >= w.minZ && z <= w.maxZ &&
-            pointInRing(w.pts, x, z)) return true;   // box first, as in resolveCollisions
+            pointInRing(w.pts, x, z)) return true;
         if (closestOnRing(w.pts, x, z).d < r) return true;
       }
     }
@@ -5065,9 +4758,7 @@ function solidOverlap(x, z, r, feetY, headY) {
   return false;
 }
 
-// Index of the building footprint containing (x, z), or -1 outdoors.
-// Raster first; an edge cell (or a point before any city is built) takes the
-// exact test. Outside the raster, which covers every shell's bounds, is outdoors.
+// Building index containing (x, z), or -1 outdoors; raster first, exact test on edge cells.
 function shellAt(x, z) {
   const R = shellRas;
   if (R.cells === null) return shellAtExact(x, z);
@@ -5079,10 +4770,7 @@ function shellAt(x, z) {
   return -1;
 }
 
-// Classify every cell once per city. Pass 1 marks each cell a ring edge
-// touches as AMBIG. After it, no edge touches any other cell, so along a row a
-// run of adjacent non-AMBIG cells is all inside or all outside a given shell:
-// pass 2 tests one centre per run instead of one per cell.
+// Two passes: mark cells a ring edge touches AMBIG, then test one centre per run of other cells along each row.
 function buildShellRaster(list) {
   const R = shellRas;
   R.cells = null; R.cols = 0; R.rows = 0;
@@ -5098,14 +4786,13 @@ function buildShellRaster(list) {
   const area = (maxX - minX + 2) * (maxZ - minZ + 2);
   const cell = Math.max(SHELL_CELL, Math.sqrt(area / SHELL_MAX_CELLS));
   const inv = 1 / cell;
-  const x0 = minX - cell, z0 = minZ - cell;   // one cell of margin on each side
+  const x0 = minX - cell, z0 = minZ - cell;
   const cols = Math.ceil((maxX - x0) * inv) + 2;
   const rows = Math.ceil((maxZ - z0) * inv) + 2;
   const cells = new (list.length < 32767 ? Int16Array : Int32Array)(cols * rows).fill(SHELL_OUT);
   const E = SHELL_EPS;
 
-  // pass 1: segment vs (slightly grown) cell, over the segment's bounding cells;
-  // the bbox axes pass by construction, so only the segment's line can separate
+  // pass 1: segment vs (slightly grown) cell over its bounding cells
   const markEdge = (ax, az, bx, bz) => {
     const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - E - x0) * inv));
     const c1 = Math.min(cols - 1, Math.floor((Math.max(ax, bx) + E - x0) * inv));
@@ -5133,8 +4820,7 @@ function buildShellRaster(list) {
     for (const h of s.holes) markRing(h);
   }
 
-  // pass 2: a cell inside one shell takes its index; inside a second, AMBIG,
-  // so shellAtExact settles overlaps in its own bucket order
+  // pass 2: inside one shell takes its index; inside a second, AMBIG
   for (let idx = 0; idx < list.length; idx++) {
     const s = list[idx];
     const c0 = Math.floor((s.minX - x0) * inv), c1 = Math.floor((s.maxX - x0) * inv);
@@ -5155,7 +4841,6 @@ function buildShellRaster(list) {
   R.cell = cell; R.inv = inv;
 }
 
-// The exact test: bucket walk, bounds, then point-in-polygon.
 function shellAtExact(x, z) {
   const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return -1;
@@ -5167,8 +4852,7 @@ function shellAtExact(x, z) {
   return -1;
 }
 
-// Is (x, z) within m of any building footprint's outline? A doorway has no
-// wall piece, so the solid test alone lets a point sit right in the opening.
+// Is (x, z) within m of a footprint outline? Catches doorways the solid test misses.
 function nearShell(x, z, m) {
   const cx0 = Math.floor((x - m) / GRID_CELL), cx1 = Math.floor((x + m) / GRID_CELL);
   const cz0 = Math.floor((z - m) / GRID_CELL), cz1 = Math.floor((z + m) / GRID_CELL);
@@ -5188,9 +4872,7 @@ function nearShell(x, z, m) {
 
 const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint edge
 
-// Nearest outdoor, dry spot the player fits at, clear of footprint edges,
-// searching rings outward from (x, z). Falls back to (x, z) if nothing
-// within maxR qualifies.
+// Nearest outdoor, dry spot the player fits, searching rings outward; falls back to (x, z).
 function spawnOk(px, pz) {
   return shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
          !nearShell(px, pz, SPAWN_CLEAR) &&
@@ -5200,9 +4882,7 @@ function spawnOk(px, pz) {
 
 const STREET_STEP = 2;   // metres between candidate points along a street
 
-// Nearest point on a street (a vehicle road, not a footway or path) to
-// (x, z) that passes the same checks as outdoorSpawn. Null when the map has
-// no street or none of them qualify.
+// Nearest qualifying point on a vehicle street, or null.
 function streetSpawn(roads, x, z) {
   const cands = [];
   for (const r of roads || []) {
@@ -5235,9 +4915,7 @@ function outdoorSpawn(x, z, maxR = 200) {
   return [x, z];
 }
 
-// NPC WORLD
-// The Arena's World loop minus what City owns (player, weather, terrain,
-// cabins). Stepped from frame().
+// NPC WORLD: the Arena's World loop minus what City owns; stepped from frame().
 
 class NpcWorld {
   static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
@@ -5245,39 +4923,42 @@ class NpcWorld {
 
   constructor() {
     this.animals = [];
-    this.plants = [];              // Plants, what deer graze
+    this.plants = [];
     this.ticks = 0;
     this.ready = false;
-    this.shownPop = -1;            // population last written to the HUD
+    this.shownPop = -1;
     this.minX = 0; this.maxX = 0; this.minZ = 0; this.maxZ = 0;
 
     this.grid = null;
     this.plantGrid = null;
-    this.deerAlive = 0;            // counted each step; humans skip the hunt query at 0
-    this.fastestHumanMS = 0;       // top speed of any person, m/s, counted each step (deer sprint off it)
-    this.greens = [];              // green areas for deer and plant spawns, with cumulative area
+    // Plants for vision queries, so sight reads nearby cells instead of every plant. Plants never move, so this
+    // cannot change what is seen; rebuilt with plantGrid to drop the dead.
+    this.plantSight = null;
+    this.deerAlive = 0;
+    this.fastestHumanMS = 0;
+    this.greens = [];
     this.greenTotal = 0;
-    this.roadIdx = null;           // keeps plants off roads and paths
-    this.plantsOn = true;          // Plants build option: off means no plants and no regrowth
+    this.roadIdx = null;
+    this.plantsOn = true;
 
     this._qLocate = [];
     this._qHunt   = [];
     this._qMate   = [];
     this._qPlant  = [];
+    this._qSight  = [];
   }
 
   clear() {
     this.animals.length = 0;
     this.plants.length = 0;
     this.ready = false;
-    animalRenderer.update(this.animals, 0);   // zero instances, meshes hidden
-    plantRenderer.rebuild(this.plants);        // zero plants, meshes hidden
+    animalRenderer.update(this.animals, 0);
+    plantRenderer.rebuild(this.plants);
     plantRenderer.update(this.plants);
-    healthBars.update(this.animals);   // no one left: every bar hidden
+    healthBars.update(this.animals);
     this.syncPopulation();
   }
 
-  // Refresh the HUD only when the count changes.
   syncPopulation() {
     if (this.animals.length === this.shownPop) return;
     this.shownPop = this.animals.length;
@@ -5289,13 +4970,14 @@ class NpcWorld {
     this.animals.length = 0;
     this.plants.length = 0;
     this.ticks = 0;
-    game.reset();                  // a new city starts the player fed and watered
+    game.reset();
     this.minX = -radius; this.maxX = radius;
     this.minZ = -radius; this.maxZ = radius;
 
     const span = 2 * radius + 1;
     this.grid = new SpatialGrid(span, span, 160 * NPC_UNIT);
     this.plantGrid = new SpatialGrid(span, span, 30 * NPC_UNIT);
+    this.plantSight = new SpatialGrid(span, span, PLANT_SIGHT_CELL);
 
     water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
     places.build(features);
@@ -5314,23 +4996,21 @@ class NpcWorld {
     plantRenderer.update(this.plants);
   }
 
-  // Green land cover (DEER_AREAS), each with its bounds and cumulative area
-  // for picks weighted by size.
+  // Green land cover with bounds and cumulative area, for picks weighted by size.
   buildGreens(areas) {
     this.greens = [];
     let total = 0;
     for (const ar of areas) {
       if (!DEER_AREAS.has(ar.kind)) continue;
       const size = Math.abs(ringArea(ar.pts));
-      if (size < 25) continue;                     // slivers: almost every sample misses
+      if (size < 25) continue;
       total += size;
       this.greens.push({ pts: ar.pts, b: bounds(ar.pts), cum: total });
     }
     this.greenTotal = total;
   }
 
-  // One random point inside a green area, picked by area; null when the
-  // sample lands outside the ring (the caller draws again).
+  // Random point in a green area picked by area; null if it lands outside the ring.
   greenPoint() {
     const greens = this.greens;
     const target = Math.random() * this.greenTotal;
@@ -5342,9 +5022,7 @@ class NpcWorld {
     return pointInRing(g.pts, x, z) ? [x, z] : null;
   }
 
-  // City: where a plant can grow. In green areas when the map has any, else
-  // on open ground anywhere; never on a road or path, indoors or in water.
-  // The Arena scattered plants uniformly over its meadow.
+  // City: where a plant can grow: green areas if any, else open ground; never road, indoors or water.
   plantSpot() {
     for (let k = 0; k < PLANT_SPOT_TRIES; k++) {
       let x, z;
@@ -5358,7 +5036,7 @@ class NpcWorld {
       }
       if (!this.isOpen(x, z)) continue;
       const r = nearestRoad(this.roadIdx, x, z, 0);
-      if (r && r.d === 0) continue;               // on the road surface
+      if (r && r.d === 0) continue;
       return [x, z];
     }
     return null;
@@ -5367,22 +5045,22 @@ class NpcWorld {
   spawnPlant() {
     const s = this.plantSpot();
     if (!s) return;
-    this.plants.push(new Plant([s[0], 0, s[1]]));
+    const p = new Plant([s[0], 0, s[1]]);
+    this.plants.push(p);
+    this.plantSight.insert(p);
   }
 
-  // A standing spot: inside the loaded area, dry, outdoors, clear of walls.
   isOpen(x, z) {
     const m = 1;
     if (x < this.minX + m || x > this.maxX - m || z < this.minZ + m || z > this.maxZ - m) return false;
     if (water.wetAt(x, z)) return false;
     if (shellAt(x, z) >= 0) return false;
-    if (occ.blockedAt(x, z)) return false;   // every step from a blocked cell would be refused
+    if (occ.blockedAt(x, z)) return false;
     const g = elevation.at(x, z);
-    return !solidOverlap(x, z, NPC_RADIUS + 0.15, g, g + NPC_COLLIDE_H);   // spawn-time margin, exact
+    return !solidOverlap(x, z, NPC_RADIUS + 0.15, g, g + NPC_COLLIDE_H);
   }
 
-  // Mostly sidewalks (street sides, footpaths), plus some open ground for
-  // parks and plazas. Picks are weighted by street length.
+  // Mostly sidewalks weighted by street length, plus some open ground.
   spawnHumans(count, roads) {
     const segs = [];
     let total = 0;
@@ -5398,11 +5076,13 @@ class NpcWorld {
       }
     }
 
-    const placed = [];
-    let gap = NPC_SPAWN_GAP;
+    // spacing on a hash of NPC_SPAWN_GAP cells, as spawnDeer (was an O(count^2) scan)
+    const cell = NPC_SPAWN_GAP;
+    const taken = new Map();
+    let gap = NPC_SPAWN_GAP, placed = 0;
     const maxTries = count * 80;
-    for (let tries = 1; placed.length < 2 * count && tries <= maxTries; tries++) {
-      if (tries % (count * 20) === 0) gap *= 0.5;   // crowded map: loosen the spacing
+    for (let tries = 1; placed < count && tries <= maxTries; tries++) {
+      if (tries % (count * 20) === 0) gap *= 0.5;
 
       let x, z;
       if (segs.length && Math.random() < 0.8) {
@@ -5423,14 +5103,25 @@ class NpcWorld {
       }
 
       if (!this.isOpen(x, z)) continue;
+      const ci = Math.floor(x / cell), cj = Math.floor(z / cell);
       let crowded = false;
-      for (let i = 0; i < placed.length; i += 2) {
-        const dx = placed[i] - x, dz = placed[i + 1] - z;
-        if (dx * dx + dz * dz < gap * gap) { crowded = true; break; }
+      for (let di = -1; di <= 1 && !crowded; di++) {
+        for (let dj = -1; dj <= 1 && !crowded; dj++) {
+          const list = taken.get(cellKey(ci + di, cj + dj));
+          if (!list) continue;
+          for (let i = 0; i < list.length; i += 2) {
+            const dx = list[i] - x, dz = list[i + 1] - z;
+            if (dx * dx + dz * dz < gap * gap) { crowded = true; break; }
+          }
+        }
       }
       if (crowded) continue;
 
-      placed.push(x, z);
+      const key = cellKey(ci, cj);
+      let list = taken.get(key);
+      if (!list) { list = []; taken.set(key, list); }
+      list.push(x, z);
+      placed++;
       const a = new Animal([x, 0, z], 'human');
       a.heading = a.targetHeading = a.facingAngle = Math.random() * Animal.TWO_PI;
       a.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
@@ -5438,18 +5129,15 @@ class NpcWorld {
     }
   }
 
-  // Mostly inside green areas (parks, grass, woods, farmland), picked by
-  // area, plus some open ground anywhere; every spot passes isOpen like a
-  // person's. City: the Arena scattered sheep uniformly over its meadow.
+  // Mostly green areas (by area), plus some open ground; each spot passes isOpen.
   spawnDeer(count) {
-    // spacing check on a hash of NPC_SPAWN_GAP cells; the gap only shrinks,
-    // so the 3 x 3 cells around a candidate hold every neighbour that matters
+    // spacing on a hash of NPC_SPAWN_GAP cells; the gap only shrinks, so 3 x 3 cells suffice
     const cell = NPC_SPAWN_GAP;
     const taken = new Map();
     let gap = NPC_SPAWN_GAP, placed = 0;
     const maxTries = count * 80;
     for (let tries = 1; placed < count && tries <= maxTries; tries++) {
-      if (tries % (count * 20) === 0) gap *= 0.5;   // crowded map: loosen the spacing
+      if (tries % (count * 20) === 0) gap *= 0.5;
 
       let x, z;
       if (this.greens.length && Math.random() < DEER_GREEN_SHARE) {
@@ -5498,8 +5186,7 @@ class NpcWorld {
           other.sex === 'female' && other.lookForMate &&
           tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
         const child = a.mate(other);
-        // City: if the Arena's one-step offset would put the child in or through
-        // a wall, it is born at the mother's spot.
+        // City: a child that would land in or through a wall is born at the mother's spot.
         const cp = child.position, mp = other.position;
         if (occ.blockedAt(cp.x, cp.z) ||
             shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
@@ -5515,7 +5202,10 @@ class NpcWorld {
   handleCollisions() {
     if (this.ticks % 3 === 0) {
       this.plantGrid.clear();
-      for (const p of this.plants) if (p.alive) this.plantGrid.insert(p);
+      this.plantSight.clear();
+      for (const p of this.plants) {
+        if (p.alive) { this.plantGrid.insert(p); this.plantSight.insert(p); }
+      }
     }
 
     for (const a of this.animals) {
@@ -5535,9 +5225,7 @@ class NpcWorld {
         }
         if (a.lookForMate) this.tryMate(a, px, pz);
 
-        // City: people graze too. eatPlant gives 0.5 food need a bite, 5 for a
-        // whole plant, against 100 for a deer (Animal.attacked), and its health
-        // stops at maxHealth where a deer's does not
+        // City: people graze too (0.5 food need a bite, 5 a plant, vs 100 for a deer).
         const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
         for (let i = 0; i < nPlant; i++) {
           const plant = this._qPlant[i];
@@ -5547,7 +5235,6 @@ class NpcWorld {
           }
         }
       } else {
-        // deer: mate, then graze (the Arena's sheep branch)
         if (a.lookForMate) this.tryMate(a, px, pz);
 
         const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
@@ -5566,12 +5253,9 @@ class NpcWorld {
     }
   }
 
-  // Replaces cabins.resolve with occupancy-grid lookups. A step into a
-  // blocked cell keeps whichever single axis of it is free (sliding along the
-  // wall), else is undone. A step (~2.5 cm) is far under the thinnest grown
-  // solid (~0.66 m), so no wall can be skipped.
+  // Occupancy-grid wall check: a step into a blocked cell keeps its free axis (slides) or is undone.
   collide(a) {
-    if (!a.moving || !a.brain) return;                 // standing still, or a deer (moveDeer resolved it)
+    if (!a.moving || !a.brain) return;
     const p = a.position;
     if (occ.blockedAt(p.x, p.z)) {
       if (!occ.blockedAt(p.x, a.freeZ)) p.z = a.freeZ;
@@ -5581,7 +5265,6 @@ class NpcWorld {
     a.freeX = p.x; a.freeZ = p.z;
   }
 
-  // One tick per rendered frame; returns whether anything was simulated.
   step(dt) {
     if (!this.ready || this.animals.length === 0) return false;
     const now = Date.now();
@@ -5611,7 +5294,7 @@ class NpcWorld {
     }
 
     this.handleCollisions();
-    game.update(dt);               // player needs, drinking, eating deer
+    game.update(dt);
 
     for (let i = this.animals.length - 1; i >= 0; i--) {
       if (!this.animals[i].alive) { this.animals[i].remove(); this.animals.splice(i, 1); }
@@ -5637,14 +5320,8 @@ const animalRenderer = new AnimalRenderer();
 const plantRenderer  = new PlantRenderer();
 const world          = new NpcWorld();
 
-// GAME MODE
-// The player joins the food chain. Deer sense the player as a predator (the
-// same vision cone and flee rule they use for people), touching a deer on foot
-// eats it, and the player grows hungry and thirsty; standing in water drinks.
-// Needs use the NPC scale, 0 (none) to 100, and the panel shows fullness as
-// the NPC bars do. The player has no mate need and is never a mate target.
-// Advanced once per NPC tick from NpcWorld.step, so it runs while people and
-// deer do.
+// GAME MODE: deer flee the player, who eats deer on contact, drinks in water, and gets hungry and thirsty
+// (NPC 0..100 scale, no mate need). Advanced from NpcWorld.step.
 const PLAYER_FOOD_RATE  = 100 / (20 * 60);   // need per second: fed to starving in 20 min
 const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
 const PLAYER_DRINK_RATE = 10;                // need per second removed while standing in water
@@ -5660,8 +5337,7 @@ const game = {
   on: false,
   foodNeed: 0,
   waterNeed: 0,
-  // what deer sense: a stand-in shaped like an NPC, sensed only while alive
-  // (game mode on and in play)
+  // what deer sense: an NPC-shaped stand-in, alive only in game mode while in play
   predator: { type: 'player', alive: false, position: new THREE.Vector3() },
   _q: [],
   _shown: -1,
@@ -5679,7 +5355,7 @@ const game = {
 
     const px = player.pos.x, pz = player.pos.z;
     const feet = player.pos.y - EYE_HEIGHT;
-    pred.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);   // body centre, as an NPC's position
+    pred.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);
 
     const cost = player.running ? PLAYER_RUN_COST : 1;
     this.foodNeed  = Math.min(100, this.foodNeed  + PLAYER_FOOD_RATE  * cost * dt);
@@ -5697,8 +5373,7 @@ const game = {
         if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
         if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
         d.alive = false;                                   // removed with the dead this tick
-        this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);   // as an NPC hunter's kill
-        // and the water in it (see DIET_WATER_SHARE)
+        this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);
         this.waterNeed = Math.max(0, this.waterNeed -
           d.startHealth * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
       }
@@ -5706,7 +5381,6 @@ const game = {
     this.draw();
   },
 
-  // Writes the bars only when a whole percent changes.
   draw() {
     const f = Math.round(100 - this.foodNeed), w = Math.round(100 - this.waterNeed);
     const key = f * 1000 + w;
@@ -5721,13 +5395,7 @@ const game = {
   }
 };
 
-// HEALTH BARS
-// Health, food and water over every person's head, one sprite each, with
-// that person's brain above it. A slot follows its person until they die,
-// then goes back for reuse, so the slot count tracks the population. Food
-// and water are drawn as how
-// full the person is (1 - need), on the same 0..100 need scale the brain
-// reads; health is health / maxHealth.
+// HEALTH BARS: a stats sprite and brain over each nearby person; slots are reused. Bars show fullness (1 - need).
 const BAR_STEPS  = 40;     // redraw only when a bar moves a whole step
 const BAR_RELEASE_TICKS = 180;   // ~3 s out of close range before a slot is handed back
 const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
@@ -5735,33 +5403,23 @@ const BAR_W_M    = 0.8;    // sprite size in metres (canvas is 2:1)
 const BAR_H_M    = 0.4;
 const BAR_ABOVE  = 0.18;   // metres between head top and sprite bottom
 const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];   // health, food, water, mate (as the stat panel)
-const BAR_ICONS  = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];   // as the stat panel
+const BAR_ICONS  = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-// LOW-DETAIL STATS AND BRAINS
-// Past NPC_LOD_DIST (the same switch as the bodies) a person's stats sprite
-// and brain are hidden and replaced by two shared InstancedMeshes, one draw
-// call each for the whole crowd: the four bars as flat camera-facing strips
-// (no icons, arrows, backing or canvas), and the brain as two spheres, one per
-// lobe, brightening with the share of that lobe's neurons firing. Bar layout
-// and lobe positions follow the full versions, so the swap keeps their place.
+// Past NPC_LOD_DIST, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
 const FAR_STAT_MAX   = 12000;  // people with low-detail stats, as AnimalRenderer.MAX_INSTANCES
-const BAR_CANVAS_W   = 192, BAR_CANVAS_H = 96;   // the full sprite's canvas, for matching the layout
-const BAR_PX         = BAR_W_M / BAR_CANVAS_W;   // metres per canvas pixel
-const LOBE_RADIUS    = 0.7;    // layout units, a little past the lobe's node ring (0.55)
-const LOBE_COLS      = [0x00e5ff, 0xaaff00];     // lobe A, lobe B, as the full brain's nodes
+const BAR_CANVAS_W   = 192, BAR_CANVAS_H = 96;
+const BAR_PX         = BAR_W_M / BAR_CANVAS_W;
+const LOBE_RADIUS    = 0.7;
+const LOBE_COLS      = [0x00e5ff, 0xaaff00];
 
-// BRAINS OVER HEADS
-// The ecosystem sim's NNVisualizer3D layout, rebuilt as two draw calls per
-// brain (one InstancedMesh for nodes, one LineSegments for edges and self
-// loops) so a pool of them can sit in the main scene. Unlit, so they read at
-// night. Only nodes whose firing state changed touch the GPU buffers.
+// BRAINS OVER HEADS: NNVisualizer3D layout as two draw calls per brain; only changed nodes touch the GPU.
 const BRAIN_SCALE  = 0.11;   // layout units -> metres (layout is ~6.2 x 4.2 units)
-const BRAIN_HALF_H = 2.1;    // layout units from centre to top/bottom
-const BRAIN_ABOVE  = 0.06;   // metres between the bars' top and the brain's bottom
+const BRAIN_HALF_H = 2.1;
+const BRAIN_ABOVE  = 0.06;
 const BRAIN_SPIN   = 0.6;    // rad/s about the brain's own vertical
-const BRAIN_TILT   = 0.18;   // rad, as the panel's resting tilt
-const BRAIN_DIM    = 0.3;    // colour scale for a quiet node
+const BRAIN_TILT   = 0.18;
+const BRAIN_DIM    = 0.3;
 const BRAIN_IN_GROUPS  = [4, 4, 4, 4, 3];
 const BRAIN_GROUP_COLS = [0xe67e22, 0x3498db, 0xe74c3c, 0x9b59b6, 0x2ecc71];
 const BRAIN_NODE_GEO = new THREE.SphereGeometry(0.13, 8, 6);
@@ -5846,7 +5504,6 @@ function buildBrain(nn) {
   for (let i = 0; i < NB; i++) for (let j = 0; j < O; j++) {
     const k = i * O + j; if (nn.maskBO[k]) straight(oB + i, posB[i], posOut[j], nn.wBO[k]);
   }
-  // lobe A self loops: the panel's torus, as a ring of segments above each node
   const loopCol = new THREE.Color(0x00e5ff), R = 0.20, SEG = 12;
   for (const p of posA) {
     for (let i = 0; i < SEG; i++) {
@@ -5878,9 +5535,8 @@ function disposeBrain(b) {
   b.mesh.dispose();
 }
 
-// Same firing rules as the sim's NNVisualizer3D._isFiring / _updateActivations.
 function brainActivity(b, a) {
-  const nn = a.brain, out = nn.output ?? 0;   // output neuron nearest the heading
+  const nn = a.brain, out = nn.output ?? 0;
   const arr = b.colorAttr.array;
   let dirty = false;
   for (let k = 0; k < b.total; k++) {
@@ -5911,16 +5567,15 @@ function brainActivity(b, a) {
 class HealthBars {
   constructor() {
     this.bars = new Map();     // person -> slot (stats sprite and brain)
-    this.spare = [];           // hidden slots, reused before making new ones
+    this.spare = [];
     this.seen = new Set();
 
-    // Row layout of the full sprite (see draw), in canvas pixels from the top.
     const rows = BAR_ICONS.length, pad = 4, gap = 3;
     const rh = (BAR_CANVAS_H - 2 * pad - (rows - 1) * gap) / rows;
-    this.farBarX = -BAR_W_M / 2 + (pad + 24) * BAR_PX;               // left edge of a bar
-    this.farBarW = (BAR_CANVAS_W - (pad + 24) - 22 - pad) * BAR_PX;  // full-bar width
+    this.farBarX = -BAR_W_M / 2 + (pad + 24) * BAR_PX;
+    this.farBarW = (BAR_CANVAS_W - (pad + 24) - 22 - pad) * BAR_PX;
     this.farBarH = rh * 0.62 * BAR_PX;
-    this.farRowY = [];                                               // row centre above the sprite bottom
+    this.farRowY = [];
     for (let i = 0; i < rows; i++) this.farRowY.push(BAR_H_M - (pad + i * (rh + gap) + rh / 2) * BAR_PX);
 
     const barGeo = new THREE.PlaneGeometry(1, 1);
@@ -5951,11 +5606,10 @@ class HealthBars {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._c = new THREE.Color();
-    this._fill = [0, 0, 0, 0];   // far-bar fill fractions, reused every person
-    this.tick = 0;               // update count, for slot release timing
+    this._fill = [0, 0, 0, 0];
+    this.tick = 0;
   }
 
-  // Share of a lobe's neurons firing this tick (the full brain's firing rule).
   firing(act) {
     if (!act || !act.length) return 0;
     let n = 0;
@@ -5973,21 +5627,19 @@ class HealthBars {
     });
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(BAR_W_M, BAR_H_M, 1);
-    sprite.center.set(0.5, 0);   // anchor the bottom edge above the head
+    sprite.center.set(0.5, 0);
     sprite.visible = false;
     scene.add(sprite);
     return { sprite, canvas, ctx: canvas.getContext('2d'), tex, key: -1,
              brain: null, brainFor: null, nearTick: 0 };
   }
 
-  // Top of the rig in metres: feet (pivot minus foot lift) plus rig height.
   headTop(a) {
     const hs = a.heightScale ?? 1.0;
     return a.position.y + (NPC_RIG_TOP[a.type] * hs - a.footLift()) * NPC_UNIT;
   }
 
-  // Memory arrow heading, as the stat panel's setArrow: relative to the
-  // person's facing, up = straight ahead. Snapped; -1 when nothing is remembered.
+  // Memory arrow heading relative to facing, snapped; -1 when nothing is remembered.
   heading(a, has, sin, cos) {
     if (!has) return -1;
     const rel = Math.atan2(sin, cos) - a.facingAngle;
@@ -5995,7 +5647,6 @@ class HealthBars {
     return ((k % ARROW_STEPS) + ARROW_STEPS) % ARROW_STEPS;
   }
 
-  // The stat panel's SVG arrow (shaft 4..-4, head to -6 in a 12-unit box).
   arrow(ctx, x, y, size, step, color) {
     const u = size / 12;
     ctx.save();
@@ -6010,9 +5661,7 @@ class HealthBars {
   }
 
   draw(slot, vals, arrows) {
-    // packed integer instead of a joined string: no allocation per person per
-    // tick. vals are 0..BAR_STEPS, arrows -1..ARROW_STEPS-1; max ~1e11, exact
-    // in a double.
+    // packed integer key, no allocation per person per tick; exact in a double
     const V = BAR_STEPS + 1, A = ARROW_STEPS + 1;
     const key = ((((((vals[0] * V + vals[1]) * V + vals[2]) * V + vals[3])
       * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
@@ -6042,39 +5691,34 @@ class HealthBars {
     slot.tex.needsUpdate = true;
   }
 
-  // A person drawn up close gets a stats sprite and, above it, their brain.
-  // Slots (canvas, texture, sprite, brain) are taken only then, and handed
-  // back after BAR_RELEASE_TICKS out of close range, so their count follows
-  // the crowd near the camera rather than the whole population. A reused slot
-  // keeps its brain only if it belongs to the same network.
+  // Slots are taken up close and returned after BAR_RELEASE_TICKS away, so they track the nearby crowd.
   update(animals) {
     const tick = ++this.tick;
     const spin = performance.now() / 1000 * BRAIN_SPIN;
     const now = Date.now();
     const q = v => Math.round(Math.max(0, Math.min(1, v)) * BAR_STEPS);
-    const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];   // health has no memory slot
+    const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
     const seen = this.seen;
     seen.clear();
 
-    // low detail faces the camera like the sprites do: camera right and up
     updateNpcFrustum();
     const cam = camera.position, cq = camera.quaternion;
     this._right.set(1, 0, 0).applyQuaternion(cq);
     this._up.set(0, 1, 0).applyQuaternion(cq);
     const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
     const rows = BAR_ICONS.length;
-    const lobeOff = 1.1 * BRAIN_SCALE;                // lobe centres above/below the brain centre
-    let nf = 0;                                       // NPCs drawn in low detail
-    let nl = 0;                                       // of those, ones with a brain (two lobes each)
+    const lobeOff = 1.1 * BRAIN_SCALE;
+    let nf = 0;
+    let nl = 0;
 
     for (const a of animals) {
-      if (!a.alive) continue;                        // people and deer alike
+      if (!a.alive) continue;
       let bar = this.bars.get(a);
-      if (bar) seen.add(a);   // hidden below unless drawn up close this tick
+      if (bar) seen.add(a);
 
       const barY = this.headTop(a) + BAR_ABOVE;
       if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) continue;
-      const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;   // as the bodies, so both swap together
+      const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;
       if (ex * ex + ey * ey + ez * ez > lod2) {
         if (nf >= FAR_STAT_MAX) continue;
 
@@ -6094,7 +5738,7 @@ class HealthBars {
         }
 
         const nn = a.brain;
-        if (nn) {                                     // deer have no brain: bars only
+        if (nn) {
           const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
           const fireA = this.firing(nn.actA), fireB = this.firing(nn.actB);
           for (let l = 0; l < 2; l++) {
@@ -6121,7 +5765,6 @@ class HealthBars {
       vals[0] = q(a.health / a.maxHealth);
       vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
       vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
-      // mate: how far through the post-birth grace period; full = lookForMate
       vals[3] = q((now - a.lastChildTime) / a.childGracePeriod);
       arrows[1] = this.heading(a, a.hasFood,  a.rayFoodSin,  a.rayFoodCos);
       arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
@@ -6145,11 +5788,11 @@ class HealthBars {
     }
     for (const [a, bar] of this.bars) {
       const alive = seen.has(a);
-      if (alive && bar.nearTick === tick) continue;        // drawn up close this tick
+      if (alive && bar.nearTick === tick) continue;
       bar.sprite.visible = false;
       if (bar.brain) bar.brain.group.visible = false;
-      if (alive && tick - bar.nearTick <= BAR_RELEASE_TICKS) continue;   // likely back soon
-      this.bars.delete(a);                                  // dead, gone, or away too long
+      if (alive && tick - bar.nearTick <= BAR_RELEASE_TICKS) continue;
+      this.bars.delete(a);
       this.spare.push(bar);
     }
 
@@ -6195,8 +5838,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   if (!locked) keys.clear();
-  // The Esc that releases pointer lock never reaches the page, so losing the
-  // lock in play is what opens settings.
+  // Esc releasing pointer lock never reaches the page, so losing the lock opens settings.
   if (!locked && active) settingsEl.classList.add('on');
   wake();
 });
@@ -6225,8 +5867,7 @@ addEventListener('keydown', e => {
 
 // TOUCH
 
-// Left half: floating stick. Right half: look-drag. Double tap on the stick crouches. Touch
-// and keyboard/mouse are always both live.
+// Left half: floating stick (double tap crouches). Right half: look-drag.
 const STICK_RADIUS = 55;          // px of travel for full tilt
 const FLICK_RADIUS = 10;          // px of flick-steering travel for full lock while driving
 const TAP_GAP_MS   = 300;
@@ -6269,7 +5910,7 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
   el.addEventListener('pointermove', e => {
     if (e.pointerId === stickId) {
       let dx = e.clientX - stickCx, dy = e.clientY - stickCy;
-      if (driving) dy = 0;   // flick steering: horizontal travel only
+      if (driving) dy = 0;
       const reach = driving ? FLICK_RADIUS : STICK_RADIUS;
       const d = Math.hypot(dx, dy);
       if (d > reach) { dx *= reach / d; dy *= reach / d; }
@@ -6307,12 +5948,10 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
 
 let flying = false;
 
-// Held altitude input while flying, like the rest of movement.
 let climb = 0;
 
 function holdClimb(btn, dir) {
   btn.addEventListener('pointerdown', e => {
-    // capture, so sliding off the button still releases it
     btn.setPointerCapture(e.pointerId);
     climb = dir;
     btn.classList.add('held');
@@ -6342,22 +5981,15 @@ function toggleFly() {
   // drop focus, or the next space press re-clicks the button
   flyEl.blur();
   player.vel.y = 0;
-  player.grounded = false;   // re-decided on the next step either way
+  player.grounded = false;
   wake();
 }
 flyEl.addEventListener('click', toggleFly);
-// F toggles like the button; key repeat is ignored
 addEventListener('keydown', e => {
   if (e.code === 'KeyF' && !e.repeat && active) toggleFly();
 });
 
-// CAR
-//
-// One drivable car per loaded city, parked on a street near the spawn. E (or
-// the Drive button) enters when close and exits beside it. Kinematic bicycle
-// model: throttle/brake/drag/slope along the heading, yaw from the front-wheel
-// angle, yaw rate capped by tyre grip. Collision reuses the player's wall grid
-// with three circles along the body. Third-person chase camera.
+// CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
 
 const CAR_LEN        = 4.3;     // body length, metres
 const CAR_WID        = 1.8;
@@ -6418,7 +6050,6 @@ const drive = { camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, sho
     g.add(b);
     return b;
   };
-  // local forward is -z, as for the player
   part(CAR_WID, 0.62, CAR_LEN, 0, 0.62, 0, paint);
   part(CAR_WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
   part(CAR_WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
@@ -6469,7 +6100,6 @@ function syncCarMesh() {
   sceneDirty = true;   // an empty car rolling to a stop still needs drawing
 }
 
-// Does the body fit at (x, z) facing yaw: outdoors, dry, clear of solids?
 function carFits(x, z, yaw, margin = 0.2) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   for (const o of CAR_CIRCLES) {
@@ -6480,8 +6110,7 @@ function carFits(x, z, yaw, margin = 0.2) {
   return true;
 }
 
-// Parked on the right-hand side of the nearest street to (x, z), aligned
-// with it, but not on top of the player.
+// Parked on the right side of the nearest street, aligned with it, off the player.
 function placeCar(roads, x, z) {
   const cands = [];
   for (const r of roads || []) {
@@ -6494,7 +6123,6 @@ function placeCar(roads, x, z) {
       if (len < 0.01) continue;
       const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
       const yaw = Math.atan2(-ux, -uz);
-      // right of travel is (cos yaw, -sin yaw) = (-uz, ux)
       const n = Math.max(1, Math.ceil(len / STREET_STEP));
       for (let k = 0; k <= n; k++) {
         const px = x0 + (x1 - x0) * k / n - uz * side;
@@ -6528,8 +6156,7 @@ function placeCar(roads, x, z) {
 
 const _carPos = new THREE.Vector3();
 
-// Move the body by (dx, dz), then push each circle out of the walls and
-// carry the push to the centre. Returns the summed push, or null.
+// Move by (dx, dz), push each circle out of walls, carry the push to the centre; returns it or null.
 const _push = { x: 0, z: 0 };
 function moveCar(dx, dz) {
   car.x += dx; car.z += dz;
@@ -6558,13 +6185,11 @@ function carPhysics(dt, throttle, steer, handbrake) {
   if (dt <= 0) return;
   const v = car.speed;
 
-  // steering: lock shrinks with speed, wheels slew toward the input
   const lock = CAR_STEER_MAX / (1 + Math.abs(v) / CAR_STEER_FALL);
   const target = steer * lock;
   const ds = target - car.steer, maxDs = CAR_STEER_RATE * dt;
   car.steer += Math.max(-maxDs, Math.min(maxDs, ds));
 
-  // longitudinal: drive or brake by input, then resistances and slope
   let a = 0;
   if (throttle > 0) {
     if (v < -0.3) a = CAR_BRAKE * throttle;
@@ -6578,8 +6203,7 @@ function carPhysics(dt, throttle, steer, handbrake) {
   const slope = -CAR_G * Math.sin(car.pitch);
 
   let nv = v + (a + slope) * dt;
-  // resistance opposes motion and never reverses it, so a gentle slope the
-  // brakes and rolling resistance can hold leaves a stopped car stopped
+  // resistance opposes motion but never reverses it, so a stopped car stays stopped on gentle slopes
   const r = resist * dt;
   if (nv > 0) nv = Math.max(0, nv - r);
   else if (nv < 0) nv = Math.min(0, nv + r);
@@ -6595,7 +6219,6 @@ function carPhysics(dt, throttle, steer, handbrake) {
   }
   car.yaw += yawRate * dt;
 
-  // translate in substeps; a wall removes the speed component driven into it
   const dist = car.speed * dt;
   const n = Math.max(1, Math.ceil(Math.abs(dist) / CAR_SUBSTEP));
   for (let k = 0; k < n; k++) {
@@ -6605,7 +6228,7 @@ function carPhysics(dt, throttle, steer, handbrake) {
       const len = Math.hypot(hit.x, hit.z);
       if (len > 1e-6) {
         const nx = hit.x / len, nz = hit.z / len;
-        const dot = fx * nx + fz * nz;   // heading . wall normal
+        const dot = fx * nx + fz * nz;
         if (car.speed * dot < 0) car.speed *= 1 - dot * dot;
         // a glancing hit turns the body along the wall instead of pinning it
         if (Math.abs(dot) < CAR_GLANCE) {
@@ -6631,7 +6254,6 @@ function carNear() {
   return d < CAR_REACH && feet > car.y - 1 && feet < car.y + CAR_TOP;
 }
 
-// Keep the walking player out of the body. Returns whether it pushed.
 function pushPlayerFromCar() {
   if (!car.placed) return false;
   const feet = player.pos.y - EYE_HEIGHT;
@@ -6652,8 +6274,7 @@ function pushPlayerFromCar() {
   return pushed;
 }
 
-// Touch pedals, held like the fly climb buttons. Brake, like S, reverses
-// once the car has stopped.
+// Touch pedals, held like the fly buttons; brake reverses once stopped, like S.
 const gasEl = document.getElementById('gas');
 const brakeEl = document.getElementById('brake');
 const sprintEl = document.getElementById('sprint');
@@ -6663,7 +6284,7 @@ const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType
 
 function holdPedal(btn, name) {
   btn.addEventListener('pointerdown', e => {
-    btn.setPointerCapture(e.pointerId);   // sliding off still releases it
+    btn.setPointerCapture(e.pointerId);
     pedal[name] = true;
     btn.classList.add('held');
     wake();
@@ -6684,9 +6305,7 @@ holdPedal(jumpEl, 'jump');
 // a tap shorter than a frame still jumps
 jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
 
-// Touch sprint and jump, held like shift and space. Shown on foot in the gas pedal's slot;
-// hidden while flying (shift means down there) but the stack stays raised
-// so the fly button doesn't jump under the thumb.
+// Touch sprint and jump, shown on foot in the gas pedal's slot, hidden while flying.
 let footTouch = false, sprintShown = false;
 function updateSprintButton() {
   const foot = active && !driving && touchUi();
@@ -6727,7 +6346,7 @@ function enterCar() {
   crouching = false; crouchY = 0;
   drive.camYaw = car.yaw;
   drive.lookYaw = 0; drive.lookPitch = 0; drive.lookAt = 0;
-  drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;   // no look delta on entry
+  drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;
   player.vel.set(0, 0, 0);
   jumpQueued = false;
   touchMove.z = 0;   // a stick held on entry steers from here on, no throttle
@@ -6740,7 +6359,6 @@ function exitCar() {
   if (!driving) return;
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
   const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
-  // driver's side, passenger side, behind, in front
   for (const [l, f] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
     const px = car.x + rx * l + fx * f, pz = car.z + rz * l + fz * f, g = elevation.at(px, pz);
     if (shellAt(px, pz) >= 0) continue;
@@ -6755,7 +6373,6 @@ function exitCar() {
     wake();
     return;
   }
-  // every side blocked: stay in
 }
 
 function toggleCar() {
@@ -6767,10 +6384,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE' && !e.repeat && active) toggleCar();
 });
 
-// Driving frame: inputs to the car, then the chase camera.
 function driveStep(dt) {
-  // mouse and touch look still write player.yaw/pitch; what changed since the
-  // last frame is this frame's look input, applied as an orbit offset
+  // this frame's look input, applied as an orbit offset
   const dYaw = player.yaw - drive.shownYaw, dPitch = player.pitch - drive.shownPitch;
   const now = performance.now();
   if (dYaw !== 0 || dPitch !== 0) drive.lookAt = now;
@@ -6784,7 +6399,7 @@ function driveStep(dt) {
     if (keys.has('KeyS') || keys.has('ArrowDown'))  throttle -= 1;
     if (keys.has('KeyA') || keys.has('ArrowLeft'))  steer += 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) steer -= 1;
-    if (stickId !== null) steer -= touchMove.x;   // flick steering
+    if (stickId !== null) steer -= touchMove.x;
     if (pedal.brake) throttle -= 1;               // brake wins when both are held
     else if (pedal.gas) throttle += 1;
   }
@@ -6792,7 +6407,6 @@ function driveStep(dt) {
   steer = Math.max(-1, Math.min(1, steer));
   carPhysics(dt, throttle, steer, active && keys.has('Space'));
 
-  // camera yaw trails the heading; look offsets ease home once left alone
   let dy = car.yaw - drive.camYaw;
   dy = Math.atan2(Math.sin(dy), Math.cos(dy));
   drive.camYaw += dy * (1 - Math.exp(-CAM_FOLLOW * dt));
@@ -6830,16 +6444,13 @@ function driveStep(dt) {
 
 // SETTINGS
 
-// Presets replace the live clock and forecast. With a forecast sunrise and
-// sunset, hours are read off today's sun, so Morning sits at the same point on
-// the arc all year; otherwise fixed hours.
+// Presets replace the live clock and forecast; with a forecast, hours follow today's sun.
 const TIMES = ['Live', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
 const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
 };
 
-// cloud drives sky and sun intensity; kind picks the fog branch. Rain, Snow
-// and Storm differ only in light until precipitation is drawn.
+// cloud drives sky and sun intensity; kind picks the fog branch
 const SKIES = {
   Live:     null,
   Clear:    { label: 'Clear',         kind: 'clear',  cloud: 0   },
@@ -6854,7 +6465,6 @@ const SKIES = {
 let timePreset = 'Live';
 let skyPreset  = 'Live';
 
-// hours past local midnight for a named preset
 function presetHour(name) {
   if (weather) {
     const rise = weather.sunrise / 60;
@@ -6869,8 +6479,7 @@ function presetHour(name) {
   return FALLBACK_HOURS[name];
 }
 
-// the instant the sky is drawn for: now, or today at the preset hour.
-// Shifting the real instant keeps declination and longitude correct.
+// the instant the sky is drawn for: now, or today at the preset hour
 function skyInstant() {
   if (timePreset === 'Live') return new Date();
   const d = cityNow();
@@ -6878,7 +6487,6 @@ function skyInstant() {
   return new Date(Date.now() + (presetHour(timePreset) - now) * 3600000);
 }
 
-// what the sky is built from: a preset if one is picked, else the forecast
 function conditions() {
   return SKIES[skyPreset] || weather;
 }
@@ -6947,7 +6555,7 @@ function step(dt) {
   player.running = speed === RUN_SPEED && len > 0 && active;
   let dx = 0, dz = 0;
   if (len > 0 && active) {
-    const scale = Math.min(len, 1) / len;   // cap at 1, keep partial stick tilt
+    const scale = Math.min(len, 1) / len;
     mx *= scale; mz *= scale;
     dx = (fwd.x * mz + right.x * mx) * speed * dt;
     dz = (fwd.z * mz + right.z * mx) * speed * dt;
@@ -6960,17 +6568,14 @@ function step(dt) {
     player.pos.z += dz;
     player.vel.y = 0;
     player.grounded = false;
-    // keyboard: space up, shift down; added to the touch buttons
     const keyClimb = active ? (keys.has('Space') ? 1 : 0) - (shiftHeld ? 1 : 0) : 0;
     const vy = Math.max(-1, Math.min(1, climb + keyClimb));
     player.pos.y += vy * speed * dt;
-    // stay out of the ground
     player.pos.y = Math.max(player.pos.y, elevation.at(player.pos.x, player.pos.z) + EYE_HEIGHT);
   } else {
     // horizontal first, so the roof lookup runs from a wall-clear position
     const wasGrounded = player.grounded;
     moveAndCollide(player.pos, dx, dz, wasGrounded ? STEP_UP : 0);
-    // out of the car's body, then settle against any wall that pushed into
     if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
 
     if (player.grounded && active && (keys.has('Space') || jumpQueued || pedal.jump)) {
@@ -6993,7 +6598,6 @@ function step(dt) {
     // re-decided each frame, so walking off a roof edge falls with no mid-air jump
     player.grounded = false;
     if (player.vel.y <= 0) {
-      // grounded feet step up onto low ledges and follow small drops (slopes)
       const walk = wasGrounded && player.vel.y <= 0;
       const reach = walk ? GROUND_SNAP : 0;
       const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet - reach, walk ? STEP_UP : 0);
@@ -7014,24 +6618,18 @@ function step(dt) {
   updateCarButton();
 }
 
-// The loop runs only while something can change the image: held input, the
-// player airborne or settling, or a pose/scene change. Otherwise it sleeps
-// until input, resize, or a new scene wakes it.
+// The loop runs only while the image can change (input, airborne, pose or scene change), else sleeps.
 let last = -1;
 let rafId = 0;
 let sceneDirty = true;
 const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
 let drawnYaw = NaN, drawnPitch = NaN, drawnCrouch = NaN;
 
-// NPC ticks are capped at 60 Hz. The Arena's constants (MOVE_TIMESTEP, need
-// increments, ACTION_HOLD, BRAIN_UPDATE_INTERVAL) are per tick and were tuned
-// at 60, so a 120 Hz display ran the crowd at double speed and double CPU.
-// Player motion still renders at the display rate; NPC-only redraws follow
-// the tick. At or under 60 Hz this is one tick per frame, as before.
+// NPC ticks are capped at 60 Hz (Arena constants are per tick at 60); player motion renders at the display rate.
 const NPC_TICK_S     = 1 / 60;
 const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
-let npcAcc = 0;                 // seconds owed to the next tick (may dip to -slack)
-let npcElapsed = 0;             // real seconds since the last tick, for leg animation
+let npcAcc = 0;
+let npcElapsed = 0;
 
 function wake() {
   if (!rafId) rafId = requestAnimationFrame(frame);
@@ -7065,8 +6663,7 @@ function frame(now) {
     npcElapsed += dt;
     if (npcAcc >= NPC_TICK_S - NPC_TICK_SLACK) {
       npcDue = world.step(npcElapsed);
-      // carry the remainder, but never bank more than one tick: a long frame
-      // does not trigger a catch-up burst
+      // carry the remainder, but bank at most one tick (no catch-up burst)
       npcAcc = Math.max(-NPC_TICK_SLACK, Math.min(npcAcc - NPC_TICK_S, NPC_TICK_S));
       npcElapsed = 0;
     }
@@ -7085,7 +6682,7 @@ function frame(now) {
   const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
                   car.speed === 0 && !(driving && drive.settling);
   if (settled && !movementHeld() && !rainAnimating() && !npcLive) {
-    last = -1;           // sleep until wake()
+    last = -1;
     return;
   }
   rafId = requestAnimationFrame(frame);
@@ -7100,9 +6697,7 @@ wake();
 
 // WEATHER
 
-// Open-Meteo: no key, CORS open, free for non-commercial use.
-// timezone=auto returns timestamps in the city's wall clock, with
-// utc_offset_seconds (DST included).
+// Open-Meteo: no key, CORS open; timezone=auto gives the city's wall clock and UTC offset.
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 const WEATHER_TIMEOUT_MS = 8000;
 
@@ -7138,7 +6733,6 @@ const WMO = {
   99: ['Thunderstorm, hail', 'storm']
 };
 
-// null until a place loads, and stays null if the request fails
 let weather = null;
 
 async function fetchWeather(lat, lon) {
@@ -7191,8 +6785,7 @@ async function fetchWeather(lat, lon) {
   };
 }
 
-// Open-Meteo times carry no offset, so parse the digits; Date would read
-// them as browser-local.
+// Open-Meteo times carry no offset, so parse the digits (Date would read them as local).
 function clockMinutes(iso) {
   return +iso.slice(11, 13) * 60 + +iso.slice(14, 16);
 }
@@ -7202,7 +6795,6 @@ function cityNow() {
   return new Date(Date.now() + (weather ? weather.offset : 0) * 1000);
 }
 
-// fractional minutes past local midnight, same units as sunrise/sunset
 function cityMinutes() {
   const d = cityNow();
   return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60;
@@ -7224,11 +6816,7 @@ function weatherText() {
 
 // SKY
 
-// Sun position for the loaded coordinates at an instant. Low-precision NOAA
-// equations, ~0.1 degree, finer than the lighting shows.
-//
-// Takes the true UTC instant, not cityNow(): the hour angle already includes
-// longitude. Returns east/north/up of a unit vector plus altitude in degrees.
+// Sun position (NOAA low precision, ~0.1 degree) from the true UTC instant: east/north/up and altitude in degrees.
 function solarVector(lat, lon, date) {
   const R = Math.PI / 180;
   const d = date.getTime() / 86400000 - 10957.5;      // days since J2000.0
@@ -7241,7 +6829,6 @@ function solarVector(lat, lon, date) {
   const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
   const ra  = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
 
-  // GMST hours, then local sidereal time, then hour angle
   const gmst = 18.697374558 + 24.06570982441908 * d;
   const lst  = (gmst * 15 + lon) * R;
   const H    = lst - ra;
@@ -7254,12 +6841,10 @@ function solarVector(lat, lon, date) {
   return { east, north, up, altDeg: Math.asin(up) / R };
 }
 
-// Moon position, same frame and inputs as solarVector. Low-precision lunar
-// series (Astronomical Almanac, ~0.3 degree) plus a topocentric parallax
-// correction (up to ~0.95 degree, about two moon diameters near the horizon).
+// Moon position, as solarVector: low-precision lunar series (~0.3 degree) plus topocentric parallax.
 function moonVector(lat, lon, date) {
   const R = Math.PI / 180;
-  const d = date.getTime() / 86400000 - 10957.5;      // days since J2000.0
+  const d = date.getTime() / 86400000 - 10957.5;
   const T = d / 36525;
   const S = x => Math.sin(x * R);
 
@@ -7271,7 +6856,6 @@ function moonVector(lat, lon, date) {
     - 0.28 * S(318.3 + 6003.15 * T) - 0.17 * S(217.6 - 407332.21 * T)) * R;
   const eps = (23.439 - 0.013 * T) * R;
 
-  // ecliptic -> equatorial
   const x = Math.cos(bet) * Math.cos(lam);
   const y = Math.cos(eps) * Math.cos(bet) * Math.sin(lam) - Math.sin(eps) * Math.sin(bet);
   const z = Math.sin(eps) * Math.cos(bet) * Math.sin(lam) + Math.cos(eps) * Math.sin(bet);
@@ -7292,8 +6876,7 @@ function moonVector(lat, lon, date) {
   return { east, north, up, altDeg: alt / R };
 }
 
-// Sun altitude (degrees), sky/fog colour, sun colour, sun intensity. The
-// top row is the original palette, so clear midday matches the old look.
+// Sun altitude (degrees), sky/fog colour, sun colour, sun intensity.
 const SKY = [
   [-12, 0x05070f, 0x2a3a5c, 0.00],
   [ -6, 0x101a2e, 0x46587c, 0.00],
@@ -7310,12 +6893,7 @@ const scratch  = new THREE.Color();
 const OVERCAST = new THREE.Color(0x8b8f96);
 const FOGGY    = new THREE.Color(0xb9bcc0);
 
-// SUN AND MOON DISCS
-// Camera-facing quads kept SKY_DIST from the camera along the true sun and
-// moon directions: buildings and the ground plane occlude them by depth, so
-// they set behind the skyline and below the horizon on their own. Drawn at
-// SKY_BODY_DEG, about 3x their real ~0.53 degrees so they read on a phone.
-// The moon's lit side faces the sun, with the phase from the sun-moon angle.
+// SUN AND MOON DISCS: camera-facing quads at SKY_DIST along the true directions, occluded by depth, ~3x real size.
 const SKY_DIST     = 1500;   // metres; inside the camera's far plane (2000), past the loaded area
 const SKY_BODY_DEG = 1.6;
 const SKY_TEX      = 128;
@@ -7333,7 +6911,6 @@ function skyDisc(canvas) {
   return mesh;
 }
 
-// sun: white core with a soft halo; tinted by sunCol, so it reddens at the horizon
 const sunCanvas = document.createElement('canvas');
 sunCanvas.width = sunCanvas.height = SKY_TEX;
 {
@@ -7351,17 +6928,16 @@ const sunDisc = skyDisc(sunCanvas);
 const moonCanvas = document.createElement('canvas');
 moonCanvas.width = moonCanvas.height = SKY_TEX;
 const moonDisc = skyDisc(moonCanvas);
-let moonShape = NaN;   // cos(elongation) the canvas was last drawn for
+let moonShape = NaN;
 
-// Lit region, bright limb on +x. e = cos(sun-moon angle): 1 new, 0 quarter,
-// -1 full. The terminator is the half-ellipse x = e * sqrt(r^2 - y^2).
+// Lit region, bright limb on +x; e = cos(sun-moon angle); terminator x = e * sqrt(r^2 - y^2).
 function drawMoon(e) {
   const g = moonCanvas.getContext('2d'), c = SKY_TEX / 2, r = c - 2;
   g.clearRect(0, 0, SKY_TEX, SKY_TEX);
   g.beginPath();
-  g.arc(c, c, r, -Math.PI / 2, Math.PI / 2, false);   // top, round the right limb, bottom
+  g.arc(c, c, r, -Math.PI / 2, Math.PI / 2, false);
   const n = 48;
-  for (let i = 0; i <= n; i++) {                        // bottom back up the terminator
+  for (let i = 0; i <= n; i++) {
     const y = r - (2 * r * i) / n;
     g.lineTo(c + e * Math.sqrt(Math.max(r * r - y * y, 0)), c + y);
   }
@@ -7377,19 +6953,16 @@ const moonDir = new THREE.Vector3();
 const _mx = new THREE.Vector3(), _my = new THREE.Vector3(), _mz = new THREE.Vector3();
 const _mBasis = new THREE.Matrix4();
 
-// called from updateSky with both directions set
 function updateSkyBodies(day, cloud) {
   const e = sunDir.dot(moonDir);
   if (!(Math.abs(e - moonShape) < 0.01)) drawMoon(e);
 
-  // cloud dims both; heavy overcast leaves a faint glow rather than nothing
   const clear = 1 - 0.85 * cloud;
   sunDisc.material.color.copy(sunCol);
   sunDisc.material.opacity = clear;
-  moonDisc.material.opacity = clear * (1 - 0.55 * day);   // washed out by daylight
+  moonDisc.material.opacity = clear * (1 - 0.55 * day);
   sunDisc.visible = moonDisc.visible = true;
 
-  // moon faces the camera with its +x toward the sun
   _mz.copy(moonDir).negate();
   _mx.copy(sunDir).addScaledVector(moonDir, -e);
   if (_mx.lengthSq() < 1e-8) _mx.set(1, 0, 0).addScaledVector(moonDir, -moonDir.x);
@@ -7398,7 +6971,6 @@ function updateSkyBodies(day, cloud) {
   moonDisc.quaternion.setFromRotationMatrix(_mBasis.makeBasis(_mx, _my, _mz));
 }
 
-// Keep both at SKY_DIST from the camera; run just before each render.
 function placeSkyBodies() {
   if (!sunDisc.visible) return;
   sunDisc.position.copy(camera.position).addScaledVector(sunDir, SKY_DIST);
@@ -7406,7 +6978,6 @@ function placeSkyBodies() {
   moonDisc.position.copy(camera.position).addScaledVector(moonDir, SKY_DIST);
 }
 
-// fills skyCol and sunCol, returns the clear-sky intensity for that altitude
 function sampleSky(alt) {
   let i = 0;
   while (i < SKY.length - 2 && alt > SKY[i + 1][0]) i++;
@@ -7417,13 +6988,13 @@ function sampleSky(alt) {
   return a[3] + (b[3] - a[3]) * t;
 }
 
-let site = null;        // coordinates of the loaded place, for the sun
-let skyMinute = -1;     // minute the sky was last rebuilt for
+let site = null;
+let skyMinute = -1;
 
 function updateSky() {
   if (!site) return;
 
-  const inst = skyInstant();   // one instant for sun and moon
+  const inst = skyInstant();
   const s = solarVector(site.lat, site.lon, inst);
   let power = sampleSky(s.altDeg);
 
@@ -7458,18 +7029,8 @@ function updateSky() {
   invalidate();
 }
 
-// RAIN
-//
-// One LineSegments draw, two vertices per drop, preallocated at the device's
-// max count. Positions are a pure function of time in the vertex shader,
-// wrapped in a camera-following box, so the CPU only sets uniforms. Intensity
-// moves the draw range, never the buffers.
-//
-// Shelter: a roof height map around the player, rebuilt from the shells on
-// crossing a ROOF_MAP_SNAP line. The fragment shader cuts streaks below the
-// roof, so rain lands on roofs and stays visible through doorways.
-//
-// Driven by conditions() like the sky; built on rain start, disposed on stop.
+// RAIN: one LineSegments draw, positions computed in the vertex shader; intensity moves the draw range.
+// A roof height map around the player cuts streaks below roofs. Built on rain start, disposed on stop.
 
 const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
 const RAIN_SPAN = 44;           // box width and depth around the camera, meters
@@ -7480,16 +7041,15 @@ const ROOF_MAP_N    = 128;      // texels per side of the shelter map
 const ROOF_MAP_SIZE = 56;       // meters per side; the rain box plus snap slack
 const ROOF_MAP_SNAP = 4;        // re-rasterize when the player crosses this grid
 
-// relative intensity for a WMO code, when no measured rate is available
 const RAIN_BY_CODE = {
   51: 0.25, 53: 0.4, 55: 0.55, 56: 0.3, 57: 0.5,
   61: 0.4, 63: 0.65, 65: 1, 66: 0.45, 67: 0.8,
   80: 0.45, 81: 0.7, 82: 1, 95: 0.85, 96: 0.9, 99: 1
 };
 
-let rain = null;                // { mesh, uniforms, roof, ... } while raining
+let rain = null;
 let rainTime = 0;
-let rainDrawn = 0;              // timestamp of the last frame drawn for rain alone
+let rainDrawn = 0;
 
 // 0 when dry, else 0..1. A measured rate beats the code; ~0.3 in/h is heavy.
 function rainState() {
@@ -7516,7 +7076,6 @@ function makeRain() {
     }
   }
   const g = new THREE.BufferGeometry();
-  // three requires position; seed carries everything
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
   g.setAttribute('seed', new THREE.BufferAttribute(seed, 4));
   g.setAttribute('tip', new THREE.BufferAttribute(tip, 1));
@@ -7530,12 +7089,12 @@ function makeRain() {
 
   const uniforms = {
     uRoof:     { value: roof },
-    uRoofArea: { value: new THREE.Vector3(0, 0, ROOF_MAP_SIZE) },   // x0, z0, size
+    uRoofArea: { value: new THREE.Vector3(0, 0, ROOF_MAP_SIZE) },
     uTime:   { value: 0 },
     uCenter: { value: new THREE.Vector3() },
     uBox:    { value: new THREE.Vector3(RAIN_SPAN, RAIN_HEIGHT, RAIN_SPAN) },
-    uVel:    { value: new THREE.Vector3(0, -8, 0) },   // per unit speed factor
-    uLen:    { value: 0.09 },                          // streak = velocity * this
+    uVel:    { value: new THREE.Vector3(0, -8, 0) },
+    uLen:    { value: 0.09 },
     uColor:  { value: new THREE.Color(0xc4ccd6) },
     uAlpha:  { value: 0.5 }
   };
@@ -7599,8 +7158,7 @@ function disposeRain() {
   invalidate();
 }
 
-// Start, retune or stop rain from current conditions. Called wherever the
-// sky is rebuilt.
+// Start, retune or stop rain from current conditions.
 function syncRain(daylight) {
   const st = rainState();
   if (!st) { disposeRain(); return; }
@@ -7613,7 +7171,6 @@ function syncRain(daylight) {
 
   // drizzle falls slowly in short strokes; real rain is 6-9 m/s
   const fall = st.drizzle ? 3 + 1.5 * i : 6.5 + 2.5 * i;
-  // wind is a capped fraction of the reported speed
   let wx = 0, wz = 0;
   if (weather && weather.windMph != null) {
     const toward = (weather.windFrom + 180) * Math.PI / 180;
@@ -7627,8 +7184,7 @@ function syncRain(daylight) {
   invalidate();
 }
 
-// Roof height of a shell over (x, z) inside it: the eaves if flat, else
-// the roofOf surface on the oriented box.
+// Roof height of a shell over (x, z): the eaves if flat, else the roofOf surface.
 function roofHeightAt(s, x, z) {
   if (!s.roofShape) return s.top;
   const o = s.obb;
@@ -7649,8 +7205,7 @@ function roofHeightAt(s, x, z) {
   return s.top + (s.roofTop - s.top) * f;
 }
 
-// Fill the shelter map around (cx, cz), testing only texels inside each
-// shell's bounds; shells come from the collision grid.
+// Fill the shelter map around (cx, cz), testing texels inside each shell's bounds.
 function rasterRoofs(cx, cz) {
   const N = ROOF_MAP_N, cell = ROOF_MAP_SIZE / N;
   const x0 = cx - ROOF_MAP_SIZE / 2, z0 = cz - ROOF_MAP_SIZE / 2;
@@ -7691,7 +7246,6 @@ function rasterRoofs(cx, cz) {
   rain.roofCx = cx; rain.roofCz = cz; rain.roofShells = shells;
 }
 
-// Per frame; true when rain needs a redraw regardless.
 function rainTick(dt, now) {
   if (!rain) return false;
   const cx = Math.round(player.pos.x / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
@@ -7704,12 +7258,11 @@ function rainTick(dt, now) {
   return now - rainDrawn >= 1000 / RAIN_FPS_IDLE;
 }
 
-// Whether the loop has to keep running for the rain's sake.
 function rainAnimating() {
   return rain !== null;
 }
 
-let hudPlace = '';      // "for <place> (N skipped)"; empty until a place loads
+let hudPlace = '';
 let hudBuildings = 0;
 let clockTimer = null;
 
@@ -7717,19 +7270,17 @@ function refreshHud() {
   const line = hudPlace
     ? `${hudBuildings} buildings, ${world.animals.length} population ${hudPlace}`
     : '';
-  perf.setText(hudEl, line + (weather ? '\n' + weatherText() : ''));   // skips unchanged text
+  perf.setText(hudEl, line + (weather ? '\n' + weatherText() : ''));
 }
 
 function tick() {
-  refreshHud();   // DOM only, no invalidate needed for the clock itself
-  // the sun moves 0.25 degree a minute; rebuilding faster wakes the renderer
-  // for nothing
+  refreshHud();
+  // the sun moves 0.25 degree a minute; rebuilding faster wakes the renderer for nothing
   const m = Math.floor(Date.now() / 60000);
   if (m !== skyMinute) { skyMinute = m; updateSky(); }
 }
 
-// Everything tick() shows or rebuilds changes by the minute (clock text,
-// sun), so wake just after each minute boundary instead of every second.
+// Wake just after each minute boundary; nothing tick() shows changes faster.
 function startClock() {
   if (clockTimer) clearTimeout(clockTimer);
   const next = () => {
@@ -7741,11 +7292,9 @@ function startClock() {
 // LOAD
 
 let busy = false;
-// The last ground image, so reloading the same place this session (back to
-// the menu, Load again) skips the multi-megabyte export. One entry: a new
-// place replaces it, so at most one decoded image is kept beyond the scene's.
+// The last ground image, so reloading the same place skips the export; one entry only.
 let lastImagery = null;
-let lastTerrain = null;   // { key, grid }: the last fetched height grid
+let lastTerrain = null;
 
 async function load(query) {
   if (busy || !query.trim()) return;
@@ -7753,13 +7302,11 @@ async function load(query) {
   goEl.disabled = true;
   say('');
   steps.reset();
-  let current = 'address';   // the row a thrown error is charged to
-  const o = { ...loadOpts };   // the More toggles as they stood when Load was pressed
+  let current = 'address';
+  const o = { ...loadOpts };
 
   try {
-    // The saved label is Nominatim's own display_name for the saved
-    // coordinates, so re-submitting it (the prefilled field on a revisit)
-    // needs no round trip to the geocoder.
+    // The saved label is Nominatim's own, so re-submitting it skips the geocoder.
     const reuse = storedPlace && storedPlace.v === FEATURES_VERSION &&
                   query.trim() === storedPlace.label;
     let place;
@@ -7781,8 +7328,7 @@ async function load(query) {
         return w;
       })
       .catch(() => { steps.off('weather', 'Unavailable; the sky uses a preset.'); return null; });
-    // terrain for the largest radius, so it covers whichever one Overpass settles on;
-    // failure leaves the city flat
+    // terrain for the largest radius, so it covers whichever Overpass settles on
     const terrainKey = `${place.lat},${place.lon}`;
     const reusedTerrain = lastTerrain && lastTerrain.key === terrainKey;
     if (!o.terrain) steps.off('terrain', 'Turned off; the ground stays flat.');
@@ -7828,13 +7374,11 @@ async function load(query) {
         const project = makeProjector(place.lat, place.lon);
         features = featuresFrom(fetched.json, project);
         try {
-            // keep the in-memory copy matching storage for later loads this session
             storedPlace = { label: place.label, lat: place.lat, lon: place.lon, radius, v: FEATURES_VERSION };
             localStorage.setItem('lastPlace', JSON.stringify(storedPlace));
             localStorage.setItem('lastFeatures', JSON.stringify(features));
         } catch (e) {
-            // over quota: the scene is built; without cached features a later label
-            // match has nothing to reuse
+            // over quota: the scene is built, but nothing is cached for next time
             localStorage.removeItem('lastFeatures');
             storedPlace = null;
         }
@@ -7844,7 +7388,6 @@ async function load(query) {
       `${fmt(features.trees.length)} trees, ${fmt((features.places || []).length)} places.`);
 
     // Imagery depends only on place and radius, so fetch it during buildCity.
-    // Failure just means no ground photo.
     const imageryKey = `${place.lat},${place.lon},${radius}`;
     if (!o.aerial) steps.off('imagery', 'Turned off; the ground stays plain.');
     else steps.start('imagery');
@@ -7854,7 +7397,6 @@ async function load(query) {
         return lastImagery.img;
       }
       const proj = makeProjector(place.lat, place.lon);
-      // tile cache fallback when the image service has nothing or is down
       steps.note('imagery', 'Requesting one high-resolution photo (USGS NAIP Plus)…');
       let img = await fetchOrtho(place.lat, place.lon, radius, proj);
       if (!img) {
@@ -7923,7 +7465,6 @@ async function load(query) {
         else if (img.kind === 'ortho') steps.done('imagery', `One ${img.w} \u00d7 ${img.h} photo from USGS NAIP Plus.`);
         else steps.done('imagery', `${img.got} of ${img.total} basemap tiles at zoom ${img.z}.`);
     } catch (e) {
-        // no imagery here or the service is down; the scene stands
         steps.off('imagery', 'Unavailable; the ground stays plain.');
     }
 
@@ -7931,20 +7472,18 @@ async function load(query) {
     weather = await pendingWeather;
     site = { lat: place.lat, lon: place.lon };
     skyMinute = Math.floor(Date.now() / 60000);
-    updateSky();    // the sun runs off the coordinates alone, forecast or not
+    updateSky();
     startClock();
 
-    // start on the street nearest the geocoded point; open ground if there is none
     driving = false;
     const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
     player.pos.set(sx, elevation.at(sx, sz) + EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
-    resolveCollisions(player.pos);   // settle against any wall the search brushed
+    resolveCollisions(player.pos);
     if (o.car) placeCar(features.roads, player.pos.x, player.pos.z);
     else { car.placed = false; car.mesh.visible = false; car.speed = car.steer = car.spin = 0; }
 
-    // Compile shaders and upload textures now so the first frame does not stall.
     current = 'scene';
     steps.start('scene');
     await paint();
@@ -7954,7 +7493,6 @@ async function load(query) {
       await renderer.compileAsync(scene, camera);
       for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
     } catch (e) {
-      // warm-up only; the first render does the same work if this fails
     }
 
     hudBuildings = count;
@@ -7965,7 +7503,7 @@ async function load(query) {
 
     steps.done('scene');
     steps.finish(true);
-    goEl.textContent = 'Load';   // back from 'Try again' once a load succeeds
+    goEl.textContent = 'Load';
     panel.classList.add('hidden');
     showControls(true);
     say('');
@@ -7983,10 +7521,7 @@ async function load(query) {
   goEl.disabled = false;
 }
 
-// GAME MODE TOGGLE
-// A chip in the Other row, styled like the time and weather presets (.sel
-// when on). It only switches the food chain (see GAME MODE); fullscreen is
-// Immersive mode's, a separate chip.
+// GAME MODE TOGGLE: a chip in the Other row; only switches the food chain.
 const gameEl = document.getElementById('game');
 gameEl.addEventListener('click', () => {
   game.on = !game.on;
@@ -7998,10 +7533,7 @@ gameEl.addEventListener('click', () => {
 
 // IMMERSIVE
 
-// Fullscreen and the landscape lock both need a user gesture, so they are
-// requested straight from the toggle and load taps, not after load()'s awaits.
-// Neither exists on iPhone Safari and the lock is refused on desktop; both
-// fail quietly and the game runs as normal.
+// Fullscreen and landscape lock need a user gesture, so they are requested from the taps; both fail quietly if unsupported.
 const immersiveEl = document.getElementById('immersive');
 let immersive = false;
 
@@ -8028,14 +7560,13 @@ function exitImmersive() {
 
 immersiveEl.addEventListener('click', () => {
   immersive = !immersive;
-  immersiveEl.classList.toggle('sel', immersive);   // a chip, like Game mode
+  immersiveEl.classList.toggle('sel', immersive);
   immersiveEl.setAttribute('aria-pressed', String(immersive));
   immersiveEl.blur();
   if (immersive) enterImmersive(); else exitImmersive();
 });
 
-// START-UP OPTIONS
-// The More toggles on the intro card; load() reads a copy when it starts.
+// START-UP OPTIONS: the More toggles; load() reads a copy when it starts.
 const loadOpts = { car: true, terrain: true, people: true, deer: true, plants: true, buildings: true, aerial: true };
 for (const el of document.querySelectorAll('#more .switch')) {
   el.addEventListener('click', () => {
@@ -8049,8 +7580,7 @@ for (const el of document.querySelectorAll('#more .switch')) {
 
 goEl.addEventListener('click', () => { enterImmersive(); load(addrEl.value); });
 
-// Suggested places: dense, well-mapped US downtowns (imagery is US-only).
-// A tap fills the address and loads it.
+// Suggested places: well-mapped US downtowns (imagery is US-only).
 const PICKS = [
   ['New York, NY',       'New York, NY'],
   ['Union Square, San Francisco',  'Union Square, San Francisco, CA'],
