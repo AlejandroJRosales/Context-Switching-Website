@@ -125,7 +125,7 @@
     width: 46px; height: 46px; margin: -23px 0 0 -23px;
     background: rgba(232, 228, 220, 0.28); border-radius: 50%;
   }
-  #fly, #gear, #climb button {
+  #fly, #car, #gear, #climb button {
     padding: 12px 18px;
     background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
     border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 3px;
@@ -138,6 +138,12 @@
     z-index: 6; display: none;
   }
   #fly.on { display: block; }
+  #car {
+    position: fixed; right: 18px; bottom: 118px; width: 74px;
+    z-index: 6; display: none;
+  }
+  #car.on { display: block; }
+  #car.driving { bottom: 62px; }
   #fly.flying, #climb button.held {
     background: rgba(232, 228, 220, 0.85); color: #10131a;
     border-color: transparent;
@@ -207,7 +213,7 @@
     </div>
     <p id="status"></p>
     <ol id="steps" hidden></ol>
-    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
+    <p id="keys">WASD to move, mouse to look, shift to run, space to jump, E to enter or leave the car (space is its handbrake), esc for settings.</p>
     <p>1.0.0.3-opt</p>
   </div>
 </div>
@@ -215,6 +221,7 @@
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
 <button id="fly">Fly</button>
+<button id="car">Drive</button>
 <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
 <button id="gear">=</button>
 <div id="settings">
@@ -5239,6 +5246,7 @@ holdClimb(upEl, 1);
 holdClimb(downEl, -1);
 
 function toggleFly() {
+  if (driving) return;
   flying = !flying;
   flyEl.classList.toggle('flying', flying);
   climbEl.classList.toggle('on', flying);
@@ -5256,6 +5264,420 @@ flyEl.addEventListener('click', toggleFly);
 addEventListener('keydown', e => {
   if (e.code === 'KeyF' && !e.repeat && active) toggleFly();
 });
+
+// CAR
+//
+// One drivable car per loaded city, parked on a street near the spawn. E (or
+// the Drive button) enters when close and exits beside it. Kinematic bicycle
+// model: throttle/brake/drag/slope along the heading, yaw from the front-wheel
+// angle, yaw rate capped by tyre grip. Collision reuses the player's wall grid
+// with three circles along the body. Third-person chase camera.
+
+const CAR_LEN        = 4.3;     // body length, metres
+const CAR_WID        = 1.8;
+const CAR_TOP        = 1.45;    // roof height above the ground
+const CAR_WHEELBASE  = 2.6;
+const CAR_TRACK      = 1.55;
+const CAR_WHEEL_R    = 0.33;
+const CAR_R          = 0.9;     // collision circle radius (half the width)
+const CAR_CIRCLES    = [-1.25, 0, 1.25];   // circle centres along the heading
+const CAR_STEP_UP    = 0.25;    // solids lower than this are driven over
+const CAR_SUBSTEP    = 0.25;    // under CAR_R, so a fast car cannot skip a fence
+const CAR_ACCEL_MAX  = 4.5;     // m/s^2, traction limit off the line
+const CAR_POWER      = 60;      // W/kg: engine power per unit mass, so a = P / v
+const CAR_BRAKE      = 9.0;     // m/s^2 service brake (~0.9 g)
+const CAR_HANDBRAKE  = 6.0;
+const CAR_REV_MAX    = 6.0;     // m/s top reverse speed
+const CAR_REV_ACCEL  = 3.0;
+const CAR_ROLL       = 0.15;    // m/s^2 rolling resistance
+const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag with the throttle released
+const CAR_DRAG       = 0.0006;  // 1/m: 0.5 * rho * CdA / mass
+const CAR_GRIP       = 8.8;     // m/s^2 lateral limit (mu ~0.9)
+const CAR_STEER_MAX  = 0.6;     // rad at standstill
+const CAR_STEER_FALL = 12;      // m/s at which the steering lock halves
+const CAR_STEER_RATE = 2.5;     // rad/s the wheels turn toward the input
+const CAR_G          = 9.81;
+const CAR_GLANCE     = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
+const CAR_ALIGN      = 0.3;     // share of the angle to the wall turned per contact substep
+const CAR_REACH      = 3.2;     // metres from the car's centre that E enters
+const CAM_DIST       = 6.5;     // chase camera boom
+const CAM_PIVOT      = 1.4;     // boom pivot above the car's base
+const CAM_PITCH      = -0.2;    // resting camera pitch
+const CAM_FOLLOW     = 5;       // 1/s camera yaw catch-up
+const CAM_LOOK_HOLD  = 1500;    // ms after the last look input before it eases back
+
+const carEl = document.getElementById('car');
+
+const car = {
+  placed: false,
+  x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
+  speed: 0,        // m/s along the heading, negative in reverse
+  steer: 0,        // front-wheel angle, rad, positive = left
+  spin: 0,         // wheel rotation, rad (visual)
+  mesh: null, front: [], wheels: []
+};
+
+let driving = false;
+const drive = { camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false };
+
+// Mesh: body, glasshouse, roof, lamps, four wheels (front two on steer pivots).
+{
+  const mat = c => new THREE.MeshLambertMaterial({ color: c });
+  const paint = mat(0x9c2f2a), glass = mat(0x28313b), trim = mat(0x1d1f22);
+  const tyre = mat(0x151617), head = mat(0xf2ecd8), tail = mat(0xb3261e);
+  const g = new THREE.Group();
+  const part = (w, h, d, x, y, z, m) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z);
+    g.add(b);
+    return b;
+  };
+  // local forward is -z, as for the player
+  part(CAR_WID, 0.62, CAR_LEN, 0, 0.62, 0, paint);
+  part(CAR_WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
+  part(CAR_WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
+  part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, -CAR_LEN / 2, trim);
+  part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, CAR_LEN / 2, trim);
+  for (const s of [-1, 1]) {
+    part(0.34, 0.14, 0.04, s * 0.62, 0.72, -CAR_LEN / 2 - 0.01, head);
+    part(0.34, 0.12, 0.04, s * 0.62, 0.74, CAR_LEN / 2 + 0.01, tail);
+  }
+  const wheelGeo = new THREE.CylinderGeometry(CAR_WHEEL_R, CAR_WHEEL_R, 0.24, 14);
+  wheelGeo.rotateZ(Math.PI / 2);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * CAR_TRACK / 2, CAR_WHEEL_R, sz * CAR_WHEELBASE / 2);
+    const w = new THREE.Mesh(wheelGeo, tyre);
+    w.rotation.order = 'YXZ';
+    pivot.add(w);
+    g.add(pivot);
+    car.wheels.push(w);
+    if (sz < 0) car.front.push(pivot);
+  }
+  g.rotation.order = 'YXZ';
+  g.visible = false;
+  scene.add(g);
+  car.mesh = g;
+}
+
+// Ground under the axles and sides sets height, pitch and roll.
+function settleCar() {
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
+  const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
+  const hb = CAR_WHEELBASE / 2, ht = CAR_TRACK / 2;
+  const hf = elevation.at(car.x + fx * hb, car.z + fz * hb);
+  const hr = elevation.at(car.x - fx * hb, car.z - fz * hb);
+  const hR = elevation.at(car.x + rx * ht, car.z + rz * ht);
+  const hL = elevation.at(car.x - rx * ht, car.z - rz * ht);
+  car.y = (hf + hr + hR + hL) / 4;
+  car.pitch = Math.atan2(hf - hr, CAR_WHEELBASE);
+  car.roll = Math.atan2(hR - hL, CAR_TRACK);
+}
+
+function syncCarMesh() {
+  const m = car.mesh;
+  m.position.set(car.x, car.y, car.z);
+  m.rotation.set(car.pitch, car.yaw, car.roll);
+  for (const p of car.front) p.rotation.y = car.steer;
+  for (const w of car.wheels) w.rotation.x = -car.spin;
+  sceneDirty = true;   // an empty car rolling to a stop still needs drawing
+}
+
+// Does the body fit at (x, z) facing yaw: outdoors, dry, clear of solids?
+function carFits(x, z, yaw, margin = 0.2) {
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  for (const o of CAR_CIRCLES) {
+    const cx = x + fx * o, cz = z + fz * o, g = elevation.at(cx, cz);
+    if (shellAt(cx, cz) >= 0 || water.wetAt(cx, cz)) return false;
+    if (solidOverlap(cx, cz, CAR_R + margin, g + CAR_STEP_UP, g + CAR_TOP)) return false;
+  }
+  return true;
+}
+
+// Parked on the right-hand side of the nearest street to (x, z), aligned
+// with it, but not on top of the player.
+function placeCar(roads, x, z) {
+  const cands = [];
+  for (const r of roads || []) {
+    if (PATH_KINDS.has(r.kind)) continue;
+    const half = (r.width || ROAD_WIDTH[r.kind] || 6.5) / 2;
+    const side = Math.max(0, half - CAR_WID / 2 - 0.3);
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      if (len < 0.01) continue;
+      const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+      const yaw = Math.atan2(-ux, -uz);
+      // right of travel is (cos yaw, -sin yaw) = (-uz, ux)
+      const n = Math.max(1, Math.ceil(len / STREET_STEP));
+      for (let k = 0; k <= n; k++) {
+        const px = x0 + (x1 - x0) * k / n - uz * side;
+        const pz = z0 + (z1 - z0) * k / n + ux * side;
+        const d = (px - x) ** 2 + (pz - z) ** 2;
+        if (d < 25 || d > 150 * 150) continue;
+        cands.push({ px, pz, yaw, d });
+      }
+    }
+  }
+  cands.sort((a, b) => a.d - b.d);
+  let spot = cands.find(c => carFits(c.px, c.pz, c.yaw));
+  if (!spot) {
+    // no street fits: nearest open ground, facing the player's way
+    for (let d = 5; d <= 80 && !spot; d += 1) {
+      for (let i = 0; i < 24; i++) {
+        const a = i / 24 * 2 * Math.PI, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+        if (carFits(px, pz, player.yaw)) { spot = { px, pz, yaw: player.yaw }; break; }
+      }
+    }
+  }
+  car.placed = !!spot;
+  car.mesh.visible = car.placed;
+  car.speed = car.steer = car.spin = 0;
+  if (!spot) return;
+  car.x = spot.px; car.z = spot.pz; car.yaw = spot.yaw;
+  settleCar();
+  syncCarMesh();
+  invalidate();
+}
+
+const _carPos = new THREE.Vector3();
+
+// Move the body by (dx, dz), then push each circle out of the walls and
+// carry the push to the centre. Returns the summed push, or null.
+const _push = { x: 0, z: 0 };
+function moveCar(dx, dz) {
+  car.x += dx; car.z += dz;
+  let any = false;
+  _push.x = _push.z = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
+    for (const o of CAR_CIRCLES) {
+      const cx = car.x + fx * o, cz = car.z + fz * o, g = elevation.at(cx, cz);
+      _carPos.set(cx, g, cz);
+      if (resolveCollisions(_carPos, CAR_R, g, g + CAR_TOP, CAR_STEP_UP)) {
+        const px = _carPos.x - cx, pz = _carPos.z - cz;
+        car.x += px; car.z += pz;
+        _push.x += px; _push.z += pz;
+        moved = any = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return any ? _push : null;
+}
+
+// One physics step. throttle, steer in [-1, 1] (steer > 0 = left).
+function carPhysics(dt, throttle, steer, handbrake) {
+  if (dt <= 0) return;
+  const v = car.speed;
+
+  // steering: lock shrinks with speed, wheels slew toward the input
+  const lock = CAR_STEER_MAX / (1 + Math.abs(v) / CAR_STEER_FALL);
+  const target = steer * lock;
+  const ds = target - car.steer, maxDs = CAR_STEER_RATE * dt;
+  car.steer += Math.max(-maxDs, Math.min(maxDs, ds));
+
+  // longitudinal: drive or brake by input, then resistances and slope
+  let a = 0;
+  if (throttle > 0) {
+    if (v < -0.3) a = CAR_BRAKE * throttle;
+    else a = throttle * Math.min(CAR_ACCEL_MAX, CAR_POWER / Math.max(v, 1));
+  } else if (throttle < 0) {
+    if (v > 0.3) a = CAR_BRAKE * throttle;
+    else if (v > -CAR_REV_MAX) a = CAR_REV_ACCEL * throttle;
+  }
+  let resist = CAR_ROLL + CAR_DRAG * v * v + (throttle === 0 ? CAR_ENGINE_BRK : 0);
+  if (handbrake) resist += CAR_HANDBRAKE;
+  const slope = -CAR_G * Math.sin(car.pitch);
+
+  let nv = v + (a + slope) * dt;
+  // resistance opposes motion and never reverses it, so a gentle slope the
+  // brakes and rolling resistance can hold leaves a stopped car stopped
+  const r = resist * dt;
+  if (nv > 0) nv = Math.max(0, nv - r);
+  else if (nv < 0) nv = Math.min(0, nv + r);
+  if (nv < -CAR_REV_MAX) nv = -CAR_REV_MAX;
+  car.speed = nv;
+
+  // yaw from the bicycle model, capped where the tyres would slide
+  let yawRate = car.speed * Math.tan(car.steer) / CAR_WHEELBASE;
+  const s = Math.abs(car.speed);
+  if (s > 0.5) {
+    const cap = CAR_GRIP / s;
+    yawRate = Math.max(-cap, Math.min(cap, yawRate));
+  }
+  car.yaw += yawRate * dt;
+
+  // translate in substeps; a wall removes the speed component driven into it
+  const dist = car.speed * dt;
+  const n = Math.max(1, Math.ceil(Math.abs(dist) / CAR_SUBSTEP));
+  for (let k = 0; k < n; k++) {
+    const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
+    const hit = moveCar(fx * dist / n, fz * dist / n);
+    if (hit) {
+      const len = Math.hypot(hit.x, hit.z);
+      if (len > 1e-6) {
+        const nx = hit.x / len, nz = hit.z / len;
+        const dot = fx * nx + fz * nz;   // heading . wall normal
+        if (car.speed * dot < 0) car.speed *= 1 - dot * dot;
+        // a glancing hit turns the body along the wall instead of pinning it
+        if (Math.abs(dot) < CAR_GLANCE) {
+          let tx = -nz, tz = nx;
+          if (tx * fx + tz * fz < 0) { tx = -tx; tz = -tz; }
+          let dy = Math.atan2(-tx, -tz) - car.yaw;
+          dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+          car.yaw += dy * CAR_ALIGN;
+        }
+      }
+    }
+  }
+
+  car.spin += (car.speed * dt) / CAR_WHEEL_R;
+  settleCar();
+  syncCarMesh();
+}
+
+function carNear() {
+  if (!car.placed || flying) return false;
+  const d = Math.hypot(player.pos.x - car.x, player.pos.z - car.z);
+  const feet = player.pos.y - EYE_HEIGHT;
+  return d < CAR_REACH && feet > car.y - 1 && feet < car.y + CAR_TOP;
+}
+
+// Keep the walking player out of the body. Returns whether it pushed.
+function pushPlayerFromCar() {
+  if (!car.placed) return false;
+  const feet = player.pos.y - EYE_HEIGHT;
+  if (feet >= car.y + CAR_TOP - LAND_EPS || player.pos.y + HEAD_CLEAR <= car.y) return false;
+  let pushed = false;
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw), min = CAR_R + PLAYER_RADIUS;
+  for (const o of CAR_CIRCLES) {
+    const cx = car.x + fx * o, cz = car.z + fz * o;
+    let dx = player.pos.x - cx, dz = player.pos.z - cz;
+    const d = Math.hypot(dx, dz);
+    if (d < min) {
+      if (d < 1e-6) { dx = -fz; dz = fx; } else { dx /= d; dz /= d; }
+      player.pos.x = cx + dx * min;
+      player.pos.z = cz + dz * min;
+      pushed = true;
+    }
+  }
+  return pushed;
+}
+
+let carBtnState = '';
+function updateCarButton() {
+  const state = !active ? '' : driving ? 'exit' : carNear() ? 'enter' : '';
+  if (state === carBtnState) return;
+  carBtnState = state;
+  carEl.classList.toggle('on', state !== '');
+  carEl.classList.toggle('driving', state === 'exit');
+  carEl.textContent = state === 'exit' ? 'Exit' : 'Drive';
+}
+
+function enterCar() {
+  if (driving || !carNear()) return;
+  driving = true;
+  drive.camYaw = car.yaw;
+  drive.lookYaw = 0; drive.lookPitch = 0; drive.lookAt = 0;
+  drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;   // no look delta on entry
+  player.vel.set(0, 0, 0);
+  jumpQueued = false;
+  flyEl.classList.remove('on');
+  updateCarButton();
+  wake();
+}
+
+function exitCar() {
+  if (!driving) return;
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
+  const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
+  // driver's side, passenger side, behind, in front
+  for (const [l, f] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
+    const px = car.x + rx * l + fx * f, pz = car.z + rz * l + fz * f, g = elevation.at(px, pz);
+    if (shellAt(px, pz) >= 0) continue;
+    if (solidOverlap(px, pz, PLAYER_RADIUS + 0.05, g, g + EYE_HEIGHT + HEAD_CLEAR)) continue;
+    driving = false;
+    player.pos.set(px, g + EYE_HEIGHT, pz);
+    player.vel.set(0, 0, 0);
+    player.grounded = false;
+    player.yaw = car.yaw; player.pitch = 0;
+    flyEl.classList.toggle('on', active);
+    updateCarButton();
+    wake();
+    return;
+  }
+  // every side blocked: stay in
+}
+
+function toggleCar() {
+  if (driving) exitCar(); else enterCar();
+}
+
+carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
+addEventListener('keydown', e => {
+  if (e.code === 'KeyE' && !e.repeat && active) toggleCar();
+});
+
+// Driving frame: inputs to the car, then the chase camera.
+function driveStep(dt) {
+  // mouse and touch look still write player.yaw/pitch; what changed since the
+  // last frame is this frame's look input, applied as an orbit offset
+  const dYaw = player.yaw - drive.shownYaw, dPitch = player.pitch - drive.shownPitch;
+  const now = performance.now();
+  if (dYaw !== 0 || dPitch !== 0) drive.lookAt = now;
+  drive.lookYaw += dYaw;
+  drive.lookPitch += dPitch;
+  jumpQueued = false;
+
+  let throttle = 0, steer = 0;
+  if (active) {
+    if (keys.has('KeyW') || keys.has('ArrowUp'))    throttle += 1;
+    if (keys.has('KeyS') || keys.has('ArrowDown'))  throttle -= 1;
+    if (keys.has('KeyA') || keys.has('ArrowLeft'))  steer += 1;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) steer -= 1;
+    if (stickId !== null) { throttle += touchMove.z; steer -= touchMove.x; }
+  }
+  throttle = Math.max(-1, Math.min(1, throttle));
+  steer = Math.max(-1, Math.min(1, steer));
+  carPhysics(dt, throttle, steer, active && keys.has('Space'));
+
+  // camera yaw trails the heading; look offsets ease home once left alone
+  let dy = car.yaw - drive.camYaw;
+  dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  drive.camYaw += dy * (1 - Math.exp(-CAM_FOLLOW * dt));
+  if (now - drive.lookAt > CAM_LOOK_HOLD && Math.abs(car.speed) > 1) {
+    const k = Math.exp(-2 * dt);
+    drive.lookYaw *= k; drive.lookPitch *= k;
+    if (Math.abs(drive.lookYaw) < 1e-4) drive.lookYaw = 0;
+    if (Math.abs(drive.lookPitch) < 1e-4) drive.lookPitch = 0;
+  }
+  drive.lookPitch = Math.max(-1.1 - CAM_PITCH, Math.min(0.5 - CAM_PITCH, drive.lookPitch));
+  const yaw = drive.camYaw + drive.lookYaw, pitch = CAM_PITCH + drive.lookPitch;
+
+  // boom from the pivot back along the view, shortened before any wall or building
+  const px = car.x, py = car.y + CAM_PIVOT, pz = car.z;
+  const bx = Math.sin(yaw) * Math.cos(pitch), by = -Math.sin(pitch), bz = Math.cos(yaw) * Math.cos(pitch);
+  let boom = CAM_DIST;
+  for (let d = 0.6; d <= CAM_DIST; d += 0.4) {
+    const x = px + bx * d, y = py + by * d, z = pz + bz * d;
+    const s = shellAt(x, z);
+    if ((s >= 0 && y < shells[s].top + 0.3) || solidOverlap(x, z, 0.3, y - 0.3, y + 0.3)) {
+      boom = Math.max(1.0, d - 0.5);
+      break;
+    }
+  }
+  const cx = px + bx * boom, cz = pz + bz * boom;
+  const cy = Math.max(py + by * boom, elevation.at(cx, cz) + 0.4);
+
+  player.pos.set(cx, cy, cz);
+  player.yaw = yaw; player.pitch = pitch;
+  drive.shownYaw = yaw; drive.shownPitch = pitch;
+  drive.settling = Math.abs(dy) > 1e-4 || drive.lookYaw !== 0 || drive.lookPitch !== 0;
+  camera.position.copy(player.pos);
+  camera.rotation.set(pitch, yaw, 0, 'YXZ');
+}
 
 // SETTINGS
 
@@ -5342,16 +5764,21 @@ gearEl.addEventListener('click', () => {
 });
 
 function showControls(on) {
-  flyEl.classList.toggle('on', on);
+  flyEl.classList.toggle('on', on && !driving);
   climbEl.classList.toggle('on', on && flying);
   gearEl.classList.toggle('on', on);
   if (!on) settingsEl.classList.remove('on');
+  updateCarButton();
 }
 
 const fwd = new THREE.Vector3();
 const right = new THREE.Vector3();
 
 function step(dt) {
+  if (driving) { driveStep(dt); updateCarButton(); return; }
+  // an empty car still rolling (left at speed) brakes to a stop
+  if (car.speed !== 0) carPhysics(dt, 0, 0, true);
+
   fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
 
@@ -5391,6 +5818,8 @@ function step(dt) {
     // horizontal first, so the roof lookup runs from a wall-clear position
     const wasGrounded = player.grounded;
     moveAndCollide(player.pos, dx, dz, wasGrounded ? STEP_UP : 0);
+    // out of the car's body, then settle against any wall that pushed into
+    if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
 
     if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
       player.vel.y = JUMP_SPEED;
@@ -5426,6 +5855,7 @@ function step(dt) {
 
   camera.position.copy(player.pos);
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+  updateCarButton();
 }
 
 // The loop runs only while something can change the image: held input, the
@@ -5495,7 +5925,8 @@ function frame(now) {
   }
 
   // falling rain and live NPCs keep the loop awake
-  const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
+  const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
+                  car.speed === 0 && !(driving && drive.settling);
   if (settled && !movementHeld() && !rainAnimating() && !npcLive) {
     last = -1;           // sleep until wake()
     return;
@@ -6323,11 +6754,13 @@ async function load(query) {
     startClock();
 
     // start on the street nearest the geocoded point; open ground if there is none
+    driving = false;
     const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
     player.pos.set(sx, elevation.at(sx, sz) + EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
     resolveCollisions(player.pos);   // settle against any wall the search brushed
+    placeCar(features.roads, player.pos.x, player.pos.z);
 
     // Compile shaders and upload textures now so the first frame does not stall.
     current = 'scene';
