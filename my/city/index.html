@@ -383,10 +383,28 @@ scene.fog = new THREE.Fog(0x9fb4c8, 120, 900);
 // coplanar ground layers
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25, 2000);
 
-scene.add(new THREE.HemisphereLight(0xbdd3e6, 0x4a4640, 1.5));
+const HEMI_DAY   = 1.5;
+const HEMI_NIGHT = 0.8;    // hemisphere dims at night so the moon's side-lighting reads
+const MOON_MAX   = 0.9;
+const hemi = new THREE.HemisphereLight(0xbdd3e6, 0x4a4640, HEMI_DAY);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
 sun.position.set(-0.5, 1, 0.4).multiplyScalar(100);
 scene.add(sun);
+// Night key light. A hemisphere light depends only on a face's up-component,
+// so with the sun down every wall got the same light whichever way it faced
+// and neighbouring buildings merged. A fixed low, off-axis direction gives
+// each facade orientation its own shade. Always in the scene (intensity 0 by
+// day) so the light count, and so the compiled shaders, never change.
+// Follows the real moon while it is up; below the horizon it falls back to
+// MOON_FALLBACK so facades still separate on moonless nights. The two blend
+// over the moon's first MOON_BLEND_DEG of altitude, so rising and setting
+// swing the light instead of snapping it.
+const MOON_FALLBACK  = new THREE.Vector3(Math.sin(0.35), Math.tan(35 * Math.PI / 180), -Math.cos(0.35)).normalize();
+const MOON_BLEND_DEG = 5;
+const moon = new THREE.DirectionalLight(0xaebfe0, 0);
+moon.position.copy(MOON_FALLBACK).multiplyScalar(100);
+scene.add(moon);
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(4000, 4000),
@@ -4921,6 +4939,7 @@ function frame(now) {
   }
   const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
   if (posed || sceneDirty || rainDue || npcDue) {
+    placeSkyBodies();
     renderer.render(scene, camera);
     drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch;
     sceneDirty = false;
@@ -5099,6 +5118,44 @@ function solarVector(lat, lon, date) {
   return { east, north, up, altDeg: Math.asin(up) / R };
 }
 
+// Moon position, same frame and inputs as solarVector. Low-precision lunar
+// series (Astronomical Almanac, ~0.3 degree) plus a topocentric parallax
+// correction (up to ~0.95 degree, about two moon diameters near the horizon).
+function moonVector(lat, lon, date) {
+  const R = Math.PI / 180;
+  const d = date.getTime() / 86400000 - 10957.5;      // days since J2000.0
+  const T = d / 36525;
+  const S = x => Math.sin(x * R);
+
+  const lam = (218.32 + 481267.881 * T
+    + 6.29 * S(135.0 + 477198.87 * T) - 1.27 * S(259.3 - 413335.36 * T)
+    + 0.66 * S(235.7 + 890534.22 * T) + 0.21 * S(269.9 + 954397.74 * T)
+    - 0.19 * S(357.5 + 35999.05 * T)  - 0.11 * S(186.5 + 966404.03 * T)) * R;
+  const bet = (5.13 * S(93.3 + 483202.02 * T) + 0.28 * S(228.2 + 960400.89 * T)
+    - 0.28 * S(318.3 + 6003.15 * T) - 0.17 * S(217.6 - 407332.21 * T)) * R;
+  const eps = (23.439 - 0.013 * T) * R;
+
+  // ecliptic -> equatorial
+  const x = Math.cos(bet) * Math.cos(lam);
+  const y = Math.cos(eps) * Math.cos(bet) * Math.sin(lam) - Math.sin(eps) * Math.sin(bet);
+  const z = Math.sin(eps) * Math.cos(bet) * Math.sin(lam) + Math.cos(eps) * Math.sin(bet);
+  const ra = Math.atan2(y, x), dec = Math.asin(z);
+
+  const gmst = 18.697374558 + 24.06570982441908 * d;
+  const H    = (gmst * 15 + lon) * R - ra;
+  const phi  = lat * R;
+  let up    =  Math.sin(dec) * Math.sin(phi) + Math.cos(dec) * Math.cos(H) * Math.cos(phi);
+  let north =  Math.sin(dec) * Math.cos(phi) - Math.cos(dec) * Math.cos(H) * Math.sin(phi);
+  let east  = -Math.cos(dec) * Math.sin(H);
+
+  // parallax: seen from the surface the moon sits lower by ~0.95 deg * cos(alt)
+  const alt = Math.asin(up) - 0.95 * R * Math.cos(Math.asin(up));
+  const h = Math.hypot(east, north) || 1, ch = Math.cos(alt);
+  east = east / h * ch; north = north / h * ch; up = Math.sin(alt);
+
+  return { east, north, up, altDeg: alt / R };
+}
+
 // Sun altitude (degrees), sky/fog colour, sun colour, sun intensity. The
 // top row is the original palette, so clear midday matches the old look.
 const SKY = [
@@ -5117,6 +5174,102 @@ const scratch  = new THREE.Color();
 const OVERCAST = new THREE.Color(0x8b8f96);
 const FOGGY    = new THREE.Color(0xb9bcc0);
 
+// SUN AND MOON DISCS
+// Camera-facing quads kept SKY_DIST from the camera along the true sun and
+// moon directions: buildings and the ground plane occlude them by depth, so
+// they set behind the skyline and below the horizon on their own. Drawn at
+// SKY_BODY_DEG, about 3x their real ~0.53 degrees so they read on a phone.
+// The moon's lit side faces the sun, with the phase from the sun-moon angle.
+const SKY_DIST     = 1500;   // metres; inside the camera's far plane (2000), past the loaded area
+const SKY_BODY_DEG = 1.6;
+const SKY_TEX      = 128;
+
+function skyDisc(canvas) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const size = 2 * SKY_DIST * Math.tan(SKY_BODY_DEG * Math.PI / 360);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false, fog: false, toneMapped: false
+  }));
+  mesh.visible = false;
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return mesh;
+}
+
+// sun: white core with a soft halo; tinted by sunCol, so it reddens at the horizon
+const sunCanvas = document.createElement('canvas');
+sunCanvas.width = sunCanvas.height = SKY_TEX;
+{
+  const g = sunCanvas.getContext('2d'), c = SKY_TEX / 2;
+  const grad = g.createRadialGradient(c, c, 0, c, c, c);
+  grad.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.30, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.36, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1.00, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, SKY_TEX, SKY_TEX);
+}
+const sunDisc = skyDisc(sunCanvas);
+
+const moonCanvas = document.createElement('canvas');
+moonCanvas.width = moonCanvas.height = SKY_TEX;
+const moonDisc = skyDisc(moonCanvas);
+let moonShape = NaN;   // cos(elongation) the canvas was last drawn for
+
+// Lit region, bright limb on +x. e = cos(sun-moon angle): 1 new, 0 quarter,
+// -1 full. The terminator is the half-ellipse x = e * sqrt(r^2 - y^2).
+function drawMoon(e) {
+  const g = moonCanvas.getContext('2d'), c = SKY_TEX / 2, r = c - 2;
+  g.clearRect(0, 0, SKY_TEX, SKY_TEX);
+  g.beginPath();
+  g.arc(c, c, r, -Math.PI / 2, Math.PI / 2, false);   // top, round the right limb, bottom
+  const n = 48;
+  for (let i = 0; i <= n; i++) {                        // bottom back up the terminator
+    const y = r - (2 * r * i) / n;
+    g.lineTo(c + e * Math.sqrt(Math.max(r * r - y * y, 0)), c + y);
+  }
+  g.closePath();
+  g.fillStyle = '#e6e9ee';
+  g.fill();
+  moonDisc.material.map.needsUpdate = true;
+  moonShape = e;
+}
+
+const sunDir  = new THREE.Vector3();
+const moonDir = new THREE.Vector3();
+const _mx = new THREE.Vector3(), _my = new THREE.Vector3(), _mz = new THREE.Vector3();
+const _mBasis = new THREE.Matrix4();
+
+// called from updateSky with both directions set
+function updateSkyBodies(day, cloud) {
+  const e = sunDir.dot(moonDir);
+  if (!(Math.abs(e - moonShape) < 0.01)) drawMoon(e);
+
+  // cloud dims both; heavy overcast leaves a faint glow rather than nothing
+  const clear = 1 - 0.85 * cloud;
+  sunDisc.material.color.copy(sunCol);
+  sunDisc.material.opacity = clear;
+  moonDisc.material.opacity = clear * (1 - 0.55 * day);   // washed out by daylight
+  sunDisc.visible = moonDisc.visible = true;
+
+  // moon faces the camera with its +x toward the sun
+  _mz.copy(moonDir).negate();
+  _mx.copy(sunDir).addScaledVector(moonDir, -e);
+  if (_mx.lengthSq() < 1e-8) _mx.set(1, 0, 0).addScaledVector(moonDir, -moonDir.x);
+  _mx.normalize();
+  _my.crossVectors(_mz, _mx);
+  moonDisc.quaternion.setFromRotationMatrix(_mBasis.makeBasis(_mx, _my, _mz));
+}
+
+// Keep both at SKY_DIST from the camera; run just before each render.
+function placeSkyBodies() {
+  if (!sunDisc.visible) return;
+  sunDisc.position.copy(camera.position).addScaledVector(sunDir, SKY_DIST);
+  sunDisc.lookAt(camera.position);
+  moonDisc.position.copy(camera.position).addScaledVector(moonDir, SKY_DIST);
+}
+
 // fills skyCol and sunCol, returns the clear-sky intensity for that altitude
 function sampleSky(alt) {
   let i = 0;
@@ -5134,7 +5287,8 @@ let skyMinute = -1;     // minute the sky was last rebuilt for
 function updateSky() {
   if (!site) return;
 
-  const s = solarVector(site.lat, site.lon, skyInstant());
+  const inst = skyInstant();   // one instant for sun and moon
+  const s = solarVector(site.lat, site.lon, inst);
   let power = sampleSky(s.altDeg);
 
   // cloud and fog fade out through twilight, so night is not greyed
@@ -5151,6 +5305,16 @@ function updateSky() {
   sun.position.set(s.east, s.up, -s.north).multiplyScalar(100);
   sun.color.copy(sunCol);
   sun.intensity = Math.max(power, 0);
+  // not dimmed by cloud: kept for facade readability rather than realism
+  moon.intensity = MOON_MAX * (1 - day);
+  hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
+
+  const m = moonVector(site.lat, site.lon, inst);
+  sunDir.set(s.east, s.up, -s.north).normalize();
+  moonDir.set(m.east, m.up, -m.north).normalize();
+  const tm = Math.min(Math.max(m.altDeg / MOON_BLEND_DEG, 0), 1);
+  moon.position.copy(MOON_FALLBACK).lerp(moonDir, tm).normalize().multiplyScalar(100);
+  updateSkyBodies(day, cloud);
 
   scene.background.copy(skyCol);
   scene.fog.color.copy(skyCol);
