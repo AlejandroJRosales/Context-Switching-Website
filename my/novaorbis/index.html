@@ -6106,6 +6106,8 @@ const vrStatsEl   = document.getElementById('vr-stats');
 // CAT COMPANION: Nibbler, from the Arena. The rig stays in Arena units under a group scaled to the player;
 // distances and speeds are the Arena's in metres. Worlds with wilderness bring him along (provider.companion).
 const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
+const CAT_SEAT  = { x: 0.4, y: 0.6, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
+const CAT_DOOR  = 1.2;                          // metres from the car's centre he steps out at, passenger side
 
 class CatCompanion {
   constructor() {
@@ -6120,6 +6122,7 @@ class CatCompanion {
     this.WATER_SPEED_FACTOR = 0.45;
     this.FLOAT = 1.5 * NPC_UNIT;          // how far under the surface he paddles (the Arena's WATER_FLOAT_LIFT)
     this.active = false;
+    this.riding = false;                  // in the car with the player
     this._w = new THREE.Vector3();
   }
 
@@ -6215,8 +6218,35 @@ class CatCompanion {
     return group;
   }
 
+  // Gets in with the player: a passenger on the car's mesh, still, facing forward (his update pauses).
+  board() {
+    if (!this.active || this.riding) return;
+    this.riding = true;
+    car.mesh.add(this.mesh);
+    this.mesh.position.set(CAT_SEAT.x, CAT_SEAT.y, CAT_SEAT.z);
+    this.mesh.rotation.set(0, Math.PI, 0);   // his forward is +z, the car's is -z
+    for (const leg of this.mesh.userData.legs) leg.rotation.x = 0;
+    sceneDirty = true;
+  }
+
+  // Gets out with the player: by the passenger door if there is room, else beside the player.
+  alight() {
+    if (!this.riding) return;
+    this.riding = false;
+    scene.add(this.mesh);
+    const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
+    let x = car.x + rx * CAT_DOOR, z = car.z + rz * CAT_DOOR;
+    const g = this.groundAt(x, z);
+    if (shellAt(x, z) >= 0 || solidOverlap(x, z, 0.2, g, g + 0.35)) { x = player.pos.x; z = player.pos.z; }
+    this.position.set(x, this.groundAt(x, z), z);
+    this.yaw = car.yaw + Math.PI;
+    this.velocity.set(0, 0, 0);
+    this.update(0);
+  }
+
   // Beside the player, facing the same way (the Arena's reset after world.initialize).
   place(show) {
+    if (this.riding) { this.riding = false; scene.add(this.mesh); }
     this.active = show;
     this.mesh.visible = show;
     if (!show) return;
@@ -6235,7 +6265,7 @@ class CatCompanion {
   }
 
   update(deltaTime) {
-    if (!this.active) return;
+    if (!this.active || this.riding) return;
     this.animTime += deltaTime;
     activeWorld.surface(this.position.x, this.position.z, _surf);
     const waterFactor = _surf.dip < 0 ? this.WATER_SPEED_FACTOR : 1;
@@ -8670,6 +8700,7 @@ function enterCar() {
   jumpQueued = false;
   touchMove.z = 0;   // a stick held on entry steers from here on, no throttle
   flyEl.classList.remove('on');
+  cat.board();
   updateCarButton();
   wake();
 }
@@ -8688,6 +8719,7 @@ function exitCar() {
     player.grounded = false;
     player.yaw = car.yaw; player.pitch = 0;
     flyEl.classList.toggle('on', active && !game.on);
+    cat.alight();
     updateCarButton();
     wake();
     return;
