@@ -72,9 +72,18 @@
   .switch.on .thumb { transform: translateX(16px); background: #10131a; }
   .switch.on { color: #e8e4dc; }
   #keys { margin: 28px 0 0; font-size: 13px; color: #6f6b64; }
+  #more { margin-top: 14px; }
+  #more summary {
+    width: fit-content; cursor: pointer; touch-action: manipulation;
+    color: rgba(232, 228, 220, 0.75);
+    font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  #more summary:focus-visible { outline: 2px solid #6f7f9c; outline-offset: 3px; }
+  #more[open] summary { margin-bottom: 12px; }
 
   /* loading page: the intro steps aside for the step list */
-  #card.loading > p:not(#status), #card.loading #picks, #card.loading #row { display: none; }
+  #card.loading > p:not(#status), #card.loading #picks, #card.loading #row, #card.loading #more { display: none; }
   #steps {
     list-style: none; margin: 18px 0 0; padding: 0;
     font: 400 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
@@ -223,6 +232,14 @@
       <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY" autocomplete="off">
       <button id="go">Load</button>
     </div>
+    <details id="more">
+      <summary>More</summary>
+      <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Car</button>
+      <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Terrain</button>
+      <button class="switch on" data-opt="people" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>People</button>
+      <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Buildings</button>
+      <button class="switch on" data-opt="aerial" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Aerial view</button>
+    </details>
     <p id="status"></p>
     <ol id="steps" hidden></ol>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, E to enter or leave the car (space is its handbrake), esc for settings.</p>
@@ -6771,6 +6788,7 @@ async function load(query) {
   say('');
   steps.reset();
   let current = 'address';   // the row a thrown error is charged to
+  const o = { ...loadOpts };   // the More toggles as they stood when Load was pressed
 
   try {
     // The saved label is Nominatim's own display_name for the saved
@@ -6801,8 +6819,9 @@ async function load(query) {
     // failure leaves the city flat
     const terrainKey = `${place.lat},${place.lon}`;
     const reusedTerrain = lastTerrain && lastTerrain.key === terrainKey;
-    steps.start('terrain', reusedTerrain ? 'Reusing heights from the last load.' : undefined);
-    const pendingTerrain = (reusedTerrain
+    if (!o.terrain) steps.off('terrain', 'Turned off; the ground stays flat.');
+    else steps.start('terrain', reusedTerrain ? 'Reusing heights from the last load.' : undefined);
+    const pendingTerrain = !o.terrain ? Promise.resolve(null) : (reusedTerrain
       ? Promise.resolve(lastTerrain.grid)
       : fetchTerrain(place.lat, place.lon, RADIUS_LADDER[0], d => steps.note('terrain', d)))
       .then(g => {
@@ -6861,8 +6880,9 @@ async function load(query) {
     // Imagery depends only on place and radius, so fetch it during buildCity.
     // Failure just means no ground photo.
     const imageryKey = `${place.lat},${place.lon},${radius}`;
-    steps.start('imagery');
-    const pendingImagery = (async () => {
+    if (!o.aerial) steps.off('imagery', 'Turned off; the ground stays plain.');
+    else steps.start('imagery');
+    const pendingImagery = !o.aerial ? Promise.resolve(null) : (async () => {
       if (lastImagery && lastImagery.key === imageryKey) {
         steps.note('imagery', 'Reusing the photo from the last load.');
         return lastImagery.img;
@@ -6886,21 +6906,33 @@ async function load(query) {
     current = 'build';
     steps.start('build');
     await paint();
-    const { count, skipped } = buildCity(features);
+    const { count, skipped } = buildCity(o.buildings ? features : { ...features, buildings: [] });
     buildTerrainBase(radius);
-    if (count) {
-      steps.done('build', `${fmt(count)} buildings standing` +
-        (skipped ? `, ${fmt(skipped)} skipped (slivers or broken outlines).` : '.'));
-      current = 'people';
-      steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground…`);
-      await paint();
-      world.initialize(features, radius);
-      steps.done('people', `${fmt(world.animals.length)} people, each with a two-lobe brain.`);
+    if (count || !o.buildings) {
+      if (o.buildings) {
+        steps.done('build', `${fmt(count)} buildings standing` +
+          (skipped ? `, ${fmt(skipped)} skipped (slivers or broken outlines).` : '.'));
+      } else {
+        steps.done('build', 'Buildings turned off; streets, ground and trees only.');
+      }
+      if (o.people) {
+        current = 'people';
+        steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground…`);
+        await paint();
+        world.initialize(features, radius);
+        steps.done('people', `${fmt(world.animals.length)} people, each with a two-lobe brain.`);
+      } else {
+        // water and places are built by world.initialize; the player and car still need them
+        water.build(features, -radius, -radius, radius, radius);
+        places.build(features);
+        world.clear();
+        steps.off('people', 'Turned off.');
+      }
     } else {
       world.clear();
     }
 
-    if (!count) {
+    if (!count && o.buildings) {
       steps.error('build', `No mapped buildings within ${radius} m.`);
       say(`That spot has no mapped buildings within ${radius} m. Try somewhere more built up.`, true);
       steps.finish(false);
@@ -6912,7 +6944,7 @@ async function load(query) {
     try {
         const img = await pendingImagery;
         buildImagery(img);
-        if (!img) steps.off('imagery', 'No photo for this area; the ground stays plain.');
+        if (!img) { if (o.aerial) steps.off('imagery', 'No photo for this area; the ground stays plain.'); }
         else if (img.kind === 'ortho') steps.done('imagery', `One ${img.w} \u00d7 ${img.h} photo from USGS NAIP Plus.`);
         else steps.done('imagery', `${img.got} of ${img.total} basemap tiles at zoom ${img.z}.`);
     } catch (e) {
@@ -6934,7 +6966,8 @@ async function load(query) {
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
     resolveCollisions(player.pos);   // settle against any wall the search brushed
-    placeCar(features.roads, player.pos.x, player.pos.z);
+    if (o.car) placeCar(features.roads, player.pos.x, player.pos.z);
+    else { car.placed = false; car.mesh.visible = false; car.speed = car.steer = car.spin = 0; }
 
     // Compile shaders and upload textures now so the first frame does not stall.
     current = 'scene';
@@ -7012,6 +7045,19 @@ immersiveEl.addEventListener('click', () => {
   immersiveEl.blur();
   if (immersive) enterImmersive(); else exitImmersive();
 });
+
+// START-UP OPTIONS
+// The More toggles on the intro card; load() reads a copy when it starts.
+const loadOpts = { car: true, terrain: true, people: true, buildings: true, aerial: true };
+for (const el of document.querySelectorAll('#more .switch')) {
+  el.addEventListener('click', () => {
+    const k = el.dataset.opt;
+    loadOpts[k] = !loadOpts[k];
+    el.classList.toggle('on', loadOpts[k]);
+    el.setAttribute('aria-checked', String(loadOpts[k]));
+    el.blur();
+  });
+}
 
 goEl.addEventListener('click', () => { enterImmersive(); load(addrEl.value); });
 
