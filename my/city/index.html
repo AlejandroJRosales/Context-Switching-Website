@@ -284,7 +284,7 @@
       <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Car</button>
       <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Terrain</button>
       <button class="switch on" data-opt="people" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>People</button>
-      <button class="switch on" data-opt="deer" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Deer</button>
+      <button class="switch" data-opt="deer" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Deer</button>
       <button class="switch on" data-opt="plants" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Plants</button>
       <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Buildings</button>
       <button class="switch on" data-opt="aerial" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Aerial view</button>
@@ -292,7 +292,7 @@
     <p id="status"></p>
     <ol id="steps" hidden></ol>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, E to enter or leave the car (space is its handbrake), esc for settings.</p>
-    <p>1.0.4.2-opt</p>
+    <p>1.0.4.2</p>
   </div>
 </div>
 <div id="dot"></div>
@@ -5341,6 +5341,7 @@ const game = {
   // what deer sense: an NPC-shaped stand-in, alive only in game mode while in play
   predator: { type: 'player', alive: false, position: new THREE.Vector3() },
   _q: [],
+  _qp: [],
   _shown: -1,
 
   reset() {
@@ -5377,6 +5378,22 @@ const game = {
         this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);
         this.waterNeed = Math.max(0, this.waterNeed -
           d.startHealth * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
+      }
+
+      // plants, bitten as people bite them: 1% of Plant nutrition a bite, far less than a deer
+      const np = world.plantGrid.queryInto(this._qp, px, pz, PLAYER_EAT_REACH);
+      for (let i = 0; i < np; i++) {
+        const p = this._qp[i];
+        if (!p.alive) continue;
+        if (Math.abs(p.position.y - feet) > PLAYER_EAT_HEIGHT) continue;
+        if (tools.distSq(px, pz, p.position.x, p.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
+        const food = p.maxHealth * 5 * 0.01;
+        this.foodNeed = Math.max(0, this.foodNeed - food);
+        this.waterNeed = Math.max(0, this.waterNeed -
+          food * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
+        p.health -= 1;
+        plantRenderer.touch(p);
+        if (p.health <= 0) p.alive = false;
       }
     }
     this.draw();
@@ -5987,7 +6004,7 @@ function toggleFly() {
 }
 flyEl.addEventListener('click', toggleFly);
 addEventListener('keydown', e => {
-  if (e.code === 'KeyF' && !e.repeat && active) toggleFly();
+  if (e.code === 'KeyF' && !e.repeat && active && !game.on) toggleFly();
 });
 
 // CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
@@ -6369,7 +6386,7 @@ function exitCar() {
     player.vel.set(0, 0, 0);
     player.grounded = false;
     player.yaw = car.yaw; player.pitch = 0;
-    flyEl.classList.toggle('on', active);
+    flyEl.classList.toggle('on', active && !game.on);
     updateCarButton();
     wake();
     return;
@@ -6523,7 +6540,7 @@ gearEl.addEventListener('click', () => {
 
 function showControls(on) {
   needsEl.classList.toggle('on', on && game.on);
-  flyEl.classList.toggle('on', on && !driving);
+  flyEl.classList.toggle('on', on && !driving && !game.on);
   climbEl.classList.toggle('on', on && flying);
   gearEl.classList.toggle('on', on);
   if (!on) settingsEl.classList.remove('on');
@@ -7530,6 +7547,20 @@ gameEl.addEventListener('click', () => {
   gameEl.setAttribute('aria-pressed', String(game.on));
   gameEl.blur();
   game.showPanel();
+  // no flying in game mode: land and hide the button
+  if (game.on && flying) toggleFly();
+  flyEl.classList.toggle('on', active && !driving && !game.on);
+  // deer only in game mode: the Deer build switch follows, and the live world gains or loses its deer
+  loadOpts.deer = game.on;
+  const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
+  deerSwitch.classList.toggle('on', game.on);
+  deerSwitch.setAttribute('aria-checked', String(game.on));
+  if (world.ready) {
+    const hasDeer = world.animals.some(a => a.alive && a.type === 'deer');
+    if (game.on && !hasDeer) world.spawnDeer(NPC_DEER_POPULATION);
+    else if (!game.on) for (const a of world.animals) if (a.type === 'deer') a.alive = false;
+  }
+  wake();
 });
 
 // IMMERSIVE
@@ -7568,7 +7599,7 @@ immersiveEl.addEventListener('click', () => {
 });
 
 // START-UP OPTIONS: the More toggles; load() reads a copy when it starts.
-const loadOpts = { car: true, terrain: true, people: true, deer: true, plants: true, buildings: true, aerial: true };
+const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: true };
 for (const el of document.querySelectorAll('#more .switch')) {
   el.addEventListener('click', () => {
     const k = el.dataset.opt;
