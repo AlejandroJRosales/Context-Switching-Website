@@ -242,7 +242,7 @@ const ENTRANCE_REACH = 1.2;     // an entrance node this close to an edge belong
 const ROAD_NEAR      = 35;      // a road or path within this of a wall counts as its street
 const ROAD_FAR       = 300;     // fallback search for the nearest road of any kind
 const ROAD_CELL      = 32;
-const FEATURES_VERSION = 2;     // bump when featuresFrom changes shape; drops stale caches
+const FEATURES_VERSION = 3;     // bump when featuresFrom changes shape; drops stale caches
 const OVERPASS_TIMEOUT_MS = 50000;
 const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
 const OVERPASS_MIRRORS = [
@@ -345,6 +345,38 @@ const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|gre
   + '|village_green|recreation_ground|basin|reservoir';
 const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
 const BARRIER_RE = Object.keys(BARRIER).join('|');
+
+// Places the city knows by purpose. Each kind lists the OSM tag values that
+// mean it; the first key/value hit (healthcare, amenity, shop) wins.
+const PLACE_KINDS = {
+  grocery:      { shop: ['supermarket', 'convenience', 'grocery', 'greengrocer', 'general',
+                         'butcher', 'bakery', 'deli', 'health_food', 'farm'] },
+  food:         { amenity: ['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar'] },
+  drinking_water: { amenity: ['drinking_water', 'water_point'] },
+  hospital:     { amenity: ['hospital'], healthcare: ['hospital'] },
+  clinic:       { amenity: ['clinic', 'doctors', 'dentist'], healthcare: ['clinic', 'doctor', 'dentist'] },
+  pharmacy:     { amenity: ['pharmacy'], healthcare: ['pharmacy'], shop: ['chemist'] },
+  school:       { amenity: ['school', 'college', 'university', 'kindergarten'] },
+  police:       { amenity: ['police'] },
+  fire_station: { amenity: ['fire_station'] }
+};
+const PLACE_KEYS = ['healthcare', 'amenity', 'shop'];
+const PLACE_OF = {};                     // "amenity=hospital" -> "hospital"
+const PLACE_RE = { healthcare: [], amenity: [], shop: [] };
+for (const [kind, byKey] of Object.entries(PLACE_KINDS)) {
+  for (const [key, vals] of Object.entries(byKey)) {
+    for (const v of vals) { PLACE_OF[`${key}=${v}`] = kind; PLACE_RE[key].push(v); }
+  }
+}
+for (const key of PLACE_KEYS) PLACE_RE[key] = PLACE_RE[key].join('|');
+
+function placeKindOf(tags) {
+  for (const key of PLACE_KEYS) {
+    const kind = tags[key] && PLACE_OF[`${key}=${tags[key]}`];
+    if (kind) return kind;
+  }
+  return null;
+}
 
 
 const panel  = document.getElementById('panel');
@@ -489,7 +521,9 @@ async function fetchBuildings(lat, lon) {
       `way["natural"="tree_row"](${bbox});` +
       `way["barrier"~"^(${BARRIER_RE})$"](${bbox});` +
       `node["natural"="tree"](${bbox});` +
-      `node["amenity"](${bbox});node["shop"](${bbox});` +
+      `node["amenity"](${bbox});node["shop"](${bbox});node["healthcare"](${bbox});` +
+      PLACE_KEYS.map(k => `way["${k}"~"^(${PLACE_RE[k]})$"](${bbox});` +
+                          `relation["${k}"~"^(${PLACE_RE[k]})$"](${bbox});`).join('') +
       `node["highway"="street_lamp"](${bbox});` +
       `node["emergency"="fire_hydrant"](${bbox});` +
       `node["entrance"](${bbox});` +
@@ -628,7 +662,7 @@ function areaKindOf(tags) {
 function featuresFrom(json, project) {
   const f = {
     buildings: [], roads: [], areas: [], waterways: [],
-    trees: [], barriers: [], pois: [], props: [], entrances: []
+    trees: [], barriers: [], pois: [], props: [], entrances: [], places: []
   };
 
   for (const el of json.elements || []) {
@@ -642,11 +676,25 @@ function featuresFrom(json, project) {
       if (tags.highway === 'street_lamp') { f.props.push({ x, z, kind: 'lamp' }); continue; }
       if (tags.emergency === 'fire_hydrant') { f.props.push({ x, z, kind: 'hydrant' }); continue; }
       if (tags.amenity === 'bench') { f.props.push({ x, z, kind: 'bench' }); continue; }
-      if (tags.amenity || tags.shop) {
+      if (tags.amenity || tags.shop || tags.healthcare) {
         const label = signLabel(tags);
         if (label) f.pois.push({ x, z, label });
+        const kind = placeKindOf(tags);
+        if (kind) f.places.push({ x, z, kind, name: label });
       }
       continue;
+    }
+
+    // A place mapped as an outline or campus sits at its bounds centre. A
+    // building already signs itself; a bare campus gets a POI sign.
+    const pkind = placeKindOf(tags);
+    if (pkind) {
+      const c = centreOf(el, project);
+      if (c) {
+        const label = signLabel(tags);
+        f.places.push({ x: c[0], z: c[1], kind: pkind, name: label });
+        if (!tags.building && label) f.pois.push({ x: c[0], z: c[1], label });
+      }
     }
 
     if (tags.building) {
@@ -707,6 +755,19 @@ function featuresFrom(json, project) {
   // big areas first so a pitch inside a park still reads on top of it
   f.areas.sort((a, b) => Math.abs(ringArea(b.pts)) - Math.abs(ringArea(a.pts)));
   return f;
+}
+
+// Bounds centre of a way or relation (from `out geom`), projected; or null.
+function centreOf(el, project) {
+  const b = el.bounds;
+  if (b) return project((b.minlat + b.maxlat) / 2, (b.minlon + b.maxlon) / 2);
+  const g = el.geometry;
+  if (g && g.length) {
+    let lat = 0, lon = 0;
+    for (const p of g) { lat += p.lat; lon += p.lon; }
+    return project(lat / g.length, lon / g.length);
+  }
+  return null;
 }
 
 // "convenience" -> "Convenience", for a POI with a type but no name.
@@ -1284,6 +1345,17 @@ function chooseDoor(s, R, roads, ents) {
   return { run, first: start, last };
 }
 
+// Doorway centred under a sign on edge i, or null when the wall is too short
+// for one or it would open into a neighbour.
+function signDoor(s, i) {
+  const R = s.R, sp = doorSpan(R, i);
+  if (!sp) return null;
+  const c = Math.min(Math.max(R.E[i].L / 2, sp.lo), sp.hi);   // signs hang at mid-wall
+  const p = probeOut(R, i, c, 0.5);
+  if (blockedAt(s, p[0], p[1])) return null;
+  return { edge: i, d0: c - sp.w / 2, d1: c + sp.w / 2 };
+}
+
 // WALL PIECES
 
 // One solid stretch of wall: painted outside, plastered inside, one collider.
@@ -1306,21 +1378,26 @@ function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   pushSolid(ctx.solids, [o0, o1, i1, i0], doorTop, wallTop);
 }
 
-// Walls for one ring. `door` is null for courtyard rings.
-function ringWalls(ctx, R, door, base, wallTop, doorTop) {
+// Walls for one ring. `doors` holds at most one door per edge, or a single
+// run door; null for courtyard rings.
+function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
   const n = R.pts.length;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
+  const run = doors && doors.length && doors[0].run ? doors[0] : null;
+  const byEdge = new Map();
+  if (doors && !run) for (const d of doors) byEdge.set(d.edge, d);
 
   for (let i = 0; i < n; i++) {
     const e = R.E[i], j = (i + 1) % n;
     const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
     const out = [-e.nx, 0, -e.nz], inn = [e.nx, 0, e.nz];
 
-    if (door && door.run && door.run.has(i)) {
+    if (run && run.run.has(i)) {
       lintelPiece(ctx, p0, p1, q0, q1, doorTop, wallTop, out, inn);
       continue;
     }
-    if (!door || door.run || door.edge !== i) {
+    const door = byEdge.get(i);
+    if (!door) {
       wallPiece(ctx, p0, p1, q0, q1, base, wallTop, out, inn);
       continue;
     }
@@ -1353,9 +1430,9 @@ function ringWalls(ctx, R, door, base, wallTop, doorTop) {
     lintelPiece(ctx, D0, D1, X0, X1, doorTop, wallTop, out, inn);
   }
 
-  if (door && door.run) {
-    const ef = R.E[door.first], el = R.E[door.last];
-    const s = door.first, t = (door.last + 1) % n;
+  if (run) {
+    const ef = R.E[run.first], el = R.E[run.last];
+    const s = run.first, t = (run.last + 1) % n;
     vquad(ctx.buf, R.pts[s], R.inner[s], base, doorTop, ctx.trim, [ef.ux, 0, ef.uz]);
     vquad(ctx.buf, R.pts[t], R.inner[t], base, doorTop, ctx.trim, [-el.ux, 0, -el.uz]);
   }
@@ -1410,11 +1487,36 @@ function buildCity(features) {
     list.push({
       pts: outer, holes, ...bounds(outer), cap,
       base, top: wallTop, ceil: wallTop - CEIL_GAP, floor: base > 0.05 ? base : 0,
-      roofTop: top, roofShape, obb, tags, door: null, doorTop: 0, throat: null, index: list.length
+      roofTop: top, roofShape, obb, tags, doors: [], doorTop: 0, throat: null, throats: [],
+      R: null, signDoors: null, index: list.length
     });
   }
   shells = list;
   shellGrid = gridOf(list, GRID_CELL);
+
+  // Door height and wall ring per shell, needed before signs claim walls.
+  for (const s of list) {
+    const wallH = s.top - s.base;
+    let doorH = Math.min(DOOR_H, wallH - 0.3);
+    if (doorH < EYE_HEIGHT + HEAD_CLEAR + 0.25) doorH = wallH;   // too low for a lintel
+    s.doorTop = s.base + doorH;
+    s.R = wallRing(s.pts);
+  }
+
+  // Signs first: each placed sign puts a doorway on the wall under it, one
+  // per wall however many signs share it.
+  const signs = [];
+  for (const q of collectSigns(list, features.pois)) {
+    if (signs.length >= SIGN_MAX) break;
+    const w = q.w, door = signDoor(w, q.edge.i);
+    const sg = placeSign(q.edge, q.text, q.kind, w.top, door ? w.doorTop + 0.12 : 0);
+    if (!sg || !fitSign(sg, signs, w.top)) continue;
+    signs.push(sg);
+    if (door) {
+      if (!w.signDoors) w.signDoors = new Map();
+      if (!w.signDoors.has(door.edge)) w.signDoors.set(door.edge, door);
+    }
+  }
 
   // Pass 2: geometry and colliders.
   const roads = roadIndex(features.roads);
@@ -1435,22 +1537,24 @@ function buildCity(features) {
       wc = [0.80 * t, 0.78 * t, 0.74 * t];
     }
 
-    const wallH = s.top - s.base;
-    let doorH = Math.min(DOOR_H, wallH - 0.3);
-    if (doorH < EYE_HEIGHT + HEAD_CLEAR + 0.25) doorH = wallH;   // too low for a lintel
-    s.doorTop = s.base + doorH;
-
-    const R = wallRing(s.pts);
-    s.door = chooseDoor(s, R, roads, ents);
-    // doorway axis, outer face to inner face, for the NPC occupancy grid
-    if (s.door && !s.door.run) {
-      const d = s.door, m = (d.d0 + d.d1) / 2;
+    const R = s.R;
+    const doors = s.signDoors ? [...s.signDoors.values()] : [];
+    const main = chooseDoor(s, R, roads, ents);
+    // one door per wall: a sign's doorway already opens the main door's wall
+    if (main.run || !doors.some(d => d.edge === main.edge)) doors.unshift(main);
+    s.doors = doors;
+    // doorway axes, outer face to inner face, for the NPC occupancy grid
+    for (const d of doors) {
+      if (d.run) continue;
+      const m = (d.d0 + d.d1) / 2;
       const o = alongEdge(R, d.edge, m), q = innerAt(R, d.edge, m);
-      s.throat = [o[0], o[1], q[0], q[1]];
+      s.throats.push([o[0], o[1], q[0], q[1]]);
     }
+    s.throat = s.throats[0] || null;
 
     const ctx = { buf, solids, wc, iw, trim };
-    ringWalls(ctx, R, s.door, s.base, s.top, s.doorTop);
+    ringWalls(ctx, R, doors, s.base, s.top, s.doorTop);
+    s.R = null; s.signDoors = null;
     for (const h of s.holes) ringWalls(ctx, wallRing(h), null, s.base, s.top, s.doorTop);
 
     pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);             // flat roof / eaves cap
@@ -1476,7 +1580,7 @@ function buildCity(features) {
   const barrierBoxes = buildBarriers(features.barriers);
   buildProps(features.props);
   buildGrid(solids.concat(barrierBoxes));
-  buildSigns(collectSigns(list, features.pois));
+  buildSigns(signs);
   return { count, skipped };
 }
 
@@ -1840,16 +1944,9 @@ function placeSign(edge, text, kind, eaves, lift) {
   };
 }
 
-// Signs are centred, so one on the door wall clears the door head.
-function doorLift(w, edge) {
-  const d = w.door;
-  if (!d || !edge) return 0;
-  const on = d.run ? d.run.has(edge.i) : d.edge === edge.i;
-  return on ? w.doorTop + 0.12 : 0;
-}
-
 // A building's name and number go on its longest wall; a POI goes on the
-// wall of the building it is in (or the nearest one).
+// wall of the building it is in (or the nearest one). Returns placement
+// requests { w, edge, text, kind }, names first; buildCity places them.
 function collectSigns(walls, pois) {
   const names = [], numbers = [];
 
@@ -1858,14 +1955,9 @@ function collectSigns(walls, pois) {
     if (!tags) continue;
     const label = signLabel(tags);
     const edge = longestEdge(w.pts);
-    if (label) {
-      const s = placeSign(edge, label, 'name', w.top, doorLift(w, edge));
-      if (s) names.push(s);
-    }
-    if (tags['addr:housenumber']) {
-      const s = placeSign(edge, tags['addr:housenumber'], 'number', w.top, doorLift(w, edge));
-      if (s) numbers.push(s);
-    }
+    if (!edge) continue;
+    if (label) names.push({ w, edge, text: label, kind: 'name' });
+    if (tags['addr:housenumber']) numbers.push({ w, edge, text: tags['addr:housenumber'], kind: 'number' });
   }
 
   // Candidates come from the shell grid as indices into `walls`; sorting keeps
@@ -1904,11 +1996,57 @@ function collectSigns(walls, pois) {
     }
     if (!hit) continue;
     const edge = edgeNearest(hit.pts, p.x, p.z);
-    const s = placeSign(edge, p.label, 'name', hit.top, doorLift(hit, edge));
-    if (s) names.push(s);
+    if (edge) names.push({ w: hit, edge, text: p.label, kind: 'name' });
   }
 
-  return names.concat(numbers).slice(0, SIGN_MAX);
+  return names.concat(numbers);
+}
+
+// Text as it will be drawn in its atlas cell: font size, clipped text, and
+// the cell width used. Measured once, at placement, so overlaps can be found.
+const signMeasure = document.createElement('canvas').getContext('2d');
+const SIGN_FONT = '"Iowan Old Style", Palatino, Georgia, serif';
+function signMetrics(text, kind) {
+  const PAD = 10, maxW = SIGN_CELL_W - PAD * 2;
+  let size = kind === 'number' ? 30 : 26;
+  signMeasure.font = `${size}px ${SIGN_FONT}`;
+  let w = signMeasure.measureText(text).width;
+  if (w > maxW) {
+    size = Math.max(13, Math.floor(size * maxW / w));
+    signMeasure.font = `${size}px ${SIGN_FONT}`;
+    w = signMeasure.measureText(text).width;
+    while (w > maxW && text.length > 2) {          // still too long: clip it
+      text = text.slice(0, -2) + '\u2026';
+      w = signMeasure.measureText(text).width;
+    }
+  }
+  return { text, size, used: Math.min(SIGN_CELL_W, Math.ceil(w + PAD * 2)) };
+}
+
+// Do two signs share a wall plane and cover some of the same face?
+function signsOverlap(a, b) {
+  if (a.nx * b.nx + a.nz * b.nz < 0.9) return false;          // facing different ways
+  const dx = b.x - a.x, dz = b.z - a.z;
+  if (Math.abs(dx * a.nx + dz * a.nz) > 0.3) return false;    // different wall planes
+  const along = Math.abs(dx * a.nz - dz * a.nx);              // across the wall
+  if (along >= a.hw + b.hw + 0.05) return false;
+  return Math.abs(b.y - a.y) < (a.h + b.h) / 2 + 0.04;
+}
+
+// Measure a new sign and move it up past any sign already hanging where it
+// would; false when it runs out of wall under the eaves, or the same label
+// already hangs there.
+function fitSign(sg, placed, eaves) {
+  sg.m = signMetrics(sg.text, sg.kind);
+  sg.hw = sg.h * (sg.m.used / SIGN_CELL_H) / 2;
+  for (let guard = 0; guard < 16; guard++) {
+    const hit = placed.find(o => signsOverlap(o, sg));
+    if (!hit) return true;
+    if (hit.text === sg.text) return false;
+    sg.y = hit.y + (hit.h + sg.h) / 2 + 0.08;
+    if (sg.y + sg.h / 2 > eaves - 0.05) return false;
+  }
+  return false;
 }
 
 // All labels share one atlas canvas, so a city's signs are one mesh. Each
@@ -1932,22 +2070,8 @@ function buildSigns(signs) {
     const ox = (i % SIGN_COLS) * SIGN_CELL_W;
     const oy = ((i / SIGN_COLS) | 0) * SIGN_CELL_H;
 
-    let text = s.text;
-    let size = s.kind === 'number' ? 30 : 26;
-    ctx.font = `${size}px "Iowan Old Style", Palatino, Georgia, serif`;
-    const maxW = SIGN_CELL_W - PAD * 2;
-    let w = ctx.measureText(text).width;
-    if (w > maxW) {
-      size = Math.max(13, Math.floor(size * maxW / w));
-      ctx.font = `${size}px "Iowan Old Style", Palatino, Georgia, serif`;
-      w = ctx.measureText(text).width;
-      while (w > maxW && text.length > 2) {          // still too long: clip it
-        text = text.slice(0, -2) + '\u2026';
-        w = ctx.measureText(text).width;
-      }
-    }
-
-    const used = Math.min(SIGN_CELL_W, Math.ceil(w + PAD * 2));
+    const { text, size, used } = s.m;
+    ctx.font = `${size}px ${SIGN_FONT}`;
     ctx.fillStyle = s.kind === 'number' ? '#e8e4dc' : '#1b1f27';
     ctx.fillRect(ox, oy, used, SIGN_CELL_H);
     ctx.fillStyle = s.kind === 'number' ? '#20242c' : '#e8e4dc';
@@ -1958,7 +2082,7 @@ function buildSigns(signs) {
 
     // right = up x normal, so the quad faces (nx, 0, nz)
     const rx = s.nz, rz = -s.nx;
-    const hw = s.h * (used / SIGN_CELL_H) / 2, hh = s.h / 2;
+    const hw = s.hw, hh = s.h / 2;
     const bl = [s.x - rx * hw, s.y - hh, s.z - rz * hw];
     const br = [s.x + rx * hw, s.y - hh, s.z + rz * hw];
     const tr = [s.x + rx * hw, s.y + hh, s.z + rz * hw];
@@ -3521,6 +3645,34 @@ const perf = {
   }
 };
 
+// Grocery stores, hospitals and the rest, tied to the building each is in.
+// `entry` is the building's doorway (outer face) when it has one, so a
+// place indoors has a reachable point; outdoor places keep their own spot.
+const places = {
+  list: [],                      // { x, z, kind, name, building, entry }
+  byKind: {},                    // kind -> [[x, z], ...] reachable points
+
+  build(features) {
+    this.list.length = 0;
+    this.byKind = {};
+    for (const kind of Object.keys(PLACE_KINDS)) this.byKind[kind] = [];
+    const seen = new Set();
+    for (const p of features.places || []) {
+      const building = shellAt(p.x, p.z);
+      // one entry per kind per building: a node and its outline often both map it
+      if (building >= 0) {
+        const key = `${p.kind}:${building}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      const t = building >= 0 ? shells[building].throat : null;
+      const entry = t ? [t[0], t[1]] : null;
+      this.list.push({ x: p.x, z: p.z, kind: p.kind, name: p.name || null, building, entry });
+      this.byKind[p.kind].push(entry || [p.x, p.z]);
+    }
+  }
+};
+
 // Painted water rasterised once per city into a 1 m mask. Roads and paths
 // are stamped dry on top, matching the render (bridges).
 const water = {
@@ -3660,12 +3812,12 @@ const occ = {
     // doorway lanes, run a cell past the grown wall on both sides
     const ext = NPC_RADIUS + OCC_CELL;
     for (const s of shells) {
-      if (!s.throat) continue;
-      const [ox, oz, qx, qz] = s.throat;
-      const len = Math.hypot(qx - ox, qz - oz);
-      if (len < 1e-6) continue;
-      const ux = (qx - ox) / len, uz = (qz - oz) / len;
-      this.carve(ox - ux * ext, oz - uz * ext, qx + ux * ext, qz + uz * ext);
+      for (const [ox, oz, qx, qz] of s.throats) {
+        const len = Math.hypot(qx - ox, qz - oz);
+        if (len < 1e-6) continue;
+        const ux = (qx - ox) / len, uz = (qz - oz) / len;
+        this.carve(ox - ux * ext, oz - uz * ext, qx + ux * ext, qz + uz * ext);
+      }
     }
   },
 
@@ -3905,6 +4057,7 @@ class NpcWorld {
     this.plantGrid = new SpatialGrid(span, span, 30 * NPC_UNIT);
 
     water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
+    places.build(features);
     occ.build(this.minX, this.minZ, this.maxX, this.maxZ);
     animalRenderer.init();
     this.spawnHumans(NPC_POPULATION, features.roads || []);
@@ -5783,6 +5936,7 @@ const PICKS = [
   ['New York, NY',       'New York, NY'],
   ['Union Square, San Francisco',  'Union Square, San Francisco, CA'],
   ['The Loop, Chicago',            'Millennium Park, Chicago, IL'],
+  ['Athens, Ohio',            'Athens, OH']
 ];
 const picksEl = document.getElementById('picks');
 for (const [label, query] of PICKS) {
