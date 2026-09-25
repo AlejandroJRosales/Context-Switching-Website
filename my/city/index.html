@@ -2707,6 +2707,7 @@ const NPC_SUBSTEP = 0.1;           // metres
 // GAIT: leg cadence follows body speed, capped at GAIT_MAX_HZ; a sprinting deer gallops.
 const GAIT_MAX_HZ       = 4;       // leg cycles per second, at most
 const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
+const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
 const DEER_EXPLORE_P   = 0.0001;   // species.py: chance per tick of a new random explore point
 const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
 const DEER_GRACE_MULT = 4;        // deer wait this many times longer than people between births
@@ -4137,7 +4138,7 @@ class AnimalRenderer {
         if (deltaTime && a.moving) {
           const v = a.stepLength() / Animal.MOVE_TIMESTEP;
           const perCycle = 4 * legLen * kp * Math.sin(swing);
-          const hz = Math.min(GAIT_MAX_HZ, v / perCycle);
+          const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
           a.animTime += deltaTime * hz * 2 * Math.PI;
         }
 
@@ -5726,7 +5727,7 @@ class HealthBars {
         fill[0] = a.health / a.maxHealth;
         fill[1] = 1 - Math.min(a.foodNeed, 100) / 100;
         fill[2] = 1 - Math.min(a.waterNeed, 100) / 100;
-        fill[3] = (now - a.lastChildTime) / a.childGracePeriod;
+        fill[3] = a.isAdult ? (now - a.lastChildTime) / a.childGracePeriod : 0;
         for (let i = 0; i < rows; i++) {
           const f = Math.max(0, Math.min(1, fill[i]));
           const dx = this.farBarX, dy = this.farRowY[i];
@@ -5765,7 +5766,7 @@ class HealthBars {
       vals[0] = q(a.health / a.maxHealth);
       vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
       vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
-      vals[3] = q((now - a.lastChildTime) / a.childGracePeriod);
+      vals[3] = a.isAdult ? q((now - a.lastChildTime) / a.childGracePeriod) : 0;
       arrows[1] = this.heading(a, a.hasFood,  a.rayFoodSin,  a.rayFoodCos);
       arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
       arrows[3] = this.heading(a, a.hasMate,  a.rayMateSin,  a.rayMateCos);
