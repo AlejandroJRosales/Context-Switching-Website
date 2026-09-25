@@ -73,6 +73,31 @@
   .switch.on { color: #e8e4dc; }
   #keys { margin: 28px 0 0; font-size: 13px; color: #6f6b64; }
 
+  /* loading page: the intro steps aside for the step list */
+  #card.loading > p:not(#status), #card.loading #picks, #card.loading #row { display: none; }
+  #steps {
+    list-style: none; margin: 18px 0 0; padding: 0;
+    font: 400 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #steps[hidden] { display: none; }
+  #steps li {
+    display: grid; grid-template-columns: 18px 1fr auto; column-gap: 8px;
+    padding: 7px 0; border-top: 1px solid rgba(232, 228, 220, 0.08);
+  }
+  #steps li:first-child { border-top: 0; }
+  #steps .mark { grid-row: 1 / span 2; text-align: center; }
+  #steps .name { color: #e8e4dc; }
+  #steps .time { color: #6f6b64; font-variant-numeric: tabular-nums; }
+  #steps .detail { grid-column: 2 / span 2; color: #8a857c; font-size: 12px; overflow-wrap: anywhere; }
+  #steps li.wait { opacity: 0.4; }
+  #steps li.wait .mark::before { content: '\25CB'; }
+  #steps li.active .mark::before { content: '\25D0'; display: inline-block; animation: spin 1s linear infinite; }
+  #steps li.done .mark::before { content: '\2713'; color: #9fbf8a; }
+  #steps li.off .mark::before { content: '\2013'; color: #9a958b; }
+  #steps li.error .mark::before { content: '\2715'; color: #d98b7a; }
+  #steps li.error .detail { color: #d98b7a; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   #hud {
     position: fixed; left: 14px; bottom: 12px;
     font: 400 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
@@ -181,6 +206,7 @@
       <button id="go">Load</button>
     </div>
     <p id="status"></p>
+    <ol id="steps" hidden></ol>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
     <p>1.0.0.3-opt</p>
   </div>
@@ -417,6 +443,80 @@ function say(msg, isError) {
   statEl.className = isError ? 'error' : '';
 }
 
+// LOADING STEPS
+// What load() is doing, one row per stage. Fetches run side by side, so
+// several rows can be active at once. States: wait, active, done, off
+// (skipped or unavailable, the load goes on), error (the load stops).
+const cardEl  = document.getElementById('card');
+const stepsEl = document.getElementById('steps');
+const LOAD_STEPS = [
+  ['address', 'Finding the address',     'Turning the address into coordinates (OpenStreetMap Nominatim).'],
+  ['map',     'Downloading map data',    'Buildings, streets, water, trees and places around the point (OpenStreetMap, Overpass API).'],
+  ['terrain', 'Fetching elevation',      'Height tiles for the rise and fall of the ground (AWS Terrain Tiles).'],
+  ['weather', 'Fetching weather',        'Current conditions and forecast for the sky and rain (Open-Meteo).'],
+  ['sort',    'Sorting map features',    'Splitting the download into buildings, roads, land cover, trees and places.'],
+  ['build',   'Building the city',       'Walls, doors, roofs, signs, ground layers and collision.'],
+  ['people',  'Populating',              'Spawning people and wiring their brains.'],
+  ['imagery', 'Fetching aerial imagery', 'Photo of the ground (USGS National Map).'],
+  ['scene',   'Preparing the scene',     'Compiling shaders and uploading textures so the first frame does not stall.']
+];
+const steps = {
+  rows: {}, t0: {}, timer: 0,
+
+  reset() {
+    stepsEl.textContent = '';
+    this.rows = {}; this.t0 = {};
+    for (const [id, name, what] of LOAD_STEPS) {
+      const li = document.createElement('li');
+      li.className = 'wait';
+      li.innerHTML = '<span class="mark"></span><span class="name"></span><span class="time"></span><span class="detail"></span>';
+      li.querySelector('.name').textContent = name;
+      li.querySelector('.detail').textContent = what;
+      stepsEl.appendChild(li);
+      this.rows[id] = li;
+    }
+    stepsEl.hidden = false;
+    cardEl.classList.add('loading');
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.tick(), 100);
+  },
+
+  set(id, state, detail) {
+    const li = this.rows[id];
+    if (!li) return;
+    if (state === 'active' && !this.t0[id]) this.t0[id] = performance.now();
+    li.className = state;
+    if (detail != null) li.querySelector('.detail').textContent = detail;
+    if (state !== 'active' && state !== 'wait' && this.t0[id]) this.stamp(id);
+  },
+  start(id, detail) { this.set(id, 'active', detail); },
+  note(id, detail)  { const li = this.rows[id]; if (li) li.querySelector('.detail').textContent = detail; },
+  done(id, detail)  { this.set(id, 'done', detail); },
+  off(id, detail)   { this.set(id, 'off', detail); },
+  error(id, detail) { this.set(id, 'error', detail); },
+
+  stamp(id) {
+    const s = (performance.now() - this.t0[id]) / 1000;
+    this.rows[id].querySelector('.time').textContent = `${s.toFixed(1)} s`;
+  },
+  tick() {
+    for (const id in this.rows) if (this.rows[id].className === 'active') this.stamp(id);
+  },
+
+  // the load ended: stop the clock; a failed load leaves the list showing
+  // where it stopped, under the restored intro
+  finish(ok) {
+    clearInterval(this.timer);
+    cardEl.classList.remove('loading');
+    if (ok) stepsEl.hidden = true;
+    else for (const id in this.rows) if (this.rows[id].className === 'active') this.set(id, 'off');
+  }
+};
+
+// Let a row's change reach the screen before synchronous work blocks it.
+const paint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+const fmt = n => n.toLocaleString('en-US');
+
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -514,7 +614,7 @@ async function overpassTry(url, query) {
 
 // Every mirror at the widest radius, then shrink and repeat. Covers both 429
 // (rate limit) and 504 (box too heavy).
-async function fetchBuildings(lat, lon) {
+async function fetchBuildings(lat, lon, onNote = say) {
   let lastErr = null;
 
   for (const radius of RADIUS_LADDER) {
@@ -548,9 +648,9 @@ async function fetchBuildings(lat, lon) {
     for (const url of OVERPASS_MIRRORS) {
       const host = new URL(url).hostname;
       // report each failed mirror; 'Failed to load' waits until all are spent
-      say(lastErr
+      onNote(lastErr
         ? `${lastErr.message}. Trying ${host} within ${radius} m…`
-        : `Fetching map data within ${radius} m from ${host}…`, !!lastErr);
+        : `Asking ${host} for everything within ${radius} m…`, !!lastErr);
       try {
         const json = await overpassTry(url, q);
         cache.set(bbox, json);
@@ -1852,7 +1952,7 @@ const elevation = {
 // Tiles covering the radius plus margin, decoded and resampled into the
 // grid. Null when any tile is missing or the pixels look tampered with, so a
 // partial or corrupt set never shapes the city; the caller stays flat.
-async function fetchTerrain(lat, lon, radius) {
+async function fetchTerrain(lat, lon, radius, onNote = () => {}) {
   const half = radius + ELEV_MARGIN;
   const kx = 111320 * Math.cos(lat * Math.PI / 180), kz = 110540;
   const dLat = half / kz, dLon = half / kx;
@@ -1864,7 +1964,7 @@ async function fetchTerrain(lat, lon, radius) {
     x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
     y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
     if ((x1 - x0 + 1) * (y1 - y0 + 1) <= TERRAIN_MAX_TILES) break;
-    if (z <= TERRAIN_MIN_Z) return null;
+    if (z <= TERRAIN_MIN_Z) { onNote('The area needs too many tiles.'); return null; }
     z--;
   }
 
@@ -1874,6 +1974,8 @@ async function fetchTerrain(lat, lon, radius) {
   const ctx = cv.getContext('2d', { willReadFrequently: true });
 
   let got = 0;
+  const total = cols * rows;
+  onNote(`Downloading ${total} height tiles at zoom ${z}…`);
   const jobs = [];
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
@@ -1881,6 +1983,7 @@ async function fetchTerrain(lat, lon, radius) {
         if (!img) return;
         ctx.drawImage(img, (tx - x0) * P, (ty - y0) * P, P, P);
         got++;
+        onNote(`Downloaded ${got} of ${total} height tiles at zoom ${z}…`);
       }));
     }
   }
@@ -1888,10 +1991,12 @@ async function fetchTerrain(lat, lon, radius) {
     Promise.all(jobs),
     new Promise(done => setTimeout(done, TERRAIN_TIMEOUT_MS))
   ]);
-  if (got < cols * rows) return null;
+  if (got < total) { onNote(`Only ${got} of ${total} height tiles arrived.`); return null; }
+  onNote(`Decoding and checking ${total} tiles…`);
 
   let px;
-  try { px = ctx.getImageData(0, 0, cv.width, cv.height).data; } catch (e) { return null; }
+  try { px = ctx.getImageData(0, 0, cv.width, cv.height).data; }
+  catch (e) { onNote('The browser would not let the tile pixels be read.'); return null; }
   const W = cv.width, H = cv.height;
   const raw = new Float32Array(W * H);
   for (let i = 0, k = 0; i < raw.length; i++, k += 4) {
@@ -1912,6 +2017,7 @@ async function fetchTerrain(lat, lon, radius) {
   }
   if (spikes > (W - 2) * (H - 2) * TERRAIN_SPIKE_FRAC) {
     console.warn(`Terrain rejected: ${spikes} spiked pixels (canvas readback may be noised).`);
+    onNote(`Rejected: ${fmt(spikes)} corrupted pixels, likely browser privacy protection.`);
     return null;
   }
 
@@ -1947,7 +2053,7 @@ async function fetchTerrain(lat, lon, radius) {
     if (h < min) min = h;
     if (h > max) max = h;
   }
-  return { half: (n - 1) * step / 2, step, n, data, min, max, z };
+  return { half: (n - 1) * step / 2, step, n, data, min, max, z, tiles: total };
 }
 
 // Split a flat, non-indexed layer until no edge is longer than ELEV_STEP,
@@ -2080,7 +2186,7 @@ async function fetchOrtho(lat, lon, radius, project) {
 }
 
 // Stitch the tiles covering the loaded radius into one canvas.
-async function fetchImagery(lat, lon, radius, project) {
+async function fetchImagery(lat, lon, radius, project, onNote = () => {}) {
   const dLat = radius / 110540;
   const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
 
@@ -2111,6 +2217,7 @@ async function fetchImagery(lat, lon, radius, project) {
         ctx.drawImage(img, (tx - x0) * IMAGERY_TILE_PX, (ty - y0) * IMAGERY_TILE_PX,
           IMAGERY_TILE_PX, IMAGERY_TILE_PX);
         got++;
+        onNote(`Basemap tiles: ${got} of ${cols * rows} at zoom ${z}…`);
       }));
     }
   }
@@ -6056,6 +6163,9 @@ async function load(query) {
   if (busy || !query.trim()) return;
   busy = true;
   goEl.disabled = true;
+  say('');
+  steps.reset();
+  let current = 'address';   // the row a thrown error is charged to
 
   try {
     // The saved label is Nominatim's own display_name for the saved
@@ -6066,19 +6176,41 @@ async function load(query) {
     let place;
     if (reuse) {
       place = { lat: storedPlace.lat, lon: storedPlace.lon, label: storedPlace.label };
+      steps.done('address', 'Saved place, no lookup needed.');
     } else {
-      say('Looking up the address…');
+      steps.start('address', `Looking up "${query.trim()}"…`);
       place = await geocode(query);
+      steps.done('address', `${place.label.split(',').slice(0, 3).join(',').trim()} ` +
+        `(${place.lat.toFixed(4)}, ${place.lon.toFixed(4)})`);
     }
 
     // parallel with Overpass; a failed forecast never blocks the load
-    const pendingWeather = fetchWeather(place.lat, place.lon).catch(() => null);
+    steps.start('weather');
+    const pendingWeather = fetchWeather(place.lat, place.lon)
+      .then(w => {
+        steps.done('weather', `${Math.round(w.tempF)}\u00b0F, ${w.label}, local time zone ${w.zone}.`);
+        return w;
+      })
+      .catch(() => { steps.off('weather', 'Unavailable; the sky uses a preset.'); return null; });
     // terrain for the largest radius, so it covers whichever one Overpass settles on;
     // failure leaves the city flat
     const terrainKey = `${place.lat},${place.lon}`;
-    const pendingTerrain = (lastTerrain && lastTerrain.key === terrainKey)
+    const reusedTerrain = lastTerrain && lastTerrain.key === terrainKey;
+    steps.start('terrain', reusedTerrain ? 'Reusing heights from the last load.' : undefined);
+    const pendingTerrain = (reusedTerrain
       ? Promise.resolve(lastTerrain.grid)
-      : fetchTerrain(place.lat, place.lon, RADIUS_LADDER[0]).catch(() => null);
+      : fetchTerrain(place.lat, place.lon, RADIUS_LADDER[0], d => steps.note('terrain', d)))
+      .then(g => {
+        if (g) {
+          steps.done('terrain', `${g.tiles} tiles, ground from ${g.min.toFixed(1)} to ` +
+            `${g.max.toFixed(1)} m around the start, sampled every ${g.step} m.`);
+        } else {
+          const why = steps.rows.terrain.querySelector('.detail').textContent;
+          steps.off('terrain', `${why} Unavailable; the ground stays flat.`);
+        }
+        return g;
+      })
+      .catch(() => { steps.off('terrain', 'Unavailable; the ground stays flat.'); return null; });
 
     let features = null;
     let radius = storedPlace ? storedPlace.radius : RADIUS_LADDER[0];
@@ -6087,13 +6219,22 @@ async function load(query) {
       ? localStorage.getItem('lastFeatures')
       : null;
 
+    current = 'map';
     if (cached) {
+        steps.done('map', `Loaded from this device's cache (${radius} m radius).`);
+        current = 'sort';
+        steps.start('sort', 'Reading the cached features…');
+        await paint();
         features = JSON.parse(cached);
     } else {
-        const fetched = await fetchBuildings(place.lat, place.lon);
+        steps.start('map');
+        const fetched = await fetchBuildings(place.lat, place.lon, msg => steps.note('map', msg));
         radius = fetched.radius;
+        steps.done('map', `${fmt((fetched.json.elements || []).length)} map elements within ${radius} m.`);
 
-        say('Building geometry…');
+        current = 'sort';
+        steps.start('sort');
+        await paint();
         const project = makeProjector(place.lat, place.lon);
         features = featuresFrom(fetched.json, project);
         try {
@@ -6109,42 +6250,72 @@ async function load(query) {
         }
     }
 
+    steps.done('sort', `${fmt(features.buildings.length)} buildings, ${fmt(features.roads.length)} roads and paths, ` +
+      `${fmt(features.trees.length)} trees, ${fmt((features.places || []).length)} places.`);
+
     // Imagery depends only on place and radius, so fetch it during buildCity.
     // Failure just means no ground photo.
     const imageryKey = `${place.lat},${place.lon},${radius}`;
+    steps.start('imagery');
     const pendingImagery = (async () => {
-      if (lastImagery && lastImagery.key === imageryKey) return lastImagery.img;
+      if (lastImagery && lastImagery.key === imageryKey) {
+        steps.note('imagery', 'Reusing the photo from the last load.');
+        return lastImagery.img;
+      }
       const proj = makeProjector(place.lat, place.lon);
       // tile cache fallback when the image service has nothing or is down
-      const img = await fetchOrtho(place.lat, place.lon, radius, proj)
-        ?? await fetchImagery(place.lat, place.lon, radius, proj);
+      steps.note('imagery', 'Requesting one high-resolution photo (USGS NAIP Plus)…');
+      let img = await fetchOrtho(place.lat, place.lon, radius, proj);
+      if (!img) {
+        steps.note('imagery', 'No NAIP Plus photo; falling back to basemap tiles…');
+        img = await fetchImagery(place.lat, place.lon, radius, proj, d => steps.note('imagery', d));
+      }
       if (img) lastImagery = { key: imageryKey, img };
       return img;
     })().catch(() => null);
 
-    say('Fetching elevation…');
     const terrainGrid_ = await pendingTerrain;
     if (terrainGrid_) lastTerrain = { key: terrainKey, grid: terrainGrid_ };
     elevation.set(terrainGrid_);
 
+    current = 'build';
+    steps.start('build');
+    await paint();
     const { count, skipped } = buildCity(features);
     buildTerrainBase(radius);
-    if (count) world.initialize(features, radius);
-    else world.clear();
+    if (count) {
+      steps.done('build', `${fmt(count)} buildings standing` +
+        (skipped ? `, ${fmt(skipped)} skipped (slivers or broken outlines).` : '.'));
+      current = 'people';
+      steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground…`);
+      await paint();
+      world.initialize(features, radius);
+      steps.done('people', `${fmt(world.animals.length)} people, each with a two-lobe brain.`);
+    } else {
+      world.clear();
+    }
 
     if (!count) {
+      steps.error('build', `No mapped buildings within ${radius} m.`);
       say(`That spot has no mapped buildings within ${radius} m. Try somewhere more built up.`, true);
+      steps.finish(false);
       busy = false; goEl.disabled = false;
       return;
     }
 
+    current = 'imagery';
     try {
-        say('Fetching aerial imagery…');
-        buildImagery(await pendingImagery);
+        const img = await pendingImagery;
+        buildImagery(img);
+        if (!img) steps.off('imagery', 'No photo for this area; the ground stays plain.');
+        else if (img.kind === 'ortho') steps.done('imagery', `One ${img.w} \u00d7 ${img.h} photo from USGS NAIP Plus.`);
+        else steps.done('imagery', `${img.got} of ${img.total} basemap tiles at zoom ${img.z}.`);
     } catch (e) {
         // no imagery here or the service is down; the scene stands
+        steps.off('imagery', 'Unavailable; the ground stays plain.');
     }
 
+    current = 'weather';
     weather = await pendingWeather;
     site = { lat: place.lat, lon: place.lon };
     skyMinute = Math.floor(Date.now() / 60000);
@@ -6159,7 +6330,9 @@ async function load(query) {
     resolveCollisions(player.pos);   // settle against any wall the search brushed
 
     // Compile shaders and upload textures now so the first frame does not stall.
-    say('Preparing scene…');
+    current = 'scene';
+    steps.start('scene');
+    await paint();
     camera.position.copy(player.pos);
     camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
     try {
@@ -6175,6 +6348,8 @@ async function load(query) {
       ` (${skipped ? `${skipped} skipped` : '0 skipped'})`;
     refreshHud();
 
+    steps.done('scene');
+    steps.finish(true);
     goEl.textContent = 'Load';   // back from 'Try again' once a load succeeds
     panel.classList.add('hidden');
     showControls(true);
@@ -6183,6 +6358,8 @@ async function load(query) {
     dotEl.classList.add('on');
     if (lastPointerType === 'mouse') renderer.domElement.requestPointerLock();
   } catch (err) {
+    steps.error(current, err.message || String(err));
+    steps.finish(false);
     say(`Failed to load. ${err.message || String(err)}`, true);
     goEl.textContent = 'Try again';
   }
