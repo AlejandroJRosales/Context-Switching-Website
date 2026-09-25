@@ -216,7 +216,7 @@
 <div id="panel">
   <div id="card">
     <h1>City</h1>
-    <p>Rebuild any real address from buildings to streets, water, trees, and the rise and fall of the land so you can walk it in first person, with live local weather and time of day. Step inside any building, and find real grocery stores, hospitals, and shops where they stand. The city is populated with artificial people who have two-lobe spiking neural network brains. They learn from their own hunger, thirst, and health instead of following scripts. See what behavior emerges when real places meet adaptive minds.</p>
+    <p>Rebuild any real city and its buildings, streets, water, hills, live local weather and time of day. Step inside any building, and find real grocery stores, hospitals, and shops. The city is populated with artificial people who have two-lobe spiking neural network brains that learn from their own hunger, thirst, and health. You also have a car.</p>
     <p>Select a city from the list or enter a custom address. Buildings within a few blocks are pulled from OpenStreetMap and extruded.</p>
     <div class="chips" id="picks"></div>
     <div id="row">
@@ -1651,6 +1651,7 @@ function buildCity(features) {
   }
   shells = list;
   shellGrid = gridOf(list, GRID_CELL);
+  buildShellRaster(list);
 
   // Door height and wall ring per shell, needed before signs claim walls.
   for (const s of list) {
@@ -2515,6 +2516,20 @@ let grid = new Map();
 let gridWalls = [];
 let shellGrid = new Map();
 let shells = [];
+
+// SHELL RASTER
+// shellAt runs for every moving NPC every tick (through terrain.baseAt), and
+// each call was a bucket walk plus point-in-polygon tests. The raster answers
+// most points with one typed-array read: a cell holds the one shell that
+// contains all of it, SHELL_OUT when it is inside none, or SHELL_AMBIG when a
+// ring edge touches it or two shells overlap it. Only SHELL_AMBIG cells take
+// the exact test, so shellAt returns what the exact test would everywhere.
+const SHELL_CELL      = 1;          // raster resolution, metres (coarsened if the city is huge)
+const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
+const SHELL_OUT       = -1;
+const SHELL_AMBIG     = -2;
+const SHELL_EPS       = 1e-4;       // cells are grown by this for the edge test, so it errs to AMBIG
+const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL };
 let solidStamp = new Uint32Array(0);
 let stampNo = 0;
 
@@ -2805,9 +2820,12 @@ class SpatialGrid {
     this.cellSize = cellSize;
     this.cols = Math.ceil(worldW / cellSize);
     this.rows = Math.ceil(worldH / cellSize);
-    this.cells = new Map();
-    this._pool = [];
-    this._usedBuckets = [];
+    // One bucket per cell in a flat array, made on first insert (a grid that
+    // is never filled, like plants for now, costs nothing). A lookup is an
+    // index, not a Map hash: locate reads hundreds of cells per call. Buckets
+    // stay allocated and are only emptied, so a rebuild allocates nothing.
+    this.cells = null;
+    this._usedKeys = [];
   }
 
   _key(cx, cy) { return cy * this.cols + cx; }
@@ -2819,38 +2837,33 @@ class SpatialGrid {
   }
 
   clear() {
-    for (const bucket of this._usedBuckets) {
-      bucket.length = 0;
-      this._pool.push(bucket);
-    }
-    this._usedBuckets.length = 0;
-    this.cells.clear();
+    const cells = this.cells, used = this._usedKeys;
+    if (cells === null) return;
+    for (let i = 0; i < used.length; i++) cells[used[i]].length = 0;
+    used.length = 0;
   }
 
   insert(entity) {
+    if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
     const k = this._cell(entity.position.x, entity.position.z);
-    let bucket = this.cells.get(k);
-    if (!bucket) {
-      bucket = this._pool.length > 0 ? this._pool.pop() : [];
-      this.cells.set(k, bucket);
-      this._usedBuckets.push(bucket);
-    }
+    let bucket = this.cells[k];
+    if (bucket === null) bucket = this.cells[k] = [];
+    if (bucket.length === 0) this._usedKeys.push(k);
     bucket.push(entity);
   }
 
   queryInto(out, x, z, r) {
+    const cells = this.cells;
+    if (cells === null) return 0;
     let n = 0;
-    const cs = this.cellSize;
+    const cs = this.cellSize, cols = this.cols, rows = this.rows;
     const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
     const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
     for (let cy = cy0; cy <= cy1; cy++) {
+      const row = (((cy % rows) + rows) % rows) * cols;   // same wrap as before, once per row
       for (let cx = cx0; cx <= cx1; cx++) {
-        const k = this._key(
-          ((cx % this.cols) + this.cols) % this.cols,
-          ((cy % this.rows) + this.rows) % this.rows
-        );
-        const bucket = this.cells.get(k);
-        if (!bucket) continue;
+        const bucket = cells[row + ((cx % cols) + cols) % cols];
+        if (bucket === null) continue;
         for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
       }
     }
@@ -3740,7 +3753,7 @@ class AnimalRenderer {
     this.TYPES      = ['sheep', 'human'];
     this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
-    this.legAngles  = { legFL: 0, legFR: 0, legBL: 0, legBR: 0 };
+    this.LIMB_SIGNS = [1, -1, -1, 1];   // swing direction per LIMB_NAMES entry
 
     this.GEOMETRIES = {
       sheep: {
@@ -3916,14 +3929,10 @@ class AnimalRenderer {
         else this._scale.set(k, k * hs, k);
 
         const angle = this.DIRECTION_ANGLES[a.outputIdx];
-        if (angle !== null && angle !== undefined) {
-          a.facingAngle = angle;
-          this._quat.setFromAxisAngle(this._yAxis, angle);
-        } else {
-          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
-        }
+        if (angle !== null && angle !== undefined) a.facingAngle = angle;
         // off-screen: nothing drawn (facing above still updates, the sim reads it)
         if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
+        this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
 
         const groundOffset = a.footLift() * NPC_UNIT;   // City: matches Animal.move's lift
         this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
@@ -3957,11 +3966,12 @@ class AnimalRenderer {
         const t = a.animTime * walkFreq;
 
         const sinT = Math.sin(t);
-        this.legAngles.legFL =  sinT;
-        this.legAngles.legFR = -sinT;
-        this.legAngles.legBL = -sinT;
-        this.legAngles.legBR =  sinT;
-        const legAngles = this.legAngles;
+        // FL and BR swing by +sinT * walkAmp, FR and BL by its negative, so the
+        // four leg quaternions about x are (+-sin(h), 0, 0, cos(h)) for one h:
+        // one sin/cos pair per person instead of four setFromAxisAngle calls
+        const legH = sinT * walkAmp * 0.5;
+        const legS = Math.sin(legH), legC = Math.cos(legH);
+        const legSign = this.LIMB_SIGNS;
 
         im.body.setMatrixAt(idx, this._mat4);
 
@@ -3974,8 +3984,7 @@ class AnimalRenderer {
 
         for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
           const part = this.LIMB_NAMES[pi];
-          const swing = legAngles[part] * walkAmp;
-          this._quatLeg.setFromAxisAngle(this._xAxis, swing);
+          this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
           this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
 
           this._pivot.copy(this.PIVOT_OFFSETS[type][part]);
@@ -4334,7 +4343,97 @@ function solidOverlap(x, z, r, feetY, headY) {
 }
 
 // Index of the building footprint containing (x, z), or -1 outdoors.
+// Raster first; an edge cell (or a point before any city is built) takes the
+// exact test. Outside the raster, which covers every shell's bounds, is outdoors.
 function shellAt(x, z) {
+  const R = shellRas;
+  if (R.cells === null) return shellAtExact(x, z);
+  const c = Math.floor((x - R.x0) * R.inv), r = Math.floor((z - R.z0) * R.inv);
+  if (c >= 0 && r >= 0 && c < R.cols && r < R.rows) {
+    const v = R.cells[r * R.cols + c];
+    return v === SHELL_AMBIG ? shellAtExact(x, z) : v;
+  }
+  return -1;
+}
+
+// Classify every cell once per city. Pass 1 marks each cell a ring edge
+// touches as AMBIG. After it, no edge touches any other cell, so along a row a
+// run of adjacent non-AMBIG cells is all inside or all outside a given shell:
+// pass 2 tests one centre per run instead of one per cell.
+function buildShellRaster(list) {
+  const R = shellRas;
+  R.cells = null; R.cols = 0; R.rows = 0;
+  if (!list.length) return;
+
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (const s of list) {
+    if (s.minX < minX) minX = s.minX;
+    if (s.maxX > maxX) maxX = s.maxX;
+    if (s.minZ < minZ) minZ = s.minZ;
+    if (s.maxZ > maxZ) maxZ = s.maxZ;
+  }
+  const area = (maxX - minX + 2) * (maxZ - minZ + 2);
+  const cell = Math.max(SHELL_CELL, Math.sqrt(area / SHELL_MAX_CELLS));
+  const inv = 1 / cell;
+  const x0 = minX - cell, z0 = minZ - cell;   // one cell of margin on each side
+  const cols = Math.ceil((maxX - x0) * inv) + 2;
+  const rows = Math.ceil((maxZ - z0) * inv) + 2;
+  const cells = new (list.length < 32767 ? Int16Array : Int32Array)(cols * rows).fill(SHELL_OUT);
+  const E = SHELL_EPS;
+
+  // pass 1: segment vs (slightly grown) cell, over the segment's bounding cells;
+  // the bbox axes pass by construction, so only the segment's line can separate
+  const markEdge = (ax, az, bx, bz) => {
+    const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - E - x0) * inv));
+    const c1 = Math.min(cols - 1, Math.floor((Math.max(ax, bx) + E - x0) * inv));
+    const r0 = Math.max(0, Math.floor((Math.min(az, bz) - E - z0) * inv));
+    const r1 = Math.min(rows - 1, Math.floor((Math.max(az, bz) + E - z0) * inv));
+    const dx = bx - ax, dz = bz - az;
+    for (let r = r0; r <= r1; r++) {
+      const zlo = z0 + r * cell - E - az, zhi = zlo + cell + 2 * E;
+      for (let c = c0; c <= c1; c++) {
+        const xlo = x0 + c * cell - E - ax, xhi = xlo + cell + 2 * E;
+        const s1 = dx * zlo - dz * xlo, s2 = dx * zlo - dz * xhi;
+        const s3 = dx * zhi - dz * xlo, s4 = dx * zhi - dz * xhi;
+        if ((s1 > 0 && s2 > 0 && s3 > 0 && s4 > 0) || (s1 < 0 && s2 < 0 && s3 < 0 && s4 < 0)) continue;
+        cells[r * cols + c] = SHELL_AMBIG;
+      }
+    }
+  };
+  const markRing = pts => {
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      markEdge(pts[j][0], pts[j][1], pts[i][0], pts[i][1]);
+    }
+  };
+  for (const s of list) {
+    markRing(s.pts);
+    for (const h of s.holes) markRing(h);
+  }
+
+  // pass 2: a cell inside one shell takes its index; inside a second, AMBIG,
+  // so shellAtExact settles overlaps in its own bucket order
+  for (let idx = 0; idx < list.length; idx++) {
+    const s = list[idx];
+    const c0 = Math.floor((s.minX - x0) * inv), c1 = Math.floor((s.maxX - x0) * inv);
+    const r0 = Math.floor((s.minZ - z0) * inv), r1 = Math.floor((s.maxZ - z0) * inv);
+    for (let r = r0; r <= r1; r++) {
+      const zc = z0 + (r + 0.5) * cell;
+      let inRun = false, inside = false;
+      for (let c = c0; c <= c1; c++) {
+        const k = r * cols + c, v = cells[k];
+        if (v === SHELL_AMBIG) { inRun = false; continue; }
+        if (!inRun) { inside = pointInShell(s, x0 + (c + 0.5) * cell, zc); inRun = true; }
+        if (inside) cells[k] = v === SHELL_OUT ? idx : SHELL_AMBIG;
+      }
+    }
+  }
+
+  R.cells = cells; R.x0 = x0; R.z0 = z0; R.cols = cols; R.rows = rows;
+  R.cell = cell; R.inv = inv;
+}
+
+// The exact test: bucket walk, bounds, then point-in-polygon.
+function shellAtExact(x, z) {
   const bucket = shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return -1;
   for (const idx of bucket) {
