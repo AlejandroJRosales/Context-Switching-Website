@@ -2041,7 +2041,11 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
           if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
-          const inside = pointInRing(w.pts, pos.x, pos.z);
+          // a point outside the piece's box cannot be inside its ring, so the
+          // crossing test only runs when it could matter (most hits are in the
+          // r-wide margin, where only the distance test decides)
+          const inside = pos.x >= w.minX && pos.x <= w.maxX && pos.z >= w.minZ && pos.z <= w.maxZ &&
+                         pointInRing(w.pts, pos.x, pos.z);
           const c = closestOnRing(w.pts, pos.x, pos.z);
 
           if (inside) {
@@ -3538,7 +3542,8 @@ function solidOverlap(x, z, r, feetY, headY) {
         const w = gridWalls[idx];
         if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
         if (x < w.minX - r || x > w.maxX + r || z < w.minZ - r || z > w.maxZ + r) continue;
-        if (pointInRing(w.pts, x, z)) return true;
+        if (x >= w.minX && x <= w.maxX && z >= w.minZ && z <= w.maxZ &&
+            pointInRing(w.pts, x, z)) return true;   // box first, as in resolveCollisions
         if (closestOnRing(w.pts, x, z).d < r) return true;
       }
     }
@@ -3643,6 +3648,7 @@ class NpcWorld {
 
     this.grid = null;
     this.plantGrid = null;
+    this.sheepAlive = 0;           // counted each step; humans skip the hunt query at 0
 
     this._qLocate = [];
     this._qHunt   = [];
@@ -3785,7 +3791,9 @@ class NpcWorld {
       const px = a.position.x, pz = a.position.z;
 
       if (a.type === 'human') {
-        const nHunt = this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+        // with no sheep alive the query can only return people it would skip
+        const nHunt = this.sheepAlive
+          ? this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
         for (let i = 0; i < nHunt; i++) {
           const other = this._qHunt[i];
           if (other.alive && other.type === 'sheep' &&
@@ -3836,13 +3844,15 @@ class NpcWorld {
       for (const a of this.animals) if (a.alive) this.grid.insert(a);
     }
 
+    let sheep = 0;
     for (let ai = 0; ai < this.animals.length; ai++) {
       const a = this.animals[ai];
       if (a.alive) {
         a.update(now, this.grid, water.locations, ai);
-        if (a.alive) this.collide(a);
+        if (a.alive) { this.collide(a); if (a.type === 'sheep') sheep++; }
       }
     }
+    this.sheepAlive = sheep;
 
     this.handleCollisions();
 
@@ -3871,6 +3881,7 @@ const world          = new NpcWorld();
 // full the person is (1 - need), on the same 0..100 need scale the brain
 // reads; health is health / maxHealth.
 const BAR_STEPS  = 40;     // redraw only when a bar moves a whole step
+const BAR_RELEASE_TICKS = 180;   // ~3 s out of close range before a slot is handed back
 const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
 const BAR_W_M    = 0.8;    // sprite size in metres (canvas is 2:1)
 const BAR_H_M    = 0.4;
@@ -4092,6 +4103,8 @@ class HealthBars {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._c = new THREE.Color();
+    this._fill = [0, 0, 0, 0];   // far-bar fill fractions, reused every person
+    this.tick = 0;               // update count, for slot release timing
   }
 
   // Share of a lobe's neurons firing this tick (the full brain's firing rule).
@@ -4115,8 +4128,8 @@ class HealthBars {
     sprite.center.set(0.5, 0);   // anchor the bottom edge above the head
     sprite.visible = false;
     scene.add(sprite);
-    return { sprite, canvas, ctx: canvas.getContext('2d'), tex, key: '',
-             brain: null, brainFor: null };
+    return { sprite, canvas, ctx: canvas.getContext('2d'), tex, key: -1,
+             brain: null, brainFor: null, nearTick: 0 };
   }
 
   // Top of the head in metres: feet (pivot minus foot lift) plus rig height.
@@ -4150,7 +4163,12 @@ class HealthBars {
   }
 
   draw(slot, vals, arrows) {
-    const key = vals.join(',') + ';' + arrows.join(',');
+    // packed integer instead of a joined string: no allocation per person per
+    // tick. vals are 0..BAR_STEPS, arrows -1..ARROW_STEPS-1; max ~1e11, exact
+    // in a double.
+    const V = BAR_STEPS + 1, A = ARROW_STEPS + 1;
+    const key = ((((((vals[0] * V + vals[1]) * V + vals[2]) * V + vals[3])
+      * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
     if (slot.key === key) return;
     slot.key = key;
     const { ctx, canvas } = slot;
@@ -4177,9 +4195,13 @@ class HealthBars {
     slot.tex.needsUpdate = true;
   }
 
-  // Every living person gets a stats sprite and, above it, their brain. A
-  // reused slot keeps its brain only if it belongs to the same network.
+  // A person drawn up close gets a stats sprite and, above it, their brain.
+  // Slots (canvas, texture, sprite, brain) are taken only then, and handed
+  // back after BAR_RELEASE_TICKS out of close range, so their count follows
+  // the crowd near the camera rather than the whole population. A reused slot
+  // keeps its brain only if it belongs to the same network.
   update(animals) {
+    const tick = ++this.tick;
     const spin = performance.now() / 1000 * BRAIN_SPIN;
     const now = Date.now();
     const q = v => Math.round(Math.max(0, Math.min(1, v)) * BAR_STEPS);
@@ -4199,32 +4221,20 @@ class HealthBars {
 
     for (const a of animals) {
       if (!a.alive || a.type !== 'human') continue;
-      seen.add(a);
       let bar = this.bars.get(a);
-      if (!bar) {
-        bar = this.spare.pop() || this.makeBar();
-        bar.key = '';
-        this.bars.set(a, bar);
-      }
+      if (bar) seen.add(a);   // hidden below unless drawn up close this tick
 
       const barY = this.headTop(a) + BAR_ABOVE;
-      if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) {
-        bar.sprite.visible = false;
-        if (bar.brain) bar.brain.group.visible = false;
-        continue;
-      }
+      if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) continue;
       const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;   // as the bodies, so both swap together
       if (ex * ex + ey * ey + ez * ez > lod2) {
-        bar.sprite.visible = false;
-        if (bar.brain) bar.brain.group.visible = false;
         if (nf >= FAR_STAT_MAX) continue;
 
-        const fill = [
-          a.health / a.maxHealth,
-          1 - Math.min(a.foodNeed, 100) / 100,
-          1 - Math.min(a.waterNeed, 100) / 100,
-          (now - a.lastChildTime) / a.childGracePeriod
-        ];
+        const fill = this._fill;
+        fill[0] = a.health / a.maxHealth;
+        fill[1] = 1 - Math.min(a.foodNeed, 100) / 100;
+        fill[2] = 1 - Math.min(a.waterNeed, 100) / 100;
+        fill[3] = (now - a.lastChildTime) / a.childGracePeriod;
         for (let i = 0; i < rows; i++) {
           const f = Math.max(0, Math.min(1, fill[i]));
           const dx = this.farBarX, dy = this.farRowY[i];
@@ -4237,17 +4247,25 @@ class HealthBars {
 
         const nn = a.brain;
         const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
-        const fire = [this.firing(nn && nn.actA), this.firing(nn && nn.actB)];
+        const fireA = this.firing(nn && nn.actA), fireB = this.firing(nn && nn.actB);
         for (let l = 0; l < 2; l++) {
           this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
           this._s.set(1, 1, 1);
           this.farLobes.setMatrixAt(nf * 2 + l, this._m.compose(this._p, this._q, this._s));
-          const k = BRAIN_DIM + (1 - BRAIN_DIM) * fire[l];
+          const k = BRAIN_DIM + (1 - BRAIN_DIM) * (l === 0 ? fireA : fireB);
           this.farLobes.setColorAt(nf * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
         }
         nf++;
         continue;
       }
+
+      if (!bar) {
+        bar = this.spare.pop() || this.makeBar();
+        bar.key = -1;
+        this.bars.set(a, bar);
+        seen.add(a);
+      }
+      bar.nearTick = tick;
 
       vals[0] = q(a.health / a.maxHealth);
       vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
@@ -4275,10 +4293,12 @@ class HealthBars {
       b.group.visible = true;
     }
     for (const [a, bar] of this.bars) {
-      if (seen.has(a)) continue;
+      const alive = seen.has(a);
+      if (alive && bar.nearTick === tick) continue;        // drawn up close this tick
       bar.sprite.visible = false;
       if (bar.brain) bar.brain.group.visible = false;
-      this.bars.delete(a);
+      if (alive && tick - bar.nearTick <= BAR_RELEASE_TICKS) continue;   // likely back soon
+      this.bars.delete(a);                                  // dead, gone, or away too long
       this.spare.push(bar);
     }
 
@@ -4644,6 +4664,16 @@ let sceneDirty = true;
 const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
 let drawnYaw = NaN, drawnPitch = NaN;
 
+// NPC ticks are capped at 60 Hz. The Arena's constants (MOVE_TIMESTEP, need
+// increments, ACTION_HOLD, BRAIN_UPDATE_INTERVAL) are per tick and were tuned
+// at 60, so a 120 Hz display ran the crowd at double speed and double CPU.
+// Player motion still renders at the display rate; NPC-only redraws follow
+// the tick. At or under 60 Hz this is one tick per frame, as before.
+const NPC_TICK_S     = 1 / 60;
+const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
+let npcAcc = 0;                 // seconds owed to the next tick (may dip to -slack)
+let npcElapsed = 0;             // real seconds since the last tick, for leg animation
+
 function wake() {
   if (!rafId) rafId = requestAnimationFrame(frame);
 }
@@ -4669,7 +4699,19 @@ function frame(now) {
   }
 
   const rainDue = rainTick(dt, now);
-  const npcDue = world.step(dt);   // one NPC tick per frame; false when none are alive
+  const npcLive = world.ready && world.animals.length > 0;
+  let npcDue = false;
+  if (npcLive) {
+    npcAcc += dt;
+    npcElapsed += dt;
+    if (npcAcc >= NPC_TICK_S - NPC_TICK_SLACK) {
+      npcDue = world.step(npcElapsed);
+      // carry the remainder, but never bank more than one tick: a long frame
+      // does not trigger a catch-up burst
+      npcAcc = Math.max(-NPC_TICK_SLACK, Math.min(npcAcc - NPC_TICK_S, NPC_TICK_S));
+      npcElapsed = 0;
+    }
+  }
   const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch;
   if (posed || sceneDirty || rainDue || npcDue) {
     renderer.render(scene, camera);
@@ -4680,7 +4722,7 @@ function frame(now) {
 
   // falling rain and live NPCs keep the loop awake
   const settled = !posed && (player.grounded || flying) && player.vel.y === 0;
-  if (settled && !movementHeld() && !rainAnimating() && !npcDue) {
+  if (settled && !movementHeld() && !rainAnimating() && !npcLive) {
     last = -1;           // sleep until wake()
     return;
   }
@@ -5168,7 +5210,7 @@ function refreshHud() {
   const line = hudPlace
     ? `${hudBuildings} buildings, ${world.animals.length} population ${hudPlace}`
     : '';
-  hudEl.textContent = line + (weather ? '\n' + weatherText() : '');
+  perf.setText(hudEl, line + (weather ? '\n' + weatherText() : ''));   // skips unchanged text
 }
 
 function tick() {
@@ -5179,14 +5221,23 @@ function tick() {
   if (m !== skyMinute) { skyMinute = m; updateSky(); }
 }
 
+// Everything tick() shows or rebuilds changes by the minute (clock text,
+// sun), so wake just after each minute boundary instead of every second.
 function startClock() {
-  if (clockTimer) clearInterval(clockTimer);
-  clockTimer = setInterval(tick, 1000);
+  if (clockTimer) clearTimeout(clockTimer);
+  const next = () => {
+    clockTimer = setTimeout(() => { tick(); next(); }, 60000 - Date.now() % 60000 + 50);
+  };
+  next();
 }
 
 // LOAD
 
 let busy = false;
+// The last ground image, so reloading the same place this session (back to
+// the menu, Load again) skips the multi-megabyte export. One entry: a new
+// place replaces it, so at most one decoded image is kept beyond the scene's.
+let lastImagery = null;
 
 async function load(query) {
   if (busy || !query.trim()) return;
@@ -5194,8 +5245,18 @@ async function load(query) {
   goEl.disabled = true;
 
   try {
-    say('Looking up the address…');
-    const place = await geocode(query);
+    // The saved label is Nominatim's own display_name for the saved
+    // coordinates, so re-submitting it (the prefilled field on a revisit)
+    // needs no round trip to the geocoder.
+    const reuse = storedPlace && storedPlace.v === FEATURES_VERSION &&
+                  query.trim() === storedPlace.label;
+    let place;
+    if (reuse) {
+      place = { lat: storedPlace.lat, lon: storedPlace.lon, label: storedPlace.label };
+    } else {
+      say('Looking up the address…');
+      place = await geocode(query);
+    }
 
     // parallel with Overpass; a failed forecast never blocks the load
     const pendingWeather = fetchWeather(place.lat, place.lon).catch(() => null);
@@ -5231,11 +5292,15 @@ async function load(query) {
 
     // Imagery depends only on place and radius, so fetch it during buildCity.
     // Failure just means no ground photo.
+    const imageryKey = `${place.lat},${place.lon},${radius}`;
     const pendingImagery = (async () => {
+      if (lastImagery && lastImagery.key === imageryKey) return lastImagery.img;
       const proj = makeProjector(place.lat, place.lon);
       // tile cache fallback when the image service has nothing or is down
-      return await fetchOrtho(place.lat, place.lon, radius, proj)
+      const img = await fetchOrtho(place.lat, place.lon, radius, proj)
         ?? await fetchImagery(place.lat, place.lon, radius, proj);
+      if (img) lastImagery = { key: imageryKey, img };
+      return img;
     })().catch(() => null);
 
     const { count, skipped } = buildCity(features);
