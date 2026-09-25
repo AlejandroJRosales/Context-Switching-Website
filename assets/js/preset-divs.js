@@ -169,7 +169,7 @@ var navbar =
 					<a class="dropdown-item" href="/my/researchandwork">Research and Projects</a>
 					<a class="dropdown-item" href="https://www.linkedin.com/in/alejandro-rosales-36ab16191/">LinkedIn</a>
 					<a class="dropdown-item" href="https://github.com/AlejandroJRosales">GitHub</a>
-					<a class="dropdown-item" href="/my/world/">Ecosystem Simulation</a>
+					<a class="dropdown-item" href="/my/world/">Ecosystem</a>
 					<a class="dropdown-item" href="/my/game/">Game</a>
 				</div>
 			</li>
