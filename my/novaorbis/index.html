@@ -335,9 +335,9 @@
       <button data-mode="city" role="radio" aria-checked="false">City</button>
       <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
     </div>
-    <p class="mode-note for-wild">A procedurally generated ecosystem of fields, mountains, lakes, and plants, where people and sheep roam, eat, drink, and reproduce with no scripted behaviors. Their brains let them explore, experience the world, make choices, and learn. You also have a cat companion named Nibbler.</p>
+    <p class="mode-note for-wild">A procedurally generated ecosystem of fields, mountains, lakes, and plants, where people roam, eat, drink, and reproduce with no scripted behaviors, alongside coyotes and deer that follow survival rules. People's brains let them explore, experience the world, make choices, and learn. You also have a cat companion named Nibbler.</p>
     <p class="mode-note for-city">Simulate any real city in the US with its buildings, streets, water, terrain, and live local weather and time of day. Walk into real grocery stores, hospitals, and shops. The city is populated with people who have two-lobe spiking neural network brains that learn from hunger, thirst, health, and deer that follow survival rules. You also have a car.</p>
-    <p class="mode-note for-mix">A real US city at the centre of the procedural wilderness, its measured terrain blended into the generated hills. The city's people, the wilderness's people and sheep, and the plants of parks and open country share one world; nothing tells anyone where to live. Nibbler and the car come along.</p>
+    <p class="mode-note for-mix">A real US city at the centre of the procedural wilderness, its measured terrain blended into the generated hills. The city's people, the wilderness's people, coyotes and deer, and the plants of parks and open country share one world; nothing tells anyone where to live. Nibbler and the car come along.</p>
     <p class="for-place">Select a city from the list or enter a custom address. Buildings within a few blocks are pulled from OpenStreetMap.</p>
     <div class="chips for-place" id="picks"></div>
     <div id="row" class="for-place">
@@ -642,7 +642,7 @@ const WILD_STEPS = [
   ['terrain', 'Shaping the land',        'Seeded fractal terrain: plains, a mountain mask and ridges.'],
   ['water',   'Filling the lakes',       'A water level over 30% of the ground, lake beds carved below it.'],
   ['cabins',  'Building cabins',         'Log cabins on dry ground, pebbles scattered.'],
-  ['people',  'Populating',              'Spawning people, sheep and plants and wiring the brains.'],
+  ['people',  'Populating',              'Spawning people, coyotes, deer and plants and wiring the brains.'],
   ['scene',   'Preparing the scene',     'Compiling shaders and uploading textures so the first frame does not stall.']
 ];
 
@@ -2888,7 +2888,7 @@ function ceilingAt(x, z, fromHead, toHead) {
 
 // NPCS: THE SHARED ECOSYSTEM ENGINE
 // Ported from AIEcosystemArena, behaviour unchanged except where marked "City:". One Animal class for every world:
-// people and the Arena's sheep think with the two-lobe network; deer are the Arena's sheep run by the species.py AI
+// people think with the two-lobe network; deer (the Arena's sheep) and coyotes run the species.py AI
 // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
 // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
@@ -2925,7 +2925,7 @@ const DEER_AREAS = new Set([      // land cover deer and plants spawn in
   'forest', 'wood', 'meadow', 'farmland', 'cemetery', 'scrub', 'orchard', 'greenfield', 'wetland'
 ]);
 // Feet to rig top in Arena units, for the stats sprite (deer use antler tips for both sexes).
-const NPC_RIG_TOP = { human: 38.55, deer: 35, sheep: 25 };
+const NPC_RIG_TOP = { human: 38.55, deer: 35, coyote: 23 };
 
 const NPC_UNIT       = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
 const NPC_RADIUS     = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
@@ -2938,14 +2938,16 @@ const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread t
 const NPC_HUMAN_HS    = NPC_HEIGHT_MEAN / (NPC_RIG_TOP.human * NPC_UNIT);
 
 // SPECIES: the per-type stats the Arena and City hard-coded by type name, in Arena units.
-// brain: two-lobe network (else the species.py rules); prey: hunted by people and sensed as food.
-// lift: feet to body centre, the rig's leg reach; eye: eye above body centre; childDrop: newborn offset.
+// brain: two-lobe network (else the species.py rules); hunts: the types it kills on contact and a brain senses as
+// food (a hunter of this type is sensed as a predator; a pair that hunts each other fights, see NpcWorld.fight).
+// food: what the species.py rules look for ('plant', or an animal type, chased at a sprint); grazes: eats plants
+// it touches. lift: feet to body centre, the rig's leg reach; eye: eye above body centre; childDrop: newborn offset.
 const SPECIES = {
-  human: { brain: true,  prey: false, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
-  sheep: { brain: true,  prey: true,  speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 7,  lift: 13,    grace: 1, childDrop: 10 },
-  deer:  { brain: false, prey: true,  speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15,    grace: DEER_GRACE_MULT, childDrop: 10 }
+  human:  { brain: true,  hunts: { deer: true, coyote: true }, food: null,    grazes: true,  speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12,  lift: 21.25, grace: 1, childDrop: 20 },
+  coyote: { brain: false, hunts: { deer: true, human: true },  food: 'deer',  grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5,  grace: 1, childDrop: 10 },
+  deer:   { brain: false, hunts: {},                           food: 'plant', grazes: true,  speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10,  lift: 15,    grace: DEER_GRACE_MULT, childDrop: 10 }
 };
-const PREY_TYPES = ['sheep', 'deer'];
+const NPC_TYPES = Object.keys(SPECIES);
 const WATER_SIGHT_CELL = 20;     // metres: water perception points for vision queries (NpcWorld.waterSight)
 const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
 const NPC_BODY_R      = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
@@ -3549,7 +3551,7 @@ class Animal extends Entity {
       const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
       this.heightScale = metres / (38.55 * NPC_UNIT);
     } else {
-      const heightParams = { deer: [1.0, 0.10], sheep: [1.0, 0.10] };
+      const heightParams = { deer: [1.0, 0.10], coyote: [1.0, 0.10] };
       const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
       this.heightScale = NPC_HUMAN_HS * brains.randNormal(hMean, hStd);
     }
@@ -3615,6 +3617,7 @@ class Animal extends Entity {
     this.freeX = this.position.x; this.freeZ = this.position.z;
 
     this.mesh = null;
+    this.home = null;              // the spawn source it came from (children inherit the mother's)
   }
 
   remove() {  }
@@ -3662,9 +3665,9 @@ class Animal extends Entity {
     return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
   }
 
-  // Brained senses (vision cone), memories kept until out of range. People: prey and plants are food, opposite-sex
-  // people are mates. Sheep (the Arena's): people and the game-mode player are predators, plants are food,
-  // opposite-sex sheep are mates. Everyone looks for water.
+  // Brained senses (vision cone), memories kept until out of range. What a species hunts is food, what hunts it
+  // is a predator (people and coyotes are both to each other), plants are food, opposite-sex kin are mates, and
+  // the game-mode player is a predator to whatever people hunt. Everyone looks for water.
   locate(grid) {
     const px = this.position.x, pz = this.position.z;
     const py = this.eyeY();
@@ -3672,7 +3675,7 @@ class Animal extends Entity {
     const ax = Math.sin(this.facingAngle), az = Math.cos(this.facingAngle);
     const cosH = this.cosFovH, tanV = this.tanFovV;
     const hit = Animal._hit;
-    const prey = this.spec.prey;
+    const hunts = this.spec.hunts, type = this.type;
     let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
     const _n = grid.queryInto(world._qLocate, px, pz, this.visionDistance);
@@ -3680,9 +3683,13 @@ class Animal extends Entity {
       const obj = world._qLocate[_i];
       if (obj === this) continue;
       const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
+      const isPred = obj.spec.hunts[type] === true;
+      const isFood = hunts[obj.type] === true;
+      const isMate = obj.type === type && this.sex !== obj.sex;
+      if (!isPred && !isFood && !isMate) continue;
+      if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
 
-      if (prey && obj.type === 'human') {
-        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+      if (isPred) {
         if (hit.d3sq < bestPredDist) {
           bestPredDist = hit.d3sq;
           this.memPredatorX = ox; this.memPredatorY = oy; this.memPredatorZ = oz;
@@ -3690,8 +3697,8 @@ class Animal extends Entity {
           this.rayPredatorSin = hit.sin;   this.rayPredatorCos  = hit.cos;
           this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
         }
-      } else if (!prey && obj.spec.prey) {
-        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+      }
+      if (isFood) {
         if (hit.d3sq < bestFoodDist) {
           bestFoodDist = hit.d3sq;
           this.memFoodX = ox; this.memFoodY = oy; this.memFoodZ = oz;
@@ -3699,8 +3706,8 @@ class Animal extends Entity {
           this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
           this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
         }
-      } else if (obj.type === this.type && this.sex !== obj.sex) {
-        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+      }
+      if (isMate) {
         if (hit.d3sq < bestMateDist) {
           bestMateDist = hit.d3sq;
           this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
@@ -3711,9 +3718,9 @@ class Animal extends Entity {
       }
     }
 
-    // City: in game mode the player is a predator too
+    // City: in game mode the player is a predator too, to whatever people hunt
     const gp = game.predator;
-    if (prey && gp.alive &&
+    if (SPECIES.human.hunts[type] && gp.alive &&
         this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
         hit.d3sq < bestPredDist) {
       bestPredDist = hit.d3sq;
@@ -3723,7 +3730,7 @@ class Animal extends Entity {
       this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
     }
 
-    // City: plants are food for people too (nearer of plant and deer wins), from the sight grid.
+    // City: plants are food for people too (nearer of plant and animal food wins), from the sight grid.
     const nSight = world.plantSight.queryInto(world._qSight, px, pz, this.visionDistance);
     for (let _i = 0; _i < nSight; _i++) {
       const plant = world._qSight[_i];
@@ -3807,8 +3814,9 @@ class Animal extends Entity {
     this.moving = true;
   }
 
-  // DEER AI (species.py): thinkDeer, every DEER_THINK_TICKS, picks the highest need with a known location
+  // DEER AND COYOTE AI (species.py): thinkDeer, every DEER_THINK_TICKS, picks the highest need with a known location
   // (predator, food, water, mate; ties in that order) and flees or heads for it; steerDeer moves every tick.
+  // A predator within DEER_SPRINT_DIST is fled at a sprint; a coyote sprints toward its food (a deer) too.
   thinkDeer(grid) {
     if (Math.random() <= 1 - Math.pow(1 - DEER_EXPLORE_P, DEER_THINK_TICKS)) this.newExploreCoords();
     this.searchDeer(grid);
@@ -3829,7 +3837,8 @@ class Animal extends Entity {
     else if (best === 'mate')    { this.focusX = this.memMateX;  this.focusZ = this.memMateZ; }
 
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
-    this.sprinting = best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST;
+    const chase = best === 'food' && this.spec.food !== 'plant';
+    this.sprinting = chase || (best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST);
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
     this.bumpScale = 1;
     if (best !== 'predator') this.aimAtFocus();
@@ -3862,6 +3871,7 @@ class Animal extends Entity {
     let bP = Infinity, bF = Infinity, bW = Infinity, bM = Infinity;
     this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
     this.avoidNeed = 0;
+    const food = this.spec.food;
 
     const n = grid.queryInto(world._qLocate, x, z, this.visionDistance);
     for (let i = 0; i < n; i++) {
@@ -3870,22 +3880,24 @@ class Animal extends Entity {
       const ox = obj.position.x, oz = obj.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (d2 > vd) continue;
-      if (obj.type === 'human') {
+      if (obj.spec.hunts[this.type]) {
         if (d2 <= bP) { bP = d2; this.seen(0, ox, obj.position.y, oz); this.avoidNeed = Infinity; }
+      } else if (obj.type === food) {
+        if (d2 <= bF) { bF = d2; this.seen(1, ox, obj.position.y, oz); }
       } else if (obj.type === this.type && obj.sex !== this.sex) {
         if (d2 <= bM) { bM = d2; this.seen(3, ox, obj.position.y, oz); }
       }
     }
 
-    // City: in game mode the player is a predator too
+    // City: in game mode the player is a predator too, to whatever people hunt
     const gp = game.predator;
-    if (gp.alive) {
+    if (gp.alive && SPECIES.human.hunts[this.type]) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
     }
 
-    const nSight = world.plantSight.queryInto(world._qSight, x, z, this.visionDistance);
+    const nSight = food === 'plant' ? world.plantSight.queryInto(world._qSight, x, z, this.visionDistance) : 0;
     for (let i = 0; i < nSight; i++) {
       const plant = world._qSight[i];
       if (!plant.alive) continue;
@@ -3902,10 +3914,10 @@ class Animal extends Entity {
     }
   }
 
-  // Metres moved this tick: a sprint off the fastest predator, else the Arena speed.
+  // Metres moved this tick: a sprint (fleeing or chasing) at the fastest run of its own predators, else the Arena speed.
   stepLength() {
     const ms = this.sprinting
-      ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHumanMS)
+      ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMS[this.type])
       : this.speed * this.speedScale * NPC_UNIT;
     return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * Animal.MOVE_TIMESTEP;
   }
@@ -4080,10 +4092,15 @@ class Animal extends Entity {
     this.health -= this.startHealth * 0.1;
     if (this.health <= 1) {
       this.alive = false;
-      predator.health += this.startHealth;
-      predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
-      predator.dietWater(this.startHealth);
+      predator.feedOn(this);
     }
+  }
+
+  // A kill's meal: the victim's starting health as health, food and the water that comes with it.
+  feedOn(victim) {
+    this.health += victim.startHealth;
+    this.foodNeed = Math.max(0, this.foodNeed - victim.startHealth);
+    this.dietWater(victim.startHealth);
   }
 
   // City: water eaten with `food` units of food (see DIET_WATER_SHARE).
@@ -4106,6 +4123,7 @@ class Animal extends Entity {
     );
     child.isAdult = false;
     child.birthTick = world.ticks;
+    child.home = mother.home;
 
     child.speed = ((this.speed + partner.speed) / 2) * rand();
     child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
@@ -4171,7 +4189,7 @@ class AnimalRenderer {
     this.MATURITY_TICKS = NPC_MATURITY_TICKS;
     this.MIN_SCALE      = 0.25;
 
-    this.TYPES      = ['deer', 'sheep', 'human'];
+    this.TYPES      = ['deer', 'coyote', 'human'];
     this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_SIGNS = [1, -1, -1, 1];
@@ -4204,17 +4222,30 @@ class AnimalRenderer {
     ];
     const deerAntlers = mergeGeometries([...antlerSide(1), ...antlerSide(-1)], false);
 
+    // COYOTE RIG: rig units, origin at the body centre, head toward +z; lean body, pointed ears, drooping tail.
+    const coyoteHead = mergeGeometries([
+      boxAt(3.6, 5, 3.6,   0, 1.8, 0.6, 0.6),      // neck, leaning forward
+      boxAt(4.6, 4.2, 5,   0, 4.4, 3.6),           // head
+      boxAt(2.2, 2, 4.5,   0, 3.6, 7.8),           // snout
+      boxAt(1.4, 3, 0.8,  1.5, 7.8, 3, 0, -0.2),   // ears, upright and pointed
+      boxAt(1.4, 3, 0.8, -1.5, 7.8, 3, 0,  0.2)
+    ], false);
+    const coyoteBody = mergeGeometries([
+      boxAt(7, 7, 18,     0, 0, 0),              // lean barrel
+      boxAt(2.6, 2.6, 8,  0, -2, -12.3, -0.5)    // bushy tail, drooping
+    ], false);
+
     this.GEOMETRIES = {
       deer: {
         body: deerBody,
         head: deerHead,
         leg:  new THREE.BoxGeometry(2.4, 13, 2.4)
       },
-      // SHEEP RIG: the Arena's low-detail sheep; legs reach 13 below the body centre (SPECIES.sheep.lift).
-      sheep: {
-        body: new THREE.BoxGeometry(12, 12, 25),
-        head: new THREE.BoxGeometry(14, 14, 14),
-        leg:  new THREE.BoxGeometry(3, 13, 3)
+      // coyote legs reach 11.5 below the body centre (SPECIES.coyote.lift)
+      coyote: {
+        body: coyoteBody,
+        head: coyoteHead,
+        leg:  new THREE.BoxGeometry(1.8, 10, 1.8)
       },
       human: {
         body: new THREE.BoxGeometry(8, 17, 6),
@@ -4225,13 +4256,13 @@ class AnimalRenderer {
 
     this.MATERIALS = {
       deer:  new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
-      sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+      coyote: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
       human: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })
     };
 
     this.SEX_COLORS = {
       deer:  { male: new THREE.Color(0x6f4a2a), female: new THREE.Color(0x93683f) },
-      sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
+      coyote: { male: new THREE.Color(0x8a7658), female: new THREE.Color(0xa38e6c) },
       human: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
     };
 
@@ -4241,12 +4272,12 @@ class AnimalRenderer {
     };
 
     this.PART_OFFSETS = {
-      sheep: {
-        head:  new THREE.Vector3(0, 5, 15),
-        legFL: new THREE.Vector3(-5, -8,  8),
-        legFR: new THREE.Vector3( 5, -8,  8),
-        legBL: new THREE.Vector3(-5, -8, -8),
-        legBR: new THREE.Vector3( 5, -8, -8),
+      coyote: {
+        head:  new THREE.Vector3(0, 2, 8.5),
+        legFL: new THREE.Vector3(-2.2, -6.5,  6.5),
+        legFR: new THREE.Vector3( 2.2, -6.5,  6.5),
+        legBL: new THREE.Vector3(-2.2, -6.5, -6.5),
+        legBR: new THREE.Vector3( 2.2, -6.5, -6.5),
       },
       deer: {
         head:  new THREE.Vector3(0, 2.5, 11.5),
@@ -4265,11 +4296,11 @@ class AnimalRenderer {
     };
 
     this.PIVOT_OFFSETS = {
-      sheep: {
-        legFL: new THREE.Vector3(-5, 0,  8),
-        legFR: new THREE.Vector3( 5, 0,  8),
-        legBL: new THREE.Vector3(-5, 0, -8),
-        legBR: new THREE.Vector3( 5, 0, -8),
+      coyote: {
+        legFL: new THREE.Vector3(-2.2, -1.5,  6.5),
+        legFR: new THREE.Vector3( 2.2, -1.5,  6.5),
+        legBL: new THREE.Vector3(-2.2, -1.5, -6.5),
+        legBR: new THREE.Vector3( 2.2, -1.5, -6.5),
       },
       human: {
         legFL: new THREE.Vector3(-6,  8.25, 0),
@@ -4285,23 +4316,23 @@ class AnimalRenderer {
       },
     };
 
-    this.LIMB_HALF = { deer: 6.5, sheep: 6.5, human: 6.25 };          // pivot to limb centre, rig units
-    this.WALK      = { deer: 0.45, sheep: 0.55, human: 0.65 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
-    this.LEG_LEN   = { deer: 13, sheep: 13, human: 12.5 };     // leg box heights, rig units
+    this.LIMB_HALF = { deer: 6.5, coyote: 5, human: 6.25 };          // pivot to limb centre, rig units
+    this.WALK      = { deer: 0.45, coyote: 0.55, human: 0.65 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
+    this.LEG_LEN   = { deer: 13, coyote: 10, human: 12.5 };     // leg box heights, rig units
 
     this.meshes = {};
     this.antlers = {};
-    this.renderCache = { deer: null, sheep: null, human: null };
+    this.renderCache = { deer: null, coyote: null, human: null };
 
     // LOW DETAIL: past NPC_LOD_DIST a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
     const dh = this.PART_OFFSETS.deer.head;
-    const sh = this.PART_OFFSETS.sheep.head;
+    const ch = this.PART_OFFSETS.coyote.head;
     this.FAR_GEOMETRIES = {
-      sheep: mergeGeometries([
-        this.GEOMETRIES.sheep.body.clone(),
-        this.GEOMETRIES.sheep.head.clone().translate(sh.x, sh.y, sh.z),
-        boxAt(13, 13, 3, 0, -6.5,  8),                    // front legs as one bar
-        boxAt(13, 13, 3, 0, -6.5, -8)                     // back legs as one bar
+      coyote: mergeGeometries([
+        coyoteBody.clone(),                                // barrel and tail
+        coyoteHead.clone().translate(ch.x, ch.y, ch.z),    // neck, head, snout, ears
+        boxAt(6.2, 10, 1.8, 0, -6.5,  6.5),                // front legs as one bar
+        boxAt(6.2, 10, 1.8, 0, -6.5, -6.5)                 // back legs as one bar
       ], false),
       human: mergeGeometries([
         boxAt(8.6, 8.6, 8.6, 0, 13, 0),       // head
@@ -4316,7 +4347,7 @@ class AnimalRenderer {
       ], false)
     };
     this.far = {};
-    this.farColKeys = { deer: [], sheep: [], human: [] };
+    this.farColKeys = { deer: [], coyote: [], human: [] };
 
     this._mat4      = new THREE.Matrix4();
     this._local     = new THREE.Vector3();
@@ -5197,7 +5228,8 @@ function outdoorSpawn(x, z, maxR = 200) {
 class WorldConfig {
   constructor(scale = 20) {
     this.BASE = {
-      sheep: 20,
+      coyotes: 20,
+      deer: 20,
       humans: 5,
       plants: 300,
       worldWidth: 850,
@@ -5211,7 +5243,8 @@ class WorldConfig {
   applyScale(scale) {
     const B = this.BASE;
     this.scale = scale;
-    this.initialSheep = Math.trunc(B.sheep * scale);
+    this.initialCoyotes = Math.trunc(B.coyotes * scale);
+    this.initialDeer = Math.trunc(B.deer * scale);
     this.initialHumans = Math.trunc(B.humans * scale);
     this.initialPlants = Math.trunc(B.plants * scale);
     this.worldWidth = Math.trunc(B.worldWidth * scale);
@@ -5555,6 +5588,24 @@ function clearWildLayers() {
 }
 
 // WATER: the Arena's one world-spanning surface (built-in physical material, two scrolling normal maps).
+// ISLAND COAST: Wild and Mix are islands. Near each edge the land falls to a sea floor under the water level along a
+// wavering coastline, and the sea runs on past the edge to the horizon; the edge itself is the limit nothing crosses.
+const COAST_SEA    = 30;     // metres in from the edge that are always open sea
+const COAST_LAND   = 70;     // metres over which the land falls to the sea floor
+const COAST_WOBBLE = 20;     // metres the coastline wanders (under COAST_SEA, so the edge is always water)
+const OCEAN_DEPTH  = 6;      // metres of sea floor under the water level
+const OCEAN_REACH  = 2000;   // metres the sea runs past the edge (the camera's far plane)
+
+// Height `h` at (x, z) inside bounds `b`, lowered toward the sea floor near the edge; small worlds get a narrower coast.
+function coastHeight(x, z, h, b, level) {
+  const k = Math.min(1, Math.min(b.maxX - b.minX, b.maxZ - b.minZ) / 500);
+  const d = Math.min(x - b.minX, b.maxX - x, z - b.minZ, b.maxZ - z);
+  const w = (wildTerrain.valueNoise(x / 90 + 3.7, z / 90 - 5.2) * 2 - 1) * COAST_WOBBLE * k;
+  const t = wildTerrain.smoothstep(COAST_SEA * k, (COAST_SEA + COAST_LAND) * k, d + w);
+  const floor = level - OCEAN_DEPTH;
+  return floor + (h - floor) * t;
+}
+
 class WildWater {
   constructor() {
     this.COLOR = 0x276376;
@@ -5570,6 +5621,7 @@ class WildWater {
     this.DEPTH_OFFSET_UNITS  = 1.0;
     this.SEGMENTS = 64;
     this.plane = null;
+    this.seabed = null;
     this.normalA = null;
     this.normalB = null;
     this.envMap = null;
@@ -5642,6 +5694,7 @@ class WildWater {
   }
 
   // The surface over bounds `b` at `level`; `hole` (Mix) leaves out the square |x|, |z| < hole, where the city's own water is.
+  // The open sea continues OCEAN_REACH past the bounds, over a sea floor at OCEAN_DEPTH.
   createPlane(b, level, hole = 0) {
     this.dispose();
     const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
@@ -5660,6 +5713,12 @@ class WildWater {
     } else {
       geometry = piece(b.minX, b.maxX, b.minZ, b.maxZ, this.SEGMENTS);
     }
+    const R = OCEAN_REACH;
+    const sea = () => [
+      piece(b.minX - R, b.maxX + R, b.minZ - R, b.minZ, 8), piece(b.minX - R, b.maxX + R, b.maxZ, b.maxZ + R, 8),
+      piece(b.minX - R, b.minX, b.minZ, b.maxZ, 8),         piece(b.maxX, b.maxX + R, b.minZ, b.maxZ, 8)
+    ];
+    geometry = mergeGeometries([geometry, ...sea()], false);
     // UVs from world position, so both normal maps tile evenly across the pieces
     const p = geometry.attributes.position, uv = geometry.attributes.uv;
     for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) - b.minX) / W, 1 - (p.getZ(i) - b.minZ) / D);
@@ -5699,11 +5758,25 @@ class WildWater {
     mesh.frustumCulled = false;
     scene.add(mesh);
     this.plane = mesh;
+
+    // the sea floor past the edge, meeting the terrain's own floor at the bounds
+    const bed = new THREE.Mesh(mergeGeometries(sea(), false),
+      new THREE.MeshLambertMaterial({ color: wildTerrain.grassColor }));
+    bed.position.y = level - OCEAN_DEPTH;
+    bed.frustumCulled = false;
+    scene.add(bed);
+    this.seabed = bed;
     invalidate();
     return mesh;
   }
 
   dispose() {
+    if (this.seabed) {
+      scene.remove(this.seabed);
+      this.seabed.geometry.dispose();
+      this.seabed.material.dispose();
+      this.seabed = null;
+    }
     if (!this.plane) return;
     scene.remove(this.plane);
     this.plane.geometry.dispose();
@@ -6736,7 +6809,7 @@ const visionRays = new VisionRaySystem();
 // WORLD PROVIDERS
 // The ecosystem engine (Animal, NpcWorld, the player, car, cat and renderers) asks the active world only this,
 // in metres on the scene's axes (-z north):
-//   bounds { minX, maxX, minZ, maxZ }, wraps   extent; Wild wraps like the Arena's torus, City and Mix clamp
+//   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (Wild and Mix are islands, see ISLAND COAST)
 //   heightAt(x, z)          terrain height (no buildings, no water)
 //   isWater(x, z)           standing water here
 //   surface(x, z, out)      footing: out.base (floor indoors, water surface, else ground), out.dip (bed below the
@@ -6812,7 +6885,7 @@ class CityWorld {
   }
 
   // Candidate spots; the engine checks isOpen and spacing. People: mostly sidewalks weighted by street length,
-  // plus some open ground. Deer (and Mix's park sheep): mostly green areas by area. Plants: see plantSpot.
+  // plus some open ground. Deer (and Mix's park coyotes): mostly green areas by area. Plants: see plantSpot.
   spawnPoint(type) {
     if (type === 'plant') return this.plantSpot();
     if (type === 'human') {
@@ -6914,7 +6987,7 @@ class WildWorld {
     this.seed = seed;
     const hw = CONFIG.worldWidth * NPC_UNIT / 2, hd = CONFIG.worldHeight * NPC_UNIT / 2;
     this.bounds = { minX: -hw, maxX: hw, minZ: -hd, maxZ: hd };
-    this.wraps = true;
+    this.wraps = false;              // an island: the sea at the edge is the limit (the Arena wrapped like a torus)
     this.shadows = true;
     this.companion = true;
     this.rays = 'single';
@@ -6934,9 +7007,9 @@ class WildWorld {
     const step = (b.maxX - b.minX) / WILD_GRID.x;
     const nz = Math.round((b.maxZ - b.minZ) / step) + 1;
     this.grid = new HeightGrid(b.minX, b.minZ, step, WILD_GRID.x + 1, nz);
-    this.grid.fill((x, z) => wildTerrain.metresAt(x, z));
+    this.grid.fill((x, z) => coastHeight(x, z, wildTerrain.metresAt(x, z), b, level));
     addWildLayer(heightMesh(this.grid));
-    ground.visible = false;          // past the Arena's edge there is only sky, as there was
+    ground.visible = false;          // past the edge there is only sea
     perf.terrainVersion++;
   }
 
@@ -6998,7 +7071,8 @@ class WildWorld {
   population() {
     return [
       { type: 'plant', count: CONFIG.initialPlants, src: this },
-      { type: 'sheep', count: CONFIG.initialSheep,  src: this },
+      { type: 'coyote', count: CONFIG.initialCoyotes, src: this },
+      { type: 'deer',   count: CONFIG.initialDeer,    src: this },
       { type: 'human', count: CONFIG.initialHumans, src: this }
     ];
   }
@@ -7035,7 +7109,7 @@ class WildWorld {
 const MIX_BLEND      = 250;    // metres from the measured edge to pure wilderness
 const MIX_RING_MIN   = 300;    // wilderness width around the city, metres
 const MIX_RING_MAX   = 1500;
-const MIX_PARK_SHARE = 0.25;   // share of the wilderness sheep that start in city parks and woods, when the city has any
+const MIX_PARK_SHARE = 0.25;   // share of the wilderness coyotes and deer that start in city parks and woods, when the city has any
 const MIX_HABITAT    = { forest: 2, wood: 2, scrub: 1.5, wetland: 1.5, meadow: 1.25 };
 const MIX_SINK       = 0.6;    // metres the wild mesh dips under the city's own terrain where they overlap
 
@@ -7120,7 +7194,7 @@ class MixWorld {
     const step = this.step;
     const nx = Math.round((b.maxX - b.minX) / step) + 1;
     this.grid = new HeightGrid(b.minX, b.minZ, step, nx, nx);
-    this.grid.fill((x, z) => this.blend(x, z));
+    this.grid.fill((x, z) => coastHeight(x, z, this.blend(x, z), b, this.level));
 
     // The city's own terrain mesh covers the square at ELEV_STEP; the wild mesh drops the quads well inside it and
     // tucks the one-quad overlap ring under it, so no crack opens where the two meet.
@@ -7184,13 +7258,14 @@ class MixWorld {
   waterSources() { return this.city.waterSources().concat(this.locations); }
 
   // Both ecosystems, each from its own spawn rules: the city's people, deer and plants; the wilderness's
-  // (the Arena's counts for the chosen size) people, sheep and plants.
+  // (the Arena's counts for the chosen size) people, coyotes, deer and plants.
   // (the People and Plants build options cover both)
   population() {
     const o = this.city.opts;
     return this.city.population().concat([
       { type: 'plant', count: o.plants ? CONFIG.initialPlants : 0, src: this.wild },
-      { type: 'sheep', count: CONFIG.initialSheep,                 src: this.wild },
+      { type: 'coyote', count: CONFIG.initialCoyotes,              src: this.wild },
+      { type: 'deer',   count: CONFIG.initialDeer,                 src: this.wild },
       { type: 'human', count: o.people ? CONFIG.initialHumans : 0, src: this.wild }
     ]);
   }
@@ -7210,9 +7285,9 @@ class MixWorld {
     return null;
   }
 
-  // Wilderness spawns; some sheep start in the city's parks and woods (habitat inside the city).
+  // Wilderness spawns; some coyotes and deer start in the city's parks and woods (habitat inside the city).
   wildPoint(type) {
-    if (type === 'sheep' && this.city.greens.length && Math.random() < MIX_PARK_SHARE) return this.city.greenPoint();
+    if ((type === 'coyote' || type === 'deer') && this.city.greens.length && Math.random() < MIX_PARK_SHARE) return this.city.greenPoint();
     if (type !== 'plant') return this.wildAnyPoint();
     for (let k = 0; k < PLANT_SPOT_TRIES; k++) {
       const p = this.wildAnyPoint();
@@ -7242,8 +7317,10 @@ class NpcWorld {
     this.plantSight = null;
     // The provider's water points, for vision queries; they never move.
     this.waterSight = null;
-    this.preyAlive = 0;
-    this.fastestHumanMS = 0;
+    this.typeAlive = {};                  // alive animals per type, counted each step
+    this.canHunt = {};                    // per type: is anything it hunts alive
+    this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
+    for (const t of NPC_TYPES) { this.typeAlive[t] = 0; this.canHunt[t] = false; this.fastestHunterMS[t] = 0; }
 
     this._qLocate = [];
     this._qHunt   = [];
@@ -7369,6 +7446,7 @@ class NpcWorld {
       a.heading = a.targetHeading = a.facingAngle = Math.random() * Animal.TWO_PI;
       a.position.y = surfaceY(x, z) + a.footLift() * NPC_UNIT;
       a.freeX = x; a.freeZ = z;
+      a.home = src;
       this.animals.push(a);
     }
     return placed;
@@ -7397,7 +7475,8 @@ class NpcWorld {
     }
   }
 
-  // Contact: people hunt prey (sheep, deer); everyone mates, grazes (City: people too) and drinks.
+  // Contact: hunters kill what they hunt (people: deer, coyotes; coyotes: deer, people); everyone mates and drinks;
+  // grazers (people and deer, not coyotes) eat plants.
   handleCollisions() {
     if (this.ticks % 3 === 0) {
       this.plantGrid.clear();
@@ -7411,21 +7490,24 @@ class NpcWorld {
       if (!a.alive) continue;
       const px = a.position.x, pz = a.position.z;
 
-      if (!a.spec.prey) {
-        // with no prey alive the query can only return people it would skip
-        const nHunt = this.preyAlive
-          ? this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
+      if (this.canHunt[a.type]) {
+        // with nothing it hunts alive the query can only return animals it would skip
+        const hunts = a.spec.hunts;
+        const nHunt = this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
         for (let i = 0; i < nHunt; i++) {
           const other = this._qHunt[i];
-          if (other.alive && other.spec.prey &&
+          if (other.alive && hunts[other.type] === true &&
               tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
-            other.attacked(a);
+            if (other.spec.hunts[a.type]) this.fight(a, other);   // they hunt each other
+            else other.attacked(a);
+            if (!a.alive) break;
           }
         }
+        if (!a.alive) continue;
       }
       if (a.lookForMate) this.tryMate(a, px, pz);
 
-      const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+      const nPlant = a.spec.grazes ? this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
       for (let i = 0; i < nPlant; i++) {
         const plant = this._qPlant[i];
         if (plant.alive &&
@@ -7438,6 +7520,15 @@ class NpcWorld {
         a.drinkWater();
       }
     }
+  }
+
+  // Two animals that hunt each other (a person and a coyote) meet: the one with more health kills the other and
+  // eats it; equal health, both walk away.
+  fight(a, b) {
+    if (a.health === b.health) return;
+    const win = a.health > b.health ? a : b, lose = win === a ? b : a;
+    lose.alive = false;
+    win.feedOn(lose);
   }
 
   // Occupancy-grid wall check: a step into a blocked cell keeps its free axis (slides) or is undone.
@@ -7461,20 +7552,25 @@ class NpcWorld {
       for (const a of this.animals) if (a.alive) this.grid.insert(a);
     }
 
-    let prey = 0, fastest = 0;
+    const alive = this.typeAlive, fastest = this.fastestHunterMS;
+    for (const t of NPC_TYPES) { alive[t] = 0; fastest[t] = 0; }
     for (let ai = 0; ai < this.animals.length; ai++) {
       const a = this.animals[ai];
       if (a.alive) {
         a.update(now, this.grid, ai);
         if (a.alive) {
           this.collide(a);
-          if (a.spec.prey) prey++;
-          else if (a.speed > fastest) fastest = a.speed;
+          alive[a.type]++;
+          const ms = a.speed * NPC_UNIT;
+          for (const t in a.spec.hunts) if (ms > fastest[t]) fastest[t] = ms;
         }
       }
     }
-    this.preyAlive = prey;
-    this.fastestHumanMS = fastest * NPC_UNIT;
+    for (const t of NPC_TYPES) {
+      let any = false;
+      for (const h in SPECIES[t].hunts) if (alive[h]) { any = true; break; }
+      this.canHunt[t] = any;
+    }
 
     for (const p of this.plants) {
       if (p.alive) p.update();
@@ -7510,7 +7606,7 @@ const animalRenderer = new AnimalRenderer();
 const plantRenderer  = new PlantRenderer();
 const world          = new NpcWorld();
 
-// GAME MODE: prey (deer, sheep) flee the player, who eats prey on contact, drinks in water, and gets hungry and thirsty
+// GAME MODE: what people hunt (deer, coyotes) flees the player, who eats it on contact, drinks in water, and gets hungry and thirsty
 // (NPC 0..100 scale, no mate need). Advanced from NpcWorld.step.
 const PLAYER_FOOD_RATE  = 100 / (20 * 60);   // need per second: fed to starving in 20 min
 const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
@@ -7560,7 +7656,7 @@ const game = {
       const n = world.grid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
       for (let i = 0; i < n; i++) {
         const d = this._q[i];
-        if (!d.alive || !d.spec.prey) continue;
+        if (!d.alive || !SPECIES.human.hunts[d.type]) continue;
         if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
         if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
         d.alive = false;                                   // removed with the dead this tick
@@ -8907,7 +9003,7 @@ function step(dt) {
       }
     }
   }
-  // Wild wraps at its edges (the Arena's torus); City and Mix stop at theirs
+  // every world stops the player at its edge (in Wild and Mix, out in the sea)
   if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
 
   const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
@@ -9647,13 +9743,13 @@ let hudBuildings = 0;
 let clockTimer = null;
 
 function populationText() {
-  let people = 0, sheep = 0, deer = 0;
+  let people = 0, coyotes = 0, deer = 0;
   for (const a of world.animals) {
     if (!a.alive) continue;
-    if (a.type === 'human') people++; else if (a.type === 'sheep') sheep++; else deer++;
+    if (a.type === 'human') people++; else if (a.type === 'coyote') coyotes++; else deer++;
   }
   const parts = [`${fmt(people)} people`];
-  if (sheep || (activeWorld && activeWorld.kind !== 'city')) parts.push(`${fmt(sheep)} sheep`);
+  if (coyotes || (activeWorld && activeWorld.kind !== 'city')) parts.push(`${fmt(coyotes)} coyotes`);
   if (deer) parts.push(`${fmt(deer)} deer`);
   parts.push(`${fmt(world.plants.length)} plants`, `day ${Math.floor(world.ticks / (24 * 60))}`);
   return parts.join(', ');
@@ -9805,13 +9901,14 @@ async function loadWild(seed) {
     steps.done('cabins', `${w.cabins.length} cabins, ${fmt(pebbles.data.length)} pebbles.`);
 
     current = 'people';
-    steps.start('people', `Spawning up to ${fmt(CONFIG.initialHumans)} people, ${fmt(CONFIG.initialSheep)} sheep ` +
-      `and ${fmt(CONFIG.initialPlants)} plants…`);
+    steps.start('people', `Spawning up to ${fmt(CONFIG.initialHumans)} people, ${fmt(CONFIG.initialCoyotes)} coyotes, ` +
+      `${fmt(CONFIG.initialDeer)} deer and ${fmt(CONFIG.initialPlants)} plants…`);
     await paint();
     world.initialize(w);
-    const sheep = world.animals.reduce((n, a) => n + (a.type === 'sheep'), 0);
-    steps.done('people', `${fmt(world.animals.length - sheep)} people and ${fmt(sheep)} sheep, each with a two-lobe ` +
-      `brain; ${fmt(world.plants.length)} plants.`);
+    const made = { human: 0, coyote: 0, deer: 0 };
+    for (const a of world.animals) made[a.type]++;
+    steps.done('people', `${fmt(made.human)} people, each with a two-lobe brain; ${fmt(made.coyote)} coyotes and ` +
+      `${fmt(made.deer)} deer; ${fmt(world.plants.length)} plants.`);
 
     // no forecast: this device's clock sets the sun, the Arena's rain cycle the weather
     const tz = -new Date().getTimezoneOffset();
@@ -10010,17 +10107,17 @@ async function loadPlace(query, mode = 'city') {
       current = 'people';
       const want = [];
       if (planned('human')) want.push(`${fmt(planned('human'))} people`);
-      if (planned('sheep')) want.push(`${fmt(planned('sheep'))} sheep`);
+      if (planned('coyote')) want.push(`${fmt(planned('coyote'))} coyotes`);
       if (planned('deer'))  want.push(`${fmt(planned('deer'))} deer`);
       if (planned('plant')) want.push(`${fmt(planned('plant'))} plants`);
       steps.start('people', `Spawning up to ${want.join(', ')}…`);
       await paint();
       world.initialize(provider);
-      const made = { human: 0, sheep: 0, deer: 0 };
+      const made = { human: 0, coyote: 0, deer: 0 };
       for (const a of world.animals) made[a.type]++;
       const out = [];
       if (made.human) out.push(`${fmt(made.human)} people, each with a two-lobe brain`);
-      if (made.sheep) out.push(`${fmt(made.sheep)} sheep, each with a two-lobe brain`);
+      if (made.coyote) out.push(`${fmt(made.coyote)} coyotes`);
       if (made.deer)  out.push(`${fmt(made.deer)} deer`);
       out.push(`${fmt(world.plants.length)} plants`);
       steps.done('people', out.join(', ') + '.');
@@ -10099,15 +10196,17 @@ gameEl.addEventListener('click', () => {
   // no flying in game mode: land and hide the button
   if (game.on && flying) toggleFly();
   flyEl.classList.toggle('on', active && !driving && !game.on);
-  // deer only in game mode: the Deer build switch follows, and a live city gains or loses its deer
+  // the city's deer only in game mode: the Deer build switch follows, and a live city gains or loses its own
+  // deer (the wilderness's deer stay)
   loadOpts.deer = game.on;
   const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
   deerSwitch.classList.toggle('on', game.on);
   deerSwitch.setAttribute('aria-checked', String(game.on));
   if (world.ready && activeWorld && activeWorld.city) {
-    const hasDeer = world.animals.some(a => a.alive && a.type === 'deer');
-    if (game.on && !hasDeer) world.spawn('deer', NPC_DEER_POPULATION, activeWorld.city);
-    else if (!game.on) for (const a of world.animals) if (a.type === 'deer') a.alive = false;
+    const city = activeWorld.city;
+    const hasDeer = world.animals.some(a => a.alive && a.type === 'deer' && a.home === city);
+    if (game.on && !hasDeer) world.spawn('deer', NPC_DEER_POPULATION, city);
+    else if (!game.on) for (const a of world.animals) if (a.type === 'deer' && a.home === city) a.alive = false;
   }
   wake();
 });
