@@ -125,7 +125,7 @@
     width: 46px; height: 46px; margin: -23px 0 0 -23px;
     background: rgba(232, 228, 220, 0.28); border-radius: 50%;
   }
-  #fly, #car, #gear, #climb button {
+  #fly, #car, #gear, #climb button, .pedal {
     padding: 12px 18px;
     background: rgba(16, 19, 26, 0.45); color: rgba(232, 228, 220, 0.75);
     border: 1px solid rgba(232, 228, 220, 0.3); border-radius: 3px;
@@ -143,7 +143,19 @@
     z-index: 6; display: none;
   }
   #car.on { display: block; }
-  #car.driving { bottom: 62px; }
+  #car.driving { bottom: 172px; }
+  /* touch pedals while driving: gas far right, brake beside it */
+  .pedal {
+    position: fixed; bottom: 24px; width: 74px;
+    z-index: 6; display: none;
+    touch-action: none;
+  }
+  .pedal.on { display: block; }
+  .pedal.held { background: rgba(232, 228, 220, 0.85); color: #10131a; border-color: transparent; }
+  #gas   { right: 18px;  height: 132px; }
+  #brake { right: 104px; height: 96px; }
+  /* flick steering: the floating stick narrows to a horizontal track */
+  #stick.flick { height: 46px; margin-top: -23px; border-radius: 23px; }
   #fly.flying, #climb button.held {
     background: rgba(232, 228, 220, 0.85); color: #10131a;
     border-color: transparent;
@@ -222,6 +234,8 @@
 <div id="hud"></div>
 <button id="fly">Fly</button>
 <button id="car">Drive</button>
+<button id="brake" class="pedal">Brake</button>
+<button id="gas" class="pedal">Gas</button>
 <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
 <button id="gear">=</button>
 <div id="settings">
@@ -5151,6 +5165,7 @@ addEventListener('keydown', e => {
 // Left half: floating stick. Right half: look-drag, double tap jumps. Touch
 // and keyboard/mouse are always both live.
 const STICK_RADIUS = 55;          // px of travel for full tilt
+const FLICK_RADIUS = 10;          // px of flick-steering travel for full lock while driving
 const TAP_GAP_MS   = 300;
 
 const touchMove = { x: 0, z: 0 };
@@ -5172,6 +5187,7 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
       stickEl.style.left = stickCx + 'px';
       stickEl.style.top  = stickCy + 'px';
       knobEl.style.transform = 'translate(0px, 0px)';
+      stickEl.classList.toggle('flick', driving);
       stickEl.classList.add('on');
     } else if (lookId === null) {
       lookId = e.pointerId;
@@ -5186,11 +5202,13 @@ let knobDx = 0, knobDy = 0, knobDirty = false;
   el.addEventListener('pointermove', e => {
     if (e.pointerId === stickId) {
       let dx = e.clientX - stickCx, dy = e.clientY - stickCy;
+      if (driving) dy = 0;   // flick steering: horizontal travel only
+      const reach = driving ? FLICK_RADIUS : STICK_RADIUS;
       const d = Math.hypot(dx, dy);
-      if (d > STICK_RADIUS) { dx *= STICK_RADIUS / d; dy *= STICK_RADIUS / d; }
+      if (d > reach) { dx *= reach / d; dy *= reach / d; }
       knobDx = dx; knobDy = dy; knobDirty = true;
-      touchMove.x =  dx / STICK_RADIUS;
-      touchMove.z = -dy / STICK_RADIUS;
+      touchMove.x =  dx / reach;
+      touchMove.z = -dy / reach;
     } else if (e.pointerId === lookId) {
       player.yaw   -= (e.clientX - lookX) * 0.005;
       player.pitch -= (e.clientY - lookY) * 0.005;
@@ -5566,6 +5584,32 @@ function pushPlayerFromCar() {
   return pushed;
 }
 
+// Touch pedals, held like the fly climb buttons. Brake, like S, reverses
+// once the car has stopped.
+const gasEl = document.getElementById('gas');
+const brakeEl = document.getElementById('brake');
+const pedal = { gas: false, brake: false };
+const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
+
+function holdPedal(btn, name) {
+  btn.addEventListener('pointerdown', e => {
+    btn.setPointerCapture(e.pointerId);   // sliding off still releases it
+    pedal[name] = true;
+    btn.classList.add('held');
+    wake();
+  });
+  const release = () => {
+    pedal[name] = false;
+    btn.classList.remove('held');
+    wake();
+  };
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('lostpointercapture', release);
+}
+holdPedal(gasEl, 'gas');
+holdPedal(brakeEl, 'brake');
+
 let carBtnState = '';
 function updateCarButton() {
   const state = !active ? '' : driving ? 'exit' : carNear() ? 'enter' : '';
@@ -5574,6 +5618,12 @@ function updateCarButton() {
   carEl.classList.toggle('on', state !== '');
   carEl.classList.toggle('driving', state === 'exit');
   carEl.textContent = state === 'exit' ? 'Exit' : 'Drive';
+  const pedals = state === 'exit' && touchUi();
+  for (const el of [gasEl, brakeEl]) {
+    el.classList.toggle('on', pedals);
+    if (!pedals) el.classList.remove('held');
+  }
+  if (!pedals) pedal.gas = pedal.brake = false;
 }
 
 function enterCar() {
@@ -5584,6 +5634,7 @@ function enterCar() {
   drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;   // no look delta on entry
   player.vel.set(0, 0, 0);
   jumpQueued = false;
+  touchMove.z = 0;   // a stick held on entry steers from here on, no throttle
   flyEl.classList.remove('on');
   updateCarButton();
   wake();
@@ -5637,7 +5688,9 @@ function driveStep(dt) {
     if (keys.has('KeyS') || keys.has('ArrowDown'))  throttle -= 1;
     if (keys.has('KeyA') || keys.has('ArrowLeft'))  steer += 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) steer -= 1;
-    if (stickId !== null) { throttle += touchMove.z; steer -= touchMove.x; }
+    if (stickId !== null) steer -= touchMove.x;   // flick steering
+    if (pedal.brake) throttle -= 1;               // brake wins when both are held
+    else if (pedal.gas) throttle += 1;
   }
   throttle = Math.max(-1, Math.min(1, throttle));
   steer = Math.max(-1, Math.min(1, steer));
@@ -5882,7 +5935,7 @@ function wake() {
 }
 
 function movementHeld() {
-  return stickId !== null || climb !== 0 || jumpQueued ||
+  return stickId !== null || climb !== 0 || jumpQueued || pedal.gas || pedal.brake ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space') ||
