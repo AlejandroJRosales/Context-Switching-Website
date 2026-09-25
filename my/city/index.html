@@ -182,7 +182,7 @@
     </div>
     <p id="status"></p>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, esc for settings.</p>
-    <p>1.0.0.4</p>
+    <p>1.0.0.3-opt</p>
   </div>
 </div>
 <div id="dot"></div>
@@ -268,6 +268,22 @@ const IMAGERY_TILE_PX  = 256;
 const IMAGERY_MAX_TILES = 100;
 const IMAGERY_TIMEOUT_MS = 8000;
 const IMAGERY_Y        = 0.004;   // beneath every painted ground layer
+
+// Elevation: AWS Terrain Tiles (Terrarium PNGs, public dataset, no key).
+// Heights are packed in RGB: (R * 256 + G + B / 256) - 32768 metres.
+// Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
+const TERRAIN_URL        = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
+const TERRAIN_MAX_Z      = 15;      // deepest level served (~3.7 m/px at 40 N)
+const TERRAIN_MIN_Z      = 12;
+const TERRAIN_TILE_PX    = 256;
+const TERRAIN_MAX_TILES  = 16;
+const TERRAIN_TIMEOUT_MS = 10000;
+const TERRAIN_SPIKE_M    = 30;      // a pixel this far off its neighbours' median is corrupt
+const TERRAIN_SPIKE_FRAC = 0.005;   // more spikes than this and the whole set is rejected
+const ELEV_STEP          = 5;       // metres between height samples and terrain mesh vertices
+const ELEV_MARGIN        = 100;     // metres of terrain past the loaded radius
+const STEP_UP            = 0.45;    // highest ledge walked onto without a jump (player and NPCs)
+const GROUND_SNAP        = 0.5;     // grounded feet follow a drop this small instead of falling
 
 // Flat layers sit centimetres apart, below depth-buffer resolution, so each
 // gets a depth bias. Higher wins; the base ground plane is 0.
@@ -1378,6 +1394,19 @@ function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   pushSolid(ctx.solids, [o0, o1, i1, i0], doorTop, wallTop);
 }
 
+// Foundation under a ring on sloping ground, from the lowest ground up to
+// the floor. Outer face and collider only; the inside is under the floor.
+// Its top is the step up into a doorway on the low side.
+function ringPlinth(ctx, R, foot, floor) {
+  const n = R.pts.length;
+  for (let i = 0; i < n; i++) {
+    const e = R.E[i], j = (i + 1) % n;
+    const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
+    vquad(ctx.buf, p0, p1, foot, floor, ctx.wc, [-e.nx, 0, -e.nz]);
+    pushSolid(ctx.solids, [p0, p1, q1, q0], foot, floor);
+  }
+}
+
 // Walls for one ring. `doors` holds at most one door per edge, or a single
 // run door; null for courtyard rings.
 function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
@@ -1484,10 +1513,18 @@ function buildCity(features) {
     const cap = capOf(outer, holes);
     if (!cap) { skipped++; continue; }   // self-intersecting ring; earcut gave up
 
+    // The floor goes at the highest ground under the footprint so the
+    // terrain never shows through it; a plinth runs down to the lowest.
+    // A raised part (min_height) keeps its height over that same ground.
+    const [gLo, gHi] = elevation.span(outer);
+    const raised = base > 0.05;
+    const b0 = base + gHi;
+
     list.push({
       pts: outer, holes, ...bounds(outer), cap,
-      base, top: wallTop, ceil: wallTop - CEIL_GAP, floor: base > 0.05 ? base : 0,
-      roofTop: top, roofShape, obb, tags, doors: [], doorTop: 0, throat: null, throats: [],
+      base: b0, top: wallTop + gHi, ceil: wallTop + gHi - CEIL_GAP, floor: b0,
+      ground: gHi, foot: raised ? b0 : gLo, raised,
+      roofTop: top + gHi, roofShape, obb, tags, doors: [], doorTop: 0, throat: null, throats: [],
       R: null, signDoors: null, index: list.length
     });
   }
@@ -1509,7 +1546,7 @@ function buildCity(features) {
   for (const q of collectSigns(list, features.pois)) {
     if (signs.length >= SIGN_MAX) break;
     const w = q.w, door = signDoor(w, q.edge.i);
-    const sg = placeSign(q.edge, q.text, q.kind, w.top, door ? w.doorTop + 0.12 : 0);
+    const sg = placeSign(q.edge, q.text, q.kind, w.top, door ? w.doorTop + 0.12 : 0, w.ground);
     if (!sg || !fitSign(sg, signs, w.top)) continue;
     signs.push(sg);
     if (door) {
@@ -1554,13 +1591,18 @@ function buildCity(features) {
 
     const ctx = { buf, solids, wc, iw, trim };
     ringWalls(ctx, R, doors, s.base, s.top, s.doorTop);
+    const HR = s.holes.map(wallRing);
+    for (const h of HR) ringWalls(ctx, h, null, s.base, s.top, s.doorTop);
+    if (s.base - s.foot > 0.01) {
+      ringPlinth(ctx, R, s.foot, s.base);
+      for (const h of HR) ringPlinth(ctx, h, s.foot, s.base);
+    }
     s.R = null; s.signDoors = null;
-    for (const h of s.holes) ringWalls(ctx, wallRing(h), null, s.base, s.top, s.doorTop);
 
     pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);             // flat roof / eaves cap
     pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);        // seen from inside
     pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
-    if (s.base > 0.05) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);   // raised: underside
+    if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);   // raised: underside
 
     if (s.roofShape) {
       const rcHex = roofColorOf(tags);
@@ -1610,12 +1652,14 @@ function buildGround(features) {
     if (isPath) ribbon(pathBuf, r.pts, width, LAYER_Y.path, pathC);
     else ribbon(roadBuf, r.pts, width, LAYER_Y.road, roadC);
   }
-  const rg = bufGeom(roadBuf), pg = bufGeom(pathBuf);
+  let rg = bufGeom(roadBuf), pg = bufGeom(pathBuf);
 
-  addLayer(areaGeoms, litMaterial(LAYER_BIAS.area));
-  addLayer(waterGeoms, litMaterial(LAYER_BIAS.water));
-  if (rg) addLayer([rg], litMaterial(LAYER_BIAS.road));
-  if (pg) addLayer([pg], litMaterial(LAYER_BIAS.path));
+  // flat layers follow the ground; with no terrain they stay as built
+  const lay = gs => elevation.active ? gs.map(drape) : gs;
+  addLayer(lay(areaGeoms), litMaterial(LAYER_BIAS.area));
+  addLayer(lay(waterGeoms), litMaterial(LAYER_BIAS.water));
+  if (rg) addLayer(lay([rg]), litMaterial(LAYER_BIAS.road));
+  if (pg) addLayer(lay([pg]), litMaterial(LAYER_BIAS.path));
 }
 
 // One instanced trunk and one instanced crown for the whole scene.
@@ -1645,11 +1689,12 @@ function buildTrees(trees) {
     e.set(0, Math.random() * Math.PI * 2, 0);
     q.setFromEuler(e);
 
-    pos.set(t.x, 0, t.z);
+    const gy = elevation.at(t.x, t.z);
+    pos.set(t.x, gy, t.z);
     scl.set(1, Math.max(trunkH, 0.5), 1);
     trunk.setMatrixAt(i, m.compose(pos, q, scl));
 
-    pos.set(t.x, Math.max(trunkH, 0.5) + crownR * 0.55, t.z);
+    pos.set(t.x, gy + Math.max(trunkH, 0.5) + crownR * 0.55, t.z);
     scl.set(crownR, crownR * 1.15, crownR);
     crown.setMatrixAt(i, m.compose(pos, q, scl));
     crown.setColorAt(i, c.setHSL(0.24 + Math.random() * 0.07, 0.42, 0.20 + Math.random() * 0.09));
@@ -1678,21 +1723,32 @@ function buildBarriers(list) {
     const c = rgb(spec.color);
 
     for (let i = 0; i < b.pts.length - 1; i++) {
-      const [x0, z0] = b.pts[i], [x1, z1] = b.pts[i + 1];
-      const dx = x1 - x0, dz = z1 - z0;
-      const len = Math.hypot(dx, dz);
-      if (len < 0.2) continue;
+      const [ax, az] = b.pts[i], [bx, bz] = b.pts[i + 1];
+      // on terrain, long runs step down the slope in ELEV_STEP * 2 pieces
+      const run = Math.hypot(bx - ax, bz - az);
+      const parts = elevation.active ? Math.max(1, Math.ceil(run / (ELEV_STEP * 2))) : 1;
+      for (let k = 0; k < parts; k++) {
+        const x0 = ax + (bx - ax) * k / parts, z0 = az + (bz - az) * k / parts;
+        const x1 = ax + (bx - ax) * (k + 1) / parts, z1 = az + (bz - az) * (k + 1) / parts;
+        const dx = x1 - x0, dz = z1 - z0;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.2) continue;
 
-      const g = new THREE.BoxGeometry(len, h, spec.t);
-      g.deleteAttribute('uv');
-      g.rotateY(Math.atan2(-dz, dx));
-      g.translate((x0 + x1) / 2, h / 2, (z0 + z1) / 2);
-      geoms.push(tint(nonIndexed(g), c));
+        // foot at the lower end, top a full height over the middle
+        const g0 = elevation.at(x0, z0), g1 = elevation.at(x1, z1);
+        const base = Math.min(g0, g1), top = (g0 + g1) / 2 + h;
 
-      const t = Math.max(spec.t, 0.25) / 2;
-      const nx = -dz / len * t, nz = dx / len * t;
-      const pts = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
-      boxes.push({ pts, ...bounds(pts), base: 0, top: h, tags: null });
+        const g = new THREE.BoxGeometry(len, top - base, spec.t);
+        g.deleteAttribute('uv');
+        g.rotateY(Math.atan2(-dz, dx));
+        g.translate((x0 + x1) / 2, (base + top) / 2, (z0 + z1) / 2);
+        geoms.push(tint(nonIndexed(g), c));
+
+        const t = Math.max(spec.t, 0.25) / 2;
+        const nx = -dz / len * t, nz = dx / len * t;
+        const pts = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
+        boxes.push({ pts, ...bounds(pts), base, top, tags: null });
+      }
     }
   }
 
@@ -1724,23 +1780,235 @@ function buildProps(list) {
   const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
 
   for (const p of list) {
+    const gy = elevation.at(p.x, p.z);
     if (p.kind === 'lamp') {
-      geoms.push(cyl(0.07, 0.11, 4.6, p.x, 0, p.z, post));
-      geoms.push(box(0.5, 0.18, 0.28, p.x, 4.7, p.z, 0, lampHead));
+      geoms.push(cyl(0.07, 0.11, 4.6, p.x, gy, p.z, post));
+      geoms.push(box(0.5, 0.18, 0.28, p.x, gy + 4.7, p.z, 0, lampHead));
     } else if (p.kind === 'bench') {
       const yaw = Math.random() * Math.PI * 2;
       const s = Math.sin(yaw), co = Math.cos(yaw);
-      geoms.push(box(1.7, 0.09, 0.5, p.x, 0.46, p.z, yaw, wood));
-      geoms.push(box(1.7, 0.38, 0.07, p.x - s * 0.21, 0.68, p.z - co * 0.21, yaw, wood));
-      geoms.push(box(0.07, 0.44, 0.44, p.x + co * 0.72, 0.22, p.z - s * 0.72, yaw, iron));
-      geoms.push(box(0.07, 0.44, 0.44, p.x - co * 0.72, 0.22, p.z + s * 0.72, yaw, iron));
+      geoms.push(box(1.7, 0.09, 0.5, p.x, gy + 0.46, p.z, yaw, wood));
+      geoms.push(box(1.7, 0.38, 0.07, p.x - s * 0.21, gy + 0.68, p.z - co * 0.21, yaw, wood));
+      geoms.push(box(0.07, 0.44, 0.44, p.x + co * 0.72, gy + 0.22, p.z - s * 0.72, yaw, iron));
+      geoms.push(box(0.07, 0.44, 0.44, p.x - co * 0.72, gy + 0.22, p.z + s * 0.72, yaw, iron));
     } else if (p.kind === 'hydrant') {
-      geoms.push(cyl(0.13, 0.16, 0.62, p.x, 0, p.z, hydrant));
-      geoms.push(cyl(0.09, 0.13, 0.12, p.x, 0.62, p.z, hydrant));
+      geoms.push(cyl(0.13, 0.16, 0.62, p.x, gy, p.z, hydrant));
+      geoms.push(cyl(0.09, 0.13, 0.12, p.x, gy + 0.62, p.z, hydrant));
     }
   }
 
   addLayer(geoms, litMaterial());
+}
+
+// ELEVATION
+//
+// One height grid per city, relative to the loaded point, sampled every
+// ELEV_STEP metres over the radius plus ELEV_MARGIN. Everything that stood on
+// y = 0 now stands on elevation.at(x, z); with no terrain it returns 0 and
+// the city is flat as before.
+const elevation = {
+  active: false, half: 0, step: ELEV_STEP, n: 0, data: null, min: 0, max: 0,
+
+  set(g) {
+    if (!g) { this.clear(); return; }
+    Object.assign(this, g);
+    this.active = true;
+  },
+  clear() {
+    this.active = false; this.data = null; this.n = 0; this.min = 0; this.max = 0;
+  },
+
+  // Bilinear; clamps to the grid edge outside it.
+  at(x, z) {
+    if (!this.active) return 0;
+    const n = this.n, last = n - 1;
+    let fx = (x + this.half) / this.step, fz = (z + this.half) / this.step;
+    fx = fx < 0 ? 0 : fx > last ? last : fx;
+    fz = fz < 0 ? 0 : fz > last ? last : fz;
+    const i = Math.min(Math.floor(fx), last - 1), j = Math.min(Math.floor(fz), last - 1);
+    const tx = fx - i, tz = fz - j, d = this.data, k = j * n + i;
+    const a = d[k] + (d[k + 1] - d[k]) * tx;
+    const b = d[k + n] + (d[k + n + 1] - d[k + n]) * tx;
+    return a + (b - a) * tz;
+  },
+
+  // Lowest and highest ground under a footprint: its corners plus a grid of
+  // interior samples, so a knoll inside a big footprint is not missed.
+  span(pts) {
+    if (!this.active) return [0, 0];
+    let lo = Infinity, hi = -Infinity;
+    const take = h => { if (h < lo) lo = h; if (h > hi) hi = h; };
+    for (const [x, z] of pts) take(this.at(x, z));
+    const b = bounds(pts), st = this.step;
+    for (let z = b.minZ + st / 2; z < b.maxZ; z += st) {
+      for (let x = b.minX + st / 2; x < b.maxX; x += st) {
+        if (pointInRing(pts, x, z)) take(this.at(x, z));
+      }
+    }
+    return [lo, hi];
+  }
+};
+
+// Tiles covering the radius plus margin, decoded and resampled into the
+// grid. Null when any tile is missing or the pixels look tampered with, so a
+// partial or corrupt set never shapes the city; the caller stays flat.
+async function fetchTerrain(lat, lon, radius) {
+  const half = radius + ELEV_MARGIN;
+  const kx = 111320 * Math.cos(lat * Math.PI / 180), kz = 110540;
+  const dLat = half / kz, dLon = half / kx;
+
+  let z = TERRAIN_MAX_Z, x0, x1, y0, y1;
+  for (;;) {
+    const nw = tileOf(lat + dLat, lon - dLon, z);
+    const se = tileOf(lat - dLat, lon + dLon, z);
+    x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
+    y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) <= TERRAIN_MAX_TILES) break;
+    if (z <= TERRAIN_MIN_Z) return null;
+    z--;
+  }
+
+  const cols = x1 - x0 + 1, rows = y1 - y0 + 1, P = TERRAIN_TILE_PX;
+  const cv = document.createElement('canvas');
+  cv.width = cols * P; cv.height = rows * P;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  let got = 0;
+  const jobs = [];
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      jobs.push(loadImage(`${TERRAIN_URL}/${z}/${tx}/${ty}.png`, 0).then(img => {
+        if (!img) return;
+        ctx.drawImage(img, (tx - x0) * P, (ty - y0) * P, P, P);
+        got++;
+      }));
+    }
+  }
+  await Promise.race([
+    Promise.all(jobs),
+    new Promise(done => setTimeout(done, TERRAIN_TIMEOUT_MS))
+  ]);
+  if (got < cols * rows) return null;
+
+  let px;
+  try { px = ctx.getImageData(0, 0, cv.width, cv.height).data; } catch (e) { return null; }
+  const W = cv.width, H = cv.height;
+  const raw = new Float32Array(W * H);
+  for (let i = 0, k = 0; i < raw.length; i++, k += 4) {
+    raw[i] = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
+  }
+
+  // Canvas readback can be noised (Safari and Firefox fingerprinting
+  // protection); one unit of red is 256 m, so noise shows as isolated spikes.
+  let spikes = 0;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const a = raw[i - 1], b = raw[i + 1], c = raw[i - W], d = raw[i + W];
+      // median of four: drop the extremes, average the middle two
+      const med = (a + b + c + d - Math.min(a, b, c, d) - Math.max(a, b, c, d)) / 2;
+      if (Math.abs(raw[i] - med) > TERRAIN_SPIKE_M) spikes++;
+    }
+  }
+  if (spikes > (W - 2) * (H - 2) * TERRAIN_SPIKE_FRAC) {
+    console.warn(`Terrain rejected: ${spikes} spiked pixels (canvas readback may be noised).`);
+    return null;
+  }
+
+  // Resample onto the local grid through the inverse of makeProjector.
+  // Terrarium carries bathymetry; sea level is the floor, so harbours stay
+  // at the water line instead of sinking.
+  const sample = (fx, fy) => {
+    fx = Math.min(Math.max(fx, 0), W - 1.001);
+    fy = Math.min(Math.max(fy, 0), H - 1.001);
+    const i = Math.floor(fx), j = Math.floor(fy), tx = fx - i, ty = fy - j, k = j * W + i;
+    const a = raw[k] + (raw[k + 1] - raw[k]) * tx;
+    const b = raw[k + W] + (raw[k + W + 1] - raw[k + W]) * tx;
+    return Math.max(0, a + (b - a) * ty);
+  };
+  const step = ELEV_STEP;
+  const n = Math.ceil(2 * half / step) + 1;
+  const data = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    const la = lat - (-half + j * step) / kz;
+    for (let i = 0; i < n; i++) {
+      const t = tileOf(la, lon + (-half + i * step) / kx, z);
+      data[j * n + i] = sample((t.x - x0) * P - 0.5, (t.y - y0) * P - 0.5);
+    }
+  }
+
+  // relative to the loaded point, which is where the street starts at 0
+  const t0 = tileOf(lat, lon, z);
+  const origin = sample((t0.x - x0) * P - 0.5, (t0.y - y0) * P - 0.5);
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < data.length; i++) {
+    const h = data[i] - origin;
+    data[i] = h;
+    if (h < min) min = h;
+    if (h > max) max = h;
+  }
+  return { half: (n - 1) * step / 2, step, n, data, min, max, z };
+}
+
+// Split a flat, non-indexed layer until no edge is longer than ELEV_STEP,
+// then lift every vertex by the ground under it. Longest-edge midpoint
+// splits cut a shared edge the same way from both sides, so no cracks.
+function drape(g) {
+  const P = g.attributes.position.array, C = g.attributes.color.array;
+  const pos = [], col = [], E2 = ELEV_STEP * ELEV_STEP;
+  const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[2] - b[2]) ** 2;
+  const mid = (a, b) => a.map((v, i) => (v + b[i]) / 2);
+  const emit = v => {
+    pos.push(v[0], v[1] + elevation.at(v[0], v[2]), v[2]);
+    col.push(v[3], v[4], v[5]);
+  };
+  const tri = (a, b, c, depth) => {
+    const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a);
+    const m = Math.max(ab, bc, ca);
+    if (m <= E2 || depth > 24) { emit(a); emit(b); emit(c); return; }
+    if (m === ab) { const q = mid(a, b); tri(a, q, c, depth + 1); tri(q, b, c, depth + 1); }
+    else if (m === bc) { const q = mid(b, c); tri(a, b, q, depth + 1); tri(a, q, c, depth + 1); }
+    else { const q = mid(c, a); tri(a, b, q, depth + 1); tri(q, b, c, depth + 1); }
+  };
+  for (let t = 0; t < P.length; t += 9) {
+    const v = k => [P[t + k], P[t + k + 1], P[t + k + 2], C[t + k], C[t + k + 1], C[t + k + 2]];
+    tri(v(0), v(3), v(6), 0);
+  }
+  g.dispose();
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  out.computeVertexNormals();
+  return out;
+}
+
+// Grid mesh over [-half, half] at ELEV_STEP, lifted onto the terrain; UVs
+// span the square. Flat terrain gives one quad.
+function terrainGrid(westX, eastX, northZ, southZ, y) {
+  const segX = elevation.active ? Math.max(1, Math.round((eastX - westX) / ELEV_STEP)) : 1;
+  const segZ = elevation.active ? Math.max(1, Math.round((southZ - northZ) / ELEV_STEP)) : 1;
+  const g = new THREE.PlaneGeometry(eastX - westX, southZ - northZ, segX, segZ);
+  g.rotateX(-Math.PI / 2);
+  g.translate((westX + eastX) / 2, y, (northZ + southZ) / 2);
+  if (elevation.active) {
+    const a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) a.setY(i, y + elevation.at(a.getX(i), a.getZ(i)));
+    g.computeVertexNormals();
+  }
+  return g;
+}
+
+// Plain ground over the loaded area plus margin, so the terrain reads even
+// where there is no photo. The far plane drops beneath the lowest point.
+function buildTerrainBase(radius) {
+  ground.position.y = elevation.active ? elevation.min - 0.3 : 0;
+  if (!elevation.active) return;
+  const h = Math.min(radius + ELEV_MARGIN, elevation.half);
+  const mesh = new THREE.Mesh(terrainGrid(-h, h, -h, h, -0.02),
+    new THREE.MeshLambertMaterial({ color: 0x5c5f57 }));
+  scene.add(mesh);
+  layers.push(mesh);
+  invalidate();
 }
 
 // IMAGERY
@@ -1864,9 +2132,7 @@ async function fetchImagery(lat, lon, radius, project) {
 // Textured ground quad. Canvas top is north, which default flipY gives.
 function buildImagery(img) {
   if (!img) return;
-  const g = new THREE.PlaneGeometry(img.eastX - img.westX, img.southZ - img.northZ);
-  g.rotateX(-Math.PI / 2);
-  g.translate((img.westX + img.eastX) / 2, IMAGERY_Y, (img.northZ + img.southZ) / 2);
+  const g = terrainGrid(img.westX, img.eastX, img.northZ, img.southZ, IMAGERY_Y);
 
   const tex = new THREE.Texture(img.source);
   tex.needsUpdate = true;
@@ -1926,17 +2192,18 @@ function edgeNearest(pts, x, z) {
 }
 
 // `lift` is the lowest the sign may hang, used to keep it above a doorway.
-function placeSign(edge, text, kind, eaves, lift) {
+// Heights are absolute; `ground` is the level the sign is measured up from.
+function placeSign(edge, text, kind, eaves, lift, ground = 0) {
   if (!edge || !text) return null;
   const h = kind === 'number' ? 0.3 : 0.55;
-  let y = kind === 'number'
-    ? Math.min(2.1, eaves - 0.25)
-    : Math.min(3.1, eaves - 0.45);
+  let y = ground + (kind === 'number'
+    ? Math.min(2.1, eaves - ground - 0.25)
+    : Math.min(3.1, eaves - ground - 0.45));
   if (lift && y - h / 2 < lift) {
     y = lift + h / 2;
     if (y + h / 2 > eaves - 0.05) return null;
   }
-  if (y - h / 2 < 0.3) return null;
+  if (y - h / 2 < ground + 0.3) return null;
   if (edge.len < (kind === 'number' ? 0.8 : 1.6)) return null;
   return {
     x: edge.mx + edge.nx * 0.07, y, z: edge.mz + edge.nz * 0.07,
@@ -2165,7 +2432,7 @@ function closestOnRing(pts, x, z) {
 // Defaults are the player's; NPCs pass their own radius and column.
 // Returns whether anything was pushed.
 function resolveCollisions(pos, r = PLAYER_RADIUS,
-                           feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR) {
+                           feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR, stepUp = 0) {
   let pushed = false;
 
   for (let pass = 0; pass < 4; pass++) {
@@ -2185,8 +2452,9 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
           if (solidStamp[idx] === stampNo) continue;
           solidStamp[idx] = stampNo;
           const w = gridWalls[idx];
-          // skip pieces the body column is fully above or below (e.g. a lintel)
-          if (feetY >= w.top - LAND_EPS || headY <= w.base) continue;
+          // skip pieces the body column is fully above or below (e.g. a lintel),
+          // or low enough to step onto
+          if (feetY + stepUp >= w.top - LAND_EPS || headY <= w.base) continue;
           if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
           // a point outside the piece's box cannot be inside its ring, so the
@@ -2220,22 +2488,23 @@ function resolveCollisions(pos, r = PLAYER_RADIUS,
 }
 
 // Horizontal move with collision, cut into steps no longer than SUBSTEP.
-function moveAndCollide(pos, dx, dz) {
+// `stepUp` lets the player walk onto a ledge that low.
+function moveAndCollide(pos, dx, dz, stepUp = 0) {
   const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / SUBSTEP));
   for (let k = 0; k < n; k++) {
     pos.x += dx / n;
     pos.z += dz / n;
-    resolveCollisions(pos);
+    resolveCollisions(pos, PLAYER_RADIUS, pos.y - EYE_HEIGHT, pos.y + HEAD_CLEAR, stepUp);
   }
 }
 
-// Surface the feet pass down through between `fromFeet` and `toFeet`, or 0
-// for the street. Only surfaces the feet started above count, so walking
-// indoors never snaps you onto the roof.
-function supportAt(x, z, fromFeet, toFeet) {
-  let best = 0;
+// Surface the feet pass down through between `fromFeet` and `toFeet`, or the
+// terrain. Only surfaces the feet started above (or within `stepUp` of)
+// count, so walking indoors never snaps you onto the roof.
+function supportAt(x, z, fromFeet, toFeet, stepUp = 0) {
+  let best = elevation.at(x, z);
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
-  const ok = y => y > best && y <= fromFeet + LAND_EPS && y >= toFeet;
+  const ok = y => y > best && y <= fromFeet + LAND_EPS + stepUp && y >= toFeet;
 
   for (let ox = -1; ox <= 1; ox++) {
     for (let oz = -1; oz <= 1; oz++) {
@@ -2255,7 +2524,7 @@ function supportAt(x, z, fromFeet, toFeet) {
       if (sb) {
         for (const idx of sb) {
           const w = shells[idx];
-          const roof = ok(w.top), floor = w.floor > 0 && ok(w.floor);
+          const roof = ok(w.top), floor = ok(w.floor);
           if (!roof && !floor) continue;
           if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
           if (!pointInShell(w, x, z)) continue;
@@ -2272,6 +2541,7 @@ function supportAt(x, z, fromFeet, toFeet) {
 // ceilings, raised-building undersides, door lintels.
 function ceilingAt(x, z, fromHead, toHead) {
   let best = Infinity;
+  const g = elevation.at(x, z);
   const cx = Math.floor(x / GRID_CELL), cz = Math.floor(z / GRID_CELL);
   const ok = y => y < best && y >= fromHead - LAND_EPS && y < toHead;
 
@@ -2283,7 +2553,7 @@ function ceilingAt(x, z, fromHead, toHead) {
       if (bucket) {
         for (const idx of bucket) {
           const w = gridWalls[idx];
-          if (w.base <= 0.05 || !ok(w.base)) continue;
+          if (w.base <= g + 0.05 || !ok(w.base)) continue;
           if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
           if (pointInRing(w.pts, x, z)) best = w.base;
         }
@@ -2293,7 +2563,7 @@ function ceilingAt(x, z, fromHead, toHead) {
       if (sb) {
         for (const idx of sb) {
           const w = shells[idx];
-          const ceil = ok(w.ceil), under = w.base > 0.05 && ok(w.base);
+          const ceil = ok(w.ceil), under = w.raised && ok(w.base);
           if (!ceil && !under) continue;
           if (x < w.minX || x > w.maxX || z < w.minZ || z > w.maxZ) continue;
           if (!pointInShell(w, x, z)) continue;
@@ -3126,8 +3396,8 @@ class Animal extends Entity {
       }
     }
 
-    const wy = water.level;
     for (const wl of waterLocations) {
+      const wy = wl[2];   // City: the water surface's own height on the terrain
       const qx = wl[0] - px, qz = wl[1] - pz;
       if (qx * qx + qz * qz > vd) continue;
       if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, wl[0], wy, wl[1])) continue;
@@ -3209,7 +3479,7 @@ class Animal extends Entity {
     const floatY = water.level - water.FLOAT_DEPTH;
     this.floating = g < floatY;
     this.submerged = g < water.level;
-    this.position.y = (this.floating ? floatY : g) + lift;
+    this.position.y = this._b + (this.floating ? floatY : g) + lift;
   }
 
   update(now, grid, waterLocations, animalIndex) {
@@ -3678,7 +3948,7 @@ const places = {
 const water = {
   level: 0,
   FLOAT_DEPTH: 1,                // deeper than NPC_WADE: humans wade, never float
-  locations: [],                 // [x, z] points the Arena's perception looks for
+  locations: [],                 // [x, z, y] points the Arena's perception looks for
   mask: new Uint8Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
 
   wetAt(x, z) {
@@ -3706,7 +3976,8 @@ const water = {
     for (let r = every >> 1; r < this.rows; r += every) {
       for (let c = every >> 1; c < this.cols; c += every) {
         if (this.mask[r * this.cols + c]) {
-          pts.push([this.x0 + (c + 0.5) * WATER_CELL, this.z0 + (r + 0.5) * WATER_CELL]);
+          const x = this.x0 + (c + 0.5) * WATER_CELL, z = this.z0 + (r + 0.5) * WATER_CELL;
+          pts.push([x, z, elevation.at(x, z)]);
         }
       }
     }
@@ -3762,15 +4033,23 @@ const water = {
   }
 };
 
-// Street is flat at 0; water is a shallow dip so the Arena's submerged,
-// drink and slow-down logic runs unchanged.
+// heightAt is relative to the ground under the NPC: water is a shallow dip
+// so the Arena's submerged, drink and slow-down logic runs unchanged.
+// baseAt is that ground: the floor indoors, else the terrain.
 const terrain = {
   heightAt(x, z) { return water.wetAt(x, z) ? -NPC_WADE : 0; },
 
+  baseAt(x, z) {
+    const i = shellAt(x, z);
+    return i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
+  },
+
+  // relative height, cached with the base as ent._b
   heightAtFor(ent, wx, wz) {
     if (ent._hx === wx && ent._hz === wz && ent._hv === perf.terrainVersion) return ent._h;
     const h = this.heightAt(wx, wz);
     ent._hx = wx; ent._hz = wz; ent._hv = perf.terrainVersion; ent._h = h;
+    ent._b = this.baseAt(wx, wz);
     return h;
   }
 };
@@ -3803,7 +4082,8 @@ const occ = {
 
     // grown solid = its interior plus a capsule of NPC_RADIUS around each edge
     for (const w of gridWalls) {
-      if (w.top <= LAND_EPS || w.base >= NPC_COLLIDE_H) continue;
+      const gp = elevation.at((w.minX + w.maxX) / 2, (w.minZ + w.maxZ) / 2);
+      if (w.top <= gp + LAND_EPS || w.base >= gp + NPC_COLLIDE_H) continue;
       const pts = w.pts;
       this.fillRing(pts);
       for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) this.stampSeg(pts[j], pts[i], NPC_RADIUS);
@@ -3892,7 +4172,8 @@ const occ = {
   unblock(c, r) {
     if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return;
     const x = this.x0 + (c + 0.5) * OCC_CELL, z = this.z0 + (r + 0.5) * OCC_CELL;
-    if (solidOverlap(x, z, OCC_CARVE_KEEP, 0, NPC_COLLIDE_H)) return;
+    const f = terrain.baseAt(x, z) + STEP_UP;   // a low plinth under the door is a step
+    if (solidOverlap(x, z, OCC_CARVE_KEEP, f, f + NPC_COLLIDE_H)) return;
     const i = r * this.cols + c;
     this.bits[i >>> 5] &= ~(1 << (i & 31));
   }
@@ -3963,7 +4244,8 @@ const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint ed
 function spawnOk(px, pz) {
   return shellAt(px, pz) < 0 && !water.wetAt(px, pz) &&
          !nearShell(px, pz, SPAWN_CLEAR) &&
-         !solidOverlap(px, pz, PLAYER_RADIUS + 0.1, 0, EYE_HEIGHT + HEAD_CLEAR);
+         !solidOverlap(px, pz, PLAYER_RADIUS + 0.1, elevation.at(px, pz),
+                       elevation.at(px, pz) + EYE_HEIGHT + HEAD_CLEAR);
 }
 
 const STREET_STEP = 2;   // metres between candidate points along a street
@@ -4073,7 +4355,8 @@ class NpcWorld {
     if (water.wetAt(x, z)) return false;
     if (shellAt(x, z) >= 0) return false;
     if (occ.blockedAt(x, z)) return false;   // every step from a blocked cell would be refused
-    return !solidOverlap(x, z, NPC_RADIUS + 0.15, 0, NPC_COLLIDE_H);   // spawn-time margin, exact
+    const g = elevation.at(x, z);
+    return !solidOverlap(x, z, NPC_RADIUS + 0.15, g, g + NPC_COLLIDE_H);   // spawn-time margin, exact
   }
 
   // Mostly sidewalks (street sides, footpaths), plus some open ground for
@@ -4128,7 +4411,7 @@ class NpcWorld {
       placed.push(x, z);
       const a = new Animal([x, 0, z], 'human');
       a.facingAngle = Animal.FACING_ANGLES[Math.floor(Math.random() * 8)];
-      a.position.y = terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
+      a.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
       this.animals.push(a);
     }
   }
@@ -4995,10 +5278,12 @@ function step(dt) {
     const keyClimb = active ? (keys.has('Space') ? 1 : 0) - (shiftHeld ? 1 : 0) : 0;
     const vy = Math.max(-1, Math.min(1, climb + keyClimb));
     player.pos.y += vy * speed * dt;
-    player.pos.y = Math.max(player.pos.y, EYE_HEIGHT);   // stay out of the ground
+    // stay out of the ground
+    player.pos.y = Math.max(player.pos.y, elevation.at(player.pos.x, player.pos.z) + EYE_HEIGHT);
   } else {
     // horizontal first, so the roof lookup runs from a wall-clear position
-    moveAndCollide(player.pos, dx, dz);
+    const wasGrounded = player.grounded;
+    moveAndCollide(player.pos, dx, dz, wasGrounded ? STEP_UP : 0);
 
     if (player.grounded && active && (keys.has('Space') || jumpQueued)) {
       player.vel.y = JUMP_SPEED;
@@ -5020,8 +5305,11 @@ function step(dt) {
     // re-decided each frame, so walking off a roof edge falls with no mid-air jump
     player.grounded = false;
     if (player.vel.y <= 0) {
-      const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet);
-      if (toFeet <= floorY) {
+      // grounded feet step up onto low ledges and follow small drops (slopes)
+      const walk = wasGrounded && player.vel.y <= 0;
+      const reach = walk ? GROUND_SNAP : 0;
+      const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet - reach, walk ? STEP_UP : 0);
+      if (toFeet - reach <= floorY) {
         player.pos.y = floorY + EYE_HEIGHT;
         player.vel.y = 0;
         player.grounded = true;
@@ -5762,6 +6050,7 @@ let busy = false;
 // the menu, Load again) skips the multi-megabyte export. One entry: a new
 // place replaces it, so at most one decoded image is kept beyond the scene's.
 let lastImagery = null;
+let lastTerrain = null;   // { key, grid }: the last fetched height grid
 
 async function load(query) {
   if (busy || !query.trim()) return;
@@ -5784,6 +6073,12 @@ async function load(query) {
 
     // parallel with Overpass; a failed forecast never blocks the load
     const pendingWeather = fetchWeather(place.lat, place.lon).catch(() => null);
+    // terrain for the largest radius, so it covers whichever one Overpass settles on;
+    // failure leaves the city flat
+    const terrainKey = `${place.lat},${place.lon}`;
+    const pendingTerrain = (lastTerrain && lastTerrain.key === terrainKey)
+      ? Promise.resolve(lastTerrain.grid)
+      : fetchTerrain(place.lat, place.lon, RADIUS_LADDER[0]).catch(() => null);
 
     let features = null;
     let radius = storedPlace ? storedPlace.radius : RADIUS_LADDER[0];
@@ -5827,7 +6122,13 @@ async function load(query) {
       return img;
     })().catch(() => null);
 
+    say('Fetching elevation…');
+    const terrainGrid_ = await pendingTerrain;
+    if (terrainGrid_) lastTerrain = { key: terrainKey, grid: terrainGrid_ };
+    elevation.set(terrainGrid_);
+
     const { count, skipped } = buildCity(features);
+    buildTerrainBase(radius);
     if (count) world.initialize(features, radius);
     else world.clear();
 
@@ -5852,7 +6153,7 @@ async function load(query) {
 
     // start on the street nearest the geocoded point; open ground if there is none
     const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
-    player.pos.set(sx, EYE_HEIGHT, sz);
+    player.pos.set(sx, elevation.at(sx, sz) + EYE_HEIGHT, sz);
     player.vel.set(0, 0, 0);
     player.yaw = 0; player.pitch = 0;
     resolveCollisions(player.pos);   // settle against any wall the search brushed
@@ -5936,7 +6237,6 @@ const PICKS = [
   ['New York, NY',       'New York, NY'],
   ['Union Square, San Francisco',  'Union Square, San Francisco, CA'],
   ['The Loop, Chicago',            'Millennium Park, Chicago, IL'],
-  ['Athens, Ohio',            'Athens, OH']
 ];
 const picksEl = document.getElementById('picks');
 for (const [label, query] of PICKS) {
