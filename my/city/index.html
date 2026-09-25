@@ -1392,7 +1392,7 @@ function buildCity(features) {
     list.push({
       pts: outer, holes, ...bounds(outer), cap,
       base, top: wallTop, ceil: wallTop - CEIL_GAP, floor: base > 0.05 ? base : 0,
-      roofTop: top, roofShape, obb, tags, door: null, doorTop: 0, index: list.length
+      roofTop: top, roofShape, obb, tags, door: null, doorTop: 0, throat: null, index: list.length
     });
   }
   shells = list;
@@ -1424,6 +1424,12 @@ function buildCity(features) {
 
     const R = wallRing(s.pts);
     s.door = chooseDoor(s, R, roads, ents);
+    // doorway axis, outer face to inner face, for the NPC occupancy grid
+    if (s.door && !s.door.run) {
+      const d = s.door, m = (d.d0 + d.d1) / 2;
+      const o = alongEdge(R, d.edge, m), q = innerAt(R, d.edge, m);
+      s.throat = [o[0], o[1], q[0], q[1]];
+    }
 
     const ctx = { buf, solids, wc, iw, trim };
     ringWalls(ctx, R, s.door, s.base, s.top, s.doorTop);
@@ -2203,6 +2209,9 @@ function npcOnScreen(x, y, z, r) {
   return npcFrustum.intersectsSphere(_npcSphere);
 }
 const WATER_CELL     = 1;        // water raster resolution, metres
+const OCC_CELL       = 0.25;     // NPC occupancy grid resolution, metres
+const OCC_INV        = 1 / OCC_CELL;
+const OCC_CARVE_KEEP = 0.2;      // a doorway lane never clears a cell whose centre is this close to a raw solid
 
 // SHARED HELPERS
 // Helpers the Arena classes expect by name.
@@ -3525,6 +3534,129 @@ const terrain = {
   }
 };
 
+// NPC OCCUPANCY GRID
+// Every solid an NPC's column can touch (base under NPC_COLLIDE_H, top above
+// the street, the same test resolveCollisions makes) is rasterized once per
+// city into a 1-bit-per-cell bitmap, grown by NPC_RADIUS so an NPC is a point
+// in it: a cell is blocked when its centre is inside a solid or within
+// NPC_RADIUS of one. Walkability is one typed-array read instead of polygon
+// tests. The player keeps exact wall-piece collision.
+// At 0.25 m and the largest radius (500 m) this is ~16M cells in ~2 MB.
+const occ = {
+  bits: new Uint32Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
+
+  // Outside the grid counts as open; Animal.move clamps to the same bounds.
+  blockedAt(x, z) {
+    const c = Math.floor((x - this.x0) * OCC_INV);
+    const r = Math.floor((z - this.z0) * OCC_INV);
+    if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return false;
+    const i = r * this.cols + c;
+    return ((this.bits[i >>> 5] >>> (i & 31)) & 1) === 1;
+  },
+
+  build(minX, minZ, maxX, maxZ) {
+    this.x0 = minX; this.z0 = minZ;
+    this.cols = Math.ceil((maxX - minX) * OCC_INV);
+    this.rows = Math.ceil((maxZ - minZ) * OCC_INV);
+    this.bits = new Uint32Array((this.cols * this.rows + 31) >>> 5);
+
+    // grown solid = its interior plus a capsule of NPC_RADIUS around each edge
+    for (const w of gridWalls) {
+      if (w.top <= LAND_EPS || w.base >= NPC_COLLIDE_H) continue;
+      const pts = w.pts;
+      this.fillRing(pts);
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) this.stampSeg(pts[j], pts[i], NPC_RADIUS);
+    }
+
+    // doorway lanes, run a cell past the grown wall on both sides
+    const ext = NPC_RADIUS + OCC_CELL;
+    for (const s of shells) {
+      if (!s.throat) continue;
+      const [ox, oz, qx, qz] = s.throat;
+      const len = Math.hypot(qx - ox, qz - oz);
+      if (len < 1e-6) continue;
+      const ux = (qx - ox) / len, uz = (qz - oz) / len;
+      this.carve(ox - ux * ext, oz - uz * ext, qx + ux * ext, qz + uz * ext);
+    }
+  },
+
+  set(c, r) {
+    const i = r * this.cols + c;
+    this.bits[i >>> 5] |= 1 << (i & 31);
+  },
+
+  // scanline fill, even-odd, cell centres; as water.fillRing
+  fillRing(pts) {
+    let zMin = Infinity, zMax = -Infinity;
+    for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
+    const r0 = Math.max(0, Math.floor((zMin - this.z0) * OCC_INV));
+    const r1 = Math.min(this.rows - 1, Math.floor((zMax - this.z0) * OCC_INV));
+    const xs = [];
+    for (let r = r0; r <= r1; r++) {
+      const zc = this.z0 + (r + 0.5) * OCC_CELL;
+      xs.length = 0;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, zi] = pts[i], [xj, zj] = pts[j];
+        if ((zi > zc) !== (zj > zc)) xs.push(xi + (zc - zi) * (xj - xi) / (zj - zi));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const c0 = Math.max(0, Math.ceil((xs[k] - this.x0) * OCC_INV - 0.5));
+        const c1 = Math.min(this.cols - 1, Math.floor((xs[k + 1] - this.x0) * OCC_INV - 0.5));
+        for (let c = c0; c <= c1; c++) this.set(c, r);
+      }
+    }
+  },
+
+  // every cell whose centre is strictly within `half` of segment a-b
+  stampSeg(a, b, half) {
+    const [x0, z0] = a, [x1, z1] = b;
+    const dx = x1 - x0, dz = z1 - z0, l2 = dx * dx + dz * dz, h2 = half * half;
+    const c0 = Math.max(0, Math.floor((Math.min(x0, x1) - half - this.x0) * OCC_INV));
+    const c1 = Math.min(this.cols - 1, Math.floor((Math.max(x0, x1) + half - this.x0) * OCC_INV));
+    const r0 = Math.max(0, Math.floor((Math.min(z0, z1) - half - this.z0) * OCC_INV));
+    const r1 = Math.min(this.rows - 1, Math.floor((Math.max(z0, z1) + half - this.z0) * OCC_INV));
+    for (let r = r0; r <= r1; r++) {
+      const zc = this.z0 + (r + 0.5) * OCC_CELL;
+      for (let c = c0; c <= c1; c++) {
+        const xc = this.x0 + (c + 0.5) * OCC_CELL;
+        let t = l2 > 0 ? ((xc - x0) * dx + (zc - z0) * dz) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = xc - (x0 + dx * t), ez = zc - (z0 + dz * t);
+        if (ex * ex + ez * ez < h2) this.set(c, r);
+      }
+    }
+  },
+
+  // One 4-connected lane of cells cleared along a doorway's axis. At the
+  // narrowest doors (DOOR_MIN_W) the grown jambs leave a ~0.3 m gap, which at
+  // an oblique angle can sample as only a diagonal chain of free cells that a
+  // point stepping a few cm per tick cannot follow. Cells whose centre is
+  // within OCC_CARVE_KEEP of a raw solid stay blocked.
+  carve(ax, az, bx, bz) {
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) * OCC_INV * 4));
+    let pc = 0, pr = 0;
+    for (let k = 0; k <= n; k++) {
+      const c = Math.floor((ax + (bx - ax) * k / n - this.x0) * OCC_INV);
+      const r = Math.floor((az + (bz - az) * k / n - this.z0) * OCC_INV);
+      if (k > 0) {
+        if (c === pc && r === pr) continue;
+        if (c !== pc && r !== pr) this.unblock(c, pr);   // corner step: keep the lane 4-connected
+      }
+      this.unblock(c, r);
+      pc = c; pr = r;
+    }
+  },
+
+  unblock(c, r) {
+    if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return;
+    const x = this.x0 + (c + 0.5) * OCC_CELL, z = this.z0 + (r + 0.5) * OCC_CELL;
+    if (solidOverlap(x, z, OCC_CARVE_KEEP, 0, NPC_COLLIDE_H)) return;
+    const i = r * this.cols + c;
+    this.bits[i >>> 5] &= ~(1 << (i & 31));
+  }
+};
+
 // CITY GEOMETRY QUERIES
 // For NPC placement, on the same grids the player uses.
 
@@ -3684,6 +3816,7 @@ class NpcWorld {
     this.plantGrid = new SpatialGrid(span, span, 30 * NPC_UNIT);
 
     water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
+    occ.build(this.minX, this.minZ, this.maxX, this.maxZ);
     animalRenderer.init();
     this.spawnHumans(NPC_POPULATION, features.roads || []);
     this.ready = true;
@@ -3697,7 +3830,8 @@ class NpcWorld {
     if (x < this.minX + m || x > this.maxX - m || z < this.minZ + m || z > this.maxZ - m) return false;
     if (water.wetAt(x, z)) return false;
     if (shellAt(x, z) >= 0) return false;
-    return !solidOverlap(x, z, NPC_RADIUS + 0.15, 0, NPC_COLLIDE_H);
+    if (occ.blockedAt(x, z)) return false;   // every step from a blocked cell would be refused
+    return !solidOverlap(x, z, NPC_RADIUS + 0.15, 0, NPC_COLLIDE_H);   // spawn-time margin, exact
   }
 
   // Mostly sidewalks (street sides, footpaths), plus some open ground for
@@ -3769,7 +3903,7 @@ class NpcWorld {
         // City: if the Arena's one-step offset would put the child in or through
         // a wall, it is born at the mother's spot.
         const cp = child.position, mp = other.position;
-        if (solidOverlap(cp.x, cp.z, NPC_RADIUS, 0, NPC_COLLIDE_H) ||
+        if (occ.blockedAt(cp.x, cp.z) ||
             shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
           cp.x = mp.x; cp.z = mp.z;
         }
@@ -3821,15 +3955,17 @@ class NpcWorld {
     }
   }
 
-  // Replaces cabins.resolve: the player's push-out with NPC-sized circle and
-  // column. One pass is enough at ~2.5 cm per frame. If still wedged, revert to
-  // the last clear spot.
+  // Replaces cabins.resolve with occupancy-grid lookups. A step into a
+  // blocked cell keeps whichever single axis of it is free (sliding along the
+  // wall), else is undone. A step (~2.5 cm) is far under the thinnest grown
+  // solid (~0.66 m), so no wall can be skipped.
   collide(a) {
     if (a.outputIdx === Animal.ACTION_STAY) return;   // standing still: nothing moved
     const p = a.position;
-    if (resolveCollisions(p, NPC_RADIUS, 0, NPC_COLLIDE_H) &&
-        solidOverlap(p.x, p.z, NPC_RADIUS * 0.8, 0, NPC_COLLIDE_H)) {
-      p.x = a.freeX; p.z = a.freeZ;
+    if (occ.blockedAt(p.x, p.z)) {
+      if (!occ.blockedAt(p.x, a.freeZ)) p.z = a.freeZ;
+      else if (!occ.blockedAt(a.freeX, p.z)) p.x = a.freeX;
+      else { p.x = a.freeX; p.z = a.freeZ; }
     }
     a.freeX = p.x; a.freeZ = p.z;
   }
