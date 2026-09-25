@@ -278,7 +278,7 @@
     <p id="status"></p>
     <ol id="steps" hidden></ol>
     <p id="keys">WASD to move, mouse to look, shift to run, space to jump, E to enter or leave the car (space is its handbrake), esc for settings.</p>
-    <p>1.0.4.3</p>
+    <p>1.0.4.2</p>
   </div>
 </div>
 <div id="dot"></div>
@@ -2831,13 +2831,17 @@ const PLANT_REGROW_P = 0.03;      // chance per tick of one new plant (the Arena
 const PLANT_SPOT_TRIES = 30;      // random samples per plant before that spawn is skipped
 // DEER AI (ported from species.py, Animal.search / think / move)
 const DEER_CRUISE      = 0.3;      // species.py: speed share when not fleeing
+// Deer sense and decide once per DEER_THINK_TICKS (60, one second), so their
+// reaction lags; between decisions they keep to the last one, still steering
+// toward a fixed target each tick so they stop on it instead of overshooting.
+const DEER_THINK_TICKS = 60;
 // A deer fleeing a predator within DEER_SPRINT_DIST sprints: this many times
 // the top running speed of any predator, the player's RUN_SPEED or the fastest
 // person, whichever is higher, burning this many times its walking energy
 // (food need) while it does. A predator farther off is fled at the deer's
 // normal full speed (species.py's flee), at normal energy.
 const DEER_SPRINT_DIST   = 10;     // metres
-const DEER_SPRINT_OVER   = 2;
+const DEER_SPRINT_OVER   = 1;      // was 2: half that, so a deer sprints only as fast as its fastest predator runs
 const DEER_SPRINT_ENERGY = 2;
 // An NPC step longer than this is split into sub-steps, each checked against
 // the occupancy grid, so a sprinting deer cannot pass through a wall or skip
@@ -3534,6 +3538,8 @@ class Animal extends Entity {
     this.focusX = 0; this.focusZ = 0;   // deer: species.py's coords_focused
     this.speedScale = 1;           // deer: DEER_CRUISE unless sprinting; people always 1
     this.sprinting = false;        // deer: fleeing a predator at the sprint speed
+    this.predSumX = 0; this.predSumZ = 0;   // deer: summed offsets to every predator in sight this tick
+    this.fleeHeading = 0;          // deer: escape direction fixed at the last decision, radians
     if (type === 'deer') this.newExploreCoords();
 
     this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodElev = 0;      this.rayFoodDist = 0;
@@ -3543,7 +3549,7 @@ class Animal extends Entity {
 
     // City: deer run thinkDeer() (the species.py AI) every tick instead of a brain
     this.brain = type === 'deer' ? null : new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001);
-    this.ACTION_HOLD   = 60;
+    this.ACTION_HOLD   = type === 'deer' ? DEER_THINK_TICKS : 60;
     this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD);
     this.currentAction = 0;
     // City: movement is a heading, radians, direction (sin, cos) in (x, z).
@@ -3741,24 +3747,28 @@ class Animal extends Entity {
     this.moving = true;
   }
 
-  // DEER AI, ported from species.py. Every tick, as species.py runs
-  // update_body, search, think and move every frame:
-  //   1. a DEER_EXPLORE_P chance of a new random explore point (update_body)
+  // DEER AI, ported from species.py (update_body, search, think, move), run
+  // as a decision once per DEER_THINK_TICKS and steering every tick:
+  // thinkDeer (once a second, so reactions lag):
+  //   1. a chance of a new random explore point (update_body's per-frame
+  //      DEER_EXPLORE_P, compounded over the decision interval)
   //   2. search: everything within vision distance, a plain circle as in
-  //      neighbors(); the nearest person (or the player in game mode) is the
-  //      predator and sets avoidNeed to Infinity, the nearest plant is food,
-  //      the nearest water point is water, the nearest opposite-sex deer is a
-  //      mate. Locations are what is in sight this tick.
+  //      neighbors(); people (and the player in game mode) are predators and
+  //      set avoidNeed to Infinity, the nearest plant is food, the nearest
+  //      water point is water, the nearest opposite-sex deer is a mate.
+  //      Locations are what is in sight at this decision.
   //   3. think: needs ranked highest first, predator (avoidNeed), food,
   //      water, mate (ties keep that order, as Python's stable sort did); the
   //      first with a known location becomes the priority and its location
-  //      the focus. A predator's location is mirrored through the deer,
-  //      self + (self - predator) (transpose_focused_coords), so the focus is
-  //      straight away from it. Nothing known: the focus stays where it was.
-  //   4. move: straight at the focus, recomputed every tick, at full speed
-  //      when the priority is the predator and DEER_CRUISE of it otherwise.
+  //      the focus. Fleeing fixes an escape heading instead, opposite the sum
+  //      of the offsets to every predator in sight (with one predator, the
+  //      direction of transpose_focused_coords), and whether to sprint.
+  // steerDeer (every tick):
+  //   4. move: along the escape heading when fleeing; otherwise straight at
+  //      the focus, stopping on it; at full speed (or the sprint) when
+  //      fleeing and DEER_CRUISE of it otherwise.
   thinkDeer(grid, waterLocations) {
-    if (Math.random() <= DEER_EXPLORE_P) this.newExploreCoords();
+    if (Math.random() <= 1 - Math.pow(1 - DEER_EXPLORE_P, DEER_THINK_TICKS)) this.newExploreCoords();
     this.searchDeer(grid, waterLocations);
 
     let best = null, bestV = -Infinity;
@@ -3770,8 +3780,11 @@ class Animal extends Entity {
 
     const x = this.position.x, z = this.position.z;
     if (best === 'predator') {
-      this.focusX = x + (x - this.memPredatorX);        // transpose_focused_coords
-      this.focusZ = z + (z - this.memPredatorZ);
+      // opposite the summed offsets to every predator in sight; offsets that
+      // cancel exactly fall back to the nearest
+      let sx = this.predSumX, sz = this.predSumZ;
+      if (sx === 0 && sz === 0) { sx = this.memPredatorX - x; sz = this.memPredatorZ - z; }
+      if (sx !== 0 || sz !== 0) this.fleeHeading = Animal.wrapAngle(Math.atan2(-sx, -sz));
     } else if (best === 'food')  { this.focusX = this.memFoodX;  this.focusZ = this.memFoodZ; }
     else if (best === 'water')   { this.focusX = this.memWaterX; this.focusZ = this.memWaterZ; }
     else if (best === 'mate')    { this.focusX = this.memMateX;  this.focusZ = this.memMateZ; }
@@ -3779,17 +3792,29 @@ class Animal extends Entity {
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
     this.sprinting = best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST;
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;   // fleeing beyond sprint range: full speed
+  }
+
+  // Every tick: carry out the last decision.
+  steerDeer() {
     // sprinting burns DEER_SPRINT_ENERGY times the walking energy: the base
     // increment was added in update(), this adds the rest
     if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
-    const dx = this.focusX - x, dz = this.focusZ - z;
+
+    if (this.priority === 'predator') {
+      // fleeing never "arrives": the deer runs the escape heading until it
+      // decides again
+      this.moving = true;
+      this.heading = this.targetHeading = this.fleeHeading;
+      return;
+    }
+    const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
     const step = this.stepLength();
     if (dx * dx + dz * dz <= step * step) {
       // at the focus: stand (eating, drinking or meeting a mate happens on
       // contact). City: species.py divides by a zero-length vector here; an
       // explore point that is reached is replaced, as the first species.py did.
       this.moving = false;
-      if (best === null) this.newExploreCoords();
+      if (this.priority === null) this.newExploreCoords();
       return;
     }
     this.moving = true;
@@ -3802,6 +3827,7 @@ class Animal extends Entity {
     let bP = Infinity, bF = Infinity, bW = Infinity, bM = Infinity;
     this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
     this.avoidNeed = 0;
+    this.predSumX = 0; this.predSumZ = 0;
 
     const n = grid.queryInto(world._qLocate, x, z, this.visionDistance);
     for (let i = 0; i < n; i++) {
@@ -3811,6 +3837,7 @@ class Animal extends Entity {
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (d2 > vd) continue;
       if (obj.type === 'human') {
+        this.predSumX += ox - x; this.predSumZ += oz - z;   // every predator counts toward the escape
         if (d2 <= bP) { bP = d2; this.seen(0, ox, obj.position.y, oz); this.avoidNeed = Infinity; }
       } else if (obj.type === 'deer' && obj.sex !== this.sex) {
         if (d2 <= bM) { bM = d2; this.seen(3, ox, obj.position.y, oz); }
@@ -3822,7 +3849,11 @@ class Animal extends Entity {
     if (gp.alive) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-      if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
+      if (d2 <= vd) {
+        this.predSumX += ox - x; this.predSumZ += oz - z;
+        if (d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); }
+        this.avoidNeed = Infinity;
+      }
     }
 
     for (const plant of world.plants) {
@@ -3950,7 +3981,13 @@ class Animal extends Entity {
     if (this.health <= 1) { this.alive = false; return; }
 
     if (!this.brain) {
-      this.thinkDeer(grid, waterLocations);                // City: deer, every tick as species.py
+      // City: deer decide once a second (staggered by the random start of
+      // actionTimer) and steer every tick
+      if (--this.actionTimer <= 0) {
+        this.thinkDeer(grid, waterLocations);
+        this.actionTimer = this.ACTION_HOLD;
+      }
+      this.steerDeer();
     } else if (--this.actionTimer <= 0) {
       this.think(grid, waterLocations);
       this.actionTimer   = this.ACTION_HOLD;
