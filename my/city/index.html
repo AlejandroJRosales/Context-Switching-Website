@@ -115,6 +115,25 @@
     pointer-events: none; z-index: 5;
     white-space: pre-line;
   }
+  #needs {
+    position: fixed; left: 14px; top: 16px;
+    padding: 6px 9px; border-radius: 8px;
+    background: rgba(12, 15, 21, 0.55);
+    pointer-events: none; z-index: 5; display: none;
+  }
+  #needs.on { display: block; }
+  #needs .need { display: flex; align-items: center; gap: 7px; height: 20px; }
+  #needs .need span {
+    width: 16px; text-align: center;
+    font: 13px/1 "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  }
+  #needs .need i {
+    display: block; width: 110px; height: 7px; border-radius: 4px; overflow: hidden;
+    background: rgba(232, 228, 220, 0.12);
+  }
+  #needs .need b { display: block; height: 100%; width: 100%; }
+  #needFood  { background: #e67e22; }
+  #needWater { background: #3498db; }
   #dot {
     position: fixed; left: 50%; top: 50%;
     width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
@@ -241,7 +260,7 @@
 <div id="panel">
   <div id="card">
     <h1>City</h1>
-    <p>Rebuild any real city and its buildings, streets, water, hills, live local weather and time of day. Step inside any building, and find real grocery stores, hospitals, and shops. The city is populated with artificial people who have two-lobe spiking neural network brains that learn from their own hunger, thirst, and health. You also have a car.</p>
+    <p>Rebuild any real city and its buildings, streets, water, hills, live local weather and time of day. Step inside any building, and find real grocery stores, hospitals, and shops. The city is populated with artificial people, who have two-lobe spiking neural network brains that learn from their own hunger, thirst, and health, and deer that follow simple survival rules. You also have a car.</p>
     <p>Select a city from the list or enter a custom address. Buildings within a few blocks are pulled from OpenStreetMap and extruded.</p>
     <div class="chips" id="picks"></div>
     <div id="row">
@@ -265,6 +284,10 @@
 <div id="dot"></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="hud"></div>
+<div id="needs" aria-hidden="true">
+  <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
+  <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
+</div>
 <button id="fly" aria-label="Fly"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 36C6 20 20 8 44 6C42 12 38 15 32 16C38 17 39 20 35 23C31 25 27 25 23 25C28 27 28 30 24 32C18 35 11 36 4 36Z"/></svg></button>
 <button id="car">Drive</button>
 <button id="brake" class="pedal" aria-label="Brake"><svg viewBox="0 0 64 40" aria-hidden="true"><path fill-rule="evenodd" d="M6 4H58Q62 4 61 8L57 32Q56 36 52 36H12Q8 36 7 32L3 8Q2 4 6 4ZM13.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"/></svg></button>
@@ -279,7 +302,7 @@
   <h2 class="second">Weather</h2>
   <div class="chips" id="skies"></div>
   <h2 class="second">Display</h2>
-  <button id="immersive" class="switch" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Immersive mode</button>
+  <button id="game" class="switch" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Game mode</button>
   <div class="chips" id="leave"><button id="tomenu">Back to intro</button></div>
 </div>
 
@@ -515,7 +538,7 @@ const LOAD_STEPS = [
   ['weather', 'Fetching weather',        'Current conditions and forecast for the sky and rain (Open-Meteo).'],
   ['sort',    'Sorting map features',    'Splitting the download into buildings, roads, land cover, trees and places.'],
   ['build',   'Building the city',       'Walls, doors, roofs, signs, ground layers and collision.'],
-  ['people',  'Populating',              'Spawning people and wiring their brains.'],
+  ['people',  'Populating',              'Spawning people, deer and plants and wiring the brains.'],
   ['imagery', 'Fetching aerial imagery', 'Photo of the ground (USGS National Map).'],
   ['scene',   'Preparing the scene',     'Compiling shaders and uploading textures so the first frame does not stall.']
 ];
@@ -2789,14 +2812,57 @@ function ceilingAt(x, z, fromHead, toHead) {
 // NPCS
 //
 // Human NPCs ported from AIEcosystemArena with unchanged behaviour: Animal
-// (19 inputs, 9 moves), a two-lobe DenseNetwork each, instanced AnimalRenderer.
+// (19 inputs, a heading out), a two-lobe DenseNetwork each, instanced AnimalRenderer.
 // Only the world differs: city walls, shells and painted water replace the
 // Arena's torus terrain and cabins. Differences are marked "City:".
+//
+// Deer are the Arena's sheep: same stats, senses, diet, predator (humans)
+// and mating, with a deer rig in place of the sheep boxes. They have no brain:
+// Animal.thinkDeer runs the species.py deer AI (see DEER AI). The type name is
+// 'deer' throughout.
 //
 // Stats stay in Arena units (a human is ~38 tall); NPC_UNIT converts to metres
 // where distance meets the city: step, lift, eye height, vision, contact, mesh.
 
 const NPC_POPULATION = 500;       // humans spawned per loaded city: the one knob
+const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // deer per loaded city: the Arena's 20:5 sheep-to-human ratio
+const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // plants per loaded city: the Arena's 300:5 plant-to-human ratio
+const PLANT_REGROW_P = 0.03;      // chance per tick of one new plant (the Arena's probSpawnPlant)
+const PLANT_SPOT_TRIES = 30;      // random samples per plant before that spawn is skipped
+// DEER AI (ported from species.py, Animal.search / think / move)
+const DEER_CRUISE      = 0.3;      // species.py: speed share when not fleeing
+// A deer fleeing a predator within DEER_SPRINT_DIST sprints: this many times
+// the top running speed of any predator, the player's RUN_SPEED or the fastest
+// person, whichever is higher, burning this many times its walking energy
+// (food need) while it does. A predator farther off is fled at the deer's
+// normal full speed (species.py's flee), at normal energy.
+const DEER_SPRINT_DIST   = 10;     // metres
+const DEER_SPRINT_OVER   = 2;
+const DEER_SPRINT_ENERGY = 2;
+// An NPC step longer than this is split into sub-steps, each checked against
+// the occupancy grid, so a sprinting deer cannot pass through a wall or skip
+// a doorway lane between ticks.
+const NPC_SUBSTEP = 0.1;           // metres
+// GAIT
+// Legs cycle as fast as the body moves: one leg cycle carries the body
+// 4 L sin(swing) (two stances, each sweeping 2 L sin(swing)), so cadence is
+// speed over that. Capped where a faster swing no longer reads on screen; a
+// sprinting deer also lengthens its stride to a gallop swing.
+const GAIT_MAX_HZ       = 4;       // leg cycles per second, at most
+const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
+const DEER_EXPLORE_P   = 0.0001;   // species.py: chance per tick of a new random explore point
+const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
+// People turn toward the heading their brain picks at this rate instead of
+// snapping to it.
+const HUMAN_TURN_RATE   = 3;      // radians per second
+const DEER_GREEN_SHARE = 0.8;     // share of deer spawns drawn from green areas when the map has any
+const DEER_AREAS = new Set([      // land cover deer and plants spawn in
+  'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'golf_course',
+  'forest', 'wood', 'meadow', 'farmland', 'cemetery', 'scrub', 'orchard', 'greenfield', 'wetland'
+]);
+// Feet to the top of each rig in Arena units, for the stats sprite. Deer use
+// a buck's antler tips for both sexes so every deer's stats sit at one height.
+const NPC_RIG_TOP = { human: 38.55, deer: 35 };
 
 const NPC_UNIT       = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
 const NPC_RADIUS     = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
@@ -2805,6 +2871,9 @@ const NPC_WADE       = 0.55;     // how far a human sinks into painted water
 const NPC_SPAWN_GAP  = 8;        // metres between spawn points before crowding forces it lower
 const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
 const NPC_HEIGHT_STD  = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
+// heightScale of the mean person. City people are NPC_HEIGHT_MEAN tall, not the
+// rig's 1.73 m, so other species take this factor too to stay in proportion.
+const NPC_HUMAN_HS    = NPC_HEIGHT_MEAN / (NPC_RIG_TOP.human * NPC_UNIT);
 const NPC_LOD_DIST    = 60;      // metres from the camera past which a body swaps to its low-detail version
 const NPC_BODY_R      = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
 const NPC_STATS_R     = 0.7;     // metres: bounding sphere around the stats sprite and brain
@@ -2995,14 +3064,17 @@ class DenseNetwork {
 
   constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
     this.inputDims    = inputDims;
-    this.outputDims   = 9;
+    // Output neurons are a ring of preferred headings, 2 pi i / O. Their
+    // activity-weighted vector sum collapses to one heading in [0, 2 pi).
+    this.outputDims   = 8;
     this.learningRate = learningRate;
     this.momentum     = momentum;
     this.weightDecay  = weightDecay;
     this.cost         = 0.0;
     this.lastCost     = 0.0;
     this.costHistoryLen = 0;
-    this.output       = null;
+    this.output       = null;            // output neuron nearest the heading (display)
+    this.heading      = Math.random() * Math.PI * 2;   // last collapsed heading, radians
     this.normCount    = 0;
     this.EMA          = 0.001;
 
@@ -3094,6 +3166,14 @@ class DenseNetwork {
     this.actO = new Float32Array(O);
 
     this.layerDims = [I, NA, NB, O];
+
+    this.prefSin = new Float32Array(O);
+    this.prefCos = new Float32Array(O);
+    for (let i = 0; i < O; i++) {
+      const phi = (i / O) * Math.PI * 2;      // same angle convention as facingAngle: (sin, cos) is (x, z)
+      this.prefSin[i] = Math.sin(phi);
+      this.prefCos[i] = Math.cos(phi);
+    }
 
     this.activations = [this.actA, this.actB, this.actO];
   }
@@ -3228,13 +3308,22 @@ class DenseNetwork {
 
     this.prevB.set(this.actB);
     const values = this.propagate(standardized);
-    let bestIdx = 0, bestVal = values[0];
-    for (let j = 1; j < values.length; j++) {
-      if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
+
+    // Population vector: each output pulls toward its preferred heading by its
+    // (softmax) activity; the sum's angle is the heading, wrapped to [0, 2 pi).
+    // No class is picked, so a small change in activity is a small turn.
+    const O = this.outputDims;
+    let vx = 0, vz = 0;
+    for (let i = 0; i < O; i++) { vx += values[i] * this.prefSin[i]; vz += values[i] * this.prefCos[i]; }
+    let heading = this.heading;              // perfectly balanced outputs: keep the last heading
+    if (vx * vx + vz * vz > 1e-12) {
+      heading = Math.atan2(vx, vz);
+      if (heading < 0) heading += Math.PI * 2;
     }
-    this.output = bestIdx;
-    this.tagSynapses(standardized, bestIdx);
-    return bestIdx;
+    this.heading = heading;
+    this.output = Math.round(heading / (Math.PI * 2) * O) % O;
+    this.tagSynapses(standardized, heading);
+    return heading;
   }
 
   getAdaptiveLr() {
@@ -3254,9 +3343,11 @@ class DenseNetwork {
   // below it (moderate Ca2+, calcineurin side) tags them for depression. Each
   // synapse's tag is pre activity x that post factor, and decays, so it records
   // which synapses took part in recent behaviour and in which direction.
-  // Pre is the activity that actually reached the synapse this step; action
-  // neurons count the chosen action as the one that fired.
-  tagSynapses(inp, chosen) {
+  // Pre is the activity that actually reached the synapse this step. Output
+  // neurons count as active by how well their preferred heading matches the
+  // heading taken (cosine tuning, floored at 0), so reward credits the ones
+  // that pulled that way.
+  tagSynapses(inp, heading) {
     const NA = this.lobeSizeA, NB = this.lobeSizeB, I = this.inputDims, O = this.outputDims;
     const de = DenseNetwork.TAG_DECAY, g = 1 - de;
     const dc = DenseNetwork.CA_DECAY, gc = 1 - dc;
@@ -3272,8 +3363,10 @@ class DenseNetwork {
       fB[i] = a - this.caB[i];
       this.caB[i] = this.caB[i] * dc + gc * a;
     }
+    const hs = Math.sin(heading), hc = Math.cos(heading);
     for (let i = 0; i < O; i++) {
-      const a = i === chosen ? 1 : 0;
+      const tuned = this.prefSin[i] * hs + this.prefCos[i] * hc;   // cos(preferred - heading)
+      const a = tuned > 0 ? tuned : 0;
       fO[i] = a - this.caO[i];
       this.caO[i] = this.caO[i] * dc + gc * a;
     }
@@ -3375,22 +3468,13 @@ class Entity {
 }
 
 class Animal extends Entity {
-  static ACTION_STAY = 8;
   static MOVE_TIMESTEP = 0.016;
-  static MOVE_DIRS = [
-    [1, 0], [-1, 0], [0, 1], [0, -1],
-    [1, 1], [1, -1], [-1, 1], [-1, -1]
-  ];
-  static FACING_ANGLES = [
-    Math.PI / 2, -Math.PI / 2, 0, Math.PI,
-    Math.PI / 4, 3 * Math.PI / 4, -Math.PI / 4, -3 * Math.PI / 4,
-    null
-  ];
-  static FOV_H = { human: [0.90, 1.30], sheep: [2.10, 2.80] };
-  static FOV_V = { human: [0.25, 0.45], sheep: [0.20, 0.40] };
+  static TWO_PI = Math.PI * 2;
+  static FOV_H = { human: [0.90, 1.30], deer: [2.10, 2.80] };
+  static FOV_V = { human: [0.25, 0.45], deer: [0.20, 0.40] };
   static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
   static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
-  static EYE_OFFSET = { human: 12, sheep: 7 };
+  static EYE_OFFSET = { human: 12, deer: 10 };   // deer: the head's centre on the deer rig
   static INPUT_DIMS = 19;
   static _hit = { d3sq: 0, sin: 0, cos: 0, elev: 0, dist: 0 };
 
@@ -3420,9 +3504,10 @@ class Animal extends Entity {
       const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
       this.heightScale = metres / (38.55 * NPC_UNIT);
     } else {
-      const heightParams = { sheep: [1.0, 0.10] };
+      const heightParams = { deer: [1.0, 0.10] };
       const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
-      this.heightScale = brains.randNormal(hMean, hStd);
+      // City: sized against the people, who are scaled down to NPC_HEIGHT_MEAN
+      this.heightScale = NPC_HUMAN_HS * brains.randNormal(hMean, hStd);
     }
 
     this.waterNeed = Math.random() * 0.05;
@@ -3438,25 +3523,36 @@ class Animal extends Entity {
 
     this.waterIncrement = this.health * 0.000001;
     this.foodIncrement  = this.health * 0.000003;
+    this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;   // deer: species.py's additive mate need
     this.ageDepl        = this.health * 0.000001;
 
     this.memPredatorX = 0; this.memPredatorY = 0; this.memPredatorZ = 0; this.hasPredator = false;
     this.memFoodX = 0;     this.memFoodY = 0;     this.memFoodZ = 0;     this.hasFood = false;
     this.memWaterX = 0;    this.memWaterY = 0;    this.memWaterZ = 0;    this.hasWater = false;
     this.memMateX = 0;     this.memMateY = 0;     this.memMateZ = 0;     this.hasMate = false;
-    this.priority = null;
+    this.priority = null;          // deer: 'predator', 'food', 'water', 'mate', or null while exploring
+    this.focusX = 0; this.focusZ = 0;   // deer: species.py's coords_focused
+    this.speedScale = 1;           // deer: DEER_CRUISE unless sprinting; people always 1
+    this.sprinting = false;        // deer: fleeing a predator at the sprint speed
+    if (type === 'deer') this.newExploreCoords();
 
     this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodElev = 0;      this.rayFoodDist = 0;
     this.rayWaterSin = 0;     this.rayWaterCos = 0;     this.rayWaterElev = 0;     this.rayWaterDist = 0;
     this.rayPredatorSin = 0;  this.rayPredatorCos = 0;  this.rayPredatorElev = 0;  this.rayPredatorDist = 0;
     this.rayMateSin = 0;      this.rayMateCos = 0;      this.rayMateElev = 0;      this.rayMateDist = 0;
 
-    this.brain = new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001);
+    // City: deer run thinkDeer() (the species.py AI) every tick instead of a brain
+    this.brain = type === 'deer' ? null : new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001);
     this.ACTION_HOLD   = 60;
     this.actionTimer   = Math.floor(Math.random() * this.ACTION_HOLD);
     this.currentAction = 0;
-    this.outputIdx = 0;
-    this.facingAngle = 0;
+    // City: movement is a heading, radians, direction (sin, cos) in (x, z).
+    // People turn toward targetHeading (their brain's output) at
+    // HUMAN_TURN_RATE; deer set both every tick, pointing at their focus.
+    this.heading = Math.random() * Animal.TWO_PI;
+    this.targetHeading = this.heading;
+    this.moving = true;
+    this.facingAngle = this.heading;
     this.prevHealth = this.health;
     this.prevWaterNeed = this.waterNeed;
     this.prevFoodNeed = this.foodNeed;
@@ -3489,10 +3585,11 @@ class Animal extends Entity {
   }
 
   // City: body-centre height above the feet in Arena units, from the rig (leg
-  // pivot + leg length). The Arena's flat 15 / 9 sank feet ~6 units.
+  // pivot + leg length). The Arena's flat 15 / 9 sank feet ~6 units. Both rigs
+  // scale uniformly with heightScale.
   footLift() {
     const hs = this.heightScale ?? 1.0;
-    return this.type === 'sheep' ? 9 + 6.5 * hs : 21.25 * hs;   // City: human rig scales uniformly
+    return this.type === 'deer' ? 15 * hs : 21.25 * hs;   // deer: pivot 2 + leg 13 below the body centre
   }
 
   eyeY() {
@@ -3525,6 +3622,9 @@ class Animal extends Entity {
     return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
   }
 
+  // People's senses (deer use searchDeer): vision cone, the nearest deer or
+  // plant as food and nearest opposite-sex person as a mate, water; memories
+  // kept until out of range.
   locate(grid, waterLocations) {
     const px = this.position.x, pz = this.position.z;
     const py = this.eyeY();
@@ -3532,9 +3632,7 @@ class Animal extends Entity {
     const ax = Math.sin(this.facingAngle), az = Math.cos(this.facingAngle);
     const cosH = this.cosFovH, tanV = this.tanFovV;
     const hit = Animal._hit;
-    const isSheep = this.type === 'sheep';
-    let bestPredDist = Infinity, bestFoodDist = Infinity,
-      bestMateDist = Infinity, bestWaterDist = Infinity;
+    let bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
     const _n = grid.queryInto(world._qLocate, px, pz, this.visionDistance);
     for (let _i = 0; _i < _n; _i++) {
@@ -3542,65 +3640,40 @@ class Animal extends Entity {
       if (obj === this) continue;
       const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
 
-      if (isSheep) {
-        if (obj.type === 'human') {
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
-          if (hit.d3sq < bestPredDist) {
-            bestPredDist = hit.d3sq;
-            this.memPredatorX = ox; this.memPredatorY = oy; this.memPredatorZ = oz;
-            this.hasPredator = true; this.avoidNeed = 0.5;
-            this.rayPredatorSin = hit.sin;   this.rayPredatorCos  = hit.cos;
-            this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
-          }
-        } else if (obj.type === 'sheep' && this.sex !== obj.sex) {
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
-          if (hit.d3sq < bestMateDist) {
-            bestMateDist = hit.d3sq;
-            this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
-            this.hasMate = true;
-            this.rayMateSin = hit.sin;   this.rayMateCos  = hit.cos;
-            this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
-          }
-        }
-      } else {
-        if (obj.type === 'sheep') {
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
-          if (hit.d3sq < bestFoodDist) {
-            bestFoodDist = hit.d3sq;
-            this.memFoodX = ox; this.memFoodY = oy; this.memFoodZ = oz;
-            this.hasFood = true;
-            this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
-            this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
-          }
-        } else if (obj.type === 'human' && this.sex !== obj.sex) {
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
-          if (hit.d3sq < bestMateDist) {
-            bestMateDist = hit.d3sq;
-            this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
-            this.hasMate = true;
-            this.rayMateSin = hit.sin;   this.rayMateCos  = hit.cos;
-            this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
-          }
-        }
-      }
-    }
-
-    if (isSheep) {
-      for (const plant of world.plants) {
-        if (!plant.alive) continue;
-        const qx = plant.position.x - px, qz = plant.position.z - pz;
-        if (qx * qx + qz * qz > vd) continue;
-        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
-            plant.position.x, plant.position.y, plant.position.z)) continue;
+      if (obj.type === 'deer') {
+        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
         if (hit.d3sq < bestFoodDist) {
           bestFoodDist = hit.d3sq;
-          this.memFoodX = plant.position.x;
-          this.memFoodY = plant.position.y;
-          this.memFoodZ = plant.position.z;
+          this.memFoodX = ox; this.memFoodY = oy; this.memFoodZ = oz;
           this.hasFood = true;
           this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
           this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
         }
+      } else if (obj.type === 'human' && this.sex !== obj.sex) {
+        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+        if (hit.d3sq < bestMateDist) {
+          bestMateDist = hit.d3sq;
+          this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz;
+          this.hasMate = true;
+          this.rayMateSin = hit.sin;   this.rayMateCos  = hit.cos;
+          this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
+        }
+      }
+    }
+
+    // City: plants are food for people too; the nearer of plant and deer wins
+    for (const plant of world.plants) {
+      if (!plant.alive) continue;
+      const qx = plant.position.x - px, qz = plant.position.z - pz;
+      if (qx * qx + qz * qz > vd) continue;
+      if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
+          plant.position.x, plant.position.y, plant.position.z)) continue;
+      if (hit.d3sq < bestFoodDist) {
+        bestFoodDist = hit.d3sq;
+        this.memFoodX = plant.position.x; this.memFoodY = plant.position.y; this.memFoodZ = plant.position.z;
+        this.hasFood = true;
+        this.rayFoodSin = hit.sin;   this.rayFoodCos  = hit.cos;
+        this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
       }
     }
 
@@ -3664,7 +3737,160 @@ class Animal extends Entity {
     inp[17] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
     inp[18] = this.health > 0 ? this.health / this.maxHealth : 0;
 
-    this.outputIdx = this.brain.think(inp);
+    this.targetHeading = this.brain.think(inp);   // City: a heading, not a class
+    this.moving = true;
+  }
+
+  // DEER AI, ported from species.py. Every tick, as species.py runs
+  // update_body, search, think and move every frame:
+  //   1. a DEER_EXPLORE_P chance of a new random explore point (update_body)
+  //   2. search: everything within vision distance, a plain circle as in
+  //      neighbors(); the nearest person (or the player in game mode) is the
+  //      predator and sets avoidNeed to Infinity, the nearest plant is food,
+  //      the nearest water point is water, the nearest opposite-sex deer is a
+  //      mate. Locations are what is in sight this tick.
+  //   3. think: needs ranked highest first, predator (avoidNeed), food,
+  //      water, mate (ties keep that order, as Python's stable sort did); the
+  //      first with a known location becomes the priority and its location
+  //      the focus. A predator's location is mirrored through the deer,
+  //      self + (self - predator) (transpose_focused_coords), so the focus is
+  //      straight away from it. Nothing known: the focus stays where it was.
+  //   4. move: straight at the focus, recomputed every tick, at full speed
+  //      when the priority is the predator and DEER_CRUISE of it otherwise.
+  thinkDeer(grid, waterLocations) {
+    if (Math.random() <= DEER_EXPLORE_P) this.newExploreCoords();
+    this.searchDeer(grid, waterLocations);
+
+    let best = null, bestV = -Infinity;
+    if (this.hasPredator && this.avoidNeed        > bestV) { best = 'predator'; bestV = this.avoidNeed; }
+    if (this.hasFood     && this.foodNeed         > bestV) { best = 'food';     bestV = this.foodNeed; }
+    if (this.hasWater    && this.waterNeed        > bestV) { best = 'water';    bestV = this.waterNeed; }
+    if (this.hasMate     && this.reproductionNeed > bestV) { best = 'mate';     bestV = this.reproductionNeed; }
+    this.priority = best;
+
+    const x = this.position.x, z = this.position.z;
+    if (best === 'predator') {
+      this.focusX = x + (x - this.memPredatorX);        // transpose_focused_coords
+      this.focusZ = z + (z - this.memPredatorZ);
+    } else if (best === 'food')  { this.focusX = this.memFoodX;  this.focusZ = this.memFoodZ; }
+    else if (best === 'water')   { this.focusX = this.memWaterX; this.focusZ = this.memWaterZ; }
+    else if (best === 'mate')    { this.focusX = this.memMateX;  this.focusZ = this.memMateZ; }
+
+    const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
+    this.sprinting = best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST;
+    this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;   // fleeing beyond sprint range: full speed
+    // sprinting burns DEER_SPRINT_ENERGY times the walking energy: the base
+    // increment was added in update(), this adds the rest
+    if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
+    const dx = this.focusX - x, dz = this.focusZ - z;
+    const step = this.stepLength();
+    if (dx * dx + dz * dz <= step * step) {
+      // at the focus: stand (eating, drinking or meeting a mate happens on
+      // contact). City: species.py divides by a zero-length vector here; an
+      // explore point that is reached is replaced, as the first species.py did.
+      this.moving = false;
+      if (best === null) this.newExploreCoords();
+      return;
+    }
+    this.moving = true;
+    this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(dx, dz));
+  }
+
+  searchDeer(grid, waterLocations) {
+    const x = this.position.x, z = this.position.z;
+    const vd = this.visionDistSq;
+    let bP = Infinity, bF = Infinity, bW = Infinity, bM = Infinity;
+    this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
+    this.avoidNeed = 0;
+
+    const n = grid.queryInto(world._qLocate, x, z, this.visionDistance);
+    for (let i = 0; i < n; i++) {
+      const obj = world._qLocate[i];
+      if (obj === this || !obj.alive) continue;
+      const ox = obj.position.x, oz = obj.position.z;
+      const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
+      if (d2 > vd) continue;
+      if (obj.type === 'human') {
+        if (d2 <= bP) { bP = d2; this.seen(0, ox, obj.position.y, oz); this.avoidNeed = Infinity; }
+      } else if (obj.type === 'deer' && obj.sex !== this.sex) {
+        if (d2 <= bM) { bM = d2; this.seen(3, ox, obj.position.y, oz); }
+      }
+    }
+
+    // City: in game mode the player is a predator too
+    const gp = game.predator;
+    if (gp.alive) {
+      const ox = gp.position.x, oz = gp.position.z;
+      const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
+      if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
+    }
+
+    for (const plant of world.plants) {
+      if (!plant.alive) continue;
+      const ox = plant.position.x, oz = plant.position.z;
+      const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
+      if (d2 <= vd && d2 <= bF) { bF = d2; this.seen(1, ox, plant.position.y, oz); }
+    }
+
+    for (const wl of waterLocations) {
+      const d2 = (wl[0] - x) * (wl[0] - x) + (wl[1] - z) * (wl[1] - z);
+      if (d2 <= vd && d2 <= bW) { bW = d2; this.seen(2, wl[0], wl[2], wl[1]); }
+    }
+  }
+
+  // Metres moved this tick. Deer sprint at DEER_SPRINT_OVER times the fastest
+  // predator's running speed; otherwise the Arena speed, scaled.
+  stepLength() {
+    const ms = this.sprinting
+      ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHumanMS)
+      : this.speed * this.speedScale * NPC_UNIT;
+    return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * Animal.MOVE_TIMESTEP;
+  }
+
+  // Records a sighting (0 predator, 1 food, 2 water, 3 mate) as a location,
+  // plus the direction and distance the vitals sprite's arrows read.
+  seen(kind, ox, oy, oz) {
+    const dx = ox - this.position.x, dz = oz - this.position.z;
+    const h = Math.hypot(dx, dz) || 1;
+    const s = dx / h, c = dz / h, dist = Math.min(1, h / this.visionDistance);
+    if (kind === 0) {
+      this.memPredatorX = ox; this.memPredatorY = oy; this.memPredatorZ = oz; this.hasPredator = true;
+      this.rayPredatorSin = s; this.rayPredatorCos = c; this.rayPredatorDist = dist;
+    } else if (kind === 1) {
+      this.memFoodX = ox; this.memFoodY = oy; this.memFoodZ = oz; this.hasFood = true;
+      this.rayFoodSin = s; this.rayFoodCos = c; this.rayFoodDist = dist;
+    } else if (kind === 2) {
+      this.memWaterX = ox; this.memWaterY = oy; this.memWaterZ = oz; this.hasWater = true;
+      this.rayWaterSin = s; this.rayWaterCos = c; this.rayWaterDist = dist;
+    } else {
+      this.memMateX = ox; this.memMateY = oy; this.memMateZ = oz; this.hasMate = true;
+      this.rayMateSin = s; this.rayMateCos = c; this.rayMateDist = dist;
+    }
+  }
+
+  // species.py new_explore_coords: a random point in the world. City: drawn
+  // up to 10 times for an open outdoor spot, so the target is not inside a
+  // building or in water.
+  newExploreCoords() {
+    for (let k = 0; k < 10; k++) {
+      this.focusX = world.minX + Math.random() * (world.maxX - world.minX);
+      this.focusZ = world.minZ + Math.random() * (world.maxZ - world.minZ);
+      if (world.isOpen(this.focusX, this.focusZ)) return;
+    }
+  }
+
+  static wrapAngle(a) {
+    a %= Animal.TWO_PI;
+    return a < 0 ? a + Animal.TWO_PI : a;
+  }
+
+  // `from` turned toward `to` by at most `maxStep` radians, the short way round.
+  static turnToward(from, to, maxStep) {
+    let d = (to - from) % Animal.TWO_PI;
+    if (d > Math.PI) d -= Animal.TWO_PI;
+    else if (d < -Math.PI) d += Animal.TWO_PI;
+    if (d > maxStep) d = maxStep; else if (d < -maxStep) d = -maxStep;
+    return Animal.wrapAngle(from + d);
   }
 
   isSubmerged() {
@@ -3673,15 +3899,34 @@ class Animal extends Entity {
 
   move() {
     const lift = this.footLift() * NPC_UNIT;   // City: feet on the street, metres
-    if (this.outputIdx !== Animal.ACTION_STAY) {
-      const facing = Animal.FACING_ANGLES[this.outputIdx];
-      if (facing !== null && facing !== undefined) this.facingAngle = facing;
-      const speed = this.submerged ? this.speed * this.WATER_SPEED_FACTOR : this.speed;
-      const step = speed * Animal.MOVE_TIMESTEP * NPC_UNIT;   // City: metres
-      const dir = Animal.MOVE_DIRS[this.outputIdx];
-      // City: clamp to the loaded area; the Arena's torus wrap would teleport
-      this.position.x = tools.clamp(this.position.x + dir[0] * step, world.minX, world.maxX);
-      this.position.z = tools.clamp(this.position.z + dir[1] * step, world.minZ, world.maxZ);
+    if (this.moving) {
+      // City: people turn smoothly toward their brain's heading; deer already face their focus
+      if (this.heading !== this.targetHeading) {
+        this.heading = Animal.turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * Animal.MOVE_TIMESTEP);
+      }
+      this.facingAngle = this.heading;
+      const step = this.stepLength();                    // City: metres
+      const sx = Math.sin(this.heading) * step, sz = Math.cos(this.heading) * step;
+      const n = Math.ceil(step / NPC_SUBSTEP);
+      if (n <= 1) {
+        // a normal walking step: NpcWorld.collide settles it against walls
+        // City: clamp to the loaded area; the Arena's torus wrap would teleport
+        this.position.x = tools.clamp(this.position.x + sx, world.minX, world.maxX);
+        this.position.z = tools.clamp(this.position.z + sz, world.minZ, world.maxZ);
+      } else {
+        // a long (sprinting) step: sub-steps, each refused or slid along one
+        // axis at a blocked cell, as NpcWorld.collide does for a whole step
+        let x = this.position.x, z = this.position.z;
+        for (let k = 0; k < n; k++) {
+          const nx = tools.clamp(x + sx / n, world.minX, world.maxX);
+          const nz = tools.clamp(z + sz / n, world.minZ, world.maxZ);
+          if (!occ.blockedAt(nx, nz)) { x = nx; z = nz; }
+          else if (!occ.blockedAt(nx, z)) x = nx;
+          else if (!occ.blockedAt(x, nz)) z = nz;
+          else break;
+        }
+        this.position.x = x; this.position.z = z;
+      }
     }
     const g = terrain.heightAtFor(this, this.position.x, this.position.z);
     const floatY = water.level - water.FLOAT_DEPTH;
@@ -3694,22 +3939,25 @@ class Animal extends Entity {
     this.waterNeed += this.waterIncrement;
     this.foodNeed  += this.foodIncrement;
     this.lookForMate = (now - this.lastChildTime) >= this.childGracePeriod;
-    this.reproductionNeed = this.lookForMate
-      ? this.reproductionNeed + this.reproductionNeed
-      : 0;
+    // people: the Arena's rule; deer: species.py's, one increment per tick
+    const rn = this.reproductionNeed;
+    this.reproductionNeed = !this.lookForMate ? 0
+      : this.brain ? rn + rn : rn + this.reproductionIncrement;
     this.health -= ((now - this.tob) / 1000) * this.ageDepl
                  + this.waterNeed * 0.0001
                  + this.foodNeed  * 0.0001;
     this.avoidNeed = 0;
     if (this.health <= 1) { this.alive = false; return; }
 
-    this.actionTimer--;
-    if (this.actionTimer <= 0) {
+    if (!this.brain) {
+      this.thinkDeer(grid, waterLocations);                // City: deer, every tick as species.py
+    } else if (--this.actionTimer <= 0) {
       this.think(grid, waterLocations);
       this.actionTimer   = this.ACTION_HOLD;
     }
 
-    if (world.ticks % perf.BRAIN_UPDATE_INTERVAL === animalIndex % perf.BRAIN_UPDATE_INTERVAL) {
+    if (this.brain &&
+        world.ticks % perf.BRAIN_UPDATE_INTERVAL === animalIndex % perf.BRAIN_UPDATE_INTERVAL) {
       const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
       const waterDelta  = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05);
       const foodDelta   = (this.prevFoodNeed  - this.foodNeed)  / (this.startHealth * 0.05);
@@ -3748,7 +3996,7 @@ class Animal extends Entity {
     const mother = this.sex === 'female' ? this : partner;
     const child = new Animal(
       [mother.position.x, mother.position.y,
-       mother.position.z + (this.type === 'sheep' ? 10 : 20) * NPC_UNIT],   // City: metres
+       mother.position.z + (this.type === 'deer' ? 10 : 20) * NPC_UNIT],   // City: metres
       this.type
     );
     child.isAdult = false;
@@ -3768,16 +4016,18 @@ class Animal extends Entity {
     const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
     child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + brains.randNormal(0, 0.04)));
 
-    const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
-    child.brain = new DenseNetwork(
-      ParentBrain.inputDims,
-      null,
-      ((this.brain.learningRate + partner.brain.learningRate) / 2)
-        * (0.5 + Math.random()),
-      ParentBrain.momentum,
-      ParentBrain.weightDecay,
-      ParentBrain.getMasks()
-    );
+    if (this.brain && partner.brain) {                    // City: deer fawns have none, as their parents
+      const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
+      child.brain = new DenseNetwork(
+        ParentBrain.inputDims,
+        null,
+        ((this.brain.learningRate + partner.brain.learningRate) / 2)
+          * (0.5 + Math.random()),
+        ParentBrain.momentum,
+        ParentBrain.weightDecay,
+        ParentBrain.getMasks()
+      );
+    }
 
     child.generation = Math.max(this.generation, partner.generation) + 1;
 
@@ -3817,16 +4067,52 @@ class AnimalRenderer {
     this.MATURITY_TICKS = 3 * this.TICKS_PER_DAY;
     this.MIN_SCALE      = 0.25;
 
-    this.TYPES      = ['sheep', 'human'];
+    this.TYPES      = ['deer', 'human'];
     this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
     this.LIMB_SIGNS = [1, -1, -1, 1];   // swing direction per LIMB_NAMES entry
 
+    // A box in rig units, turned about x then z, then moved to (x, y, z).
+    const boxAt = (w, h, d, x, y, z, rx = 0, rz = 0) => {
+      const g = new THREE.BoxGeometry(w, h, d);
+      if (rx) g.rotateX(rx);
+      if (rz) g.rotateZ(rz);
+      g.translate(x, y, z);
+      return g;
+    };
+
+    // DEER RIG
+    // Rig units (NPC_UNIT metres each), origin at the body centre, head toward
+    // +z. Deer heightScale carries NPC_HUMAN_HS, so heights are given against
+    // the mean person: back at 51% of their height, head top 72%, ear tips
+    // 79%, antler tips 91% (at NPC_HEIGHT_MEAN 1.15 m: 0.60, 0.83, 0.91 and
+    // 1.04 m). The head part carries the neck, snout and ears and is placed at
+    // PART_OFFSETS.deer.head like the sheep's head cube was. Antlers are their
+    // own mesh, drawn for bucks only.
+    const deerHead = mergeGeometries([
+      boxAt(4.5, 8, 5,     0, 3.2, 1.5, 0.45),     // neck, leaning forward
+      boxAt(5, 5, 7,       0, 7.8, 5),             // head
+      boxAt(3.4, 3.2, 4.5, 0, 6.9, 10),            // snout
+      boxAt(0.9, 3.4, 2,  2.8, 11.2, 3, 0, -0.5),  // ears, tipped outward
+      boxAt(0.9, 3.4, 2, -2.8, 11.2, 3, 0,  0.5)
+    ], false);
+    const deerBody = mergeGeometries([
+      boxAt(10, 10, 26,   0, 0, 0),              // barrel
+      boxAt(3, 4.2, 1.8,  0, 3, -13.7, -0.45)    // tail, flicked up
+    ], false);
+    const antlerSide = s => [
+      boxAt(0.9, 4.5, 0.9, s * 2.1, 12.3, 3.6, 0, -s * 0.45),   // beam rising from the skull
+      boxAt(0.8, 0.8, 5.5, s * 3.1, 14.4, 5.6),                 // beam sweeping forward
+      boxAt(0.7, 2.8, 0.7, s * 3.1, 16, 4.3),                   // tines
+      boxAt(0.7, 2.8, 0.7, s * 3.1, 16, 7.2)
+    ];
+    const deerAntlers = mergeGeometries([...antlerSide(1), ...antlerSide(-1)], false);
+
     this.GEOMETRIES = {
-      sheep: {
-        body: new THREE.BoxGeometry(12, 12, 25),
-        head: new THREE.BoxGeometry(14, 14, 14),
-        leg:  new THREE.BoxGeometry(3, 13, 3)
+      deer: {
+        body: deerBody,
+        head: deerHead,
+        leg:  new THREE.BoxGeometry(2.4, 13, 2.4)
       },
       human: {
         body: new THREE.BoxGeometry(8, 17, 6),
@@ -3836,22 +4122,28 @@ class AnimalRenderer {
     };
 
     this.MATERIALS = {
-      sheep: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
+      deer:  new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
       human: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })
     };
 
     this.SEX_COLORS = {
-      sheep: { male: new THREE.Color(0xB0B0B0), female: new THREE.Color(0x676767) },
+      deer:  { male: new THREE.Color(0x6f4a2a), female: new THREE.Color(0x93683f) },
       human: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
     };
 
+    // Male-only parts: one extra instanced mesh per type that has them, placed
+    // with the head's matrix, not sex-tinted.
+    this.ANTLERS = {
+      deer: { geom: deerAntlers, mat: new THREE.MeshStandardMaterial({ color: 0xcbb793 }) }
+    };
+
     this.PART_OFFSETS = {
-      sheep: {
-        head:  new THREE.Vector3(0, 5, 15),
-        legFL: new THREE.Vector3(-5, -8,  8),
-        legFR: new THREE.Vector3( 5, -8,  8),
-        legBL: new THREE.Vector3(-5, -8, -8),
-        legBR: new THREE.Vector3( 5, -8, -8),
+      deer: {
+        head:  new THREE.Vector3(0, 2.5, 11.5),
+        legFL: new THREE.Vector3(-3.2, -8.5,  10),
+        legFR: new THREE.Vector3( 3.2, -8.5,  10),
+        legBL: new THREE.Vector3(-3.2, -8.5, -10),
+        legBR: new THREE.Vector3( 3.2, -8.5, -10),
       },
       human: {
         head:  new THREE.Vector3(0, 13, 0),
@@ -3869,22 +4161,21 @@ class AnimalRenderer {
         legBL: new THREE.Vector3(-2, -8.75, 0),
         legBR: new THREE.Vector3( 2, -8.75, 0),
       },
-      sheep: {
-        legFL: new THREE.Vector3(-5,  0,  8),
-        legFR: new THREE.Vector3( 5,  0,  8),
-        legBL: new THREE.Vector3(-5,  0, -8),
-        legBR: new THREE.Vector3( 5,  0, -8),
+      deer: {
+        legFL: new THREE.Vector3(-3.2, -2,  10),
+        legFR: new THREE.Vector3( 3.2, -2,  10),
+        legBL: new THREE.Vector3(-3.2, -2, -10),
+        legBR: new THREE.Vector3( 3.2, -2, -10),
       },
     };
 
-    this.DIRECTION_ANGLES = [
-      Math.PI / 2, -Math.PI / 2, 0, Math.PI,
-      Math.PI / 4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4,
-      null
-    ];
+    this.LIMB_HALF = { deer: 6.5, human: 6.25 };          // pivot to limb centre, rig units
+    this.WALK      = { deer: 0.45, human: 0.65 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
+    this.LEG_LEN   = { deer: 13, human: 12.5 };     // leg box heights, rig units
 
     this.meshes = {};
-    this.renderCache = { sheep: null, human: null };
+    this.antlers = {};                        // type -> InstancedMesh, bucks only
+    this.renderCache = { deer: null, human: null };
 
     // LOW DETAIL
     // Past NPC_LOD_DIST a body is one instance of a merged, rest-pose mesh
@@ -3893,26 +4184,23 @@ class AnimalRenderer {
     // and the boxes sit where the rig's parts sit at rest, so the swap only
     // stops the legs. Units are rig units, origin at the body centre, like
     // the body mesh, so the far instance uses the body's matrix unchanged.
-    const boxAt = (w, h, d, x, y, z) => {
-      const g = new THREE.BoxGeometry(w, h, d);
-      g.translate(x, y, z);
-      return g;
-    };
+    // Antlers are left out at this distance.
+    const dh = this.PART_OFFSETS.deer.head;
     this.FAR_GEOMETRIES = {
       human: mergeGeometries([
         boxAt(8.6, 8.6, 8.6, 0, 13, 0),       // head
         boxAt(14, 17, 6, 0, 0, 0),            // torso with both arms
         boxAt(6, 12.5, 2, 0, -15, 0)          // both legs as one block
       ], false),
-      sheep: mergeGeometries([
-        boxAt(12, 12, 25, 0, 0, 0),           // body
-        boxAt(14, 14, 14, 0, 5, 15),          // head
-        boxAt(13, 13, 3, 0, -9,  8),          // front legs as one bar
-        boxAt(13, 13, 3, 0, -9, -8)           // back legs as one bar
+      deer: mergeGeometries([
+        deerBody.clone(),                                  // barrel and tail
+        deerHead.clone().translate(dh.x, dh.y, dh.z),      // neck, head, snout, ears
+        boxAt(8.8, 13, 2.4, 0, -8.5,  10),                 // front legs as one bar
+        boxAt(8.8, 13, 2.4, 0, -8.5, -10)                  // back legs as one bar
       ], false)
     };
     this.far = {};                            // type -> InstancedMesh
-    this.farColKeys = { sheep: [], human: [] };
+    this.farColKeys = { deer: [], human: [] };
 
     this._mat4      = new THREE.Matrix4();
     this._local     = new THREE.Vector3();
@@ -3927,11 +4215,12 @@ class AnimalRenderer {
   }
 
   init() {
-    for (const type of ['sheep', 'human']) {
+    for (const type of this.TYPES) {
       if (this.meshes[type]) {
         for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
       }
       if (this.far[type]) { scene.remove(this.far[type]); this.far[type].dispose(); }
+      if (this.antlers[type]) { scene.remove(this.antlers[type]); this.antlers[type].dispose(); }
       const far = new THREE.InstancedMesh(this.FAR_GEOMETRIES[type], this.MATERIALS[type], this.MAX_INSTANCES);
       far.castShadow = true;
       far.frustumCulled = false;
@@ -3952,6 +4241,14 @@ class AnimalRenderer {
         mesh.castShadow = true;
         mesh.frustumCulled = false;
         scene.add(mesh);
+      }
+      const ant = this.ANTLERS[type];
+      if (ant) {
+        const mesh = new THREE.InstancedMesh(ant.geom, ant.mat, this.MAX_INSTANCES);
+        mesh.castShadow = true;
+        mesh.frustumCulled = false;
+        scene.add(mesh);
+        this.antlers[type] = mesh;
       }
     }
   }
@@ -3974,30 +4271,38 @@ class AnimalRenderer {
       if (!im) continue;
       const cache = this.cacheFor(type, im);
       const far = this.far[type], farColKeys = this.farColKeys[type];
+      const antlers = this.antlers[type];               // undefined for humans
+      const walkSwing = this.WALK[type], legLen = this.LEG_LEN[type];
+      const limbHalf = this.LIMB_HALF[type];
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
       const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
-      let idx = 0, fidx = 0;
+      let idx = 0, fidx = 0, aidx = 0;
       let colorsDirty = false, farColorsDirty = false;
 
       for (const a of animals) {
         if (!a.alive || a.type !== type) continue;
         if (idx + fidx >= this.MAX_INSTANCES) break;
 
-        if (deltaTime && a.outputIdx !== 8) a.animTime += deltaTime;
 
         const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
         const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
         const k = s * NPC_UNIT;                         // City: rig scale in metres
         const hs = a.heightScale ?? 1.0;
-        // City: humans scale uniformly by heightScale, so a short NPC is a smaller
-        // copy of the rig, not a y-squash
-        const kp = type === 'human' ? k * hs : k;       // part offsets and limb hang
-        if (type === 'human') this._scale.set(kp, kp, kp);
-        else this._scale.set(k, k * hs, k);
+        // City: every rig scales uniformly by heightScale, so a small NPC is a
+        // smaller copy of the rig, not a y-squash
+        const kp = k * hs;                              // part offsets and limb hang
+        this._scale.set(kp, kp, kp);
 
-        const angle = this.DIRECTION_ANGLES[a.outputIdx];
-        if (angle !== null && angle !== undefined) a.facingAngle = angle;
-        // off-screen: nothing drawn (facing above still updates, the sim reads it)
+        // gait: cadence from speed, so the feet keep pace with the ground
+        const swing = a.sprinting ? GAIT_GALLOP_SWING : walkSwing;
+        if (deltaTime && a.moving) {
+          const v = a.stepLength() / Animal.MOVE_TIMESTEP;            // m/s this tick
+          const perCycle = 4 * legLen * kp * Math.sin(swing);          // metres per leg cycle
+          const hz = Math.min(GAIT_MAX_HZ, v / perCycle);
+          a.animTime += deltaTime * hz * 2 * Math.PI;                  // animTime is now the gait phase
+        }
+
+        // off-screen: nothing drawn
         if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
         this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
 
@@ -4027,15 +4332,14 @@ class AnimalRenderer {
           colorsDirty = true;
         }
 
-        const isIdle = a.outputIdx === 8;
-        const walkFreq = type === 'sheep' ? 6.5 : 5.0;
-        const walkAmp  = isIdle ? 0 : (type === 'sheep' ? 0.55 : 0.65);
-        const t = a.animTime * walkFreq;
+        const isIdle = !a.moving;
+        const walkAmp = isIdle ? 0 : swing;
+        const t = a.animTime;
 
         const sinT = Math.sin(t);
         // FL and BR swing by +sinT * walkAmp, FR and BL by its negative, so the
         // four leg quaternions about x are (+-sin(h), 0, 0, cos(h)) for one h:
-        // one sin/cos pair per person instead of four setFromAxisAngle calls
+        // one sin/cos pair per NPC instead of four setFromAxisAngle calls
         const legH = sinT * walkAmp * 0.5;
         const legS = Math.sin(legH), legC = Math.cos(legH);
         const legSign = this.LIMB_SIGNS;
@@ -4046,8 +4350,7 @@ class AnimalRenderer {
         this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
         this._mat4.compose(this._local, this._quat, this._scale);
         im.head.setMatrixAt(idx, this._mat4);
-
-        const limbHalf = type === 'sheep' ? 9 : 6.25;
+        if (antlers && a.sex === 'male') antlers.setMatrixAt(aidx++, this._mat4);   // rides the head
 
         for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
           const part = this.LIMB_NAMES[pi];
@@ -4072,17 +4375,263 @@ class AnimalRenderer {
         perf.instances(mesh, idx);
         if (colorsDirty) perf.instanceColors(mesh, idx);
       }
+      if (antlers) perf.instances(antlers, aidx);
       perf.instances(far, fidx);
       if (farColorsDirty) perf.instanceColors(far, fidx);
     }
   }
 
   setGraphics(shadowsOn) {
-    for (const type of ['sheep', 'human']) {
+    for (const type of this.TYPES) {
       const im = this.meshes[type];
       if (!im) continue;
       for (const mesh of Object.values(im)) mesh.castShadow = shadowsOn;
       if (this.far[type]) this.far[type].castShadow = shadowsOn;
+      if (this.antlers[type]) this.antlers[type].castShadow = shadowsOn;
+    }
+  }
+}
+
+// PLANTS
+// The Arena's Plant and PlantRenderer, what deer graze. A plant is a stem and
+// four leaves that shrink with its health (10 bites). Sizes stay in Arena
+// units and are scaled to metres by NPC_UNIT when written, so a full plant
+// stands ~0.23 m above the ground, the same size against a deer as a plant
+// was against a sheep.
+
+class Plant extends Entity {
+  constructor(position) {
+    super(position, 'plant');
+    this.health = 10;
+    this.maxHealth = 10;
+    // City: the ground under the plant, sunk 3 Arena units as in the Arena.
+    // The city ground never reshapes, so there is no terrain-version recheck.
+    const x = this.position.x, z = this.position.z;
+    this.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) - 3 * NPC_UNIT;
+    this._slot = -1;
+    plantRenderer.add(this);
+  }
+
+  remove() { plantRenderer.remove(this); }
+
+  update() {
+    // spawned past MAX_INSTANCES: retry each tick so a freed slot gets adopted
+    if (this._slot < 0) plantRenderer.add(this);
+  }
+}
+
+class PlantRenderer {
+  constructor() {
+    this.MAX_INSTANCES = 15000;
+    this.GEOMETRIES = {
+      stem: new THREE.CylinderGeometry(1, 1, 5, 3),
+      leaf: new THREE.SphereGeometry(1, 2, 2),
+    };
+    this.LEAF_OFFSETS_XZ = [0, 1, 2, 3].map(i => {
+      const angle = (i / 4) * Math.PI * 2;
+      return new THREE.Vector2(Math.cos(angle) * 2, Math.sin(angle) * 2);
+    });
+    this.MATERIAL = new THREE.MeshStandardMaterial({
+      color: 0x228b22,
+      roughness: 0.85,
+    });
+    this.meshes = null;
+    this.meshList = null;
+    this.stemArr = null;
+    this.leafArrs = null;
+    this.arrOwner = null;
+
+    // dirty-list bookkeeping: only slots that changed are written and uploaded
+    this.slots      = new Array(this.MAX_INSTANCES).fill(null);
+    this.count      = 0;
+    this.lastCount  = -1;
+    this.dirty      = [];
+    this.dirtyFlag  = new Uint8Array(this.MAX_INSTANCES);
+    this.MAX_RUNS   = 32;
+    this._sortBuf   = [];
+    this._runs      = [];
+  }
+
+  init() {
+    if (this.meshes) {
+      for (const mesh of Object.values(this.meshes)) { scene.remove(mesh); mesh.dispose(); }
+    }
+    const geos = this.GEOMETRIES;
+    this.meshes = {
+      stem:  new THREE.InstancedMesh(geos.stem, this.MATERIAL, this.MAX_INSTANCES),
+      leaf0: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
+      leaf1: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
+      leaf2: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
+      leaf3: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
+    };
+    for (const mesh of Object.values(this.meshes)) {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.count = 0;
+      mesh.visible = false;
+      scene.add(mesh);
+    }
+    this.arrOwner  = null;
+    this.lastCount = -1;
+  }
+
+  refreshArrays() {
+    this.arrOwner  = this.meshes;
+    this.meshList  = Object.values(this.meshes);
+    this.stemArr   = this.meshes.stem.instanceMatrix.array;
+    this.leafArrs  = [
+      this.meshes.leaf0.instanceMatrix.array,
+      this.meshes.leaf1.instanceMatrix.array,
+      this.meshes.leaf2.instanceMatrix.array,
+      this.meshes.leaf3.instanceMatrix.array,
+    ];
+  }
+
+  add(p) {
+    if (p._slot >= 0) return;
+    if (this.count >= this.MAX_INSTANCES) { p._slot = -1; return; }
+    const slot = this.count++;
+    this.slots[slot] = p;
+    p._slot = slot;
+    this.markDirty(slot);
+  }
+
+  remove(p) {
+    const slot = p._slot;
+    if (slot === undefined || slot < 0) return;
+    const last = --this.count;
+    if (slot !== last) {
+      const moved = this.slots[last];
+      this.slots[slot] = moved;
+      moved._slot = slot;
+      this.markDirty(slot);
+    }
+    this.slots[last] = null;
+    p._slot = -1;
+  }
+
+  touch(p) {
+    const slot = p._slot;
+    if (slot === undefined || slot < 0) return;
+    this.markDirty(slot);
+  }
+
+  markDirty(slot) {
+    if (this.dirtyFlag[slot]) return;
+    this.dirtyFlag[slot] = 1;
+    this.dirty.push(slot);
+  }
+
+  rebuild(plants) {
+    this.slots.fill(null);
+    this.dirtyFlag.fill(0);
+    this.dirty.length = 0;
+    this.count = 0;
+    this.lastCount = -1;
+    for (const p of plants) {
+      p._slot = -1;
+      if (p.alive) this.add(p);
+    }
+  }
+
+  writeSlot(slot) {
+    const p = this.slots[slot];
+    if (!p) return;
+
+    const U = NPC_UNIT;                                 // City: Arena units to metres
+    const h = p.health / p.maxHealth;
+    const hs = h * U;
+    const groundY = p.position.y;
+    const px = p.position.x, pz = p.position.z;
+    const o = slot * 16;
+
+    this.stemArr[o]      = hs;
+    this.stemArr[o + 5]  = hs;
+    this.stemArr[o + 10] = hs;
+    this.stemArr[o + 12] = px;
+    this.stemArr[o + 13] = groundY + 5 * hs;
+    this.stemArr[o + 14] = pz;
+    this.stemArr[o + 15] = 1;
+
+    const leafY = groundY + 7 * hs;
+    for (let li = 0; li < 4; li++) {
+      const off = this.LEAF_OFFSETS_XZ[li];
+      const a = this.leafArrs[li];
+      a[o]      = hs;
+      a[o + 5]  = hs;
+      a[o + 10] = hs;
+      a[o + 12] = px + off.x * U;
+      a[o + 13] = leafY;
+      a[o + 14] = pz + off.y * U;
+      a[o + 15] = 1;
+    }
+  }
+
+  update(plants) {
+    if (!this.meshes) return;
+    if (this.arrOwner !== this.meshes) {
+      this.refreshArrays();
+      this.rebuild(plants);
+    }
+
+    const count = this.count;
+    if (count !== this.lastCount) {
+      this.lastCount = count;
+      for (let i = 0; i < this.meshList.length; i++) {
+        this.meshList[i].count = count;
+        this.meshList[i].visible = count > 0;   // City: no plants, no draw calls
+      }
+    }
+
+    const dirty = this.dirty;
+    if (dirty.length === 0) return;
+
+    for (let i = 0; i < dirty.length; i++) {
+      const slot = dirty[i];
+      this.dirtyFlag[slot] = 0;
+      if (slot < count) this.writeSlot(slot);
+    }
+    this.uploadDirty(dirty, count);
+    dirty.length = 0;
+  }
+
+  uploadDirty(dirty, count) {
+    const sorted = this._sortBuf;
+    sorted.length = 0;
+    for (let i = 0; i < dirty.length; i++) {
+      if (dirty[i] < count) sorted.push(dirty[i]);
+    }
+    if (sorted.length === 0) return;
+    sorted.sort((a, b) => a - b);
+
+    const runs = this._runs;
+    runs.length = 0;
+    let start = sorted[0], prev = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+      const s = sorted[i];
+      if (s <= prev + 1) { prev = s; continue; }
+      runs.push(start, prev);
+      start = s; prev = s;
+    }
+    runs.push(start, prev);
+
+    const nRuns    = runs.length / 2;
+    const spanFrom = runs[0];
+    const spanTo   = runs[runs.length - 1];
+    const useSpan  = nRuns > this.MAX_RUNS;
+
+    for (let i = 0; i < this.meshList.length; i++) {
+      const attr = this.meshList[i].instanceMatrix;
+      attr.clearUpdateRanges();
+      if (useSpan) {
+        attr.addUpdateRange(spanFrom * 16, (spanTo - spanFrom + 1) * 16);
+      } else {
+        for (let r = 0; r < runs.length; r += 2) {
+          attr.addUpdateRange(runs[r] * 16, (runs[r + 1] - runs[r] + 1) * 16);
+        }
+      }
+      attr.needsUpdate = true;
     }
   }
 }
@@ -4098,7 +4647,7 @@ const perf = {
   // the range after each upload, so set it every frame.
   instances(mesh, n) {
     mesh.count = n;
-    mesh.visible = n > 0;        // an empty type (sheep, for now) costs no draw call
+    mesh.visible = n > 0;        // an empty type or part (no bucks in view) costs no draw call
     if (n === 0) return;         // not drawn, so nothing to send
     const attr = mesh.instanceMatrix;
     attr.clearUpdateRanges();
@@ -4589,7 +5138,7 @@ class NpcWorld {
 
   constructor() {
     this.animals = [];
-    this.plants = [];              // none in the city yet; sheep read this
+    this.plants = [];              // Plants, what deer graze
     this.ticks = 0;
     this.ready = false;
     this.shownPop = -1;            // population last written to the HUD
@@ -4597,7 +5146,11 @@ class NpcWorld {
 
     this.grid = null;
     this.plantGrid = null;
-    this.sheepAlive = 0;           // counted each step; humans skip the hunt query at 0
+    this.deerAlive = 0;            // counted each step; humans skip the hunt query at 0
+    this.fastestHumanMS = 0;       // top speed of any person, m/s, counted each step (deer sprint off it)
+    this.greens = [];              // green areas for deer and plant spawns, with cumulative area
+    this.greenTotal = 0;
+    this.roadIdx = null;           // keeps plants off roads and paths
 
     this._qLocate = [];
     this._qHunt   = [];
@@ -4610,6 +5163,8 @@ class NpcWorld {
     this.plants.length = 0;
     this.ready = false;
     animalRenderer.update(this.animals, 0);   // zero instances, meshes hidden
+    plantRenderer.rebuild(this.plants);        // zero plants, meshes hidden
+    plantRenderer.update(this.plants);
     healthBars.update(this.animals);   // no one left: every bar hidden
     this.syncPopulation();
   }
@@ -4625,6 +5180,7 @@ class NpcWorld {
     this.animals.length = 0;
     this.plants.length = 0;
     this.ticks = 0;
+    game.reset();                  // a new city starts the player fed and watered
     this.minX = -radius; this.maxX = radius;
     this.minZ = -radius; this.maxZ = radius;
 
@@ -4635,11 +5191,73 @@ class NpcWorld {
     water.build(features, this.minX, this.minZ, this.maxX, this.maxZ);
     places.build(features);
     occ.build(this.minX, this.minZ, this.maxX, this.maxZ);
+    this.buildGreens(features.areas || []);
+    this.roadIdx = roadIndex(features.roads || []);
     animalRenderer.init();
+    plantRenderer.init();
+    for (let i = 0; i < NPC_PLANT_POPULATION; i++) this.spawnPlant();
     this.spawnHumans(NPC_POPULATION, features.roads || []);
+    this.spawnDeer(NPC_DEER_POPULATION);
     this.ready = true;
     // write instance data now so compileAsync warms the instance-colour shader
     animalRenderer.update(this.animals, 0);
+    plantRenderer.update(this.plants);
+  }
+
+  // Green land cover (DEER_AREAS), each with its bounds and cumulative area
+  // for picks weighted by size.
+  buildGreens(areas) {
+    this.greens = [];
+    let total = 0;
+    for (const ar of areas) {
+      if (!DEER_AREAS.has(ar.kind)) continue;
+      const size = Math.abs(ringArea(ar.pts));
+      if (size < 25) continue;                     // slivers: almost every sample misses
+      total += size;
+      this.greens.push({ pts: ar.pts, b: bounds(ar.pts), cum: total });
+    }
+    this.greenTotal = total;
+  }
+
+  // One random point inside a green area, picked by area; null when the
+  // sample lands outside the ring (the caller draws again).
+  greenPoint() {
+    const greens = this.greens;
+    const target = Math.random() * this.greenTotal;
+    let lo = 0, hi = greens.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (greens[mid].cum < target) lo = mid + 1; else hi = mid; }
+    const g = greens[lo], b = g.b;
+    const x = b.minX + Math.random() * (b.maxX - b.minX);
+    const z = b.minZ + Math.random() * (b.maxZ - b.minZ);
+    return pointInRing(g.pts, x, z) ? [x, z] : null;
+  }
+
+  // City: where a plant can grow. In green areas when the map has any, else
+  // on open ground anywhere; never on a road or path, indoors or in water.
+  // The Arena scattered plants uniformly over its meadow.
+  plantSpot() {
+    for (let k = 0; k < PLANT_SPOT_TRIES; k++) {
+      let x, z;
+      if (this.greens.length) {
+        const p = this.greenPoint();
+        if (!p) continue;
+        [x, z] = p;
+      } else {
+        x = this.minX + Math.random() * (this.maxX - this.minX);
+        z = this.minZ + Math.random() * (this.maxZ - this.minZ);
+      }
+      if (!this.isOpen(x, z)) continue;
+      const r = nearestRoad(this.roadIdx, x, z, 0);
+      if (r && r.d === 0) continue;               // on the road surface
+      return [x, z];
+    }
+    return null;
+  }
+
+  spawnPlant() {
+    const s = this.plantSpot();
+    if (!s) return;
+    this.plants.push(new Plant([s[0], 0, s[1]]));
   }
 
   // A standing spot: inside the loaded area, dry, outdoors, clear of walls.
@@ -4704,7 +5322,58 @@ class NpcWorld {
 
       placed.push(x, z);
       const a = new Animal([x, 0, z], 'human');
-      a.facingAngle = Animal.FACING_ANGLES[Math.floor(Math.random() * 8)];
+      a.heading = a.targetHeading = a.facingAngle = Math.random() * Animal.TWO_PI;
+      a.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
+      this.animals.push(a);
+    }
+  }
+
+  // Mostly inside green areas (parks, grass, woods, farmland), picked by
+  // area, plus some open ground anywhere; every spot passes isOpen like a
+  // person's. City: the Arena scattered sheep uniformly over its meadow.
+  spawnDeer(count) {
+    // spacing check on a hash of NPC_SPAWN_GAP cells; the gap only shrinks,
+    // so the 3 x 3 cells around a candidate hold every neighbour that matters
+    const cell = NPC_SPAWN_GAP;
+    const taken = new Map();
+    let gap = NPC_SPAWN_GAP, placed = 0;
+    const maxTries = count * 80;
+    for (let tries = 1; placed < count && tries <= maxTries; tries++) {
+      if (tries % (count * 20) === 0) gap *= 0.5;   // crowded map: loosen the spacing
+
+      let x, z;
+      if (this.greens.length && Math.random() < DEER_GREEN_SHARE) {
+        const p = this.greenPoint();
+        if (!p) continue;
+        [x, z] = p;
+      } else {
+        x = this.minX + Math.random() * (this.maxX - this.minX);
+        z = this.minZ + Math.random() * (this.maxZ - this.minZ);
+      }
+
+      if (!this.isOpen(x, z)) continue;
+      const ci = Math.floor(x / cell), cj = Math.floor(z / cell);
+      let crowded = false;
+      for (let di = -1; di <= 1 && !crowded; di++) {
+        for (let dj = -1; dj <= 1 && !crowded; dj++) {
+          const list = taken.get(cellKey(ci + di, cj + dj));
+          if (!list) continue;
+          for (let i = 0; i < list.length; i += 2) {
+            const dx = list[i] - x, dz = list[i + 1] - z;
+            if (dx * dx + dz * dz < gap * gap) { crowded = true; break; }
+          }
+        }
+      }
+      if (crowded) continue;
+
+      const key = cellKey(ci, cj);
+      let list = taken.get(key);
+      if (!list) { list = []; taken.set(key, list); }
+      list.push(x, z);
+      placed++;
+
+      const a = new Animal([x, 0, z], 'deer');
+      a.heading = a.targetHeading = a.facingAngle = Math.random() * Animal.TWO_PI;
       a.position.y = terrain.baseAt(x, z) + terrain.heightAt(x, z) + a.footLift() * NPC_UNIT;
       this.animals.push(a);
     }
@@ -4744,18 +5413,31 @@ class NpcWorld {
       const px = a.position.x, pz = a.position.z;
 
       if (a.type === 'human') {
-        // with no sheep alive the query can only return people it would skip
-        const nHunt = this.sheepAlive
+        // with no deer alive the query can only return people it would skip
+        const nHunt = this.deerAlive
           ? this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
         for (let i = 0; i < nHunt; i++) {
           const other = this._qHunt[i];
-          if (other.alive && other.type === 'sheep' &&
+          if (other.alive && other.type === 'deer' &&
               tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
             other.attacked(a);
           }
         }
         if (a.lookForMate) this.tryMate(a, px, pz);
+
+        // City: people graze too. eatPlant gives 0.5 food need a bite, 5 for a
+        // whole plant, against 100 for a deer (Animal.attacked), and its health
+        // stops at maxHealth where a deer's does not
+        const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
+        for (let i = 0; i < nPlant; i++) {
+          const plant = this._qPlant[i];
+          if (plant.alive &&
+              tools.distSq(px, pz, plant.position.x, plant.position.z) < NpcWorld.CONTACT_DIST_SQ) {
+            a.eatPlant(plant);
+          }
+        }
       } else {
+        // deer: mate, then graze (the Arena's sheep branch)
         if (a.lookForMate) this.tryMate(a, px, pz);
 
         const nPlant = this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
@@ -4779,7 +5461,7 @@ class NpcWorld {
   // wall), else is undone. A step (~2.5 cm) is far under the thinnest grown
   // solid (~0.66 m), so no wall can be skipped.
   collide(a) {
-    if (a.outputIdx === Animal.ACTION_STAY) return;   // standing still: nothing moved
+    if (!a.moving) return;                             // standing still: nothing moved
     const p = a.position;
     if (occ.blockedAt(p.x, p.z)) {
       if (!occ.blockedAt(p.x, a.freeZ)) p.z = a.freeZ;
@@ -4799,23 +5481,39 @@ class NpcWorld {
       for (const a of this.animals) if (a.alive) this.grid.insert(a);
     }
 
-    let sheep = 0;
+    let deer = 0, fastest = 0;
     for (let ai = 0; ai < this.animals.length; ai++) {
       const a = this.animals[ai];
       if (a.alive) {
         a.update(now, this.grid, water.locations, ai);
-        if (a.alive) { this.collide(a); if (a.type === 'sheep') sheep++; }
+        if (a.alive) {
+          this.collide(a);
+          if (a.type === 'deer') deer++;
+          else if (a.speed > fastest) fastest = a.speed;
+        }
       }
     }
-    this.sheepAlive = sheep;
+    this.deerAlive = deer;
+    this.fastestHumanMS = fastest * NPC_UNIT;
+
+    for (const p of this.plants) {
+      if (p.alive) p.update();
+    }
 
     this.handleCollisions();
+    game.update(dt);               // player needs, drinking, eating deer
 
     for (let i = this.animals.length - 1; i >= 0; i--) {
       if (!this.animals[i].alive) { this.animals[i].remove(); this.animals.splice(i, 1); }
     }
+    for (let i = this.plants.length - 1; i >= 0; i--) {
+      if (!this.plants[i].alive) { this.plants[i].remove(); this.plants.splice(i, 1); }
+    }
+
+    if (Math.random() < PLANT_REGROW_P) this.spawnPlant();
 
     animalRenderer.update(this.animals, dt);
+    plantRenderer.update(this.plants);
     healthBars.update(this.animals);
     this.syncPopulation();
     this.ticks++;
@@ -4826,7 +5524,87 @@ class NpcWorld {
 const tools          = new MathTools();
 const brains         = new BrainFactory();
 const animalRenderer = new AnimalRenderer();
+const plantRenderer  = new PlantRenderer();
 const world          = new NpcWorld();
+
+// GAME MODE
+// The player joins the food chain. Deer sense the player as a predator (the
+// same vision cone and flee rule they use for people), touching a deer on foot
+// eats it, and the player grows hungry and thirsty; standing in water drinks.
+// Needs use the NPC scale, 0 (none) to 100, and the panel shows fullness as
+// the NPC bars do. The player has no mate need and is never a mate target.
+// Advanced once per NPC tick from NpcWorld.step, so it runs while people and
+// deer do.
+const PLAYER_FOOD_RATE  = 100 / (20 * 60);   // need per second: fed to starving in 20 min
+const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
+const PLAYER_DRINK_RATE = 10;                // need per second removed while standing in water
+const PLAYER_EAT_REACH  = PLAYER_RADIUS + 0.45;   // metres, player to a deer's centre, that count as touching
+const PLAYER_EAT_HEIGHT = 1.5;               // metres of height difference past which a deer is out of reach
+
+const needsEl = document.getElementById('needs');
+const needFoodEl = document.getElementById('needFood');
+const needWaterEl = document.getElementById('needWater');
+
+const game = {
+  on: false,
+  foodNeed: 0,
+  waterNeed: 0,
+  // what deer sense: a stand-in shaped like an NPC, sensed only while alive
+  // (game mode on and in play)
+  predator: { type: 'player', alive: false, position: new THREE.Vector3() },
+  _q: [],
+  _shown: -1,
+
+  reset() {
+    this.foodNeed = 0;
+    this.waterNeed = 0;
+    this.draw();
+  },
+
+  update(dt) {
+    const pred = this.predator;
+    pred.alive = this.on && active;
+    if (!pred.alive) return;
+
+    const px = player.pos.x, pz = player.pos.z;
+    const feet = player.pos.y - EYE_HEIGHT;
+    pred.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);   // body centre, as an NPC's position
+
+    this.foodNeed  = Math.min(100, this.foodNeed  + PLAYER_FOOD_RATE  * dt);
+    this.waterNeed = Math.min(100, this.waterNeed + PLAYER_WATER_RATE * dt);
+
+    if (!driving) {
+      if (!flying && player.grounded && water.wetAt(px, pz)) {
+        this.waterNeed = Math.max(0, this.waterNeed - PLAYER_DRINK_RATE * dt);
+      }
+
+      const n = world.grid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
+      for (let i = 0; i < n; i++) {
+        const d = this._q[i];
+        if (!d.alive || d.type !== 'deer') continue;
+        if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
+        if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
+        d.alive = false;                                   // removed with the dead this tick
+        this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);   // as an NPC hunter's kill
+      }
+    }
+    this.draw();
+  },
+
+  // Writes the bars only when a whole percent changes.
+  draw() {
+    const f = Math.round(100 - this.foodNeed), w = Math.round(100 - this.waterNeed);
+    const key = f * 1000 + w;
+    if (key === this._shown) return;
+    this._shown = key;
+    needFoodEl.style.width = f + '%';
+    needWaterEl.style.width = w + '%';
+  },
+
+  showPanel() {
+    needsEl.classList.toggle('on', this.on && active);
+  }
+};
 
 // HEALTH BARS
 // Health, food and water over every person's head, one sprite each, with
@@ -4987,7 +5765,7 @@ function disposeBrain(b) {
 
 // Same firing rules as the sim's NNVisualizer3D._isFiring / _updateActivations.
 function brainActivity(b, a) {
-  const nn = a.brain, out = a.outputIdx ?? 0;
+  const nn = a.brain, out = nn.output ?? 0;   // output neuron nearest the heading
   const arr = b.colorAttr.array;
   let dirty = false;
   for (let k = 0; k < b.total; k++) {
@@ -5087,11 +5865,10 @@ class HealthBars {
              brain: null, brainFor: null, nearTick: 0 };
   }
 
-  // Top of the head in metres: feet (pivot minus foot lift) plus rig height.
+  // Top of the rig in metres: feet (pivot minus foot lift) plus rig height.
   headTop(a) {
     const hs = a.heightScale ?? 1.0;
-    if (a.type !== 'human') return a.eyeY() + 0.15;
-    return a.position.y + (38.55 * hs - a.footLift()) * NPC_UNIT;
+    return a.position.y + (NPC_RIG_TOP[a.type] * hs - a.footLift()) * NPC_UNIT;
   }
 
   // Memory arrow heading, as the stat panel's setArrow: relative to the
@@ -5172,10 +5949,11 @@ class HealthBars {
     const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
     const rows = BAR_ICONS.length;
     const lobeOff = 1.1 * BRAIN_SCALE;                // lobe centres above/below the brain centre
-    let nf = 0;                                       // people drawn in low detail
+    let nf = 0;                                       // NPCs drawn in low detail
+    let nl = 0;                                       // of those, ones with a brain (two lobes each)
 
     for (const a of animals) {
-      if (!a.alive || a.type !== 'human') continue;
+      if (!a.alive) continue;                        // people and deer alike
       let bar = this.bars.get(a);
       if (bar) seen.add(a);   // hidden below unless drawn up close this tick
 
@@ -5201,14 +5979,17 @@ class HealthBars {
         }
 
         const nn = a.brain;
-        const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
-        const fireA = this.firing(nn && nn.actA), fireB = this.firing(nn && nn.actB);
-        for (let l = 0; l < 2; l++) {
-          this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
-          this._s.set(1, 1, 1);
-          this.farLobes.setMatrixAt(nf * 2 + l, this._m.compose(this._p, this._q, this._s));
-          const k = BRAIN_DIM + (1 - BRAIN_DIM) * (l === 0 ? fireA : fireB);
-          this.farLobes.setColorAt(nf * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
+        if (nn) {                                     // deer have no brain: bars only
+          const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+          const fireA = this.firing(nn.actA), fireB = this.firing(nn.actB);
+          for (let l = 0; l < 2; l++) {
+            this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
+            this._s.set(1, 1, 1);
+            this.farLobes.setMatrixAt(nl * 2 + l, this._m.compose(this._p, this._q, this._s));
+            const k = BRAIN_DIM + (1 - BRAIN_DIM) * (l === 0 ? fireA : fireB);
+            this.farLobes.setColorAt(nl * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
+          }
+          nl++;
         }
         nf++;
         continue;
@@ -5258,8 +6039,8 @@ class HealthBars {
     }
 
     perf.instances(this.farBars, nf * rows);
-    perf.instances(this.farLobes, nf * 2);
-    perf.instanceColors(this.farLobes, nf * 2);
+    perf.instances(this.farLobes, nl * 2);
+    perf.instanceColors(this.farLobes, nl * 2);
   }
 }
 
@@ -6016,6 +6797,7 @@ gearEl.addEventListener('click', () => {
 });
 
 function showControls(on) {
+  needsEl.classList.toggle('on', on && game.on);
   flyEl.classList.toggle('on', on && !driving);
   climbEl.classList.toggle('on', on && flying);
   gearEl.classList.toggle('on', on);
@@ -6984,10 +7766,11 @@ async function load(query) {
       }
       if (o.people) {
         current = 'people';
-        steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground…`);
+        steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground, ${fmt(NPC_DEER_POPULATION)} deer and ${fmt(NPC_PLANT_POPULATION)} plants in green space…`);
         await paint();
         world.initialize(features, radius);
-        steps.done('people', `${fmt(world.animals.length)} people, each with a two-lobe brain.`);
+        const deer = world.animals.reduce((n, a) => n + (a.type === 'deer'), 0);
+        steps.done('people', `${fmt(world.animals.length - deer)} people, each with a two-lobe brain, ${fmt(deer)} deer and ${fmt(world.plants.length)} plants.`);
       } else {
         // water and places are built by world.initialize; the player and car still need them
         water.build(features, -radius, -radius, radius, radius);
@@ -7075,21 +7858,21 @@ async function load(query) {
   goEl.disabled = false;
 }
 
-// IMMERSIVE
-
+// GAME MODE TOGGLE
+// Game mode keeps what immersive mode did (fullscreen and a landscape lock)
+// and turns on the food chain above (see GAME MODE).
 // Fullscreen and the landscape lock both need a user gesture, so they are
 // requested straight from the toggle and load taps, not after load()'s awaits.
 // Neither exists on iPhone Safari and the lock is refused on desktop; both
 // fail quietly and the game runs as normal.
-const immersiveEl = document.getElementById('immersive');
-let immersive = false;
+const gameEl = document.getElementById('game');
 
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
-function enterImmersive() {
-  if (!immersive) return;
+function enterGameScreen() {
+  if (!game.on) return;
   const root = document.documentElement;   // whole page, so the HUD and controls stay visible
   const req = root.requestFullscreen || root.webkitRequestFullscreen;
   const pending = (!fullscreenElement() && req) ? req.call(root, { navigationUI: 'hide' }) : null;
@@ -7099,18 +7882,19 @@ function enterImmersive() {
   }).catch(() => {});
 }
 
-function exitImmersive() {
+function exitGameScreen() {
   try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
   const exit = document.exitFullscreen || document.webkitExitFullscreen;
   if (fullscreenElement() && exit) Promise.resolve(exit.call(document)).catch(() => {});
 }
 
-immersiveEl.addEventListener('click', () => {
-  immersive = !immersive;
-  immersiveEl.classList.toggle('on', immersive);
-  immersiveEl.setAttribute('aria-checked', String(immersive));
-  immersiveEl.blur();
-  if (immersive) enterImmersive(); else exitImmersive();
+gameEl.addEventListener('click', () => {
+  game.on = !game.on;
+  gameEl.classList.toggle('on', game.on);
+  gameEl.setAttribute('aria-checked', String(game.on));
+  gameEl.blur();
+  game.showPanel();
+  if (game.on) enterGameScreen(); else exitGameScreen();
 });
 
 // START-UP OPTIONS
@@ -7126,7 +7910,7 @@ for (const el of document.querySelectorAll('#more .switch')) {
   });
 }
 
-goEl.addEventListener('click', () => { enterImmersive(); load(addrEl.value); });
+goEl.addEventListener('click', () => { enterGameScreen(); load(addrEl.value); });
 
 // Suggested places: dense, well-mapped US downtowns (imagery is US-only).
 // A tap fills the address and loads it.
@@ -7143,14 +7927,14 @@ for (const [label, query] of PICKS) {
   b.addEventListener('click', () => {
     addrEl.value = query;
     b.blur();
-    enterImmersive();
+    enterGameScreen();
     load(query);
   });
   picksEl.appendChild(b);
 }
 addrEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  enterImmersive();
+  enterGameScreen();
   load(addrEl.value);
 });
 addrEl.focus();
