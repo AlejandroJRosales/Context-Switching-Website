@@ -2834,7 +2834,7 @@ const DEER_CRUISE      = 0.3;      // species.py: speed share when not fleeing
 // Deer sense and decide once per DEER_THINK_TICKS (60, one second), so their
 // reaction lags; between decisions they keep to the last one, still steering
 // toward a fixed target each tick so they stop on it instead of overshooting.
-const DEER_THINK_TICKS = 60;
+const DEER_THINK_TICKS = 25;
 // A deer fleeing a predator within DEER_SPRINT_DIST sprints: this many times
 // the top running speed of any predator, the player's RUN_SPEED or the fastest
 // person, whichever is higher, burning this many times its walking energy
@@ -3538,8 +3538,7 @@ class Animal extends Entity {
     this.focusX = 0; this.focusZ = 0;   // deer: species.py's coords_focused
     this.speedScale = 1;           // deer: DEER_CRUISE unless sprinting; people always 1
     this.sprinting = false;        // deer: fleeing a predator at the sprint speed
-    this.predSumX = 0; this.predSumZ = 0;   // deer: summed offsets to every predator in sight this tick
-    this.fleeHeading = 0;          // deer: escape direction fixed at the last decision, radians
+    this.bumpScale = 1;            // deer: speed left after wall hits, as the car's; 1 again at each decision
     if (type === 'deer') this.newExploreCoords();
 
     this.rayFoodSin = 0;      this.rayFoodCos = 0;      this.rayFoodElev = 0;      this.rayFoodDist = 0;
@@ -3760,9 +3759,10 @@ class Animal extends Entity {
   //   3. think: needs ranked highest first, predator (avoidNeed), food,
   //      water, mate (ties keep that order, as Python's stable sort did); the
   //      first with a known location becomes the priority and its location
-  //      the focus. Fleeing fixes an escape heading instead, opposite the sum
-  //      of the offsets to every predator in sight (with one predator, the
-  //      direction of transpose_focused_coords), and whether to sprint.
+  //      the focus. Fleeing fixes an escape heading instead, straight away
+  //      from the nearest predator (the direction of species.py's
+  //      transpose_focused_coords, self + (self - predator)), and whether to
+  //      sprint.
   // steerDeer (every tick):
   //   4. move: along the escape heading when fleeing; otherwise straight at
   //      the focus, stopping on it; at full speed (or the sprint) when
@@ -3780,11 +3780,9 @@ class Animal extends Entity {
 
     const x = this.position.x, z = this.position.z;
     if (best === 'predator') {
-      // opposite the summed offsets to every predator in sight; offsets that
-      // cancel exactly fall back to the nearest
-      let sx = this.predSumX, sz = this.predSumZ;
-      if (sx === 0 && sz === 0) { sx = this.memPredatorX - x; sz = this.memPredatorZ - z; }
-      if (sx !== 0 || sz !== 0) this.fleeHeading = Animal.wrapAngle(Math.atan2(-sx, -sz));
+      // straight away from the nearest predator: toward self + (self - predator)
+      const ax = x - this.memPredatorX, az = z - this.memPredatorZ;
+      if (ax !== 0 || az !== 0) this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(ax, az));
     } else if (best === 'food')  { this.focusX = this.memFoodX;  this.focusZ = this.memFoodZ; }
     else if (best === 'water')   { this.focusX = this.memWaterX; this.focusZ = this.memWaterZ; }
     else if (best === 'mate')    { this.focusX = this.memMateX;  this.focusZ = this.memMateZ; }
@@ -3792,6 +3790,15 @@ class Animal extends Entity {
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
     this.sprinting = best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST;
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;   // fleeing beyond sprint range: full speed
+    this.bumpScale = 1;                                        // back up to speed after any wall hit
+    if (best !== 'predator') this.aimAtFocus();
+    this.moving = true;
+  }
+
+  // Heading straight at the focus (kept if already on it).
+  aimAtFocus() {
+    const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
+    if (dx !== 0 || dz !== 0) this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(dx, dz));
   }
 
   // Every tick: carry out the last decision.
@@ -3800,25 +3807,19 @@ class Animal extends Entity {
     // increment was added in update(), this adds the rest
     if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
-    if (this.priority === 'predator') {
-      // fleeing never "arrives": the deer runs the escape heading until it
-      // decides again
-      this.moving = true;
-      this.heading = this.targetHeading = this.fleeHeading;
-      return;
-    }
+    // The heading set at the decision is kept between decisions (a wall hit
+    // may bend it, see moveDeer), so only arrival is checked here. Fleeing
+    // never "arrives": the deer runs until it decides again.
+    if (this.priority === 'predator' || !this.moving) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
     const step = this.stepLength();
     if (dx * dx + dz * dz <= step * step) {
       // at the focus: stand (eating, drinking or meeting a mate happens on
       // contact). City: species.py divides by a zero-length vector here; an
       // explore point that is reached is replaced, as the first species.py did.
-      this.moving = false;
-      if (this.priority === null) this.newExploreCoords();
-      return;
+      if (this.priority === null) { this.newExploreCoords(); this.aimAtFocus(); }
+      else this.moving = false;
     }
-    this.moving = true;
-    this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(dx, dz));
   }
 
   searchDeer(grid, waterLocations) {
@@ -3827,7 +3828,6 @@ class Animal extends Entity {
     let bP = Infinity, bF = Infinity, bW = Infinity, bM = Infinity;
     this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
     this.avoidNeed = 0;
-    this.predSumX = 0; this.predSumZ = 0;
 
     const n = grid.queryInto(world._qLocate, x, z, this.visionDistance);
     for (let i = 0; i < n; i++) {
@@ -3837,7 +3837,6 @@ class Animal extends Entity {
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (d2 > vd) continue;
       if (obj.type === 'human') {
-        this.predSumX += ox - x; this.predSumZ += oz - z;   // every predator counts toward the escape
         if (d2 <= bP) { bP = d2; this.seen(0, ox, obj.position.y, oz); this.avoidNeed = Infinity; }
       } else if (obj.type === 'deer' && obj.sex !== this.sex) {
         if (d2 <= bM) { bM = d2; this.seen(3, ox, obj.position.y, oz); }
@@ -3849,11 +3848,7 @@ class Animal extends Entity {
     if (gp.alive) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-      if (d2 <= vd) {
-        this.predSumX += ox - x; this.predSumZ += oz - z;
-        if (d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); }
-        this.avoidNeed = Infinity;
-      }
+      if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
     }
 
     for (const plant of world.plants) {
@@ -3875,7 +3870,46 @@ class Animal extends Entity {
     const ms = this.sprinting
       ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHumanMS)
       : this.speed * this.speedScale * NPC_UNIT;
-    return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * Animal.MOVE_TIMESTEP;
+    return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * Animal.MOVE_TIMESTEP;
+  }
+
+  // City: a deer's step against the exact building walls, handled as the car
+  // handles them (carPhysics / moveCar): sub-steps no longer than NPC_SUBSTEP,
+  // each pushed out of any wall piece by resolveCollisions; the push is the
+  // wall normal. Moving into the wall loses that share of speed (bumpScale *=
+  // 1 - dot^2, the car's speed rule), and a glancing hit (|heading . normal| <
+  // CAR_GLANCE) turns the heading CAR_ALIGN of the way along the wall per
+  // contact sub-step. The bent heading and lost speed hold until the deer
+  // decides again, so it glances off rather than pressing into the wall.
+  moveDeer(step) {
+    const p = this.position, w = Animal._wallPos;
+    const feet = this._b ?? terrain.baseAt(p.x, p.z);
+    const n = Math.max(1, Math.ceil(step / NPC_SUBSTEP));
+    const b0 = this.bumpScale || 1;                        // step was taken at this speed share
+    const d0 = step / n;
+    for (let k = 0; k < n; k++) {
+      const d = d0 * (this.bumpScale / b0);               // later sub-steps slow with any loss taken so far
+      let fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      p.x = tools.clamp(p.x + fx * d, world.minX, world.maxX);
+      p.z = tools.clamp(p.z + fz * d, world.minZ, world.maxZ);
+      w.set(p.x, 0, p.z);
+      if (!resolveCollisions(w, NPC_RADIUS, feet, feet + NPC_COLLIDE_H, STEP_UP)) continue;
+      const px = w.x - p.x, pz = w.z - p.z;
+      p.x = w.x; p.z = w.z;
+      const len = Math.hypot(px, pz);
+      if (len < 1e-6) continue;
+      const nx = px / len, nz = pz / len;
+      const dot = fx * nx + fz * nz;                       // heading . wall normal
+      if (dot < 0) this.bumpScale *= 1 - dot * dot;        // the speed driven into the wall is lost
+      if (Math.abs(dot) < CAR_GLANCE) {
+        // a glancing hit turns the body along the wall instead of pinning it
+        let tx = -nz, tz = nx;
+        if (tx * fx + tz * fz < 0) { tx = -tx; tz = -tz; }
+        let dy = Math.atan2(tx, tz) - this.heading;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        this.heading = this.targetHeading = Animal.wrapAngle(this.heading + dy * CAR_ALIGN);
+      }
+    }
   }
 
   // Records a sighting (0 predator, 1 food, 2 water, 3 mate) as a location,
@@ -3910,6 +3944,8 @@ class Animal extends Entity {
     }
   }
 
+  static _wallPos = new THREE.Vector3();
+
   static wrapAngle(a) {
     a %= Animal.TWO_PI;
     return a < 0 ? a + Animal.TWO_PI : a;
@@ -3939,7 +3975,9 @@ class Animal extends Entity {
       const step = this.stepLength();                    // City: metres
       const sx = Math.sin(this.heading) * step, sz = Math.cos(this.heading) * step;
       const n = Math.ceil(step / NPC_SUBSTEP);
-      if (n <= 1) {
+      if (!this.brain) {
+        this.moveDeer(step);                             // City: deer glance off walls like the car
+      } else if (n <= 1) {
         // a normal walking step: NpcWorld.collide settles it against walls
         // City: clamp to the loaded area; the Arena's torus wrap would teleport
         this.position.x = tools.clamp(this.position.x + sx, world.minX, world.maxX);
@@ -5498,7 +5536,7 @@ class NpcWorld {
   // wall), else is undone. A step (~2.5 cm) is far under the thinnest grown
   // solid (~0.66 m), so no wall can be skipped.
   collide(a) {
-    if (!a.moving) return;                             // standing still: nothing moved
+    if (!a.moving || !a.brain) return;                 // standing still, or a deer (moveDeer resolved it)
     const p = a.position;
     if (occ.blockedAt(p.x, p.z)) {
       if (!occ.blockedAt(p.x, a.freeZ)) p.z = a.freeZ;
