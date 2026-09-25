@@ -2362,11 +2362,17 @@ class BrainFactory {
 }
 
 // TWO-LOBE NETWORK
-// Unchanged from the Arena.
+// Forward pass unchanged from the Arena; learning is City's three-factor
+// plasticity rule (tagSynapses + adjustWeights).
 //
 //   Input -> A, Input -> B, A -> B, B -> A (one-step lag), A,B -> Output
 //   Leaky integrate-and-fire lobes with refractory period; softmax over 9 actions.
 class DenseNetwork {
+  // Plasticity time constants, per think() step (~1 s at ACTION_HOLD 60).
+  static TAG_DECAY     = 0.5;    // synaptic tag (eligibility) kept per step
+  static CA_DECAY      = 0.5;    // each neuron's running activity average (sliding LTP/LTD threshold)
+  static DA_TONIC_RATE = 0.05;   // how fast tonic dopamine tracks reward
+
   constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
     this.inputDims    = inputDims;
     this.outputDims   = 9;
@@ -2429,16 +2435,27 @@ class DenseNetwork {
     this.biasB  = new Float32Array(NB);
     this.biasO  = new Float32Array(O);
 
-    this.vIA    = new Float32Array(I  * NA);
-    this.vIB    = new Float32Array(I  * NB);
-    this.vAB    = new Float32Array(NA * NB);
-    this.vBA    = new Float32Array(NB * NA);
-    this.vAO    = new Float32Array(NA * O);
-    this.vBO    = new Float32Array(NB * O);
-    this.vSelf  = new Float32Array(NA);
-    this.vBiasA = new Float32Array(NA);
-    this.vBiasB = new Float32Array(NB);
-    this.vBiasO = new Float32Array(O);
+    // Plasticity state: one synaptic tag per synapse and bias, one activity
+    // average per neuron, and the tonic dopamine level.
+    this.eIA    = new Float32Array(I  * NA);
+    this.eIB    = new Float32Array(I  * NB);
+    this.eAB    = new Float32Array(NA * NB);
+    this.eBA    = new Float32Array(NB * NA);
+    this.eAO    = new Float32Array(NA * O);
+    this.eBO    = new Float32Array(NB * O);
+    this.eSelf  = new Float32Array(NA);
+    this.eBiasA = new Float32Array(NA);
+    this.eBiasB = new Float32Array(NB);
+    this.eBiasO = new Float32Array(O);
+    this.caA    = new Float32Array(NA);
+    this.caB    = new Float32Array(NB);
+    this.caO    = new Float32Array(O);
+    this.fA     = new Float32Array(NA);   // post factor this step: activity minus its average
+    this.fB     = new Float32Array(NB);
+    this.fO     = new Float32Array(O);
+    this.prevB  = new Float32Array(NB);   // B activity that A read this step (one-step lag)
+    this.selfIn = new Float32Array(NA);   // membrane each A neuron fed back to itself
+    this.daTonic = 0;
 
     this.hA = new Float32Array(NA);
 
@@ -2490,10 +2507,12 @@ class DenseNetwork {
         refracA[i]--;
         hA[i] = lifRst;
         actA[i] = 0.0;
+        this.selfIn[i] = 0;
         continue;
       }
 
       hA[i] *= lifLeak;
+      this.selfIn[i] = hA[i];
 
       let net = this.biasA[i] + this.wSelf[i] * hA[i];
       for (let j = 0; j < I; j++) {
@@ -2587,12 +2606,14 @@ class DenseNetwork {
       standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s;
     }
 
+    this.prevB.set(this.actB);
     const values = this.propagate(standardized);
     let bestIdx = 0, bestVal = values[0];
     for (let j = 1; j < values.length; j++) {
       if (values[j] > bestVal) { bestVal = values[j]; bestIdx = j; }
     }
     this.output = bestIdx;
+    this.tagSynapses(standardized, bestIdx);
     return bestIdx;
   }
 
@@ -2607,61 +2628,111 @@ class DenseNetwork {
     return this.learningRate;
   }
 
-  // City: hoisted from per-call closures in adjustWeights. Same maths and
-  // Math.random() order, no allocation.
-  _stepWeights(w, v, mask, len, mom, grad, wd1, r) {
+  // SYNAPTIC TAGGING (first two factors), once per think().
+  // Calcium-style rule: a postsynaptic neuron active above its own recent
+  // average (high Ca2+, CaMKII side) tags its active inputs for potentiation;
+  // below it (moderate Ca2+, calcineurin side) tags them for depression. Each
+  // synapse's tag is pre activity x that post factor, and decays, so it records
+  // which synapses took part in recent behaviour and in which direction.
+  // Pre is the activity that actually reached the synapse this step; action
+  // neurons count the chosen action as the one that fired.
+  tagSynapses(inp, chosen) {
+    const NA = this.lobeSizeA, NB = this.lobeSizeB, I = this.inputDims, O = this.outputDims;
+    const de = DenseNetwork.TAG_DECAY, g = 1 - de;
+    const dc = DenseNetwork.CA_DECAY, gc = 1 - dc;
+    const fA = this.fA, fB = this.fB, fO = this.fO;
+
+    for (let i = 0; i < NA; i++) {
+      const a = this.actA[i];
+      fA[i] = a - this.caA[i];
+      this.caA[i] = this.caA[i] * dc + gc * a;
+    }
+    for (let i = 0; i < NB; i++) {
+      const a = this.actB[i];
+      fB[i] = a - this.caB[i];
+      this.caB[i] = this.caB[i] * dc + gc * a;
+    }
+    for (let i = 0; i < O; i++) {
+      const a = i === chosen ? 1 : 0;
+      fO[i] = a - this.caO[i];
+      this.caO[i] = this.caO[i] * dc + gc * a;
+    }
+
+    this._tag(this.eIA, this.maskIA, inp,        I,  fA, NA, de, g);
+    this._tag(this.eIB, this.maskIB, inp,        I,  fB, NB, de, g);
+    this._tag(this.eBA, this.maskBA, this.prevB, NB, fA, NA, de, g);
+    this._tag(this.eAB, this.maskAB, this.actA,  NA, fB, NB, de, g);
+    this._tag(this.eAO, this.maskAO, this.actA,  NA, fO, O,  de, g);
+    this._tag(this.eBO, this.maskBO, this.actB,  NB, fO, O,  de, g);
+
+    for (let i = 0; i < NA; i++) {
+      this.eSelf[i]  = this.eSelf[i]  * de + g * this.selfIn[i] * fA[i];
+      this.eBiasA[i] = this.eBiasA[i] * de + g * fA[i];   // intrinsic excitability
+    }
+    for (let i = 0; i < NB; i++) this.eBiasB[i] = this.eBiasB[i] * de + g * fB[i];
+    for (let i = 0; i < O;  i++) this.eBiasO[i] = this.eBiasO[i] * de + g * fO[i];
+  }
+
+  // Weights are laid out [pre * nPost + post], as in propagate.
+  _tag(e, mask, pre, nPre, post, nPost, de, g) {
+    for (let j = 0; j < nPre; j++) {
+      const p = g * pre[j], row = j * nPost;
+      for (let i = 0; i < nPost; i++) {
+        const k = row + i;
+        if (mask[k]) e[k] = e[k] * de + p * post[i];
+      }
+    }
+  }
+
+  // Tag capture, then the synapse's own intrinsic fluctuation, then decay.
+  _stepWeights(w, e, mask, len, gain, wd1, r) {
     for (let k = 0; k < len; k++) {
       if (!mask[k]) continue;
       const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
-      const vel = mom * v[k] - grad + noise;
-      v[k] = vel;
-      w[k] = w[k] * wd1 + vel;
+      w[k] = w[k] * wd1 + gain * e[k] + noise;
     }
   }
 
-  _stepBias(b, v, len, mom, gradB, wdB) {
-    for (let k = 0; k < len; k++) {
-      const vel = mom * v[k] - gradB;
-      v[k] = vel;
-      b[k] = b[k] * wdB + vel;
-    }
+  _stepBias(b, e, len, gain, wdB) {
+    for (let k = 0; k < len; k++) b[k] = b[k] * wdB + gain * e[k];
   }
 
+  // THIRD FACTOR: dopamine. Reward against the tonic level the network has
+  // come to expect gives a phasic burst (positive) or dip (negative). A burst
+  // converts each synapse's tag into lasting change in the tag's direction; a
+  // dip reverses it. Untagged synapses only fluctuate and decay.
   adjustWeights(reward) {
     this.cost = reward;
     const r   = Math.max(-1, Math.min(1, reward));
     const lr  = this.getAdaptiveLr();
-    const mom = this.momentum;
     const wd1 = 1 - this.weightDecay;
     const wdB = 1 - this.weightDecay * 0.1;
 
-    const chosenProb = this.actO[this.output] ?? 0.5;
-    const policyGrad = r * (1 - chosenProb);
-    const grad  = lr * policyGrad;
-    const gradB = lr * 0.1 * policyGrad;
+    const da = r - this.daTonic;
+    this.daTonic += DenseNetwork.DA_TONIC_RATE * da;
+    const gain  = lr * da;
+    const gainB = lr * 0.1 * da;
 
     const NA = this.lobeSizeA;
     const NB = this.lobeSizeB;
     const I = this.inputDims;
     const O = this.outputDims;
 
-    this._stepWeights(this.wIA, this.vIA, this.maskIA, I  * NA, mom, grad, wd1, r);
-    this._stepWeights(this.wIB, this.vIB, this.maskIB, I  * NB, mom, grad, wd1, r);
-    this._stepWeights(this.wAB, this.vAB, this.maskAB, NA * NB, mom, grad, wd1, r);
-    this._stepWeights(this.wBA, this.vBA, this.maskBA, NB * NA, mom, grad, wd1, r);
-    this._stepWeights(this.wAO, this.vAO, this.maskAO, NA * O,  mom, grad, wd1, r);
-    this._stepWeights(this.wBO, this.vBO, this.maskBO, NB * O,  mom, grad, wd1, r);
+    this._stepWeights(this.wIA, this.eIA, this.maskIA, I  * NA, gain, wd1, r);
+    this._stepWeights(this.wIB, this.eIB, this.maskIB, I  * NB, gain, wd1, r);
+    this._stepWeights(this.wAB, this.eAB, this.maskAB, NA * NB, gain, wd1, r);
+    this._stepWeights(this.wBA, this.eBA, this.maskBA, NB * NA, gain, wd1, r);
+    this._stepWeights(this.wAO, this.eAO, this.maskAO, NA * O,  gain, wd1, r);
+    this._stepWeights(this.wBO, this.eBO, this.maskBO, NB * O,  gain, wd1, r);
 
     for (let k = 0; k < NA; k++) {
       const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
-      const vel = mom * this.vSelf[k] - grad + noise;
-      this.vSelf[k] = vel;
-      this.wSelf[k] = this.wSelf[k] * wd1 + vel;
+      this.wSelf[k] = this.wSelf[k] * wd1 + gain * this.eSelf[k] + noise;
     }
 
-    this._stepBias(this.biasA, this.vBiasA, NA, mom, gradB, wdB);
-    this._stepBias(this.biasB, this.vBiasB, NB, mom, gradB, wdB);
-    this._stepBias(this.biasO, this.vBiasO, O,  mom, gradB, wdB);
+    this._stepBias(this.biasA, this.eBiasA, NA, gainB, wdB);
+    this._stepBias(this.biasB, this.eBiasB, NB, gainB, wdB);
+    this._stepBias(this.biasO, this.eBiasO, O,  gainB, wdB);
   }
 }
 
