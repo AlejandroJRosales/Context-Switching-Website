@@ -8883,8 +8883,9 @@ vitalsEl.addEventListener('click', () => {
 });
 // HUD off: the Arena's clearHud (text, crosshair, vitals and vision rays hide together)
 let hudOn = true, raysBeforeHud = 'single';
-hudBtnEl.addEventListener('click', () => {
-  hudOn = !hudOn;
+function setHud(on) {
+  if (on === hudOn) return;
+  hudOn = on;
   document.body.classList.toggle('hud-off', !hudOn);
   hudBtnEl.classList.toggle('sel', hudOn);
   hudBtnEl.setAttribute('aria-pressed', String(hudOn));
@@ -8892,9 +8893,9 @@ hudBtnEl.addEventListener('click', () => {
   vitalsEl.classList.toggle('sel', hudOn);
   if (!hudOn) { raysBeforeHud = labels.rayVisMode; labels.setRayVis('off'); }
   else labels.setRayVis(raysBeforeHud);
-  hudBtnEl.blur();
   invalidate();
-});
+}
+hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
 fsEl.addEventListener('click', () => {
   fsEl.blur();
@@ -10219,12 +10220,16 @@ function newEcosystem() {
 
 // GAME MODE TOGGLE: a chip in the Other row; only switches the food chain.
 const gameEl = document.getElementById('game');
+let hudBeforeGame = true;
 gameEl.addEventListener('click', () => {
   game.on = !game.on;
   gameEl.classList.toggle('sel', game.on);
   gameEl.setAttribute('aria-pressed', String(game.on));
   gameEl.blur();
   game.showPanel();
+  // the HUD goes off in game mode and comes back as it was on leaving
+  if (game.on) { hudBeforeGame = hudOn; setHud(false); }
+  else setHud(hudBeforeGame);
   // no flying in game mode: land and hide the button
   if (game.on && flying) toggleFly();
   flyEl.classList.toggle('on', active && !driving && !game.on);
