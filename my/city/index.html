@@ -47,7 +47,6 @@
   #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; color: #9a958b; }
   #status.error { margin-top: 16px; color: #d98b7a; }
   .switch + .switch { margin-top: 10px; }
-  #leave { margin-top: 16px; }
   .switch {
     display: flex; width: fit-content; align-items: center; gap: 10px;
     padding: 0; background: none; border: 0;
@@ -218,10 +217,23 @@
   #gear.on { display: block; }
   #settings {
     position: fixed; right: 18px; top: 62px;
-    width: min(262px, calc(100vw - 36px)); padding: 14px;
+    box-sizing: border-box;   /* width and max-height include the padding */
+    width: min(380px, calc(100vw - 36px)); padding: 14px;   /* wide enough for the Other row on one line */
+    max-height: calc(100vh - 74px); max-height: calc(100dvh - 74px); overflow-y: auto;
     background: rgba(12, 15, 21, 0.86);
     border: 1px solid rgba(232, 228, 220, 0.18); border-radius: 4px;
     z-index: 9; display: none;
+  }
+  /* phones in landscape: beside the gear instead of under it, tighter spacing */
+  @media (orientation: landscape) and (max-height: 500px) {
+    #settings {
+      top: 12px; right: 76px; padding: 8px 10px;
+      width: min(380px, calc(100vw - 94px));
+      max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px);
+    }
+    #settings h2 { margin-bottom: 6px; }
+    #settings h2.second { margin-top: 8px; }
+    #settings .chips button { padding: 5px 9px; }
   }
   #settings.on { display: block; }
   #settings h2 {
@@ -272,6 +284,8 @@
       <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Car</button>
       <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Terrain</button>
       <button class="switch on" data-opt="people" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>People</button>
+      <button class="switch on" data-opt="deer" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Deer</button>
+      <button class="switch on" data-opt="plants" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Plants</button>
       <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Buildings</button>
       <button class="switch on" data-opt="aerial" role="switch" aria-checked="true"><span class="track"><span class="thumb"></span></span>Aerial view</button>
     </details>
@@ -301,9 +315,12 @@
   <div class="chips" id="times"></div>
   <h2 class="second">Weather</h2>
   <div class="chips" id="skies"></div>
-  <h2 class="second">Display</h2>
-  <button id="game" class="switch" role="switch" aria-checked="false"><span class="track"><span class="thumb"></span></span>Game mode</button>
-  <div class="chips" id="leave"><button id="tomenu">Back to intro</button></div>
+  <h2 class="second">Other</h2>
+  <div class="chips">
+    <button id="game" aria-pressed="false">Game mode</button>
+    <button id="immersive" aria-pressed="false">Immersive mode</button>
+    <button id="tomenu">Back to intro</button>
+  </div>
 </div>
 
 <script type="module">
@@ -2827,14 +2844,19 @@ function ceilingAt(x, z, fromHead, toHead) {
 const NPC_POPULATION = 500;       // humans spawned per loaded city: the one knob
 const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // deer per loaded city: the Arena's 20:5 sheep-to-human ratio
 const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // plants per loaded city: the Arena's 300:5 plant-to-human ratio
+// Food carries water: sized so that an eater who eats enough to keep up with
+// its hunger gets this share of its water from food (about 30% for people),
+// the rest from drinking. Each unit of food need eaten removes
+// DIET_WATER_SHARE x (thirst rate / hunger rate) units of water need.
+const DIET_WATER_SHARE = 0.3;
 const PLANT_REGROW_P = 0.03;      // chance per tick of one new plant (the Arena's probSpawnPlant)
 const PLANT_SPOT_TRIES = 30;      // random samples per plant before that spawn is skipped
 // DEER AI (ported from species.py, Animal.search / think / move)
 const DEER_CRUISE      = 0.3;      // species.py: speed share when not fleeing
-// Deer sense and decide once per DEER_THINK_TICKS (60, one second), so their
-// reaction lags; between decisions they keep to the last one, still steering
-// toward a fixed target each tick so they stop on it instead of overshooting.
-const DEER_THINK_TICKS = 25;
+// Deer sense and decide once per DEER_THINK_TICKS (20, a third of a second),
+// so their reaction lags; between decisions they keep to the last one,
+// checking each tick whether they have reached their target.
+const DEER_THINK_TICKS = 20;
 // A deer fleeing a predator within DEER_SPRINT_DIST sprints: this many times
 // the top running speed of any predator, the player's RUN_SPEED or the fastest
 // person, whichever is higher, burning this many times its walking energy
@@ -3748,7 +3770,7 @@ class Animal extends Entity {
 
   // DEER AI, ported from species.py (update_body, search, think, move), run
   // as a decision once per DEER_THINK_TICKS and steering every tick:
-  // thinkDeer (once a second, so reactions lag):
+  // thinkDeer (once per DEER_THINK_TICKS, so reactions lag):
   //   1. a chance of a new random explore point (update_body's per-frame
   //      DEER_EXPLORE_P, compounded over the decision interval)
   //   2. search: everything within vision distance, a plain circle as in
@@ -4019,7 +4041,7 @@ class Animal extends Entity {
     if (this.health <= 1) { this.alive = false; return; }
 
     if (!this.brain) {
-      // City: deer decide once a second (staggered by the random start of
+      // City: deer decide once per DEER_THINK_TICKS (staggered by the random start of
       // actionTimer) and steer every tick
       if (--this.actionTimer <= 0) {
         this.thinkDeer(grid, waterLocations);
@@ -4059,7 +4081,16 @@ class Animal extends Entity {
       this.alive = false;
       predator.health += this.startHealth;
       predator.foodNeed = Math.max(0, predator.foodNeed - this.startHealth);
+      predator.dietWater(this.startHealth);
     }
+  }
+
+  // City: the water in `food` units of food eaten (see DIET_WATER_SHARE). By
+  // the amount eaten, not the hunger it met, since the water comes with the
+  // food either way.
+  dietWater(food) {
+    const perFood = DIET_WATER_SHARE * this.waterIncrement / this.foodIncrement;
+    this.waterNeed = Math.max(0, this.waterNeed - food * perFood);
   }
 
   mate(partner) {
@@ -4121,6 +4152,7 @@ class Animal extends Entity {
     const nutrition = plant.maxHealth * 5;
     this.health = Math.min(this.health + nutrition, this.maxHealth);
     this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
+    this.dietWater(nutrition * 0.01);
     plant.health -= 1;
     plantRenderer.touch(plant);
     if (plant.health <= 0) plant.alive = false;
@@ -5226,6 +5258,7 @@ class NpcWorld {
     this.greens = [];              // green areas for deer and plant spawns, with cumulative area
     this.greenTotal = 0;
     this.roadIdx = null;           // keeps plants off roads and paths
+    this.plantsOn = true;          // Plants build option: off means no plants and no regrowth
 
     this._qLocate = [];
     this._qHunt   = [];
@@ -5251,7 +5284,8 @@ class NpcWorld {
     refreshHud();
   }
 
-  initialize(features, radius) {
+  // `pop` is the People, Deer and Plants build options.
+  initialize(features, radius, pop = { people: true, deer: true, plants: true }) {
     this.animals.length = 0;
     this.plants.length = 0;
     this.ticks = 0;
@@ -5270,9 +5304,10 @@ class NpcWorld {
     this.roadIdx = roadIndex(features.roads || []);
     animalRenderer.init();
     plantRenderer.init();
-    for (let i = 0; i < NPC_PLANT_POPULATION; i++) this.spawnPlant();
-    this.spawnHumans(NPC_POPULATION, features.roads || []);
-    this.spawnDeer(NPC_DEER_POPULATION);
+    this.plantsOn = pop.plants;
+    if (pop.plants) for (let i = 0; i < NPC_PLANT_POPULATION; i++) this.spawnPlant();
+    if (pop.people) this.spawnHumans(NPC_POPULATION, features.roads || []);
+    if (pop.deer)   this.spawnDeer(NPC_DEER_POPULATION);
     this.ready = true;
     // write instance data now so compileAsync warms the instance-colour shader
     animalRenderer.update(this.animals, 0);
@@ -5585,7 +5620,7 @@ class NpcWorld {
       if (!this.plants[i].alive) { this.plants[i].remove(); this.plants.splice(i, 1); }
     }
 
-    if (Math.random() < PLANT_REGROW_P) this.spawnPlant();
+    if (this.plantsOn && Math.random() < PLANT_REGROW_P) this.spawnPlant();
 
     animalRenderer.update(this.animals, dt);
     plantRenderer.update(this.plants);
@@ -5613,6 +5648,7 @@ const world          = new NpcWorld();
 const PLAYER_FOOD_RATE  = 100 / (20 * 60);   // need per second: fed to starving in 20 min
 const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
 const PLAYER_DRINK_RATE = 10;                // need per second removed while standing in water
+const PLAYER_RUN_COST   = 2;                 // hunger and thirst rise this many times faster while running
 const PLAYER_EAT_REACH  = PLAYER_RADIUS + 0.45;   // metres, player to a deer's centre, that count as touching
 const PLAYER_EAT_HEIGHT = 1.5;               // metres of height difference past which a deer is out of reach
 
@@ -5645,8 +5681,9 @@ const game = {
     const feet = player.pos.y - EYE_HEIGHT;
     pred.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);   // body centre, as an NPC's position
 
-    this.foodNeed  = Math.min(100, this.foodNeed  + PLAYER_FOOD_RATE  * dt);
-    this.waterNeed = Math.min(100, this.waterNeed + PLAYER_WATER_RATE * dt);
+    const cost = player.running ? PLAYER_RUN_COST : 1;
+    this.foodNeed  = Math.min(100, this.foodNeed  + PLAYER_FOOD_RATE  * cost * dt);
+    this.waterNeed = Math.min(100, this.waterNeed + PLAYER_WATER_RATE * cost * dt);
 
     if (!driving) {
       if (!flying && player.grounded && water.wetAt(px, pz)) {
@@ -5661,6 +5698,9 @@ const game = {
         if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
         d.alive = false;                                   // removed with the dead this tick
         this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);   // as an NPC hunter's kill
+        // and the water in it (see DIET_WATER_SHARE)
+        this.waterNeed = Math.max(0, this.waterNeed -
+          d.startHealth * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
       }
     }
     this.draw();
@@ -6129,7 +6169,8 @@ const player = {
   vel: new THREE.Vector3(),
   yaw: 0,
   pitch: 0,
-  grounded: true
+  grounded: true,
+  running: false     // on foot, moving, at RUN_SPEED this frame (game mode needs read it)
 };
 const keys = new Set();
 let active = false;   // in play: panel closed, input accepted
@@ -6884,7 +6925,7 @@ const fwd = new THREE.Vector3();
 const right = new THREE.Vector3();
 
 function step(dt) {
-  if (driving) { driveStep(dt); updateCarButton(); return; }
+  if (driving) { player.running = false; driveStep(dt); updateCarButton(); return; }
   // an empty car still rolling (left at speed) brakes to a stop
   if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
@@ -6903,6 +6944,7 @@ function step(dt) {
   const speed = (crouching && !flying) ? CROUCH_SPEED :
                 ((shiftHeld || pedal.sprint) && !flying) ? RUN_SPEED : WALK_SPEED;
   const len = Math.hypot(mx, mz);
+  player.running = speed === RUN_SPEED && len > 0 && active;
   let dx = 0, dz = 0;
   if (len > 0 && active) {
     const scale = Math.min(len, 1) / len;   // cap at 1, keep partial stick tilt
@@ -7839,13 +7881,21 @@ async function load(query) {
       } else {
         steps.done('build', 'Buildings turned off; streets, ground and trees only.');
       }
-      if (o.people) {
+      if (o.people || o.deer || o.plants) {
         current = 'people';
-        steps.start('people', `Spawning up to ${fmt(NPC_POPULATION)} people on sidewalks and open ground, ${fmt(NPC_DEER_POPULATION)} deer and ${fmt(NPC_PLANT_POPULATION)} plants in green space…`);
+        const plan = [];
+        if (o.people) plan.push(`${fmt(NPC_POPULATION)} people on sidewalks and open ground`);
+        if (o.deer)   plan.push(`${fmt(NPC_DEER_POPULATION)} deer`);
+        if (o.plants) plan.push(`${fmt(NPC_PLANT_POPULATION)} plants`);
+        steps.start('people', `Spawning up to ${plan.join(', ')}…`);
         await paint();
-        world.initialize(features, radius);
+        world.initialize(features, radius, { people: o.people, deer: o.deer, plants: o.plants });
         const deer = world.animals.reduce((n, a) => n + (a.type === 'deer'), 0);
-        steps.done('people', `${fmt(world.animals.length - deer)} people, each with a two-lobe brain, ${fmt(deer)} deer and ${fmt(world.plants.length)} plants.`);
+        const made = [];
+        if (o.people) made.push(`${fmt(world.animals.length - deer)} people, each with a two-lobe brain`);
+        if (o.deer)   made.push(`${fmt(deer)} deer`);
+        if (o.plants) made.push(`${fmt(world.plants.length)} plants`);
+        steps.done('people', made.join(', ') + '.');
       } else {
         // water and places are built by world.initialize; the player and car still need them
         water.build(features, -radius, -radius, radius, radius);
@@ -7934,20 +7984,33 @@ async function load(query) {
 }
 
 // GAME MODE TOGGLE
-// Game mode keeps what immersive mode did (fullscreen and a landscape lock)
-// and turns on the food chain above (see GAME MODE).
+// A chip in the Other row, styled like the time and weather presets (.sel
+// when on). It only switches the food chain (see GAME MODE); fullscreen is
+// Immersive mode's, a separate chip.
+const gameEl = document.getElementById('game');
+gameEl.addEventListener('click', () => {
+  game.on = !game.on;
+  gameEl.classList.toggle('sel', game.on);
+  gameEl.setAttribute('aria-pressed', String(game.on));
+  gameEl.blur();
+  game.showPanel();
+});
+
+// IMMERSIVE
+
 // Fullscreen and the landscape lock both need a user gesture, so they are
 // requested straight from the toggle and load taps, not after load()'s awaits.
 // Neither exists on iPhone Safari and the lock is refused on desktop; both
 // fail quietly and the game runs as normal.
-const gameEl = document.getElementById('game');
+const immersiveEl = document.getElementById('immersive');
+let immersive = false;
 
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
-function enterGameScreen() {
-  if (!game.on) return;
+function enterImmersive() {
+  if (!immersive) return;
   const root = document.documentElement;   // whole page, so the HUD and controls stay visible
   const req = root.requestFullscreen || root.webkitRequestFullscreen;
   const pending = (!fullscreenElement() && req) ? req.call(root, { navigationUI: 'hide' }) : null;
@@ -7957,24 +8020,23 @@ function enterGameScreen() {
   }).catch(() => {});
 }
 
-function exitGameScreen() {
+function exitImmersive() {
   try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
   const exit = document.exitFullscreen || document.webkitExitFullscreen;
   if (fullscreenElement() && exit) Promise.resolve(exit.call(document)).catch(() => {});
 }
 
-gameEl.addEventListener('click', () => {
-  game.on = !game.on;
-  gameEl.classList.toggle('on', game.on);
-  gameEl.setAttribute('aria-checked', String(game.on));
-  gameEl.blur();
-  game.showPanel();
-  if (game.on) enterGameScreen(); else exitGameScreen();
+immersiveEl.addEventListener('click', () => {
+  immersive = !immersive;
+  immersiveEl.classList.toggle('sel', immersive);   // a chip, like Game mode
+  immersiveEl.setAttribute('aria-pressed', String(immersive));
+  immersiveEl.blur();
+  if (immersive) enterImmersive(); else exitImmersive();
 });
 
 // START-UP OPTIONS
 // The More toggles on the intro card; load() reads a copy when it starts.
-const loadOpts = { car: true, terrain: true, people: true, buildings: true, aerial: true };
+const loadOpts = { car: true, terrain: true, people: true, deer: true, plants: true, buildings: true, aerial: true };
 for (const el of document.querySelectorAll('#more .switch')) {
   el.addEventListener('click', () => {
     const k = el.dataset.opt;
@@ -7985,7 +8047,7 @@ for (const el of document.querySelectorAll('#more .switch')) {
   });
 }
 
-goEl.addEventListener('click', () => { enterGameScreen(); load(addrEl.value); });
+goEl.addEventListener('click', () => { enterImmersive(); load(addrEl.value); });
 
 // Suggested places: dense, well-mapped US downtowns (imagery is US-only).
 // A tap fills the address and loads it.
@@ -8002,14 +8064,14 @@ for (const [label, query] of PICKS) {
   b.addEventListener('click', () => {
     addrEl.value = query;
     b.blur();
-    enterGameScreen();
+    enterImmersive();
     load(query);
   });
   picksEl.appendChild(b);
 }
 addrEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  enterGameScreen();
+  enterImmersive();
   load(addrEl.value);
 });
 addrEl.focus();
