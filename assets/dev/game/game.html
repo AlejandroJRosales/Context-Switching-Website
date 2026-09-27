@@ -1080,6 +1080,8 @@
     const FEATURES_VERSION = 3;     // bump when featuresFrom changes shape; drops stale caches
     const OVERPASS_TIMEOUT_MS = 50000;
     const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
+    const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
+    const OVERPASS_MAX_PARALLEL = 2;     // never more than this many mirrors asked at once
     const OVERPASS_MIRRORS = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -1410,10 +1412,12 @@
       };
     }
 
-    // One attempt on one mirror; a `fatal` error (bad query) ends the search.
-    async function overpassTry(url, query) {
+    // One attempt on one mirror; a `fatal` error (bad query) ends the search. `cancel` aborts it from outside
+    // (another mirror answered first).
+    async function overpassTry(url, query, cancel) {
       const host = new URL(url).hostname;
       const ctrl = new AbortController();
+      if (cancel) cancel.addEventListener('abort', () => ctrl.abort(), { once: true });
       const timer = setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS);
       try {
         const res = await fetch(url, {
@@ -1427,12 +1431,66 @@
         if (!res.ok) throw new Error(`${host} returned ${res.status}`);
         return await res.json();
       } catch (err) {
-        if (err.name === 'AbortError') throw new Error(`${host} timed out`);
+        if (err.name === 'AbortError') {
+          if (cancel && cancel.aborted) throw Object.assign(new Error(`${host} cancelled`), { cancelled: true });
+          throw new Error(`${host} timed out`);
+        }
         if (err instanceof TypeError) throw new Error(`${host} unreachable`);
         throw err;
       } finally {
         clearTimeout(timer);
       }
+    }
+
+    // Each mirror at most once for this query, in order. A failure moves straight to the next mirror; a mirror still
+    // silent after OVERPASS_HEDGE_MS gets the next one asked alongside it (at most OVERPASS_MAX_PARALLEL at once).
+    // The first answer wins and the rest are cancelled. Rejects with the last error when every mirror failed.
+    function overpassHedged(q, radius, onNote, prevErr) {
+      return new Promise((resolve, reject) => {
+        const cancel = new AbortController();
+        const hosts = OVERPASS_MIRRORS.map(u => new URL(u).hostname);
+        let next = 0, running = 0, settled = false, lastErr = prevErr, hedge = 0;
+        const slow = [];
+        const end = () => { settled = true; clearTimeout(hedge); cancel.abort(); };
+
+        const launch = why => {
+          if (settled || next >= OVERPASS_MIRRORS.length) return;
+          const k = next++;
+          const host = hosts[k];
+          if (why === 'hedge') onNote(`${slow.join(' and ')} has not answered in ${OVERPASS_HEDGE_MS / 1000} s. ` +
+            `Also asking ${host} within ${radius} m…`, false);
+          else onNote(lastErr
+            ? `${lastErr.message}. Trying ${host} within ${radius} m…`
+            : `Asking ${host} for everything within ${radius} m…`, !!lastErr);
+          running++;
+          slow.push(host);
+          armHedge();
+          overpassTry(OVERPASS_MIRRORS[k], q, cancel.signal).then(json => {
+            if (settled) return;
+            end();
+            resolve(json);
+          }, err => {
+            running--;
+            slow.splice(slow.indexOf(host), 1);
+            if (settled) return;
+            if (err.fatal) { end(); reject(err); return; }
+            lastErr = err;
+            if (next < OVERPASS_MIRRORS.length && running < OVERPASS_MAX_PARALLEL) launch('failed');
+            else if (running === 0) { end(); reject(lastErr); }
+          });
+        };
+
+        // the hedge clock restarts with every launch
+        const armHedge = () => {
+          clearTimeout(hedge);
+          if (next >= OVERPASS_MIRRORS.length) return;
+          hedge = setTimeout(() => {
+            if (running < OVERPASS_MAX_PARALLEL) launch('hedge');
+          }, OVERPASS_HEDGE_MS);
+        };
+
+        launch('first');
+      });
     }
 
     // Every mirror at the widest radius, then shrink and repeat (covers 429 and 504).
@@ -1465,19 +1523,13 @@
           `node["entrance"](${bbox});` +
           `);out geom;`;
 
-        for (const url of OVERPASS_MIRRORS) {
-          const host = new URL(url).hostname;
-          onNote(lastErr
-            ? `${lastErr.message}. Trying ${host} within ${radius} m…`
-            : `Asking ${host} for everything within ${radius} m…`, !!lastErr);
-          try {
-            // not kept: a dense response runs to hundreds of MB; load() keeps only the features
-            const json = await overpassTry(url, q);
-            return { json, radius };
-          } catch (err) {
-            if (err.fatal) throw err;
-            lastErr = err;
-          }
+        try {
+          // not kept: a dense response runs to hundreds of MB; load() keeps only the features
+          const json = await overpassHedged(q, radius, onNote, lastErr);
+          return { json, radius };
+        } catch (err) {
+          if (err.fatal) throw err;
+          lastErr = err;
         }
       }
 
@@ -6737,7 +6789,7 @@
     // CAT COMPANION: Nibbler, from the Arena. The rig stays in Arena units under a group scaled to the player;
     // distances and speeds are the Arena's in metres. Worlds with wilderness bring him along (provider.companion).
     const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
-    const CAT_SEAT = { x: 0.4, y: 0.6, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
+    const CAT_SEAT = { x: 0.4, y: 0.95, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
     const CAT_DOOR = 1.2;                          // metres from the car's centre he steps out at, passenger side
 
     class CatCompanion {
@@ -9012,12 +9064,13 @@
 
     // CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
 
-    const CAR_LEN = 4.3;     // body length, metres
+    const CAR_LEN = 4.3;     // body length, metres (bumper to bumper, spare tyre extra)
     const CAR_WID = 1.8;
-    const CAR_TOP = 1.45;    // roof height above the ground
+    const CAR_TOP = 1.86;    // roof height above the ground: a four-door jeep with a hardtop
     const CAR_WHEELBASE = 2.6;
-    const CAR_TRACK = 1.55;
-    const CAR_WHEEL_R = 0.33;
+    const CAR_TRACK = 1.65;
+    const CAR_WHEEL_R = 0.4;
+    const CAR_PARK_FAR = 3;  // parked this many times farther from the start cabin than the nearest open spot
     const CAR_R = 0.9;     // collision circle radius (half the width)
     const CAR_CIRCLES = [-1.25, 0, 1.25];   // circle centres along the heading
     const CAR_STEP_UP = 0.25;    // solids lower than this are driven over
@@ -9059,11 +9112,13 @@
     let driving = false;
     const drive = { camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false };
 
-    // Mesh: body, glasshouse, roof, lamps, four wheels (front two on steer pivots).
+    // Mesh: a red four-door jeep. Boxy tub and flat hood, upright windshield, hardtop glasshouse split by pillars
+    // into two doors a side, door seams and handles, black flares, bumpers, steps, round lamps, a slotted grille,
+    // a spare on the tailgate, four chunky wheels (front two on steer pivots). -z is forward.
     {
       const mat = c => new THREE.MeshLambertMaterial({ color: c });
-      const paint = mat(0x9c2f2a), glass = mat(0x28313b), trim = mat(0x1d1f22);
-      const tyre = mat(0x151617), head = mat(0xf2ecd8), tail = mat(0xb3261e);
+      const paint = mat(0xc4221b), glass = mat(0x28313b), trim = mat(0x1d1f22);
+      const tyre = mat(0x151617), hub = mat(0x9aa0a6), head = mat(0xf2ecd8), tail = mat(0xb3261e);
       const g = new THREE.Group();
       const part = (w, h, d, x, y, z, m) => {
         const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -9071,22 +9126,65 @@
         g.add(b);
         return b;
       };
-      part(CAR_WID, 0.62, CAR_LEN, 0, 0.62, 0, paint);
-      part(CAR_WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
-      part(CAR_WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
-      part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, -CAR_LEN / 2, trim);
-      part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, CAR_LEN / 2, trim);
-      for (const s of [-1, 1]) {
-        part(0.34, 0.14, 0.04, s * 0.62, 0.72, -CAR_LEN / 2 - 0.01, head);
-        part(0.34, 0.12, 0.04, s * 0.62, 0.74, CAR_LEN / 2 + 0.01, tail);
+      const F = -CAR_LEN / 2 + 0.15, R = CAR_LEN / 2 - 0.15;   // body faces inside the bumpers
+      const W = CAR_WID, hw = W / 2;
+      // frame and running gear under the body
+      part(1.2, 0.22, R - F, 0, 0.66, 0, trim);
+      // tub (cabin sides and doors) from the windshield back, hood ahead of it
+      const cowl = -0.7;
+      part(W, 0.55, R - cowl, 0, 1.025, (R + cowl) / 2, paint);
+      part(W - 0.06, 0.5, cowl - F, 0, 1.0, (cowl + F) / 2, paint);
+      // glasshouse and hardtop
+      part(W - 0.08, 0.5, R - cowl - 0.04, 0, 1.54, (R + cowl) / 2, glass);
+      part(W, 0.08, R - cowl + 0.04, 0, 1.82, (R + cowl) / 2, paint);
+      // pillars: A (windshield frame), B (between the doors), C (behind the rear door), D (rear corners)
+      for (const [pz, pd] of [[cowl + 0.04, 0.08], [0.42, 0.12], [1.36, 0.12], [R - 0.04, 0.08]]) {
+        for (const s of [-1, 1]) part(0.1, 0.52, pd, s * (hw - 0.05), 1.54, pz, paint);
       }
-      const wheelGeo = new THREE.CylinderGeometry(CAR_WHEEL_R, CAR_WHEEL_R, 0.24, 14);
+      part(W - 0.08, 0.08, 0.1, 0, 1.3, cowl + 0.02, paint);      // windshield base
+      // four doors: seams at the front door's leading edge, between the doors, and the rear door's trailing edge
+      for (const sz of [cowl + 0.05, 0.42, 1.36]) part(W + 0.012, 0.5, 0.025, 0, 1.03, sz, trim);
+      part(W + 0.012, 0.02, 2.06, 0, 0.78, (cowl + 1.36) / 2, trim);   // door sills
+      for (const hz of [0.24, 1.18]) part(W + 0.04, 0.04, 0.14, 0, 1.18, hz, trim);   // handles, both sides
+      // mirrors on the front doors
+      for (const s of [-1, 1]) part(0.18, 0.12, 0.08, s * (hw + 0.1), 1.36, cowl + 0.18, trim);
+      // fender flares over the wheels, side steps, bumpers
+      for (const s of [-1, 1]) {
+        for (const wz of [-1, 1]) part(0.24, 0.1, 1.05, s * (hw + 0.02), 0.86, wz * CAR_WHEELBASE / 2, trim);
+        part(0.18, 0.05, 1.1, s * (hw + 0.04), 0.6, 0.3, trim);
+      }
+      part(W + 0.14, 0.22, 0.22, 0, 0.72, -CAR_LEN / 2 + 0.11, trim);
+      part(W + 0.1, 0.2, 0.2, 0, 0.72, CAR_LEN / 2 - 0.1, trim);
+      // grille: slots between round headlamps
+      for (let i = -2; i <= 2; i++) part(0.07, 0.32, 0.02, i * 0.14, 1.0, F - 0.005, trim);
+      const lampGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16);
+      lampGeo.rotateX(Math.PI / 2);
+      for (const s of [-1, 1]) {
+        const l = new THREE.Mesh(lampGeo, head);
+        l.position.set(s * 0.58, 1.02, F - 0.01);
+        g.add(l);
+        part(0.1, 0.2, 0.04, s * (hw - 0.07), 1.05, R + 0.01, tail);
+      }
+      // spare tyre on the tailgate
+      const spareGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.24, 16);
+      spareGeo.rotateX(Math.PI / 2);
+      const spare = new THREE.Mesh(spareGeo, tyre);
+      spare.position.set(0, 1.12, R + 0.14);
+      g.add(spare);
+      part(0.34, 0.34, 0.02, 0, 1.12, R + 0.265, hub);
+      const wheelGeo = new THREE.CylinderGeometry(CAR_WHEEL_R, CAR_WHEEL_R, 0.3, 16);
       wheelGeo.rotateZ(Math.PI / 2);
+      const hubGeo = new THREE.BoxGeometry(0.31, 0.36, 0.1);   // a spoke bar, so the wheel's spin shows
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         const pivot = new THREE.Group();
         pivot.position.set(sx * CAR_TRACK / 2, CAR_WHEEL_R, sz * CAR_WHEELBASE / 2);
         const w = new THREE.Mesh(wheelGeo, tyre);
         w.rotation.order = 'YXZ';
+        for (const r of [0, Math.PI / 2]) {
+          const h = new THREE.Mesh(hubGeo, hub);
+          h.rotation.x = r;
+          w.add(h);
+        }
         pivot.add(w);
         g.add(pivot);
         car.wheels.push(w);
@@ -9132,7 +9230,7 @@
     }
 
     // Parked on the right side of the nearest street, aligned with it, off the player.
-    function placeCar(roads, x, z) {
+    function placeCar(roads, x, z, far = 1) {
       const cands = [];
       for (const r of roads || []) {
         if (PATH_KINDS.has(r.kind)) continue;
@@ -9158,12 +9256,18 @@
       let spot = cands.find(c => carFits(c.px, c.pz, c.yaw));
       if (!spot) {
         // no street fits: nearest open ground, facing the player's way
-        for (let d = 5; d <= 80 && !spot; d += 1) {
-          for (let i = 0; i < 24; i++) {
-            const a = i / 24 * 2 * Math.PI, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
-            if (carFits(px, pz, player.yaw)) { spot = { px, pz, yaw: player.yaw }; break; }
+        const ring = (from, to) => {
+          for (let d = from; d <= to; d += 1) {
+            for (let i = 0; i < 24; i++) {
+              const a = i / 24 * 2 * Math.PI, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+              if (carFits(px, pz, player.yaw)) return { px, pz, yaw: player.yaw, d };
+            }
           }
-        }
+          return null;
+        };
+        spot = ring(5, 80);
+        // farther out: `far` times the nearest open distance, keeping the near spot if nothing fits there
+        if (spot && far > 1) spot = ring(Math.round(spot.d * far), Math.round(spot.d * far) + 40) || spot;
       }
       setCar(spot);
     }
@@ -9183,11 +9287,14 @@
     function parkBesideCabin(c, yaw) {
       const s = CABIN_SCALE * CABIN_M;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      const side = 44 * s + CAR_WID / 2 + 0.8;         // past the cabin's floor
-      for (let ds = 0; ds <= 6; ds += 0.5) {
-        for (const df of [0.5, 0, 1.5, -0.5, 2.5, -1.5]) {
-          const px = c.x + rx * (side + ds) + fx * df, pz = c.z + rz * (side + ds) + fz * df;
-          if (carFits(px, pz, yaw)) { setCar({ px, pz, yaw }); return true; }
+      const near = 44 * s + CAR_WID / 2 + 0.8;         // past the cabin's floor
+      // CAR_PARK_FAR times the old centre distance first; the old spot if nothing fits out there
+      for (const [side, reach] of [[near * CAR_PARK_FAR, 12], [near, 6]]) {
+        for (let ds = 0; ds <= reach; ds += 0.5) {
+          for (const df of [0.5, 0, 1.5, -0.5, 2.5, -1.5]) {
+            const px = c.x + rx * (side + ds) + fx * df, pz = c.z + rz * (side + ds) + fz * df;
+            if (carFits(px, pz, yaw)) { setCar({ px, pz, yaw }); return true; }
+          }
         }
       }
       return false;
@@ -10650,7 +10757,7 @@
         player.vel.set(0, 0, 0);
         player.yaw = st.yaw; player.pitch = -0.3;
         player.grounded = false;
-        if (loadOpts.car) placeCar([], player.pos.x, player.pos.z);
+        if (loadOpts.car) placeCar([], player.pos.x, player.pos.z, CAR_PARK_FAR);
 
         current = 'scene';
         await finishLoad(w);
