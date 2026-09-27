@@ -796,6 +796,33 @@
       cursor: default;
     }
 
+    /* after loading: only the Observer / Game choice */
+    #card.choosing>*:not(h1):not(#choose) {
+      display: none !important;
+    }
+
+    #choose {
+      display: none;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    #card.choosing #choose {
+      display: flex;
+    }
+
+    #choose button {
+      flex: 1;
+      padding: 11px 20px;
+      background: #e8e4dc;
+      color: #10131a;
+      border: 0;
+      border-radius: 3px;
+      font: inherit;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
     #card.loading #modes,
     #card.loading .mode-note,
     #card.loading .for-wild,
@@ -885,6 +912,10 @@
   <div id="panel">
     <div id="card" data-mode="mix">
       <h1>Nova Orbis</h1>
+      <div id="choose">
+        <button id="chooseObs">Observer</button>
+        <button id="chooseGame">Game mode</button>
+      </div>
       <div class="chips" id="modes" role="radiogroup" aria-label="World">
         <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
         <button data-mode="wild" role="radio" aria-checked="false">Wild</button>
@@ -992,7 +1023,6 @@
     <h2 class="second">Other</h2>
     <div class="chips">
       <button id="game" aria-pressed="false">Game mode</button>
-      <button id="immersive" aria-pressed="false">Immersive mode</button>
       <button id="neweco" hidden>New ecosystem</button>
       <button id="tomenu">Back to intro</button>
     </div>
@@ -7856,9 +7886,47 @@
           }
           return [b.maxX - 30, b.maxZ - 30];
         };
-        this.cabins = placeCabins(count, null, 0, pick, (x, z) => this.heightAt(x, z), this.level);
+        // the first cabin: the player's, just past the measured square, its door toward the city's centre
+        const first = this.cabinSite();
+        const firstYaw = first ? Math.atan2(-first[0], -first[1]) : 0;
+        this.cabins = placeCabins(count, first, firstYaw, pick, (x, z) => this.heightAt(x, z), this.level);
         pebbles.init();
         pebbles.place(() => this.wildAnyPoint(), (x, z) => this.heightAt(x, z));
+      }
+
+      // Nearest dry, level spot outside the measured square: rings outward from its edge, the flattest spot on the
+      // first ring that has one. Footprint and the car's parking side are both sampled.
+      cabinSite() {
+        const b = this.bounds, dry = this.level + 4 * NPC_UNIT;
+        const reach = 44 * CABIN_SCALE * CABIN_M + CAR_WID + 2;      // cabin half-width plus the parked car
+        const N = 72;
+        for (let t = this.h + 25; t <= b.maxX - reach - 20; t += 10) {
+          let best = null;
+          for (let i = 0; i < N; i++) {
+            const a = i / N * 2 * Math.PI;
+            const dx = Math.sin(a), dz = Math.cos(a), k = t / Math.max(Math.abs(dx), Math.abs(dz));
+            const x = dx * k, z = dz * k;
+            let lo = Infinity, hi = -Infinity;
+            for (let j = 0; j < 12; j++) {
+              for (const r of [0, reach * 0.5, reach]) {
+                const q = j / 12 * 2 * Math.PI, hh = this.heightAt(x + Math.cos(q) * r, z + Math.sin(q) * r);
+                if (hh < lo) lo = hh;
+                if (hh > hi) hi = hh;
+              }
+            }
+            if (lo < dry) continue;
+            const slope = hi - lo;
+            if (slope < 0.8 && (!best || slope < best.slope)) best = { x, z, slope };
+          }
+          if (best) return [best.x, best.z];
+        }
+        return null;
+      }
+
+      // The player starts in the first cabin, facing out its door toward the city.
+      playerStart() {
+        const c = this.cabins[0];
+        return { x: c.x, z: c.z, y: c.floor + 0.02, yaw: c.yaw + Math.PI };
       }
 
       teardown() {
@@ -9097,6 +9165,10 @@
           }
         }
       }
+      setCar(spot);
+    }
+
+    function setCar(spot) {
       car.placed = !!spot;
       car.mesh.visible = car.placed;
       car.speed = car.steer = car.spin = 0;
@@ -9105,6 +9177,20 @@
       settleCar();
       syncCarMesh();
       invalidate();
+    }
+
+    // Parked just outside a cabin on the right (as seen looking out its door), nose the same way as the door.
+    function parkBesideCabin(c, yaw) {
+      const s = CABIN_SCALE * CABIN_M;
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      const side = 44 * s + CAR_WID / 2 + 0.8;         // past the cabin's floor
+      for (let ds = 0; ds <= 6; ds += 0.5) {
+        for (const df of [0.5, 0, 1.5, -0.5, 2.5, -1.5]) {
+          const px = c.x + rx * (side + ds) + fx * df, pz = c.z + rz * (side + ds) + fz * df;
+          if (carFits(px, pz, yaw)) { setCar({ px, pz, yaw }); return true; }
+        }
+      }
+      return false;
     }
 
     const _carPos = new THREE.Vector3();
@@ -10498,6 +10584,8 @@
       refreshHud();
       steps.done('scene');
       steps.finish(true);
+      const wantGame = await chooseMode();
+      if (wantGame !== game.on) gameEl.click();
       panel.classList.add('hidden');
       showControls(true);
       say('');
@@ -10784,13 +10872,23 @@
         startClock();
 
         driving = false;
-        const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
-        player.pos.set(sx, groundAt(sx, sz) + EYE_HEIGHT, sz);
-        player.vel.set(0, 0, 0);
-        player.yaw = 0; player.pitch = 0;
-        player.grounded = false;
-        resolveCollisions(player.pos);
-        if (o.car) placeCar(features.roads, player.pos.x, player.pos.z);
+        if (mode === 'mix' && provider.cabins.length) {
+          // Mix: in the edge cabin, looking out the door at the city; the car parked on the cabin's right
+          const st = provider.playerStart();
+          player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
+          player.vel.set(0, 0, 0);
+          player.yaw = st.yaw; player.pitch = 0;
+          player.grounded = false;
+          if (o.car && !parkBesideCabin(provider.cabins[0], st.yaw)) placeCar(features.roads, player.pos.x, player.pos.z);
+        } else {
+          const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
+          player.pos.set(sx, groundAt(sx, sz) + EYE_HEIGHT, sz);
+          player.vel.set(0, 0, 0);
+          player.yaw = 0; player.pitch = 0;
+          player.grounded = false;
+          resolveCollisions(player.pos);
+          if (o.car) placeCar(features.roads, player.pos.x, player.pos.z);
+        }
 
         hudBuildings = count;
         hudPlace =
@@ -10853,40 +10951,19 @@
       wake();
     });
 
-    // IMMERSIVE
-
-    // Fullscreen and landscape lock need a user gesture, so they are requested from the taps; both fail quietly if unsupported.
-    const immersiveEl = document.getElementById('immersive');
-    let immersive = false;
-
-    function fullscreenElement() {
-      return document.fullscreenElement || document.webkitFullscreenElement || null;
+    // OBSERVER OR GAME: asked once the world is ready; Game mode is the Other row's toggle.
+    function chooseMode() {
+      cardEl.classList.add('choosing');
+      return new Promise(resolve => {
+        const pick = wantGame => {
+          cardEl.classList.remove('choosing');
+          document.getElementById('chooseObs').onclick = document.getElementById('chooseGame').onclick = null;
+          resolve(wantGame);
+        };
+        document.getElementById('chooseObs').onclick = () => pick(false);
+        document.getElementById('chooseGame').onclick = () => pick(true);
+      });
     }
-
-    function enterImmersive() {
-      if (!immersive) return;
-      const root = document.documentElement;   // whole page, so the HUD and controls stay visible
-      const req = root.requestFullscreen || root.webkitRequestFullscreen;
-      const pending = (!fullscreenElement() && req) ? req.call(root, { navigationUI: 'hide' }) : null;
-      Promise.resolve(pending).then(() => {
-        // browsers that allow the lock only allow it while fullscreen
-        if (screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape');
-      }).catch(() => { });
-    }
-
-    function exitImmersive() {
-      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { }
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (fullscreenElement() && exit) Promise.resolve(exit.call(document)).catch(() => { });
-    }
-
-    immersiveEl.addEventListener('click', () => {
-      immersive = !immersive;
-      immersiveEl.classList.toggle('sel', immersive);
-      immersiveEl.setAttribute('aria-pressed', String(immersive));
-      immersiveEl.blur();
-      if (immersive) enterImmersive(); else exitImmersive();
-    });
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
     const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: true };
@@ -10926,13 +11003,13 @@
     seedEl.addEventListener('blur', () => { if (!seedEl.value) seedEl.value = DEFAULT_SEED; });
     seedEl.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      if (startMode === 'wild') { enterImmersive(); loadWild(wildSeedValue()); }
-      else { enterImmersive(); loadPlace(addrEl.value, startMode); }
+      if (startMode === 'wild') { loadWild(wildSeedValue()); }
+      else { loadPlace(addrEl.value, startMode); }
     });
     sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
-    wildGoEl.addEventListener('click', () => { enterImmersive(); loadWild(wildSeedValue()); });
+    wildGoEl.addEventListener('click', () => { loadWild(wildSeedValue()); });
 
-    goEl.addEventListener('click', () => { enterImmersive(); loadPlace(addrEl.value, startMode); });
+    goEl.addEventListener('click', () => { loadPlace(addrEl.value, startMode); });
 
     // Suggested places: well-mapped US downtowns (imagery is US-only).
     const PICKS = [
@@ -10948,14 +11025,12 @@
       b.addEventListener('click', () => {
         addrEl.value = query;
         b.blur();
-        enterImmersive();
         loadPlace(query, startMode);
       });
       picksEl.appendChild(b);
     }
     addrEl.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      enterImmersive();
       loadPlace(addrEl.value, startMode);
     });
 
