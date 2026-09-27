@@ -670,6 +670,11 @@
       touch-action: manipulation;
     }
 
+    .chips button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
     .chips button.sel {
       background: rgba(232, 228, 220, 0.85);
       color: #10131a;
@@ -1018,7 +1023,7 @@
       <button id="hudbtn" class="sel" aria-pressed="true">HUD</button>
       <button id="gfx">Graphics: high</button>
       <button id="fs" aria-pressed="false">Fullscreen</button>
-      <button id="orient" hidden>Orientation: landscape</button>
+      <button id="orient" disabled>Landscape</button>
       <button id="vr" hidden>Enter VR</button>
     </div>
     <h2 class="second">Other</h2>
@@ -1148,6 +1153,41 @@
       cemetery: 0x5d6a54, allotments: 0x6a7847, scrub: 0x5b6b45, sand: 0xc4b48c,
       orchard: 0x5f7f45, greenfield: 0x6d8a4c
     };
+
+    // Mix: green land cover takes the wild ground's palette, keeping a trace of its own shade in the middle of the city
+    // and fading to the wild grass exactly at the edge of the city square, so the two grounds meet without a seam.
+    const MIX_GREEN_PULL = 0.8;   // pull toward the wild grass inside the city
+    const MIX_EDGE_FADE = 0.25;   // outer fraction of the square over which the pull rises to 1
+    const MIX_GREEN_KINDS = new Set([
+      'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'pitch', 'golf_course',
+      'forest', 'wood', 'meadow', 'scrub', 'orchard', 'greenfield', 'cemetery', 'allotments', 'wetland'
+    ]);
+    let groundMatchWild = false;
+    let groundMatchHalf = 0;      // half-size of the Mix city square (same as the terrain base)
+
+    // Per vertex, after draping: green toward the wild grass (fully at the square's edge), then paintSlope's rock blend
+    // with the same normal-z test, so land cover shades like the wild mesh it sits on.
+    function matchWildGround(g, green) {
+      const p = g.attributes.position.array, n = g.attributes.normal.array, c = g.attributes.color.array;
+      const gr = wildTerrain.grassColor, r = wildTerrain.rockColor;
+      const half = groundMatchHalf || 1;
+      for (let i = 0; i < n.length; i += 3) {
+        if (green) {
+          const d = Math.min(1, Math.max(Math.abs(p[i]), Math.abs(p[i + 2])) / half);
+          let e = Math.max(0, Math.min(1, (d - (1 - MIX_EDGE_FADE)) / MIX_EDGE_FADE));
+          e = e * e * (3 - 2 * e);
+          const k = MIX_GREEN_PULL + (1 - MIX_GREEN_PULL) * e;
+          c[i] += (gr.r - c[i]) * k;
+          c[i + 1] += (gr.g - c[i + 1]) * k;
+          c[i + 2] += (gr.b - c[i + 2]) * k;
+        }
+        const t = Math.max(0, Math.min(1, (0.12 - Math.abs(n[i + 2])) / (0.12 - 0.84)));
+        c[i] += (r.r - c[i]) * t;
+        c[i + 1] += (r.g - c[i + 1]) * t;
+        c[i + 2] += (r.b - c[i + 2]) * t;
+      }
+      g.attributes.color.needsUpdate = true;
+    }
 
     const WATERWAY_WIDTH = { river: 14, canal: 9, stream: 3, ditch: 1.6, drain: 1.6 };
 
@@ -1981,6 +2021,8 @@
         if (m.geometry) m.geometry.dispose();
         if (m.material) {
           if (m.material.map) m.material.map.dispose();
+          if (m.material.normalMap) m.material.normalMap.dispose();
+          if (m.material.clearcoatNormalMap) m.material.clearcoatNormalMap.dispose();
           m.material.dispose();
         }
       }
@@ -2550,7 +2592,7 @@
 
     // Roads, paths, water and land cover, one mesh per layer for its own depth bias.
     function buildGround(features) {
-      const areaGeoms = [], waterGeoms = [];
+      const areaGeoms = [], greenGeoms = [], waterGeoms = [];
       const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
 
       for (const a of features.areas) {
@@ -2558,7 +2600,7 @@
         if (hex == null) continue;
         const wet = a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir';
         const g = areaGeom(a.pts, wet ? LAYER_Y.water : LAYER_Y.area, rgb(hex));
-        if (g) (wet ? waterGeoms : areaGeoms).push(g);
+        if (g) (wet ? waterGeoms : groundMatchWild && MIX_GREEN_KINDS.has(a.kind) ? greenGeoms : areaGeoms).push(g);
       }
 
       const waterC = rgb(AREA_COLOR.water);
@@ -2577,8 +2619,23 @@
 
       // flat layers follow the ground; with no terrain they stay as built
       const lay = gs => elevation.active ? gs.map(drape).filter(Boolean) : gs;
-      addLayer(lay(areaGeoms), litMaterial(LAYER_BIAS.area));
-      addLayer(lay(waterGeoms), litMaterial(LAYER_BIAS.water));
+      const areas = lay(areaGeoms), greens = lay(greenGeoms);
+      if (groundMatchWild) {
+        for (const g of areas) matchWildGround(g, false);
+        for (const g of greens) matchWildGround(g, true);
+      }
+      const areaMesh = addLayer(areas.concat(greens), litMaterial(LAYER_BIAS.area));
+      // Mix: the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
+      if (areaMesh && groundMatchWild) areaMesh.receiveShadow = true;
+      // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
+      wildWater.cityMaps = null;
+      const waterMesh = addLayer(lay(waterGeoms), wildWater.cityMaterial(LAYER_BIAS.water));
+      if (waterMesh) {
+        const p = waterMesh.geometry.attributes.position, uv = new Float32Array(p.count * 2);
+        for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i); uv[i * 2 + 1] = -p.getZ(i); }
+        waterMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        waterMesh.renderOrder = 1;       // after the opaque ground and bed, as the wild surface
+      }
       if (rg) addLayer(lay([rg]), litMaterial(LAYER_BIAS.road));
       if (pg) addLayer(lay([pg]), litMaterial(LAYER_BIAS.path));
     }
@@ -3614,7 +3671,6 @@
     const NPC_UNIT = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
     const NPC_RADIUS = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
     const NPC_COLLIDE_H = 1.35;     // collision column height; under the lowest lintel (1.4 m) so no door refuses them
-    const NPC_WADE = 0.55;     // how far a human sinks into painted water
     const NPC_SPAWN_GAP = 8;        // metres between spawn points before crowding forces it lower
     const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
     const NPC_HEIGHT_STD = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
@@ -5510,13 +5566,23 @@
     };
 
     // Painted water in a 1 m mask, roads stamped dry on top (bridges). Read through the City provider.
+    // Like the wild lakes it has a bed: depth grows with distance from the shore (SHORE_SLOPE) up to MAX_DEPTH, so
+    // narrow streams stay wadeable and wide rivers and lakes are deep enough to swim and float in.
     const cityWater = {
-      FLOAT_DEPTH: 1,                // deeper than NPC_WADE: humans wade, never float
+      MAX_DEPTH: 4,                  // metres of water at the deepest
+      SHORE_SLOPE: 0.35,             // metres of depth gained per metre from the shore
+      BED_SINK: 0.05,                // the drawn bed stays this far under the ground mesh at the shoreline
+      BED_STEP: 2,                   // metres between bed mesh vertices
+      BED_MAX_TRIS: 300000,
+      BED_COLOR: 0x4b5a48,
       locations: [],                 // [x, z, y] points the Arena's perception looks for
       mask: new Uint8Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
+      // chamfer distance to the shore in half cells (0 = dry), from the water before roads were stamped on it,
+      // so the bed runs on under bridges
+      dist: new Uint8Array(0),
 
       clear() {
-        this.mask = new Uint8Array(0); this.cols = this.rows = 0; this.locations = [];
+        this.mask = new Uint8Array(0); this.dist = new Uint8Array(0); this.cols = this.rows = 0; this.locations = [];
       },
 
       wetAt(x, z) {
@@ -5525,6 +5591,27 @@
         if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return false;
         return this.mask[r * this.cols + c] === 1;
       },
+
+      // depth of one cell centre; dry cells and cells off the grid are 0
+      cellDepth(c, r) {
+        if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return 0;
+        const v = this.dist[r * this.cols + c];
+        return v ? Math.min(this.MAX_DEPTH, (v * 0.5 - 0.5) * this.SHORE_SLOPE) : 0;
+      },
+
+      // depth of the bed under the surface, bilinear between cell centres (ignores bridges)
+      bedDepthAt(x, z) {
+        if (!this.dist.length) return 0;
+        const fx = (x - this.x0) / WATER_CELL - 0.5, fz = (z - this.z0) / WATER_CELL - 0.5;
+        const c = Math.floor(fx), r = Math.floor(fz), tx = fx - c, tz = fz - r;
+        const a = this.cellDepth(c, r), b = this.cellDepth(c + 1, r);
+        const d = this.cellDepth(c, r + 1), e = this.cellDepth(c + 1, r + 1);
+        const top = a + (b - a) * tx, bot = d + (e - d) * tx;
+        return top + (bot - top) * tz;
+      },
+
+      // water depth at a point: 0 on land and on bridges
+      depthAt(x, z) { return this.wetAt(x, z) ? this.bedDepthAt(x, z) : 0; },
 
       build(features, minX, minZ, maxX, maxZ) {
         this.x0 = minX; this.z0 = minZ;
@@ -5536,6 +5623,7 @@
           if (a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir') this.fillRing(a.pts);
         }
         for (const w of features.waterways) this.stampLine(w.pts, w.width / 2, 1);
+        this.buildDist();
         for (const r of features.roads) this.stampLine(r.pts, (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2, 0);
 
         // perception targets: coarse, capped sample of wet cells
@@ -5552,6 +5640,95 @@
         const cap = 400;
         const stride = Math.max(1, Math.ceil(pts.length / cap));
         this.locations = stride === 1 ? pts : pts.filter((_, i) => i % stride === 0);
+      },
+
+      // Two-pass chamfer distance (2 straight, 3 diagonal, in half cells) from every wet cell to the nearest dry one;
+      // off the grid counts as dry, so water shoals at the city's edge instead of ending in an underwater wall.
+      buildDist() {
+        const cols = this.cols, rows = this.rows, m = this.mask;
+        const d = this.dist = new Uint8Array(cols * rows);
+        for (let i = 0; i < d.length; i++) d[i] = m[i] ? 255 : 0;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const i = r * cols + c;
+            if (!d[i]) continue;
+            const up = r > 0, lf = c > 0, rt = c < cols - 1;
+            let v = d[i];
+            v = Math.min(v, (lf ? d[i - 1] : 0) + 2, (up ? d[i - cols] : 0) + 2,
+              (up && lf ? d[i - cols - 1] : 0) + 3, (up && rt ? d[i - cols + 1] : 0) + 3);
+            d[i] = v;
+          }
+        }
+        for (let r = rows - 1; r >= 0; r--) {
+          for (let c = cols - 1; c >= 0; c--) {
+            const i = r * cols + c;
+            if (!d[i]) continue;
+            const dn = r < rows - 1, lf = c > 0, rt = c < cols - 1;
+            let v = d[i];
+            v = Math.min(v, (rt ? d[i + 1] : 0) + 2, (dn ? d[i + cols] : 0) + 2,
+              (dn && rt ? d[i + cols + 1] : 0) + 3, (dn && lf ? d[i + cols - 1] : 0) + 3);
+            d[i] = v;
+          }
+        }
+      },
+
+      // The bed under the painted surface, as one indexed mesh over every BED_STEP cell that touches water;
+      // shore vertices sit at the ground, so it meets the banks. Returns { geometry, minY } or null.
+      bedGeometry() {
+        const d = this.dist, cols = this.cols, rows = this.rows;
+        if (!d.length) return null;
+        let c0 = Infinity, c1 = -1, r0 = Infinity, r1 = -1, wetCells = 0;
+        for (let r = 0; r < rows; r++) {
+          const row = r * cols;
+          for (let c = 0; c < cols; c++) {
+            if (!d[row + c]) continue;
+            wetCells++;
+            if (c < c0) c0 = c; if (c > c1) c1 = c;
+            if (r < r0) r0 = r; if (r > r1) r1 = r;
+          }
+        }
+        if (c1 < 0) return null;
+
+        // coarser over very large water, so the bed stays near BED_MAX_TRIS triangles
+        const s = Math.max(this.BED_STEP, Math.sqrt(2 * wetCells * WATER_CELL * WATER_CELL / this.BED_MAX_TRIS));
+        const xa = this.x0 + c0 * WATER_CELL - s, za = this.z0 + r0 * WATER_CELL - s;
+        const nx = Math.ceil((this.x0 + (c1 + 1) * WATER_CELL + s - xa) / s);
+        const nz = Math.ceil((this.z0 + (r1 + 1) * WATER_CELL + s - za) / s);
+        const wet = (x, z) => {
+          const c = Math.floor((x - this.x0) / WATER_CELL), r = Math.floor((z - this.z0) / WATER_CELL);
+          return c >= 0 && r >= 0 && c < cols && r < rows && d[r * cols + c] > 0;
+        };
+
+        const vid = new Int32Array((nx + 1) * (nz + 1)).fill(-1);
+        const pos = [], idx = [];
+        let minY = Infinity;
+        const vert = (i, j) => {
+          const k = j * (nx + 1) + i;
+          if (vid[k] < 0) {
+            const x = xa + i * s, z = za + j * s;
+            const y = elevation.at(x, z) - this.BED_SINK - this.bedDepthAt(x, z);
+            if (y < minY) minY = y;
+            vid[k] = pos.length / 3;
+            pos.push(x, y, z);
+          }
+          return vid[k];
+        };
+        for (let j = 0; j < nz; j++) {
+          for (let i = 0; i < nx; i++) {
+            const x = xa + i * s, z = za + j * s, h = s / 2;
+            if (!(wet(x + h, z + h) || wet(x + 0.25, z + 0.25) || wet(x + s - 0.25, z + 0.25) ||
+              wet(x + 0.25, z + s - 0.25) || wet(x + s - 0.25, z + s - 0.25))) continue;
+            const a = vert(i, j), b = vert(i + 1, j), c = vert(i + 1, j + 1), e = vert(i, j + 1);
+            idx.push(a, e, c, a, c, b);          // wound to face up
+          }
+        }
+        if (!idx.length) return null;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+        g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+        g.computeVertexNormals();
+        g.computeBoundingSphere();
+        return { geometry: g, minY };
       },
 
       fillRing(pts) {
@@ -6306,6 +6483,7 @@
         this.SEGMENTS = 64;
         this.plane = null;
         this.seabed = null;
+        this.cityMaps = null;        // the city water's normal maps (cityMaterial)
         this.normalA = null;
         this.normalB = null;
         this.envMap = null;
@@ -6379,6 +6557,49 @@
 
       // The surface over bounds `b` at `level`; `hole` (Mix) leaves out the square |x|, |z| < hole, where the city's own water is.
       // The open sea continues OCEAN_REACH past the bounds, over a sea floor at OCEAN_DEPTH.
+      ensureNormals() {
+        if (this.normalA) return;
+        this.normalA = this.buildNormalTexture(this.NORMAL_SIZE, this.NORMAL_CELLS, this.NORMAL_STRENGTH);
+        this.normalB = this.normalA.clone();
+        this.normalB.needsUpdate = true;
+      }
+
+      // The water look: physical surface, two scrolling normal maps, sky reflection, translucent, seen from both sides.
+      surfaceMaterial(normalA, normalB, offsetFactor, offsetUnits) {
+        return new THREE.MeshPhysicalMaterial({
+          color: this.COLOR,
+          roughness: 0.18,
+          metalness: 0.0,
+          normalMap: normalA,
+          normalScale: new THREE.Vector2(0.50, 0.50),
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.14,
+          clearcoatNormalMap: normalB,
+          clearcoatNormalScale: new THREE.Vector2(0.35, 0.35),
+          envMap: this.getEnvMap(),
+          envMapIntensity: this.ENV_INTENSITY,
+          transparent: true,
+          opacity: 0.90,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: offsetFactor,
+          polygonOffsetUnits: offsetUnits,
+        });
+      }
+
+      // The same surface for the city's painted water: a mesh draped on the ground, so it takes world-metre UVs and
+      // its own copies of the normal maps (scrolled by update), and a pull toward the camera to stay over the ground layers.
+      cityMaterial(bias) {
+        this.ensureNormals();
+        const a = this.normalA.clone(), b = this.normalA.clone();
+        a.needsUpdate = b.needsUpdate = true;
+        a.repeat.set(1 / this.TILE_A, 1 / this.TILE_A);
+        b.repeat.set(1 / this.TILE_B, 1 / this.TILE_B);
+        this.cityMaps = [a, b];
+        return this.surfaceMaterial(a, b, -bias, -bias);
+      }
+
       createPlane(b, level, hole = 0) {
         this.dispose();
         const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
@@ -6408,34 +6629,11 @@
         for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) - b.minX) / W, 1 - (p.getZ(i) - b.minZ) / D);
         uv.needsUpdate = true;
 
-        if (!this.normalA) {
-          this.normalA = this.buildNormalTexture(this.NORMAL_SIZE, this.NORMAL_CELLS, this.NORMAL_STRENGTH);
-          this.normalB = this.normalA.clone();
-          this.normalB.needsUpdate = true;
-        }
+        this.ensureNormals();
         this.normalA.repeat.set(W / this.TILE_A, D / this.TILE_A);
         this.normalB.repeat.set(W / this.TILE_B, D / this.TILE_B);
 
-        const material = new THREE.MeshPhysicalMaterial({
-          color: this.COLOR,
-          roughness: 0.18,
-          metalness: 0.0,
-          normalMap: this.normalA,
-          normalScale: new THREE.Vector2(0.50, 0.50),
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.14,
-          clearcoatNormalMap: this.normalB,
-          clearcoatNormalScale: new THREE.Vector2(0.35, 0.35),
-          envMap: this.getEnvMap(),
-          envMapIntensity: this.ENV_INTENSITY,
-          transparent: true,
-          opacity: 0.90,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: this.DEPTH_OFFSET_FACTOR,
-          polygonOffsetUnits: this.DEPTH_OFFSET_UNITS,
-        });
+        const material = this.surfaceMaterial(this.normalA, this.normalB, this.DEPTH_OFFSET_FACTOR, this.DEPTH_OFFSET_UNITS);
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.y = level;
         mesh.renderOrder = 1;
@@ -6469,6 +6667,10 @@
       }
 
       update(timeSeconds) {
+        if (this.cityMaps) {
+          this.cityMaps[0].offset.set((this.FLOW_A.x * timeSeconds) % 1, (this.FLOW_A.y * timeSeconds) % 1);
+          this.cityMaps[1].offset.set((this.FLOW_B.x * timeSeconds) % 1, (this.FLOW_B.y * timeSeconds) % 1);
+        }
         if (!this.plane) return;
         const m = this.plane.material;
         m.normalMap.offset.set(
@@ -7558,8 +7760,11 @@
       }
 
       build() {
-        const b = this.bounds, f = this.features;
-        cityWater.build(f, b.minX, b.minZ, b.maxX, b.maxZ);
+        const f = this.features;
+        // water over the whole measured square (the terrain base, which Mix walks on past the radius); off it counts as dry
+        const h = elevation.active ? Math.min(this.radius + ELEV_MARGIN, elevation.half) : this.radius;
+        cityWater.build(f, -h, -h, h, h);
+        this.buildWaterBed();
         places.build(f);
         this.buildGreens(f.areas || []);
         this.roadIdx = roadIndex(f.roads || []);
@@ -7572,15 +7777,28 @@
         places.byKind = {};
       }
 
-      heightAt(x, z) { return elevation.at(x, z); }
+      // The drawn bed under the painted water (a layer, so clearLayers frees it); the far ground plane drops under it.
+      buildWaterBed() {
+        const bed = cityWater.bedGeometry();
+        if (!bed) return;
+        const mesh = new THREE.Mesh(bed.geometry, new THREE.MeshLambertMaterial({ color: cityWater.BED_COLOR }));
+        scene.add(mesh);
+        layers.push(mesh);
+        if (elevation.active) ground.position.y = Math.min(ground.position.y, bed.minY - 0.3);
+        invalidate();
+      }
+
+      // the bed under water, as the wild lakes; bridges (roads stamped dry) stay at the surface
+      heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z); }
       isWater(x, z) { return cityWater.wetAt(x, z); }
 
-      // the floor indoors (raised floors are stood on through the solids), else the ground; painted water is a shallow dip
+      // the floor indoors (raised floors are stood on through the solids), else the ground; over water the surface,
+      // with the bed `dip` below it and the wild water's float depth, so people and animals swim and float alike
       surface(x, z, out) {
         const i = shellAt(x, z);
         out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
-        out.dip = cityWater.wetAt(x, z) ? -NPC_WADE : 0;
-        out.float = cityWater.FLOAT_DEPTH;
+        out.dip = i >= 0 ? 0 : -cityWater.depthAt(x, z);
+        out.float = WILD_FLOAT_DEPTH;
       }
 
       waterSources() { return cityWater.locations; }
@@ -7992,7 +8210,7 @@
       }
 
       heightAt(x, z) {
-        return this.inside(x, z) ? elevation.at(x, z) : this.grid.at(x, z);
+        return this.inside(x, z) ? this.city.heightAt(x, z) : this.grid.at(x, z);
       }
 
       isWater(x, z) {
@@ -9659,14 +9877,15 @@
     document.addEventListener('fullscreenchange', syncFullscreen);
     document.addEventListener('webkitfullscreenchange', syncFullscreen);
     // ORIENTATION: flips between portrait and landscape; the browser only locks orientation in fullscreen, so it enters it first.
-    // Shown only where the Screen Orientation lock exists (mostly Android browsers).
+    // Disabled where the Screen Orientation lock does not exist (iPhone Safari, desktop).
     const orientEl = document.getElementById('orient');
     const so = screen.orientation;
     const isPortrait = () => (so && so.type ? so.type.startsWith('portrait') : innerHeight > innerWidth);
-    const syncOrient = () => { orientEl.textContent = 'Orientation: ' + (isPortrait() ? 'portrait' : 'landscape'); };
-    if (so && typeof so.lock === 'function') {
-      orientEl.hidden = false;
-      syncOrient();
+    const syncOrient = () => { orientEl.textContent = isPortrait() ? 'Portrait' : 'Landscape'; };
+    syncOrient();
+    addEventListener('resize', syncOrient);
+    if (so && typeof so.lock === 'function' && matchMedia('(pointer: coarse)').matches) {   // desktop Chrome has lock() but always rejects it
+      orientEl.disabled = false;
       so.addEventListener('change', syncOrient);
       orientEl.addEventListener('click', async () => {
         orientEl.blur();
@@ -10865,6 +11084,8 @@
         steps.start('build');
         await paint();
         resetObstacles();
+        groundMatchWild = mode === 'mix';
+        groundMatchHalf = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
         const { count, skipped } = buildCity(o.buildings ? features : { ...features, buildings: [] });
         // Mix: the measured square is painted like the wild ground, so the city sits in the same land
         buildTerrainBase(radius, mode === 'mix' ? g => { paintSlope(g); return new THREE.MeshLambertMaterial({ vertexColors: true }); } : null);
