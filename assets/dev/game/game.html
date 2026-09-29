@@ -801,7 +801,7 @@
       cursor: default;
     }
 
-    /* after loading: only the Observer / Game choice */
+    /* after loading: only the Observer / Survivor choice */
     #card.choosing>*:not(h1):not(#choose) {
       display: none !important;
     }
@@ -919,7 +919,7 @@
       <h1>Nova Orbis</h1>
       <div id="choose">
         <button id="chooseObs">Observer</button>
-        <button id="chooseGame">Game mode</button>
+        <button id="chooseGame">Survivor</button>
       </div>
       <div class="chips" id="modes" role="radiogroup" aria-label="World">
         <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
@@ -938,7 +938,7 @@
         neural networks with evolving topology: they sense the world, feel hunger, thirst, and injury, and learn how to
         respond. Coyotes stalk deer, people hunt both, and every species needs water. Each newborn inherits its parents'
         traits with small mutations, so the survivors shape the next generation. Your cat Nibbler rides along, and a car
-        is waiting when you want to cover ground. Switch on Survival mode to take your own place in the ecosystem and
+        is waiting when you want to cover ground. Switch on Survivor mode to take your own place in the ecosystem and
         live by the same rules as everyone else.</p>
       <p class="for-place">Select a city from the list or enter a custom address. Buildings within a few blocks are
         pulled from OpenStreetMap.</p>
@@ -1028,7 +1028,7 @@
     </div>
     <h2 class="second">Other</h2>
     <div class="chips">
-      <button id="game" aria-pressed="false">Game mode</button>
+      <button id="game" aria-pressed="false">Survivor</button>
       <button id="neweco" hidden>New ecosystem</button>
       <button id="tomenu">Back to intro</button>
     </div>
@@ -1051,7 +1051,7 @@
     }
 
     const RADIUS_LADDER = [500, 350, 200];   // half-extent tried in order, meters
-    const DEFAULT_LEVELS = 3;       // when a building has no height info at all
+    const DEFAULT_LEVELS = 3;
     const METERS_PER_LVL = 3.2;
     const EYE_HEIGHT = 1;
     const PLAYER_RADIUS = 0.35;
@@ -1064,30 +1064,30 @@
     const GRAVITY = 22.0;
     const GRID_CELL = 24;      // collision broadphase cell size, meters
     const LAND_EPS = 0.01;    // slack so a snapped-to roof still reads as clear
-    const HEAD_CLEAR = 0.15;    // top of the head above the eye
+    const HEAD_CLEAR = 0.15;
     const SUBSTEP = 0.25;    // max move per collision pass; under PLAYER_RADIUS so thin walls are not skipped
 
     // Enterable buildings: thick-walled hollow shells with a doorway and floor/ceiling/roof caps.
     const WALL_T = 0.3;     // exterior wall thickness, meters, measured inward
     const WALL_T_MIN = 0.06;    // thinnest a wall is retried at when mitres fold
-    const MITER_MAX = 4;       // a sharp corner's mitre is clamped to this many thicknesses
+    const MITER_MAX = 4;
     const DOOR_W = 1.2;
     const DOOR_MIN_W = 0.9;     // comfortably wider than 2 * PLAYER_RADIUS
     const DOOR_H = 2.2;
-    const PIER = 0.35;    // solid wall kept beside a doorway when there is room
+    const PIER = 0.35;
     const PIER_MIN = 0.12;
-    const FRAME_W = 0.09;    // painted frame around the opening, flush with the wall
-    const FLOOR_Y = 0.055;   // interior floor, just above every painted ground layer
-    const CEIL_GAP = 0.02;    // ceiling hangs this far under the roof cap
-    const ENTRANCE_REACH = 1.2;     // an entrance node this close to an edge belongs to it
-    const ROAD_NEAR = 35;      // a road or path within this of a wall counts as its street
-    const ROAD_FAR = 300;     // fallback search for the nearest road of any kind
+    const FRAME_W = 0.09;
+    const FLOOR_Y = 0.055;
+    const CEIL_GAP = 0.02;
+    const ENTRANCE_REACH = 1.2;
+    const ROAD_NEAR = 35;
+    const ROAD_FAR = 300;
     const ROAD_CELL = 32;
     const FEATURES_VERSION = 3;     // bump when featuresFrom changes shape; drops stale caches
     const OVERPASS_TIMEOUT_MS = 50000;
     const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
     const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
-    const OVERPASS_MAX_PARALLEL = 2;     // never more than this many mirrors asked at once
+    const OVERPASS_MAX_PARALLEL = 2;
     const OVERPASS_MIRRORS = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -1100,7 +1100,7 @@
     const ORTHO_URL = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
     const ORTHO_M_PX = 0.5;          // ground metres per pixel to ask for
     const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
-    const ORTHO_TIMEOUT_MS = 12000;   // a big export takes the server a while
+    const ORTHO_TIMEOUT_MS = 12000;
 
     const IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile';
     const IMAGERY_MAX_Z = 16;
@@ -1108,7 +1108,7 @@
     const IMAGERY_TILE_PX = 256;
     const IMAGERY_MAX_TILES = 100;
     const IMAGERY_TIMEOUT_MS = 8000;
-    const IMAGERY_Y = 0.004;   // beneath every painted ground layer
+    const IMAGERY_Y = 0.004;
 
     // Elevation: AWS Terrain Tiles (Terrarium, no key); height = R * 256 + G + B / 256 - 32768 m.
     // Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
@@ -1119,11 +1119,11 @@
     const TERRAIN_MAX_TILES = 16;
     const TERRAIN_TIMEOUT_MS = 10000;
     const TERRAIN_SPIKE_M = 30;      // a pixel this far off its neighbours' median is corrupt
-    const TERRAIN_SPIKE_FRAC = 0.005;   // more spikes than this and the whole set is rejected
+    const TERRAIN_SPIKE_FRAC = 0.005;
     const ELEV_STEP = 5;       // metres between height samples and terrain mesh vertices
-    const ELEV_MARGIN = 100;     // metres of terrain past the loaded radius
+    const ELEV_MARGIN = 100;
     const STEP_UP = 0.45;    // highest ledge walked onto without a jump (player and NPCs)
-    const GROUND_SNAP = 0.5;     // grounded feet follow a drop this small instead of falling
+    const GROUND_SNAP = 0.5;
 
     // Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
     const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
@@ -1156,14 +1156,14 @@
 
     // Mix: green land cover takes the wild ground's palette, keeping a trace of its own shade in the middle of the city
     // and fading to the wild grass exactly at the edge of the city square, so the two grounds meet without a seam.
-    const MIX_GREEN_PULL = 0.8;   // pull toward the wild grass inside the city
+    const MIX_GREEN_PULL = 0.8;
     const MIX_EDGE_FADE = 0.25;   // outer fraction of the square over which the pull rises to 1
     const MIX_GREEN_KINDS = new Set([
       'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'pitch', 'golf_course',
       'forest', 'wood', 'meadow', 'scrub', 'orchard', 'greenfield', 'cemetery', 'allotments', 'wetland'
     ]);
     let groundMatchWild = false;
-    let groundMatchHalf = 0;      // half-size of the Mix city square (same as the terrain base)
+    let groundMatchHalf = 0;
 
     // Per vertex, after draping: green toward the wild grass (fully at the square's edge), then paintSlope's rock blend
     // with the same normal-z test, so land cover shades like the wild mesh it sits on.
@@ -1223,7 +1223,7 @@
       skillion: 'skillion', 'lean_to': 'skillion', monopitch: 'skillion'
     };
 
-    const TREE_ROW_SPACING = 9;     // meters between trees sampled along a tree_row
+    const TREE_ROW_SPACING = 9;
     const SIGN_COLS = 8;
     const SIGN_CELL_W = 256;
     const SIGN_CELL_H = 48;
@@ -1379,7 +1379,7 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
-    renderer.xr.enabled = true;                  // Wild's VR; ignored until a session starts
+    renderer.xr.enabled = true;
     renderer.shadowMap.enabled = false;          // Graphics: high turns sun shadows on over wild terrain
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -1398,14 +1398,14 @@
     const viewQuat = new THREE.Quaternion();
 
     const HEMI_DAY = 1.5;
-    const HEMI_NIGHT = 0.8;    // hemisphere dims at night so the moon's side-lighting reads
+    const HEMI_NIGHT = 0.8;
     const MOON_MAX = 0.9;
     const hemi = new THREE.HemisphereLight(0xbdd3e6, 0x4a4640, HEMI_DAY);
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
     sun.position.set(-0.5, 1, 0.4).multiplyScalar(100);
     scene.add(sun);
-    scene.add(sun.target);                       // the shadow box follows the player (Wild's Engine.updateShadows)
+    scene.add(sun.target);
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = sun.shadow.camera.bottom = -60;
     sun.shadow.camera.right = sun.shadow.camera.top = 60;
@@ -1428,14 +1428,14 @@
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
 
-    const layers = [];   // every mesh built for the current place
+    const layers = [];
 
     addEventListener('resize', () => {
       if (renderer.xr.isPresenting) return;
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      invalidate();   // setSize clears the drawing buffer, so redraw even if the pose is unchanged
+      invalidate();
     });
     renderer.domElement.addEventListener('webglcontextrestored', () => invalidate());
 
@@ -2440,9 +2440,9 @@
     function buildCity(features) {
       clearLayers();
 
-      const buf = newBuf();        // walls, jambs, roof caps, ceilings
+      const buf = newBuf();
       const roofBuf = newBuf();
-      const floorBuf = newBuf();   // interior floors, depth-biased over the ground paint
+      const floorBuf = newBuf();
       const list = [];
       let skipped = 0;
 
@@ -2451,7 +2451,7 @@
         const outer = orientRing(dedupeRing(ring.pts), true);
         if (outer.length < 3) { skipped++; continue; }
         const foot = Math.abs(ringArea(outer));
-        if (foot < 4) { skipped++; continue; }   // slivers, map noise
+        if (foot < 4) { skipped++; continue; }
 
         const tags = ring.tags || {};
         const top = heightOf(tags);
@@ -2501,7 +2501,7 @@
       for (const s of list) {
         const wallH = s.top - s.base;
         let doorH = Math.min(DOOR_H, wallH - 0.3);
-        if (doorH < EYE_HEIGHT + HEAD_CLEAR + 0.25) doorH = wallH;   // too low for a lintel
+        if (doorH < EYE_HEIGHT + HEAD_CLEAR + 0.25) doorH = wallH;
         s.doorTop = s.base + doorH;
         s.R = wallRing(s.pts);
       }
@@ -2566,7 +2566,7 @@
         pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);
         pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);
         pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
-        if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);   // raised: underside
+        if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);
 
         if (s.roofShape) {
           const rcHex = roofColorOf(tags);
@@ -2634,7 +2634,7 @@
         const p = waterMesh.geometry.attributes.position, uv = new Float32Array(p.count * 2);
         for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i); uv[i * 2 + 1] = -p.getZ(i); }
         waterMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        waterMesh.renderOrder = 1;       // after the opaque ground and bed, as the wild surface
+        waterMesh.renderOrder = 1;
       }
       if (rg) addLayer(lay([rg]), litMaterial(LAYER_BIAS.road));
       if (pg) addLayer(lay([pg]), litMaterial(LAYER_BIAS.path));
@@ -3390,7 +3390,7 @@
 
     // SHELL RASTER
     // shellAt in one typed-array read for most points; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
-    const SHELL_CELL = 1;          // raster resolution, metres (coarsened if the city is huge)
+    const SHELL_CELL = 1;
     const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
     const SHELL_OUT = -1;
     const SHELL_AMBIG = -2;
@@ -3633,13 +3633,13 @@
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
-    const NPC_POPULATION = 500;       // humans spawned per loaded city: the one knob
+    const NPC_POPULATION = 500;
     const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // the Arena's 20:5 sheep-to-human ratio
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
     // Share of water that comes with food for an eater keeping up with hunger (~30% for people).
     const DIET_WATER_SHARE = 0.3;
-    const PLANT_REGROW_P = 0.03;      // chance per tick of one new plant (the Arena's probSpawnPlant)
-    const PLANT_SPOT_TRIES = 30;      // random samples per plant before that spawn is skipped
+    const PLANT_REGROW_P = 0.03;
+    const PLANT_SPOT_TRIES = 30;
     const PLANT_SIGHT_CELL = 15;      // metres: plant cell for vision queries (NpcWorld.plantSight)
     // DEER AI (ported from species.py, Animal.search / think / move)
     const DEER_CRUISE = 0.3;      // species.py: speed share when not fleeing
@@ -3647,12 +3647,12 @@
     const DEER_THINK_TICKS = 20;
     // A deer within DEER_SPRINT_DIST of a predator sprints (speed and energy below); farther off it flees at normal speed.
     const DEER_SPRINT_DIST = 10;     // metres
-    const DEER_SPRINT_OVER = 1;      // sprint = this x the fastest predator's run
+    const DEER_SPRINT_OVER = 1;
     const DEER_SPRINT_ENERGY = 2;
     // NPC steps longer than this are split so a sprinting deer cannot pass a wall.
     const NPC_SUBSTEP = 0.1;           // metres
     // GAIT: leg cadence follows body speed, capped at GAIT_MAX_HZ; a sprinting deer gallops.
-    const GAIT_MAX_HZ = 4;       // leg cycles per second, at most
+    const GAIT_MAX_HZ = 4;
     const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
     const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
     const DEER_EXPLORE_P = 0.0001;   // species.py: chance per tick of a new random explore point
@@ -3660,8 +3660,8 @@
     const DEER_GRACE_MULT = 4;        // deer wait this many times longer than people between births
     const NPC_MATURITY_TICKS = 3 * 24 * 60;   // ticks from birth to full size (72 s at 60 Hz); no mating before
     const HUMAN_TURN_RATE = 3;      // radians per second people turn toward their brain's heading
-    const DEER_GREEN_SHARE = 0.8;     // share of deer spawns drawn from green areas when the map has any
-    const DEER_AREAS = new Set([      // land cover deer and plants spawn in
+    const DEER_GREEN_SHARE = 0.8;
+    const DEER_AREAS = new Set([
       'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'golf_course',
       'forest', 'wood', 'meadow', 'farmland', 'cemetery', 'scrub', 'orchard', 'greenfield', 'wetland'
     ]);
@@ -3688,11 +3688,11 @@
       deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: DEER_GRACE_MULT, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
-    const WATER_SIGHT_CELL = 20;     // metres: water perception points for vision queries (NpcWorld.waterSight)
+    const WATER_SIGHT_CELL = 20;
     const NPC_LOD_DIST = 60;      // metres from the camera past which a body swaps to its low-detail version
     const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
-    const NPC_STATS_R = 0.7;     // metres: bounding sphere around the stats sprite and brain
-    const NPC_STATS_UP = 0.55;    // metres from the sprite bottom to that sphere's centre
+    const NPC_STATS_R = 0.7;
+    const NPC_STATS_UP = 0.55;
 
     // VIEW CULL: off-screen bodies, stats and brains are skipped (bounding sphere vs frustum).
     const npcFrustum = new THREE.Frustum();
@@ -3707,12 +3707,12 @@
     }
 
     function npcOnScreen(x, y, z, r) {
-      if (renderer.xr.isPresenting) return true;   // two eyes, two frusta: draw everything nearby
+      if (renderer.xr.isPresenting) return true;
       _npcSphere.center.set(x, y, z);
       _npcSphere.radius = r;
       return npcFrustum.intersectsSphere(_npcSphere);
     }
-    const WATER_CELL = 1;        // water raster resolution, metres
+    const WATER_CELL = 1;
     const OCC_CELL = 0.25;     // NPC occupancy grid resolution, metres
     const OCC_INV = 1 / OCC_CELL;
     const OCC_CARVE_KEEP = 0.2;      // a doorway lane never clears a cell whose centre is this close to a raw solid
@@ -3877,7 +3877,7 @@
         this.cost = 0.0;
         this.lastCost = 0.0;
         this.costHistoryLen = 0;
-        this.output = null;            // output neuron nearest the heading (display)
+        this.output = null;
         this.heading = Math.random() * Math.PI * 2;
         this.normCount = 0;
         this.EMA = 0.001;
@@ -3949,7 +3949,7 @@
         this.fB = new Float32Array(NB);
         this.fO = new Float32Array(O);
         this.prevB = new Float32Array(NB);   // B activity that A read this step (one-step lag)
-        this.selfIn = new Float32Array(NA);   // membrane each A neuron fed back to itself
+        this.selfIn = new Float32Array(NA);
         this.daTonic = 0;
 
         this.hA = new Float32Array(NA);
@@ -4357,7 +4357,7 @@
         this.freeX = this.position.x; this.freeZ = this.position.z;
 
         this.mesh = null;
-        this.home = null;              // the spawn source it came from (children inherit the mother's)
+        this.home = null;
       }
 
       remove() { }
@@ -4458,7 +4458,7 @@
           }
         }
 
-        // City: in game mode the player is a predator too, to whatever people hunt
+        // City: in Survivor mode the player is a predator too, to whatever people hunt
         const gp = game.predator;
         if (SPECIES.human.hunts[type] && gp.alive &&
           this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
@@ -4629,7 +4629,7 @@
           }
         }
 
-        // City: in game mode the player is a predator too, to whatever people hunt
+        // City: in Survivor mode the player is a predator too, to whatever people hunt
         const gp = game.predator;
         if (gp.alive && SPECIES.human.hunts[this.type]) {
           const ox = gp.position.x, oz = gp.position.z;
@@ -4944,35 +4944,35 @@
 
         // DEER RIG: rig units, origin at the body centre, head toward +z, sized against the mean person. Antlers: bucks only.
         const deerHead = mergeGeometries([
-          boxAt(4.5, 8, 5, 0, 3.2, 1.5, 0.45),     // neck, leaning forward
-          boxAt(5, 5, 7, 0, 7.8, 5),             // head
-          boxAt(3.4, 3.2, 4.5, 0, 6.9, 10),            // snout
+          boxAt(4.5, 8, 5, 0, 3.2, 1.5, 0.45),
+          boxAt(5, 5, 7, 0, 7.8, 5),
+          boxAt(3.4, 3.2, 4.5, 0, 6.9, 10),
           boxAt(0.9, 3.4, 2, 2.8, 11.2, 3, 0, -0.5),  // ears, tipped outward
           boxAt(0.9, 3.4, 2, -2.8, 11.2, 3, 0, 0.5)
         ], false);
         const deerBody = mergeGeometries([
-          boxAt(10, 10, 26, 0, 0, 0),              // barrel
-          boxAt(3, 4.2, 1.8, 0, 3, -13.7, -0.45)    // tail, flicked up
+          boxAt(10, 10, 26, 0, 0, 0),
+          boxAt(3, 4.2, 1.8, 0, 3, -13.7, -0.45)
         ], false);
         const antlerSide = s => [
-          boxAt(0.9, 4.5, 0.9, s * 2.1, 12.3, 3.6, 0, -s * 0.45),   // beam rising from the skull
-          boxAt(0.8, 0.8, 5.5, s * 3.1, 14.4, 5.6),                 // beam sweeping forward
-          boxAt(0.7, 2.8, 0.7, s * 3.1, 16, 4.3),                   // tines
+          boxAt(0.9, 4.5, 0.9, s * 2.1, 12.3, 3.6, 0, -s * 0.45),
+          boxAt(0.8, 0.8, 5.5, s * 3.1, 14.4, 5.6),
+          boxAt(0.7, 2.8, 0.7, s * 3.1, 16, 4.3),
           boxAt(0.7, 2.8, 0.7, s * 3.1, 16, 7.2)
         ];
         const deerAntlers = mergeGeometries([...antlerSide(1), ...antlerSide(-1)], false);
 
         // COYOTE RIG: rig units, origin at the body centre, head toward +z; lean body, pointed ears, drooping tail.
         const coyoteHead = mergeGeometries([
-          boxAt(3.6, 5, 3.6, 0, 1.8, 0.6, 0.6),      // neck, leaning forward
-          boxAt(4.6, 4.2, 5, 0, 4.4, 3.6),           // head
-          boxAt(2.2, 2, 4.5, 0, 3.6, 7.8),           // snout
-          boxAt(1.4, 3, 0.8, 1.5, 7.8, 3, 0, -0.2),   // ears, upright and pointed
+          boxAt(3.6, 5, 3.6, 0, 1.8, 0.6, 0.6),
+          boxAt(4.6, 4.2, 5, 0, 4.4, 3.6),
+          boxAt(2.2, 2, 4.5, 0, 3.6, 7.8),
+          boxAt(1.4, 3, 0.8, 1.5, 7.8, 3, 0, -0.2),
           boxAt(1.4, 3, 0.8, -1.5, 7.8, 3, 0, 0.2)
         ], false);
         const coyoteBody = mergeGeometries([
-          boxAt(7, 7, 18, 0, 0, 0),              // lean barrel
-          boxAt(2.6, 2.6, 8, 0, -2, -12.3, -0.5)    // bushy tail, drooping
+          boxAt(7, 7, 18, 0, 0, 0),
+          boxAt(2.6, 2.6, 8, 0, -2, -12.3, -0.5)
         ], false);
 
         this.GEOMETRIES = {
@@ -5056,9 +5056,9 @@
           },
         };
 
-        this.LIMB_HALF = { deer: 6.5, coyote: 5, human: 6.25 };          // pivot to limb centre, rig units
+        this.LIMB_HALF = { deer: 6.5, coyote: 5, human: 6.25 };
         this.WALK = { deer: 0.45, coyote: 0.55, human: 0.65 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
-        this.LEG_LEN = { deer: 13, coyote: 10, human: 12.5 };     // leg box heights, rig units
+        this.LEG_LEN = { deer: 13, coyote: 10, human: 12.5 };
 
         this.meshes = {};
         this.antlers = {};
@@ -5069,21 +5069,21 @@
         const ch = this.PART_OFFSETS.coyote.head;
         this.FAR_GEOMETRIES = {
           coyote: mergeGeometries([
-            coyoteBody.clone(),                                // barrel and tail
-            coyoteHead.clone().translate(ch.x, ch.y, ch.z),    // neck, head, snout, ears
-            boxAt(6.2, 10, 1.8, 0, -6.5, 6.5),                // front legs as one bar
-            boxAt(6.2, 10, 1.8, 0, -6.5, -6.5)                 // back legs as one bar
+            coyoteBody.clone(),
+            coyoteHead.clone().translate(ch.x, ch.y, ch.z),
+            boxAt(6.2, 10, 1.8, 0, -6.5, 6.5),
+            boxAt(6.2, 10, 1.8, 0, -6.5, -6.5)
           ], false),
           human: mergeGeometries([
-            boxAt(8.6, 8.6, 8.6, 0, 13, 0),       // head
-            boxAt(14, 17, 6, 0, 0, 0),            // torso with both arms
-            boxAt(6, 12.5, 2, 0, -15, 0)          // both legs as one block
+            boxAt(8.6, 8.6, 8.6, 0, 13, 0),
+            boxAt(14, 17, 6, 0, 0, 0),
+            boxAt(6, 12.5, 2, 0, -15, 0)
           ], false),
           deer: mergeGeometries([
-            deerBody.clone(),                                  // barrel and tail
-            deerHead.clone().translate(dh.x, dh.y, dh.z),      // neck, head, snout, ears
-            boxAt(8.8, 13, 2.4, 0, -8.5, 10),                 // front legs as one bar
-            boxAt(8.8, 13, 2.4, 0, -8.5, -10)                  // back legs as one bar
+            deerBody.clone(),
+            deerHead.clone().translate(dh.x, dh.y, dh.z),
+            boxAt(8.8, 13, 2.4, 0, -8.5, 10),
+            boxAt(8.8, 13, 2.4, 0, -8.5, -10)
           ], false)
         };
         this.far = {};
@@ -5518,7 +5518,7 @@
       // Upload only the first n instances (three clears the range after each upload, so set it every frame).
       instances(mesh, n) {
         mesh.count = n;
-        mesh.visible = n > 0;        // an empty type or part (no bucks in view) costs no draw call
+        mesh.visible = n > 0;
         if (n === 0) return;
         const attr = mesh.instanceMatrix;
         attr.clearUpdateRanges();
@@ -5542,7 +5542,7 @@
     // Grocery stores, hospitals and the rest; `entry` is the building's doorway, a reachable point.
     const places = {
       list: [],                      // { x, z, kind, name, building, entry }
-      byKind: {},                    // kind -> [[x, z], ...] reachable points
+      byKind: {},
 
       build(features) {
         this.list.length = 0;
@@ -5570,12 +5570,12 @@
     // narrow streams stay wadeable and wide rivers and lakes are deep enough to swim and float in.
     const cityWater = {
       MAX_DEPTH: 4,                  // metres of water at the deepest
-      SHORE_SLOPE: 0.35,             // metres of depth gained per metre from the shore
-      BED_SINK: 0.05,                // the drawn bed stays this far under the ground mesh at the shoreline
+      SHORE_SLOPE: 0.35,
+      BED_SINK: 0.05,
       BED_STEP: 2,                   // metres between bed mesh vertices
       BED_MAX_TRIS: 300000,
       BED_COLOR: 0x4b5a48,
-      locations: [],                 // [x, z, y] points the Arena's perception looks for
+      locations: [],
       mask: new Uint8Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
       // chamfer distance to the shore in half cells (0 = dry), from the water before roads were stamped on it,
       // so the bed runs on under bridges
@@ -5719,7 +5719,7 @@
             if (!(wet(x + h, z + h) || wet(x + 0.25, z + 0.25) || wet(x + s - 0.25, z + 0.25) ||
               wet(x + 0.25, z + s - 0.25) || wet(x + s - 0.25, z + s - 0.25))) continue;
             const a = vert(i, j), b = vert(i + 1, j), c = vert(i + 1, j + 1), e = vert(i, j + 1);
-            idx.push(a, e, c, a, c, b);          // wound to face up
+            idx.push(a, e, c, a, c, b);
           }
         }
         if (!idx.length) return null;
@@ -5783,7 +5783,7 @@
     const OCC_TILE_WORDS = (1 << (2 * OCC_TILE_BITS)) >>> 5;
     const occ = {
       tiles: new Map(),
-      _lk: NaN, _lt: null,                                       // last tile written; rows stay in one tile
+      _lk: NaN, _lt: null,
 
       // A cell with no tile is open; Animal.move keeps to the provider's bounds.
       blockedAt(x, z) {
@@ -5802,7 +5802,7 @@
       build() {
         this.clear();
         for (const w of gridWalls) {
-          if (w.walkable) continue;                              // floor slabs lower than a step
+          if (w.walkable) continue;
           const gp = groundAt((w.minX + w.maxX) / 2, (w.minZ + w.maxZ) / 2);
           if (w.top <= gp + LAND_EPS || w.base >= gp + NPC_COLLIDE_H) continue;
           const pts = w.pts;
@@ -6115,7 +6115,7 @@
 
     const CONFIG = new WorldConfig();
     const DEFAULT_SEED = '03132024';
-    const WILD_FLOAT_DEPTH = 5 * NPC_UNIT;      // the Arena's water.FLOAT_DEPTH
+    const WILD_FLOAT_DEPTH = 5 * NPC_UNIT;
     const WILD_GRID = { x: 350, z: 260 };       // the Arena's high terrain resolution, one height sample per vertex
 
     class WildTerrain {
@@ -6451,8 +6451,8 @@
     // WATER: the Arena's one world-spanning surface (built-in physical material, two scrolling normal maps).
     // ISLAND COAST: Wild and Mix are islands. Near each edge the land falls to a sea floor under the water level along a
     // wavering coastline, and the sea runs on past the edge to the horizon; the edge itself is the limit nothing crosses.
-    const COAST_SEA = 30;     // metres in from the edge that are always open sea
-    const COAST_LAND = 70;     // metres over which the land falls to the sea floor
+    const COAST_SEA = 30;
+    const COAST_LAND = 70;
     const COAST_WOBBLE = 20;     // metres the coastline wanders (under COAST_SEA, so the edge is always water)
     const OCEAN_DEPTH = 6;      // metres of sea floor under the water level
     const OCEAN_REACH = 2000;   // metres the sea runs past the edge (the camera's far plane)
@@ -6483,7 +6483,7 @@
         this.SEGMENTS = 64;
         this.plane = null;
         this.seabed = null;
-        this.cityMaps = null;        // the city water's normal maps (cityMaterial)
+        this.cityMaps = null;
         this.normalA = null;
         this.normalB = null;
         this.envMap = null;
@@ -6685,7 +6685,7 @@
     }
 
     // CABINS: the Arena's log cabins, sized to the player (CABIN_M), their colliders turned into obstacle-index solids.
-    const CABIN_SCALE = 1.75;                       // the Arena's cabinScale
+    const CABIN_SCALE = 1.75;
     const CABIN_M = NPC_UNIT * NPC_HUMAN_HS;        // cabin rig units -> metres
 
     class Cabin extends THREE.Group {
@@ -6993,7 +6993,7 @@
     // distances and speeds are the Arena's in metres. Worlds with wilderness bring him along (provider.companion).
     const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
     const CAT_SEAT = { x: 0.4, y: 0.6, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
-    const CAT_DOOR = 1.2;                          // metres from the car's centre he steps out at, passenger side
+    const CAT_DOOR = 1.2;
 
     class CatCompanion {
       constructor() {
@@ -7006,9 +7006,9 @@
         this.yaw = 0;
         this.animTime = 0;
         this.WATER_SPEED_FACTOR = 0.45;
-        this.FLOAT = 1.5 * NPC_UNIT;          // how far under the surface he paddles (the Arena's WATER_FLOAT_LIFT)
+        this.FLOAT = 1.5 * NPC_UNIT;
         this.active = false;
-        this.riding = false;                  // in the car with the player
+        this.riding = false;
         this._w = new THREE.Vector3();
       }
 
@@ -7323,7 +7323,7 @@
         this.lines = new THREE.LineSegments(this.geo, this.mat);
         this.lines.frustumCulled = false;
         this.lines.visible = false;
-        this.lines.renderOrder = 2;      // after the water surface, as the vitals
+        this.lines.renderOrder = 2;
         scene.add(this.lines);
 
         this.FILL_VERTS = COLS * 2;
@@ -7665,7 +7665,7 @@
     // the shadow box follows the player and refreshes on a step or every SHADOW_MAX_INTERVAL ms.
     const SHADOW_FOLLOW_STEP = 11;       // metres (the Arena's 250 units)
     const SHADOW_MAX_INTERVAL = 50;       // ms
-    const SUN_DIST = 200;      // metres from the shadow anchor to the light
+    const SUN_DIST = 200;
 
     const graphics = {
       high: !matchMedia('(pointer: coarse)').matches,
@@ -7745,13 +7745,13 @@
         this.features = features;
         this.radius = radius;
         this.opts = opts;
-        this.habitat = habitat;          // green-area weights by land cover (Mix: forests hold more life)
+        this.habitat = habitat;
         this.bounds = { minX: -radius, maxX: radius, minZ: -radius, maxZ: radius };
         this.wraps = false;
         this.shadows = false;
         this.companion = false;
         this.rays = 'off';
-        this.city = this;                // the city part, for game-mode deer
+        this.city = this;
         this.greens = [];
         this.greenTotal = 0;
         this.roadIdx = null;
@@ -7941,7 +7941,7 @@
         this.grid = new HeightGrid(b.minX, b.minZ, step, WILD_GRID.x + 1, nz);
         this.grid.fill((x, z) => coastHeight(x, z, wildTerrain.metresAt(x, z), b, level));
         addWildLayer(heightMesh(this.grid));
-        ground.visible = false;          // past the edge there is only sea
+        ground.visible = false;
         perf.terrainVersion++;
       }
 
@@ -8054,7 +8054,7 @@
         this.h = elevation.active ? Math.min(this.R + ELEV_MARGIN, elevation.half) : this.R;
         const ring = Math.min(MIX_RING_MAX, Math.max(MIX_RING_MIN,
           0.6 * Math.max(CONFIG.worldWidth, CONFIG.worldHeight) * NPC_UNIT));
-        this.step = Number.isInteger(this.h / 10) ? 10 : 5;       // mesh lines land on the measured square's edge
+        this.step = Number.isInteger(this.h / 10) ? 10 : 5;
         const M = this.h + Math.ceil(ring / this.step) * this.step;
         this.bounds = { minX: -M, maxX: M, minZ: -M, maxZ: M };
         this.wraps = false;
@@ -8169,7 +8169,7 @@
       // first ring that has one. Footprint and the car's parking side are both sampled.
       cabinSite() {
         const b = this.bounds, dry = this.level + 4 * NPC_UNIT;
-        const reach = 44 * CABIN_SCALE * CABIN_M + CAR_WID + 4.5;    // cabin half-width plus the gap and the parked car
+        const reach = 44 * CABIN_SCALE * CABIN_M + CAR_WID + 4.5;
         const N = 72;
         for (let t = this.h + 25; t <= b.maxX - reach - 20; t += 10) {
           let best = null;
@@ -8287,8 +8287,8 @@
         this.plantSight = null;
         // The provider's water points, for vision queries; they never move.
         this.waterSight = null;
-        this.typeAlive = {};                  // alive animals per type, counted each step
-        this.canHunt = {};                    // per type: is anything it hunts alive
+        this.typeAlive = {};
+        this.canHunt = {};
         this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
         for (const t of NPC_TYPES) { this.typeAlive[t] = 0; this.canHunt[t] = false; this.fastestHunterMS[t] = 0; }
 
@@ -8468,7 +8468,7 @@
               const other = this._qHunt[i];
               if (other.alive && hunts[other.type] === true &&
                 tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
-                if (other.spec.hunts[a.type]) this.fight(a, other);   // they hunt each other
+                if (other.spec.hunts[a.type]) this.fight(a, other);
                 else other.attacked(a);
                 if (!a.alive) break;
               }
@@ -8576,7 +8576,7 @@
     const plantRenderer = new PlantRenderer();
     const world = new NpcWorld();
 
-    // GAME MODE: what people hunt (deer, coyotes) flees the player, who eats it on contact, drinks in water, and gets hungry and thirsty
+    // SURVIVOR MODE: what people hunt (deer, coyotes) flees the player, who eats it on contact, drinks in water, and gets hungry and thirsty
     // (NPC 0..100 scale, no mate need). Advanced from NpcWorld.step.
     const PLAYER_FOOD_RATE = 100 / (20 * 60);   // need per second: fed to starving in 20 min
     const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
@@ -8593,7 +8593,7 @@
       on: false,
       foodNeed: 0,
       waterNeed: 0,
-      // what deer sense: an NPC-shaped stand-in, alive only in game mode while in play
+      // what deer sense: an NPC-shaped stand-in, alive only in Survivor mode while in play
       predator: { type: 'player', alive: false, position: new THREE.Vector3() },
       _q: [],
       _qp: [],
@@ -8629,7 +8629,7 @@
             if (!d.alive || !SPECIES.human.hunts[d.type]) continue;
             if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
             if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
-            d.alive = false;                                   // removed with the dead this tick
+            d.alive = false;
             this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);
             this.waterNeed = Math.max(0, this.waterNeed -
               d.startHealth * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
@@ -8674,13 +8674,13 @@
     const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
     const BAR_W_M = 0.8;    // sprite size in metres (canvas is 2:1)
     const BAR_H_M = 0.4;
-    const BAR_ABOVE = 0.18;   // metres between head top and sprite bottom
-    const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];   // health, food, water, mate (as the stat panel)
+    const BAR_ABOVE = 0.18;
+    const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];
     const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
     const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
     // Past NPC_LOD_DIST, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
-    const FAR_STAT_MAX = 12000;  // people with low-detail stats, as AnimalRenderer.MAX_INSTANCES
+    const FAR_STAT_MAX = 12000;
     const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;
     const BAR_PX = BAR_W_M / BAR_CANVAS_W;
     const LOBE_RADIUS = 0.7;
@@ -8791,7 +8791,7 @@
       const colorAttr = new THREE.Float32BufferAttribute(cols, 4);
       geo.setAttribute('color', colorAttr);
       const lines = new THREE.LineSegments(geo, brainLineMat);
-      lines.renderOrder = 2;          // after the wild water surface, so it never paints over a brain
+      lines.renderOrder = 2;
 
       const group = new THREE.Group();
       group.add(mesh, lines);
@@ -8842,7 +8842,7 @@
 
     class HealthBars {
       constructor() {
-        this.bars = new Map();     // person -> slot (stats sprite and brain)
+        this.bars = new Map();
         this.spare = [];
         this.seen = new Set();
 
@@ -8868,7 +8868,7 @@
 
         const lobeGeo = new THREE.IcosahedronGeometry(LOBE_RADIUS * BRAIN_SCALE, 0);
         this.farLobes = new THREE.InstancedMesh(lobeGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), FAR_STAT_MAX * 2);
-        this.farLobes.setColorAt(0, c.set(0));                           // allocates instanceColor
+        this.farLobes.setColorAt(0, c.set(0));
         this.farLobes.frustumCulled = false;
         this.farLobes.count = 0;
         this.farLobes.visible = false;
@@ -8884,7 +8884,7 @@
         this._c = new THREE.Color();
         this._fill = [0, 0, 0, 0];
         this.tick = 0;
-        this.enabled = true;       // the Arena's Vitals Board switch
+        this.enabled = true;
       }
 
       setEnabled(on) {
@@ -8916,7 +8916,7 @@
         const sprite = new THREE.Sprite(mat);
         sprite.scale.set(BAR_W_M, BAR_H_M, 1);
         sprite.center.set(0.5, 0);
-        sprite.renderOrder = 2;      // after the wild water surface (the Arena's VITALS_ORDER)
+        sprite.renderOrder = 2;
         sprite.visible = false;
         scene.add(sprite);
         return {
@@ -9105,11 +9105,11 @@
       yaw: 0,
       pitch: 0,
       grounded: true,
-      running: false     // on foot, moving, at RUN_SPEED this frame (game mode needs read it)
+      running: false     // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
     };
     const keys = new Set();
     let active = false;   // in play: panel closed, input accepted
-    let locked = false;   // mouse pointer lock held; mouse look only runs while locked
+    let locked = false;
     // Last pointer type, so a tap-started load does not grab pointer lock.
     let lastPointerType = 'mouse';
     addEventListener('pointerdown', e => { lastPointerType = e.pointerType; }, true);
@@ -9161,7 +9161,7 @@
 
     // Left half: floating stick (double tap crouches). Right half: look-drag.
     const STICK_RADIUS = 55;          // px of travel for full tilt
-    const FLICK_RADIUS = 10;          // px of flick-steering travel for full lock while driving
+    const FLICK_RADIUS = 10;
     const TAP_GAP_MS = 300;
 
     const touchMove = { x: 0, z: 0 };
@@ -9283,14 +9283,14 @@
 
     // CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
 
-    const CAR_LEN = 4.3;     // body length, metres
+    const CAR_LEN = 4.3;
     const CAR_WID = 1.8;
-    const CAR_TOP = 1.45;    // roof height above the ground
+    const CAR_TOP = 1.45;
     const CAR_WHEELBASE = 2.6;
     const CAR_TRACK = 1.55;
     const CAR_WHEEL_R = 0.33;
-    const CAR_R = 0.9;     // collision circle radius (half the width)
-    const CAR_CIRCLES = [-1.25, 0, 1.25];   // circle centres along the heading
+    const CAR_R = 0.9;
+    const CAR_CIRCLES = [-1.25, 0, 1.25];
     const CAR_STEP_UP = 0.25;    // solids lower than this are driven over
     const CAR_SUBSTEP = 0.25;    // under CAR_R, so a fast car cannot skip a fence
     const CAR_ACCEL_MAX = 4.5;     // m/s^2, traction limit off the line
@@ -9309,10 +9309,10 @@
     const CAR_G = 9.81;
     const CAR_GLANCE = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
     const CAR_ALIGN = 0.3;     // share of the angle to the wall turned per contact substep
-    const CAR_REACH = 3.2;     // metres from the car's centre that E enters
-    const CAM_DIST = 6.5;     // chase camera boom
-    const CAM_PIVOT = 1.4;     // boom pivot above the car's base
-    const CAM_PITCH = -0.2;    // resting camera pitch
+    const CAR_REACH = 3.2;
+    const CAM_DIST = 6.5;
+    const CAM_PIVOT = 1.4;
+    const CAM_PITCH = -0.2;
     const CAM_FOLLOW = 5;       // 1/s camera yaw catch-up
     const CAM_LOOK_HOLD = 1500;    // ms after the last look input before it eases back
 
@@ -9323,7 +9323,7 @@
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
       speed: 0,        // m/s along the heading, negative in reverse
       steer: 0,        // front-wheel angle, rad, positive = left
-      spin: 0,         // wheel rotation, rad (visual)
+      spin: 0,
       mesh: null, front: [], wheels: []
     };
 
@@ -9389,7 +9389,7 @@
       m.rotation.set(car.pitch, car.yaw, car.roll);
       for (const p of car.front) p.rotation.y = car.steer;
       for (const w of car.wheels) w.rotation.x = -car.spin;
-      sceneDirty = true;   // an empty car rolling to a stop still needs drawing
+      sceneDirty = true;
     }
 
     function carFits(x, z, yaw, margin = 0.2) {
@@ -9455,7 +9455,7 @@
     function parkBesideCabin(c, yaw) {
       const s = CABIN_SCALE * CABIN_M;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      const side = 44 * s + CAR_WID / 2 + CABIN_CAR_GAP;   // past the cabin's floor, with room to walk between
+      const side = 44 * s + CAR_WID / 2 + CABIN_CAR_GAP;
       for (let ds = 0; ds <= 6; ds += 0.5) {
         for (const df of [0.5, 0, 1.5, -0.5, 2.5, -1.5]) {
           const px = c.x + rx * (side + ds) + fx * df, pz = c.z + rz * (side + ds) + fz * df;
@@ -9661,7 +9661,7 @@
       drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;
       player.vel.set(0, 0, 0);
       jumpQueued = false;
-      touchMove.z = 0;   // a stick held on entry steers from here on, no throttle
+      touchMove.z = 0;
       flyEl.classList.remove('on');
       cat.board();
       updateCarButton();
@@ -9714,7 +9714,7 @@
         if (keys.has('KeyA') || keys.has('ArrowLeft')) steer += 1;
         if (keys.has('KeyD') || keys.has('ArrowRight')) steer -= 1;
         if (stickId !== null) steer -= touchMove.x;
-        if (pedal.brake) throttle -= 1;               // brake wins when both are held
+        if (pedal.brake) throttle -= 1;
         else if (pedal.gas) throttle += 1;
       }
       throttle = Math.max(-1, Math.min(1, throttle));
@@ -9917,8 +9917,8 @@
     // SWIMMING (the Arena's): water deeper than the eye floats the player at the surface; moving while looking down dives.
     const SWIM_DEPTH = EYE_HEIGHT + 0.2;   // metres of water over the bed past which the player swims
     const SWIM_FLOAT = 0.22;               // eye above the surface while floating (the Arena's WATER_FLOAT_OFFSET)
-    const SWIM_SPEED = 0.45;               // the Arena's WATER_SPEED_FACTOR
-    const SWIM_JUMP = 0.5;                // the Arena's WATER_JUMP_FACTOR
+    const SWIM_SPEED = 0.45;
+    const SWIM_JUMP = 0.5;
     const SWIM_DRAG = 4;                  // 1/s, vertical
     let swimming = false;
 
@@ -10119,7 +10119,7 @@
         if (xr) vr.updateHud();
         fpsFrames = 0; fpsAt = now;
       }
-      if (xr) return;   // the XR session drives the next frame
+      if (xr) return;
 
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
@@ -10213,8 +10213,8 @@
         code: c.weather_code, label, kind,
         tempF: c.temperature_2m,
         feelsF: c.apparent_temperature,
-        humidity: c.relative_humidity_2m,      // percent
-        cloud: c.cloud_cover,               // percent
+        humidity: c.relative_humidity_2m,
+        cloud: c.cloud_cover,
         precip: c.precipitation,             // inches in the last hour
         windMph: c.wind_speed_10m,
         windFrom: c.wind_direction_10m,        // degrees the wind blows from
@@ -10223,7 +10223,7 @@
         lowF: d.temperature_2m_min[0],
         sunrise: clockMinutes(d.sunrise[0]),  // minutes past local midnight
         sunset: clockMinutes(d.sunset[0]),
-        hourly: json.hourly,                 // raw arrays, local wall clock
+        hourly: json.hourly,
         daily: d
       };
     }
@@ -10485,12 +10485,12 @@
 
     const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
     const RAIN_SPAN = 44;           // box width and depth around the camera, meters
-    const RAIN_HEIGHT = 26;         // box height, centred a little above the eye
-    const RAIN_FPS_IDLE = 30;       // redraw cap while rain is the only thing moving
+    const RAIN_HEIGHT = 26;
+    const RAIN_FPS_IDLE = 30;
     const RAIN_TIME_WRAP = 600;     // seconds; keeps the shader's float time small
-    const ROOF_MAP_N = 128;      // texels per side of the shelter map
+    const ROOF_MAP_N = 128;
     const ROOF_MAP_SIZE = 56;       // meters per side; the rain box plus snap slack
-    const ROOF_MAP_SNAP = 4;        // re-rasterize when the player crosses this grid
+    const ROOF_MAP_SNAP = 4;
 
     const RAIN_BY_CODE = {
       51: 0.25, 53: 0.4, 55: 0.55, 56: 0.3, 57: 0.5,
@@ -10586,7 +10586,7 @@
       void main() {
         vec2 uv = (vP.xz - uRoofArea.xy) / uRoofArea.z;
         if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x < 1.0 && uv.y < 1.0 &&
-            vP.y < texture2D(uRoof, uv).r) discard;   // under a roof
+            vP.y < texture2D(uRoof, uv).r) discard;
         gl_FragColor = vec4(uColor, uAlpha * vA);
         #include <colorspace_fragment>
       }`
@@ -10594,7 +10594,7 @@
 
       const mesh = new THREE.LineSegments(g, m);
       mesh.frustumCulled = false;
-      mesh.renderOrder = 10;      // after the opaque city, over the ground
+      mesh.renderOrder = 10;
       scene.add(mesh);
       return { mesh, uniforms, roof, roofData, roofShells: null, roofShelters: null, roofCx: NaN, roofCz: NaN, mark: null };
     }
@@ -10907,7 +10907,7 @@
         steps.start('terrain', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
         await paint();
         w.terrainStep();
-        activeWorld = w;          // answers queries once its heights exist
+        activeWorld = w;
         const b = w.bounds;
         steps.done('terrain', `${Math.round(b.maxX - b.minX)} \u00d7 ${Math.round(b.maxZ - b.minZ)} m of land from seed ${seed}.`);
 
@@ -11220,7 +11220,7 @@
       else loadPlace(lastQuery, 'mix');
     }
 
-    // GAME MODE TOGGLE: a chip in the Other row; only switches the food chain.
+    // SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
     const gameEl = document.getElementById('game');
     let hudBeforeGame = true;
     gameEl.addEventListener('click', () => {
@@ -11229,13 +11229,13 @@
       gameEl.setAttribute('aria-pressed', String(game.on));
       gameEl.blur();
       game.showPanel();
-      // the HUD goes off in game mode and comes back as it was on leaving
+      // the HUD goes off in Survivor mode and comes back as it was on leaving
       if (game.on) { hudBeforeGame = hudOn; setHud(false); }
       else setHud(hudBeforeGame);
-      // no flying in game mode: land and hide the button
+      // no flying in Survivor mode: land and hide the button
       if (game.on && flying) toggleFly();
       flyEl.classList.toggle('on', active && !driving && !game.on);
-      // the city's deer only in game mode: the Deer build switch follows, and a live city gains or loses its own
+      // the city's deer only in Survivor mode: the Deer build switch follows, and a live city gains or loses its own
       // deer (the wilderness's deer stay)
       loadOpts.deer = game.on;
       const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
@@ -11250,7 +11250,7 @@
       wake();
     });
 
-    // OBSERVER OR GAME: asked once the world is ready; Game mode is the Other row's toggle.
+    // OBSERVER OR SURVIVOR: asked once the world is ready; Survivor is the Other row's toggle.
     function chooseMode() {
       cardEl.classList.add('choosing');
       return new Promise(resolve => {
