@@ -1042,7 +1042,6 @@
       <button id="hudbtn" class="sel" aria-pressed="true">HUD</button>
       <button id="gfx">Graphics: high</button>
       <button id="fs" aria-pressed="false">Fullscreen</button>
-      <button id="orient" disabled>Landscape</button>
       <button id="vr" hidden>Enter VR</button>
     </div>
     <h2 class="second">Other</h2>
@@ -7149,16 +7148,19 @@
         this.update(0);
       }
 
-      // Beside the player, facing the same way (the Arena's reset after world.initialize).
+      // In front of the player, a little to the right, facing the player.
       place(show) {
         if (this.riding) { this.riding = false; scene.add(this.mesh); }
         this.active = show;
         this.mesh.visible = show;
         if (!show) return;
         const feet = player.pos.y - EYE_HEIGHT;
-        this.position.set(player.pos.x + Math.sin(player.yaw) * 28 * NPC_UNIT, feet,
-          player.pos.z + Math.cos(player.yaw) * 28 * NPC_UNIT);
-        this.yaw = player.yaw;
+        const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);   // player forward
+        const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);    // player right
+        const ahead = 28 * NPC_UNIT, side = 10 * NPC_UNIT;
+        this.position.set(player.pos.x + fx * ahead + rx * side, feet,
+          player.pos.z + fz * ahead + rz * side);
+        this.yaw = Math.atan2(player.pos.x - this.position.x, player.pos.z - this.position.z);
         this.velocity.set(0, 0, 0);
         this.update(0);
       }
@@ -9469,16 +9471,26 @@
       invalidate();
     }
 
-    // Parked just outside a cabin on the right (as seen looking out its door), nose the same way as the door.
-    const CABIN_CAR_GAP = 3.2;   // metres of clear ground between the cabin's floor edge and the parked car's side
+    // Parked in front of a cabin, off to one side of the doorway (right first, as seen looking out the door),
+    // nose pointing away from the cabin the same way as the door. `yaw` is the look-out-the-door heading.
+    const CABIN_CAR_GAP = 1.5;       // metres of clear ground between the cabin's floor edge and the car's rear
+    const CABIN_CAR_WALKWAY = 1.2;   // metres of clear ground between the doorway's edge and the car's side
     function parkBesideCabin(c, yaw) {
       const s = CABIN_SCALE * CABIN_M;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-      const side = 44 * s + CAR_WID / 2 + CABIN_CAR_GAP;
-      for (let ds = 0; ds <= 6; ds += 0.5) {
-        for (const df of [0.5, 0, 1.5, -0.5, 2.5, -1.5]) {
-          const px = c.x + rx * (side + ds) + fx * df, pz = c.z + rz * (side + ds) + fz * df;
-          if (carFits(px, pz, yaw)) { setCar({ px, pz, yaw }); return true; }
+      const halfDoor = 9 * s;   // Cabin DOOR_WIDTH / 2, rig units -> metres
+      const floorFront = 34 * s;   // Cabin floor slab's front edge (CD / 2 + 4)
+      const carBack = -CAR_CIRCLES[0] + CAR_R;   // car centre to its rear
+      const ahead = floorFront + CABIN_CAR_GAP + carBack;
+      const side = halfDoor + CABIN_CAR_WALKWAY + CAR_WID / 2;
+      // only ever step further out or further aside, never toward the doorway's lane
+      for (let df = 0; df <= 6; df += 0.5) {
+        for (let ds = 0; ds <= 3; ds += 0.5) {
+          for (const sign of [1, -1]) {
+            const lat = sign * (side + ds), fwd = ahead + df;
+            const px = c.x + rx * lat + fx * fwd, pz = c.z + rz * lat + fz * fwd;
+            if (carFits(px, pz, yaw)) { setCar({ px, pz, yaw }); return true; }
+          }
         }
       }
       return false;
@@ -9880,13 +9892,16 @@
     hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
     gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
     function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+    // entering fullscreen also locks landscape where the device can (the lock needs fullscreen); skipped elsewhere
+    const so = screen.orientation;
+    const canLock = !!(so && typeof so.lock === 'function' && matchMedia('(pointer: coarse)').matches);   // desktop Chrome has lock() but always rejects it
     fsEl.addEventListener('click', () => {
       fsEl.blur();
       const exit = document.exitFullscreen || document.webkitExitFullscreen;
       if (fullscreenElement()) { if (exit) Promise.resolve(exit.call(document)).catch(() => { }); return; }
       const root = document.documentElement;
       const req = root.requestFullscreen || root.webkitRequestFullscreen;
-      if (req) Promise.resolve(req.call(root)).catch(() => { });
+      if (req) Promise.resolve(req.call(root)).then(() => { if (canLock) return so.lock('landscape'); }).catch(() => { });
     });
     // the Observer / Survivor choice's Fullscreen button shares the Settings one's toggle
     const chooseFsEl = document.getElementById('chooseFs');
@@ -9900,30 +9915,6 @@
     };
     document.addEventListener('fullscreenchange', syncFullscreen);
     document.addEventListener('webkitfullscreenchange', syncFullscreen);
-    // ORIENTATION: flips between portrait and landscape; the browser only locks orientation in fullscreen, so it enters it first.
-    // Disabled where the Screen Orientation lock does not exist (iPhone Safari, desktop).
-    const orientEl = document.getElementById('orient');
-    const so = screen.orientation;
-    const isPortrait = () => (so && so.type ? so.type.startsWith('portrait') : innerHeight > innerWidth);
-    const syncOrient = () => { orientEl.textContent = isPortrait() ? 'Portrait' : 'Landscape'; };
-    syncOrient();
-    addEventListener('resize', syncOrient);
-    if (so && typeof so.lock === 'function' && matchMedia('(pointer: coarse)').matches) {   // desktop Chrome has lock() but always rejects it
-      orientEl.disabled = false;
-      so.addEventListener('change', syncOrient);
-      orientEl.addEventListener('click', async () => {
-        orientEl.blur();
-        const want = isPortrait() ? 'landscape' : 'portrait';
-        try {
-          if (!fullscreenElement()) {
-            const root = document.documentElement, req = root.requestFullscreen || root.webkitRequestFullscreen;
-            if (req) await req.call(root);
-          }
-          await so.lock(want);
-        } catch (e) { }
-        syncOrient();
-      });
-    }
     newEcoEl.addEventListener('click', () => { newEcoEl.blur(); newEcosystem(); });
 
     function showControls(on) {
@@ -10971,7 +10962,7 @@
         player.vel.set(0, 0, 0);
         player.yaw = st.yaw; player.pitch = -0.3;
         player.grounded = false;
-        if (loadOpts.car) placeCar([], player.pos.x, player.pos.z);
+        if (loadOpts.car && !parkBesideCabin(w.cabins[0], st.yaw)) placeCar([], player.pos.x, player.pos.z);
 
         current = 'scene';
         await finishLoad(w);
@@ -11196,7 +11187,7 @@
 
         driving = false;
         if (mode === 'mix' && provider.cabins.length) {
-          // Mix: in the edge cabin, looking out the door at the city; the car parked on the cabin's right
+          // Mix: in the edge cabin, looking out the door at the city; the car parked in front, beside the doorway
           const st = provider.playerStart();
           player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
           player.vel.set(0, 0, 0);
