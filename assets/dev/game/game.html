@@ -808,6 +808,7 @@
 
     #choose {
       display: none;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 18px;
     }
@@ -826,6 +827,23 @@
       font: inherit;
       font-size: 15px;
       cursor: pointer;
+    }
+
+    /* optional: its own row under the choice, in the chip style */
+    #choose #chooseFs {
+      flex-basis: 100%;
+      padding: 8px 10px;
+      background: rgba(16, 19, 26, 0.45);
+      color: rgba(232, 228, 220, 0.75);
+      border: 1px solid rgba(232, 228, 220, 0.3);
+      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      touch-action: manipulation;
+    }
+
+    #choose #chooseFs.sel {
+      background: rgba(232, 228, 220, 0.85);
+      color: #10131a;
+      border-color: transparent;
     }
 
     #card.loading #modes,
@@ -920,6 +938,7 @@
       <div id="choose">
         <button id="chooseObs">Observer</button>
         <button id="chooseGame">Survivor</button>
+        <button id="chooseFs" aria-pressed="false">Fullscreen</button>
       </div>
       <div class="chips" id="modes" role="radiogroup" aria-label="World">
         <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
@@ -969,7 +988,7 @@
               class="thumb"></span></span>Plants</button>
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
-        <button class="switch on" data-opt="aerial" role="switch" aria-checked="true"><span class="track"><span
+        <button class="switch" data-opt="aerial" role="switch" aria-checked="false"><span class="track"><span
               class="thumb"></span></span>Aerial view</button>
       </details>
       <p id="status"></p>
@@ -9869,10 +9888,15 @@
       const req = root.requestFullscreen || root.webkitRequestFullscreen;
       if (req) Promise.resolve(req.call(root)).catch(() => { });
     });
+    // the Observer / Survivor choice's Fullscreen button shares the Settings one's toggle
+    const chooseFsEl = document.getElementById('chooseFs');
+    chooseFsEl.addEventListener('click', () => { chooseFsEl.blur(); fsEl.click(); });
     const syncFullscreen = () => {
       const on = !!fullscreenElement();
-      fsEl.classList.toggle('sel', on);
-      fsEl.setAttribute('aria-pressed', String(on));
+      for (const el of [fsEl, chooseFsEl]) {
+        el.classList.toggle('sel', on);
+        el.setAttribute('aria-pressed', String(on));
+      }
     };
     document.addEventListener('fullscreenchange', syncFullscreen);
     document.addEventListener('webkitfullscreenchange', syncFullscreen);
@@ -11265,7 +11289,7 @@
     }
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: true };
+    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: false };
     for (const el of document.querySelectorAll('#more .switch')) {
       el.addEventListener('click', () => {
         const k = el.dataset.opt;
