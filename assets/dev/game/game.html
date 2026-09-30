@@ -3706,6 +3706,8 @@
       deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: DEER_GRACE_MULT, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
+    const HUNTED = {};
+    for (const t of NPC_TYPES) HUNTED[t] = NPC_TYPES.some(h => SPECIES[h].hunts[t] === true);
     const WATER_SIGHT_CELL = 20;
     const NPC_LOD_DIST = 60;      // metres from the camera past which a body swaps to its low-detail version
     const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
@@ -3789,6 +3791,8 @@
         // Flat array of buckets, made on first insert and only emptied on rebuild: lookups are indexes, rebuilds allocate nothing.
         this.cells = null;
         this._usedKeys = [];
+        this.rb = { cx0: 0, cx1: 0, cy0: 0, cy1: 0, ccx: 0, ccy: 0, K: 0, edge: 0, W: 0 };
+        this.nearD2 = Infinity;
       }
 
       _key(cx, cy) { return cy * this.cols + cx; }
@@ -3813,6 +3817,65 @@
         if (bucket === null) bucket = this.cells[k] = [];
         if (bucket.length === 0) this._usedKeys.push(k);
         bucket.push(entity);
+        return k;
+      }
+
+      remove(entity, k) {
+        const bucket = this.cells === null ? null : this.cells[k];
+        if (!bucket) return;
+        const i = bucket.indexOf(entity);
+        if (i >= 0) bucket.splice(i, 1);
+      }
+
+      ringBox(x, z, r) {
+        const cs = this.cellSize, b = this.rb;
+        b.cx0 = Math.floor((x - r) / cs); b.cx1 = Math.floor((x + r) / cs);
+        b.cy0 = Math.floor((z - r) / cs); b.cy1 = Math.floor((z + r) / cs);
+        b.ccx = Math.floor(x / cs); b.ccy = Math.floor(z / cs);
+        b.K = Math.max(b.ccx - b.cx0, b.cx1 - b.ccx, b.ccy - b.cy0, b.cy1 - b.ccy);
+        b.edge = Math.min(x - b.ccx * cs, (b.ccx + 1) * cs - x, z - b.ccy * cs, (b.ccy + 1) * cs - z);
+        b.W = b.cx1 - b.cx0 + 1;
+        return b;
+      }
+
+      ringFloor(k) { return (k - 1) * this.cellSize + this.rb.edge - 1e-6; }
+
+      nearest(x, z, r, maxD2, live, beat = Infinity) {
+        this.nearD2 = beat;
+        const cells = this.cells;
+        if (cells === null) return null;
+        const cols = this.cols, rows = this.rows;
+        const { cx0, cx1, cy0, cy1, ccx, ccy, K, W } = this.ringBox(x, z, r);
+        let best = null, bestD2 = beat, bestKey = -1;
+        const early = W <= cols && cy1 - cy0 < rows;
+        for (let k = 0; k <= K; k++) {
+          if (k > 0 && early) {
+            const L = this.ringFloor(k);
+            if (L > 0 && (L * L > maxD2 || bestD2 < L * L)) break;
+          }
+          const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
+          for (let j = j0; j <= j1; j++) {
+            const row = (((j % rows) + rows) % rows) * cols;
+            const full = j === ccy - k || j === ccy + k;
+            const step = full ? 1 : 2 * k;
+            const iEnd = Math.min(cx1, ccx + k);
+            for (let i = full ? Math.max(cx0, ccx - k) : ccx - k; i <= iEnd; i += step) {
+              if (i < cx0) continue;
+              const bucket = cells[row + ((i % cols) + cols) % cols];
+              if (bucket === null) continue;
+              const base = ((j - cy0) * W + (i - cx0)) * 1048576;
+              for (let b = 0; b < bucket.length; b++) {
+                const it = bucket[b];
+                if (live && !it.alive) continue;
+                const p = it.position, dx = p.x - x, dz = p.z - z, d2 = dx * dx + dz * dz;
+                if (d2 > maxD2 || d2 > bestD2) continue;
+                if (d2 < bestD2 || base + b > bestKey) { best = it; bestD2 = d2; bestKey = base + b; }
+              }
+            }
+          }
+        }
+        this.nearD2 = bestD2;
+        return best;
       }
 
       queryInto(out, x, z, r) {
@@ -4373,6 +4436,7 @@
 
         // City: last wall-clear position, the fallback in NpcWorld.collide
         this.freeX = this.position.x; this.freeZ = this.position.z;
+        this._fx = NaN; this._fz = NaN;
 
         this.mesh = null;
         this.home = null;
@@ -4625,51 +4689,78 @@
 
       searchDeer(grid) {
         const x = this.position.x, z = this.position.z;
-        const vd = this.visionDistSq;
-        let bP = Infinity, bF = Infinity, bW = Infinity, bM = Infinity;
+        const vd = this.visionDistSq, r = this.visionDistance;
         this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
         this.avoidNeed = 0;
-        const food = this.spec.food;
+        const food = this.spec.food, type = this.type, sex = this.sex;
+        const needP = HUNTED[type], needF = food !== null && food !== 'plant';
+        let bP = Infinity, bF = Infinity, bM = Infinity, kP = -1, kF = -1, kM = -1;
+        let oP = null, oF = null, oM = null;
 
-        const n = grid.queryInto(world._qLocate, x, z, this.visionDistance);
-        for (let i = 0; i < n; i++) {
-          const obj = world._qLocate[i];
-          if (obj === this || !obj.alive) continue;
-          const ox = obj.position.x, oz = obj.position.z;
-          const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-          if (d2 > vd) continue;
-          if (obj.spec.hunts[this.type]) {
-            if (d2 <= bP) { bP = d2; this.seen(0, ox, obj.position.y, oz); this.avoidNeed = Infinity; }
-          } else if (obj.type === food) {
-            if (d2 <= bF) { bF = d2; this.seen(1, ox, obj.position.y, oz); }
-          } else if (obj.type === this.type && obj.sex !== this.sex) {
-            if (d2 <= bM) { bM = d2; this.seen(3, ox, obj.position.y, oz); }
+        const cells = grid.cells;
+        if (cells !== null) {
+          const cols = grid.cols, rows = grid.rows;
+          const { cx0, cx1, cy0, cy1, ccx, ccy, K, W } = grid.ringBox(x, z, r);
+          const drift = Math.sqrt(world.drift2);
+          const early = W <= cols && cy1 - cy0 < rows;
+          for (let k = 0; k <= K; k++) {
+            if (k > 0 && early) {
+              const L = grid.ringFloor(k) - drift;
+              if (L > r) break;
+              if (L > 0) {
+                const L2 = L * L;
+                if ((!needP || bP < L2) && (!needF || bF < L2) && bM < L2) break;
+              }
+            }
+            const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
+            for (let j = j0; j <= j1; j++) {
+              const row = (((j % rows) + rows) % rows) * cols;
+              const full = j === ccy - k || j === ccy + k;
+              const step = full ? 1 : 2 * k;
+              const iEnd = Math.min(cx1, ccx + k);
+              for (let i = full ? Math.max(cx0, ccx - k) : ccx - k; i <= iEnd; i += step) {
+                if (i < cx0) continue;
+                const bucket = cells[row + ((i % cols) + cols) % cols];
+                if (bucket === null) continue;
+                const base = ((j - cy0) * W + (i - cx0)) * 1048576;
+                for (let b = 0; b < bucket.length; b++) {
+                  const obj = bucket[b];
+                  if (obj === this || !obj.alive) continue;
+                  const ox = obj.position.x, oz = obj.position.z;
+                  const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
+                  if (d2 > vd) continue;
+                  const key = base + b;
+                  if (obj.spec.hunts[type]) {
+                    if (d2 < bP || (d2 === bP && key > kP)) { bP = d2; kP = key; oP = obj; }
+                  } else if (obj.type === food) {
+                    if (d2 < bF || (d2 === bF && key > kF)) { bF = d2; kF = key; oF = obj; }
+                  } else if (obj.type === type && obj.sex !== sex) {
+                    if (d2 < bM || (d2 === bM && key > kM)) { bM = d2; kM = key; oM = obj; }
+                  }
+                }
+              }
+            }
           }
         }
+        if (oP) { this.seen(0, oP.position.x, oP.position.y, oP.position.z); this.avoidNeed = Infinity; }
+        if (oF) this.seen(1, oF.position.x, oF.position.y, oF.position.z);
+        if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
 
         // City: in Survivor mode the player is a predator too, to whatever people hunt
         const gp = game.predator;
-        if (gp.alive && SPECIES.human.hunts[this.type]) {
+        if (gp.alive && SPECIES.human.hunts[type]) {
           const ox = gp.position.x, oz = gp.position.z;
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
           if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
         }
 
-        const nSight = food === 'plant' ? world.plantSight.queryInto(world._qSight, x, z, this.visionDistance) : 0;
-        for (let i = 0; i < nSight; i++) {
-          const plant = world._qSight[i];
-          if (!plant.alive) continue;
-          const ox = plant.position.x, oz = plant.position.z;
-          const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-          if (d2 <= vd && d2 <= bF) { bF = d2; this.seen(1, ox, plant.position.y, oz); }
+        if (food === 'plant') {
+          const plant = world.plantSight.nearest(x, z, r, vd, true, bF);
+          if (plant) this.seen(1, plant.position.x, plant.position.y, plant.position.z);
         }
 
-        const nWater = world.waterSight.queryInto(world._qWater, x, z, this.visionDistance);
-        for (let i = 0; i < nWater; i++) {
-          const wp = world._qWater[i].position;
-          const d2 = (wp.x - x) * (wp.x - x) + (wp.z - z) * (wp.z - z);
-          if (d2 <= vd && d2 <= bW) { bW = d2; this.seen(2, wp.x, wp.y, wp.z); }
-        }
+        const w = world.waterSight.nearest(x, z, r, vd, false);
+        if (w) this.seen(2, w.position.x, w.position.y, w.position.z);
       }
 
       // Metres moved this tick: a sprint (fleeing or chasing) at the fastest run of its own predators, else the Arena speed.
@@ -4941,6 +5032,19 @@
 
     // INSTANCED RENDERER
 
+    const geometryViews = new WeakMap();
+    function geometryView(geo, slot) {
+      let views = geometryViews.get(geo);
+      if (!views) geometryViews.set(geo, views = []);
+      if (views[slot]) return views[slot];
+      const g = new THREE.BufferGeometry();
+      g.setIndex(geo.index);
+      for (const k in geo.attributes) g.setAttribute(k, geo.attributes[k]);
+      for (const gr of geo.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+      g.setDrawRange(geo.drawRange.start, geo.drawRange.count);
+      return views[slot] = g;
+    }
+
     class AnimalRenderer {
       constructor() {
         this.MAX_INSTANCES = 12000;
@@ -5138,9 +5242,9 @@
             body: new THREE.InstancedMesh(geom.body, mat, this.MAX_INSTANCES),
             head: new THREE.InstancedMesh(geom.head, mat, this.MAX_INSTANCES),
             legFL: new THREE.InstancedMesh(geom.leg, mat, this.MAX_INSTANCES),
-            legFR: new THREE.InstancedMesh(geom.leg, mat, this.MAX_INSTANCES),
-            legBL: new THREE.InstancedMesh(geom.leg, mat, this.MAX_INSTANCES),
-            legBR: new THREE.InstancedMesh(geom.leg, mat, this.MAX_INSTANCES),
+            legFR: new THREE.InstancedMesh(geometryView(geom.leg, 1), mat, this.MAX_INSTANCES),
+            legBL: new THREE.InstancedMesh(geometryView(geom.leg, 2), mat, this.MAX_INSTANCES),
+            legBR: new THREE.InstancedMesh(geometryView(geom.leg, 3), mat, this.MAX_INSTANCES),
           };
           for (const mesh of Object.values(this.meshes[type])) {
             mesh.castShadow = true;
@@ -5302,6 +5406,8 @@
         const x = this.position.x, z = this.position.z;
         this.position.y = surfaceY(x, z) - 3 * NPC_UNIT;
         this._slot = -1;
+        this._sightKey = -1;
+        this._gridKey = -1;
         plantRenderer.add(this);
       }
 
@@ -5352,9 +5458,9 @@
         this.meshes = {
           stem: new THREE.InstancedMesh(geos.stem, this.MATERIAL, this.MAX_INSTANCES),
           leaf0: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
-          leaf1: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
-          leaf2: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
-          leaf3: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
+          leaf1: new THREE.InstancedMesh(geometryView(geos.leaf, 1), this.MATERIAL, this.MAX_INSTANCES),
+          leaf2: new THREE.InstancedMesh(geometryView(geos.leaf, 2), this.MATERIAL, this.MAX_INSTANCES),
+          leaf3: new THREE.InstancedMesh(geometryView(geos.leaf, 3), this.MATERIAL, this.MAX_INSTANCES),
         };
         for (const mesh of Object.values(this.meshes)) {
           mesh.castShadow = true;
@@ -6738,25 +6844,21 @@
         const DOOR_WIDTH = 18;
         const DOOR_HEIGHT = 42;
 
-        const add = (mesh, cast = true, receive = true) => {
-          mesh.castShadow = cast;
-          mesh.receiveShadow = receive;
-          this.add(mesh);
-          return mesh;
+        const parts = new Map();
+        const place = new THREE.Object3D();
+        const put = (geo, mat, x, y, z, rx = 0, rz = 0) => {
+          place.position.set(x, y, z);
+          place.rotation.set(rx, 0, rz);
+          place.updateMatrix();
+          geo.applyMatrix4(place.matrix);
+          if (!parts.has(mat)) parts.set(mat, []);
+          parts.get(mat).push(geo);
         };
 
-        const box = (w, h, d, mat, x = 0, y = 0, z = 0) => {
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-          mesh.position.set(x, y, z);
-          return add(mesh);
-        };
+        const box = (w, h, d, mat, x = 0, y = 0, z = 0) => put(new THREE.BoxGeometry(w, h, d), mat, x, y, z);
 
-        const hlog = (len, mat, x, y, z, axis) => {
-          const mesh = new THREE.Mesh(new THREE.CylinderGeometry(LR, LR, len, 10), mat);
-          mesh.rotation[axis] = Math.PI / 2;
-          mesh.position.set(x, y, z);
-          return add(mesh);
-        };
+        const hlog = (len, mat, x, y, z, axis) => put(new THREE.CylinderGeometry(LR, LR, len, 10), mat, x, y, z,
+          axis === 'x' ? Math.PI / 2 : 0, axis === 'z' ? Math.PI / 2 : 0);
 
         box(CW + 8, FLOOR_Y, CD + 8, M.logDark, 0, FLOOR_Y / 2, 0);
 
@@ -6786,12 +6888,10 @@
           const rise = RIDGE_H;
           const panelLen = Math.sqrt(run * run + rise * rise);
           const angle = Math.atan2(rise, run) * sx * -1;
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(panelLen, 3, CD + OVH * 2 + 4), M.roof);
-          mesh.rotation.z = angle;
-          mesh.position.set(sx * run / 2, ROOF_BASE + rise / 2, 0);
-          add(mesh);
+          put(new THREE.BoxGeometry(panelLen, 3, CD + OVH * 2 + 4), M.roof, sx * run / 2, ROOF_BASE + rise / 2, 0, 0, angle);
         });
 
+        const gableMat = new THREE.MeshStandardMaterial({ color: 0x3a2b1b, roughness: 0.92, side: THREE.DoubleSide });
         [-1, 1].forEach(sz => {
           const shape = new THREE.Shape();
           shape.moveTo(-(CW / 2 + OVH), 0);
@@ -6799,10 +6899,7 @@
           shape.lineTo(0, RIDGE_H);
           shape.lineTo(-(CW / 2 + OVH), 0);
           const geo = new THREE.ExtrudeGeometry(shape, { depth: LD * 2, bevelEnabled: false });
-          const mat = new THREE.MeshStandardMaterial({ color: 0x3a2b1b, roughness: 0.92, side: THREE.DoubleSide });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.set(0, ROOF_BASE, sz * (CD / 2 + OVH + 2) - (sz * LD * 2));
-          add(mesh);
+          put(geo, gableMat, 0, ROOF_BASE, sz * (CD / 2 + OVH + 2) - (sz * LD * 2));
         });
 
         const CHX = -18;
@@ -6813,6 +6910,14 @@
 
         box(CHW, topOfChimney, CHD, M.stone, CHX, topOfChimney / 2, CHZ);
         box(CHW + 4, 2.5, CHD + 4, M.logDark, CHX, topOfChimney + 1.25, CHZ);
+
+        for (const [mat, geos] of parts) {
+          const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          this.add(mesh);
+          for (const g of geos) g.dispose();
+        }
       }
     }
 
@@ -8320,6 +8425,9 @@
         this._qPlant = [];
         this._qSight = [];
         this._qWater = [];
+        this._plantAdds = [];
+        this._plantDrops = [];
+        this.drift2 = 0;
       }
 
       // Keep a coordinate in the world: the Arena's torus wrap, or City's clamp.
@@ -8336,6 +8444,8 @@
       clear() {
         this.animals.length = 0;
         this.plants.length = 0;
+        this._plantAdds.length = 0;
+        this._plantDrops.length = 0;
         this.ready = false;
         animalRenderer.update(this.animals, 0);
         plantRenderer.rebuild(this.plants);
@@ -8354,6 +8464,8 @@
       initialize(provider) {
         this.animals.length = 0;
         this.plants.length = 0;
+        this._plantAdds.length = 0;
+        this._plantDrops.length = 0;
         this.ticks = 0;
         game.reset();
         const b = provider.bounds;
@@ -8387,7 +8499,23 @@
         if (!s) return;
         const p = new Plant([s[0], 0, s[1]]);
         this.plants.push(p);
-        this.plantSight.insert(p);
+        p._sightKey = this.plantSight.insert(p);
+        this._plantAdds.push(p);
+      }
+
+      syncPlantGrids() {
+        const drops = this._plantDrops, adds = this._plantAdds;
+        for (let i = 0; i < drops.length; i++) {
+          const p = drops[i];
+          if (p._gridKey >= 0) { this.plantGrid.remove(p, p._gridKey); p._gridKey = -1; }
+          if (p._sightKey >= 0) { this.plantSight.remove(p, p._sightKey); p._sightKey = -1; }
+        }
+        for (let i = 0; i < adds.length; i++) {
+          const p = adds[i];
+          if (p.alive && p._sightKey >= 0) p._gridKey = this.plantGrid.insert(p);
+        }
+        drops.length = 0;
+        adds.length = 0;
       }
 
       isOpen(x, z) {
@@ -8470,13 +8598,7 @@
       // Contact: hunters kill what they hunt (people: deer, coyotes; coyotes: deer, people); everyone mates and drinks;
       // grazers (people and deer, not coyotes) eat plants.
       handleCollisions() {
-        if (this.ticks % 3 === 0) {
-          this.plantGrid.clear();
-          this.plantSight.clear();
-          for (const p of this.plants) {
-            if (p.alive) { this.plantGrid.insert(p); this.plantSight.insert(p); }
-          }
-        }
+        if (this.ticks % 3 === 0) this.syncPlantGrids();
 
         for (const a of this.animals) {
           if (!a.alive) continue;
@@ -8541,7 +8663,12 @@
 
         if (this.ticks % 3 === 0) {
           this.grid.clear();
-          for (const a of this.animals) if (a.alive) this.grid.insert(a);
+          for (const a of this.animals) {
+            if (!a.alive) continue;
+            this.grid.insert(a);
+            a._fx = a.position.x; a._fz = a.position.z;
+          }
+          this.drift2 = 0;
         }
 
         const alive = this.typeAlive, fastest = this.fastestHunterMS;
@@ -8552,6 +8679,8 @@
             a.update(now, this.grid, ai);
             if (a.alive) {
               this.collide(a);
+              const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
+              if (f2 > this.drift2) this.drift2 = f2;
               alive[a.type]++;
               const ms = a.speed * NPC_UNIT;
               for (const t in a.spec.hunts) if (ms > fastest[t]) fastest[t] = ms;
@@ -8575,7 +8704,11 @@
           if (!this.animals[i].alive) { this.animals[i].remove(); this.animals.splice(i, 1); }
         }
         for (let i = this.plants.length - 1; i >= 0; i--) {
-          if (!this.plants[i].alive) { this.plants[i].remove(); this.plants.splice(i, 1); }
+          if (!this.plants[i].alive) {
+            this.plants[i].remove();
+            this._plantDrops.push(this.plants[i]);
+            this.plants.splice(i, 1);
+          }
         }
 
         activeWorld.regrow(this);
@@ -8897,10 +9030,6 @@
         scene.add(this.farLobes);
         this.lobeBase = LOBE_COLS.map(h => new THREE.Color(h));
 
-        this._m = new THREE.Matrix4();
-        this._p = new THREE.Vector3();
-        this._s = new THREE.Vector3();
-        this._q = new THREE.Quaternion();
         this._right = new THREE.Vector3();
         this._up = new THREE.Vector3();
         this._c = new THREE.Color();
@@ -9025,6 +9154,17 @@
         let nf = 0;
         let nl = 0;
 
+        const qx = cq.x, qy = cq.y, qz = cq.z, qw = cq.w;
+        const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;
+        const xx = qx * x2, xy = qx * y2, xz = qx * z2, yy = qy * y2, yz = qy * z2, zz = qz * z2;
+        const wx = qw * x2, wy = qw * y2, wz = qw * z2;
+        const r0 = 1 - (yy + zz), r1 = xy + wz, r2 = xz - wy;
+        const r4 = xy - wz, r5 = 1 - (xx + zz), r6 = yz + wx;
+        const r8 = xz + wy, r9 = yz - wx, r10 = 1 - (xx + yy);
+        const barArr = this.farBars.instanceMatrix.array, barH = this.farBarH, barW = this.farBarW;
+        const rx = this._right.x, ry = this._right.y, rz = this._right.z, ux = this._up.x, uy = this._up.y, uz = this._up.z;
+        const lobeArr = this.farLobes.instanceMatrix.array;
+
         for (const a of animals) {
           if (!a.alive) continue;
           let bar = this.bars.get(a);
@@ -9041,14 +9181,19 @@
             fill[1] = 1 - Math.min(a.foodNeed, 100) / 100;
             fill[2] = 1 - Math.min(a.waterNeed, 100) / 100;
             fill[3] = a.isAdult ? (now - a.lastChildTime) / a.childGracePeriod : 0;
+            const dx = this.farBarX;
             for (let i = 0; i < rows; i++) {
               const f = Math.max(0, Math.min(1, fill[i]));
-              const dx = this.farBarX, dy = this.farRowY[i];
-              this._p.set(a.position.x + this._right.x * dx + this._up.x * dy,
-                barY + this._right.y * dx + this._up.y * dy,
-                a.position.z + this._right.z * dx + this._up.z * dy);
-              this._s.set(Math.max(f * this.farBarW, 1e-4), this.farBarH, 1);
-              this.farBars.setMatrixAt(nf * rows + i, this._m.compose(this._p, cq, this._s));
+              const dy = this.farRowY[i];
+              const sx = Math.max(f * barW, 1e-4);
+              const o = (nf * rows + i) * 16;
+              barArr[o] = r0 * sx; barArr[o + 1] = r1 * sx; barArr[o + 2] = r2 * sx; barArr[o + 3] = 0;
+              barArr[o + 4] = r4 * barH; barArr[o + 5] = r5 * barH; barArr[o + 6] = r6 * barH; barArr[o + 7] = 0;
+              barArr[o + 8] = r8; barArr[o + 9] = r9; barArr[o + 10] = r10; barArr[o + 11] = 0;
+              barArr[o + 12] = a.position.x + rx * dx + ux * dy;
+              barArr[o + 13] = barY + ry * dx + uy * dy;
+              barArr[o + 14] = a.position.z + rz * dx + uz * dy;
+              barArr[o + 15] = 1;
             }
 
             const nn = a.brain;
@@ -9056,9 +9201,10 @@
               const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
               const fireA = this.firing(nn.actA), fireB = this.firing(nn.actB);
               for (let l = 0; l < 2; l++) {
-                this._p.set(a.position.x, by + (l === 0 ? lobeOff : -lobeOff), a.position.z);
-                this._s.set(1, 1, 1);
-                this.farLobes.setMatrixAt(nl * 2 + l, this._m.compose(this._p, this._q, this._s));
+                const o = (nl * 2 + l) * 16;
+                lobeArr[o + 12] = a.position.x;
+                lobeArr[o + 13] = by + (l === 0 ? lobeOff : -lobeOff);
+                lobeArr[o + 14] = a.position.z;
                 const k = BRAIN_DIM + (1 - BRAIN_DIM) * (l === 0 ? fireA : fireB);
                 this.farLobes.setColorAt(nl * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
               }
