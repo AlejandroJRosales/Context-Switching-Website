@@ -953,14 +953,12 @@
         live local weather and time of day. Walk into real grocery stores, hospitals, and shops. The city is populated
         with people who have two-lobe spiking neural network brains that learn from hunger, thirst, health, and deer
         that follow survival rules. You also have a car.</p>
-      <p class="mode-note for-mix">Choose any real US city by its address to replicate and drop at the center of a procedurally generated
-        wilderness. People will be spawned in who are fitted with spiking neural networks and dopamine-modulated
-        plasticity. This allows them to sense the world, feel hunger, thirst, and injury, and learn and adapt in this
-        environment. Each newborn, coyote, deer, or people, inherits its parents' brain structure and physical traits
-        with small mutations, so the survivors shape the next generation. You have cat companion that rides along, and a
-        car is waiting when you want to cover ground. Observe their ecosystem organically grow or switch on Survivor to
-        enter and survive the system yourself.</p>
-      <p class="for-place">Select a city from the list or enter a custom address.</p>
+      <p class="mode-note for-mix">Choose any US city by address to replicate at the center of a procedurally generated
+        wilderness. People populate the ecosystem with two-lobed, spiking brains with dopamine-modulated neural
+        plasticity. They sense the world, hunger, thirst, explore, and learn. Each newborn (coyote, deer, or person)
+        inherits its parents' brain structure and physical traits with small mutations, so survivors shape the next
+        generation. You have a car and a cat companion to care for. Watch the ecosystem grow organically, or switch on
+        Survivor to live in it.</p>
       <div class="chips for-place" id="picks"></div>
       <div id="row" class="for-place">
         <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY"
@@ -7122,8 +7120,8 @@
     // CAT COMPANION: Nibbler, from the Arena. The rig stays in Arena units under a group scaled to the player;
     // distances and speeds are the Arena's in metres. Worlds with wilderness bring him along (provider.companion).
     const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
-    const CAT_SEAT = { x: 0.4, y: 0.6, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
-    const CAT_DOOR = 1.2;
+    const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // passenger seat in the car's frame (+x passenger side, -z forward)
+    const CAT_DOOR = 0.95;         // m from the car's centre line to where he stands at the passenger door
     const CAT_RUN_FROM = 25;       // m from the car: starting farther than this (or the car moving) he runs...
     const CAT_WALK_WITHIN = 4;     // m: ...until this close, then walks the rest
     const CAT_RUN_SPEED = 11;      // m/s sprint (his catch-up pace)
@@ -9581,14 +9579,15 @@
 
     // CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
 
-    const CAR_LEN = 4.3;
-    const CAR_WID = 1.8;
-    const CAR_TOP = 1.45;
-    const CAR_WHEELBASE = 2.6;
-    const CAR_TRACK = 1.55;
-    const CAR_WHEEL_R = 0.33;
-    const CAR_R = 0.9;
-    const CAR_CIRCLES = [-1.25, 0, 1.25];
+    const CAR_SCALE = 0.75;      // whole car (model, collisions, reach, camera) relative to the original full-size build
+    const CAR_LEN = 4.3 * CAR_SCALE;
+    const CAR_WID = 1.8 * CAR_SCALE;
+    const CAR_TOP = 1.45 * CAR_SCALE;
+    const CAR_WHEELBASE = 2.6 * CAR_SCALE;
+    const CAR_TRACK = 1.55 * CAR_SCALE;
+    const CAR_WHEEL_R = 0.33 * CAR_SCALE;
+    const CAR_R = 0.9 * CAR_SCALE;
+    const CAR_CIRCLES = [-1.25 * CAR_SCALE, 0, 1.25 * CAR_SCALE];
     const CAR_STEP_UP = 0.25;    // solids lower than this are driven over
     const CAR_SUBSTEP = 0.25;    // under CAR_R, so a fast car cannot skip a fence
     const CAR_ACCEL_MAX = 4.5;     // m/s^2, traction limit off the line
@@ -9607,9 +9606,9 @@
     const CAR_G = 9.81;
     const CAR_GLANCE = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
     const CAR_ALIGN = 0.3;     // share of the angle to the wall turned per contact substep
-    const CAR_REACH = 3.2;
-    const CAM_DIST = 6.5;
-    const CAM_PIVOT = 1.4;
+    const CAR_REACH = 3.2 * CAR_SCALE;
+    const CAM_DIST = 6.5 * CAR_SCALE;
+    const CAM_PIVOT = 1.4 * CAR_SCALE;
     const CAM_PITCH = -0.2;
     const CAM_FOLLOW = 5;       // 1/s camera yaw catch-up
     const CAM_LOOK_HOLD = 1500;    // ms after the last look input before it eases back
@@ -9633,7 +9632,13 @@
       const mat = c => new THREE.MeshLambertMaterial({ color: c });
       const paint = mat(0x9c2f2a), glass = mat(0x28313b), trim = mat(0x1d1f22);
       const tyre = mat(0x151617), head = mat(0xf2ecd8), tail = mat(0xb3261e);
+      // built at full size inside a group scaled by CAR_SCALE
+      const LEN = CAR_LEN / CAR_SCALE, WID = CAR_WID / CAR_SCALE, WB = CAR_WHEELBASE / CAR_SCALE;
+      const TRACK = CAR_TRACK / CAR_SCALE, WR = CAR_WHEEL_R / CAR_SCALE;
+      const root = new THREE.Group();
       const g = new THREE.Group();
+      g.scale.setScalar(CAR_SCALE);
+      root.add(g);
       const part = (w, h, d, x, y, z, m) => {
         const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
         b.position.set(x, y, z);
@@ -9643,17 +9648,17 @@
       // Lower body: a narrow full core plus two side panels whose side profile has arches cut over the wheels,
       // with dark liners on the core behind each arch (the wheel wells).
       {
-        const yb = 0.31, yt = 0.93, L = CAR_LEN / 2, R = CAR_WHEEL_R + 0.09;
-        const arches = [-CAR_WHEELBASE / 2, CAR_WHEELBASE / 2];
+        const yb = 0.31, yt = 0.93, L = LEN / 2, R = WR + 0.09;
+        const arches = [-WB / 2, WB / 2];
         const core = 0.46;                 // core half-width: clear of the wheels at full lock
-        const side = CAR_WID / 2 - core;   // side panel thickness
+        const side = WID / 2 - core;   // side panel thickness
         // profile in (z, y): bottom edge left to right with the arches, then up and back across the top
         const prof = new THREE.Shape();
         prof.moveTo(-L, yb);
         for (const c of arches) {
           prof.lineTo(c - R, yb);
-          prof.lineTo(c - R, CAR_WHEEL_R);
-          prof.absarc(c, CAR_WHEEL_R, R, Math.PI, 0, true);
+          prof.lineTo(c - R, WR);
+          prof.absarc(c, WR, R, Math.PI, 0, true);
           prof.lineTo(c + R, yb);
         }
         prof.lineTo(L, yb);
@@ -9664,17 +9669,17 @@
         panelGeo.rotateY(Math.PI / 2);     // profile z -> car z (mirrored, symmetric), extrusion -> car +x
         for (const sx of [-1, 1]) {
           const m = new THREE.Mesh(panelGeo, paint);
-          m.position.x = sx > 0 ? core : -CAR_WID / 2;
+          m.position.x = sx > 0 ? core : -WID / 2;
           g.add(m);
         }
-        part(core * 2, yt - yb, CAR_LEN, 0, (yb + yt) / 2, 0, paint);
+        part(core * 2, yt - yb, LEN, 0, (yb + yt) / 2, 0, paint);
         const liner = new THREE.MeshLambertMaterial({ color: 0x0d0e10, side: THREE.DoubleSide });
         for (const c of arches) {
           const well = new THREE.Shape();
           well.moveTo(c - R, yb);
           well.lineTo(c + R, yb);
-          well.lineTo(c + R, CAR_WHEEL_R);
-          well.absarc(c, CAR_WHEEL_R, R, 0, Math.PI, false);
+          well.lineTo(c + R, WR);
+          well.absarc(c, WR, R, 0, Math.PI, false);
           well.closePath();
           const wellGeo = new THREE.ShapeGeometry(well, 12);
           wellGeo.rotateY(Math.PI / 2);
@@ -9685,19 +9690,19 @@
           }
         }
       }
-      part(CAR_WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
-      part(CAR_WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
-      part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, -CAR_LEN / 2, trim);
-      part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, CAR_LEN / 2, trim);
+      part(WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
+      part(WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
+      part(WID + 0.02, 0.18, 0.12, 0, 0.42, -LEN / 2, trim);
+      part(WID + 0.02, 0.18, 0.12, 0, 0.42, LEN / 2, trim);
       for (const s of [-1, 1]) {
-        part(0.34, 0.14, 0.04, s * 0.62, 0.72, -CAR_LEN / 2 - 0.01, head);
-        part(0.34, 0.12, 0.04, s * 0.62, 0.74, CAR_LEN / 2 + 0.01, tail);
+        part(0.34, 0.14, 0.04, s * 0.62, 0.72, -LEN / 2 - 0.01, head);
+        part(0.34, 0.12, 0.04, s * 0.62, 0.74, LEN / 2 + 0.01, tail);
       }
-      const wheelGeo = new THREE.CylinderGeometry(CAR_WHEEL_R, CAR_WHEEL_R, 0.24, 14);
+      const wheelGeo = new THREE.CylinderGeometry(WR, WR, 0.24, 14);
       wheelGeo.rotateZ(Math.PI / 2);
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         const pivot = new THREE.Group();
-        pivot.position.set(sx * CAR_TRACK / 2, CAR_WHEEL_R, sz * CAR_WHEELBASE / 2);
+        pivot.position.set(sx * TRACK / 2, WR, sz * WB / 2);
         const w = new THREE.Mesh(wheelGeo, tyre);
         w.rotation.order = 'YXZ';
         pivot.add(w);
@@ -9705,10 +9710,10 @@
         car.wheels.push(w);
         if (sz < 0) car.front.push(pivot);
       }
-      g.rotation.order = 'YXZ';
-      g.visible = false;
-      scene.add(g);
-      car.mesh = g;
+      root.rotation.order = 'YXZ';
+      root.visible = false;
+      scene.add(root);
+      car.mesh = root;
     }
 
     // Ground under the axles and sides sets height, pitch and roll.
@@ -10024,7 +10029,8 @@
       if (!driving) return;
       const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
       const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
-      for (const [l, f] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
+      for (const [l0, f0] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
+        const l = l0 * CAR_SCALE, f = f0 * CAR_SCALE;
         const px = car.x + rx * l + fx * f, pz = car.z + rz * l + fz * f, g = groundAt(px, pz);
         if (shellAt(px, pz) >= 0) continue;
         if (solidOverlap(px, pz, PLAYER_RADIUS + 0.05, g, g + EYE_HEIGHT + HEAD_CLEAR)) continue;
