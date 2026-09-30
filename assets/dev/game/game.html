@@ -3674,7 +3674,7 @@
     const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
     const DEER_EXPLORE_P = 0.0001;   // species.py: chance per tick of a new random explore point
     const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
-    const DEER_GRACE_MULT = 4;        // deer wait this many times longer than people between births
+    const MATE_TIME_MULT = 4;         // default for every species: this many times longer to fill the mate bar
     const NPC_MATURITY_TICKS = 3 * 24 * 60;   // ticks from birth to full size (72 s at 60 Hz); no mating before
     const HUMAN_TURN_RATE = 3;      // radians per second people turn toward their brain's heading
     const DEER_GREEN_SHARE = 0.8;
@@ -3702,7 +3702,7 @@
     const SPECIES = {
       human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
       coyote: { brain: false, hunts: { deer: true, human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
-      deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: DEER_GRACE_MULT, childDrop: 10 }
+      deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
     const HUNTED = {};
@@ -4384,7 +4384,7 @@
         this.sex = Math.random() < 0.5 ? 'male' : 'female';
         this.mutationMulti = 0.5;
         this.lastChildTime = Date.now();
-        this.childGracePeriod = (15 + Math.random() * 15) * 1000 * spec.grace;
+        this.childGracePeriod = (15 + Math.random() * 15) * 1000 * spec.grace * MATE_TIME_MULT;
         this.lookForMate = false;
 
         this.waterIncrement = this.health * 0.000001;
@@ -4891,7 +4891,7 @@
         this.waterNeed += this.waterIncrement;
         this.foodNeed += this.foodIncrement;
         if (!this.isAdult && world.ticks - this.birthTick >= NPC_MATURITY_TICKS) this.isAdult = true;
-        this.lookForMate = this.isAdult && (now - this.lastChildTime) >= this.childGracePeriod;
+        this.lookForMate = this.mateReady(now);
         // people: the Arena's rule; deer: species.py's, one increment per tick
         const rn = this.reproductionNeed;
         this.reproductionNeed = !this.lookForMate ? 0
@@ -4955,6 +4955,14 @@
       dietWater(food) {
         const perFood = DIET_WATER_SHARE * this.waterIncrement / this.foodIncrement;
         this.waterNeed = Math.max(0, this.waterNeed - food * perFood);
+      }
+
+      // Mate bar fill (0..1); only an adult with a full bar may mate.
+      mateFill(now) {
+        return this.isAdult ? (now - this.lastChildTime) / this.childGracePeriod : 0;
+      }
+      mateReady(now) {
+        return this.isAdult && this.mateFill(now) >= 1;
       }
 
       mate(partner) {
@@ -7116,6 +7124,12 @@
     const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
     const CAT_SEAT = { x: 0.4, y: 0.6, z: 0 };   // passenger seat in the car's frame (+x passenger side, -z forward)
     const CAT_DOOR = 1.2;
+    const CAT_RUN_FROM = 25;       // m from the car: starting farther than this (or the car moving) he runs...
+    const CAT_WALK_WITHIN = 4;     // m: ...until this close, then walks the rest
+    const CAT_RUN_SPEED = 11;      // m/s sprint (his catch-up pace)
+    const CAT_BOARD_SPEED = 2.2;   // m/s trot to the passenger door
+    const CAT_JUMP_TIME = 0.55;    // s: door to seat
+    const CAT_BOARD_TIMEOUT = 8;   // s: still not in, he appears at the passenger door and hops in
 
     class CatCompanion {
       constructor() {
@@ -7131,7 +7145,9 @@
         this.FLOAT = 1.5 * NPC_UNIT;
         this.active = false;
         this.riding = false;
+        this.boarding = null;          // walk-to-the-door state while the player gets in
         this._w = new THREE.Vector3();
+        this._seat = new THREE.Vector3();
       }
 
       build() {
@@ -7226,9 +7242,119 @@
         return group;
       }
 
-      // Gets in with the player: a passenger on the car's mesh, still, facing forward (his update pauses).
+      // Gets in with the player: walks round to the passenger door, hops onto the seat, then rides.
       board() {
-        if (!this.active || this.riding) return;
+        if (!this.active || this.riding || this.boarding) return;
+        const [cx, cf] = this.carLocal(this.position.x, this.position.z);
+        this.boarding = { t: 0, jump: -1, from: new THREE.Vector3(), run: Math.hypot(cx, cf) > CAT_RUN_FROM };
+        sceneDirty = true;
+      }
+
+      // (x, z) in the car's frame: [right, forward]
+      carLocal(x, z) {
+        const dx = x - car.x, dz = z - car.z, c = Math.cos(car.yaw), s = Math.sin(car.yaw);
+        return [dx * c - dz * s, -dx * s - dz * c];
+      }
+
+      // car frame -> world (x, z)
+      carWorld(lx, lf, out) {
+        const c = Math.cos(car.yaw), s = Math.sin(car.yaw);
+        out.x = car.x + c * lx - s * lf; out.z = car.z - s * lx - c * lf;
+        return out;
+      }
+
+      // Next point on his way to the passenger door, from where he is now in the car's frame;
+      // from the driver's side (or in front/behind) he goes round the nearer end instead of through the car.
+      boardTarget(lx, lf) {
+        const L = CAR_LEN / 2 + 0.5, end = lf >= 0 ? L : -L;
+        if (lx >= CAT_DOOR - 0.15) return [CAT_DOOR, 0];
+        if (Math.abs(lf) >= L - 0.15) return [CAT_DOOR, end];
+        if (lx < CAR_WID / 2 + 0.1) return [Math.min(lx, -CAT_DOOR), end];
+        return [CAT_DOOR, 0];
+      }
+
+      static wrap(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+      legs(swing, tuck) {
+        const legs = this.mesh.userData.legs;
+        legs[0].rotation.x = swing - tuck;
+        legs[1].rotation.x = -swing - tuck;
+        legs[2].rotation.x = -swing + tuck;
+        legs[3].rotation.x = swing + tuck;
+      }
+
+      // start the hop from where he stands, kept in the car's frame so a moving car carries it along
+      startJump() {
+        const b = this.boarding;
+        b.jump = 0;
+        car.mesh.updateMatrixWorld();
+        car.mesh.worldToLocal(b.from.copy(this.position));
+      }
+
+      updateBoarding(dt) {
+        const b = this.boarding;
+        b.t += dt;
+        this.animTime += dt;
+        if (b.jump < 0) {
+          // trying too long: appear at the passenger door and hop in from there
+          if (b.t > CAT_BOARD_TIMEOUT) {
+            const p = this.carWorld(CAT_DOOR, 0, this._w);
+            this.position.set(p.x, this.groundAt(p.x, p.z), p.z);
+            this.yaw = car.yaw - Math.PI / 2;
+            this.startJump();
+          } else {
+            const [cx, cf] = this.carLocal(this.position.x, this.position.z);
+            const [lx, lf] = this.boardTarget(cx, cf);
+            const tg = this.carWorld(lx, lf, this._seat);
+            const tx = tg.x, tz = tg.z;
+            const dx = tx - this.position.x, dz = tz - this.position.z, d = Math.hypot(dx, dz);
+            const atDoor = lx === CAT_DOOR && lf === 0;
+            // run while far from the car or while it is moving, walk the last stretch
+            if (car.speed !== 0) b.run = true;
+            else if (Math.hypot(cx, cf) < CAT_WALK_WITHIN) b.run = false;
+            const running = b.run;
+            const speed = running ? CAT_RUN_SPEED : CAT_BOARD_SPEED;
+            if (atDoor && d < (car.speed !== 0 ? 0.35 : 0.1)) {
+              this.startJump();
+            } else {
+              const step = Math.min(d, speed * dt);
+              if (d > 1e-6) {
+                this.position.x += dx / d * step;
+                this.position.z += dz / d * step;
+                this.yaw += CatCompanion.wrap(Math.atan2(dx, dz) - this.yaw) * Math.min(1, dt * 10);
+              }
+              const feet = this.position.y;
+              this._w.set(this.position.x, 0, this.position.z);
+              resolveCollisions(this._w, 0.15, feet, feet + 0.35, STEP_UP);
+              this.position.x = world.fitX(this._w.x);
+              this.position.z = world.fitZ(this._w.z);
+              this.position.y = this.groundAt(this.position.x, this.position.z);
+            }
+            this.legs(running ? Math.sin(this.animTime * 18) * 0.55 : Math.sin(this.animTime * 12) * 0.35, 0);
+          }
+        }
+        if (b.jump >= 0) {
+          b.jump = Math.min(1, b.jump + dt / CAT_JUMP_TIME);
+          const k = b.jump, e = k * k * (3 - 2 * k);
+          car.mesh.updateMatrixWorld();
+          const f = b.from;
+          this._seat.set(f.x + (CAT_SEAT.x - f.x) * e, f.y + (CAT_SEAT.y - f.y) * e + Math.sin(Math.PI * k) * 0.45,
+            f.z + (CAT_SEAT.z - f.z) * e);
+          this.position.copy(car.mesh.localToWorld(this._seat));
+          // leap facing into the car, settle facing forward
+          const target = k < 0.5 ? car.yaw - Math.PI / 2 : car.yaw + Math.PI;
+          this.yaw += CatCompanion.wrap(target - this.yaw) * Math.min(1, dt * 12);
+          this.legs(0, Math.sin(Math.PI * k) * 0.6);
+          if (k >= 1) { this.seat(); return; }
+        }
+        this.mesh.position.copy(this.position);
+        this.mesh.rotation.y = this.yaw;
+        sceneDirty = true;
+      }
+
+      // A passenger on the car's mesh, still, facing forward (his update pauses).
+      seat() {
+        this.boarding = null;
         this.riding = true;
         car.mesh.add(this.mesh);
         this.mesh.position.set(CAT_SEAT.x, CAT_SEAT.y, CAT_SEAT.z);
@@ -7239,6 +7365,7 @@
 
       // Gets out with the player: by the passenger door if there is room, else beside the player.
       alight() {
+        if (this.boarding) { this.boarding = null; return; }   // player got out before he got in
         if (!this.riding) return;
         this.riding = false;
         scene.add(this.mesh);
@@ -7254,6 +7381,7 @@
 
       // In front of the player, a little to the right, facing the player.
       place(show) {
+        this.boarding = null;
         if (this.riding) { this.riding = false; scene.add(this.mesh); }
         this.active = show;
         this.mesh.visible = show;
@@ -7277,6 +7405,7 @@
 
       update(deltaTime) {
         if (!this.active || this.riding) return;
+        if (this.boarding) { this.updateBoarding(deltaTime); return; }
         this.animTime += deltaTime;
         activeWorld.surface(this.position.x, this.position.z, _surf);
         const waterFactor = _surf.dip < 0 ? this.WATER_SPEED_FACTOR : 1;
@@ -8573,11 +8702,13 @@
 
       tryMate(a, px, pz) {
         if (a.sex !== 'male') return;
+        const now = Date.now();
+        if (!a.mateReady(now)) return;
         const n = this.grid.queryInto(this._qMate, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
         for (let i = 0; i < n; i++) {
           const other = this._qMate[i];
           if (other !== a && other.alive && other.type === a.type &&
-            other.sex === 'female' && other.lookForMate &&
+            other.sex === 'female' && other.lookForMate && other.mateReady(now) &&
             tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
             const child = a.mate(other);
             // City: a child that would land in or through a wall is born at the mother's spot.
@@ -9138,7 +9269,7 @@
         const tick = ++this.tick;
         const spin = performance.now() / 1000 * BRAIN_SPIN;
         const now = Date.now();
-        const q = v => Math.round(Math.max(0, Math.min(1, v)) * BAR_STEPS);
+        const q = v => Math.floor(Math.max(0, Math.min(1, v)) * BAR_STEPS);   // bars round down
         const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
         const seen = this.seen;
         seen.clear();
@@ -9179,7 +9310,7 @@
             fill[0] = a.health / a.maxHealth;
             fill[1] = 1 - Math.min(a.foodNeed, 100) / 100;
             fill[2] = 1 - Math.min(a.waterNeed, 100) / 100;
-            fill[3] = a.isAdult ? (now - a.lastChildTime) / a.childGracePeriod : 0;
+            fill[3] = a.mateFill(now);
             const dx = this.farBarX;
             for (let i = 0; i < rows; i++) {
               const f = Math.max(0, Math.min(1, fill[i]));
@@ -9224,7 +9355,7 @@
           vals[0] = q(a.health / a.maxHealth);
           vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
           vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
-          vals[3] = a.isAdult ? q((now - a.lastChildTime) / a.childGracePeriod) : 0;
+          vals[3] = q(a.mateFill(now));
           arrows[1] = this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos);
           arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
           arrows[3] = this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos);
@@ -9509,7 +9640,51 @@
         g.add(b);
         return b;
       };
-      part(CAR_WID, 0.62, CAR_LEN, 0, 0.62, 0, paint);
+      // Lower body: a narrow full core plus two side panels whose side profile has arches cut over the wheels,
+      // with dark liners on the core behind each arch (the wheel wells).
+      {
+        const yb = 0.31, yt = 0.93, L = CAR_LEN / 2, R = CAR_WHEEL_R + 0.09;
+        const arches = [-CAR_WHEELBASE / 2, CAR_WHEELBASE / 2];
+        const core = 0.46;                 // core half-width: clear of the wheels at full lock
+        const side = CAR_WID / 2 - core;   // side panel thickness
+        // profile in (z, y): bottom edge left to right with the arches, then up and back across the top
+        const prof = new THREE.Shape();
+        prof.moveTo(-L, yb);
+        for (const c of arches) {
+          prof.lineTo(c - R, yb);
+          prof.lineTo(c - R, CAR_WHEEL_R);
+          prof.absarc(c, CAR_WHEEL_R, R, Math.PI, 0, true);
+          prof.lineTo(c + R, yb);
+        }
+        prof.lineTo(L, yb);
+        prof.lineTo(L, yt);
+        prof.lineTo(-L, yt);
+        prof.closePath();
+        const panelGeo = new THREE.ExtrudeGeometry(prof, { depth: side, bevelEnabled: false, curveSegments: 12 });
+        panelGeo.rotateY(Math.PI / 2);     // profile z -> car z (mirrored, symmetric), extrusion -> car +x
+        for (const sx of [-1, 1]) {
+          const m = new THREE.Mesh(panelGeo, paint);
+          m.position.x = sx > 0 ? core : -CAR_WID / 2;
+          g.add(m);
+        }
+        part(core * 2, yt - yb, CAR_LEN, 0, (yb + yt) / 2, 0, paint);
+        const liner = new THREE.MeshLambertMaterial({ color: 0x0d0e10, side: THREE.DoubleSide });
+        for (const c of arches) {
+          const well = new THREE.Shape();
+          well.moveTo(c - R, yb);
+          well.lineTo(c + R, yb);
+          well.lineTo(c + R, CAR_WHEEL_R);
+          well.absarc(c, CAR_WHEEL_R, R, 0, Math.PI, false);
+          well.closePath();
+          const wellGeo = new THREE.ShapeGeometry(well, 12);
+          wellGeo.rotateY(Math.PI / 2);
+          for (const sx of [-1, 1]) {
+            const m = new THREE.Mesh(wellGeo, liner);
+            m.position.x = sx * (core + 0.005);
+            g.add(m);
+          }
+        }
+      }
       part(CAR_WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, glass);
       part(CAR_WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, paint);
       part(CAR_WID + 0.02, 0.18, 0.12, 0, 0.42, -CAR_LEN / 2, trim);
@@ -10284,7 +10459,7 @@
 
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
-        car.speed === 0 && !(driving && drive.settling);
+        car.speed === 0 && !(driving && drive.settling) && !cat.boarding;
       if (settled && !movementHeld() && !rainAnimating() && !npcLive) {
         last = -1;
         return;
