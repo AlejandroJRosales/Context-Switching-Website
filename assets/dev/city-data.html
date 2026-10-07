@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova Orbis city data</title>
+<style>
+  body { margin: 0; padding: 24px 16px; background: #10131a; color: #e8e4dc; font: 15px/1.5 Georgia, serif; }
+  main { max-width: 820px; margin: auto; }
+  h1 { font-weight: 400; font-size: 26px; margin: 0 0 8px; }
+  p { color: rgba(232, 228, 220, 0.75); margin: 0 0 14px; }
+  select, button { font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace; padding: 9px 14px; border-radius: 3px;
+    border: 1px solid #2c323f; background: #191d26; color: #e8e4dc; cursor: pointer; }
+  button.go { background: #e8e4dc; color: #10131a; border-color: transparent; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  section { border-top: 1px solid #2c323f; padding: 16px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  #status { min-height: 1.4em; margin-bottom: 8px; }
+  #files:empty { display: none; }
+  #call { height: 150px; }
+  #log { height: 260px; }
+  .status { font: 400 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: rgba(232, 228, 220, 0.75); }
+  .status.error { color: #d98b7a; }
+  label.cap { display: block; font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em;
+    text-transform: uppercase; color: rgba(232, 228, 220, 0.6); margin: 10px 0 4px; }
+  textarea { box-sizing: border-box; width: 100%; height: 86px; background: #191d26; color: #e8e4dc;
+    border: 1px solid #2c323f; border-radius: 3px; padding: 8px; font: 400 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nova Orbis city data</h1>
+  <p>Pick a suggested place. Step 1 asks the geocoder for its coordinates (the same call the game makes) and shows
+    the exact map request the game would send for a 500 m city. Step 2 sends that one request and saves the answer
+    as a file you can host. Each of those buttons sends a single request. "Get every queued place" works through the
+    queue instead: each place in turn, on each map server in turn until one answers, one request at a time.</p>
+  <section>
+    <div class="row"><span class="status">City</span><select id="city"></select>
+      <span class="status">Map server</span>
+      <select id="mirror">
+        <option>https://overpass-api.de/api/interpreter</option>
+        <option>https://overpass.kumi.systems/api/interpreter</option>
+        <option>https://overpass.private.coffee/api/interpreter</option>
+      </select></div>
+    <div class="row"><button id="look">1. Look up coordinates</button>
+      <button id="go" class="go" disabled>2. Download map data</button>
+      <button id="all">Get every queued place</button></div>
+    <div id="status" class="status"></div>
+    <div id="files" class="row"></div>
+    <label class="cap">Queue (kept in this browser)</label><textarea id="queue" readonly></textarea>
+    <label class="cap">Geocoder call</label><textarea id="geo" readonly></textarea>
+    <label class="cap">Place info (the game needs this alongside the file)</label><textarea id="place" readonly></textarea>
+    <label class="cap">Map data call</label><textarea id="call" readonly></textarea>
+    <label class="cap">Log</label><textarea id="log" readonly></textarea>
+  </section>
+</main>
+<script>
+// The four suggested places and the query pieces below are copied from game.html, so the requests match the game's.
+const PICKS = [
+  ['New York, NY', 'New York, NY', 'new-york'],
+  ['Union Square, San Francisco', 'Union Square, San Francisco, CA', 'san-francisco'],
+  ['The Loop, Chicago', 'Millennium Park, Chicago, IL', 'chicago'],
+  ['1 Park Place, Athens, Ohio', '1 Park Place, Athens, OH', 'athens']
+];
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const RADIUS = 500;
+const OVERPASS_QUERY_TIMEOUT=45;
+    const BARRIER = {
+      wall: { h: 2.0, t: 0.36, color: 0xb5ad9f },
+      city_wall: { h: 4.0, t: 0.80, color: 0xb5ad9f },
+      retaining_wall: { h: 1.4, t: 0.50, color: 0xb5ad9f },
+      fence: { h: 1.7, t: 0.10, color: 0x8a8272 },
+      hedge: { h: 1.6, t: 0.80, color: 0x44653a }
+    };    const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|greenfield'
+      + '|village_green|recreation_ground|basin|reservoir';
+    const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
+    const BARRIER_RE = Object.keys(BARRIER).join('|');
+
+    // Places by purpose: the OSM tag values for each kind; first hit (healthcare, amenity, shop) wins.
+    const PLACE_KINDS = {
+      grocery: {
+        shop: ['supermarket', 'convenience', 'grocery', 'greengrocer', 'general',
+          'butcher', 'bakery', 'deli', 'health_food', 'farm']
+      },
+      food: { amenity: ['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar'] },
+      drinking_water: { amenity: ['drinking_water', 'water_point'] },
+      hospital: { amenity: ['hospital'], healthcare: ['hospital'] },
+      clinic: { amenity: ['clinic', 'doctors', 'dentist'], healthcare: ['clinic', 'doctor', 'dentist'] },
+      pharmacy: { amenity: ['pharmacy'], healthcare: ['pharmacy'], shop: ['chemist'] },
+      school: { amenity: ['school', 'college', 'university', 'kindergarten'] },
+      police: { amenity: ['police'] },
+      fire_station: { amenity: ['fire_station'] }
+    };
+    const PLACE_KEYS = ['healthcare', 'amenity', 'shop'];
+    const PLACE_OF = {};
+    const PLACE_RE = { healthcare: [], amenity: [], shop: [] };
+    for (const [kind, byKey] of Object.entries(PLACE_KINDS)) {
+      for (const [key, vals] of Object.entries(byKey)) {
+        for (const v of vals) { PLACE_OF[`${key}=${v}`] = kind; PLACE_RE[key].push(v); }
+      }
+    }
+    for (const key of PLACE_KEYS) PLACE_RE[key] = PLACE_RE[key].join('|');
+
+
+function query(lat,lon,radius=500){
+        const dLat = radius / 110540;
+        const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
+        const bbox = [lat - dLat, lon - dLon, lat + dLat, lon + dLon]
+          .map(v => v.toFixed(6)).join(',');
+        const q = `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT}];(` +
+          `way["building"](${bbox});relation["building"](${bbox});` +
+          `way["highway"](${bbox});` +
+          `way["natural"="water"](${bbox});relation["natural"="water"](${bbox});` +
+          `way["waterway"](${bbox});` +
+          `way["landuse"~"^(${LANDUSE_RE})$"](${bbox});relation["landuse"~"^(${LANDUSE_RE})$"](${bbox});` +
+          `way["leisure"~"^(${LEISURE_RE})$"](${bbox});relation["leisure"~"^(${LEISURE_RE})$"](${bbox});` +
+          `way["natural"="wetland"](${bbox});way["natural"="scrub"](${bbox});way["natural"="sand"](${bbox});` +
+          `way["natural"="tree_row"](${bbox});` +
+          `way["barrier"~"^(${BARRIER_RE})$"](${bbox});` +
+          `node["natural"="tree"](${bbox});` +
+          `node["amenity"](${bbox});node["shop"](${bbox});node["healthcare"](${bbox});` +
+          PLACE_KEYS.map(k => `way["${k}"~"^(${PLACE_RE[k]})$"](${bbox});` +
+            `relation["${k}"~"^(${PLACE_RE[k]})$"](${bbox});`).join('') +
+          `node["highway"="street_lamp"](${bbox});` +
+          `node["emergency"="fire_hydrant"](${bbox});` +
+          `node["entrance"](${bbox});` +
+          `);out geom;`;
+ return {q,bbox};}
+
+const mirrorEl = document.getElementById('mirror'), cityEl = document.getElementById('city');
+const $ = id => document.getElementById(id);
+const shq = s => "'" + s.replace(/'/g, "'\\''") + "'";
+const sleep = ms => new Promise(done => setTimeout(done, ms));
+
+const REPLY_TIMEOUT_MS = 150000;   // a map server gets this long to start answering
+const STALL_TIMEOUT_MS = 60000;    // and may go this long between pieces of the answer
+const GEOCODER_GAP_MS = 1100;      // the geocoder asks for at most one request a second
+const QUEUE_KEY = 'cityDataQueue';
+
+// one record per place, kept while the page is open, so switching the dropdown does not lose a lookup;
+// `file` is a fetched answer waiting to be saved
+const cities = PICKS.map(([name, address, slug]) => ({
+  name, address, slug, place: null, built: null, status: '', error: false, file: null,
+  geoUrl: `${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`
+}));
+for (const [i, c] of cities.entries()) cityEl.add(new Option(c.name, i));
+const current = () => cities[cityEl.value];
+const mirrors = () => [...mirrorEl.options].map(o => o.value);
+let busy = false, stopper = null;
+
+// LOG: every request, the server's reply (status, headers, and the body of a refusal) and every error with its
+// traceback, newest at the bottom.
+function log(text) {
+  const el = $('log');
+  el.value += `[${new Date().toISOString().slice(11, 23)}] ${text}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function logError(where, err) {
+  log(`ERROR in ${where}: ${err && err.name ? err.name : typeof err}: ${err && err.message !== undefined ? err.message : err}` +
+    (err && err.cause ? `\n  cause: ${err.cause}` : '') +
+    (err && err.stack ? `\n${String(err.stack).split('\n').map(l => '  ' + l).join('\n')}` : ''));
+}
+function logResponse(res, ms) {
+  const heads = [...res.headers].map(([k, v]) => `${k}: ${v}`).join('; ');
+  log(`Reply ${res.status} ${res.statusText} after ${ms} ms from ${res.url || '(no url)'}\n  headers: ${heads || '(none readable)'}`);
+}
+window.addEventListener('error', e => logError('page', e.error || new Error(e.message)));
+window.addEventListener('unhandledrejection', e => logError('promise', e.reason));
+log(`Page opened from ${location.origin === 'null' ? 'a local file (origin null)' : location.origin}; online: ${navigator.onLine}`);
+
+// QUEUE: the places that still have no saved file, in the order they will be tried, kept in localStorage so it
+// survives a reload. A place that fails on every map server goes to the back with its last error; a place leaves
+// the queue when its file is saved.
+let queue;
+try { queue = JSON.parse(localStorage.getItem(QUEUE_KEY)); } catch (e) { queue = null; }
+if (!Array.isArray(queue)) queue = cities.map(c => ({ slug: c.slug, tries: 0, lastError: null, at: null }));
+queue = queue.filter(q => q && cities.some(c => c.slug === q.slug));
+function saveQueue() {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); } catch (e) { logError('saving the queue', e); }
+  $('queue').value = queue.length
+    ? queue.map((q, i) => `${i + 1}. ${cities.find(c => c.slug === q.slug).name}` +
+      (q.tries ? `: failed ${q.tries} time${q.tries > 1 ? 's' : ''}, last ${q.at}: ${q.lastError}` : ': not tried yet')).join('\n')
+    : 'Empty: every place has a saved file.';
+}
+function unqueue(c) { queue = queue.filter(q => q.slug !== c.slug); saveQueue(); }
+function requeue(c, message) {
+  const old = queue.find(q => q.slug === c.slug);
+  queue = queue.filter(q => q.slug !== c.slug);
+  queue.push({ slug: c.slug, tries: (old ? old.tries : 0) + 1, lastError: message, at: new Date().toISOString() });
+  saveQueue();
+}
+
+function say(c, text, error = false) { c.status = text; c.error = error; show(); }
+
+function show() {
+  const c = current();
+  $('status').textContent = c.status;
+  $('status').classList.toggle('error', c.error);
+  $('geo').value = `curl ${shq(c.geoUrl)}`;
+  $('place').value = c.place
+    ? JSON.stringify({ file: `${c.slug}.json`, ...c.place, radius: RADIUS, bbox: c.built.bbox }) : '';
+  $('call').value = c.built
+    ? `curl -X POST ${shq(mirrorEl.value)} --data-urlencode ${shq('data=' + c.built.q)} -o ${c.slug}.json` : '';
+  $('look').disabled = busy;
+  $('go').disabled = busy || !c.built;
+  $('all').textContent = stopper ? 'Stop' : 'Get every queued place';
+  $('all').disabled = busy && !stopper;
+}
+
+// The geocoder call. Fills c.place and c.built, or throws.
+async function lookUp(c) {
+  say(c, 'Asking the geocoder…');
+  log(`GET ${c.geoUrl}`);
+  const t0 = Date.now();
+  const res = await fetch(c.geoUrl);
+  logResponse(res, Date.now() - t0);
+  if (!res.ok) {
+    log(`  body: ${(await res.text().catch(() => '')).slice(0, 1500)}`);
+    throw new Error(`Geocoder returned ${res.status}.`);
+  }
+  const hits = await res.json();
+  if (!hits.length) throw new Error('No match for that address.');
+  c.place = { lat: parseFloat(hits[0].lat), lon: parseFloat(hits[0].lon), label: hits[0].display_name };
+  c.built = query(c.place.lat, c.place.lon, RADIUS);
+  log(`Place: ${JSON.stringify(c.place)}; bbox ${c.built.bbox}`);
+  say(c, `${c.place.lat.toFixed(5)}, ${c.place.lon.toFixed(5)}. Ready to download.`);
+}
+
+// One map request to one server. Resolves { blob, bytes, host, secs } or throws; `stop` aborts it from outside.
+// A clock runs while the server works, then a byte count while the answer arrives, so slow and stalled differ.
+async function fetchMap(c, url, stop = null) {
+  const host = new URL(url).hostname;
+  const t0 = Date.now(), secs = () => Math.round((Date.now() - t0) / 1000);
+  const ctrl = new AbortController();
+  let got = 0, why = '';
+  const giveUp = reason => { why = reason; ctrl.abort(); };
+  if (stop) stop.addEventListener('abort', () => giveUp('stopped'), { once: true });
+  let guard = setTimeout(() => giveUp(`no reply in ${REPLY_TIMEOUT_MS / 1000} s`), REPLY_TIMEOUT_MS);
+  const tick = () => say(c, got
+    ? `Receiving from ${host}: ${(got / 1e6).toFixed(1)} MB so far, ${secs()} s.`
+    : `Waiting for ${host} to prepare the answer… ${secs()} s.`);
+  tick();
+  const clock = setInterval(tick, 1000);
+  try {
+    log(`POST ${url} for ${c.name}, bbox ${c.built.bbox}, query ${c.built.q.length} characters`);
+    const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(c.built.q), signal: ctrl.signal });
+    logResponse(res, Date.now() - t0);
+    if (!res.ok) {
+      // the server's own explanation, with the markup stripped
+      const body = (await res.text().catch(() => '')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      log(`  body: ${body.slice(0, 1500) || '(empty)'}`);
+      throw new Error(`${host} returned ${res.status} after ${secs()} s.`);
+    }
+    const chunks = [], reader = res.body.getReader();
+    for (;;) {
+      clearTimeout(guard);
+      guard = setTimeout(() => giveUp(`nothing received for ${STALL_TIMEOUT_MS / 1000} s`), STALL_TIMEOUT_MS);
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!got) log(`First bytes after ${Date.now() - t0} ms`);
+      chunks.push(value);
+      got += value.length;
+    }
+    log(`Finished: ${got} bytes in ${Date.now() - t0} ms`);
+    return { blob: new Blob(chunks, { type: 'application/json' }), bytes: got, host, secs: secs() };
+  } catch (err) {
+    logError(`map download for ${c.name} from ${host} (${got} bytes received, ${Date.now() - t0} ms)`, err);
+    if (why) throw new Error(`${host}: ${why} (${secs()} s, ${(got / 1e6).toFixed(1)} MB received).`);
+    if (err instanceof TypeError) throw new Error(`${host} unreachable or the connection dropped after ${secs()} s.`);
+    throw err;
+  } finally {
+    clearTimeout(guard);
+    clearInterval(clock);
+  }
+}
+
+// Hands a fetched file to the browser's downloads, and takes the place off the queue.
+function saveFile(c) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(c.file.blob);
+  a.download = `${c.slug}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  log(`Saved ${c.slug}.json (${c.file.bytes} bytes, from ${c.file.host})`);
+  unqueue(c);
+}
+
+// A download button for a fetched file (one per place; a newer fetch replaces it).
+function offerFile(c) {
+  let btn = document.querySelector(`#files button[data-slug="${c.slug}"]`);
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.className = 'go';
+    btn.dataset.slug = c.slug;
+    btn.addEventListener('click', () => saveFile(c));
+    $('files').appendChild(btn);
+  }
+  btn.textContent = `Download ${c.slug}.json (${(c.file.bytes / 1e6).toFixed(2)} MB, from ${c.file.host})`;
+}
+
+cityEl.addEventListener('change', show);
+mirrorEl.addEventListener('change', show);
+
+$('look').addEventListener('click', async () => {
+  const c = current();
+  busy = true;
+  try { await lookUp(c); }
+  catch (err) {
+    logError(`geocoder lookup for ${c.name}`, err);
+    say(c, err instanceof TypeError ? 'Geocoder unreachable.' : err.message, true);
+  }
+  busy = false;
+  show();
+});
+
+$('go').addEventListener('click', async () => {
+  const c = current();
+  busy = true;
+  try {
+    c.file = await fetchMap(c, mirrorEl.value);
+    saveFile(c);
+    say(c, `Saved ${c.slug}.json: ${(c.file.bytes / 1e6).toFixed(2)} MB in ${c.file.secs} s.`);
+  } catch (err) {
+    say(c, `${err.message} Wait a minute, or try another map server.`, true);
+  }
+  busy = false;
+  show();
+});
+
+// Every queued place in turn, each on every map server in turn until one answers. One request at a time. A file
+// that arrives gets a download button; a place no server answered goes to the back of the queue for the next press.
+$('all').addEventListener('click', async () => {
+  if (stopper) { stopper.abort(); return; }
+  const todo = queue.map(q => cities.find(c => c.slug === q.slug)).filter(c => !c.file);
+  if (!todo.length) { log('Nothing to fetch: every queued place already has a file waiting or saved.'); return; }
+  busy = true;
+  stopper = new AbortController();
+  const stop = stopper.signal;
+  log(`Loop started: ${todo.map(c => c.name).join('; ')} on ${mirrors().map(u => new URL(u).hostname).join(', ')}`);
+  let lastGeo = 0;
+  for (const c of todo) {
+    if (stop.aborted) break;
+    cityEl.value = cities.indexOf(c);
+    show();
+    let lastError = null;
+    try {
+      if (!c.built) {
+        await sleep(Math.max(0, lastGeo + GEOCODER_GAP_MS - Date.now()));
+        lastGeo = Date.now();
+        await lookUp(c);
+      }
+      for (const url of mirrors()) {
+        if (stop.aborted) break;
+        try {
+          c.file = await fetchMap(c, url, stop);
+          offerFile(c);
+          say(c, `${c.slug}.json is ready: ${(c.file.bytes / 1e6).toFixed(2)} MB from ${c.file.host} in ${c.file.secs} s.`);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+    } catch (err) {
+      logError(`geocoder lookup for ${c.name}`, err);
+      lastError = err instanceof TypeError ? new Error('Geocoder unreachable.') : err;
+    }
+    if (lastError && !stop.aborted) {
+      requeue(c, lastError.message);
+      say(c, `No server answered; back of the queue. Last: ${lastError.message}`, true);
+    } else if (lastError) {
+      say(c, 'Stopped.', true);
+    }
+  }
+  log(stop.aborted ? 'Loop stopped.' : `Loop finished: ${cities.filter(c => c.file).length} file(s) ready, ${queue.length} place(s) queued.`);
+  stopper = null;
+  busy = false;
+  show();
+});
+
+saveQueue();
+show();
+</script>
+</body>
+</html>
