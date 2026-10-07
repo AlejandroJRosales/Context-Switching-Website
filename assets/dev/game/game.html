@@ -970,7 +970,7 @@
   <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.min.js",
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
 }
@@ -1124,7 +1124,7 @@
     // The chosen size as { scale, ladder }. Custom takes its scale from the slider.
     function worldSizeChoice() {
       const scale = worldSize === 'custom'
-        ? Math.min(100, Math.max(5, parseFloat(document.getElementById('size').value) || 30))
+        ? parseFloat(document.getElementById('size').value)
         : WORLD_SIZES[worldSize].scale;
       return { scale, ladder: CITY_LADDER };
     }
@@ -1653,7 +1653,7 @@
 
       const min = ladder[ladder.length - 1];
       throw new Error(
-        `Every mirror failed, down to a ${min} m radius. Last: ${lastErr ? lastErr.message : 'unknown'}.`
+        `Every mirror failed, down to a ${min} m radius. Last: ${lastErr.message}.`
       );
     }
 
@@ -1722,7 +1722,6 @@
     }
 
     function heightOf(tags) {
-      if (!tags) return DEFAULT_LEVELS * METERS_PER_LVL;
       // these are ground-to-top already, so they win; est_height ranks above a levels guess
       const direct = parseLength(tags.height)
         ?? parseLength(tags['building:height'])
@@ -1739,7 +1738,6 @@
     }
 
     function minHeightOf(tags) {
-      if (!tags) return 0;
       return parseLength(tags.min_height) ?? (parseLength(tags['building:min_level']) ?? 0) * METERS_PER_LVL;
     }
 
@@ -1916,7 +1914,6 @@
     }
 
     function signLabel(tags) {
-      if (!tags) return null;
       if (tags.name) return tags.name;
       if (tags.brand) return tags.brand;
       if (tags.operator) return tags.operator;
@@ -1937,7 +1934,6 @@
     }
 
     function wallColorOf(tags) {
-      if (!tags) return null;
       return cssColor(tags['building:colour'])
         ?? cssColor(tags.colour)
         ?? WALL_MATERIAL_COLOR[tags['building:material']]
@@ -1946,7 +1942,6 @@
     }
 
     function roofColorOf(tags) {
-      if (!tags) return null;
       return cssColor(tags['roof:colour'])
         ?? ROOF_MATERIAL_COLOR[tags['roof:material']]
         ?? null;
@@ -2302,7 +2297,7 @@
     function roadIndex(roads) {
       const segs = [];
       for (const r of roads || []) {
-        const half = (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2;
+        const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
         const wgt = PATH_KINDS.has(r.kind) ? 0.75 : 1;
         for (let i = 0; i < r.pts.length - 1; i++) {
           const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
@@ -2596,7 +2591,6 @@
           rh = Math.min(rh, (top - base) - 1.0);
           if (rh >= 0.6) wallTop = top - rh; else roofShape = null;
         }
-        if (!(wallTop - base > 0.5)) { skipped++; continue; }
 
         const holes = (ring.holes || [])
           .map(h => orientRing(dedupeRing(h), false))
@@ -2645,7 +2639,7 @@
 
       // Pass 2: geometry and colliders.
       const roads = roadIndex(features.roads);
-      const ents = pointIndex(features.entrances || []);
+      const ents = pointIndex(features.entrances);
       const iw = rgb(0xe4ded2), floorC = rgb(0x8f7358), ceilC = rgb(0xf1eee8), trim = rgb(0x4e3d30);
       const solids = [];
 
@@ -2720,7 +2714,6 @@
 
       for (const a of features.areas) {
         const hex = AREA_COLOR[a.kind];
-        if (hex == null) continue;
         const wet = a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir';
         const g = areaGeom(a.pts, wet ? LAYER_Y.water : LAYER_Y.area, rgb(hex));
         if (g) (wet ? waterGeoms : groundMatchWild && MIX_GREEN_KINDS.has(a.kind) ? greenGeoms : areaGeoms).push(g);
@@ -2765,7 +2758,7 @@
 
     // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
     function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj => { scene.add(obj); layers.push(obj); }) {
-      if (!trees || !trees.length) return;
+      if (!trees.length) return;
 
       const trunkG = new THREE.CylinderGeometry(0.14, 0.2, 1, 6);
       trunkG.translate(0, 0.5, 0);
@@ -2814,11 +2807,9 @@
     // Walls, fences and hedges; each segment is also a thin collision footprint.
     function buildBarriers(list) {
       const geoms = [], boxes = [];
-      if (!list) return boxes;
 
       for (const b of list) {
         const spec = BARRIER[b.kind];
-        if (!spec) continue;
         const h = Math.min(Math.max(b.height ?? spec.h, 0.4), 12);
         const c = rgb(spec.color);
 
@@ -2872,7 +2863,6 @@
 
     function buildProps(list) {
       const geoms = [];
-      if (!list) return;
 
       const post = rgb(0x50545c), lampHead = rgb(0xf5ead0);
       const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
@@ -3356,7 +3346,6 @@
 
       for (const w of walls) {
         const tags = w.tags;
-        if (!tags) continue;
         const label = signLabel(tags);
         const edge = longestEdge(w.pts);
         if (!edge) continue;
@@ -3380,7 +3369,7 @@
             const bucket = shellGrid.get(cellKey(cx, cz));
             if (!bucket) continue;
             for (const idx of bucket) {
-              if (idx >= walls.length || mark[idx] === stamp) continue;
+              if (mark[idx] === stamp) continue;
               mark[idx] = stamp;
               cand.push(idx);
             }
@@ -3859,34 +3848,8 @@
         return ((value % size) + size) % size;
       }
 
-      sigmoid(x) {
-        x = Math.max(-500, Math.min(500, x));
-        return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
-      }
-
-      softmax(vector) {
-        const max = Math.max(...vector);
-        const exps = vector.map(v => Math.exp(v - max));
-        const sum = exps.reduce((a, b) => a + b, 0);
-        return exps.map(exp => exp / sum);
-      }
-
       random(min = 0, max = 1) {
         return Math.random() * (max - min) + min;
-      }
-
-      getMeanVariance(inputs) {
-        let mean = 0;
-        for (let i = 0; i < inputs.length; i++) mean += inputs[i];
-        mean /= inputs.length;
-
-        let variance = 0;
-        for (let i = 0; i < inputs.length; i++) {
-          const diff = inputs[i] - mean;
-          variance += diff * diff;
-        }
-        variance /= inputs.length;
-        return { mean, variance };
       }
     }
 
@@ -4067,7 +4030,6 @@
         this.costHistoryLen = 0;
         this.output = null;
         this.heading = Math.random() * Math.PI * 2;
-        this.normCount = 0;
         this.EMA = 0.001;
 
         this.runningMean = new Float32Array(inputDims);
@@ -4156,7 +4118,6 @@
         this.actB = new Float32Array(NB);
         this.actO = new Float32Array(O);
 
-        this.layerDims = [I, NA, NB, O];
 
         this.prefSin = new Float32Array(O);
         this.prefCos = new Float32Array(O);
@@ -4166,7 +4127,6 @@
           this.prefCos[i] = Math.cos(phi);
         }
 
-        this.activations = [this.actA, this.actB, this.actO];
       }
 
       getMasks() {
@@ -4222,9 +4182,7 @@
             refracA[i] = refracPd;
           } else {
             const vRel = hA[i] - lifTh;
-            actA[i] = vRel >= 0
-              ? 1 / (1 + Math.exp(-vRel))
-              : Math.exp(vRel) / (1 + Math.exp(vRel));
+            actA[i] = Math.exp(vRel) / (1 + Math.exp(vRel));
           }
         }
 
@@ -4257,9 +4215,7 @@
             refracB[i] = refracPd;
           } else {
             const vRel = hB[i] - lifTh;
-            actB[i] = vRel >= 0
-              ? 1 / (1 + Math.exp(-vRel))
-              : Math.exp(vRel) / (1 + Math.exp(vRel));
+            actB[i] = Math.exp(vRel) / (1 + Math.exp(vRel));
           }
         }
 
@@ -4286,7 +4242,6 @@
       }
 
       think(inputs) {
-        this.normCount++;
         const standardized = this._standardized;
 
         for (let i = 0; i < inputs.length; i++) {
@@ -4394,7 +4349,7 @@
       // THIRD FACTOR (dopamine): reward vs. its expected level turns tags into lasting change (burst) or reverses them (dip).
       adjustWeights(reward) {
         this.cost = reward;
-        const r = Math.max(-1, Math.min(1, reward));
+        const r = reward;
         const lr = this.getAdaptiveLr();
         const wd1 = 1 - this.weightDecay;
         const wdB = 1 - this.weightDecay * 0.1;
@@ -4479,9 +4434,7 @@
           const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
           this.heightScale = metres / (38.55 * NPC_UNIT);
         } else {
-          const heightParams = { deer: [1.0, 0.10], coyote: [1.0, 0.10] };
-          const [hMean, hStd] = heightParams[type] ?? [1.0, 0.10];
-          this.heightScale = NPC_HUMAN_HS * brains.randNormal(hMean, hStd);
+          this.heightScale = NPC_HUMAN_HS * brains.randNormal(1.0, 0.10);
         }
 
         this.waterNeed = Math.random() * 0.05;
@@ -4505,11 +4458,9 @@
         this.memWaterX = 0; this.memWaterY = 0; this.memWaterZ = 0; this.hasWater = false;
         this.memMateX = 0; this.memMateY = 0; this.memMateZ = 0; this.hasMate = false;
         this.priority = null;          // deer: 'predator', 'food', 'water', 'mate', or null while exploring
-        this.focusX = 0; this.focusZ = 0;
         this.speedScale = 1;
         this.sprinting = false;
         this.bumpScale = 1;
-        if (!spec.brain) this.newExploreCoords();
 
         this.rayFoodSin = 0; this.rayFoodCos = 0; this.rayFoodElev = 0; this.rayFoodDist = 0;
         this.rayWaterSin = 0; this.rayWaterCos = 0; this.rayWaterElev = 0; this.rayWaterDist = 0;
@@ -4519,7 +4470,6 @@
         this.brain = spec.brain ? new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001) : null;
         this.ACTION_HOLD = spec.brain ? 60 : DEER_THINK_TICKS;
         this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
-        this.currentAction = 0;
         // City: heading in radians, direction (sin, cos) in (x, z); people turn toward targetHeading.
         this.heading = Math.random() * Animal.TWO_PI;
         this.targetHeading = this.heading;
@@ -4560,12 +4510,12 @@
 
       // City: body-centre height above the feet in Arena units, from the rig; scales with heightScale.
       footLift() {
-        const hs = this.heightScale ?? 1.0;
+        const hs = this.heightScale;
         return this.spec.lift * hs;
       }
 
       eyeY() {
-        return this.position.y + this.eyeOffset * (this.heightScale ?? 1.0) * NPC_UNIT;
+        return this.position.y + this.eyeOffset * this.heightScale * NPC_UNIT;
       }
 
       senseTarget(px, py, pz, ax, az, cosH, tanV, tx, ty, tz) {
@@ -4622,7 +4572,7 @@
             if (hit.d3sq < bestPredDist) {
               bestPredDist = hit.d3sq;
               this.memPredatorX = ox; this.memPredatorY = oy; this.memPredatorZ = oz;
-              this.hasPredator = true; this.avoidNeed = 0.5;
+              this.hasPredator = true;
               this.rayPredatorSin = hit.sin; this.rayPredatorCos = hit.cos;
               this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
             }
@@ -4654,7 +4604,7 @@
           hit.d3sq < bestPredDist) {
           bestPredDist = hit.d3sq;
           this.memPredatorX = gp.position.x; this.memPredatorY = gp.position.y; this.memPredatorZ = gp.position.z;
-          this.hasPredator = true; this.avoidNeed = 0.5;
+          this.hasPredator = true;
           this.rayPredatorSin = hit.sin; this.rayPredatorCos = hit.cos;
           this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
         }
@@ -4719,25 +4669,25 @@
         this.locate(grid);
         const inp = this._inputs;
 
-        inp[0] = this.hasFood ? this.rayFoodSin : 0;
-        inp[1] = this.hasFood ? this.rayFoodCos : 0;
-        inp[2] = this.hasFood ? this.rayFoodElev : 0;
-        inp[3] = this.hasFood ? this.rayFoodDist : 0;
-        inp[4] = this.hasWater ? this.rayWaterSin : 0;
-        inp[5] = this.hasWater ? this.rayWaterCos : 0;
-        inp[6] = this.hasWater ? this.rayWaterElev : 0;
-        inp[7] = this.hasWater ? this.rayWaterDist : 0;
-        inp[8] = this.hasPredator ? this.rayPredatorSin : 0;
-        inp[9] = this.hasPredator ? this.rayPredatorCos : 0;
-        inp[10] = this.hasPredator ? this.rayPredatorElev : 0;
-        inp[11] = this.hasPredator ? this.rayPredatorDist : 0;
-        inp[12] = this.hasMate ? this.rayMateSin : 0;
-        inp[13] = this.hasMate ? this.rayMateCos : 0;
-        inp[14] = this.hasMate ? this.rayMateElev : 0;
-        inp[15] = this.hasMate ? this.rayMateDist : 0;
+        inp[0] = this.rayFoodSin;
+        inp[1] = this.rayFoodCos;
+        inp[2] = this.rayFoodElev;
+        inp[3] = this.rayFoodDist;
+        inp[4] = this.rayWaterSin;
+        inp[5] = this.rayWaterCos;
+        inp[6] = this.rayWaterElev;
+        inp[7] = this.rayWaterDist;
+        inp[8] = this.rayPredatorSin;
+        inp[9] = this.rayPredatorCos;
+        inp[10] = this.rayPredatorElev;
+        inp[11] = this.rayPredatorDist;
+        inp[12] = this.rayMateSin;
+        inp[13] = this.rayMateCos;
+        inp[14] = this.rayMateElev;
+        inp[15] = this.rayMateDist;
         inp[16] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
         inp[17] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
-        inp[18] = this.health > 0 ? this.health / this.maxHealth : 0;
+        inp[18] = this.health / this.maxHealth;
 
         this.targetHeading = this.brain.think(inp);
         this.moving = true;
@@ -4953,10 +4903,6 @@
         return Animal.wrapAngle(from + d);
       }
 
-      isSubmerged() {
-        return this.submerged;
-      }
-
       move() {
         const lift = this.footLift() * NPC_UNIT;
         if (this.moving) {
@@ -5100,7 +5046,7 @@
         child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
           * (0.9 + Math.random() * 0.2);
 
-        const parentAvg = ((this.heightScale ?? 1.0) + (partner.heightScale ?? 1.0)) / 2;
+        const parentAvg = (this.heightScale + partner.heightScale) / 2;
         child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + brains.randNormal(0, 0.04)));
 
         if (this.brain && partner.brain) {
@@ -5411,7 +5357,7 @@
             const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
             const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
             const k = s * NPC_UNIT;
-            const hs = a.heightScale ?? 1.0;
+            const hs = a.heightScale;
             // City: rigs scale uniformly by heightScale
             const kp = k * hs;
             this._scale.set(kp, kp, kp);
@@ -5496,16 +5442,6 @@
           if (antlers) perf.instances(antlers, aidx);
           perf.instances(far, fidx);
           if (farColorsDirty) perf.instanceColors(far, fidx);
-        }
-      }
-
-      setGraphics(shadowsOn) {
-        for (const type of this.TYPES) {
-          const im = this.meshes[type];
-          if (!im) continue;
-          for (const mesh of Object.values(im)) mesh.castShadow = shadowsOn;
-          if (this.far[type]) this.far[type].castShadow = shadowsOn;
-          if (this.antlers[type]) this.antlers[type].castShadow = shadowsOn;
         }
       }
     }
@@ -5603,7 +5539,7 @@
 
       add(p) {
         if (p._slot >= 0) return;
-        if (this.count >= this.MAX_INSTANCES) { p._slot = -1; return; }
+        if (this.count >= this.MAX_INSTANCES) return;
         const slot = this.count++;
         this.slots[slot] = p;
         p._slot = slot;
@@ -5612,7 +5548,7 @@
 
       remove(p) {
         const slot = p._slot;
-        if (slot === undefined || slot < 0) return;
+        if (slot < 0) return;
         const last = --this.count;
         if (slot !== last) {
           const moved = this.slots[last];
@@ -5626,7 +5562,7 @@
 
       touch(p) {
         const slot = p._slot;
-        if (slot === undefined || slot < 0) return;
+        if (slot < 0) return;
         this.markDirty(slot);
       }
 
@@ -5788,7 +5724,7 @@
         this.byKind = {};
         for (const kind of Object.keys(PLACE_KINDS)) this.byKind[kind] = [];
         const seen = new Set();
-        for (const p of features.places || []) {
+        for (const p of features.places) {
           const building = shellAt(p.x, p.z);
           // one entry per kind per building: a node and its outline often both map it
           if (building >= 0) {
@@ -5922,7 +5858,7 @@
         }
         for (const w of features.waterways) this.stampLine(w.pts, w.width / 2, 1);
         this.buildDist();
-        for (const r of features.roads) this.stampLine(r.pts, (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2, 0);
+        for (const r of features.roads) this.stampLine(r.pts, (r.width ?? ROAD_WIDTH[r.kind]) / 2, 0);
 
         // perception targets: coarse, capped sample of wet cells
         const pts = [];
@@ -5984,7 +5920,7 @@
         wm.x0 = -h; wm.z0 = -h;
         wm.cols = wm.rows = Math.ceil(2 * h / WATER_CELL);
         wm.mask = new Uint8Array(wm.cols * wm.rows);
-        for (const a of features.areas || []) {
+        for (const a of features.areas) {
           if (a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir') wm.fillRing(a.pts);
         }
 
@@ -7078,7 +7014,6 @@
         rotationY = 0
       } = {}) {
         super();
-        this.scaleFactor = scale;
         this.position.copy(position);
         this._build();
         this.scale.set(scale, scale, scale);
@@ -7340,7 +7275,6 @@
         for (const p of this.data) {
           const tier = p.radius < 5 * NPC_UNIT ? 0 : p.radius < 9 * NPC_UNIT ? 1 : 2;
           const idx = counts[tier];
-          if (idx >= this.MAX_INSTANCES) continue;
           const groundY = heightAt(p.x, p.z);
           this._pos.set(p.x, groundY + p.radius * p.squashY * 0.5, p.z);
           this._pquat.setFromAxisAngle(this._paxis, p.rotY);
@@ -7769,7 +7703,7 @@
 
       updateTarget() {
         const target = this.rayVisMode === 'single' ? this.pickTarget() : null;
-        this.current = (target && target.alive) ? target : null;
+        this.current = target;
         if (this.current !== null && this.current !== this.locked) this.locked = this.current;
         if (this.locked && !this.locked.alive) this.locked = null;
         visionRays.lines.visible = this.rayVisMode !== 'off' && !!(this.current || this.locked || this.rayVisMode === 'all');
@@ -7789,7 +7723,7 @@
     // VISION RAYS: each ray-visible animal's 3D vision cone (spokes, rim and a faint fill), from the Arena.
     class VisionRaySystem {
       constructor() {
-        this.MAX = 600;
+        this.MAX = 1000;
         this.LEN_SCALE = 0.55;
         this.COLS = 10;
 
@@ -7907,7 +7841,7 @@
           rayAnimals.push(target);
         }
 
-        const n = Math.min(rayAnimals.length, this.MAX);
+        const n = rayAnimals.length;
         const nSpokes = this.SPOKES.length;
         const nRim = this.RIM.length;
         const nCols = this.COLS;
@@ -8274,9 +8208,9 @@
         waterClip.set(cityWater);
         this.buildWaterBed();
         places.build(f);
-        this.buildGreens(f.areas || []);
-        this.roadIdx = roadIndex(f.roads || []);
-        this.buildSidewalks(f.roads || []);
+        this.buildGreens(f.areas);
+        this.roadIdx = roadIndex(f.roads);
+        this.buildSidewalks(f.roads);
       }
 
       teardown() {
@@ -8345,7 +8279,7 @@
         const segs = [];
         let total = 0;
         for (const r of roads) {
-          const half = (r.width ?? ROAD_WIDTH[r.kind] ?? 4) / 2;
+          const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
           const path = PATH_KINDS.has(r.kind);
           for (let i = 0; i < r.pts.length - 1; i++) {
             const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
@@ -8461,7 +8395,7 @@
       // the Arena's World.initialize cabins: log(scale) pairs, the first on dry ground near its (400, 300)
       cabinStep() {
         const b = this.bounds;
-        const count = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
+        const count = Math.floor(Math.log(CONFIG.scale)) * 2;
         const x0 = (400 - CONFIG.worldWidth / 2) * NPC_UNIT, z0 = (300 - CONFIG.worldHeight / 2) * NPC_UNIT;
         const first = this.findDryGround(x0, z0, this.level + 4 * NPC_UNIT);
         const margin = 150 * NPC_UNIT;
@@ -8912,7 +8846,7 @@
 
       cabinStep() {
         const b = this.bounds, h = this.h + 20;
-        const count = Math.max(1, Math.floor(Math.log(CONFIG.scale))) * 2;
+        const count = Math.floor(Math.log(CONFIG.scale)) * 2;
         const pick = () => {
           for (let k = 0; k < 40; k++) {
             const x = b.minX + 20 + Math.random() * (b.maxX - b.minX - 40);
@@ -9262,13 +9196,11 @@
 
       tryMate(a, px, pz) {
         if (a.sex !== 'male') return;
-        const now = Date.now();
-        if (!a.mateReady(now)) return;
         const n = this.grid.queryInto(this._qMate, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
         for (let i = 0; i < n; i++) {
           const other = this._qMate[i];
           if (other !== a && other.alive && other.type === a.type &&
-            other.sex === 'female' && other.lookForMate && other.mateReady(now) &&
+            other.sex === 'female' && other.lookForMate &&
             tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
             const child = a.mate(other);
             // City: a child that would land in or through a wall is born at the mother's spot.
@@ -9561,11 +9493,9 @@
         for (let k = 0; k < BRAIN_IN_GROUPS[g]; k++) {
           const ka = (k / BRAIN_IN_GROUPS[g]) * Math.PI * 2;
           posIn.push(new THREE.Vector3(Math.cos(ka) * 0.30, gy + Math.sin(ka) * 0.30, gz));
-          inCol.push(BRAIN_GROUP_COLS[g % BRAIN_GROUP_COLS.length]);
+          inCol.push(BRAIN_GROUP_COLS[g]);
         }
       }
-      while (posIn.length < I) { posIn.push(new THREE.Vector3()); inCol.push(0xe67e22); }
-      posIn.length = I; inCol.length = I;
       const posA = spread(NA, 0.55), posB = spread(NB, 0.55), posOut = spread(O, 0.90);
       posIn.forEach(p => p.x += -2.8);
       posA.forEach(p => p.y += 1.1);
@@ -9662,9 +9592,9 @@
       let dirty = false;
       for (let k = 0; k < b.total; k++) {
         let f;
-        if (k < b.oA) f = Math.abs(nn._standardized?.[k] ?? 0) > 0.5;
-        else if (k < b.oB) f = (nn.actA[k - b.oA] ?? 0) >= 1.0;
-        else if (k < b.oOut) f = (nn.actB[k - b.oB] ?? 0) >= 1.0;
+        if (k < b.oA) f = Math.abs(nn._standardized[k]) > 0.5;
+        else if (k < b.oB) f = nn.actA[k - b.oA] >= 1.0;
+        else if (k < b.oOut) f = nn.actB[k - b.oB] >= 1.0;
         else f = (k - b.oOut) === out;
         const v = f ? 1 : 0;
         if (b.fire[k] === v) continue;
@@ -9740,7 +9670,6 @@
       }
 
       firing(act) {
-        if (!act || !act.length) return 0;
         let n = 0;
         for (let i = 0; i < act.length; i++) if (act[i] >= 1.0) n++;
         return n / act.length;
@@ -9767,7 +9696,7 @@
       }
 
       headTop(a) {
-        const hs = a.heightScale ?? 1.0;
+        const hs = a.heightScale;
         return a.position.y + (NPC_RIG_TOP[a.type] * hs - a.footLift()) * NPC_UNIT;
       }
 
@@ -9924,7 +9853,7 @@
           bar.sprite.visible = true;
 
           const nn = a.brain;
-          if (!nn || !nn.maskIA) { if (bar.brain) bar.brain.group.visible = false; continue; }
+          if (!nn) { if (bar.brain) bar.brain.group.visible = false; continue; }
           if (bar.brainFor !== nn) {
             if (bar.brain) disposeBrain(bar.brain);
             bar.brain = buildBrain(nn);
@@ -10316,7 +10245,7 @@
       const cands = [];
       for (const r of roads || []) {
         if (PATH_KINDS.has(r.kind)) continue;
-        const half = (r.width || ROAD_WIDTH[r.kind] || 6.5) / 2;
+        const half = (r.width || ROAD_WIDTH[r.kind]) / 2;
         const side = Math.max(0, half - CAR_WID / 2 - 0.3);
         for (let i = 0; i < r.pts.length - 1; i++) {
           const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
@@ -10561,7 +10490,6 @@
       if (state === carBtnState) return;
       carBtnState = state;
       carEl.classList.toggle('on', state !== '');
-      carEl.classList.toggle('driving', state === 'exit');
       carEl.textContent = state === 'exit' ? 'Exit' : 'Drive';
       const pedals = state === 'exit' && touchUi();
       for (const el of [gasEl, brakeEl]) {
@@ -10918,7 +10846,7 @@
         // re-decided each frame, so walking off a roof edge falls with no mid-air jump
         player.grounded = false;
         if (player.vel.y <= 0) {
-          const walk = wasGrounded && player.vel.y <= 0;
+          const walk = wasGrounded;
           const reach = walk ? GROUND_SNAP : 0;
           const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet - reach, walk ? STEP_UP : 0);
           if (toFeet - reach <= floorY) {
@@ -11160,7 +11088,6 @@
     }
 
     function weatherText() {
-      if (!weather) return '';
       return `${clockText(skyInstant())} ${weather.zone}  ${Math.round(weather.tempF)}\u00b0F ` +
         `${conditions().label}, wind ${Math.round(weather.windMph)} mph, ` +
         `high ${Math.round(weather.highF)} low ${Math.round(weather.lowF)}`;
@@ -11366,7 +11293,7 @@
       graphics.placeSun();
       graphics.force = true;
       sun.color.copy(sunCol);
-      sun.intensity = Math.max(power, 0);
+      sun.intensity = power;
       // not dimmed by cloud: kept for facade readability rather than realism
       moon.intensity = MOON_MAX * (1 - day);
       hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
@@ -11984,7 +11911,7 @@
         }
 
         steps.done('sort', `${fmt(features.buildings.length)} buildings, ${fmt(features.roads.length)} roads and paths, ` +
-          `${fmt(features.trees.length)} trees, ${fmt((features.places || []).length)} places.`);
+          `${fmt(features.trees.length)} trees, ${fmt(features.places.length)} places.`);
 
         // Imagery depends only on place and radius, so fetch it during buildCity.
         const imageryKey = `${place.lat},${place.lon},${radius}`;
@@ -12126,7 +12053,7 @@
         hudBuildings = count;
         hudPlace =
           `for ${place.label.split(',').slice(0, 3).join(',').trim()}` +
-          ` (${skipped ? `${skipped} skipped` : '0 skipped'})`;
+          ` (${skipped} skipped)`;
 
         current = 'scene';
         await finishLoad(provider);
@@ -12282,12 +12209,6 @@
     labels.bind();
     vr.bind();
     addrEl.focus();
-
-    const keysEl = document.getElementById('keys');
-    if (keysEl && navigator.maxTouchPoints > 0) {
-      keysEl.textContent +=
-        ' On touch: left half to walk, drag the right half to look, double tap the stick to crouch.';
-    }
   </script>
 </body>
 
