@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<!-- Style sheet for Bootstrap -->
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+		integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous" />
+
+	<!-- Style sheets for "font awesome" icons -->
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.13.0/css/all.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+	<link rel="stylesheet" href="/assets/css/style.css">
+
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<title>Quantum Convolutional Neural Network - Context Switching</title>
+</head>
+
+<body>
+	<div class="nav-placeholder" id="nav-placeholder"></div>
+	<div class="title-section"></div>
+
+	<div class="information">
+
+		<div class="table-of-contents"></div>
+
+		<div class="category-header-div">
+			<p class="category-header" id="quantum-cnn">Quantum Convolutional Neural Network</p>
+
+			<p id="code-reference-1">
+				My code for related quantum neural network: <a
+					href="https://github.com/AlejandroJRosales/QuantumNeuralNetwork/blob/main/qnn.py">
+					<i>
+						QuantumNeuralNetwork
+					</i>
+				</a>
+			</p>
+
+			<div class="section-header-div">
+				<p class="section-header" id="research-relation">Introduction</p>
+A quantum convolutional neural network QCNN circuit combines two key techniques: <a
+						class="sliding-link" href="#mera">multi-scale
+						entanglement renormalization ansatz</a>
+					MERA, which is a variational ansatz for many-body wavefunctions, and nested <a
+					target="_blank" href="/cs/quantumec/">quantum error correction</a>
+					QEC, which detects and corrects local quantum errors without collapsing the wavefunction. We will
+					explore these two components, MERA and QEC, in detail. Next, we will look at the processes that make
+					up these techniques, such as quantum
+					forward propagation and quantum backpropagation. However, before diving into these, we need to
+					define the input for the QCNN and understand the underlying
+					fundamental principles of <a
+						href="/phys/quantummechanics/">quantum mechanics</a>, mathematics, and computer science that
+					form its
+					foundation. Let's begin!
+				</p>
+
+				<p>
+					The QCNN is similar to other supervised quantum machine learning QML algorithms, such as the <a
+					target="_blank" href="/cs/quantumsvm/">quantum support vector
+						machine</a>, in that the input is simliar and that the QCNN uses <a
+						target="_blank" href="/cs/quantumcomputingtheory/">quantum computing</a> to exploit quantum mechanics inherit high-dimensional feature space for <a
+						target="_blank" href="/cs/algorithmicanalysis/">algorithmic complexity</a> optimization. Consider data from a
+					training set \(T\) and a
+					testing set \(S\), where
+
+					<!-- </p>
+				
+					where \(T, S\) are subsets \(\Omega\subset\mathbb{R}^{d}\). -->
+					for each training set, we assume the data is labeled by a true map \(m: T \cup S
+					\rightarrow\left\{+1,
+					-1\right\}\), which is not given to the algorithm. The algorithm is given training data, where
+					the goal is for the algorithm to infer an approximate mappping \(\tilde{m}:
+					T\rightarrow\{+1,-1\}\) for the data. After training, the algorithm is asked to apply the
+					approximate mapping on a test set \(\tilde{m}: S\rightarrow\{+1,-1\}\). The approximate mapping
+					needs to match the true
+					map \(m(\vec{s})=\tilde{m}(\vec{s})\) with a high probability.
+				</p>
+
+				<!--
+				<p>
+					To use quantum state space as feature
+					space a mapping is constructed such that the data is non-linearly mapped to a quantum state
+					\(\Phi:\vec{x}\in\Omega\rightarrow
+					|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\). Where, \(|\Phi(\vec{x})\rangle\) is a part of
+					complex vector space or Hilbert Space \(\mathcal{H}\) and \(\langle\Phi(\vec{x})|\) is the
+					complex conjugate
+					that is a dual correspondance. We can see that the non-linear mapping \(\Phi\) takes the
+					classical data \(\vec{x}\in\Omega\subset\mathbb{R}^{d}\) or \(\vec{x}\in
+					T\cup S\) and reperesents it in quantum state space
+					\(|\Phi(\vec{x})\rangle\langle\Phi(\vec{x})|\). In this article, we will look at the procedure
+					behind quantum mapping.
+				</p>
+				-->
+
+				<p>
+					The first class of problems we will look at are quantum phase recognition, which determines
+					whether a given quantum state is a particular quantum phase of matter. Our input will be a
+					\(1\)-dimensional class of of <a
+					class="sliding-link" href="#mps">many-body-systems</a> called a Haldane chain. We consider a \(\mathbb{Z}_2
+					\times \mathbb{Z}_2\) symmetry-protected topological SPT phase that contains \(S=1\) Haldane chain.
+					This phase has ground states \(\left\{\left|\psi_{\text {GS} }\right\rangle\right\}\) of a family of
+					Hamiltonians on a spin-\(\frac{1}{2}\) chain with open boundary conditions:
+				</p>
+
+				<p class="math-def">
+					\(H=-J \sum_{i=1}^{N-2} Z_i X_{i+1} Z_{i+2}\) \(-h_1 \sum_{i=1}^N X_i-\) \(h_2 \sum_{i=1}^{N-1} X_i
+					X_{i+1}\)
+				</p>
+
+				<p>
+					such that \(Z_i,X_i\) are Pauli operators for spin at site \(i\) and the \(\mathbb{Z}_2
+					\times \mathbb{Z}_2\) symmetry is generated by \(X_{\text {even(odd)}}\) \(=\prod_{i \in \text
+					{even}(\text {odd})} X_i\).
+				</p>
+
+				<p>
+					Note, that it is possible to generalize the model to higher dimensions for phases that have intrinsic
+					<a href="/math/differentialmanifolds#topological-space">topological</a> order by implementing toric codes. It may also be possible to implement parallel feature
+					mapping, as seen in classical convolutional neural networks CNN architecture, by relaxing the translation invariance constraints or by
+					using ancilla qubits.
+				</p>
+
+				<!-- <p>
+					We will look at how <a href="/cs/quantumcomputingtheory/">quantum computing</a> can be applied to
+					classical deep learning like convolutional neural networks CNN, aptly called quantum convolutional
+					neural network. These quantum-enhanced algorithms could pave the way for groundbreaking
+					advancements in algorithms such as computer vision. It is known that quantum computing can improve
+					the <a href="/cs/algorithmicanalysis/">algorithmic complexity</a> of performing larger operations
+					by exploiting <a href="/phys/quantummechanics/">quantum mechanics</a>. However, here we will look at
+					how quantum computers can enhance the
+					algorithmic complexity of classical machine learning algorithms. Utilizing quantum mechanical
+					phenomena in classical machine learning algorithms like for CNN's can allow for an increased number
+					or
+					size of convolution kernels, and exploring larger or more complex input structures.
+				</p> -->	
+			</div>
+			
+			<div class="section-header-div">
+				<p class="section-header" id="tensor-network">Tensor Network</p>
+
+				<p>
+					Tensor networks are important to understand since MERA, a key underlying technique in QCNN, is a
+					specific type of
+					tensor network. Tensor networks are used to
+					efficiently represent and approximate many-body quantum states by organizing tensors in a
+					hierarchical, multi-scale structure. A tensor network as it relates to quantum mechanics can be used
+					to represent
+					complex quantum states, particularly in many-body systems, by breaking them down into simpler,
+					interconnected components. They help efficiently handle high-dimensional data that arise in quantum
+					systems, such as entangled states, by using tensors to encode the
+					relationships between different parts of the system. In these networks, each tensor represents a
+					local degree of freedom, and the network structure encodes the global state of the system. They are
+					defined by a set of tensors connected through shared indices, representing interactions between
+					different system parts. Tensor networks allow for efficient approximation of quantum states
+					without needing to work directly with every possible outcome of large Hilbert spaces. Since, some
+					of
+					these states are non-sensical or are not pertinent to the states of focus.
+				</p>
+
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="mps">Matrix Product State</p>
+
+					<p>
+						A matrix product state MPS in quantum mechanics is used to represent a quantum state or
+						wavefunction of \(N\) particles. More formally, a MPS can
+						be considered as an one-dimensional lattice \(\mathcal{L}\) such that each site
+						\(s\) hosts a spin
+						for each state of the site
+						\(|\Psi\rangle \in H_{\mathcal{L}}=\otimes_{\mathrm{s} \in \mathcal{L}} H_s\) where \(H\)
+						denotes
+						complex vector space, Hilbert Space. The complexity of the state grows exponentially with
+						respect to the number of spins
+						\(N\). The \(H\) space dimension is \(\operatorname{dim} H_\mathcal{L}=2^N\). The quantum state
+						\(|\Psi\rangle\) with \(N\) sites can be
+						represented as MPS as follows:
+					</p>
+
+					<p class="math-def">
+						\(|\Psi\rangle\) \(=\sum_{\{s\}} \operatorname{Tr}\left[A_1^{\left(s_1\right)}
+						A_2^{\left(s_2\right)} \ldots A_N^{\left(s_N\right)}\right]\)\(\left|s_1 s_2 \ldots
+						s_N\right\rangle\)
+					</p>
+
+					<p>
+						such that \(A_i^{\left(s_i\right)}\) are complex, square matrices and \(s_{i}\) are \(2\)-level
+						system qubits, which are elements of \(\{0, 1\}\).
+					</p>
+
+					<p>
+						Let's look at an example. Consider a photon spin-\(\frac{1}{2}\) chain of \(N\) particles.
+					</p>
+
+					<img src="/assets/images/1d-ising-spin-chain-model.png"
+						alt="Diagram of 1-dimmensional ising spin chain." class="figure-ignore"
+						style="width:45%;height:auto;padding:0%0%;">
+
+					<p class="figure-source-txt">
+						Image Source: <a
+							href="https://www.researchgate.net/figure/sing-spin-chain-for-i-i-10-spins-and-coupling-strength-i-i12-The-black-disks_fig1_358603740">https://www.researchgate.net/figure/sing-spin-chain-for-i-i-10-spins-and-coupling-strength-i-i12-The-black-disks_fig1_358603740</a>
+					</p>
+
+					<p>
+						Given the local
+						basis \(|\vec{\sigma}\rangle\in \{|\uparrow\rangle,|\downarrow\rangle\}\) then a basis state
+						has the
+						form:
+					</p>
+
+					<p class="math-def">
+						\(|\vec{\sigma}\rangle=\) \(\left|\sigma_1,\sigma_2,\cdots,\sigma_{N-1},\sigma_N\right\rangle\)
+					</p>
+
+					<p>
+						There exists some generic quantum state \(|\Psi\rangle\) for the photon spin-\(\frac{1}{2}\)
+						chain in this basis:
+					</p>
+
+					<p class="math-def">
+						\(|\Psi\rangle=\sum_{\vec{\sigma}_n}^N C_{\vec{\sigma}_n}\left|\vec{\sigma}_n\right\rangle\)
+					</p>
+
+					<p>
+						When expressed in this form, the state \(|\Psi\rangle\) is called a MPS, or
+						more broadly, a
+						tensor network. This representation is exact, allowing any quantum state to be written this way,
+						provided the bond-dimension \(\chi\), which is the shared index between the tensors, is large
+						enough.
+					</p>
+
+					<p>
+						The complex, \(C_{\vec{\sigma}_n}\) tensor can is composed of rank-\(3\) tensors \(C_{\sigma_1,
+						\cdots, \sigma_N}\) \(=A_{a_0, a_1}^{\sigma_1}, A_{a_1, a_2}^{\sigma_2}, \) \(\cdots,
+						A_{a_{N-2},
+						a_{N-1}}^{\sigma_{N-1}}, A_{a_{N-1}, a_N}^{\sigma_N}\)
+					</p>
+
+					<p>
+						The contraction of matrices occurs over shared incdicies between rank-\(3\) tensors in the
+						photon spin-\(\frac{1}{2}\) chain. This is because these shared indicies represent
+						nearest-neighbor interactions between sites or particles. Given shared indicies are summed over,
+						indicies \(a_{1},a_{N}\) are trivial \(1\)D indicies, and subscript indices are dropped because
+						they are implied in matrix multiplication, the generic quantum state \(|\Psi\rangle\) can be
+						written as:
+					</p>
+
+					<p class="math-def">
+						\(|\Psi\rangle\) \(=\sum_{\sigma_1, \cdots, \sigma_N} A^{\sigma_1} A^{\sigma_2} \cdots
+						A^{\sigma_{N-1}} A^{\sigma_N}\) \(\left|\sigma_1, \cdots, \sigma_N\right\rangle\)
+					</p>
+
+					<p>
+						Now, let's look at how we can decompose quantum states and express the state them as
+						a MPS. One way to obtain a MPS representation of a quantum state is to use Schmidt decomposition
+						\(N-1\) times. Note, that if the quantum circuit which prepares the many body state is given,
+						than we can
+						alternatively obtain a matrix product operator representation of the circuit, which we will look
+						at later. Schmidt decomposition is done to
+						reduce the degrees of freedom by identifying those that contain
+						the most relevant information. Here, we will examine iterative reshaping of coefficient
+						arrays and
+						singular value decomposition SVD. Where SVD can correspond to the Schmidt decomposition for a
+						properly reshaped
+						array of state coefficients:
+					</p>
+
+					<p class="math-def">
+						\(|\Psi\rangle\) \(=\sum_{s_1, \ldots, s_N} c^{s_1, \ldots, s_N}\left|s_1, \ldots,
+						s_N\right\rangle\)
+					</p>
+
+					<p>
+						depending on the chosen bipartition of the lattice. The chosen bipartition is uniquely
+						determined
+						in the one dimension case with:
+					</p>
+
+					<p class="math-def">
+						\(c^{s_1, \ldots, s_N} \rightarrow c^{\left(s_1, \ldots, s_\ell\right)},\) \(\left(s_{\ell+1},
+						\ldots,
+						s_N\right)\) \(=\sum_{a_\ell} U_{a_\ell}^{\left(s_1, \ldots, s_\ell\right)} \Lambda^{a_\ell,
+						a_\ell}\left(V^{\dagger}\right)_{a_\ell}^{\left(s_{\ell+1}, \ldots, s_N\right)}\)
+					</p>
+
+					<p>
+						where \(\Lambda\) is a diagonal matrix containing Schmidt coefficients \(\lambda_{a_{l}}\) and
+						physical indices (\(\ldots\)) refer to matrix unfolding for tensors.
+					</p>
+
+					<p>
+						For a properly reshaped array of state
+						coefficients for some state \(|\Psi\rangle\), given the following decomposition for rank-3
+						tensors \(A_{a_\ell}^{1,\left(s_1,
+						\ldots, s_\ell\right)}\) \(=U_{a_l}^{\left(s_1, \ldots, s_\ell\right)}\) and
+						\(B_{a_l}^{\left(s_{\ell+1},
+						\ldots, s_N\right), 1}\) \(=\left(V^{\dagger}\right)_{a_l}^{\left(s_{\ell + 1} \ldots,
+						s_N\right)}\) we
+						get:
+					</p>
+
+					<p class="math-def">
+						\(|\Psi\rangle\) \(=\sum_{s_1, \ldots, s_N} \sum_{a_{\ell}} A_{a_{\ell}}^{1,\left(s_1, \ldots,
+						s_{\ell}\right)} \Lambda^{a_\ell, a_\ell}\) \(B_{a_{\ell}}^{\left(s_{\ell+1}, \ldots,
+						s_N\right),
+						1}\left|s_1, \ldots, s_N\right\rangle\) \(=\sum_{a_{\ell}}
+						\lambda_{a_{\ell}}|a\rangle_{a_{\ell}}|b\rangle_{a_l}\)
+					</p>
+
+					<p>
+						which we can see illustrated in the figure below:
+					</p>
+
+					<img src="/assets/images/1-dim-mps-schematic.png"
+						alt="Schematic representation of 1-dimmensional matrix product state schematic with rank-3 tensors."
+						class="figure-ignore" style="width:45%;height:auto;padding:0%0%;">
+
+					<p class="figure-source-txt">
+						Image Source: <a
+							href="https://www.mdpi.com/2673-8716/3/3/33">https://www.mdpi.com/2673-8716/3/3/33</a>
+					</p>
+
+					<p>
+						To continue.
+					</p>
+				</div>
+				<div class="subsection-header-div">
+					<p class="subsection-header" id="mera">Multi-scale Entanglement
+						Renormalization Ansatz</p>
+					<p>
+						Entanglement renormalization is a numerical technique that locally reorganizes the Hilbert space
+						of a quantum
+						many-body system to reduce entanglement in its wave function. It addresses computational
+						challenges of real-space renormalization group RG methods, which struggle with
+						the rapid growth of degrees of freedom that occur during successive transformations of RG
+						transformations.
+					</p>
+
+					<p>
+						The key idea is that as a result of local character of physical interactions, some relevant
+						degrees of freedom in the
+						system's ground state of a many-body system can be decoupled from the rest by applying unitary
+						transformations called disentanglers to small regions, isolating and removing these degrees of
+						freedom from the system, preventing their accumulation in future descriptions.
+					</p>
+
+					<p>
+						This approach enables more efficient real-space RG transformations, capable of handling large
+						\(1\)D
+						and \(2\)D lattice systems, even at quantum critical points. It also forms the basis for the
+						MERA,
+						a variational method for approximating many-body states. MERA is based on a class of quantum
+						circuts and succesful at describing ground state at quantum criticality or topological order. A
+						key property of MERA that we will focus on for QCNN is how, from a computiational perspective,
+						MERA efficently optimizes its tensors based on the evalution of expected values of local
+						observables.
+					</p>
+
+					<p>
+						More formally, let \(\mathcal{L}\) denote a \(D\)-dimensional lattice with \(N\) sites. Each
+						site
+						\(s_{1},...,s_{N} \in \mathcal{L}\) is a described by a Hilbert space \(\mathbb{V}\) of finite
+						dimension \(d\), such that \(\mathrm{V}_{\mathcal{f}} \cong \mathrm{V}^{\otimes N}\). MERA is an
+						ansatz used to describe certain pure states \(|\Psi\rangle \in \mathbb{V}_{\mathcal{L}}\) of
+						lattice \(\mathcal{L}\), or of subspaces \(\mathbb{V}_U \subseteq \mathbb{V}_{\mathcal{L}}\).
+					</p>
+
+					<div class="subsubsection-header-div">
+						<p class="subsubsection-header" id="cg-and-gse">Coarse-graining and Ground State Entanglement
+						</p>
+						<p>
+							As before, let's consider a quantum spin model described by a lattice \(\mathcal{L}\) in
+							\(D\) spatial dimensions. Note, most derivations will involve a lattice on one spatial
+							dimension, for simplicity, however, an important feature of entanglement renormalization ER
+							is it
+							applies to higher dimensional
+							casses as well.
+						</p>
+
+						<p>
+							The goal is to compute low energy properties of the system, described as the ground state
+							\(\left|\Psi_{\mathrm{GS}}\right\rangle \in \mathbb{V}^{\otimes N}\) of Hilbert space \(H\).
+							Let \(o_1, o_2, \cdots, o_k\) be an arbitrary local operators acting on parts of the
+							\(\mathcal{L}\). To predict how the system reacts to arbitrary external probes, we can use
+							expected values of compute quantities such as:
+						</p>
+
+						<p class="math-def">
+							\(\left\langle o_1 o_2 \cdots o_k\right\rangle_{\Psi_{\mathrm{GS}}}\)
+							\(\equiv\left\langle\Psi_{\mathrm{GS}}\right| o_1 o_2 \cdots
+							o_k\left|\Psi_{\mathrm{GS}}\right\rangle\)
+						</p>
+
+						<p>
+							We would like to continue this way, however, only very small systems can be computed by
+							diagonalizing \(H\) for \(|\Psi_{\mathrm{GS}}\rangle\) like above, since the exponential
+							growth in \(N\) of dimension \(\mathbb{V}^{\otimes N}\). Thus, to compute larger systems, we
+							build a transformation that removes short-distance degrees of freedom from the lattice model
+							\((\mathcal{L}, H)\) to narrow down on expected values that help predict how the system
+							reacts to the arbitrary external probes. This initial lattice model is mapped into an
+							effective lattice model \((\mathcal{L^{\prime}}, H^{\prime})\) such that:
+						</p>
+
+						<p class="math-def">
+							\(\left\langle o_1^{\prime}, o_2^{\prime}, \cdots,
+							o_k^{\prime}\right\rangle_{\Psi_{\mathrm{GS}}^{\prime}}\) \(=\left\langle o_1, o_2, \cdots,
+							o_k\right\rangle_{\Psi_{\mathrm{GS}}}\)
+						</p>
+
+						<p>
+							where, \(|\Psi_{\mathrm{GS}}^{\prime}\rangle\) is the ground state of \(H^{\prime}\). The
+							operators \(o_1^{\prime}, o_2^{\prime}, \cdots, o_k^{\prime}\) are a result from
+							transforming \(o_1, o_2, \cdots, o_k\)
+						</p>
+
+						<p>
+							From above, we have a model \((\mathcal{L^{\prime}}, H^{\prime})\) that has a smaller
+							Hilbert space dimension than the
+							original model, thus making diagonalizing \(H^{\prime}\) mroe computationally affordable.
+							Thus, larger models can be addressed.
+						</p>
+
+						<p>
+							With finite-size scaling techniques, the implication is that a powerful numerical route to
+							study quantum critical phenomena is made possible with MERA. This can be used for
+							coarse-graining transformation to remove short-distance degrees of freedom to investigate
+							how \(H\) changes under scale transformations, and with RG help, evaluate the thermodynamic
+							limit
+							directly. However, for our purpose as MERA relates to QCNN, it is important to remember a
+							QCNN is MERA inversed.
+						</p>
+					</div>
+
+					<!--
+					<p>
+						The MERA can be viewed in two ways: as a quantum circuit \(\mathcal{C}\), where the output wires
+						correspond to the lattice sites \(\mathcal{L}\), or as a coarse-graining process that maps
+						\(\mathcal{L}\) to
+						increasingly coarser lattices, implementing a renormalization-group transformation. We'll
+						briefly explore these interpretations, compare MERA schemes, and discuss how to use space
+						symmetries.
+					</p>
+					-->
+				</div>
+			</div>
+
+			<div class="section-header-div">
+				<p class="section-header" id="qcnn-circut">Quantum Convolutional Neural Network</p>
+				<p id="section-reference-1">
+					Section Reference:
+					<a href="https://arxiv.org/pdf/quant-ph/0610099">
+						<i>
+							Vidal, G. (2006, October 12). A class of quantum many-body states that can be
+							efficiently
+							simulated. arXiv. https://arxiv.org/abs/quant-ph/0610099
+						</i>
+						\(^{[1]}\)
+					</a>
+				</p>
+
+				<p>
+					Consider a square lattice \(\mathcal{L}\) in \(D\) spatial dimensions with \(N\) sites, where
+					each
+					site \(s_{1},...,s_{N} \in \mathcal{L}\) is a complex vector space \(\mathbb{V}\) with finite
+					dimension
+					\(\chi\),
+					termed the bond dimension. Site \(s\) can be described by a pure quantum state
+					\(|\Psi\rangle
+					\in \mathbb{V}^{\otimes N}=\mathbb{V}_\mathcal{L}\). This state is made of \(N\) quantum wires,
+					which has a reduced density matrix
+					\(\rho^{[s]}=\operatorname{tr}_{\bar{s}}(|\Psi\rangle\langle\Psi|)\). Unitary gates \(u\) transform
+					the unentangled state state \(|0\rangle^{\otimes N}\) into state \(|\Psi\rangle\), which is
+					be
+					generated by a quantum circut \(\mathcal{C}\) with depth \(\Theta \equiv 2 \log _2(N)-1\). A
+					figure
+					of this quantum circut is given below:
+				</p>
+
+				<img src="/assets/images/mera-as-quantum-circut-c.png"
+					alt="Schematic representation of quantum circut with 2N-1 gates that transformes initial state to N-site state of 1D lattice."
+					class="figure-ignore" style="width:45%;height:auto;padding:0%0%;">
+
+				<p class="figure-source-txt">
+					Image Source: <a class="sliding-link" href="#section-reference-1">\([1]\)</a>
+				</p>
+
+				<p>
+					Generically, each unitary gate \(u\) in the circuit \(\mathcal{C}\) incoporates some small number
+					\(p\) of wires.
+				</p>
+
+				<p>
+					To continue.
+				</p>
+			</div>
+		</div>
+	</div>
+
+	<div class="related-articles">
+		<div class="section-header-div">
+			<!-- Can make clickable image dynamically -->
+			<p class="section-header" id="related-articles">Related Articles</p>
+
+			<!-- Go back and add style to style sheet not here -->
+			<div class="row row-cols-1 row-cols-md-3 g-4">
+				<div class="col related-article-card">
+					<div class="card h-100">
+						<a href="/cs/quantumsvm/">
+							<img src="/assets/images/short-depth-quantum-circuit.png" class="card-img-top"
+								alt="Nonlinear SVM Example" />
+						</a>
+						<div class="card-body">
+							<a href="/cs/quantumsvm/"><h5 class="card-title">Quantum Support Vector Machine</h5></a>
+							<p class="card-text">
+								Using quantum computing, the authors exploit quantum mechanics for the algorithmic
+								complexity optimization of a
+								Support Vector Machine with high-dimensional feature space. Where the high-dimensional
+								classical data is mapped
+								non-linearly to Hilbert Space and a hyperplane in quantum space is used to separate and
+								label the data. By using
+								the...
+							</p>
+						</div>
+						<div class="card-footer">
+							<a href="/cs/quantumsvm">Read More</a>
+						</div>
+					</div>
+				</div>
+				<div class="col related-article-card">
+					<div class="card h-100">
+						<!-- https://commons.wikimedia.org/wiki/File:Universal_line_bundle.jpg-->
+						<a href="/cs/quantumcomputingtheory/">
+							<img src="/assets/images/bloch-sphere.png" class="card-img-top"
+								alt="IBM Quantum Computer" />
+						</a>
+						<div class="card-body">
+							<a href="/cs/quantumcomputingtheory/"><h5 class="card-title">Quantum Computing Theory</h5></a>
+							<p class="card-text">
+								Quantum Computing Theory is a field of computer science that uses the principles of
+								quantum
+								mechanics, mathematics, and computer science. By borrowing concepts from each field
+								scientists can rigorously
+								define both a broad and narrow theoretical model of a quantum computer and later apply
+								it to the real world. These...
+							</p>
+						</div>
+						<div class="card-footer">
+							<a href="/cs/quantumcomputingtheory/">Read More</a>
+						</div>
+					</div>
+				</div>
+				<div class="col related-article-card">
+					<div class="card h-100">
+						<!-- https://commons.wikimedia.org/wiki/File:HypercubeBiparti.pngg -->
+						<a href="/math/informationtheory/">
+							<img src="https://upload.wikimedia.org/wikipedia/commons/4/49/HypercubeBiparti.png"
+								class="card-img-top" alt="Hypercube" />
+						</a>
+						<div class="card-body">
+							<a href="/math/informationtheory/"><h5 class="card-title">Information Theory</h5></a>
+							<p class="card-text">
+								Three properties were required by Shannon: \(I(p) \geq 0\), i.e. information is a real
+								non-negative measure. \(I(p_{1},p_{2})=I(p_{1})+I(p_{2})\) for independent events.
+								\(I(p)\) is a continous
+								function of \(p\). The mathematical function that satisfies these requirements is:
+								\(I(p)=k\;log(p)\) In the
+								equation, the value of \(k\) is arbitrary...
+							</p>
+						</div>
+						<div class="card-footer">
+							<a href="/math/informationtheory/">Read More</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!--Collapsible table of contents-->
+	<div class="table-of-contents-collapsible-div"></div>
+	<!-- end of collapsible table of contents -->
+
+	<!-- Footer bar -->
+	<div class="footer-placeholder" id="footer-placeholder"></div>
+	<!-- end of Footer bar -->
+
+	<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+		integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+		crossorigin="anonymous"></script>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+		integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+		crossorigin="anonymous"></script>
+	<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+	<script src="/assets/js/preset-divs.js"></script>
+	<script src="/assets/js/helper-functions.js"></script>
+	<script src="/assets/js/script.js"></script>
+</body>
+
+</html>
