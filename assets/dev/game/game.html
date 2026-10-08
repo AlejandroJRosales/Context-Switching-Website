@@ -1004,7 +1004,7 @@
         Survivor to live in it.</p>
       <div class="chips for-place" id="picks"></div>
       <div id="row" class="for-place">
-        <input id="addr" type="text" value="The Loop, Chicago, IL" placeholder="The Loop, Chicago, IL" spellcheck="false"
+        <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY"
           autocomplete="off">
         <button id="go">Load</button>
       </div>
@@ -1036,8 +1036,6 @@
               class="thumb"></span></span>Plants</button>
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
-        <button class="switch" data-opt="aerial" role="switch" aria-checked="false"><span class="track"><span
-              class="thumb"></span></span>Aerial view</button>
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
@@ -1172,21 +1170,6 @@
     ];
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
-    // USGS orthoimagery, public domain, no key (credit: USGS, USDA, The National Map).
-    // NAIP Plus (~0.3 m/px) first, else the basemap tiles (zoom 16, ~1.8 m/px).
-    const ORTHO_URL = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
-    const ORTHO_M_PX = 0.5;          // ground metres per pixel to ask for
-    const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
-    const ORTHO_TIMEOUT_MS = 12000;
-
-    const IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile';
-    const IMAGERY_MAX_Z = 16;
-    const IMAGERY_MIN_Z = 12;
-    const IMAGERY_TILE_PX = 256;
-    const IMAGERY_MAX_TILES = 100;
-    const IMAGERY_TIMEOUT_MS = 8000;
-    const IMAGERY_Y = 0.004;
-
     // Elevation: AWS Terrain Tiles (Terrarium, no key); height = R * 256 + G + B / 256 - 32768 m.
     // Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
     const TERRAIN_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
@@ -1203,7 +1186,7 @@
     const GROUND_SNAP = 0.5;
 
     // Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
-    const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
+    const LAYER_BIAS = { area: 2, water: 3, road: 4, path: 5, floor: 6 };
 
 
     // LAYER TABLES
@@ -1380,7 +1363,6 @@
       ['sort', 'Sorting map features', 'Splitting the download into buildings, roads, land cover, trees and places.'],
       ['build', 'Building the city', 'Walls, doors, roofs, signs, ground layers and collision.'],
       ['people', 'Populating', 'Spawning people, deer and plants and wiring the brains.'],
-      ['imagery', 'Fetching aerial imagery', 'Photo of the ground (USGS National Map).'],
       ['scene', 'Preparing the scene', 'Compiling shaders and uploading textures so the first frame does not stall.']
     ];
     // Mix grows the wilderness once the city stands; Wild downloads nothing.
@@ -3345,9 +3327,9 @@
       invalidate();
     }
 
-    // IMAGERY
+    // TILE HELPERS
 
-    // Slippy-tile maths. ArcGIS serves /tile/{z}/{row}/{col}, i.e. z/y/x.
+    // Slippy-tile maths, used by the elevation tiles.
     function tileOf(lat, lon, z) {
       const n = 2 ** z;
       const rad = lat * Math.PI / 180;
@@ -3355,10 +3337,6 @@
         x: (lon + 180) / 360 * n,
         y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n
       };
-    }
-    function tileLon(x, z) { return x / 2 ** z * 360 - 180; }
-    function tileLat(y, z) {
-      return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
     }
 
     // Resolves with the image or null, never rejects; crossOrigin keeps the pixels usable by WebGL.
@@ -3373,140 +3351,6 @@
         if (timeoutMs) setTimeout(() => finish(null), timeoutMs);
         img.src = url;
       });
-    }
-
-    function mercator(lat, lon) {
-      const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137;
-      return [lon * Math.PI / 180 * 6378137, y];
-    }
-
-    async function fetchOrtho(lat, lon, radius, project) {
-      const dLat = radius / 110540;
-      const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
-      const north = lat + dLat, south = lat - dLat;
-      const west = lon - dLon, east = lon + dLon;
-
-      const [minX, minY] = mercator(south, west);
-      const [maxX, maxY] = mercator(north, east);
-
-      // match the Mercator box's aspect or the service stretches the image
-      const cap = Math.min(ORTHO_MAX_PX, renderer.capabilities.maxTextureSize);
-      let w = Math.min(cap, Math.round(2 * radius / ORTHO_M_PX));
-      let h = Math.min(cap, Math.round(w * (maxY - minY) / (maxX - minX)));
-      w = Math.round(h * (maxX - minX) / (maxY - minY));
-      if (!(w > 0 && h > 0)) return null;
-
-      const url = `${ORTHO_URL}?bbox=${minX},${minY},${maxX},${maxY}`
-        + `&bboxSR=3857&imageSR=3857&size=${w},${h}`
-        + `&format=jpg&interpolation=RSP_BilinearInterpolation&f=image`;
-
-      const img = await loadImage(url, ORTHO_TIMEOUT_MS);
-      if (!img) return null;
-      // decode off the main thread, not inside the first texImage2D
-      try { await img.decode(); } catch (e) { /* already usable after onload */ }
-
-      const [westX, northZ] = project(north, west);
-      const [eastX, southZ] = project(south, east);
-      return { source: img, westX, eastX, northZ, southZ, w, h, kind: 'ortho' };
-    }
-
-    async function fetchImagery(lat, lon, radius, project, onNote = () => { }) {
-      const dLat = radius / 110540;
-      const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
-
-      let z = IMAGERY_MAX_Z, x0, x1, y0, y1;
-      for (; ;) {
-        const nw = tileOf(lat + dLat, lon - dLon, z);
-        const se = tileOf(lat - dLat, lon + dLon, z);
-        x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
-        y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
-        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= IMAGERY_MAX_TILES) break;
-        if (z <= IMAGERY_MIN_Z) return null;
-        z--;
-      }
-
-      const cols = x1 - x0 + 1, rows = y1 - y0 + 1;
-      const cv = document.createElement('canvas');
-      cv.width = cols * IMAGERY_TILE_PX;
-      cv.height = rows * IMAGERY_TILE_PX;
-      const ctx = cv.getContext('2d');
-
-      let got = 0;
-      const jobs = [];
-      for (let ty = y0; ty <= y1; ty++) {
-        for (let tx = x0; tx <= x1; tx++) {
-          jobs.push(loadImage(`${IMAGERY_URL}/${z}/${ty}/${tx}`, 0).then(img => {
-            if (!img) return;
-            ctx.drawImage(img, (tx - x0) * IMAGERY_TILE_PX, (ty - y0) * IMAGERY_TILE_PX,
-              IMAGERY_TILE_PX, IMAGERY_TILE_PX);
-            got++;
-            onNote(`Basemap tiles: ${got} of ${cols * rows} at zoom ${z}…`);
-          }));
-        }
-      }
-
-      await Promise.race([
-        Promise.all(jobs),
-        new Promise(done => setTimeout(done, IMAGERY_TIMEOUT_MS))
-      ]);
-      if (!got) return null;
-
-      // Corners go through the game's projector so the photo lines up with the buildings.
-      const [westX, northZ] = project(tileLat(y0, z), tileLon(x0, z));
-      const [eastX, southZ] = project(tileLat(y1 + 1, z), tileLon(x1 + 1, z));
-      return { source: cv, westX, eastX, northZ, southZ, z, got, total: cols * rows, kind: 'tiles' };
-    }
-
-    // Mix: `fade` = { half, color, width } clips the photo to the measured square and fades its last `width` into color.
-    function buildImagery(img, fade = null) {
-      if (!img) return;
-      const w = fade ? Math.max(img.westX, -fade.half) : img.westX, e = fade ? Math.min(img.eastX, fade.half) : img.eastX;
-      const n = fade ? Math.max(img.northZ, -fade.half) : img.northZ, so = fade ? Math.min(img.southZ, fade.half) : img.southZ;
-      if (!(e > w && so > n)) return;
-      const g = terrainGrid(w, e, n, so, IMAGERY_Y);
-      if (fade) {
-        // UVs from the photo's own extent, so the clipped grid still lines up with the buildings
-        const p = g.attributes.position, uv = g.attributes.uv;
-        for (let i = 0; i < p.count; i++) {
-          uv.setXY(i, (p.getX(i) - img.westX) / (img.eastX - img.westX),
-            1 - (p.getZ(i) - img.northZ) / (img.southZ - img.northZ));
-        }
-        uv.needsUpdate = true;
-      }
-
-      const tex = new THREE.Texture(img.source);
-      tex.needsUpdate = true;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 4;
-
-      const mat = new THREE.MeshLambertMaterial({ map: tex });
-      mat.polygonOffset = true;
-      mat.polygonOffsetFactor = -LAYER_BIAS.imagery;
-      mat.polygonOffsetUnits = -LAYER_BIAS.imagery;
-      if (fade) {
-        const rect = new THREE.Vector4(
-          (w - img.westX) / (img.eastX - img.westX), (e - img.westX) / (img.eastX - img.westX),
-          1 - (so - img.northZ) / (img.southZ - img.northZ), 1 - (n - img.northZ) / (img.southZ - img.northZ));
-        mat.onBeforeCompile = sh => {
-          sh.uniforms.uFadeCol = { value: fade.color };
-          sh.uniforms.uFadeW = { value: fade.width };
-          sh.uniforms.uRect = { value: rect };
-          sh.fragmentShader = 'uniform vec3 uFadeCol;\nuniform float uFadeW;\nuniform vec4 uRect;\n' +
-            sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-  {
-    float ex = min(vMapUv.x - uRect.x, uRect.y - vMapUv.x) / (uRect.y - uRect.x);
-    float ez = min(vMapUv.y - uRect.z, uRect.w - vMapUv.y) / (uRect.w - uRect.z);
-    diffuseColor.rgb = mix(uFadeCol, diffuseColor.rgb, smoothstep(0.0, uFadeW, min(ex, ez)));
-  }`);
-        };
-      }
-      waterClip.apply(mat);
-
-      const mesh = new THREE.Mesh(g, mat);
-      if (fade) mesh.receiveShadow = true;
-      scene.add(mesh);
-      layers.push(mesh);
-      invalidate();
     }
 
     // SIGNAGE
@@ -5968,7 +5812,7 @@
       }
     };
 
-    // WATER CLIP: the ground layers (terrain base, land cover, aerial photo) are draped on the same surface as the
+    // WATER CLIP: the ground layers (terrain base, land cover) are draped on the same surface as the
     // painted water, centimetres below it and with different triangles, so they poked through it over deep water.
     // Their fragments over water are discarded instead, from a texture of cityWater's cells, leaving the bed mesh
     // below as the only ground there. Cells within a metre of the shore keep their ground, so no gap opens at the bank.
@@ -8406,7 +8250,7 @@
     // the engine's collision (resolveCollisions, supportAt, the NPC occupancy grid) reads that index.
     // Presentation flags: shadows (wild terrain casts), companion (Nibbler comes), rays (default vision-ray mode).
 
-    // CITY: the OpenStreetMap / Terrarium / orthophoto city. Geometry is built by the City pipeline (buildCity and friends);
+    // CITY: the OpenStreetMap / Terrarium city. Geometry is built by the City pipeline (buildCity and friends);
     // this adds the NPC-side data and answers the queries.
     class CityWorld {
       constructor(features, radius, opts, habitat = null) {
@@ -11874,8 +11718,6 @@
     // LOAD
 
     let busy = false;
-    // The last ground image, so reloading the same place skips the export; one entry only.
-    let lastImagery = null;
     let lastTerrain = null;
     let lastQuery = '';
     let startMode = 'mix';
@@ -12148,26 +11990,6 @@
         steps.done('sort', `${fmt(features.buildings.length)} buildings, ${fmt(features.roads.length)} roads and paths, ` +
           `${fmt(features.trees.length)} trees, ${fmt(features.places.length)} places.`);
 
-        // Imagery depends only on place and radius, so fetch it during buildCity.
-        const imageryKey = `${place.lat},${place.lon},${radius}`;
-        if (!o.aerial) steps.off('imagery', 'Turned off; the ground stays plain.');
-        else steps.start('imagery');
-        const pendingImagery = !o.aerial ? Promise.resolve(null) : (async () => {
-          if (lastImagery && lastImagery.key === imageryKey) {
-            steps.note('imagery', 'Reusing the photo from the last load.');
-            return lastImagery.img;
-          }
-          const proj = makeProjector(place.lat, place.lon);
-          steps.note('imagery', 'Requesting one high-resolution photo (USGS NAIP Plus)…');
-          let img = await fetchOrtho(place.lat, place.lon, radius, proj);
-          if (!img) {
-            steps.note('imagery', 'No NAIP Plus photo; falling back to basemap tiles…');
-            img = await fetchImagery(place.lat, place.lon, radius, proj, d => steps.note('imagery', d));
-          }
-          if (img) lastImagery = { key: imageryKey, img };
-          return img;
-        })().catch(() => null);
-
         const terrainGrid_ = await pendingTerrain;
         if (terrainGrid_) lastTerrain = { key: terrainKey, grid: terrainGrid_ };
         elevation.set(terrainGrid_);
@@ -12245,18 +12067,6 @@
         } else {
           world.clear();
           steps.off('people', 'Turned off.');
-        }
-
-        current = 'imagery';
-        try {
-          const img = await pendingImagery;
-          buildImagery(img, mode === 'mix'
-            ? { half: provider.h, color: wildTerrain.grassColor, width: 0.08 } : null);
-          if (!img) { if (o.aerial) steps.off('imagery', 'No photo for this area; the ground stays plain.'); }
-          else if (img.kind === 'ortho') steps.done('imagery', `One ${img.w} \u00d7 ${img.h} photo from USGS NAIP Plus.`);
-          else steps.done('imagery', `${img.got} of ${img.total} basemap tiles at zoom ${img.z}.`);
-        } catch (e) {
-          steps.off('imagery', 'Unavailable; the ground stays plain.');
         }
 
         current = 'weather';
@@ -12361,7 +12171,7 @@
     }
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: false };
+    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true };
     for (const el of document.querySelectorAll('#more .switch')) {
       el.addEventListener('click', () => {
         const k = el.dataset.opt;
@@ -12416,12 +12226,12 @@
 
     goEl.addEventListener('click', () => { loadPlace(addrEl.value, startMode); });
 
-    // Suggested places: well-mapped US downtowns (imagery is US-only).
+    // Suggested places: well-mapped US downtowns.
     const PICKS = [
       ['New York, NY', 'New York, NY'],
-      ['Union Square, CA', 'Union Square, San Francisco, CA'],
-      ['The Loop, IL', 'Millennium Park, Chicago, IL'],
-      ['1 Park Place, Athens, OH', '1 Park Place, Athens, OH']
+      ['Union Square, San Francisco', 'Union Square, San Francisco, CA'],
+      ['The Loop, Chicago', 'Millennium Park, Chicago, IL'],
+      ['1 Park Place, Athens, Ohio', '1 Park Place, Athens, OH']
     ];
     const picksEl = document.getElementById('picks');
     for (const [label, query] of PICKS) {
