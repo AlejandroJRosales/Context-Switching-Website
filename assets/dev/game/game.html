@@ -1075,10 +1075,16 @@
   <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
   <button id="gear">=</button>
   <div id="settings">
-    <h2>Time of day</h2>
-    <div class="chips" id="times"></div>
-    <h2 class="second">Weather</h2>
-    <div class="chips" id="skies"></div>
+    <div id="skyset">
+      <h2>Time of day</h2>
+      <div class="chips" id="times"></div>
+      <h2 class="second">Weather</h2>
+      <div class="chips" id="skies"></div>
+    </div>
+    <div id="realset" hidden>
+      <button class="switch" id="realsky" role="switch" aria-checked="false"><span class="track"><span
+            class="thumb"></span></span>Real time and weather</button>
+    </div>
     <h2 class="second">View</h2>
     <div class="chips">
       <button id="pov">1st person</button>
@@ -5135,7 +5141,10 @@
           * (0.9 + Math.random() * 0.2);
 
         const parentAvg = (this.heightScale + partner.heightScale) / 2;
-        child.heightScale = Math.max(0.55, Math.min(1.55, parentAvg + brains.randNormal(0, 0.04)));
+        // the Arena's limits and mutation step assumed a mean heightScale of 1; here the mean is NPC_HUMAN_HS
+        const hsMean = NPC_HUMAN_HS;
+        child.heightScale = Math.max(0.55 * hsMean,
+          Math.min(1.55 * hsMean, parentAvg + brains.randNormal(0, 0.04 * hsMean)));
 
         if (this.brain && partner.brain) {
           const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -10915,6 +10924,68 @@
     let timePreset = 'Live';
     let skyPreset = 'Live';
 
+    // SURVIVOR SKY: Survivor mode has no pickers. With its Real time and weather switch off, the game runs its own
+    // clock and weather: it opens in the afternoon under 30 s of rain, clears, then changes weather at random; a full
+    // day lasts 20 minutes, as in Minecraft. With the switch on, the live clock and forecast apply.
+    const simSky = {
+      real: false,                 // the Settings switch
+      running: false,              // a world is in play
+      DAY_S: 1200,                 // real seconds per game day
+      OPENING_RAIN_S: 30,
+      SPAN: [60, 180],             // seconds each weather lasts
+      STEP_S: 0.25,                // sky redraw interval; the sun moves 0.075 degree in it
+      KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
+      hour: 15, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
+
+      get on() { return this.running && game.on && !this.real; },
+
+      start() {
+        this.running = true;
+        this.hour = presetHour('Afternoon');
+        this.kind = 'Rain';
+        this.timer = this.OPENING_RAIN_S;
+        this.opening = true;
+        this.acc = 0;
+        this.lastNow = 0;
+        this.shownMinute = -1;
+      },
+      stop() { this.running = false; },
+
+      conditions() { return SKIES[this.kind]; },
+
+      // real elapsed time, not the frame's clamped physics step, so a slow frame rate cannot stretch the day
+      update(now) {
+        if (!this.running || document.hidden) { this.lastNow = 0; return; }
+        const dt = this.lastNow ? Math.min(Math.max((now - this.lastNow) / 1000, 0), 5) : 0;
+        this.lastNow = now;
+        this.hour = (this.hour + dt * 24 / this.DAY_S) % 24;
+        this.timer -= dt;
+        let changed = false;
+        if (this.timer <= 0) {
+          if (this.opening) { this.opening = false; this.kind = 'Clear'; }
+          else {
+            this.kind = this.KINDS[Math.floor(Math.random() * this.KINDS.length)];
+          }
+          this.timer = this.SPAN[0] + Math.random() * (this.SPAN[1] - this.SPAN[0]);
+          changed = true;
+        }
+        // the clock and weather run through the whole session, so switching to them never restarts them; they are
+        // only drawn in Survivor mode with the switch off
+        if (!this.on) return;
+        this.acc += dt;
+        if (changed || this.acc >= this.STEP_S) {
+          this.acc = 0;
+          updateSky();
+        }
+        // the HUD clock reads game minutes
+        const minute = Math.floor(this.hour * 60);
+        if (changed || minute !== this.shownMinute) { this.shownMinute = minute; refreshHud(); }
+      }
+    };
+
+    // Survivor mode ignores the presets (their pickers are hidden there)
+    function timeMode() { return game.on ? 'Live' : timePreset; }
+
     function presetHour(name) {
       if (weather) {
         const rise = weather.sunrise / 60;
@@ -10931,14 +11002,16 @@
 
     // the instant the sky is drawn for: now, or today at the preset hour
     function skyInstant() {
-      if (timePreset === 'Live') return new Date();
+      const mode = timeMode();
+      if (mode === 'Live' && !simSky.on) return new Date();
       const d = cityNow();
       const now = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-      return new Date(Date.now() + (presetHour(timePreset) - now) * 3600000);
+      return new Date(Date.now() + ((simSky.on ? simSky.hour : presetHour(mode)) - now) * 3600000);
     }
 
     function conditions() {
-      return SKIES[skyPreset] || weather || autoRain.conditions();
+      if (simSky.on) return simSky.conditions();
+      return (game.on ? null : SKIES[skyPreset]) || weather || autoRain.conditions();
     }
 
     function chips(host, names, pick) {
@@ -11173,6 +11246,7 @@
     let npcElapsed = 0;
 
     function wake() {
+      if (document.hidden) return;
       if (!rafId) rafId = requestAnimationFrame(frame);
     }
 
@@ -11199,6 +11273,7 @@
       camera.getWorldQuaternion(viewQuat);
       if (activeWorld) cat.update(dt);
       autoRain.update(dt);
+      simSky.update(now);
 
       if (knobDirty) {
         knobEl.style.transform = `translate(${knobDx}px, ${knobDy}px)`;
@@ -11245,13 +11320,22 @@
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
         car.speed === 0 && !(driving && drive.settling) && !cat.boarding;
-      if (settled && !movementHeld() && !rainAnimating() && !npcLive) {
+      if (settled && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on) {
         last = -1;
         return;
       }
       // a redraw requested during this frame (invalidate -> wake) may have scheduled the next one already
       if (!rafId) rafId = requestAnimationFrame(frame);
     }
+
+    // another tab or a minimised window: the game stops outright and picks up where it left off on return
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+        last = -1;
+        simSky.lastNow = 0;
+      } else wake();
+    });
 
     // call after adding, removing, or re-texturing anything
     function invalidate() {
@@ -11590,7 +11674,8 @@
 
       // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
       const cn = cityNow();
-      const hour = timePreset === 'Live' ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : presetHour(timePreset);
+      const hour = simSky.on ? simSky.hour :
+        timeMode() === 'Live' ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : presetHour(timeMode());
       const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
       const dark = 1 - day;
       facadeLit.value.set(dark * 0.1375 * late, dark * (hour >= 22 || hour < 6 ? 0.3 : 0.9));
@@ -11913,7 +11998,7 @@
         if (activeWorld.kind === 'mix') head += `, wilderness seed ${activeWorld.seed}`;
       }
       const c = conditions();
-      const sky = weather ? weatherText() : (site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '');
+      const sky = weather && !simSky.on ? weatherText() : (site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '');
       perf.setText(hudEl, head + '\n' + populationText() + (sky ? '\n' + sky : ''));
     }
 
@@ -11970,6 +12055,7 @@
       ground.visible = true;
       ground.position.y = 0;
       autoRain.stop();
+      simSky.stop();
       weather = null;
       site = null;
       disposeRain();
@@ -12012,6 +12098,8 @@
       steps.finish(true);
       const wantGame = await chooseMode();
       if (wantGame !== game.on) gameEl.click();
+      simSky.start();
+      updateSky();
       panel.classList.add('hidden');
       showControls(true);
       say('');
@@ -12346,6 +12434,9 @@
 
     // SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
     const gameEl = document.getElementById('game');
+    const skysetEl = document.getElementById('skyset');
+    const realsetEl = document.getElementById('realset');
+    const realskyEl = document.getElementById('realsky');
     let hudBeforeGame = true;
     gameEl.addEventListener('click', () => {
       game.on = !game.on;
@@ -12356,6 +12447,11 @@
       // the HUD goes off in Survivor mode and comes back as it was on leaving
       if (game.on) { hudBeforeGame = hudOn; setHud(false); }
       else setHud(hudBeforeGame);
+      // the sky pickers give way to the Real time and weather switch; entering restarts the game's own sky
+      skysetEl.hidden = game.on;
+      realsetEl.hidden = !game.on;
+      updateSky();
+      refreshHud();
       // no flying in Survivor mode: land and hide the button
       if (game.on && flying) toggleFly();
       flyEl.classList.toggle('on', active && !driving && !game.on);
@@ -12371,6 +12467,17 @@
         if (game.on && !hasDeer) world.spawn('deer', NPC_DEER_POPULATION, city);
         else if (!game.on) for (const a of world.animals) if (a.type === 'deer' && a.home === city) a.alive = false;
       }
+      wake();
+    });
+
+    // REAL TIME AND WEATHER: Survivor mode's switch between the live clock and forecast and the game's own sky
+    realskyEl.addEventListener('click', () => {
+      simSky.real = !simSky.real;
+      realskyEl.classList.toggle('on', simSky.real);
+      realskyEl.setAttribute('aria-checked', String(simSky.real));
+      realskyEl.blur();
+      updateSky();
+      refreshHud();
       wake();
     });
 
