@@ -894,6 +894,19 @@
       border-color: transparent;
     }
 
+    /* Observer and Survivor are a two-way toggle: the unselected one is dimmed, Go launches */
+    #choose #chooseObs:not(.sel),
+    #choose #chooseGame:not(.sel) {
+      background: rgba(16, 19, 26, 0.45);
+      color: rgba(232, 228, 220, 0.75);
+      box-shadow: inset 0 0 0 1px rgba(232, 228, 220, 0.3);
+    }
+
+    #choose #chooseGo {
+      flex-basis: 100%;
+      margin-top: 40px;
+    }
+
     #card.loading #modes,
     #card.loading .mode-note,
     #card.loading .for-wild,
@@ -984,9 +997,10 @@
     <div id="card" data-mode="mix">
       <h1>Nova Orbis</h1>
       <div id="choose">
-        <button id="chooseObs">Observer</button>
-        <button id="chooseGame">Survivor</button>
+        <button id="chooseObs" aria-pressed="true" class="sel">Observer</button>
+        <button id="chooseGame" aria-pressed="false">Survivor</button>
         <button id="chooseFs" aria-pressed="false">Fullscreen</button>
+        <button id="chooseGo">Go</button>
       </div>
       <div class="chips" id="modes" role="radiogroup" aria-label="World">
         <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
@@ -1008,11 +1022,6 @@
           autocomplete="off">
         <button id="go">Load</button>
       </div>
-      <div id="wildrow" class="for-wild">
-        <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-            maxlength="12" value="03132024"></label>
-        <button id="wildgo">Start</button>
-      </div>
       <div id="sizerow" role="radiogroup" aria-label="World size">
         <span>World size</span>
         <button class="sizebtn" data-size="small" role="radio" aria-checked="false">Small</button>
@@ -1020,10 +1029,15 @@
         <button class="sizebtn" data-size="large" role="radio" aria-checked="false">Large</button>
         <button class="sizebtn" data-size="custom" role="radio" aria-checked="false">Custom</button>
       </div>
+      <div id="wildrow" class="for-wild">
+        <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
+            maxlength="12" value="03132024"></label>
+        <button id="wildgo">Start</button>
+      </div>
       <label id="customrow" hidden>World Size <span id="sizeOut">30</span><input id="size" type="range" min="5" max="100"
           step="0.5" value="30"></label>
       <details id="more" class="for-place">
-        <summary>Spawn Options</summary>
+        <summary>More World Options</summary>
         <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Car</button>
         <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span
@@ -1036,6 +1050,8 @@
               class="thumb"></span></span>Plants</button>
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
+        <button class="switch" data-opt="live" role="switch" aria-checked="false"><span class="track"><span
+              class="thumb"></span></span>Live weather and time</button>
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
@@ -1080,10 +1096,6 @@
       <div class="chips" id="times"></div>
       <h2 class="second">Weather</h2>
       <div class="chips" id="skies"></div>
-    </div>
-    <div id="realset" hidden>
-      <button class="switch" id="realsky" role="switch" aria-checked="false"><span class="track"><span
-            class="thumb"></span></span>Real time and weather</button>
     </div>
     <h2 class="second">View</h2>
     <div class="chips">
@@ -10924,11 +10936,10 @@
     let timePreset = 'Live';
     let skyPreset = 'Live';
 
-    // SURVIVOR SKY: Survivor mode has no pickers. With its Real time and weather switch off, the game runs its own
-    // clock and weather: it opens in the afternoon under 30 s of rain, clears, then changes weather at random; a full
-    // day lasts 20 minutes, as in Minecraft. With the switch on, the live clock and forecast apply.
+    // GAME SKY: with Live weather and time off (More World Options), both modes run the game's own clock and weather.
+    // It opens in the afternoon under 30 s of rain, clears, then changes weather at random; a full day lasts 20
+    // minutes, as in Minecraft. With it on, the live clock and forecast apply. An Observer preset overrides either.
     const simSky = {
-      real: false,                 // the Settings switch
       running: false,              // a world is in play
       DAY_S: 1200,                 // real seconds per game day
       OPENING_RAIN_S: 30,
@@ -10937,7 +10948,7 @@
       KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
       hour: 15, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
 
-      get on() { return this.running && game.on && !this.real; },
+      get on() { return this.running && !loadOpts.live; },   // live: the More World Options switch
 
       start() {
         this.running = true;
@@ -10950,6 +10961,14 @@
         this.shownMinute = -1;
       },
       stop() { this.running = false; },
+
+      // New ecosystem: any hour, any weather, no opening rain
+      randomize() {
+        this.hour = Math.random() * 24;
+        this.kind = this.KINDS[Math.floor(Math.random() * this.KINDS.length)];
+        this.timer = this.SPAN[0] + Math.random() * (this.SPAN[1] - this.SPAN[0]);
+        this.opening = false;
+      },
 
       conditions() { return SKIES[this.kind]; },
 
@@ -10985,6 +11004,8 @@
 
     // Survivor mode ignores the presets (their pickers are hidden there)
     function timeMode() { return game.on ? 'Live' : timePreset; }
+    // the hour a non-live sky is drawn for: an Observer preset first, else the game's own clock
+    function skyHour(mode) { return mode !== 'Live' ? presetHour(mode) : simSky.hour; }
 
     function presetHour(name) {
       if (weather) {
@@ -11006,12 +11027,15 @@
       if (mode === 'Live' && !simSky.on) return new Date();
       const d = cityNow();
       const now = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-      return new Date(Date.now() + ((simSky.on ? simSky.hour : presetHour(mode)) - now) * 3600000);
+      return new Date(Date.now() + (skyHour(mode) - now) * 3600000);
     }
 
     function conditions() {
+      // an Observer preset first, then the game's own weather, then the forecast or the Wild rain cycle
+      const preset = game.on ? null : SKIES[skyPreset];
+      if (preset) return preset;
       if (simSky.on) return simSky.conditions();
-      return (game.on ? null : SKIES[skyPreset]) || weather || autoRain.conditions();
+      return weather || autoRain.conditions();
     }
 
     function chips(host, names, pick) {
@@ -11274,6 +11298,7 @@
       if (activeWorld) cat.update(dt);
       autoRain.update(dt);
       simSky.update(now);
+      skyFade.tick(now);
 
       if (knobDirty) {
         knobEl.style.transform = `translate(${knobDx}px, ${knobDy}px)`;
@@ -11320,7 +11345,7 @@
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
         car.speed === 0 && !(driving && drive.settling) && !cat.boarding;
-      if (settled && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on) {
+      if (settled && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
         last = -1;
         return;
       }
@@ -11644,6 +11669,43 @@
     let site = null;
     let skyMinute = -1;
 
+    // SKY FADE: when the weather changes, cloud cover and fog take SKY_FADE_S to reach their new values (the first
+    // sky of a world is set at once). The frame loop redraws the sky while a fade runs.
+    const SKY_FADE_S = 5;
+    const skyFade = {
+      cloud: 0, fog: 0,                  // what the sky is drawn with now
+      c0: 0, f0: 0, c1: 0, f1: 0,        // the running fade's start and end values
+      t0: 0, fading: false, set: false, drawn: 0,
+
+      reset() { this.set = false; this.fading = false; },
+
+      aim(cloud, fog) {
+        const now = performance.now();
+        if (!this.set) {
+          this.set = true;
+          this.cloud = this.c1 = cloud; this.fog = this.f1 = fog;
+          return;
+        }
+        if (cloud !== this.c1 || fog !== this.f1) {
+          this.c0 = this.cloud; this.f0 = this.fog;
+          this.c1 = cloud; this.f1 = fog;
+          this.t0 = now; this.fading = true;
+        }
+        if (!this.fading) return;
+        const t = Math.min((now - this.t0) / (SKY_FADE_S * 1000), 1);
+        this.cloud = this.c0 + (this.c1 - this.c0) * t;
+        this.fog = this.f0 + (this.f1 - this.f0) * t;
+        if (t === 1) this.fading = false;
+      },
+
+      // each frame: redraw the sky about 15 times a second while fading
+      tick(now) {
+        if (!this.fading || now - this.drawn < 66) return;
+        this.drawn = now;
+        updateSky();
+      }
+    };
+
     function updateSky() {
       if (!site) return;
 
@@ -11654,12 +11716,13 @@
       // cloud and fog fade out through twilight, so night is not greyed
       const day = Math.min(Math.max((s.altDeg + 6) / 12, 0), 1);
       const c = conditions();
-      const cloud = c ? c.cloud / 100 : 0;
-      const foggy = c && c.kind === 'fog';
+      // cloud cover and fog ease to a new weather's values over SKY_FADE_S
+      skyFade.aim(c ? c.cloud / 100 : 0, c && c.kind === 'fog' ? 1 : 0);
+      const cloud = skyFade.cloud, fog = skyFade.fog;
 
       skyCol.lerp(OVERCAST, cloud * 0.65 * day);
-      if (foggy) skyCol.lerp(FOGGY, 0.6 * day);
-      power *= 1 - 0.7 * cloud - (foggy ? 0.2 : 0);
+      skyCol.lerp(FOGGY, 0.6 * day * fog);
+      power *= 1 - 0.7 * cloud - 0.2 * fog;
 
       // below the horizon the light is off, so its position stays true
       // the light keeps this direction; graphics aims it at the player's shadow box
@@ -11674,10 +11737,10 @@
 
       // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
       const cn = cityNow();
-      const hour = simSky.on ? simSky.hour :
-        timeMode() === 'Live' ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : presetHour(timeMode());
+      const hour = timeMode() === 'Live' && !simSky.on ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : skyHour(timeMode());
       const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
-      const dark = 1 - day;
+      // by day a quarter of the evening's lights stay on
+      const dark = Math.max(1 - day, 0.25);
       facadeLit.value.set(dark * 0.1375 * late, dark * (hour >= 22 || hour < 6 ? 0.3 : 0.9));
 
       const m = moonVector(site.lat, site.lon, inst);
@@ -11700,6 +11763,7 @@
     const RAIN_SPAN = 44;           // box width and depth around the camera, meters
     const RAIN_HEIGHT = 26;
     const RAIN_FPS_IDLE = 30;
+    const RAIN_FADE_S = 5;          // seconds rain takes to fade in or out
     const RAIN_TIME_WRAP = 600;     // seconds; keeps the shader's float time small
     const ROOF_MAP_N = 128;
     const ROOF_MAP_SIZE = 56;       // meters per side; the rain box plus snap slack
@@ -11809,7 +11873,8 @@
       mesh.frustumCulled = false;
       mesh.renderOrder = 10;
       scene.add(mesh);
-      return { mesh, uniforms, roof, roofData, roofShells: null, roofShelters: null, roofCx: NaN, roofCz: NaN, mark: null };
+      return { mesh, uniforms, roof, roofData, roofShells: null, roofShelters: null, roofCx: NaN, roofCz: NaN, mark: null,
+        fade: 0, target: 1, alpha: 0, fadeAt: 0 };   // fade: 0..1 toward target over RAIN_FADE_S; alpha: the full-strength opacity
     }
 
     function disposeRain() {
@@ -11825,8 +11890,10 @@
     // Start, retune or stop rain from current conditions.
     function syncRain(daylight) {
       const st = rainState();
-      if (!st) { disposeRain(); return; }
+      // stopping: rainTick fades it out, then disposes it
+      if (!st) { if (rain) rain.target = 0; return; }
       if (!rain) rain = makeRain();
+      rain.target = 1;
 
       const u = rain.uniforms;
       const i = st.intensity;
@@ -11844,7 +11911,8 @@
       }
       u.uVel.value.set(wx, -fall, wz);
       u.uLen.value = st.drizzle ? 0.05 : 0.08 + 0.03 * i;
-      u.uAlpha.value = (st.drizzle ? 0.3 : 0.42 + 0.2 * i) * (0.35 + 0.65 * daylight);
+      rain.alpha = (st.drizzle ? 0.3 : 0.42 + 0.2 * i) * (0.35 + 0.65 * daylight);
+      u.uAlpha.value = rain.alpha * rain.fade;
       invalidate();
     }
 
@@ -11931,6 +11999,16 @@
 
     function rainTick(dt, now) {
       if (!rain) return false;
+      // rain fades in when it starts and out when it stops, however the change came about
+      // timed on the frame clock, not the clamped physics step, so a slow frame rate cannot stretch the fade
+      const since = rain.fadeAt ? Math.min(Math.max(now - rain.fadeAt, 0), 1000) / 1000 : 0;
+      rain.fadeAt = now;
+      if (rain.fade !== rain.target) {
+        const step = since / RAIN_FADE_S;
+        rain.fade = rain.target > rain.fade ? Math.min(rain.fade + step, 1) : Math.max(rain.fade - step, 0);
+        rain.uniforms.uAlpha.value = rain.alpha * rain.fade;
+      }
+      if (rain.fade === 0 && rain.target === 0) { disposeRain(); return true; }
       const cx = Math.round(player.pos.x / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
       const cz = Math.round(player.pos.z / ROOF_MAP_SNAP) * ROOF_MAP_SNAP;
       if (cx !== rain.roofCx || cz !== rain.roofCz || rain.roofShells !== shells || rain.roofShelters !== shelters) rasterRoofs(cx, cz);
@@ -12056,6 +12134,7 @@
       ground.position.y = 0;
       autoRain.stop();
       simSky.stop();
+      skyFade.reset();
       weather = null;
       site = null;
       disposeRain();
@@ -12099,6 +12178,15 @@
       const wantGame = await chooseMode();
       if (wantGame !== game.on) gameEl.click();
       simSky.start();
+      syncSkyset();
+      if (randomSky) {
+        // New ecosystem: a random hour and weather for the game's sky, and a random preset of each for Observer
+        randomSky = false;
+        simSky.randomize();
+        for (const host of [timesEl, skiesEl]) {
+          host.children[1 + Math.floor(Math.random() * (host.children.length - 1))].click();   // 0 is Live
+        }
+      }
       updateSky();
       panel.classList.add('hidden');
       showControls(true);
@@ -12213,8 +12301,10 @@
         }
 
         // parallel with Overpass; a failed forecast never blocks the load
-        steps.start('weather');
-        const pendingWeather = fetchWeather(place.lat, place.lon)
+        // with Live weather and time off there is no forecast to fetch
+        if (o.live) steps.start('weather');
+        else steps.off('weather', 'Turned off.');
+        const pendingWeather = !o.live ? Promise.resolve(null) : fetchWeather(place.lat, place.lon)
           .then(w => {
             steps.done('weather', `${Math.round(w.tempF)}\u00b0F, ${w.label}, local time zone ${w.zone}.`);
             return w;
@@ -12378,6 +12468,9 @@
         current = 'weather';
         weather = await pendingWeather;
         site = { lat: place.lat, lon: place.lon };
+        // Live weather and time off: no forecast, so no time zone. Estimate it from the longitude, so preset and game
+        // hours match the sun.
+        if (!o.live) site.offset = Math.round(place.lon / 15) * 3600;
         skyMinute = Math.floor(Date.now() / 60000);
         updateSky();
         startClock();
@@ -12421,12 +12514,18 @@
     }
 
     // NEW ECOSYSTEM (the Arena's): a fresh random seed; Wild regrows, Mix regrows the wilderness around the same city.
+    // set by New ecosystem, used up when its world finishes loading; a load started from the intro clears it
+    let randomSky = false;
+    goEl.addEventListener('click', () => { randomSky = false; }, true);
+    wildGoEl.addEventListener('click', () => { randomSky = false; }, true);
+
     function newEcosystem() {
       if (!activeWorld || activeWorld.kind === 'city' || busy) return;
       const kind = activeWorld.kind;
       const seed = String(Math.floor(Math.random() * 1e12));
       seedEl.value = seed;
       returnToIntro();
+      randomSky = true;
       setMode(kind);
       if (kind === 'wild') loadWild(seed);
       else loadPlace(lastQuery, 'mix');
@@ -12435,8 +12534,12 @@
     // SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
     const gameEl = document.getElementById('game');
     const skysetEl = document.getElementById('skyset');
-    const realsetEl = document.getElementById('realset');
-    const realskyEl = document.getElementById('realsky');
+    // the sky pickers: Observer only. Their first chip clears the preset: Live with Live weather and time on, else
+    // Game, the game's own clock or weather (nothing was fetched, so there is no live sky to offer).
+    function syncSkyset() {
+      skysetEl.hidden = game.on;
+      timesEl.firstElementChild.textContent = skiesEl.firstElementChild.textContent = loadOpts.live ? 'Live' : 'Game';
+    }
     let hudBeforeGame = true;
     gameEl.addEventListener('click', () => {
       game.on = !game.on;
@@ -12447,9 +12550,10 @@
       // the HUD goes off in Survivor mode and comes back as it was on leaving
       if (game.on) { hudBeforeGame = hudOn; setHud(false); }
       else setHud(hudBeforeGame);
-      // the sky pickers give way to the Real time and weather switch; entering restarts the game's own sky
-      skysetEl.hidden = game.on;
-      realsetEl.hidden = !game.on;
+      // no Vision rays, Vitals or HUD chips in Survivor mode
+      syncSkyset();
+      raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = game.on;
+      newEcoEl.textContent = game.on ? 'New game' : 'New ecosystem';
       updateSky();
       refreshHud();
       // no flying in Survivor mode: land and hide the button
@@ -12470,33 +12574,34 @@
       wake();
     });
 
-    // REAL TIME AND WEATHER: Survivor mode's switch between the live clock and forecast and the game's own sky
-    realskyEl.addEventListener('click', () => {
-      simSky.real = !simSky.real;
-      realskyEl.classList.toggle('on', simSky.real);
-      realskyEl.setAttribute('aria-checked', String(simSky.real));
-      realskyEl.blur();
-      updateSky();
-      refreshHud();
-      wake();
-    });
-
-    // OBSERVER OR SURVIVOR: asked once the world is ready; Survivor is the Other row's toggle.
+    // OBSERVER OR SURVIVOR: asked once the world is ready. The two buttons only select; Go launches. Survivor is
+    // also the Other row's toggle.
+    const chooseObsEl = document.getElementById('chooseObs');
+    const chooseGameEl = document.getElementById('chooseGame');
+    const chooseGoEl = document.getElementById('chooseGo');
     function chooseMode() {
       cardEl.classList.add('choosing');
       return new Promise(resolve => {
-        const pick = wantGame => {
+        let wantGame = game.on;
+        const show = () => {
+          for (const [el, on] of [[chooseObsEl, !wantGame], [chooseGameEl, wantGame]]) {
+            el.classList.toggle('sel', on);
+            el.setAttribute('aria-pressed', String(on));
+          }
+        };
+        show();
+        chooseObsEl.onclick = () => { wantGame = false; show(); chooseObsEl.blur(); };
+        chooseGameEl.onclick = () => { wantGame = true; show(); chooseGameEl.blur(); };
+        chooseGoEl.onclick = () => {
           cardEl.classList.remove('choosing');
-          document.getElementById('chooseObs').onclick = document.getElementById('chooseGame').onclick = null;
+          chooseObsEl.onclick = chooseGameEl.onclick = chooseGoEl.onclick = null;
           resolve(wantGame);
         };
-        document.getElementById('chooseObs').onclick = () => pick(false);
-        document.getElementById('chooseGame').onclick = () => pick(true);
       });
     }
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true };
+    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, live: false };
     for (const el of document.querySelectorAll('#more .switch')) {
       el.addEventListener('click', () => {
         const k = el.dataset.opt;
