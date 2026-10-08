@@ -3820,8 +3820,12 @@
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
-    const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
-    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
+    // Phones and tablets (touch as the main pointer) start with a quarter of the people a PC gets.
+    const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
+    const HUMAN_SHARE = IS_MOBILE ? 0.25 : 1;
+    const NPC_POPULATION_PC = 2000;   // city people on a PC
+    const NPC_POPULATION = Math.floor(NPC_POPULATION_PC * HUMAN_SHARE);
+    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION_PC / 24);   // from the PC count, so deer stay at 83 on mobile too
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
     // Share of water that comes with food for an eater keeping up with hunger (~30% for people).
     const DIET_WATER_SHARE = 0.3;
@@ -6677,7 +6681,7 @@
         this.BASE = {
           coyotes: 20,
           deer: 20,
-          humans: 20,   // 4x the earlier 5 per unit of world scale
+          humans: 20 * HUMAN_SHARE,   // per unit of world scale: 20 on a PC, 5 on mobile
           plants: 300,
           worldWidth: 850,
           worldHeight: 600,
