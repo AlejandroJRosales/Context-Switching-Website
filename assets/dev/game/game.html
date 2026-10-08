@@ -1004,7 +1004,7 @@
         Survivor to live in it.</p>
       <div class="chips for-place" id="picks"></div>
       <div id="row" class="for-place">
-        <input id="addr" type="text" value="350 5th Ave, New York, NY" placeholder="350 5th Ave, New York, NY"
+        <input id="addr" type="text" value="The Loop, Chicago, IL" placeholder="The Loop, Chicago, IL" spellcheck="false"
           autocomplete="off">
         <button id="go">Load</button>
       </div>
@@ -1036,6 +1036,8 @@
               class="thumb"></span></span>Plants</button>
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
+        <button class="switch" data-opt="aerial" role="switch" aria-checked="false"><span class="track"><span
+              class="thumb"></span></span>Aerial view</button>
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
@@ -1158,7 +1160,7 @@
     const ROAD_NEAR = 35;
     const ROAD_FAR = 300;
     const ROAD_CELL = 32;
-    const FEATURES_VERSION = 4;     // bump when featuresFrom changes shape; drops stale caches
+    const FEATURES_VERSION = 3;     // bump when featuresFrom changes shape; drops stale caches
     const OVERPASS_TIMEOUT_MS = 50000;
     const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
     const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
@@ -1169,6 +1171,21 @@
       'https://overpass.private.coffee/api/interpreter'
     ];
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+
+    // USGS orthoimagery, public domain, no key (credit: USGS, USDA, The National Map).
+    // NAIP Plus (~0.3 m/px) first, else the basemap tiles (zoom 16, ~1.8 m/px).
+    const ORTHO_URL = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
+    const ORTHO_M_PX = 0.5;          // ground metres per pixel to ask for
+    const ORTHO_MAX_PX = 4000;        // the service refuses anything larger
+    const ORTHO_TIMEOUT_MS = 12000;
+
+    const IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile';
+    const IMAGERY_MAX_Z = 16;
+    const IMAGERY_MIN_Z = 12;
+    const IMAGERY_TILE_PX = 256;
+    const IMAGERY_MAX_TILES = 100;
+    const IMAGERY_TIMEOUT_MS = 8000;
+    const IMAGERY_Y = 0.004;
 
     // Elevation: AWS Terrain Tiles (Terrarium, no key); height = R * 256 + G + B / 256 - 32768 m.
     // Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
@@ -1186,7 +1203,7 @@
     const GROUND_SNAP = 0.5;
 
     // Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
-    const LAYER_BIAS = { area: 2, water: 3, road: 4, path: 5, floor: 6 };
+    const LAYER_BIAS = { imagery: 1, area: 2, water: 3, road: 4, path: 5, floor: 6 };
 
 
     // LAYER TABLES
@@ -1302,7 +1319,6 @@
           'butcher', 'bakery', 'deli', 'health_food', 'farm']
       },
       food: { amenity: ['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar'] },
-      fuel: { amenity: ['fuel'] },   // gas stations, for their food boxes
       drinking_water: { amenity: ['drinking_water', 'water_point'] },
       hospital: { amenity: ['hospital'], healthcare: ['hospital'] },
       clinic: { amenity: ['clinic', 'doctors', 'dentist'], healthcare: ['clinic', 'doctor', 'dentist'] },
@@ -1364,6 +1380,7 @@
       ['sort', 'Sorting map features', 'Splitting the download into buildings, roads, land cover, trees and places.'],
       ['build', 'Building the city', 'Walls, doors, roofs, signs, ground layers and collision.'],
       ['people', 'Populating', 'Spawning people, deer and plants and wiring the brains.'],
+      ['imagery', 'Fetching aerial imagery', 'Photo of the ground (USGS National Map).'],
       ['scene', 'Preparing the scene', 'Compiling shaders and uploading textures so the first frame does not stall.']
     ];
     // Mix grows the wilderness once the city stands; Wild downloads nothing.
@@ -1435,11 +1452,8 @@
     const fmt = n => n.toLocaleString('en-US');
 
 
-    // Phones and tablets: touch is the main pointer.
-    const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
-    // Mobile: no anti-aliasing and at most 1.5x pixel density; a PC keeps both at full.
-    const renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, IS_MOBILE ? 1.5 : 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
     renderer.xr.enabled = true;
@@ -3331,9 +3345,9 @@
       invalidate();
     }
 
-    // TILE HELPERS
+    // IMAGERY
 
-    // Slippy-tile maths, used by the elevation tiles.
+    // Slippy-tile maths. ArcGIS serves /tile/{z}/{row}/{col}, i.e. z/y/x.
     function tileOf(lat, lon, z) {
       const n = 2 ** z;
       const rad = lat * Math.PI / 180;
@@ -3341,6 +3355,10 @@
         x: (lon + 180) / 360 * n,
         y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n
       };
+    }
+    function tileLon(x, z) { return x / 2 ** z * 360 - 180; }
+    function tileLat(y, z) {
+      return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
     }
 
     // Resolves with the image or null, never rejects; crossOrigin keeps the pixels usable by WebGL.
@@ -3355,6 +3373,140 @@
         if (timeoutMs) setTimeout(() => finish(null), timeoutMs);
         img.src = url;
       });
+    }
+
+    function mercator(lat, lon) {
+      const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137;
+      return [lon * Math.PI / 180 * 6378137, y];
+    }
+
+    async function fetchOrtho(lat, lon, radius, project) {
+      const dLat = radius / 110540;
+      const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
+      const north = lat + dLat, south = lat - dLat;
+      const west = lon - dLon, east = lon + dLon;
+
+      const [minX, minY] = mercator(south, west);
+      const [maxX, maxY] = mercator(north, east);
+
+      // match the Mercator box's aspect or the service stretches the image
+      const cap = Math.min(ORTHO_MAX_PX, renderer.capabilities.maxTextureSize);
+      let w = Math.min(cap, Math.round(2 * radius / ORTHO_M_PX));
+      let h = Math.min(cap, Math.round(w * (maxY - minY) / (maxX - minX)));
+      w = Math.round(h * (maxX - minX) / (maxY - minY));
+      if (!(w > 0 && h > 0)) return null;
+
+      const url = `${ORTHO_URL}?bbox=${minX},${minY},${maxX},${maxY}`
+        + `&bboxSR=3857&imageSR=3857&size=${w},${h}`
+        + `&format=jpg&interpolation=RSP_BilinearInterpolation&f=image`;
+
+      const img = await loadImage(url, ORTHO_TIMEOUT_MS);
+      if (!img) return null;
+      // decode off the main thread, not inside the first texImage2D
+      try { await img.decode(); } catch (e) { /* already usable after onload */ }
+
+      const [westX, northZ] = project(north, west);
+      const [eastX, southZ] = project(south, east);
+      return { source: img, westX, eastX, northZ, southZ, w, h, kind: 'ortho' };
+    }
+
+    async function fetchImagery(lat, lon, radius, project, onNote = () => { }) {
+      const dLat = radius / 110540;
+      const dLon = radius / (111320 * Math.cos(lat * Math.PI / 180));
+
+      let z = IMAGERY_MAX_Z, x0, x1, y0, y1;
+      for (; ;) {
+        const nw = tileOf(lat + dLat, lon - dLon, z);
+        const se = tileOf(lat - dLat, lon + dLon, z);
+        x0 = Math.floor(nw.x); x1 = Math.floor(se.x);
+        y0 = Math.floor(nw.y); y1 = Math.floor(se.y);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= IMAGERY_MAX_TILES) break;
+        if (z <= IMAGERY_MIN_Z) return null;
+        z--;
+      }
+
+      const cols = x1 - x0 + 1, rows = y1 - y0 + 1;
+      const cv = document.createElement('canvas');
+      cv.width = cols * IMAGERY_TILE_PX;
+      cv.height = rows * IMAGERY_TILE_PX;
+      const ctx = cv.getContext('2d');
+
+      let got = 0;
+      const jobs = [];
+      for (let ty = y0; ty <= y1; ty++) {
+        for (let tx = x0; tx <= x1; tx++) {
+          jobs.push(loadImage(`${IMAGERY_URL}/${z}/${ty}/${tx}`, 0).then(img => {
+            if (!img) return;
+            ctx.drawImage(img, (tx - x0) * IMAGERY_TILE_PX, (ty - y0) * IMAGERY_TILE_PX,
+              IMAGERY_TILE_PX, IMAGERY_TILE_PX);
+            got++;
+            onNote(`Basemap tiles: ${got} of ${cols * rows} at zoom ${z}…`);
+          }));
+        }
+      }
+
+      await Promise.race([
+        Promise.all(jobs),
+        new Promise(done => setTimeout(done, IMAGERY_TIMEOUT_MS))
+      ]);
+      if (!got) return null;
+
+      // Corners go through the game's projector so the photo lines up with the buildings.
+      const [westX, northZ] = project(tileLat(y0, z), tileLon(x0, z));
+      const [eastX, southZ] = project(tileLat(y1 + 1, z), tileLon(x1 + 1, z));
+      return { source: cv, westX, eastX, northZ, southZ, z, got, total: cols * rows, kind: 'tiles' };
+    }
+
+    // Mix: `fade` = { half, color, width } clips the photo to the measured square and fades its last `width` into color.
+    function buildImagery(img, fade = null) {
+      if (!img) return;
+      const w = fade ? Math.max(img.westX, -fade.half) : img.westX, e = fade ? Math.min(img.eastX, fade.half) : img.eastX;
+      const n = fade ? Math.max(img.northZ, -fade.half) : img.northZ, so = fade ? Math.min(img.southZ, fade.half) : img.southZ;
+      if (!(e > w && so > n)) return;
+      const g = terrainGrid(w, e, n, so, IMAGERY_Y);
+      if (fade) {
+        // UVs from the photo's own extent, so the clipped grid still lines up with the buildings
+        const p = g.attributes.position, uv = g.attributes.uv;
+        for (let i = 0; i < p.count; i++) {
+          uv.setXY(i, (p.getX(i) - img.westX) / (img.eastX - img.westX),
+            1 - (p.getZ(i) - img.northZ) / (img.southZ - img.northZ));
+        }
+        uv.needsUpdate = true;
+      }
+
+      const tex = new THREE.Texture(img.source);
+      tex.needsUpdate = true;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+
+      const mat = new THREE.MeshLambertMaterial({ map: tex });
+      mat.polygonOffset = true;
+      mat.polygonOffsetFactor = -LAYER_BIAS.imagery;
+      mat.polygonOffsetUnits = -LAYER_BIAS.imagery;
+      if (fade) {
+        const rect = new THREE.Vector4(
+          (w - img.westX) / (img.eastX - img.westX), (e - img.westX) / (img.eastX - img.westX),
+          1 - (so - img.northZ) / (img.southZ - img.northZ), 1 - (n - img.northZ) / (img.southZ - img.northZ));
+        mat.onBeforeCompile = sh => {
+          sh.uniforms.uFadeCol = { value: fade.color };
+          sh.uniforms.uFadeW = { value: fade.width };
+          sh.uniforms.uRect = { value: rect };
+          sh.fragmentShader = 'uniform vec3 uFadeCol;\nuniform float uFadeW;\nuniform vec4 uRect;\n' +
+            sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  {
+    float ex = min(vMapUv.x - uRect.x, uRect.y - vMapUv.x) / (uRect.y - uRect.x);
+    float ez = min(vMapUv.y - uRect.z, uRect.w - vMapUv.y) / (uRect.w - uRect.z);
+    diffuseColor.rgb = mix(uFadeCol, diffuseColor.rgb, smoothstep(0.0, uFadeW, min(ex, ez)));
+  }`);
+        };
+      }
+      waterClip.apply(mat);
+
+      const mesh = new THREE.Mesh(g, mat);
+      if (fade) mesh.receiveShadow = true;
+      scene.add(mesh);
+      layers.push(mesh);
+      invalidate();
     }
 
     // SIGNAGE
@@ -3823,11 +3975,8 @@
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
-    // Mobile starts with a quarter of the people a PC gets.
-    const HUMAN_SHARE = IS_MOBILE ? 0.25 : 1;
-    const NPC_POPULATION_PC = 2000;   // city people on a PC
-    const NPC_POPULATION = Math.floor(NPC_POPULATION_PC * HUMAN_SHARE);
-    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION_PC / 24);   // from the PC count, so deer stay at 83 on mobile too
+    const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
+    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
     // Share of water that comes with food for an eater keeping up with hunger (~30% for people).
     const DIET_WATER_SHARE = 0.3;
@@ -4706,22 +4855,6 @@
           }
         }
 
-        // food boxes are food for people: the nearest of animal, plant and crate wins
-        if (type === 'human' && foodBoxes.list.length) {
-          const nBox = world.foodSight.queryInto(world._qBox, px, pz, this.visionDistance);
-          for (let _i = 0; _i < nBox; _i++) {
-            const bp = world._qBox[_i].position;
-            if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, bp.x, bp.y, bp.z)) continue;
-            if (hit.d3sq < bestFoodDist) {
-              bestFoodDist = hit.d3sq;
-              this.memFoodX = bp.x; this.memFoodY = bp.y; this.memFoodZ = bp.z;
-              this.hasFood = true;
-              this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
-              this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
-            }
-          }
-        }
-
         // water, from the sight grid of the provider's water sources
         const nWater = world.waterSight.queryInto(world._qWater, px, pz, this.visionDistance);
         for (let _i = 0; _i < nWater; _i++) {
@@ -5180,16 +5313,8 @@
         if (plant.health <= 0) plant.alive = false;
       }
 
-      // A food box: full health, hunger cleared, and the water that comes with that much food. The crate then moves.
-      eatBox() {
-        this.health = this.maxHealth;
-        this.dietWater(this.foodNeed);
-        this.foodNeed = 0;
-      }
-
-      // Every species drinks the same way: an empty water bar refills in NPC_DRINK_SECONDS.
       drinkWater() {
-        this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 / NPC_DRINK_SECONDS * NPC_TICK_S);
+        this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 25);
         this.health = Math.min(this.health + this.waterIncrement * 25, this.maxHealth);
       }
     }
@@ -5843,177 +5968,7 @@
       }
     };
 
-    // FOOD BOXES: one crate per restaurant, grocery store and gas station. An eaten crate reappears at another
-    // of those places, so the number of crates never changes.
-    const FOOD_BOX_KINDS = { food: true, grocery: true, fuel: true };
-    const FOOD_BOX_SIZE = 0.35;      // metres, cube edge
-    const FOOD_BOX_REACH = 1.1;      // metres from the crate's centre that count as touching
-    const FOOD_BOX_HEIGHT = 2.5;     // metres of height difference past which a crate is out of reach
-    const FOOD_BOX_SLOTS = 4;        // crates one place can hold at once
-    const FOOD_BOX_OUTDOOR_CHANCE = 0.25;   // share of spawns that land outdoors in the city instead of at a place
-
-    const foodBoxes = {
-      list: [],                      // crates: { position: { x, y, z }, kind, spot, slot, i, _k }; spot is null outdoors
-      spots: [],                     // one per place: { kind, slots: [[x, y, z]], used: [crate or null] }
-      mesh: null,
-      city: null,                    // the CityWorld, for outdoor points
-      dirty: false,                  // a crate moved since the last render
-      _shown: [], _now: [],          // crate indexes drawn last render and this one
-      _m: new THREE.Matrix4(),
-
-      // After places.build and buildSidewalks: needs the shells, floors and sidewalks.
-      build(city) {
-        this.clear();
-        this.city = city;
-        const perShell = new Map();
-        for (const p of places.list) {
-          if (!FOOD_BOX_KINDS[p.kind]) continue;
-          const slots = [];
-          const add = (x, z) => {
-            const i = shellAt(x, z);
-            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z);
-            slots.push([x, floor + FOOD_BOX_SIZE / 2, z]);
-          };
-          const s = p.building >= 0 ? shells[p.building] : null;
-          const t = s ? s.throat : null;
-          if (t) {
-            // just inside the door, alternating sides, so the doorway stays clear
-            const n0 = perShell.get(p.building) || 0;
-            perShell.set(p.building, n0 + FOOD_BOX_SLOTS);
-            const dx = t[2] - t[0], dz = t[3] - t[1], L = Math.hypot(dx, dz) || 1;
-            const ux = dx / L, uz = dz / L;
-            for (let k = 0; k < FOOD_BOX_SLOTS; k++) {
-              const n = n0 + k;
-              const side = (n % 2 ? -1 : 1) * (1.2 + Math.floor(n / 2) * 0.9);
-              const bx = t[2] + ux * 1.4 - uz * side, bz = t[3] + uz * 1.4 + ux * side;
-              if (pointInShell(s, bx, bz)) add(bx, bz);
-            }
-            if (!slots.length && pointInShell(s, t[2] + ux * 0.9, t[3] + uz * 0.9)) add(t[2] + ux * 0.9, t[3] + uz * 0.9);
-          }
-          // no usable doorway: a short row at the mapped point
-          if (!slots.length) {
-            for (let k = 0; k < FOOD_BOX_SLOTS; k++) add(p.x + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.9, p.z);
-          }
-          const spot = { kind: p.kind, slots, used: new Array(slots.length).fill(null) };
-          this.spots.push(spot);
-          const crate = { position: { x: 0, y: 0, z: 0 }, kind: p.kind, spot: null, slot: 0, i: this.list.length, _k: -1 };
-          if (!this.putOutdoors(crate)) this.put(crate, spot, 0);
-          this.list.push(crate);
-        }
-        this.draw();
-      },
-
-      // A dry point in the city that is not inside a building, mostly along sidewalks; null if none turns up.
-      outdoorPoint() {
-        const c = this.city, b = c.bounds;
-        for (let k = 0; k < 20; k++) {
-          const q = c.segs.length && Math.random() < 0.8 ? c.sidewalkPoint() : c.anyPoint();
-          if (q[0] < b.minX || q[0] > b.maxX || q[1] < b.minZ || q[1] > b.maxZ) continue;
-          if (shellAt(q[0], q[1]) >= 0 || c.isWater(q[0], q[1])) continue;
-          return q;
-        }
-        return null;
-      },
-
-      // Rolls the outdoor chance; true when the crate was set down outdoors.
-      putOutdoors(crate) {
-        if (Math.random() >= FOOD_BOX_OUTDOOR_CHANCE) return false;
-        const q = this.outdoorPoint();
-        if (!q) return false;
-        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
-        crate.spot = null; crate.slot = 0; crate.kind = 'outdoor';
-        return true;
-      },
-
-      put(crate, spot, slot) {
-        const q = spot.slots[slot];
-        crate.position.x = q[0]; crate.position.y = q[1]; crate.position.z = q[2];
-        crate.spot = spot; crate.slot = slot; crate.kind = spot.kind;
-        spot.used[slot] = crate;
-      },
-
-      // One instanced mesh, kept in `layers` so clearLayers frees it with the city.
-      draw() {
-        if (!this.list.length) return;
-        const g = new THREE.BoxGeometry(FOOD_BOX_SIZE, FOOD_BOX_SIZE, FOOD_BOX_SIZE);
-        const m = new THREE.MeshLambertMaterial({ color: 0xd9822b, emissive: 0x3a1c05 });
-        const mesh = new THREE.InstancedMesh(g, m, this.list.length);
-        // culled per crate in render(), like the animals, so three's whole-mesh test is off
-        mesh.frustumCulled = false;
-        mesh.count = 0;
-        scene.add(mesh);
-        layers.push(mesh);
-        this.mesh = mesh;
-        this._shown.length = 0;
-        this.dirty = true;
-      },
-
-      // VIEW CULL, as AnimalRenderer does it: only crates inside the camera's view are drawn. Call after
-      // updateNpcFrustum. The instance buffer is rewritten only when the visible set or a position changed.
-      render() {
-        const mesh = this.mesh;
-        if (!mesh) return;
-        const now = this._now, shown = this._shown, r = FOOD_BOX_SIZE * 0.87;
-        now.length = 0;
-        for (const c of this.list) if (npcOnScreen(c.position.x, c.position.y, c.position.z, r)) now.push(c.i);
-        let same = !this.dirty && now.length === shown.length;
-        for (let i = 0; same && i < now.length; i++) same = now[i] === shown[i];
-        if (same) return;
-        for (let i = 0; i < now.length; i++) {
-          const q = this.list[now[i]].position;
-          mesh.setMatrixAt(i, this._m.makeTranslation(q.x, q.y, q.z));
-          shown[i] = now[i];
-        }
-        shown.length = now.length;
-        mesh.count = now.length;
-        mesh.instanceMatrix.needsUpdate = true;
-        this.dirty = false;
-        invalidate();
-      },
-
-      // The crate (x, z) at height y is touching, or null; `out` is a scratch array.
-      touching(out, x, y, z) {
-        const grid = world.foodSight;
-        if (!grid || !this.list.length) return null;
-        const n = grid.queryInto(out, x, z, FOOD_BOX_REACH);
-        for (let i = 0; i < n; i++) {
-          const q = out[i].position;
-          if (Math.abs(q.y - y) > FOOD_BOX_HEIGHT) continue;
-          if (tools.distSq(x, z, q.x, q.z) < FOOD_BOX_REACH * FOOD_BOX_REACH) return out[i];
-        }
-        return null;
-      },
-
-      // Eaten: move the crate outdoors (by chance) or to a free slot at a different place, picked at random.
-      eat(crate) {
-        const from = crate.spot, fromSlot = crate.slot;
-        const grid = world.foodSight;
-        if (grid && crate._k >= 0) grid.remove(crate, crate._k);
-        if (this.putOutdoors(crate)) {
-          if (from) from.used[fromSlot] = null;
-        } else {
-          const n = this.spots.length, start = Math.floor(Math.random() * n);
-          let to = null, slot = -1;
-          for (let j = 0; j < n && !to; j++) {
-            const sp = this.spots[(start + j) % n];
-            if (sp === from) continue;
-            const k = sp.used.indexOf(null);
-            if (k >= 0) { to = sp; slot = k; }
-          }
-          // nowhere else to go (a single place): the crate stays put
-          if (to) {
-            if (from) from.used[fromSlot] = null;
-            this.put(crate, to, slot);
-          }
-        }
-        if (grid) crate._k = grid.insert(crate);
-        this.dirty = true;
-      },
-
-      clear() { this.list.length = 0; this.spots.length = 0; this.mesh = null; this.city = null; }
-    };
-
-    // WATER CLIP: the ground layers (terrain base, land cover) are draped on the same surface as the
+    // WATER CLIP: the ground layers (terrain base, land cover, aerial photo) are draped on the same surface as the
     // painted water, centimetres below it and with different triangles, so they poked through it over deep water.
     // Their fragments over water are discarded instead, from a texture of cityWater's cells, leaving the bed mesh
     // below as the only ground there. Cells within a metre of the shore keep their ground, so no gap opens at the bank.
@@ -6683,7 +6638,7 @@
         this.BASE = {
           coyotes: 20,
           deer: 20,
-          humans: 20 * HUMAN_SHARE,   // per unit of world scale: 20 on a PC, 5 on mobile
+          humans: 20,   // 4x the earlier 5 per unit of world scale
           plants: 300,
           worldWidth: 850,
           worldHeight: 600,
@@ -8451,7 +8406,7 @@
     // the engine's collision (resolveCollisions, supportAt, the NPC occupancy grid) reads that index.
     // Presentation flags: shadows (wild terrain casts), companion (Nibbler comes), rays (default vision-ray mode).
 
-    // CITY: the OpenStreetMap / Terrarium city. Geometry is built by the City pipeline (buildCity and friends);
+    // CITY: the OpenStreetMap / Terrarium / orthophoto city. Geometry is built by the City pipeline (buildCity and friends);
     // this adds the NPC-side data and answers the queries.
     class CityWorld {
       constructor(features, radius, opts, habitat = null) {
@@ -8484,14 +8439,12 @@
         this.buildGreens(f.areas);
         this.roadIdx = roadIndex(f.roads);
         this.buildSidewalks(f.roads);
-        foodBoxes.build(this);
       }
 
       teardown() {
         cityWater.clear();
         places.list.length = 0;
         places.byKind = {};
-        foodBoxes.clear();
       }
 
       // The drawn bed under the painted water (a layer, so clearLayers frees it); the far ground plane drops under it.
@@ -9311,8 +9264,6 @@
         this.plantSight = null;
         // The provider's water points, for vision queries; they never move.
         this.waterSight = null;
-        // Food boxes, for vision and contact queries; they never move.
-        this.foodSight = null;
         this.typeAlive = {};
         this.canHunt = {};
         this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
@@ -9324,7 +9275,6 @@
         this._qPlant = [];
         this._qSight = [];
         this._qWater = [];
-        this._qBox = [];
         this._plantAdds = [];
         this._plantDrops = [];
         this.drift2 = 0;
@@ -9379,8 +9329,6 @@
         this.plantSight = new SpatialGrid(spanX, spanZ, PLANT_SIGHT_CELL);
         this.waterSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
         for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
-        this.foodSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
-        for (const b of foodBoxes.list) b._k = this.foodSight.insert(b);
 
         occ.build();
         animalRenderer.init();
@@ -9391,7 +9339,6 @@
         this.ready = true;
         // write instance data now so compileAsync warms the instance-colour shader
         animalRenderer.update(this.animals, 0);
-        foodBoxes.render();
         plantRenderer.update(this.plants);
         this.shownPop = -1;
         this.syncPopulation();
@@ -9533,9 +9480,6 @@
             }
           }
 
-          const crate = a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
-          if (crate) { a.eatBox(); foodBoxes.eat(crate); }
-
           if (surfaceFor(a, px, pz) < 0) {
             a.drinkWater();
           }
@@ -9620,7 +9564,6 @@
         activeWorld.regrow(this);
 
         animalRenderer.update(this.animals, dt);
-        foodBoxes.render();
         plantRenderer.update(this.plants);
         healthBars.update(this.animals);
         if (this.ticks % 2 === 0) labels.updateTarget();
@@ -9659,7 +9602,6 @@
       predator: { type: 'player', alive: false, position: new THREE.Vector3() },
       _q: [],
       _qp: [],
-      _qb: [],
       _shown: -1,
 
       reset() {
@@ -9712,15 +9654,6 @@
             p.health -= 1;
             plantRenderer.touch(p);
             if (p.health <= 0) p.alive = false;
-          }
-
-          // a food box fills the hunger bar, with the water that comes with that much food
-          const crate = this.foodNeed > 0 ? foodBoxes.touching(this._qb, px, feet, pz) : null;
-          if (crate) {
-            foodBoxes.eat(crate);
-            this.waterNeed = Math.max(0, this.waterNeed -
-              this.foodNeed * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
-            this.foodNeed = 0;
           }
         }
         this.draw();
@@ -11174,7 +11107,6 @@
 
     // NPC ticks are capped at 60 Hz (Arena constants are per tick at 60); player motion renders at the display rate.
     const NPC_TICK_S = 1 / 60;
-    const NPC_DRINK_SECONDS = 10;   // seconds in water for an animal's empty water bar to fill
     const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
     let npcAcc = 0;
     let npcElapsed = 0;
@@ -11942,6 +11874,8 @@
     // LOAD
 
     let busy = false;
+    // The last ground image, so reloading the same place skips the export; one entry only.
+    let lastImagery = null;
     let lastTerrain = null;
     let lastQuery = '';
     let startMode = 'mix';
@@ -12214,6 +12148,26 @@
         steps.done('sort', `${fmt(features.buildings.length)} buildings, ${fmt(features.roads.length)} roads and paths, ` +
           `${fmt(features.trees.length)} trees, ${fmt(features.places.length)} places.`);
 
+        // Imagery depends only on place and radius, so fetch it during buildCity.
+        const imageryKey = `${place.lat},${place.lon},${radius}`;
+        if (!o.aerial) steps.off('imagery', 'Turned off; the ground stays plain.');
+        else steps.start('imagery');
+        const pendingImagery = !o.aerial ? Promise.resolve(null) : (async () => {
+          if (lastImagery && lastImagery.key === imageryKey) {
+            steps.note('imagery', 'Reusing the photo from the last load.');
+            return lastImagery.img;
+          }
+          const proj = makeProjector(place.lat, place.lon);
+          steps.note('imagery', 'Requesting one high-resolution photo (USGS NAIP Plus)…');
+          let img = await fetchOrtho(place.lat, place.lon, radius, proj);
+          if (!img) {
+            steps.note('imagery', 'No NAIP Plus photo; falling back to basemap tiles…');
+            img = await fetchImagery(place.lat, place.lon, radius, proj, d => steps.note('imagery', d));
+          }
+          if (img) lastImagery = { key: imageryKey, img };
+          return img;
+        })().catch(() => null);
+
         const terrainGrid_ = await pendingTerrain;
         if (terrainGrid_) lastTerrain = { key: terrainKey, grid: terrainGrid_ };
         elevation.set(terrainGrid_);
@@ -12291,6 +12245,18 @@
         } else {
           world.clear();
           steps.off('people', 'Turned off.');
+        }
+
+        current = 'imagery';
+        try {
+          const img = await pendingImagery;
+          buildImagery(img, mode === 'mix'
+            ? { half: provider.h, color: wildTerrain.grassColor, width: 0.08 } : null);
+          if (!img) { if (o.aerial) steps.off('imagery', 'No photo for this area; the ground stays plain.'); }
+          else if (img.kind === 'ortho') steps.done('imagery', `One ${img.w} \u00d7 ${img.h} photo from USGS NAIP Plus.`);
+          else steps.done('imagery', `${img.got} of ${img.total} basemap tiles at zoom ${img.z}.`);
+        } catch (e) {
+          steps.off('imagery', 'Unavailable; the ground stays plain.');
         }
 
         current = 'weather';
@@ -12395,7 +12361,7 @@
     }
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true };
+    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, aerial: false };
     for (const el of document.querySelectorAll('#more .switch')) {
       el.addEventListener('click', () => {
         const k = el.dataset.opt;
@@ -12450,12 +12416,12 @@
 
     goEl.addEventListener('click', () => { loadPlace(addrEl.value, startMode); });
 
-    // Suggested places: well-mapped US downtowns.
+    // Suggested places: well-mapped US downtowns (imagery is US-only).
     const PICKS = [
       ['New York, NY', 'New York, NY'],
-      ['Union Square, San Francisco', 'Union Square, San Francisco, CA'],
-      ['The Loop, Chicago', 'Millennium Park, Chicago, IL'],
-      ['1 Park Place, Athens, Ohio', '1 Park Place, Athens, OH']
+      ['Union Square, CA', 'Union Square, San Francisco, CA'],
+      ['The Loop, IL', 'Millennium Park, Chicago, IL'],
+      ['1 Park Place, Athens, OH', '1 Park Place, Athens, OH']
     ];
     const picksEl = document.getElementById('picks');
     for (const [label, query] of PICKS) {
