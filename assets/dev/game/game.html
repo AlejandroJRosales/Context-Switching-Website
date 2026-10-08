@@ -1158,7 +1158,7 @@
     const ROAD_NEAR = 35;
     const ROAD_FAR = 300;
     const ROAD_CELL = 32;
-    const FEATURES_VERSION = 3;     // bump when featuresFrom changes shape; drops stale caches
+    const FEATURES_VERSION = 4;     // bump when featuresFrom changes shape; drops stale caches
     const OVERPASS_TIMEOUT_MS = 50000;
     const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
     const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
@@ -1302,6 +1302,7 @@
           'butcher', 'bakery', 'deli', 'health_food', 'farm']
       },
       food: { amenity: ['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar'] },
+      fuel: { amenity: ['fuel'] },   // gas stations, for their food boxes
       drinking_water: { amenity: ['drinking_water', 'water_point'] },
       hospital: { amenity: ['hospital'], healthcare: ['hospital'] },
       clinic: { amenity: ['clinic', 'doctors', 'dentist'], healthcare: ['clinic', 'doctor', 'dentist'] },
@@ -4699,6 +4700,22 @@
           }
         }
 
+        // food boxes are food for people: the nearest of animal, plant and crate wins
+        if (type === 'human' && foodBoxes.list.length) {
+          const nBox = world.foodSight.queryInto(world._qBox, px, pz, this.visionDistance);
+          for (let _i = 0; _i < nBox; _i++) {
+            const bp = world._qBox[_i].position;
+            if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, bp.x, bp.y, bp.z)) continue;
+            if (hit.d3sq < bestFoodDist) {
+              bestFoodDist = hit.d3sq;
+              this.memFoodX = bp.x; this.memFoodY = bp.y; this.memFoodZ = bp.z;
+              this.hasFood = true;
+              this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
+              this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
+            }
+          }
+        }
+
         // water, from the sight grid of the provider's water sources
         const nWater = world.waterSight.queryInto(world._qWater, px, pz, this.visionDistance);
         for (let _i = 0; _i < nWater; _i++) {
@@ -5157,8 +5174,16 @@
         if (plant.health <= 0) plant.alive = false;
       }
 
+      // A food box: full health, hunger cleared, and the water that comes with that much food. The crate then moves.
+      eatBox() {
+        this.health = this.maxHealth;
+        this.dietWater(this.foodNeed);
+        this.foodNeed = 0;
+      }
+
+      // Every species drinks the same way: an empty water bar refills in NPC_DRINK_SECONDS.
       drinkWater() {
-        this.waterNeed = Math.max(0, this.waterNeed - this.waterIncrement * 25);
+        this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 / NPC_DRINK_SECONDS * NPC_TICK_S);
         this.health = Math.min(this.health + this.waterIncrement * 25, this.maxHealth);
       }
     }
@@ -5810,6 +5835,176 @@
           this.byKind[p.kind].push(entry || [p.x, p.z]);
         }
       }
+    };
+
+    // FOOD BOXES: one crate per restaurant, grocery store and gas station. An eaten crate reappears at another
+    // of those places, so the number of crates never changes.
+    const FOOD_BOX_KINDS = { food: true, grocery: true, fuel: true };
+    const FOOD_BOX_SIZE = 0.35;      // metres, cube edge
+    const FOOD_BOX_REACH = 1.1;      // metres from the crate's centre that count as touching
+    const FOOD_BOX_HEIGHT = 2.5;     // metres of height difference past which a crate is out of reach
+    const FOOD_BOX_SLOTS = 4;        // crates one place can hold at once
+    const FOOD_BOX_OUTDOOR_CHANCE = 0.25;   // share of spawns that land outdoors in the city instead of at a place
+
+    const foodBoxes = {
+      list: [],                      // crates: { position: { x, y, z }, kind, spot, slot, i, _k }; spot is null outdoors
+      spots: [],                     // one per place: { kind, slots: [[x, y, z]], used: [crate or null] }
+      mesh: null,
+      city: null,                    // the CityWorld, for outdoor points
+      dirty: false,                  // a crate moved since the last render
+      _shown: [], _now: [],          // crate indexes drawn last render and this one
+      _m: new THREE.Matrix4(),
+
+      // After places.build and buildSidewalks: needs the shells, floors and sidewalks.
+      build(city) {
+        this.clear();
+        this.city = city;
+        const perShell = new Map();
+        for (const p of places.list) {
+          if (!FOOD_BOX_KINDS[p.kind]) continue;
+          const slots = [];
+          const add = (x, z) => {
+            const i = shellAt(x, z);
+            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z);
+            slots.push([x, floor + FOOD_BOX_SIZE / 2, z]);
+          };
+          const s = p.building >= 0 ? shells[p.building] : null;
+          const t = s ? s.throat : null;
+          if (t) {
+            // just inside the door, alternating sides, so the doorway stays clear
+            const n0 = perShell.get(p.building) || 0;
+            perShell.set(p.building, n0 + FOOD_BOX_SLOTS);
+            const dx = t[2] - t[0], dz = t[3] - t[1], L = Math.hypot(dx, dz) || 1;
+            const ux = dx / L, uz = dz / L;
+            for (let k = 0; k < FOOD_BOX_SLOTS; k++) {
+              const n = n0 + k;
+              const side = (n % 2 ? -1 : 1) * (1.2 + Math.floor(n / 2) * 0.9);
+              const bx = t[2] + ux * 1.4 - uz * side, bz = t[3] + uz * 1.4 + ux * side;
+              if (pointInShell(s, bx, bz)) add(bx, bz);
+            }
+            if (!slots.length && pointInShell(s, t[2] + ux * 0.9, t[3] + uz * 0.9)) add(t[2] + ux * 0.9, t[3] + uz * 0.9);
+          }
+          // no usable doorway: a short row at the mapped point
+          if (!slots.length) {
+            for (let k = 0; k < FOOD_BOX_SLOTS; k++) add(p.x + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.9, p.z);
+          }
+          const spot = { kind: p.kind, slots, used: new Array(slots.length).fill(null) };
+          this.spots.push(spot);
+          const crate = { position: { x: 0, y: 0, z: 0 }, kind: p.kind, spot: null, slot: 0, i: this.list.length, _k: -1 };
+          if (!this.putOutdoors(crate)) this.put(crate, spot, 0);
+          this.list.push(crate);
+        }
+        this.draw();
+      },
+
+      // A dry point in the city that is not inside a building, mostly along sidewalks; null if none turns up.
+      outdoorPoint() {
+        const c = this.city, b = c.bounds;
+        for (let k = 0; k < 20; k++) {
+          const q = c.segs.length && Math.random() < 0.8 ? c.sidewalkPoint() : c.anyPoint();
+          if (q[0] < b.minX || q[0] > b.maxX || q[1] < b.minZ || q[1] > b.maxZ) continue;
+          if (shellAt(q[0], q[1]) >= 0 || c.isWater(q[0], q[1])) continue;
+          return q;
+        }
+        return null;
+      },
+
+      // Rolls the outdoor chance; true when the crate was set down outdoors.
+      putOutdoors(crate) {
+        if (Math.random() >= FOOD_BOX_OUTDOOR_CHANCE) return false;
+        const q = this.outdoorPoint();
+        if (!q) return false;
+        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
+        crate.spot = null; crate.slot = 0; crate.kind = 'outdoor';
+        return true;
+      },
+
+      put(crate, spot, slot) {
+        const q = spot.slots[slot];
+        crate.position.x = q[0]; crate.position.y = q[1]; crate.position.z = q[2];
+        crate.spot = spot; crate.slot = slot; crate.kind = spot.kind;
+        spot.used[slot] = crate;
+      },
+
+      // One instanced mesh, kept in `layers` so clearLayers frees it with the city.
+      draw() {
+        if (!this.list.length) return;
+        const g = new THREE.BoxGeometry(FOOD_BOX_SIZE, FOOD_BOX_SIZE, FOOD_BOX_SIZE);
+        const m = new THREE.MeshLambertMaterial({ color: 0xd9822b, emissive: 0x3a1c05 });
+        const mesh = new THREE.InstancedMesh(g, m, this.list.length);
+        // culled per crate in render(), like the animals, so three's whole-mesh test is off
+        mesh.frustumCulled = false;
+        mesh.count = 0;
+        scene.add(mesh);
+        layers.push(mesh);
+        this.mesh = mesh;
+        this._shown.length = 0;
+        this.dirty = true;
+      },
+
+      // VIEW CULL, as AnimalRenderer does it: only crates inside the camera's view are drawn. Call after
+      // updateNpcFrustum. The instance buffer is rewritten only when the visible set or a position changed.
+      render() {
+        const mesh = this.mesh;
+        if (!mesh) return;
+        const now = this._now, shown = this._shown, r = FOOD_BOX_SIZE * 0.87;
+        now.length = 0;
+        for (const c of this.list) if (npcOnScreen(c.position.x, c.position.y, c.position.z, r)) now.push(c.i);
+        let same = !this.dirty && now.length === shown.length;
+        for (let i = 0; same && i < now.length; i++) same = now[i] === shown[i];
+        if (same) return;
+        for (let i = 0; i < now.length; i++) {
+          const q = this.list[now[i]].position;
+          mesh.setMatrixAt(i, this._m.makeTranslation(q.x, q.y, q.z));
+          shown[i] = now[i];
+        }
+        shown.length = now.length;
+        mesh.count = now.length;
+        mesh.instanceMatrix.needsUpdate = true;
+        this.dirty = false;
+        invalidate();
+      },
+
+      // The crate (x, z) at height y is touching, or null; `out` is a scratch array.
+      touching(out, x, y, z) {
+        const grid = world.foodSight;
+        if (!grid || !this.list.length) return null;
+        const n = grid.queryInto(out, x, z, FOOD_BOX_REACH);
+        for (let i = 0; i < n; i++) {
+          const q = out[i].position;
+          if (Math.abs(q.y - y) > FOOD_BOX_HEIGHT) continue;
+          if (tools.distSq(x, z, q.x, q.z) < FOOD_BOX_REACH * FOOD_BOX_REACH) return out[i];
+        }
+        return null;
+      },
+
+      // Eaten: move the crate outdoors (by chance) or to a free slot at a different place, picked at random.
+      eat(crate) {
+        const from = crate.spot, fromSlot = crate.slot;
+        const grid = world.foodSight;
+        if (grid && crate._k >= 0) grid.remove(crate, crate._k);
+        if (this.putOutdoors(crate)) {
+          if (from) from.used[fromSlot] = null;
+        } else {
+          const n = this.spots.length, start = Math.floor(Math.random() * n);
+          let to = null, slot = -1;
+          for (let j = 0; j < n && !to; j++) {
+            const sp = this.spots[(start + j) % n];
+            if (sp === from) continue;
+            const k = sp.used.indexOf(null);
+            if (k >= 0) { to = sp; slot = k; }
+          }
+          // nowhere else to go (a single place): the crate stays put
+          if (to) {
+            if (from) from.used[fromSlot] = null;
+            this.put(crate, to, slot);
+          }
+        }
+        if (grid) crate._k = grid.insert(crate);
+        this.dirty = true;
+      },
+
+      clear() { this.list.length = 0; this.spots.length = 0; this.mesh = null; this.city = null; }
     };
 
     // WATER CLIP: the ground layers (terrain base, land cover) are draped on the same surface as the
@@ -8283,12 +8478,14 @@
         this.buildGreens(f.areas);
         this.roadIdx = roadIndex(f.roads);
         this.buildSidewalks(f.roads);
+        foodBoxes.build(this);
       }
 
       teardown() {
         cityWater.clear();
         places.list.length = 0;
         places.byKind = {};
+        foodBoxes.clear();
       }
 
       // The drawn bed under the painted water (a layer, so clearLayers frees it); the far ground plane drops under it.
@@ -9108,6 +9305,8 @@
         this.plantSight = null;
         // The provider's water points, for vision queries; they never move.
         this.waterSight = null;
+        // Food boxes, for vision and contact queries; they never move.
+        this.foodSight = null;
         this.typeAlive = {};
         this.canHunt = {};
         this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
@@ -9119,6 +9318,7 @@
         this._qPlant = [];
         this._qSight = [];
         this._qWater = [];
+        this._qBox = [];
         this._plantAdds = [];
         this._plantDrops = [];
         this.drift2 = 0;
@@ -9173,6 +9373,8 @@
         this.plantSight = new SpatialGrid(spanX, spanZ, PLANT_SIGHT_CELL);
         this.waterSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
         for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
+        this.foodSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
+        for (const b of foodBoxes.list) b._k = this.foodSight.insert(b);
 
         occ.build();
         animalRenderer.init();
@@ -9183,6 +9385,7 @@
         this.ready = true;
         // write instance data now so compileAsync warms the instance-colour shader
         animalRenderer.update(this.animals, 0);
+        foodBoxes.render();
         plantRenderer.update(this.plants);
         this.shownPop = -1;
         this.syncPopulation();
@@ -9324,6 +9527,9 @@
             }
           }
 
+          const crate = a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
+          if (crate) { a.eatBox(); foodBoxes.eat(crate); }
+
           if (surfaceFor(a, px, pz) < 0) {
             a.drinkWater();
           }
@@ -9408,6 +9614,7 @@
         activeWorld.regrow(this);
 
         animalRenderer.update(this.animals, dt);
+        foodBoxes.render();
         plantRenderer.update(this.plants);
         healthBars.update(this.animals);
         if (this.ticks % 2 === 0) labels.updateTarget();
@@ -9446,6 +9653,7 @@
       predator: { type: 'player', alive: false, position: new THREE.Vector3() },
       _q: [],
       _qp: [],
+      _qb: [],
       _shown: -1,
 
       reset() {
@@ -9498,6 +9706,15 @@
             p.health -= 1;
             plantRenderer.touch(p);
             if (p.health <= 0) p.alive = false;
+          }
+
+          // a food box fills the hunger bar, with the water that comes with that much food
+          const crate = this.foodNeed > 0 ? foodBoxes.touching(this._qb, px, feet, pz) : null;
+          if (crate) {
+            foodBoxes.eat(crate);
+            this.waterNeed = Math.max(0, this.waterNeed -
+              this.foodNeed * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
+            this.foodNeed = 0;
           }
         }
         this.draw();
@@ -10951,6 +11168,7 @@
 
     // NPC ticks are capped at 60 Hz (Arena constants are per tick at 60); player motion renders at the display rate.
     const NPC_TICK_S = 1 / 60;
+    const NPC_DRINK_SECONDS = 10;   // seconds in water for an animal's empty water bar to fill
     const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
     let npcAcc = 0;
     let npcElapsed = 0;
