@@ -1435,8 +1435,11 @@
     const fmt = n => n.toLocaleString('en-US');
 
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // Phones and tablets: touch is the main pointer.
+    const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
+    // Mobile: no anti-aliasing and at most 1.5x pixel density; a PC keeps both at full.
+    const renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, IS_MOBILE ? 1.5 : 2));
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
     renderer.xr.enabled = true;
@@ -3820,8 +3823,7 @@
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
-    // Phones and tablets (touch as the main pointer) start with a quarter of the people a PC gets.
-    const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
+    // Mobile starts with a quarter of the people a PC gets.
     const HUMAN_SHARE = IS_MOBILE ? 0.25 : 1;
     const NPC_POPULATION_PC = 2000;   // city people on a PC
     const NPC_POPULATION = Math.floor(NPC_POPULATION_PC * HUMAN_SHARE);
