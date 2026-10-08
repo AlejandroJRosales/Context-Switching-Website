@@ -1966,6 +1966,7 @@
     }
 
     function newBuf() { return { pos: [], col: [] }; }
+    const NO_WIN = [0, 0, 0];
 
     // `ref` is the direction the face should point; winding is fixed to match.
     function pushTri(b, p0, p1, p2, c, ref) {
@@ -1976,6 +1977,11 @@
       const q1 = flip ? p2 : p1, q2 = flip ? p1 : p2;
       b.pos.push(p0[0], p0[1], p0[2], q1[0], q1[1], q1[2], q2[0], q2[1], q2[2]);
       b.col.push(c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]);
+      // FACADE: outer walls carry [baseY, topY, seed]; every other face gets zeros.
+      if (b.win) {
+        const w = c === b.winCol && ref[1] === 0 ? b.winData : NO_WIN;
+        b.win.push(w[0], w[1], w[2], w[0], w[1], w[2], w[0], w[1], w[2]);
+      }
     }
 
     function pushQuad(b, p0, p1, p2, p3, c, ref) {
@@ -1988,6 +1994,7 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
       g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+      if (b.win) g.setAttribute('win', new THREE.Float32BufferAttribute(b.win, 3));
       g.computeVertexNormals();
       return g;
     }
@@ -2555,12 +2562,227 @@
 
     // BUILD
 
+    // FACADE: procedural windows, lit windows, ground-floor band, rooftop clutter.
+
+    // x = fraction of upper windows lit, y = fraction of shopfront bays lit.
+    const facadeLit = { value: new THREE.Vector2(0, 0) };
+
+    function hash01(i) {
+      const v = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    }
+
+    // Small seeded generator so each building's roof layout is stable between loads.
+    function seededRandom(seed) {
+      let a = (seed * 2654435761) >>> 0;
+      return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // Lambert material with the window pattern patched into its shader.
+    function facadeMaterial() {
+      const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+      m.extensions = { derivatives: true };
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uFacadeLit = facadeLit;
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', `#include <common>
+            attribute vec3 win;
+            varying vec3 vWin;
+            varying vec3 vFacadePos;
+            varying vec3 vFacadeNrm;`)
+          .replace('#include <begin_vertex>', `#include <begin_vertex>
+            vWin = win;
+            vFacadePos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+            vFacadeNrm = normal;`);
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', `#include <common>
+            uniform vec2 uFacadeLit;
+            varying vec3 vWin;
+            varying vec3 vFacadePos;
+            varying vec3 vFacadeNrm;
+            float facadeHash(vec3 p) {
+              p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+              p += dot(p, p.yzx + 33.33);
+              return fract((p.x + p.y) * p.z);
+            }
+            // 1 inside [lo, hi], with edges softened by the pixel footprint e
+            float facadeBox(float x, float lo, float hi, float e) {
+              return smoothstep(lo - e, lo + e, x) * (1.0 - smoothstep(hi - e, hi + e, x));
+            }`)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+            vec3 facadeGlow = vec3(0.0);
+            {
+              // snapped: interpolation noise on the seed made borderline windows speckle
+              float seed = floor(vWin.z * 1024.0 + 0.5) / 1024.0;
+              float h = vFacadePos.y - vWin.x;
+              float wallH = vWin.y - vWin.x;
+              if (seed > 0.0 && h > 0.0 && h < wallH) {
+                float r1 = fract(seed * 7.13), r2 = fract(seed * 13.7), r3 = fract(seed * 29.3);
+                vec2 along = normalize(vec2(-vFacadeNrm.z, vFacadeNrm.x));
+                float u = dot(vFacadePos.xz, along) + seed * 37.0;
+                float tall = smoothstep(30.0, 60.0, wallH);
+                // ground-floor band only on buildings tall enough to have one
+                float gf = wallH > 7.0 ? 4.2 + r1 * 0.8 : 0.0;
+                vec3 glassCol = mix(vec3(0.030, 0.040, 0.055), vec3(0.060, 0.095, 0.130), r3);
+                float glass = 0.0, lit = 0.0, cover = 0.0, litAvg = 0.0, cell = 0.0, fw = 0.0;
+
+                if (h < gf) {
+                  // shopfront: wide glazing between piers, kick plate below, fascia above
+                  float bayW = 3.0 + r2 * 1.5;
+                  float fx = u / bayW;
+                  float ex = fwidth(fx);
+                  fw = ex;
+                  cell = floor(fx);
+                  glass = facadeBox(fract(fx), 0.06, 0.94, ex) * facadeBox(h, 0.45, gf - 0.75, fwidth(h));
+                  cover = 0.88 * (gf - 1.2) / gf;
+                  float fascia = smoothstep(gf - 0.75, gf - 0.70, h);
+                  diffuseColor.rgb *= mix(0.72, 0.50, fascia);
+                  lit = step(facadeHash(vec3(cell, 91.0, seed * 51.0)) + 0.0001, uFacadeLit.y);
+                  litAvg = uFacadeLit.y;
+                } else {
+                  float floorH = 3.0 + r2 * 0.8;
+                  float bayW = mix(2.2 + r1 * 1.6, 1.5 + r3 * 0.9, tall);
+                  float fx = u / bayW, fy = (h - gf) / floorH;
+                  float ex = fwidth(fx), ey = fwidth(fy);
+                  fw = max(ex, ey);
+                  float col = floor(fx), row = floor(fy);
+                  // tall towers read as curtain wall, low buildings as punched windows
+                  float x0 = mix(0.22, 0.05, tall), y0 = mix(0.30, 0.10, tall), y1 = mix(0.80, 0.93, tall);
+                  // no window on a partial top storey
+                  float whole = step(floorH * 0.85, wallH - gf - row * floorH);
+                  glass = facadeBox(fract(fx), x0, 1.0 - x0, ex) * facadeBox(fract(fy), y0, y1, ey) * whole;
+                  cover = (1.0 - 2.0 * x0) * (y1 - y0);
+                  cell = col + row * 57.0;
+                  lit = step(facadeHash(vec3(col, row, seed * 51.0)) + 0.0001, uFacadeLit.x);
+                  litAvg = uFacadeLit.x;
+                }
+
+                // far away the grid is finer than a pixel: fade to its average to stop shimmer
+                float detail = 1.0 - smoothstep(0.35, 0.9, fw);
+                float g = mix(cover, glass, detail);
+                float l = mix(cover * litAvg, glass * lit, detail);
+                diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, g);
+                float tone = facadeHash(vec3(cell, seed * 17.0, 3.0));
+                vec3 lamp = mix(vec3(1.0, 0.74, 0.42), vec3(0.78, 0.88, 1.0), step(0.86, tone));
+                facadeGlow = lamp * l * (0.45 + 0.55 * fract(tone * 9.7));
+              }
+            }`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+            totalEmissiveRadiance += facadeGlow;`);
+      };
+      return m;
+    }
+
+    // Box on a roof, turned to the axis (ux, uz); four sides and a top.
+    function pushBox(b, cx, cz, ux, uz, hw, hd, y0, y1, c) {
+      const vx = -uz, vz = ux;
+      const k = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, d]) =>
+        [cx + ux * hw * a + vx * hd * d, cz + uz * hw * a + vz * hd * d]);
+      for (let i = 0; i < 4; i++) {
+        const p = k[i], q = k[(i + 1) % 4];
+        const mx = (p[0] + q[0]) / 2 - cx, mz = (p[1] + q[1]) / 2 - cz;
+        pushQuad(b, [p[0], y0, p[1]], [q[0], y0, q[1]], [q[0], y1, q[1]], [p[0], y1, p[1]], c, [mx, 0, mz]);
+      }
+      pushQuad(b, [k[0][0], y1, k[0][1]], [k[1][0], y1, k[1][1]], [k[2][0], y1, k[2][1]], [k[3][0], y1, k[3][1]], c, [0, 1, 0]);
+    }
+
+    // Upright prism with `sides` faces, used for water tanks.
+    function pushPrism(b, cx, cz, r, y0, y1, sides, c) {
+      for (let i = 0; i < sides; i++) {
+        const a0 = i / sides * Math.PI * 2, a1 = (i + 1) / sides * Math.PI * 2;
+        const p = [cx + Math.cos(a0) * r, cz + Math.sin(a0) * r], q = [cx + Math.cos(a1) * r, cz + Math.sin(a1) * r];
+        pushQuad(b, [p[0], y0, p[1]], [q[0], y0, q[1]], [q[0], y1, q[1]], [p[0], y1, p[1]], c,
+          [Math.cos((a0 + a1) / 2), 0, Math.sin((a0 + a1) / 2)]);
+        pushTri(b, [cx, y1, cz], [p[0], y1, p[1]], [q[0], y1, q[1]], c, [0, 1, 0]);
+      }
+    }
+
+    // Parapet and rooftop plant for a flat-roofed shell. Visual only: no colliders.
+    function roofDetail(b, s, R, wc) {
+      const wallH = s.top - s.base;
+      if (wallH < 6) return;
+      const y = s.top, n = R.pts.length;
+
+      // parapet: outer face continues the wall, inner face and coping are darker
+      const ph = wallH > 30 ? 0.9 : 0.5;
+      const pc = [wc[0] * 0.8, wc[1] * 0.8, wc[2] * 0.8];
+      for (let i = 0; i < n; i++) {
+        const e = R.E[i], j = (i + 1) % n;
+        const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
+        vquad(b, p0, p1, y, y + ph, wc, [-e.nx, 0, -e.nz]);
+        vquad(b, q0, q1, y, y + ph, pc, [e.nx, 0, e.nz]);
+        pushQuad(b, [p0[0], y + ph, p0[1]], [p1[0], y + ph, p1[1]], [q1[0], y + ph, q1[1]], [q0[0], y + ph, q0[1]], pc, [0, 1, 0]);
+      }
+
+      const area = Math.abs(ringArea(s.pts));
+      if (area < 80) return;
+      const rnd = seededRandom(s.index + 1);
+      // align everything to the longest wall
+      let long = R.E[0];
+      for (const e of R.E) if (e.L > long.L) long = e;
+      const ux = long.ux, uz = long.uz, vx = -uz, vz = ux;
+      const placed = [];
+
+      // Random spot whose padded footprint is on the roof and clear of earlier pieces.
+      const place = (hw, hd) => {
+        const pw = hw + 0.9, pd = hd + 0.9, r = Math.hypot(hw, hd);
+        for (let t = 0; t < 14; t++) {
+          const x = s.minX + rnd() * (s.maxX - s.minX), z = s.minZ + rnd() * (s.maxZ - s.minZ);
+          let ok = pointInShell(s, x, z);
+          for (let a = -1; a <= 1 && ok; a += 2) for (let d = -1; d <= 1 && ok; d += 2) {
+            ok = pointInShell(s, x + ux * pw * a + vx * pd * d, z + uz * pw * a + vz * pd * d);
+          }
+          for (const q of placed) if (ok && Math.hypot(x - q[0], z - q[1]) < r + q[2] + 0.4) ok = false;
+          if (ok) { placed.push([x, z, r]); return [x, z]; }
+        }
+        return null;
+      };
+      const box = (hw, hd, h, c) => {
+        const p = place(hw, hd);
+        if (p) pushBox(b, p[0], p[1], ux, uz, hw, hd, y, y + h, c);
+      };
+      const shade = k => [wc[0] * k, wc[1] * k, wc[2] * k];
+      // each piece survives one time in four: 75 percent less clutter
+      const keep = () => rnd() < 0.25;
+
+      if (wallH > 45 && keep()) {
+        // mechanical penthouse and a mast on towers
+        box(3 + rnd() * 3, 2.5 + rnd() * 2, 3.5 + rnd() * 2, shade(0.7));
+        const p = place(0.5, 0.5);
+        if (p) pushBox(b, p[0], p[1], ux, uz, 0.12, 0.12, y, y + 8 + rnd() * 12, [0.03, 0.03, 0.035]);
+      }
+      // stair bulkhead
+      if (wallH > 12 && area > 150 && keep()) box(1.6, 2.3, 2.8, shade(0.75));
+      // water tank on some mid-rise roofs
+      if (wallH > 14 && wallH <= 45 && rnd() < 0.3 && keep()) {
+        const p = place(1.5, 1.5);
+        if (p) {
+          pushBox(b, p[0], p[1], ux, uz, 1.0, 1.0, y, y + 1.3, [0.04, 0.04, 0.045]);
+          pushPrism(b, p[0], p[1], 1.4, y + 1.3, y + 4.0, 8, [0.13, 0.075, 0.04]);
+        }
+      }
+      // air handlers, more on bigger roofs
+      const units = Math.min(7, 1 + Math.floor(area / 300));
+      for (let i = 0; i < units; i++) {
+        if (!keep()) continue;
+        const k = 0.12 + rnd() * 0.16;
+        box(0.7 + rnd() * 1.3, 0.6 + rnd() * 0.9, 0.8 + rnd() * 1.3, [k, k, k * 1.04]);
+      }
+    }
+
     function buildCity(features) {
       clearLayers();
 
       const buf = newBuf();
       const roofBuf = newBuf();
       const floorBuf = newBuf();
+      // FACADE: both buffers merge into one mesh, so both need the window attribute.
+      buf.win = []; roofBuf.win = [];
       const list = [];
       let skipped = 0;
 
@@ -2655,6 +2877,10 @@
           wc = [0.80 * t, 0.78 * t, 0.74 * t];
         }
 
+        // FACADE: faces pushed with this exact colour array become window walls.
+        buf.winCol = wc;
+        buf.winData = [s.base, s.top, 0.05 + 0.95 * hash01(s.index)];
+
         const R = s.R;
         const doors = s.signDoors ? [...s.signDoors.values()] : [];
         const main = chooseDoor(s, R, roads, ents);
@@ -2684,6 +2910,8 @@
         pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);
         pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
         if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);
+        // FACADE: parapet and rooftop plant on flat roofs only.
+        if (!s.roofShape) roofDetail(buf, s, R, wc);
 
         if (s.roofShape) {
           const rcHex = roofColorOf(tags);
@@ -2694,7 +2922,7 @@
 
       const count = list.length;
       const geoms = [bufGeom(buf), bufGeom(roofBuf)].filter(Boolean);
-      addLayer(geoms, litMaterial());
+      addLayer(geoms, facadeMaterial());
       const fg = bufGeom(floorBuf);
       if (fg) addLayer([fg], litMaterial(LAYER_BIAS.floor));
 
@@ -3747,8 +3975,8 @@
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
-    const NPC_POPULATION = 500;
-    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 6);   // the Arena's 20:5 sheep-to-human ratio
+    const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
+    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
     // Share of water that comes with food for an eater keeping up with hunger (~30% for people).
     const DIET_WATER_SHARE = 0.3;
@@ -6410,7 +6638,7 @@
         this.BASE = {
           coyotes: 20,
           deer: 20,
-          humans: 5,
+          humans: 20,   // 4x the earlier 5 per unit of world scale
           plants: 300,
           worldWidth: 850,
           worldHeight: 600,
@@ -11297,6 +11525,13 @@
       // not dimmed by cloud: kept for facade readability rather than realism
       moon.intensity = MOON_MAX * (1 - day);
       hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
+
+      // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
+      const cn = cityNow();
+      const hour = timePreset === 'Live' ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : presetHour(timePreset);
+      const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
+      const dark = 1 - day;
+      facadeLit.value.set(dark * 0.1375 * late, dark * (hour >= 22 || hour < 6 ? 0.3 : 0.9));
 
       const m = moonVector(site.lat, site.lon, inst);
       sunDir.set(s.east, s.up, -s.north).normalize();
