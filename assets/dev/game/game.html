@@ -697,7 +697,7 @@
 
     #card .for-wilderness,
     #card .for-place,
-    #card .for-mix {
+    #card .for-city {
       display: none;
     }
 
@@ -705,25 +705,25 @@
       display: block;
     }
 
-    #card[data-mode="mix"] .for-mix {
+    #card[data-mode="city"] .for-city {
       display: block;
     }
 
-    #card[data-mode="mix"] .for-place {
+    #card[data-mode="city"] .for-place {
       display: block;
     }
 
-    #card[data-mode="mix"] #row.for-place,
-    #card[data-mode="mix"] #picks.for-place,
+    #card[data-mode="city"] #row.for-place,
+    #card[data-mode="city"] #picks.for-place,
     #card[data-mode="wilderness"] #seedrow.for-wilderness {
       display: flex;
     }
 
-    #card[data-mode="mix"] #seedrow {
+    #card[data-mode="city"] #seedrow {
       display: flex;
     }
 
-    #card[data-mode="mix"] #startgo {
+    #card[data-mode="city"] #startgo {
       display: none;
     }
 
@@ -999,7 +999,7 @@
 
   <div id="water-tint"></div>
   <div id="panel">
-    <div id="card" data-mode="mix">
+    <div id="card" data-mode="city">
       <h1>Nova Orbis</h1>
       <div id="choose">
         <button id="chooseObs" aria-pressed="true" class="sel">Observer</button>
@@ -1007,7 +1007,7 @@
         <button id="chooseFs" aria-pressed="false">Fullscreen</button>
         <button id="chooseGo">Go</button>
       </div>
-      <p class="mode-note for-mix">Choose any US city by address to replicate at the center of a procedurally generated
+      <p class="mode-note for-city">Choose any US city by address to replicate at the center of a procedurally generated
         wilderness. People populate the ecosystem with two-lobed, spiking brains with dopamine-modulated neural
         plasticity. They sense the world, hunger, thirst, explore, and learn. Each newborn (coyote, deer, or person)
         inherits its parents' brain structure and physical traits with small mutations, so survivors shape the next
@@ -1229,7 +1229,7 @@
       orchard: 0x5f7f45, greenfield: 0x6d8a4c
     };
 
-    // Mix: green land cover takes the wild ground's palette, keeping a trace of its own shade in the middle of the city
+    // green land cover takes the wild ground's palette, keeping a trace of its own shade in the middle of the city
     // and fading to the wild grass exactly at the edge of the city square, so the two grounds meet without a seam.
     const MIX_GREEN_PULL = 0.8;
     const MIX_EDGE_FADE = 0.25;   // outer fraction of the square over which the pull rises to 1
@@ -1237,7 +1237,6 @@
       'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'pitch', 'golf_course',
       'forest', 'wood', 'meadow', 'scrub', 'orchard', 'greenfield', 'cemetery', 'allotments', 'wetland'
     ]);
-    let groundMatchWild = false;
     let groundMatchHalf = 0;
 
     // Per vertex, after draping: green toward the wild grass (fully at the square's edge), then paintSlope's rock blend
@@ -1370,19 +1369,17 @@
     // One row per load() stage; parallel fetches can be active together. States: wait, active, done, off, error.
     const cardEl = document.getElementById('card');
     const stepsEl = document.getElementById('steps');
-    const LOAD_STEPS = [
+    // A city load: the city, then the wilderness grown around it.
+    const CITY_STEPS = [
       ['address', 'Finding the address', 'Turning the address into coordinates (OpenStreetMap Nominatim).'],
       ['map', 'Downloading map data', 'Buildings, streets, water, trees and places around the point (OpenStreetMap, Overpass API).'],
       ['terrain', 'Fetching elevation', 'Height tiles for the rise and fall of the ground (AWS Terrain Tiles).'],
       ['sort', 'Sorting map features', 'Splitting the download into buildings, roads, land cover, trees and places.'],
       ['build', 'Building the city', 'Walls, doors, roofs, signs, ground layers and collision.'],
+      ['wilderness', 'Growing the wilderness', 'Seeded terrain around the city, blended into the measured ground; lakes, cabins, pebbles.'],
       ['people', 'Populating', 'Spawning people, deer and plants and wiring the brains.'],
       ['scene', 'Preparing the scene', 'Compiling shaders and uploading textures so the first frame does not stall.']
     ];
-    // Mix grows the wilderness once the city stands.
-    const MIX_STEPS = LOAD_STEPS.slice(0, 5).concat([
-      ['wilderness', 'Growing the wilderness', 'Seeded terrain around the city, blended into the measured ground; lakes, cabins, pebbles.']
-    ], LOAD_STEPS.slice(5));
     // City off: the wilderness alone, nothing downloaded.
     const WILDERNESS_STEPS = [
       ['terrain', 'Shaping the land', 'Seeded fractal terrain: plains, a mountain mask and ridges.'],
@@ -1395,7 +1392,7 @@
     const steps = {
       rows: {}, t0: {}, timer: 0,
 
-      reset(list = LOAD_STEPS) {
+      reset(list) {
         stepsEl.textContent = '';
         this.rows = {}; this.t0 = {};
         for (const [id, name, what] of list) {
@@ -3014,7 +3011,7 @@ void main() {
         const hex = AREA_COLOR[a.kind];
         const wet = a.kind === 'water' || a.kind === 'basin' || a.kind === 'reservoir';
         const g = areaGeom(a.pts, wet ? LAYER_Y.water : LAYER_Y.area, rgb(hex));
-        if (g) (wet ? waterGeoms : groundMatchWild && MIX_GREEN_KINDS.has(a.kind) ? greenGeoms : areaGeoms).push(g);
+        if (g) (wet ? waterGeoms : MIX_GREEN_KINDS.has(a.kind) ? greenGeoms : areaGeoms).push(g);
       }
 
       const waterC = rgb(AREA_COLOR.water);
@@ -3034,13 +3031,11 @@ void main() {
       // flat layers follow the ground; with no terrain they stay as built
       const lay = gs => elevation.active ? gs.map(drape).filter(Boolean) : gs;
       const areas = lay(areaGeoms), greens = lay(greenGeoms);
-      if (groundMatchWild) {
-        for (const g of areas) matchWildGround(g, false);
-        for (const g of greens) matchWildGround(g, true);
-      }
+      for (const g of areas) matchWildGround(g, false);
+      for (const g of greens) matchWildGround(g, true);
       const areaMesh = addLayer(areas.concat(greens), waterClip.apply(litMaterial(LAYER_BIAS.area)));
-      // Mix: the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
-      if (areaMesh && groundMatchWild) areaMesh.receiveShadow = true;
+      // the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
+      if (areaMesh) areaMesh.receiveShadow = true;
       // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
       wildWater.cityMaps = null;
       const waterMesh = addLayer(lay(waterGeoms), wildWater.cityMaterial(LAYER_BIAS.water));
@@ -3402,7 +3397,7 @@ void main() {
     }
 
     // Plain ground over the area plus margin; the far plane drops beneath the lowest point.
-    // Mix: `paint(geometry)` returns the material (slope-painted like the wild ground) and the base is built even when flat.
+    // `paint(geometry)` returns the material (slope-painted like the wild ground) and the base is built even when flat.
     function buildTerrainBase(radius, paint = null) {
       ground.position.y = elevation.active ? elevation.min - 0.3 : 0;
       if (!elevation.active && !paint) return;
@@ -3657,7 +3652,7 @@ void main() {
     // COLLISION
     // grid/gridWalls: solids pushed against and stood on. shellGrid/shells: footprints for roofs, floors, ceilings, signs.
 
-    let grid = new Map();
+    let wallGrid = new Map();
     let gridWalls = [];
     let shellGrid = new Map();
     let shells = [];
@@ -3678,7 +3673,7 @@ void main() {
 
     function buildGrid(solids) {
       gridWalls = solids;
-      grid = gridOf(solids, GRID_CELL);
+      wallGrid = gridOf(solids, GRID_CELL);
       solidStamp = new Uint32Array(solids.length);
       stampNo = 0;
     }
@@ -3690,7 +3685,7 @@ void main() {
 
     function resetObstacles() {
       obstacleThroats = [];
-      grid = new Map(); gridWalls = [];
+      wallGrid = new Map(); gridWalls = [];
       shellGrid = new Map(); shells = [];
       shellRas.cells = null; shellRas.cols = 0; shellRas.rows = 0;
       solidStamp = new Uint32Array(0); stampNo = 0;
@@ -3707,8 +3702,8 @@ void main() {
         for (let cx = x0; cx <= x1; cx++) {
           for (let cz = z0; cz <= z1; cz++) {
             const k = cellKey(cx, cz);
-            let bucket = grid.get(k);
-            if (!bucket) grid.set(k, bucket = []);
+            let bucket = wallGrid.get(k);
+            if (!bucket) wallGrid.set(k, bucket = []);
             bucket.push(first + i);
           }
         }
@@ -3781,7 +3776,7 @@ void main() {
 
         for (let gx = cx0; gx <= cx1; gx++) {
           for (let gz = cz0; gz <= cz1; gz++) {
-            const bucket = grid.get(cellKey(gx, gz));
+            const bucket = wallGrid.get(cellKey(gx, gz));
             if (!bucket) continue;
 
             for (const idx of bucket) {
@@ -3839,7 +3834,7 @@ void main() {
         for (let oz = -1; oz <= 1; oz++) {
           const key = cellKey(cx + ox, cz + oz);
 
-          const bucket = grid.get(key);
+          const bucket = wallGrid.get(key);
           if (bucket) {
             for (const idx of bucket) {
               const w = gridWalls[idx];
@@ -3877,7 +3872,7 @@ void main() {
         for (let oz = -1; oz <= 1; oz++) {
           const key = cellKey(cx + ox, cz + oz);
 
-          const bucket = grid.get(key);
+          const bucket = wallGrid.get(key);
           if (bucket) {
             for (const idx of bucket) {
               const w = gridWalls[idx];
@@ -3910,6 +3905,9 @@ void main() {
     // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
     // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
 
+    // One NPC tick is NPC_TICK_S of sim time (16 ms, 62.5 ticks per sim second); every per-tick constant, movement step
+    // and the sim clock (NpcWorld.time) use it. frame() runs at most one tick per frame.
+    const NPC_TICK_S = 0.016;
     const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
     const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
@@ -3935,7 +3933,8 @@ void main() {
     const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
     const DEER_EXPLORE_P = 0.0001;   // species.py: chance per tick of a new random explore point
     const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
-    const MATE_TIME_MULT = 4;         // default for every species: this many times longer to fill the mate bar
+    const MATE_TIME_MULT = 4;
+    const REPRO_NEED_MAX = 100;       // ceiling for a brained animal's reproduction need, which doubles every tick         // default for every species: this many times longer to fill the mate bar
     const NPC_MATURITY_TICKS = 3 * 24 * 60;   // ticks from birth to full size (72 s at 60 Hz); no mating before
     const HUMAN_TURN_RATE = 3;      // radians per second people turn toward their brain's heading
     const DEER_GREEN_SHARE = 0.8;
@@ -4024,7 +4023,6 @@ void main() {
         this.rows = Math.ceil(worldH / cellSize);
         // Flat array of buckets, made on first insert and only emptied on rebuild: lookups are indexes, rebuilds allocate nothing.
         this.cells = null;
-        this._usedKeys = [];
         this.rb = { cx0: 0, cx1: 0, cy0: 0, cy1: 0, ccx: 0, ccy: 0, K: 0, edge: 0, W: 0 };
         this.nearD2 = Infinity;
       }
@@ -4037,24 +4035,16 @@ void main() {
         return this._key((cx + this.cols) % this.cols, (cy + this.rows) % this.rows);
       }
 
-      clear() {
-        const cells = this.cells, used = this._usedKeys;
-        if (cells === null) return;
-        for (let i = 0; i < used.length; i++) cells[used[i]].length = 0;
-        used.length = 0;
-      }
-
       insert(entity) {
         if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
         const k = this._cell(entity.position.x, entity.position.z);
         let bucket = this.cells[k];
         if (bucket === null) bucket = this.cells[k] = [];
-        if (bucket.length === 0) this._usedKeys.push(k);
         bucket.push(entity);
         return k;
       }
 
-      // Append to bucket k without touching _usedKeys (for grids kept up to date by moves, never clear()ed).
+      // Append to bucket k (for a grid kept up to date by moves; insert() computes k itself).
       place(entity, k) {
         if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
         let bucket = this.cells[k];
@@ -4140,7 +4130,7 @@ void main() {
     }
 
     // CONTACT GRID: animals counting-sorted into small hashed cells (typed arrays, no per-cell arrays), rebuilt with
-    // NpcWorld.grid, for contact-range queries (hunt, mate). The vision grid's 7.2 m cells made each contact query scan
+    // NpcWorld.animalGrid, for contact-range queries (hunt, mate). The vision grid's 7.2 m cells made each contact query scan
     // ~200 m² for a 1.3 m contact circle. A hash collision only adds candidates (the distance test filters); hashes
     // repeated within one query box are visited once. Within a cell, items keep world.animals order.
     class ContactGrid {
@@ -4272,12 +4262,11 @@ void main() {
       static CA_DECAY = 0.5;    // each neuron's running activity average (sliding LTP/LTD threshold)
       static DA_TONIC_RATE = 0.05;   // how fast tonic dopamine tracks reward
 
-      constructor(inputDims, _ignoredLayerDims, learningRate = 0.001, momentum = 0.9, weightDecay = 0.0001, masks = null) {
+      constructor(inputDims, learningRate = 0.001, weightDecay = 0.0001, masks = null) {
         this.inputDims = inputDims;
         // Outputs are a ring of preferred headings; their weighted vector sum is the heading.
         this.outputDims = 8;
         this.learningRate = learningRate;
-        this.momentum = momentum;
         this.weightDecay = weightDecay;
         this.cost = 0.0;
         this.lastCost = 0.0;
@@ -4402,7 +4391,6 @@ void main() {
       propagate(inp) {
         const NA = this.lobeSizeA;
         const NB = this.lobeSizeB;
-        const I = this.inputDims;
         const O = this.outputDims;
         const actA = this.actA;
         const actB = this.actB;
@@ -4529,7 +4517,7 @@ void main() {
       // SYNAPTIC TAGGING, once per think(): each decaying tag = pre activity x (post activity - its recent average).
       // Outputs count as active by how well their heading matches the one taken, so reward credits the ones that pulled that way.
       tagSynapses(inp, heading) {
-        const NA = this.lobeSizeA, NB = this.lobeSizeB, I = this.inputDims, O = this.outputDims;
+        const NA = this.lobeSizeA, NB = this.lobeSizeB, O = this.outputDims;
         const de = DenseNetwork.TAG_DECAY, g = 1 - de;
         const dc = DenseNetwork.CA_DECAY, gc = 1 - dc;
         const fA = this.fA, fB = this.fB, fO = this.fO;
@@ -4605,7 +4593,6 @@ void main() {
 
         const NA = this.lobeSizeA;
         const NB = this.lobeSizeB;
-        const I = this.inputDims;
         const O = this.outputDims;
 
         this._stepWeights(this.wIA, this.eIA, this.lIA, gain, wd1, r);
@@ -4645,7 +4632,6 @@ void main() {
     }
 
     class Animal extends Entity {
-      static MOVE_TIMESTEP = 0.016;
       static TWO_PI = Math.PI * 2;
       static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
       static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
@@ -4688,8 +4674,8 @@ void main() {
 
         this.sex = Math.random() < 0.5 ? 'male' : 'female';
         this.mutationMulti = 0.5;
-        this.lastChildTime = Date.now();
-        this.childGracePeriod = (15 + Math.random() * 15) * 1000 * spec.grace * MATE_TIME_MULT;
+        this.lastChildTime = world.time;   // sim seconds
+        this.childGracePeriod = (15 + Math.random() * 15) * spec.grace * MATE_TIME_MULT;   // sim seconds
         this.lookForMate = false;
 
         this.waterIncrement = this.health * 0.000001;
@@ -4711,7 +4697,7 @@ void main() {
         this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 0;
         this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 0;
 
-        this.brain = spec.brain ? new DenseNetwork(Animal.INPUT_DIMS, null, 0.001, 0.5, 0.001) : null;
+        this.brain = spec.brain ? new DenseNetwork(Animal.INPUT_DIMS, 0.001, 0.001) : null;
         this.ACTION_HOLD = spec.brain ? 60 : DEER_THINK_TICKS;
         this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
         // City: heading in radians, direction (sin, cos) in (x, z); people turn toward targetHeading.
@@ -4731,7 +4717,7 @@ void main() {
 
         this.focusX = this.position.x;
         this.focusZ = this.position.z;
-        this.tob = Date.now();
+        this.tob = world.time;   // time of birth, sim seconds
 
         this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
 
@@ -4741,7 +4727,7 @@ void main() {
 
         this.mesh = null;
         this.home = null;
-        this._gk = -1;   // NpcWorld.grid bucket this animal is filed under, -1 when not filed
+        this._gk = -1;   // NpcWorld.animalGrid bucket this animal is filed under, -1 when not filed
       }
 
       remove() { }
@@ -5112,7 +5098,7 @@ void main() {
         const ms = this.sprinting
           ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMS[this.type])
           : this.speed * this.speedScale * NPC_UNIT;
-        return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * Animal.MOVE_TIMESTEP;
+        return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
       }
 
       // City: deer collide like the car: substeps pushed out of walls, speed lost into the wall, glancing hits turn along it.
@@ -5194,7 +5180,7 @@ void main() {
         const lift = this.footLift() * NPC_UNIT;
         if (this.moving) {
           if (this.heading !== this.targetHeading) {
-            this.heading = Animal.turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * Animal.MOVE_TIMESTEP);
+            this.heading = Animal.turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * NPC_TICK_S);
           }
           this.facingAngle = this.heading;
           const step = this.stepLength();
@@ -5236,8 +5222,8 @@ void main() {
         // people: the Arena's rule; deer: species.py's, one increment per tick
         const rn = this.reproductionNeed;
         this.reproductionNeed = !this.lookForMate ? 0
-          : this.brain ? rn + rn : rn + this.reproductionIncrement;
-        this.health -= ((now - this.tob) / 1000) * this.ageDepl
+          : this.brain ? Math.min(rn + rn, REPRO_NEED_MAX) : rn + this.reproductionIncrement;
+        this.health -= (now - this.tob) * this.ageDepl
           + this.waterNeed * 0.0001
           + this.foodNeed * 0.0001;
         this.avoidNeed = 0;
@@ -5343,10 +5329,8 @@ void main() {
           const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
           child.brain = new DenseNetwork(
             ParentBrain.inputDims,
-            null,
             ((this.brain.learningRate + partner.brain.learningRate) / 2)
             * (0.5 + Math.random()),
-            ParentBrain.momentum,
             ParentBrain.weightDecay,
             ParentBrain.getMasks()
           );
@@ -5354,7 +5338,7 @@ void main() {
 
         child.generation = Math.max(this.generation, partner.generation) + 1;
 
-        const now = Date.now();
+        const now = world.time;
         this.lastChildTime = now;
         this.lookForMate = false;
         this.reproductionNeed = 0;
@@ -5662,7 +5646,7 @@ void main() {
 
             const swing = a.sprinting ? GAIT_GALLOP_SWING : walkSwing;
             if (deltaTime && a.moving) {
-              const v = a.stepLength() / Animal.MOVE_TIMESTEP;
+              const v = a.stepLength() / NPC_TICK_S;
               const perCycle = 4 * legLen * kp * Math.sin(swing);
               const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
               a.animTime += deltaTime * hz * 2 * Math.PI;
@@ -6565,7 +6549,7 @@ void main() {
     };
 
     // NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell, so walkability is one read.
-    // Kept as 32 m tiles made on first write, so a wide Mix world only pays where there are solids.
+    // Kept as 32 m tiles made on first write, so a wide world only pays where there are solids.
     const OCC_TILE_BITS = 7;                                   // 128 cells a tile side
     const OCC_TILE_MASK = (1 << OCC_TILE_BITS) - 1;
     const OCC_TILE_WORDS = (1 << (2 * OCC_TILE_BITS)) >>> 5;
@@ -6730,7 +6714,7 @@ void main() {
       const cz0 = Math.floor((z - r) / GRID_CELL), cz1 = Math.floor((z + r) / GRID_CELL);
       for (let gx = cx0; gx <= cx1; gx++) {
         for (let gz = cz0; gz <= cz1; gz++) {
-          const bucket = grid.get(cellKey(gx, gz));
+          const bucket = wallGrid.get(cellKey(gx, gz));
           if (!bucket) continue;
           for (const idx of bucket) {
             const w = gridWalls[idx];
@@ -6936,7 +6920,6 @@ void main() {
     const CONFIG = new WorldConfig();
     const DEFAULT_SEED = '03132024';
     const WILD_FLOAT_DEPTH = 5 * NPC_UNIT;
-    const WILD_GRID = { x: 350, z: 260 };       // the Arena's high terrain resolution, one height sample per vertex
 
     class WildTerrain {
       constructor() {
@@ -7100,7 +7083,7 @@ void main() {
       metresAt(x, z) { return this.heightAt(this.arenaX(x), this.arenaZ(z)) * NPC_UNIT; }
 
       // The Arena's water.computeLevel: the uncarved height under `waterCoverage` of the samples, over a region in metres.
-      // `skip(x, z)` leaves points out (Mix: the city square).
+      // `skip(x, z)` leaves points out (the city square).
       computeLevel(b, skip = null) {
         if (this.params.waterLevelOverride !== null) return this.params.waterLevelOverride * NPC_UNIT;
         const N = 96;
@@ -7172,7 +7155,7 @@ void main() {
       colorAttr.needsUpdate = true;
     }
 
-    // Terrain mesh straight from a HeightGrid. `skip(i, j)` drops a quad (Mix: inside the city); `sink(x, z)` lowers a vertex.
+    // Terrain mesh straight from a HeightGrid. `skip(i, j)` drops a quad (inside the city); `sink(x, z)` lowers a vertex.
     function heightMesh(grid, skip = null, sink = null) {
       const { nx, nz, x0, z0, step, data } = grid;
       const pos = new Float32Array(nx * nz * 3);
@@ -7269,7 +7252,7 @@ void main() {
     }
 
     // WATER: the Arena's one world-spanning surface (built-in physical material, two scrolling normal maps).
-    // ISLAND COAST: Mix worlds are islands. Near each edge the land falls to a sea floor under the water level along a
+    // ISLAND COAST: wilderness worlds are islands. Near each edge the land falls to a sea floor under the water level along a
     // wavering coastline, and the sea runs on past the edge to the horizon; the edge itself is the limit nothing crosses.
     const COAST_SEA = 30;
     const COAST_LAND = 70;
@@ -7375,7 +7358,7 @@ void main() {
         return this.envMap;
       }
 
-      // The surface over bounds `b` at `level`; `hole` (Mix) leaves out the square |x|, |z| < hole, where the city's own water is.
+      // The surface over bounds `b` at `level`; `hole` leaves out the square |x|, |z| < hole, where the city's own water is.
       // The open sea continues OCEAN_REACH past the bounds, over a sea floor at OCEAN_DEPTH.
       ensureNormals() {
         if (this.normalA) return;
@@ -8670,7 +8653,7 @@ void main() {
     // WORLD PROVIDERS
     // The ecosystem engine (Animal, NpcWorld, the player, car, cat and renderers) asks the active world only this,
     // in metres on the scene's axes (-z north):
-    //   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (Mix worlds are islands, see ISLAND COAST)
+    //   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (wilderness worlds are islands, see ISLAND COAST)
     //   heightAt(x, z)          terrain height (no buildings, no water)
     //   isWater(x, z)           standing water here
     //   surface(x, z, out)      footing: out.base (floor indoors, water surface, else ground), out.dip (bed below the
@@ -8706,7 +8689,7 @@ void main() {
 
       build() {
         const f = this.features;
-        // water over the whole measured square (the terrain base, which Mix walks on past the radius); off it counts as dry
+        // water over the whole measured square (the terrain base, which the wilderness world walks on past the radius); off it counts as dry
         const h = elevation.active ? Math.min(this.radius + ELEV_MARGIN, elevation.half) : this.radius;
         cityWater.build(f, -h, -h, h, h);
         waterClip.set(cityWater);
@@ -8765,7 +8748,7 @@ void main() {
       }
 
       // Candidate spots; the engine checks isOpen and spacing. People: mostly sidewalks weighted by street length,
-      // plus some open ground. Deer (and Mix's park coyotes): mostly green areas by area. Plants: see plantSpot.
+      // plus some open ground. Deer (and the wilderness's park coyotes): mostly green areas by area. Plants: see plantSpot.
       spawnPoint(type) {
         if (type === 'plant') return this.plantSpot();
         if (type === 'human') {
@@ -8861,7 +8844,7 @@ void main() {
     }
 
     // WILD: the Arena's procedural world, centred on the origin, wrapping at its edges.
-    // The groves every Mix map carries: the mapped trees within 500 m of Millennium Park, Chicago (OpenStreetMap),
+    // The groves every wilderness map carries: the mapped trees within 500 m of Millennium Park, Chicago (OpenStreetMap),
     // grouped where they stand within 12 m of each other and cut into pieces of at most 80 m so each fits a small
     // wilderness. Groves are separated by "|"; a grove is "dx dz dx dz …" in decimetres from its own centre.
     const WILD_GROVES = [
@@ -9117,10 +9100,11 @@ void main() {
       return wildGroveList;
     }
 
-    // MIX: the city in the middle of the wilderness. With City off (city null) there is no measured square: the
-    // procedural land, lakes, groves, cabins and wildlife run through the centre too. The measured Terrarium ground rules the square it covers (the loaded
-    // radius plus ELEV_MARGIN), so every draped street and building still fits; past it, height blends from the city's
-    // edge into the procedural land over MIX_BLEND metres, along a seeded, wavering distance so the seam is not a square.
+    // WILDERNESS: the world, with the city (if any) in the middle. With City off (city null) there is no measured
+    // square: the procedural land, lakes, groves, cabins and wildlife run through the centre too. With a city, the
+    // measured Terrarium ground rules the square it covers (the loaded radius plus ELEV_MARGIN), so every draped street
+    // and building still fits; past it, height blends from the city's edge into the procedural land over MIX_BLEND
+    // metres, along a seeded, wavering distance so the seam is not a square.
     const MIX_BLEND = 250;    // metres from the measured edge to pure wilderness
     const MIX_RING_MIN = 300;    // wilderness width around the city, metres
     const MIX_RING_MAX = 1500;
@@ -9128,9 +9112,9 @@ void main() {
     const MIX_HABITAT = { forest: 2, wood: 2, scrub: 1.5, wetland: 1.5, meadow: 1.25 };
     const MIX_SINK = 0.6;    // metres the wild mesh dips under the city's own terrain where they overlap
 
-    class MixWorld {
+    class WildernessWorld {
       constructor(city, seed, opts = city ? city.opts : null) {
-        this.kind = 'mix';
+        this.kind = 'wilderness';
         this.city = city;
         this.opts = opts;
         this.seed = seed;
@@ -9257,7 +9241,7 @@ void main() {
         pebbles.place(() => this.wildAnyPoint(), (x, z) => this.heightAt(x, z));
       }
 
-      // WILD GROVES: every Mix map gets the same WILD_GROVES (the Loop's trees, as groves), each set down whole at a
+      // WILD GROVES: every wilderness map gets the same WILD_GROVES (the Loop's trees, as groves), each set down whole at a
       // random spot with a random turn. Math.random, not the seed: the groves land somewhere new on every load.
       // A tree may not stand in water, in the measured square, on a cabin or off the map. A grove takes the first
       // spot that fits all of it (the best of GROVE_TRIES otherwise), and a tree still without a place is moved,
@@ -9424,7 +9408,7 @@ void main() {
         this.minX = 0; this.maxX = 0; this.minZ = 0; this.maxZ = 0;
         this.wraps = false;
 
-        this.grid = null;
+        this.animalGrid = null;
         this.plantGrid = null;
         // Plants for vision queries, so sight reads nearby cells instead of every plant. Plants never move, so this
         // cannot change what is seen; rebuilt with plantGrid to drop the dead.
@@ -9438,20 +9422,20 @@ void main() {
         this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
         for (const t of NPC_TYPES) { this.typeAlive[t] = 0; this.canHunt[t] = false; this.fastestHunterMS[t] = 0; }
 
-        this._qLocate = [];
-        this._qHunt = [];
-        this._qMate = [];
         this._qPlant = [];
-        this._qSight = [];
         this._qWater = [];
         this._qBox = [];
         this._plantAdds = [];
         this._plantDrops = [];
-        this._gridDrops = [];    // animals removed from `animals` since the last grid sync, still filed in the grid
+        this._animalGridDrops = [];    // animals removed from `animals` since the last grid sync, still filed in the grid
         this.drift2 = 0;
         this.contact = null;
         this._contactR = NpcWorld.CONTACT_DIST;
       }
+
+      // SIM CLOCK: seconds of sim time since this world was initialized. Aging and mate readiness run on it, so they
+      // keep pace with the per-tick needs and stop while the sim is paused (hidden tab, slow device).
+      get time() { return this.ticks * NPC_TICK_S; }
 
       // Keep a coordinate in the world: the Arena's torus wrap, or City's clamp.
       fitX(x) {
@@ -9490,7 +9474,7 @@ void main() {
         this._plantAdds.length = 0;
         this._plantDrops.length = 0;
         this.ticks = 0;
-        this._gridDrops.length = 0;
+        this._animalGridDrops.length = 0;
         game.reset();
         const b = provider.bounds;
         this.minX = b.minX; this.maxX = b.maxX;
@@ -9498,7 +9482,7 @@ void main() {
         this.wraps = provider.wraps;
 
         const spanX = b.maxX - b.minX + 1, spanZ = b.maxZ - b.minZ + 1;
-        this.grid = new SpatialGrid(spanX, spanZ, 160 * NPC_UNIT);
+        this.animalGrid = new SpatialGrid(spanX, spanZ, 160 * NPC_UNIT);
         this.plantGrid = new SpatialGrid(spanX, spanZ, 30 * NPC_UNIT);
         this.contact = new ContactGrid(NPC_CONTACT_CELL);
         this.plantSight = new SpatialGrid(spanX, spanZ, PLANT_SIGHT_CELL);
@@ -9695,13 +9679,13 @@ void main() {
 
       step(dt) {
         if (!this.ready || this.animals.length === 0) return false;
-        const now = Date.now();
+        const now = this.time;
 
         // Grid sync every 3 ticks, incremental: only an animal whose cell changed moves bucket. Which animals each
         // bucket holds matches a full rebuild exactly (dead and removed animals leave at the same sync, newborns join
         // at it); only the order inside a bucket can differ.
         if (this.ticks % 3 === 0) {
-          const g = this.grid, drops = this._gridDrops;
+          const g = this.animalGrid, drops = this._animalGridDrops;
           for (let i = 0; i < drops.length; i++) {
             const d = drops[i];
             if (d._gk >= 0) { g.remove(d, d._gk); d._gk = -1; }
@@ -9729,7 +9713,7 @@ void main() {
         for (let ai = 0; ai < this.animals.length; ai++) {
           const a = this.animals[ai];
           if (a.alive) {
-            a.update(now, this.grid, ai);
+            a.update(now, this.animalGrid, ai);
             if (a.alive) {
               this.collide(a);
               const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
@@ -9760,7 +9744,7 @@ void main() {
         for (let i = this.animals.length - 1; i >= 0; i--) {
           if (!this.animals[i].alive) {
             this.animals[i].remove();
-            this._gridDrops.push(this.animals[i]);
+            this._animalGridDrops.push(this.animals[i]);
             this.animals.splice(i, 1);
           }
         }
@@ -9841,7 +9825,7 @@ void main() {
             this.waterNeed = Math.max(0, this.waterNeed - PLAYER_DRINK_RATE * dt);
           }
 
-          const n = world.grid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
+          const n = world.animalGrid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
           for (let i = 0; i < n; i++) {
             const d = this._q[i];
             if (!d.alive || !SPECIES.human.hunts[d.type]) continue;
@@ -10209,7 +10193,7 @@ void main() {
         if (!this.enabled) return;
         const tick = ++this.tick;
         const spin = performance.now() / 1000 * BRAIN_SPIN;
-        const now = Date.now();
+        const now = world.time;
         const q = v => Math.floor(Math.max(0, Math.min(1, v)) * BAR_STEPS);   // bars round down
         const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
         const seen = this.seen;
@@ -11268,7 +11252,7 @@ void main() {
     const SWIM_DRAG = 4;                  // 1/s, vertical
     let swimming = false;
 
-    function step(dt) {
+    function playerStep(dt) {
       if (driving) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
       // an empty car still rolling (left at speed) brakes to a stop
       if (car.speed !== 0) carPhysics(dt, 0, 0, true);
@@ -11370,7 +11354,7 @@ void main() {
           }
         }
       }
-      // every world stops the player at its edge (in Mix, out in the sea)
+      // every world stops the player at its edge (out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
 
       const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
@@ -11393,8 +11377,7 @@ void main() {
     // low-power frame cap: a draw wanted inside the cap waits for the next allowed frame (sim ticks are unaffected)
     let drawPending = false, drawnAt = -1e9;
 
-    // NPC ticks are capped at 60 Hz (Arena constants are per tick at 60); player motion renders at the display rate.
-    const NPC_TICK_S = 1 / 60;
+    // NPC ticks: one per NPC_TICK_S of real time at most (Arena constants are per tick); player motion renders at the display rate.
     const NPC_DRINK_SECONDS = 10;   // seconds in water for an animal's empty water bar to fill
     const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
     let npcAcc = 0;
@@ -11422,7 +11405,7 @@ void main() {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
       if (xr) vr.poll(dt);
-      step(dt);
+      playerStep(dt);
       camera.updateMatrixWorld();
       camera.getWorldPosition(viewPos);
       camera.getWorldQuaternion(viewQuat);
@@ -12054,7 +12037,7 @@ void main() {
         if (a.type === 'human') people++; else if (a.type === 'coyote') coyotes++; else deer++;
       }
       const parts = [`${fmt(people)} people`];
-      if (coyotes || (activeWorld && activeWorld.kind !== 'city')) parts.push(`${fmt(coyotes)} coyotes`);
+      if (coyotes || activeWorld) parts.push(`${fmt(coyotes)} coyotes`);
       if (deer) parts.push(`${fmt(deer)} deer`);
       parts.push(`${fmt(world.plants.length)} plants`, `day ${Math.floor(world.ticks / (24 * 60))}`);
       return parts.join(', ');
@@ -12066,7 +12049,7 @@ void main() {
       if (!activeWorld.city) head = `Wilderness, seed ${activeWorld.seed}`;
       else {
         head = `${fmt(hudBuildings)} buildings ${hudPlace}`;
-        if (activeWorld.kind === 'mix') head += `, wilderness seed ${activeWorld.seed}`;
+        head += `, wilderness seed ${activeWorld.seed}`;
       }
       const c = conditions();
       const sky = site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '';
@@ -12078,7 +12061,7 @@ void main() {
     let busy = false;
     let lastTerrain = null;
     let lastQuery = '';
-    let startMode = 'mix';
+    let startMode = 'city';
 
     const seedEl = document.getElementById('seed');
     const sizeBtns = [...document.querySelectorAll('.sizebtn')];
@@ -12135,7 +12118,6 @@ void main() {
       labels.setRayVis(hudOn ? provider.rays : 'off');
       raysBeforeHud = provider.rays;
       graphics.apply();
-      newEcoEl.hidden = provider.kind === 'city';
       camera.position.copy(player.pos);
       camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
       camera.updateMatrixWorld();
@@ -12147,6 +12129,8 @@ void main() {
         try { await renderer.compileAsync(scene, camera); } finally { renderer.setRenderTarget(null); }
         for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
       } catch (e) {
+        // warm-up only: the scene still draws, compiling on first use
+        console.warn('Shader warm-up failed:', e);
       }
       refreshHud();
       steps.done('scene');
@@ -12174,7 +12158,7 @@ void main() {
     }
 
     // WILD: the Arena's world from a seed; nothing is downloaded.
-    // CITY OFF: the Mix world with no city in the middle (MixWorld with city null): seeded land, lakes, cabins, groves
+    // CITY OFF: the wilderness world with no city in the middle (WildernessWorld with city null): seeded land, lakes, cabins, groves
     // and wildlife across the whole map. Nothing is downloaded.
     async function loadWilderness(seed) {
       if (busy) return;
@@ -12186,7 +12170,7 @@ void main() {
       try {
         teardownWorld();
         CONFIG.applyScale(worldSizeChoice().scale);
-        const w = new MixWorld(null, seed, o);
+        const w = new WildernessWorld(null, seed, o);
 
         steps.start('terrain', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
         await paint();
@@ -12245,12 +12229,12 @@ void main() {
       setBusy(false);
     }
 
-    // CITY and MIX: City's load. Mix grows the wilderness around the finished city before the population.
-    async function loadPlace(query, mode = 'city') {
+    // CITY ON: the city's load, then the wilderness grown around the finished city before the population.
+    async function loadPlace(query) {
       if (busy || !query.trim()) return;
       setBusy(true);
       say('');
-      steps.reset(mode === 'mix' ? MIX_STEPS : LOAD_STEPS);
+      steps.reset(CITY_STEPS);
       let current = 'address';
       const o = { ...loadOpts };
       const seed = seedValue();
@@ -12259,7 +12243,7 @@ void main() {
       try {
         teardownWorld();
         const sizeChoice = worldSizeChoice(), ladder = sizeChoice.ladder;
-        if (mode === 'mix') CONFIG.applyScale(sizeChoice.scale);
+        CONFIG.applyScale(sizeChoice.scale);
 
         // The saved label is Nominatim's own, so re-submitting it skips the geocoder.
         const reuse = storedPlace && storedPlace.v === FEATURES_VERSION &&
@@ -12368,11 +12352,10 @@ void main() {
         steps.start('build');
         await paint();
         resetObstacles();
-        groundMatchWild = mode === 'mix';
         groundMatchHalf = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
         const { count, skipped } = buildCity(o.buildings ? features : { ...features, buildings: [] });
-        // Mix: the measured square is painted like the wild ground, so the city sits in the same land
-        buildTerrainBase(radius, mode === 'mix' ? g => { paintSlope(g); return new THREE.MeshLambertMaterial({ vertexColors: true }); } : null);
+        // the measured square is painted like the wild ground, so the city sits in the same land
+        buildTerrainBase(radius, g => { paintSlope(g); return new THREE.MeshLambertMaterial({ vertexColors: true }); });
 
         if (!count && o.buildings) {
           steps.error('build', `No mapped buildings within ${radius} m.`);
@@ -12390,15 +12373,14 @@ void main() {
         }
 
         // the city's provider: painted water, places, green areas and sidewalks for spawning
-        const cw = new CityWorld(features, radius, o, mode === 'mix' ? MIX_HABITAT : null);
+        const cw = new CityWorld(features, radius, o, MIX_HABITAT);
         cw.build();
         activeWorld = cw;
-        let provider = cw;
-        if (mode === 'mix') {
+        {
           current = 'wilderness';
           steps.start('wilderness', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
           await paint();
-          const mw = new MixWorld(cw, seed);
+          const mw = new WildernessWorld(cw, seed);
           mw.terrainStep();
           activeWorld = mw;
           mw.waterStep();
@@ -12408,9 +12390,9 @@ void main() {
           steps.done('wilderness', `${Math.round(b.maxX - b.minX)} m square of wilderness from seed ${seed}, blended into the ` +
             `measured ground over ${MIX_BLEND} m; ${mw.cabins.length} cabins, ${mw.locations.length} shore points, ` +
             `${fmt(groveTrees)} trees in ${fmt(groves)} groves.`);
-          provider = mw;
+          activeWorld = mw;
         }
-        activeWorld = provider;
+        const provider = activeWorld;
 
         const plan = provider.population();
         const planned = t => plan.reduce((n, g) => n + (g.type === t ? g.count : 0), 0);
@@ -12442,8 +12424,8 @@ void main() {
         updateSky();
 
         driving = false;
-        if (mode === 'mix' && provider.cabins.length) {
-          // Mix: in the edge cabin, looking out the door at the city; the car parked in front, beside the doorway
+        if (provider.cabins.length) {
+          // in the edge cabin, looking out the door at the city; the car parked in front, beside the doorway
           const st = provider.playerStart();
           player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
           player.vel.set(0, 0, 0);
@@ -12486,15 +12468,15 @@ void main() {
     startGoEl.addEventListener('click', () => { randomSky = false; }, true);
 
     function newEcosystem() {
-      if (!activeWorld || activeWorld.kind === 'city' || busy) return;
+      if (!activeWorld || busy) return;
       const noCity = !activeWorld.city;
       const seed = String(Math.floor(Math.random() * 1e12));
       seedEl.value = seed;
       returnToIntro();
       randomSky = true;
-      setMode(noCity ? 'wilderness' : 'mix');
+      setMode(noCity ? 'wilderness' : 'city');
       if (noCity) loadWilderness(seed);
-      else loadPlace(lastQuery, 'mix');
+      else loadPlace(lastQuery);
     }
 
     // SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
@@ -12577,20 +12559,20 @@ void main() {
       });
     }
 
-    // START SCREEN: the City switch (More World Options) picks a city in the wilderness (mode 'mix', on) or the
+    // START SCREEN: the City switch (More World Options) picks a city in the wilderness (mode 'city', on) or the
     // wilderness alone (mode 'wilderness', off: loadWilderness); the card shows that world's fields.
     const citySwitchEl = document.querySelector('#more .switch[data-opt="city"]');
     function setMode(m) {
       startMode = m;
       cardEl.dataset.mode = m;
-      const on = m === 'mix';
+      const on = m === 'city';
       citySwitchEl.classList.toggle('on', on);
       citySwitchEl.setAttribute('aria-checked', String(on));
       say('');
     }
     citySwitchEl.addEventListener('click', () => {
       if (busy) return;
-      setMode(startMode === 'mix' ? 'wilderness' : 'mix');
+      setMode(startMode === 'city' ? 'wilderness' : 'city');
       citySwitchEl.blur();
     });
 
@@ -12603,7 +12585,7 @@ void main() {
     seedEl.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       if (startMode === 'wilderness') { loadWilderness(seedValue()); }
-      else { loadPlace(addrEl.value, startMode); }
+      else { loadPlace(addrEl.value); }
     });
     for (const b of sizeBtns) {
       b.addEventListener('click', () => {
@@ -12618,7 +12600,7 @@ void main() {
     sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
     startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
 
-    goEl.addEventListener('click', () => { loadPlace(addrEl.value, startMode); });
+    goEl.addEventListener('click', () => { loadPlace(addrEl.value); });
 
     // Suggested places: well-mapped US downtowns.
     const PICKS = [
@@ -12634,16 +12616,16 @@ void main() {
       b.addEventListener('click', () => {
         addrEl.value = query;
         b.blur();
-        loadPlace(query, startMode);
+        loadPlace(query);
       });
       picksEl.appendChild(b);
     }
     addrEl.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      loadPlace(addrEl.value, startMode);
+      loadPlace(addrEl.value);
     });
 
-    setMode('mix');
+    setMode('city');
     graphics.apply();
     labels.bind();
     vr.bind();
