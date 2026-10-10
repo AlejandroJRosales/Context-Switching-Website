@@ -695,13 +695,13 @@
       padding: 24px 0;
     }
 
-    #card .for-wild,
+    #card .for-wilderness,
     #card .for-place,
     #card .for-mix {
       display: none;
     }
 
-    #card[data-mode="wild"] .for-wild {
+    #card[data-mode="wilderness"] .for-wilderness {
       display: block;
     }
 
@@ -715,20 +715,20 @@
 
     #card[data-mode="mix"] #row.for-place,
     #card[data-mode="mix"] #picks.for-place,
-    #card[data-mode="wild"] #wildrow.for-wild {
+    #card[data-mode="wilderness"] #seedrow.for-wilderness {
       display: flex;
     }
 
-    #card[data-mode="mix"] #wildrow {
+    #card[data-mode="mix"] #seedrow {
       display: flex;
     }
 
-    #card[data-mode="mix"] #wildgo {
+    #card[data-mode="mix"] #startgo {
       display: none;
     }
 
-    /* City off (Wild): no Buildings switch */
-    #card[data-mode="wild"] #more .switch[data-opt="buildings"] {
+    /* City off: no Buildings switch */
+    #card[data-mode="wilderness"] #more .switch[data-opt="buildings"] {
       display: none;
     }
 
@@ -741,7 +741,7 @@
       padding: 9px 16px;
     }
 
-    #wildrow {
+    #seedrow {
       gap: 8px;
       align-items: flex-end;
       flex-wrap: wrap;
@@ -749,7 +749,7 @@
       margin-top: 8px;
     }
 
-    #wildrow label {
+    #seedrow label {
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -838,7 +838,7 @@
       outline-offset: 2px;
     }
 
-    #wildgo {
+    #startgo {
       padding: 11px 20px;
       background: #e8e4dc;
       color: #10131a;
@@ -849,7 +849,7 @@
       cursor: pointer;
     }
 
-    #wildgo:disabled {
+    #startgo:disabled {
       opacity: 0.45;
       cursor: default;
     }
@@ -914,7 +914,7 @@
 
     #card.loading #more,
     #card.loading .mode-note,
-    #card.loading .for-wild,
+    #card.loading .for-wilderness,
     #card.loading .for-place {
       display: none !important;
     }
@@ -1026,13 +1026,13 @@
         <button class="sizebtn" data-size="large" role="radio" aria-checked="false">Large</button>
         <button class="sizebtn" data-size="custom" role="radio" aria-checked="false">Custom</button>
       </div>
-      <div id="wildrow" class="for-wild">
-        <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-            maxlength="12" value="03132024"></label>
-        <button id="wildgo">Start</button>
-      </div>
       <label id="customrow" hidden>World Size <span id="sizeOut">30</span><input id="size" type="range" min="5" max="100"
           step="0.5" value="30"></label>
+      <div id="seedrow" class="for-wilderness">
+        <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
+            maxlength="12" value="03132024"></label>
+        <button id="startgo">Start</button>
+      </div>
       <details id="more">
         <summary>More World Options</summary>
         <button class="switch on" data-opt="city" role="switch" aria-checked="true"><span class="track"><span
@@ -1049,12 +1049,10 @@
               class="thumb"></span></span>Plants</button>
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
-        <button class="switch" data-opt="live" role="switch" aria-checked="false"><span class="track"><span
-              class="thumb"></span></span>Live weather and time</button>
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
-      <p class="credit">Game 1.0.0.3 by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
+      <p class="credit">Game 1.0.0.3-opt by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
     </div>
   </div>
   <div id="dot"></div>
@@ -1376,18 +1374,17 @@
       ['address', 'Finding the address', 'Turning the address into coordinates (OpenStreetMap Nominatim).'],
       ['map', 'Downloading map data', 'Buildings, streets, water, trees and places around the point (OpenStreetMap, Overpass API).'],
       ['terrain', 'Fetching elevation', 'Height tiles for the rise and fall of the ground (AWS Terrain Tiles).'],
-      ['weather', 'Fetching weather', 'Current conditions and forecast for the sky and rain (Open-Meteo).'],
       ['sort', 'Sorting map features', 'Splitting the download into buildings, roads, land cover, trees and places.'],
       ['build', 'Building the city', 'Walls, doors, roofs, signs, ground layers and collision.'],
       ['people', 'Populating', 'Spawning people, deer and plants and wiring the brains.'],
       ['scene', 'Preparing the scene', 'Compiling shaders and uploading textures so the first frame does not stall.']
     ];
-    // Mix grows the wilderness once the city stands; Wild downloads nothing.
-    const MIX_STEPS = LOAD_STEPS.slice(0, 6).concat([
-      ['wild', 'Growing the wilderness', 'Seeded terrain around the city, blended into the measured ground; lakes, cabins, pebbles.']
-    ], LOAD_STEPS.slice(6));
+    // Mix grows the wilderness once the city stands.
+    const MIX_STEPS = LOAD_STEPS.slice(0, 5).concat([
+      ['wilderness', 'Growing the wilderness', 'Seeded terrain around the city, blended into the measured ground; lakes, cabins, pebbles.']
+    ], LOAD_STEPS.slice(5));
     // City off: the wilderness alone, nothing downloaded.
-    const WILD_STEPS = [
+    const WILDERNESS_STEPS = [
       ['terrain', 'Shaping the land', 'Seeded fractal terrain: plains, a mountain mask and ridges.'],
       ['water', 'Filling the lakes', 'A water level over 30% of the ground, lake beds carved below it.'],
       ['cabins', 'Building cabins and groves', 'Log cabins on dry ground, groves of trees, pebbles scattered.'],
@@ -5206,7 +5203,7 @@ void main() {
           if (!this.brain) {
             this.moveDeer(step);
           } else if (n <= 1) {
-            // walking step: NpcWorld.collide settles walls; the provider decides clamp (City) or torus wrap (Wild)
+            // walking step: NpcWorld.collide settles walls; the provider decides clamp or torus wrap
             this.position.x = world.fitX(this.position.x + sx);
             this.position.z = world.fitZ(this.position.z + sz);
           } else {
@@ -6568,7 +6565,7 @@ void main() {
     };
 
     // NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell, so walkability is one read.
-    // Kept as 32 m tiles made on first write, so a wide Wild or Mix world only pays where there are solids.
+    // Kept as 32 m tiles made on first write, so a wide Mix world only pays where there are solids.
     const OCC_TILE_BITS = 7;                                   // 128 cells a tile side
     const OCC_TILE_MASK = (1 << OCC_TILE_BITS) - 1;
     const OCC_TILE_WORDS = (1 << (2 * OCC_TILE_BITS)) >>> 5;
@@ -7272,7 +7269,7 @@ void main() {
     }
 
     // WATER: the Arena's one world-spanning surface (built-in physical material, two scrolling normal maps).
-    // ISLAND COAST: Wild and Mix are islands. Near each edge the land falls to a sea floor under the water level along a
+    // ISLAND COAST: Mix worlds are islands. Near each edge the land falls to a sea floor under the water level along a
     // wavering coastline, and the sea runs on past the edge to the horizon; the edge itself is the limit nothing crosses.
     const COAST_SEA = 30;
     const COAST_LAND = 70;
@@ -8673,7 +8670,7 @@ void main() {
     // WORLD PROVIDERS
     // The ecosystem engine (Animal, NpcWorld, the player, car, cat and renderers) asks the active world only this,
     // in metres on the scene's axes (-z north):
-    //   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (Wild and Mix are islands, see ISLAND COAST)
+    //   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (Mix worlds are islands, see ISLAND COAST)
     //   heightAt(x, z)          terrain height (no buildings, no water)
     //   isWater(x, z)           standing water here
     //   surface(x, z, out)      footing: out.base (floor indoors, water surface, else ground), out.dip (bed below the
@@ -11064,15 +11061,15 @@ void main() {
 
     // SETTINGS
 
-    // Presets replace the live clock and forecast; with a forecast, hours follow today's sun.
-    const TIMES = ['Live', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
+    // Presets replace the game's own clock and weather ('Game', the first chip).
+    const TIMES = ['Game', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
     const FALLBACK_HOURS = {
       Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
     };
 
     // cloud drives sky and sun intensity; kind picks the fog branch
     const SKIES = {
-      Live: null,
+      Game: null,
       Clear: { label: 'Clear', kind: 'clear', cloud: 0 },
       Cloudy: { label: 'Partly cloudy', kind: 'cloudy', cloud: 45 },
       Overcast: { label: 'Overcast', kind: 'cloudy', cloud: 100 },
@@ -11082,12 +11079,12 @@ void main() {
       Storm: { label: 'Thunderstorm', kind: 'storm', cloud: 100 }
     };
 
-    let timePreset = 'Live';
-    let skyPreset = 'Live';
+    let timePreset = 'Game';
+    let skyPreset = 'Game';
 
-    // GAME SKY: with Live weather and time off (More World Options), both modes run the game's own clock and weather.
-    // It opens in the afternoon under 30 s of rain, clears, then changes weather at random; a full day lasts 20
-    // minutes, as in Minecraft. With it on, the live clock and forecast apply. An Observer preset overrides either.
+    // GAME SKY: every world runs the game's own clock and weather. It opens in the afternoon under 30 s of rain,
+    // clears, then changes weather at random; a full day lasts 20 minutes, as in Minecraft. An Observer preset
+    // overrides it.
     const simSky = {
       running: false,              // a world is in play
       DAY_S: 1200,                 // real seconds per game day
@@ -11097,7 +11094,7 @@ void main() {
       KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
       hour: 15, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
 
-      get on() { return this.running && !loadOpts.live; },   // live: the More World Options switch
+      get on() { return this.running; },
 
       start() {
         this.running = true;
@@ -11137,9 +11134,6 @@ void main() {
           this.timer = this.SPAN[0] + Math.random() * (this.SPAN[1] - this.SPAN[0]);
           changed = true;
         }
-        // the clock and weather run through the whole session, so switching to them never restarts them; they are
-        // only drawn in Survivor mode with the switch off
-        if (!this.on) return;
         this.acc += dt;
         if (changed || this.acc >= this.STEP_S) {
           this.acc = 0;
@@ -11152,39 +11146,25 @@ void main() {
     };
 
     // Survivor mode ignores the presets (their pickers are hidden there)
-    function timeMode() { return game.on ? 'Live' : timePreset; }
-    // the hour a non-live sky is drawn for: an Observer preset first, else the game's own clock
-    function skyHour(mode) { return mode !== 'Live' ? presetHour(mode) : simSky.hour; }
+    function timeMode() { return game.on ? 'Game' : timePreset; }
+    // the hour the sky is drawn for: an Observer preset first, else the game's own clock
+    function skyHour(mode) { return mode !== 'Game' ? presetHour(mode) : simSky.hour; }
 
-    function presetHour(name) {
-      if (weather) {
-        const rise = weather.sunrise / 60;
-        const day = weather.sunset / 60 - rise;
-        if (name === 'Dawn') return rise;
-        if (name === 'Morning') return rise + day * 0.25;
-        if (name === 'Noon') return rise + day * 0.5;
-        if (name === 'Afternoon') return rise + day * 0.75;
-        if (name === 'Sunset') return weather.sunset / 60;
-        if (name === 'Night') return (rise + day * 0.5 + 12) % 24;
-      }
-      return FALLBACK_HOURS[name];
-    }
+    function presetHour(name) { return FALLBACK_HOURS[name]; }
 
-    // the instant the sky is drawn for: now, or today at the preset hour
+    // the instant the sky is drawn for: today at the sky hour
     function skyInstant() {
       const mode = timeMode();
-      if (mode === 'Live' && !simSky.on) return new Date();
       const d = cityNow();
       const now = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
       return new Date(Date.now() + (skyHour(mode) - now) * 3600000);
     }
 
     function conditions() {
-      // an Observer preset first, then the game's own weather, then the forecast or the Wild rain cycle
+      // an Observer preset first, then the game's own weather
       const preset = game.on ? null : SKIES[skyPreset];
       if (preset) return preset;
-      if (simSky.on) return simSky.conditions();
-      return weather || autoRain.conditions();
+      return simSky.on ? simSky.conditions() : null;
     }
 
     function chips(host, names, pick) {
@@ -11198,7 +11178,7 @@ void main() {
           updateSky();
           refreshHud();
         });
-        if (name === 'Live') b.classList.add('sel');
+        if (name === 'Game') b.classList.add('sel');
         host.appendChild(b);
       }
     }
@@ -11390,7 +11370,7 @@ void main() {
           }
         }
       }
-      // every world stops the player at its edge (in Wild and Mix, out in the sea)
+      // every world stops the player at its edge (in Mix, out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
 
       const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
@@ -11447,7 +11427,6 @@ void main() {
       camera.getWorldPosition(viewPos);
       camera.getWorldQuaternion(viewQuat);
       if (activeWorld) cat.update(dt);
-      autoRain.update(dt);
       simSky.update(now);
       skyFade.tick(now);
 
@@ -11525,114 +11504,14 @@ void main() {
     }
     wake();
 
-    // WEATHER
-
-    // Open-Meteo: no key, CORS open; timezone=auto gives the city's wall clock and UTC offset.
-    const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
-    const WEATHER_TIMEOUT_MS = 8000;
-
-    // WMO 4677 codes. label is shown in the HUD; kind is the coarse group.
-    const WMO = {
-      0: ['Clear', 'clear'],
-      1: ['Mainly clear', 'clear'],
-      2: ['Partly cloudy', 'cloudy'],
-      3: ['Overcast', 'cloudy'],
-      45: ['Fog', 'fog'],
-      48: ['Rime fog', 'fog'],
-      51: ['Light drizzle', 'rain'],
-      53: ['Drizzle', 'rain'],
-      55: ['Heavy drizzle', 'rain'],
-      56: ['Freezing drizzle', 'rain'],
-      57: ['Freezing drizzle', 'rain'],
-      61: ['Light rain', 'rain'],
-      63: ['Rain', 'rain'],
-      65: ['Heavy rain', 'rain'],
-      66: ['Freezing rain', 'rain'],
-      67: ['Freezing rain', 'rain'],
-      71: ['Light snow', 'snow'],
-      73: ['Snow', 'snow'],
-      75: ['Heavy snow', 'snow'],
-      77: ['Snow grains', 'snow'],
-      80: ['Light showers', 'rain'],
-      81: ['Showers', 'rain'],
-      82: ['Violent showers', 'rain'],
-      85: ['Snow showers', 'snow'],
-      86: ['Heavy snow showers', 'snow'],
-      95: ['Thunderstorm', 'storm'],
-      96: ['Thunderstorm, hail', 'storm'],
-      99: ['Thunderstorm, hail', 'storm']
-    };
-
-    let weather = null;
-
-    async function fetchWeather(lat, lon) {
-      const params = new URLSearchParams({
-        latitude: lat.toFixed(4),
-        longitude: lon.toFixed(4),
-        current: 'temperature_2m,apparent_temperature,relative_humidity_2m,is_day,' +
-          'precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m',
-        hourly: 'temperature_2m,weather_code,cloud_cover,precipitation_probability,wind_speed_10m',
-        daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset',
-        forecast_days: '3',
-        timezone: 'auto',
-        temperature_unit: 'fahrenheit',
-        wind_speed_unit: 'mph',
-        precipitation_unit: 'inch'
-      });
-
-      const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), WEATHER_TIMEOUT_MS);
-      let json;
-      try {
-        const res = await fetch(`${WEATHER_URL}?${params}`, { signal: ctl.signal });
-        if (!res.ok) throw new Error(`Weather service returned ${res.status}.`);
-        json = await res.json();
-      } finally {
-        clearTimeout(timer);
-      }
-
-      const c = json.current, d = json.daily;
-      const [label, kind] = WMO[c.weather_code] || ['Unknown', 'clear'];
-
-      return {
-        offset: json.utc_offset_seconds,     // city time minus UTC, in seconds
-        zone: json.timezone_abbreviation,
-        code: c.weather_code, label, kind,
-        tempF: c.temperature_2m,
-        feelsF: c.apparent_temperature,
-        humidity: c.relative_humidity_2m,
-        cloud: c.cloud_cover,
-        precip: c.precipitation,             // inches in the last hour
-        windMph: c.wind_speed_10m,
-        windFrom: c.wind_direction_10m,        // degrees the wind blows from
-        isDay: c.is_day === 1,
-        highF: d.temperature_2m_max[0],
-        lowF: d.temperature_2m_min[0],
-        sunrise: clockMinutes(d.sunrise[0]),  // minutes past local midnight
-        sunset: clockMinutes(d.sunset[0]),
-        hourly: json.hourly,
-        daily: d
-      };
-    }
-
-    // Open-Meteo times carry no offset, so parse the digits (Date would read them as local).
-    function clockMinutes(iso) {
-      return +iso.slice(11, 13) * 60 + +iso.slice(14, 16);
-    }
-
     // City wall clock now. The epoch is pre-shifted, so use getUTC* only.
-    // City time minus UTC, seconds: the forecast's, else the site's own (Wild: this device's), else UTC.
+    // City time minus UTC, seconds: the site's own (estimated from its longitude; City off: this device's), else UTC.
     function zoneOffset() {
-      return weather ? weather.offset : (site && site.offset) || 0;
+      return (site && site.offset) || 0;
     }
 
     function cityNow() {
       return new Date(Date.now() + zoneOffset() * 1000);
-    }
-
-    function cityMinutes() {
-      const d = cityNow();
-      return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60;
     }
 
     function clockText(date) {
@@ -11640,12 +11519,6 @@ void main() {
       const h = d.getUTCHours();
       return `${(h + 11) % 12 + 1}:${String(d.getUTCMinutes()).padStart(2, '0')}` +
         ` ${h < 12 ? 'AM' : 'PM'}`;
-    }
-
-    function weatherText() {
-      return `${clockText(skyInstant())} ${weather.zone}  ${Math.round(weather.tempF)}\u00b0F ` +
-        `${conditions().label}, wind ${Math.round(weather.windMph)} mph, ` +
-        `high ${Math.round(weather.highF)} low ${Math.round(weather.lowF)}`;
     }
 
     // SKY
@@ -11823,7 +11696,6 @@ void main() {
     }
 
     let site = null;
-    let skyMinute = -1;
 
     // SKY FADE: when the weather changes, cloud cover and fog take SKY_FADE_S to reach their new values (the first
     // sky of a world is set at once). The frame loop redraws the sky while a fade runs.
@@ -11892,8 +11764,7 @@ void main() {
       hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
 
       // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
-      const cn = cityNow();
-      const hour = timeMode() === 'Live' && !simSky.on ? cn.getUTCHours() + cn.getUTCMinutes() / 60 : skyHour(timeMode());
+      const hour = skyHour(timeMode());
       const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
       // by day a quarter of the evening's lights stay on
       const dark = Math.max(1 - day, 0.25);
@@ -12058,14 +11929,7 @@ void main() {
 
       // drizzle falls slowly in short strokes; real rain is 6-9 m/s
       const fall = st.drizzle ? 3 + 1.5 * i : 6.5 + 2.5 * i;
-      let wx = 0, wz = 0;
-      if (weather && weather.windMph != null) {
-        const toward = (weather.windFrom + 180) * Math.PI / 180;
-        const s = Math.min(weather.windMph * 0.447 * 0.3 * (st.storm ? 1.5 : 1), 4);
-        wx = Math.sin(toward) * s;       // +x east
-        wz = -Math.cos(toward) * s;      // -z north
-      }
-      u.uVel.value.set(wx, -fall, wz);
+      u.uVel.value.set(0, -fall, 0);
       u.uLen.value = st.drizzle ? 0.05 : 0.08 + 0.03 * i;
       rain.alpha = (st.drizzle ? 0.3 : 0.42 + 0.2 * i) * (0.35 + 0.65 * daylight);
       u.uAlpha.value = rain.alpha * rain.fade;
@@ -12180,35 +12044,8 @@ void main() {
     }
 
 
-    // PROCEDURAL WEATHER: a world with no forecast (Wild) runs the Arena's rain cycle under Live weather: dry for
-    // 90-240 s, wet for 45-120 s, opening with a 20 s shower. The shared rain renderer draws it.
-    const autoRain = {
-      on: false, wet: false, timer: 0,
-      DRY_SPAN: [90, 240], WET_SPAN: [45, 120], SHOWCASE_TIME: 20,
-
-      span(r) { return r[0] + Math.random() * (r[1] - r[0]); },
-
-      start() { this.on = true; this.wet = true; this.timer = this.SHOWCASE_TIME; },
-      stop() { this.on = false; this.wet = false; },
-
-      conditions() {
-        if (!this.on) return null;
-        return this.wet ? SKIES.Rain : SKIES.Clear;
-      },
-
-      update(dt) {
-        if (!this.on) return;
-        this.timer -= dt;
-        if (this.timer > 0) return;
-        this.wet = !this.wet;
-        this.timer = this.span(this.wet ? this.WET_SPAN : this.DRY_SPAN);
-        updateSky();
-        refreshHud();
-      }
-    };
     let hudPlace = '';
     let hudBuildings = 0;
-    let clockTimer = null;
 
     function populationText() {
       let people = 0, coyotes = 0, deer = 0;
@@ -12232,24 +12069,8 @@ void main() {
         if (activeWorld.kind === 'mix') head += `, wilderness seed ${activeWorld.seed}`;
       }
       const c = conditions();
-      const sky = weather && !simSky.on ? weatherText() : (site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '');
+      const sky = site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '';
       perf.setText(hudEl, head + '\n' + populationText() + (sky ? '\n' + sky : ''));
-    }
-
-    function tick() {
-      refreshHud();
-      // the sun moves 0.25 degree a minute; rebuilding faster wakes the renderer for nothing
-      const m = Math.floor(Date.now() / 60000);
-      if (m !== skyMinute) { skyMinute = m; updateSky(); }
-    }
-
-    // Wake just after each minute boundary; nothing tick() shows changes faster.
-    function startClock() {
-      if (clockTimer) clearTimeout(clockTimer);
-      const next = () => {
-        clockTimer = setTimeout(() => { tick(); next(); }, 60000 - Date.now() % 60000 + 50);
-      };
-      next();
     }
 
     // LOAD
@@ -12264,9 +12085,9 @@ void main() {
     const sizeEl = document.getElementById('size');
     const sizeOutEl = document.getElementById('sizeOut');
     const customRowEl = document.getElementById('customrow');
-    const wildGoEl = document.getElementById('wildgo');
+    const startGoEl = document.getElementById('startgo');
 
-    function wildSeedValue() {
+    function seedValue() {
       return seedEl.value || DEFAULT_SEED;
     }
 
@@ -12287,10 +12108,8 @@ void main() {
       elevation.clear();
       ground.visible = true;
       ground.position.y = 0;
-      autoRain.stop();
       simSky.stop();
       skyFade.reset();
-      weather = null;
       site = null;
       disposeRain();
       cat.place(false);
@@ -12304,7 +12123,7 @@ void main() {
 
     function setBusy(on) {
       busy = on;
-      goEl.disabled = wildGoEl.disabled = on;
+      goEl.disabled = startGoEl.disabled = on;
       for (const b of picksEl.children) b.disabled = on;
     }
 
@@ -12341,7 +12160,7 @@ void main() {
         randomSky = false;
         simSky.randomize();
         for (const host of [timesEl, skiesEl]) {
-          host.children[1 + Math.floor(Math.random() * (host.children.length - 1))].click();   // 0 is Live
+          host.children[1 + Math.floor(Math.random() * (host.children.length - 1))].click();   // 0 is Game
         }
       }
       updateSky();
@@ -12357,11 +12176,11 @@ void main() {
     // WILD: the Arena's world from a seed; nothing is downloaded.
     // CITY OFF: the Mix world with no city in the middle (MixWorld with city null): seeded land, lakes, cabins, groves
     // and wildlife across the whole map. Nothing is downloaded.
-    async function loadWild(seed) {
+    async function loadWilderness(seed) {
       if (busy) return;
       setBusy(true);
       say('');
-      steps.reset(WILD_STEPS);
+      steps.reset(WILDERNESS_STEPS);
       let current = 'terrain';
       const o = { ...loadOpts };
       try {
@@ -12402,14 +12221,10 @@ void main() {
         steps.done('people', `${fmt(made.human)} people, each with a two-lobe brain; ${fmt(made.coyote)} coyotes and ` +
           `${fmt(made.deer)} deer; ${fmt(world.plants.length)} plants.`);
 
-        // no forecast: this device's clock sets the sun, the Arena's rain cycle the weather
+        // no place: this device's time zone places the sun
         const tz = -new Date().getTimezoneOffset();
         site = { lat: 40, lon: tz / 60 * 15, offset: tz * 60 };
-        weather = null;
-        autoRain.start();
-        skyMinute = Math.floor(Date.now() / 60000);
         updateSky();
-        startClock();
 
         driving = false;
         const st = w.playerStart();
@@ -12438,7 +12253,7 @@ void main() {
       steps.reset(mode === 'mix' ? MIX_STEPS : LOAD_STEPS);
       let current = 'address';
       const o = { ...loadOpts };
-      const seed = wildSeedValue();
+      const seed = seedValue();
       lastQuery = query;
 
       try {
@@ -12465,16 +12280,6 @@ void main() {
             `(${place.lat.toFixed(4)}, ${place.lon.toFixed(4)})`);
         }
 
-        // parallel with Overpass; a failed forecast never blocks the load
-        // with Live weather and time off there is no forecast to fetch
-        if (o.live) steps.start('weather');
-        else steps.off('weather', 'Turned off.');
-        const pendingWeather = !o.live ? Promise.resolve(null) : fetchWeather(place.lat, place.lon)
-          .then(w => {
-            steps.done('weather', `${Math.round(w.tempF)}\u00b0F, ${w.label}, local time zone ${w.zone}.`);
-            return w;
-          })
-          .catch(() => { steps.off('weather', 'Unavailable; the sky uses a preset.'); return null; });
         // terrain for the largest radius, so it covers whichever Overpass settles on
         const terrainKey = `${place.lat},${place.lon},${ladder[0]}`;
         const reusedTerrain = lastTerrain && lastTerrain.key === terrainKey;
@@ -12590,8 +12395,8 @@ void main() {
         activeWorld = cw;
         let provider = cw;
         if (mode === 'mix') {
-          current = 'wild';
-          steps.start('wild', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
+          current = 'wilderness';
+          steps.start('wilderness', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
           await paint();
           const mw = new MixWorld(cw, seed);
           mw.terrainStep();
@@ -12600,7 +12405,7 @@ void main() {
           mw.cabinStep();
           const [groveTrees, groves] = mw.treeStep();
           const b = mw.bounds;
-          steps.done('wild', `${Math.round(b.maxX - b.minX)} m square of wilderness from seed ${seed}, blended into the ` +
+          steps.done('wilderness', `${Math.round(b.maxX - b.minX)} m square of wilderness from seed ${seed}, blended into the ` +
             `measured ground over ${MIX_BLEND} m; ${mw.cabins.length} cabins, ${mw.locations.length} shore points, ` +
             `${fmt(groveTrees)} trees in ${fmt(groves)} groves.`);
           provider = mw;
@@ -12632,15 +12437,9 @@ void main() {
           steps.off('people', 'Turned off.');
         }
 
-        current = 'weather';
-        weather = await pendingWeather;
-        site = { lat: place.lat, lon: place.lon };
-        // Live weather and time off: no forecast, so no time zone. Estimate it from the longitude, so preset and game
-        // hours match the sun.
-        if (!o.live) site.offset = Math.round(place.lon / 15) * 3600;
-        skyMinute = Math.floor(Date.now() / 60000);
+        // no time zone is fetched: estimate it from the longitude, so preset and game hours match the sun
+        site = { lat: place.lat, lon: place.lon, offset: Math.round(place.lon / 15) * 3600 };
         updateSky();
-        startClock();
 
         driving = false;
         if (mode === 'mix' && provider.cabins.length) {
@@ -12680,11 +12479,11 @@ void main() {
       setBusy(false);
     }
 
-    // NEW ECOSYSTEM (the Arena's): a fresh random seed; Wild regrows, Mix regrows the wilderness around the same city.
+    // NEW ECOSYSTEM (the Arena's): a fresh random seed; the wilderness regrows, around the same city when there is one.
     // set by New ecosystem, used up when its world finishes loading; a load started from the intro clears it
     let randomSky = false;
     goEl.addEventListener('click', () => { randomSky = false; }, true);
-    wildGoEl.addEventListener('click', () => { randomSky = false; }, true);
+    startGoEl.addEventListener('click', () => { randomSky = false; }, true);
 
     function newEcosystem() {
       if (!activeWorld || activeWorld.kind === 'city' || busy) return;
@@ -12693,19 +12492,17 @@ void main() {
       seedEl.value = seed;
       returnToIntro();
       randomSky = true;
-      setMode(noCity ? 'wild' : 'mix');
-      if (noCity) loadWild(seed);
+      setMode(noCity ? 'wilderness' : 'mix');
+      if (noCity) loadWilderness(seed);
       else loadPlace(lastQuery, 'mix');
     }
 
     // SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
     const gameEl = document.getElementById('game');
     const skysetEl = document.getElementById('skyset');
-    // the sky pickers: Observer only. Their first chip clears the preset: Live with Live weather and time on, else
-    // Game, the game's own clock or weather (nothing was fetched, so there is no live sky to offer).
+    // the sky pickers: Observer only. Their first chip, Game, clears the preset back to the game's own clock or weather.
     function syncSkyset() {
       skysetEl.hidden = game.on;
-      timesEl.firstElementChild.textContent = skiesEl.firstElementChild.textContent = loadOpts.live ? 'Live' : 'Game';
     }
     let hudBeforeGame = true;
     gameEl.addEventListener('click', () => {
@@ -12768,7 +12565,7 @@ void main() {
     }
 
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, live: false };
+    const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true };
     for (const el of document.querySelectorAll('#more .switch')) {
       if (el.dataset.opt === 'city') continue;   // the City switch picks the world (setMode), not a build option
       el.addEventListener('click', () => {
@@ -12781,7 +12578,7 @@ void main() {
     }
 
     // START SCREEN: the City switch (More World Options) picks a city in the wilderness (mode 'mix', on) or the
-    // wilderness alone (mode 'wild', off: loadWild); the card shows that world's fields.
+    // wilderness alone (mode 'wilderness', off: loadWilderness); the card shows that world's fields.
     const citySwitchEl = document.querySelector('#more .switch[data-opt="city"]');
     function setMode(m) {
       startMode = m;
@@ -12793,7 +12590,7 @@ void main() {
     }
     citySwitchEl.addEventListener('click', () => {
       if (busy) return;
-      setMode(startMode === 'mix' ? 'wild' : 'mix');
+      setMode(startMode === 'mix' ? 'wilderness' : 'mix');
       citySwitchEl.blur();
     });
 
@@ -12805,7 +12602,7 @@ void main() {
     seedEl.addEventListener('blur', () => { if (!seedEl.value) seedEl.value = DEFAULT_SEED; });
     seedEl.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      if (startMode === 'wild') { loadWild(wildSeedValue()); }
+      if (startMode === 'wilderness') { loadWilderness(seedValue()); }
       else { loadPlace(addrEl.value, startMode); }
     });
     for (const b of sizeBtns) {
@@ -12819,7 +12616,7 @@ void main() {
       });
     }
     sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
-    wildGoEl.addEventListener('click', () => { loadWild(wildSeedValue()); });
+    startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
 
     goEl.addEventListener('click', () => { loadPlace(addrEl.value, startMode); });
 
