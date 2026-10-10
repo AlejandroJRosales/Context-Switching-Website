@@ -727,6 +727,11 @@
       display: none;
     }
 
+    /* City off (Wild): no Buildings switch */
+    #card[data-mode="wild"] #more .switch[data-opt="buildings"] {
+      display: none;
+    }
+
     #modes {
       margin: 0 0 16px;
     }
@@ -907,7 +912,7 @@
       margin-top: 40px;
     }
 
-    #card.loading #modes,
+    #card.loading #more,
     #card.loading .mode-note,
     #card.loading .for-wild,
     #card.loading .for-place {
@@ -1002,14 +1007,6 @@
         <button id="chooseFs" aria-pressed="false">Fullscreen</button>
         <button id="chooseGo">Go</button>
       </div>
-      <div class="chips" id="modes" role="radiogroup" aria-label="World">
-        <button data-mode="mix" role="radio" aria-checked="true" class="sel">Mix</button>
-        <button data-mode="wild" role="radio" aria-checked="false">Wild</button>
-      </div>
-      <p class="mode-note for-wild">A procedurally generated ecosystem of fields, mountains, lakes, and plants, where
-        people roam, eat, drink, and reproduce with no scripted behaviors, alongside coyotes and deer that follow
-        survival rules. People's brains let them explore, experience the world, make choices, and learn. You also have a
-        cat companion named Nibbler.</p>
       <p class="mode-note for-mix">Choose any US city by address to replicate at the center of a procedurally generated
         wilderness. People populate the ecosystem with two-lobed, spiking brains with dopamine-modulated neural
         plasticity. They sense the world, hunger, thirst, explore, and learn. Each newborn (coyote, deer, or person)
@@ -1036,8 +1033,10 @@
       </div>
       <label id="customrow" hidden>World Size <span id="sizeOut">30</span><input id="size" type="range" min="5" max="100"
           step="0.5" value="30"></label>
-      <details id="more" class="for-place">
+      <details id="more">
         <summary>More World Options</summary>
+        <button class="switch on" data-opt="city" role="switch" aria-checked="true"><span class="track"><span
+              class="thumb"></span></span>City</button>
         <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Car</button>
         <button class="switch on" data-opt="terrain" role="switch" aria-checked="true"><span class="track"><span
@@ -1387,10 +1386,11 @@
     const MIX_STEPS = LOAD_STEPS.slice(0, 6).concat([
       ['wild', 'Growing the wilderness', 'Seeded terrain around the city, blended into the measured ground; lakes, cabins, pebbles.']
     ], LOAD_STEPS.slice(6));
+    // City off: the wilderness alone, nothing downloaded.
     const WILD_STEPS = [
       ['terrain', 'Shaping the land', 'Seeded fractal terrain: plains, a mountain mask and ridges.'],
       ['water', 'Filling the lakes', 'A water level over 30% of the ground, lake beds carved below it.'],
-      ['cabins', 'Building cabins', 'Log cabins on dry ground, pebbles scattered.'],
+      ['cabins', 'Building cabins and groves', 'Log cabins on dry ground, groves of trees, pebbles scattered.'],
       ['people', 'Populating', 'Spawning people, coyotes, deer and plants and wiring the brains.'],
       ['scene', 'Preparing the scene', 'Compiling shaders and uploading textures so the first frame does not stall.']
     ];
@@ -1452,9 +1452,23 @@
     const fmt = n => n.toLocaleString('en-US');
 
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // LOW-POWER (Graphics: low): pixel ratio capped at LOW_PIXEL_RATIO, renders at LOW_RENDER_FPS and no MSAA (see
+    // graphics.apply, frame, msaa). The GPU preference is fixed when the WebGL context is made, so it follows the starting
+    // setting (low on touch devices, as graphics.high defaults). The context has no antialiasing of its own: high
+    // graphics antialiases through msaa below, so it switches live.
+    const LOW_PIXEL_RATIO = 1.25;
+    const LOW_RENDER_FPS = 30;
+    const MSAA_SAMPLES = 4;
+    const startLowPower = matchMedia('(pointer: coarse)').matches;
+    const renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      powerPreference: startLowPower ? 'low-power' : 'default'
+    });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
     renderer.setSize(innerWidth, innerHeight);
+    // skip three's per-program getProgramInfoLog/getShaderInfoLog/getProgramParameter checks (~0.5 s of load);
+    // the cost is that a shader that fails to compile no longer logs why
+    renderer.debug.checkShaderErrors = false;
     document.body.appendChild(renderer.domElement);
     renderer.xr.enabled = true;
     renderer.shadowMap.enabled = false;          // Graphics: high turns sun shadows on over wild terrain
@@ -1506,6 +1520,63 @@
     scene.add(ground);
 
     const layers = [];
+
+    // HIGH-GRAPHICS MSAA: the scene is drawn into a MSAA_SAMPLES multisampled target, then copied to the screen by a
+    // full-screen pass that applies the renderer's tone mapping and output colour space (what drawing straight to the
+    // screen does). Graphics: low and VR draw straight to the screen. Half-float when the GPU can render to it, else
+    // 8-bit sRGB storage, so dark tones keep their precision either way.
+    const msaa = {
+      target: null, qScene: null, qCam: null, quad: null, _size: new THREE.Vector2(),
+
+      ensure() {
+        renderer.getDrawingBufferSize(this._size);
+        const w = Math.max(1, this._size.x), h = Math.max(1, this._size.y);
+        if (this.target === null) {
+          const ext = renderer.extensions;
+          const half = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+          this.target = new THREE.WebGLRenderTarget(w, h, {
+            samples: MSAA_SAMPLES, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType
+          });
+          if (!half) this.target.texture.colorSpace = THREE.SRGBColorSpace;
+          if (this.quad === null) {
+            const mat = new THREE.ShaderMaterial({
+              uniforms: { tDiffuse: { value: null } },
+              vertexShader: `varying vec2 vUv;
+void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+              fragmentShader: `uniform sampler2D tDiffuse;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = texture2D(tDiffuse, vUv);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
+              depthTest: false, depthWrite: false
+            });
+            this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+            this.quad.frustumCulled = false;
+            this.qScene = new THREE.Scene();
+            this.qScene.add(this.quad);
+            this.qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+          }
+          this.quad.material.uniforms.tDiffuse.value = this.target.texture;
+        } else if (this.target.width !== w || this.target.height !== h) this.target.setSize(w, h);
+        return this.target;
+      },
+
+      render() {
+        renderer.setRenderTarget(this.ensure());
+        renderer.render(scene, camera);
+        renderer.setRenderTarget(null);
+        renderer.render(this.qScene, this.qCam);
+      },
+
+      // free the GPU memory while Graphics is low
+      dispose() {
+        if (this.target === null) return;
+        this.target.dispose();
+        this.target = null;
+      }
+    };
 
     addEventListener('resize', () => {
       if (renderer.xr.isPresenting) return;
@@ -3596,7 +3667,7 @@
 
     // SHELL RASTER
     // shellAt in one typed-array read for most points; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
-    const SHELL_CELL = 1;
+    const SHELL_CELL = 0.5;    // metres; finer cells shrink the AMBIG band around walls that falls back to shellAtExact
     const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
     const SHELL_OUT = -1;
     const SHELL_AMBIG = -2;
@@ -3672,8 +3743,10 @@
 
     function pointInRing(pts, x, z) {
       let inside = false;
+      // indexed reads, not destructuring: this runs in the per-tick footing and wall tests
       for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-        const [xi, zi] = pts[i], [xj, zj] = pts[j];
+        const pi = pts[i], pj = pts[j];
+        const xi = pi[0], zi = pi[1], xj = pj[0], zj = pj[1];
         if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
       }
       return inside;
@@ -3683,7 +3756,8 @@
     function closestOnRing(pts, x, z) {
       let best = Infinity, bx = x, bz = z;
       for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-        const [xi, zi] = pts[i], [xj, zj] = pts[j];
+        const pi = pts[i], pj = pts[j];
+        const xi = pi[0], zi = pi[1], xj = pj[0], zj = pj[1];
         const dx = xi - xj, dz = zi - zj;
         const len2 = dx * dx + dz * dz;
         let t = len2 > 0 ? ((x - xj) * dx + (z - zj) * dz) / len2 : 0;
@@ -3847,6 +3921,7 @@
     const PLANT_REGROW_P = 0.03;
     const PLANT_SPOT_TRIES = 30;
     const PLANT_SIGHT_CELL = 15;      // metres: plant cell for vision queries (NpcWorld.plantSight)
+    const NPC_CONTACT_CELL = 1.5;     // metres: ContactGrid cell, about two contact radii, so a query reads 1 to 4 cells
     // DEER AI (ported from species.py, Animal.search / think / move)
     const DEER_CRUISE = 0.3;      // species.py: speed share when not fleeing
     // Deer decide once per DEER_THINK_TICKS (a third of a second) and keep that decision in between.
@@ -3982,6 +4057,14 @@
         return k;
       }
 
+      // Append to bucket k without touching _usedKeys (for grids kept up to date by moves, never clear()ed).
+      place(entity, k) {
+        if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
+        let bucket = this.cells[k];
+        if (bucket === null) bucket = this.cells[k] = [];
+        bucket.push(entity);
+      }
+
       remove(entity, k) {
         const bucket = this.cells === null ? null : this.cells[k];
         if (!bucket) return;
@@ -4059,6 +4142,66 @@
       }
     }
 
+    // CONTACT GRID: animals counting-sorted into small hashed cells (typed arrays, no per-cell arrays), rebuilt with
+    // NpcWorld.grid, for contact-range queries (hunt, mate). The vision grid's 7.2 m cells made each contact query scan
+    // ~200 m² for a 1.3 m contact circle. A hash collision only adds candidates (the distance test filters); hashes
+    // repeated within one query box are visited once. Within a cell, items keep world.animals order.
+    class ContactGrid {
+      constructor(cellSize, bits = 16) {
+        this.cellSize = cellSize;
+        this.inv = 1 / cellSize;
+        this.mask = (1 << bits) - 1;
+        this.start = new Int32Array(this.mask + 2);
+        this.cursor = new Int32Array(this.mask + 1);
+        this.cellOf = new Int32Array(1024);
+        this.items = [];
+        this.hs = new Int32Array(64);
+      }
+
+      hash(cx, cz) { return (Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663)) & this.mask; }
+
+      rebuild(list) {
+        const n = list.length, start = this.start, cursor = this.cursor, inv = this.inv;
+        if (this.cellOf.length < n) this.cellOf = new Int32Array(n * 2);
+        const cellOf = this.cellOf;
+        start.fill(0);
+        let m = 0;
+        for (let i = 0; i < n; i++) {
+          const a = list[i];
+          if (!a.alive) { cellOf[i] = -1; continue; }
+          const h = this.hash(Math.floor(a.position.x * inv), Math.floor(a.position.z * inv));
+          cellOf[i] = h; start[h + 1]++; m++;
+        }
+        const M = this.mask + 1;
+        for (let h = 0; h < M; h++) { start[h + 1] += start[h]; cursor[h] = start[h]; }
+        const items = this.items;
+        items.length = m;
+        for (let i = 0; i < n; i++) {
+          const h = cellOf[i];
+          if (h >= 0) items[cursor[h]++] = list[i];
+        }
+      }
+
+      // Distinct hashes of the cells covering (x, z) +- r into this.hs; returns how many.
+      cellsFor(x, z, r) {
+        const inv = this.inv;
+        const cx0 = Math.floor((x - r) * inv), cx1 = Math.floor((x + r) * inv);
+        const cz0 = Math.floor((z - r) * inv), cz1 = Math.floor((z + r) * inv);
+        if ((cx1 - cx0 + 1) * (cz1 - cz0 + 1) > this.hs.length) this.hs = new Int32Array((cx1 - cx0 + 1) * (cz1 - cz0 + 1) * 2);
+        const hs = this.hs;
+        let nh = 0;
+        for (let cz = cz0; cz <= cz1; cz++) {
+          for (let cx = cx0; cx <= cx1; cx++) {
+            const h = this.hash(cx, cz);
+            let dup = false;
+            for (let q = 0; q < nh; q++) if (hs[q] === h) { dup = true; break; }
+            if (!dup) hs[nh++] = h;
+          }
+        }
+        return nh;
+      }
+    }
+
     class BrainFactory {
       constructor() {
         this.LOBE_SIZE_MIN = 4;
@@ -4100,6 +4243,28 @@
         const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
         return Math.max(0.55, Math.min(1.55, mean + std * n));
       }
+    }
+
+    // ACTIVE-SYNAPSE LISTS for a mask laid out [pre * nPost + post]: `idx`, the set entries in ascending order (as the
+    // dense loops visit them), and per post neuron its entries by ascending pre (colStart / colPre / colK), the order
+    // propagate sums in. Masks never change after creation and children share their parent's, so one list per mask.
+    const _maskLists = new WeakMap();
+    function maskLists(mask, nPre, nPost) {
+      let L = _maskLists.get(mask);
+      if (L) return L;
+      let n = 0;
+      for (let k = 0; k < mask.length; k++) if (mask[k]) n++;
+      const idx = new Int32Array(n), pre = new Int32Array(n), post = new Int32Array(n);
+      n = 0;
+      for (let k = 0; k < mask.length; k++) if (mask[k]) { idx[n] = k; pre[n] = (k / nPost) | 0; post[n] = k - pre[n] * nPost; n++; }
+      const colStart = new Int32Array(nPost + 1), colPre = new Int32Array(n), colK = new Int32Array(n);
+      for (let m = 0; m < n; m++) colStart[post[m] + 1]++;
+      for (let i = 0; i < nPost; i++) colStart[i + 1] += colStart[i];
+      const fill = colStart.slice(0, nPost);
+      for (let m = 0; m < n; m++) { const c = fill[post[m]]++; colPre[c] = pre[m]; colK[c] = idx[m]; }
+      L = { idx, pre, post, colStart, colPre, colK };
+      _maskLists.set(mask, L);
+      return L;
     }
 
     // TWO-LOBE NETWORK
@@ -4157,6 +4322,13 @@
           this.maskAO = brains.makeSparseMask(NA, O, brains.LOBE_SPARSITY);
           this.maskBO = brains.makeSparseMask(NB, O, brains.LOBE_SPARSITY);
         }
+
+        this.lIA = maskLists(this.maskIA, I, NA);
+        this.lIB = maskLists(this.maskIB, I, NB);
+        this.lAB = maskLists(this.maskAB, NA, NB);
+        this.lBA = maskLists(this.maskBA, NB, NA);
+        this.lAO = maskLists(this.maskAO, NA, O);
+        this.lBO = maskLists(this.maskBO, NB, O);
 
         this.wIA = brains.makeMaskedWeights(I, NA, this.maskIA);
         this.wIB = brains.makeMaskedWeights(I, NB, this.maskIB);
@@ -4239,6 +4411,8 @@
         const actB = this.actB;
         const actO = this.actO;
         const hA = this.hA;
+        const lIA = this.lIA, lIB = this.lIB, lAB = this.lAB, lBA = this.lBA, lAO = this.lAO, lBO = this.lBO;
+        const wIA = this.wIA, wIB = this.wIB, wAB = this.wAB, wBA = this.wBA, wAO = this.wAO, wBO = this.wBO;
 
         const refracA = this.refracA;
         const lifLeak = this.lifLeak;
@@ -4258,14 +4432,8 @@
           this.selfIn[i] = hA[i];
 
           let net = this.biasA[i] + this.wSelf[i] * hA[i];
-          for (let j = 0; j < I; j++) {
-            const k = j * NA + i;
-            if (this.maskIA[k]) net += this.wIA[k] * inp[j];
-          }
-          for (let k = 0; k < NB; k++) {
-            const idx = k * NA + i;
-            if (this.maskBA[idx]) net += this.wBA[idx] * actB[k];
-          }
+          for (let m = lIA.colStart[i], mEnd = lIA.colStart[i + 1]; m < mEnd; m++) net += wIA[lIA.colK[m]] * inp[lIA.colPre[m]];
+          for (let m = lBA.colStart[i], mEnd = lBA.colStart[i + 1]; m < mEnd; m++) net += wBA[lBA.colK[m]] * actB[lBA.colPre[m]];
           hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
 
           if (hA[i] >= lifTh) {
@@ -4291,14 +4459,8 @@
           hB[i] *= lifLeak;
 
           let net = this.biasB[i];
-          for (let j = 0; j < I; j++) {
-            const k = j * NB + i;
-            if (this.maskIB[k]) net += this.wIB[k] * inp[j];
-          }
-          for (let k = 0; k < NA; k++) {
-            const idx = k * NB + i;
-            if (this.maskAB[idx]) net += this.wAB[idx] * actA[k];
-          }
+          for (let m = lIB.colStart[i], mEnd = lIB.colStart[i + 1]; m < mEnd; m++) net += wIB[lIB.colK[m]] * inp[lIB.colPre[m]];
+          for (let m = lAB.colStart[i], mEnd = lAB.colStart[i + 1]; m < mEnd; m++) net += wAB[lAB.colK[m]] * actA[lAB.colPre[m]];
           hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
 
           if (hB[i] >= lifTh) {
@@ -4313,14 +4475,8 @@
 
         for (let i = 0; i < O; i++) {
           let net = this.biasO[i];
-          for (let k = 0; k < NA; k++) {
-            const idxA = k * O + i;
-            if (this.maskAO[idxA]) net += this.wAO[idxA] * actA[k];
-          }
-          for (let k = 0; k < NB; k++) {
-            const idxB = k * O + i;
-            if (this.maskBO[idxB]) net += this.wBO[idxB] * actB[k];
-          }
+          for (let m = lAO.colStart[i], mEnd = lAO.colStart[i + 1]; m < mEnd; m++) net += wAO[lAO.colK[m]] * actA[lAO.colPre[m]];
+          for (let m = lBO.colStart[i], mEnd = lBO.colStart[i + 1]; m < mEnd; m++) net += wBO[lBO.colK[m]] * actB[lBO.colPre[m]];
           actO[i] = net;
         }
 
@@ -4399,12 +4555,12 @@
           this.caO[i] = this.caO[i] * dc + gc * a;
         }
 
-        this._tag(this.eIA, this.maskIA, inp, I, fA, NA, de, g);
-        this._tag(this.eIB, this.maskIB, inp, I, fB, NB, de, g);
-        this._tag(this.eBA, this.maskBA, this.prevB, NB, fA, NA, de, g);
-        this._tag(this.eAB, this.maskAB, this.actA, NA, fB, NB, de, g);
-        this._tag(this.eAO, this.maskAO, this.actA, NA, fO, O, de, g);
-        this._tag(this.eBO, this.maskBO, this.actB, NB, fO, O, de, g);
+        this._tag(this.eIA, this.lIA, inp, fA, de, g);
+        this._tag(this.eIB, this.lIB, inp, fB, de, g);
+        this._tag(this.eBA, this.lBA, this.prevB, fA, de, g);
+        this._tag(this.eAB, this.lAB, this.actA, fB, de, g);
+        this._tag(this.eAO, this.lAO, this.actA, fO, de, g);
+        this._tag(this.eBO, this.lBO, this.actB, fO, de, g);
 
         for (let i = 0; i < NA; i++) {
           this.eSelf[i] = this.eSelf[i] * de + g * this.selfIn[i] * fA[i];
@@ -4414,21 +4570,20 @@
         for (let i = 0; i < O; i++) this.eBiasO[i] = this.eBiasO[i] * de + g * fO[i];
       }
 
-      // Weights are laid out [pre * nPost + post], as in propagate.
-      _tag(e, mask, pre, nPre, post, nPost, de, g) {
-        for (let j = 0; j < nPre; j++) {
-          const p = g * pre[j], row = j * nPost;
-          for (let i = 0; i < nPost; i++) {
-            const k = row + i;
-            if (mask[k]) e[k] = e[k] * de + p * post[i];
-          }
+      // Weights are laid out [pre * nPost + post], as in propagate; only the mask's synapses, in ascending order.
+      _tag(e, L, pre, post, de, g) {
+        const idx = L.idx, pr = L.pre, po = L.post;
+        for (let m = 0; m < idx.length; m++) {
+          const k = idx[m];
+          e[k] = e[k] * de + (g * pre[pr[m]]) * post[po[m]];
         }
       }
 
-      // Tag capture, then the synapse's own intrinsic fluctuation, then decay.
-      _stepWeights(w, e, mask, len, gain, wd1, r) {
-        for (let k = 0; k < len; k++) {
-          if (!mask[k]) continue;
+      // Tag capture, then the synapse's own intrinsic fluctuation (one independent draw per synapse), then decay.
+      _stepWeights(w, e, L, gain, wd1, r) {
+        const idx = L.idx;
+        for (let m = 0; m < idx.length; m++) {
+          const k = idx[m];
           const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
           w[k] = w[k] * wd1 + gain * e[k] + noise;
         }
@@ -4456,12 +4611,12 @@
         const I = this.inputDims;
         const O = this.outputDims;
 
-        this._stepWeights(this.wIA, this.eIA, this.maskIA, I * NA, gain, wd1, r);
-        this._stepWeights(this.wIB, this.eIB, this.maskIB, I * NB, gain, wd1, r);
-        this._stepWeights(this.wAB, this.eAB, this.maskAB, NA * NB, gain, wd1, r);
-        this._stepWeights(this.wBA, this.eBA, this.maskBA, NB * NA, gain, wd1, r);
-        this._stepWeights(this.wAO, this.eAO, this.maskAO, NA * O, gain, wd1, r);
-        this._stepWeights(this.wBO, this.eBO, this.maskBO, NB * O, gain, wd1, r);
+        this._stepWeights(this.wIA, this.eIA, this.lIA, gain, wd1, r);
+        this._stepWeights(this.wIB, this.eIB, this.lIB, gain, wd1, r);
+        this._stepWeights(this.wAB, this.eAB, this.lAB, gain, wd1, r);
+        this._stepWeights(this.wBA, this.eBA, this.lBA, gain, wd1, r);
+        this._stepWeights(this.wAO, this.eAO, this.lAO, gain, wd1, r);
+        this._stepWeights(this.wBO, this.eBO, this.lBO, gain, wd1, r);
 
         for (let k = 0; k < NA; k++) {
           const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
@@ -4589,6 +4744,7 @@
 
         this.mesh = null;
         this.home = null;
+        this._gk = -1;   // NpcWorld.grid bucket this animal is filed under, -1 when not filed
       }
 
       remove() { }
@@ -4649,11 +4805,24 @@
         const hunts = this.spec.hunts, type = this.type;
         let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
-        const _n = grid.queryInto(world._qLocate, px, pz, this.visionDistance);
-        for (let _i = 0; _i < _n; _i++) {
-          const obj = world._qLocate[_i];
+        // Buckets are read in place, in queryInto's order (no copy). The horizontal-distance reject is the one
+        // senseTarget would make anyway (3D distance >= horizontal), so what is sensed is unchanged.
+        const r = this.visionDistance;
+        const gCells = grid.cells;
+        const gcs = grid.cellSize, gcols = grid.cols, grows = grid.rows;
+        const gcx0 = Math.floor((px - r) / gcs), gcx1 = Math.floor((px + r) / gcs);
+        const gcy0 = Math.floor((pz - r) / gcs), gcy1 = Math.floor((pz + r) / gcs);
+        if (gCells !== null) for (let gcy = gcy0; gcy <= gcy1; gcy++) {
+          const grow = (((gcy % grows) + grows) % grows) * gcols;
+          for (let gcx = gcx0; gcx <= gcx1; gcx++) {
+            const bucket = gCells[grow + ((gcx % gcols) + gcols) % gcols];
+            if (bucket === null) continue;
+            for (let _i = 0; _i < bucket.length; _i++) {
+          const obj = bucket[_i];
           if (obj === this) continue;
           const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
+          const hx = ox - px, hz = oz - pz;
+          if (hx * hx + hz * hz > vd) continue;
           const isPred = obj.spec.hunts[type] === true;
           const isFood = hunts[obj.type] === true;
           const isMate = obj.type === type && this.sex !== obj.sex;
@@ -4687,6 +4856,8 @@
               this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
             }
           }
+            }
+          }
         }
 
         // City: in Survivor mode the player is a predator too, to whatever people hunt
@@ -4702,20 +4873,31 @@
         }
 
         // City: plants are food for people too (nearer of plant and animal food wins), from the sight grid.
-        const nSight = world.plantSight.queryInto(world._qSight, px, pz, this.visionDistance);
-        for (let _i = 0; _i < nSight; _i++) {
-          const plant = world._qSight[_i];
-          if (!plant.alive) continue;
-          const qx = plant.position.x - px, qz = plant.position.z - pz;
-          if (qx * qx + qz * qz > vd) continue;
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
-            plant.position.x, plant.position.y, plant.position.z)) continue;
-          if (hit.d3sq < bestFoodDist) {
-            bestFoodDist = hit.d3sq;
-            this.memFoodX = plant.position.x; this.memFoodY = plant.position.y; this.memFoodZ = plant.position.z;
-            this.hasFood = true;
-            this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
-            this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
+        // (read in place, in queryInto's order)
+        const ps = world.plantSight, pCells = ps.cells;
+        const pcs = ps.cellSize, pcols = ps.cols, prows = ps.rows;
+        const pcx0 = Math.floor((px - r) / pcs), pcx1 = Math.floor((px + r) / pcs);
+        const pcy0 = Math.floor((pz - r) / pcs), pcy1 = Math.floor((pz + r) / pcs);
+        if (pCells !== null) for (let pcy = pcy0; pcy <= pcy1; pcy++) {
+          const prow = (((pcy % prows) + prows) % prows) * pcols;
+          for (let pcx = pcx0; pcx <= pcx1; pcx++) {
+            const bucket = pCells[prow + ((pcx % pcols) + pcols) % pcols];
+            if (bucket === null) continue;
+            for (let _i = 0; _i < bucket.length; _i++) {
+              const plant = bucket[_i];
+              if (!plant.alive) continue;
+              const qx = plant.position.x - px, qz = plant.position.z - pz;
+              if (qx * qx + qz * qz > vd) continue;
+              if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
+                plant.position.x, plant.position.y, plant.position.z)) continue;
+              if (hit.d3sq < bestFoodDist) {
+                bestFoodDist = hit.d3sq;
+                this.memFoodX = plant.position.x; this.memFoodY = plant.position.y; this.memFoodZ = plant.position.z;
+                this.hasFood = true;
+                this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
+                this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
+              }
+            }
           }
         }
 
@@ -5616,6 +5798,7 @@
         this.dirty = [];
         this.dirtyFlag = new Uint8Array(this.MAX_INSTANCES);
         this.MAX_RUNS = 32;
+        this.pending = false;   // a plant is waiting for a free slot (see NpcWorld.step)
         this._sortBuf = [];
         this._runs = [];
       }
@@ -5658,7 +5841,7 @@
 
       add(p) {
         if (p._slot >= 0) return;
-        if (this.count >= this.MAX_INSTANCES) return;
+        if (this.count >= this.MAX_INSTANCES) { this.pending = true; return; }
         const slot = this.count++;
         this.slots[slot] = p;
         p._slot = slot;
@@ -6393,11 +6576,22 @@
       tiles: new Map(),
       _lk: NaN, _lt: null,
 
+      // flat index of the tiles over their bounding box, made at the end of build() (tiles are only created there)
+      flat: null, fc0: 0, fr0: 0, fw: 0, fh: 0,
+
       // A cell with no tile is open; Animal.move keeps to the provider's bounds.
       blockedAt(x, z) {
         const c = Math.floor(x * OCC_INV), r = Math.floor(z * OCC_INV);
-        const t = this.tiles.get(cellKey(c >> OCC_TILE_BITS, r >> OCC_TILE_BITS));
-        if (t === undefined) return false;
+        let t;
+        if (this.flat !== null) {
+          const tc = (c >> OCC_TILE_BITS) - this.fc0, tr = (r >> OCC_TILE_BITS) - this.fr0;
+          if (tc < 0 || tr < 0 || tc >= this.fw || tr >= this.fh) return false;
+          t = this.flat[tr * this.fw + tc];
+          if (t === null) return false;
+        } else {
+          t = this.tiles.get(cellKey(c >> OCC_TILE_BITS, r >> OCC_TILE_BITS));
+          if (t === undefined) return false;
+        }
         const i = ((r & OCC_TILE_MASK) << OCC_TILE_BITS) | (c & OCC_TILE_MASK);
         return ((t[i >>> 5] >>> (i & 31)) & 1) === 1;
       },
@@ -6405,6 +6599,26 @@
       clear() {
         this.tiles = new Map();
         this._lk = NaN; this._lt = null;
+        this.flat = null;
+      },
+
+      index() {
+        this.flat = null;
+        if (this.tiles.size === 0) { this.fw = this.fh = 0; this.flat = []; return; }
+        let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+        for (const k of this.tiles.keys()) {
+          const tc = Math.floor(k / 16384) - 8192, tr = k - (tc + 8192) * 16384 - 8192;
+          if (tc < c0) c0 = tc; if (tc > c1) c1 = tc;
+          if (tr < r0) r0 = tr; if (tr > r1) r1 = tr;
+        }
+        const fw = c1 - c0 + 1, fh = r1 - r0 + 1;
+        const flat = new Array(fw * fh).fill(null);
+        for (const [k, t] of this.tiles) {
+          const tc = Math.floor(k / 16384) - 8192, tr = k - (tc + 8192) * 16384 - 8192;
+          flat[(tr - r0) * fw + (tc - c0)] = t;
+        }
+        this.fc0 = c0; this.fr0 = r0; this.fw = fw; this.fh = fh;
+        this.flat = flat;
       },
 
       build() {
@@ -6428,6 +6642,7 @@
         };
         for (const s of shells) for (const t of s.throats) lane(t);
         for (const t of obstacleThroats) lane(t);
+        this.index();
       },
 
       set(c, r) {
@@ -6436,7 +6651,7 @@
         if (k === this._lk) t = this._lt;
         else {
           t = this.tiles.get(k);
-          if (t === undefined) this.tiles.set(k, t = new Uint32Array(OCC_TILE_WORDS));
+          if (t === undefined) { this.tiles.set(k, t = new Uint32Array(OCC_TILE_WORDS)); this.flat = null; }
           this._lk = k; this._lt = t;
         }
         const i = ((r & OCC_TILE_MASK) << OCC_TILE_BITS) | (c & OCC_TILE_MASK);
@@ -8409,6 +8624,9 @@
       apply() {
         const on = this.shadowsOn();
         gfxEl.textContent = `Graphics: ${this.high ? 'high' : 'low'}`;
+        const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
+        if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
+        if (!this.high) msaa.dispose();
         if (renderer.shadowMap.enabled !== on) {
           renderer.shadowMap.enabled = on;
           scene.traverse(o => { if (o.material) { for (const m of [].concat(o.material)) m.needsUpdate = true; } });
@@ -8646,128 +8864,6 @@
     }
 
     // WILD: the Arena's procedural world, centred on the origin, wrapping at its edges.
-    class WildWorld {
-      constructor(seed) {
-        this.kind = 'wild';
-        this.seed = seed;
-        const hw = CONFIG.worldWidth * NPC_UNIT / 2, hd = CONFIG.worldHeight * NPC_UNIT / 2;
-        this.bounds = { minX: -hw, maxX: hw, minZ: -hd, maxZ: hd };
-        this.wraps = false;              // an island: the sea at the edge is the limit (the Arena wrapped like a torus)
-        this.shadows = true;
-        this.companion = true;
-        this.rays = 'single';
-        this.city = null;
-        this.level = 0;
-        this.grid = null;
-        this.locations = [];
-        this.cabins = [];
-      }
-
-      terrainStep() {
-        const b = this.bounds;
-        wildTerrain.initSeed(this.seed);
-        const level = wildTerrain.computeLevel(b);
-        wildTerrain.lakeRef = level / NPC_UNIT;
-        this.level = level;
-        const step = (b.maxX - b.minX) / WILD_GRID.x;
-        const nz = Math.round((b.maxZ - b.minZ) / step) + 1;
-        this.grid = new HeightGrid(b.minX, b.minZ, step, WILD_GRID.x + 1, nz);
-        this.grid.fill((x, z) => coastHeight(x, z, wildTerrain.metresAt(x, z), b, level));
-        addWildLayer(heightMesh(this.grid));
-        ground.visible = false;
-        perf.terrainVersion++;
-      }
-
-      waterStep() {
-        wildWater.createPlane(this.bounds, this.level);
-        this.locations = shoreline(this.grid, this.level);
-      }
-
-      // the Arena's World.initialize cabins: log(scale) pairs, the first on dry ground near its (400, 300)
-      cabinStep() {
-        const b = this.bounds;
-        const count = Math.floor(Math.log(CONFIG.scale)) * 2;
-        const x0 = (400 - CONFIG.worldWidth / 2) * NPC_UNIT, z0 = (300 - CONFIG.worldHeight / 2) * NPC_UNIT;
-        const first = this.findDryGround(x0, z0, this.level + 4 * NPC_UNIT);
-        const margin = 150 * NPC_UNIT;
-        const pick = () => [b.minX + margin + Math.random() * (b.maxX - b.minX - 2 * margin),
-        b.minZ + margin + Math.random() * (b.maxZ - b.minZ - 2 * margin)];
-        this.cabins = placeCabins(count, first, 2 * Math.PI, pick, (x, z) => this.heightAt(x, z), this.level);
-        pebbles.init();
-        pebbles.place(() => this.anyPoint(), (x, z) => this.heightAt(x, z));
-      }
-
-      // the Arena's water.findDryGround, in metres
-      findDryGround(x, z, minY, maxRadius = 600 * NPC_UNIT, step = 25 * NPC_UNIT) {
-        if (this.heightAt(x, z) >= minY) return [x, z];
-        const b = this.bounds, m = 60 * NPC_UNIT;
-        for (let r = step; r <= maxRadius; r += step) {
-          const n = Math.max(8, Math.round((2 * Math.PI * r) / step));
-          for (let i = 0; i < n; i++) {
-            const a = (i / n) * Math.PI * 2;
-            const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-            if (px < b.minX + m || px > b.maxX - m || pz < b.minZ + m || pz > b.maxZ - m) continue;
-            if (this.heightAt(px, pz) >= minY) return [px, pz];
-          }
-        }
-        return [x, z];
-      }
-
-      teardown() {
-        clearWildLayers();
-        wildWater.dispose();
-        pebbles.dispose();
-        shelters = [];
-        ground.visible = true;
-      }
-
-      heightAt(x, z) { return this.grid.at(x, z); }
-      isWater(x, z) { return this.grid.at(x, z) < this.level; }
-
-      surface(x, z, out) {
-        const h = this.grid.at(x, z);
-        if (h < this.level) { out.base = this.level; out.dip = h - this.level; }
-        else { out.base = h; out.dip = 0; }
-        out.float = WILD_FLOAT_DEPTH;
-      }
-
-      waterSources() { return this.locations; }
-
-      population() {
-        return [
-          { type: 'plant', count: CONFIG.initialPlants, src: this },
-          { type: 'coyote', count: CONFIG.initialCoyotes, src: this },
-          { type: 'deer', count: CONFIG.initialDeer, src: this },
-          { type: 'human', count: CONFIG.initialHumans, src: this }
-        ];
-      }
-
-      regrow(w) {
-        if (Math.random() < CONFIG.probSpawnPlant) w.spawnPlant(this);
-      }
-
-      anyPoint() {
-        const b = this.bounds;
-        return [b.minX + Math.random() * (b.maxX - b.minX), b.minZ + Math.random() * (b.maxZ - b.minZ)];
-      }
-
-      // The Arena scattered everything uniformly; plants still need open, dry ground.
-      spawnPoint(type) {
-        if (type !== 'plant') return this.anyPoint();
-        for (let k = 0; k < PLANT_SPOT_TRIES; k++) {
-          const p = this.anyPoint();
-          if (world.isOpen(p[0], p[1])) return p;
-        }
-        return null;
-      }
-
-      // The player starts in the first cabin, facing its door.
-      playerStart() {
-        const c = this.cabins[0];
-        return { x: c.x, z: c.z, y: c.floor + 0.02, yaw: Math.PI };
-      }
-    }
-
     // The groves every Mix map carries: the mapped trees within 500 m of Millennium Park, Chicago (OpenStreetMap),
     // grouped where they stand within 12 m of each other and cut into pieces of at most 80 m so each fits a small
     // wilderness. Groves are separated by "|"; a grove is "dx dz dx dz …" in decimetres from its own centre.
@@ -9024,7 +9120,8 @@
       return wildGroveList;
     }
 
-    // MIX: the city in the middle of the wilderness. The measured Terrarium ground rules the square it covers (the loaded
+    // MIX: the city in the middle of the wilderness. With City off (city null) there is no measured square: the
+    // procedural land, lakes, groves, cabins and wildlife run through the centre too. The measured Terrarium ground rules the square it covers (the loaded
     // radius plus ELEV_MARGIN), so every draped street and building still fits; past it, height blends from the city's
     // edge into the procedural land over MIX_BLEND metres, along a seeded, wavering distance so the seam is not a square.
     const MIX_BLEND = 250;    // metres from the measured edge to pure wilderness
@@ -9035,12 +9132,13 @@
     const MIX_SINK = 0.6;    // metres the wild mesh dips under the city's own terrain where they overlap
 
     class MixWorld {
-      constructor(city, seed) {
+      constructor(city, seed, opts = city ? city.opts : null) {
         this.kind = 'mix';
         this.city = city;
+        this.opts = opts;
         this.seed = seed;
-        this.R = city.radius;
-        this.h = elevation.active ? Math.min(this.R + ELEV_MARGIN, elevation.half) : this.R;
+        this.R = city ? city.radius : 0;
+        this.h = !city ? 0 : elevation.active ? Math.min(this.R + ELEV_MARGIN, elevation.half) : this.R;
         const ring = Math.min(MIX_RING_MAX, Math.max(MIX_RING_MIN,
           0.6 * Math.max(CONFIG.worldWidth, CONFIG.worldHeight) * NPC_UNIT));
         this.step = Number.isInteger(this.h / 10) ? 10 : 5;
@@ -9062,12 +9160,13 @@
         };
       }
 
-      inside(x, z) { return Math.abs(x) <= this.h && Math.abs(z) <= this.h; }
-      inCity(x, z) { return Math.abs(x) <= this.R && Math.abs(z) <= this.R; }
+      inside(x, z) { return this.city !== null && Math.abs(x) <= this.h && Math.abs(z) <= this.h; }
+      inCity(x, z) { return this.city !== null && Math.abs(x) <= this.R && Math.abs(z) <= this.R; }
 
       // Height outside the measured square: the edge's measured height fades toward its mean, then into the
       // procedural ground (offset to meet the city) as the wavering distance grows.
       blend(x, z) {
+        if (!this.city) return wildTerrain.metresAt(x, z) + this.offset;
         const h = this.h;
         const ex = Math.max(Math.abs(x) - h, 0), ez = Math.max(Math.abs(z) - h, 0);
         const d = Math.hypot(ex, ez);
@@ -9090,27 +9189,34 @@
         const raw = wildTerrain.computeLevel(b, outside);
         wildTerrain.lakeRef = raw / NPC_UNIT;
 
-        let sum = 0, n = 0, lo = Infinity;
-        for (let s = -h; s <= h; s += 5) {
-          for (const [x, z] of [[s, -h], [s, h], [-h, s], [h, s]]) {
-            const e = elevation.active ? elevation.at(x, z) : 0;
-            sum += e; n++;
-            if (e < lo) lo = e;
+        if (!this.city) {
+          // no city to meet: the procedural land as generated, its own water level
+          this.offset = 0;
+          this.edgeMean = 0;
+          this.level = raw;
+        } else {
+          let sum = 0, n = 0, lo = Infinity;
+          for (let s = -h; s <= h; s += 5) {
+            for (const [x, z] of [[s, -h], [s, h], [-h, s], [h, s]]) {
+              const e = elevation.active ? elevation.at(x, z) : 0;
+              sum += e; n++;
+              if (e < lo) lo = e;
+            }
           }
-        }
-        this.edgeMean = sum / n;
+          this.edgeMean = sum / n;
 
-        const samples = [];
-        for (let iz = 0; iz < 64; iz++) {
-          for (let ix = 0; ix < 64; ix++) {
-            const x = b.minX + (ix + 0.5) / 64 * (b.maxX - b.minX), z = b.minZ + (iz + 0.5) / 64 * (b.maxZ - b.minZ);
-            if (!this.inside(x, z)) samples.push(wildTerrain.metresAt(x, z));
+          const samples = [];
+          for (let iz = 0; iz < 64; iz++) {
+            for (let ix = 0; ix < 64; ix++) {
+              const x = b.minX + (ix + 0.5) / 64 * (b.maxX - b.minX), z = b.minZ + (iz + 0.5) / 64 * (b.maxZ - b.minZ);
+              if (!this.inside(x, z)) samples.push(wildTerrain.metresAt(x, z));
+            }
           }
+          samples.sort((a, c) => a - c);
+          const median = samples.length ? samples[samples.length >> 1] : 0;
+          this.offset = this.edgeMean - median;
+          this.level = Math.min(raw + this.offset, lo - 0.5);
         }
-        samples.sort((a, c) => a - c);
-        const median = samples.length ? samples[samples.length >> 1] : 0;
-        this.offset = this.edgeMean - median;
-        this.level = Math.min(raw + this.offset, lo - 0.5);
 
         const step = this.step;
         const nx = Math.round((b.maxX - b.minX) / step) + 1;
@@ -9246,7 +9352,7 @@
         pebbles.dispose();
         shelters = [];
         ground.visible = true;
-        this.city.teardown();
+        if (this.city) this.city.teardown();
       }
 
       heightAt(x, z) {
@@ -9265,14 +9371,14 @@
         out.float = WILD_FLOAT_DEPTH;
       }
 
-      waterSources() { return this.city.waterSources().concat(this.locations); }
+      waterSources() { return this.city ? this.city.waterSources().concat(this.locations) : this.locations; }
 
       // Both ecosystems, each from its own spawn rules: the city's people, deer and plants; the wilderness's
       // (the Arena's counts for the chosen size) people, coyotes, deer and plants.
       // (the People and Plants build options cover both)
       population() {
-        const o = this.city.opts;
-        return this.city.population().concat([
+        const o = this.opts;
+        return (this.city ? this.city.population() : []).concat([
           { type: 'plant', count: o.plants ? CONFIG.initialPlants : 0, src: this.wild },
           { type: 'coyote', count: CONFIG.initialCoyotes, src: this.wild },
           { type: 'deer', count: CONFIG.initialDeer, src: this.wild },
@@ -9281,8 +9387,8 @@
       }
 
       regrow(w) {
-        this.city.regrow(w);
-        if (this.city.opts.plants && Math.random() < CONFIG.probSpawnPlant) w.spawnPlant(this.wild);
+        if (this.city) this.city.regrow(w);
+        if (this.opts.plants && Math.random() < CONFIG.probSpawnPlant) w.spawnPlant(this.wild);
       }
 
       // anywhere outside the city's mapped streets (the measured ring past it counts as wild)
@@ -9297,7 +9403,7 @@
 
       // Wilderness spawns; some coyotes and deer start in the city's parks and woods (habitat inside the city).
       wildPoint(type) {
-        if ((type === 'coyote' || type === 'deer') && this.city.greens.length && Math.random() < MIX_PARK_SHARE) return this.city.greenPoint();
+        if ((type === 'coyote' || type === 'deer') && this.city && this.city.greens.length && Math.random() < MIX_PARK_SHARE) return this.city.greenPoint();
         if (type !== 'plant') return this.wildAnyPoint();
         for (let k = 0; k < PLANT_SPOT_TRIES; k++) {
           const p = this.wildAnyPoint();
@@ -9310,6 +9416,7 @@
     class NpcWorld {
       static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
       static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
+      static CONTACT_DIST = Math.sqrt(200) * NPC_UNIT;
 
       constructor() {
         this.animals = [];
@@ -9343,7 +9450,10 @@
         this._qBox = [];
         this._plantAdds = [];
         this._plantDrops = [];
+        this._gridDrops = [];    // animals removed from `animals` since the last grid sync, still filed in the grid
         this.drift2 = 0;
+        this.contact = null;
+        this._contactR = NpcWorld.CONTACT_DIST;
       }
 
       // Keep a coordinate in the world: the Arena's torus wrap, or City's clamp.
@@ -9383,6 +9493,7 @@
         this._plantAdds.length = 0;
         this._plantDrops.length = 0;
         this.ticks = 0;
+        this._gridDrops.length = 0;
         game.reset();
         const b = provider.bounds;
         this.minX = b.minX; this.maxX = b.maxX;
@@ -9392,6 +9503,7 @@
         const spanX = b.maxX - b.minX + 1, spanZ = b.maxZ - b.minZ + 1;
         this.grid = new SpatialGrid(spanX, spanZ, 160 * NPC_UNIT);
         this.plantGrid = new SpatialGrid(spanX, spanZ, 30 * NPC_UNIT);
+        this.contact = new ContactGrid(NPC_CONTACT_CELL);
         this.plantSight = new SpatialGrid(spanX, spanZ, PLANT_SIGHT_CELL);
         this.waterSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
         for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
@@ -9493,9 +9605,10 @@
 
       tryMate(a, px, pz) {
         if (a.sex !== 'male') return;
-        const n = this.grid.queryInto(this._qMate, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
-        for (let i = 0; i < n; i++) {
-          const other = this._qMate[i];
+        const cg = this.contact, items = cg.items, start = cg.start;
+        const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
+        for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
+          const other = items[i];
           if (other !== a && other.alive && other.type === a.type &&
             other.sex === 'female' && other.lookForMate &&
             tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
@@ -9518,6 +9631,10 @@
       // grazers (people and deer, not coyotes) eat plants.
       handleCollisions() {
         if (this.ticks % 3 === 0) this.syncPlantGrids();
+        // contact candidates come from the contact grid, built from positions up to 2 ticks old: the query reaches
+        // the contact distance plus the largest move since, so every animal now in contact is found
+        this._contactR = NpcWorld.CONTACT_DIST + Math.sqrt(this.drift2);
+        const cg = this.contact, items = cg.items, start = cg.start;
 
         for (const a of this.animals) {
           if (!a.alive) continue;
@@ -9526,14 +9643,14 @@
           if (this.canHunt[a.type]) {
             // with nothing it hunts alive the query can only return animals it would skip
             const hunts = a.spec.hunts;
-            const nHunt = this.grid.queryInto(this._qHunt, px, pz, NpcWorld.CONTACT_QUERY_RADIUS);
-            for (let i = 0; i < nHunt; i++) {
-              const other = this._qHunt[i];
+            const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
+            hunt: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
+              const other = items[i];
               if (other.alive && hunts[other.type] === true &&
                 tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
                 if (other.spec.hunts[a.type]) this.fight(a, other);
                 else other.attacked(a);
-                if (!a.alive) break;
+                if (!a.alive) break hunt;
               }
             }
             if (!a.alive) continue;
@@ -9583,13 +9700,30 @@
         if (!this.ready || this.animals.length === 0) return false;
         const now = Date.now();
 
+        // Grid sync every 3 ticks, incremental: only an animal whose cell changed moves bucket. Which animals each
+        // bucket holds matches a full rebuild exactly (dead and removed animals leave at the same sync, newborns join
+        // at it); only the order inside a bucket can differ.
         if (this.ticks % 3 === 0) {
-          this.grid.clear();
+          const g = this.grid, drops = this._gridDrops;
+          for (let i = 0; i < drops.length; i++) {
+            const d = drops[i];
+            if (d._gk >= 0) { g.remove(d, d._gk); d._gk = -1; }
+          }
+          drops.length = 0;
           for (const a of this.animals) {
-            if (!a.alive) continue;
-            this.grid.insert(a);
+            if (!a.alive) {
+              if (a._gk >= 0) { g.remove(a, a._gk); a._gk = -1; }
+              continue;
+            }
+            const k = g._cell(a.position.x, a.position.z);
+            if (k !== a._gk) {
+              if (a._gk >= 0) g.remove(a, a._gk);
+              g.place(a, k);
+              a._gk = k;
+            }
             a._fx = a.position.x; a._fz = a.position.z;
           }
+          this.contact.rebuild(this.animals);
           this.drift2 = 0;
         }
 
@@ -9615,15 +9749,23 @@
           this.canHunt[t] = any;
         }
 
-        for (const p of this.plants) {
-          if (p.alive) p.update();
+        // Plant.update only retries a render slot for a plant spawned past MAX_INSTANCES; skip the pass when there is none
+        if (plantRenderer.pending) {
+          plantRenderer.pending = false;
+          for (const p of this.plants) {
+            if (p.alive) p.update();
+          }
         }
 
         this.handleCollisions();
         game.update(dt);
 
         for (let i = this.animals.length - 1; i >= 0; i--) {
-          if (!this.animals[i].alive) { this.animals[i].remove(); this.animals.splice(i, 1); }
+          if (!this.animals[i].alive) {
+            this.animals[i].remove();
+            this._gridDrops.push(this.animals[i]);
+            this.animals.splice(i, 1);
+          }
         }
         for (let i = this.plants.length - 1; i >= 0; i--) {
           if (!this.plants[i].alive) {
@@ -9769,6 +9911,8 @@
 
     // Past NPC_LOD_DIST, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
     const FAR_STAT_MAX = 12000;
+    // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
+    const FAR_STAT_DIST = 120;
     const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;
     const BAR_PX = BAR_W_M / BAR_CANVAS_W;
     const LOBE_RADIUS = 0.7;
@@ -10078,7 +10222,7 @@
         const cam = viewPos, cq = viewQuat;
         this._right.set(1, 0, 0).applyQuaternion(cq);
         this._up.set(0, 1, 0).applyQuaternion(cq);
-        const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+        const lod2 = NPC_LOD_DIST * NPC_LOD_DIST, farMax2 = FAR_STAT_DIST * FAR_STAT_DIST;
         const rows = BAR_ICONS.length;
         const lobeOff = 1.1 * BRAIN_SCALE;
         let nf = 0;
@@ -10100,10 +10244,13 @@
           let bar = this.bars.get(a);
           if (bar) seen.add(a);
 
+          // distance first (cheap), then the frustum: stats past FAR_STAT_DIST would be under a pixel tall
+          const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;
+          const d2 = ex * ex + ey * ey + ez * ez;
+          if (d2 > farMax2) continue;
           const barY = this.headTop(a) + BAR_ABOVE;
           if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) continue;
-          const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;
-          if (ex * ex + ey * ey + ez * ez > lod2) {
+          if (d2 > lod2) {
             if (nf >= FAR_STAT_MAX) continue;
 
             const fill = this._fill;
@@ -11263,6 +11410,8 @@
     let sceneDirty = true;
     const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
     let drawnYaw = NaN, drawnPitch = NaN, drawnCrouch = NaN;
+    // low-power frame cap: a draw wanted inside the cap waits for the next allowed frame (sim ticks are unaffected)
+    let drawPending = false, drawnAt = -1e9;
 
     // NPC ticks are capped at 60 Hz (Arena constants are per tick at 60); player motion renders at the display rate.
     const NPC_TICK_S = 1 / 60;
@@ -11322,7 +11471,11 @@
       }
       const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch ||
         crouchY !== drawnCrouch;
-      if (xr || posed || sceneDirty || rainDue || npcDue) {
+      const wantDraw = xr || posed || sceneDirty || rainDue || npcDue || drawPending;
+      const capped = !xr && !graphics.high && now - drawnAt < 1000 / LOW_RENDER_FPS - NPC_TICK_SLACK * 1000;
+      drawPending = wantDraw && capped;
+      if (wantDraw && !capped) {
+        drawnAt = now;
         placeSkyBodies();
         wildWater.update(now * 0.001);
         graphics.update(now);
@@ -11331,7 +11484,8 @@
           activeWorld.surface(viewPos.x, viewPos.z, _surf);
           tintEl.classList.toggle('on', _surf.dip < 0 && viewPos.y < _surf.base);
         }
-        renderer.render(scene, camera);
+        if (graphics.high && !xr) msaa.render();
+        else renderer.render(scene, camera);
         drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
         sceneDirty = false;
         rainDrawn = now;
@@ -11347,7 +11501,7 @@
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
         car.speed === 0 && !(driving && drive.settling) && !cat.boarding;
-      if (settled && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
+      if (settled && !drawPending && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
         last = -1;
         return;
       }
@@ -12072,7 +12226,7 @@
     function refreshHud() {
       if (!activeWorld) { perf.setText(hudEl, ''); return; }
       let head;
-      if (activeWorld.kind === 'wild') head = `Wild, seed ${activeWorld.seed}`;
+      if (!activeWorld.city) head = `Wilderness, seed ${activeWorld.seed}`;
       else {
         head = `${fmt(hudBuildings)} buildings ${hudPlace}`;
         if (activeWorld.kind === 'mix') head += `, wilderness seed ${activeWorld.seed}`;
@@ -12105,7 +12259,6 @@
     let lastQuery = '';
     let startMode = 'mix';
 
-    const modesEl = document.getElementById('modes');
     const seedEl = document.getElementById('seed');
     const sizeBtns = [...document.querySelectorAll('.sizebtn')];
     const sizeEl = document.getElementById('size');
@@ -12170,7 +12323,9 @@
       camera.getWorldPosition(viewPos);
       camera.getWorldQuaternion(viewQuat);
       try {
-        await renderer.compileAsync(scene, camera);
+        // compile for where the scene will be drawn (high graphics draws into the MSAA target, a different variant)
+        if (graphics.high && !renderer.xr.isPresenting) renderer.setRenderTarget(msaa.ensure());
+        try { await renderer.compileAsync(scene, camera); } finally { renderer.setRenderTarget(null); }
         for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
       } catch (e) {
       }
@@ -12200,16 +12355,19 @@
     }
 
     // WILD: the Arena's world from a seed; nothing is downloaded.
+    // CITY OFF: the Mix world with no city in the middle (MixWorld with city null): seeded land, lakes, cabins, groves
+    // and wildlife across the whole map. Nothing is downloaded.
     async function loadWild(seed) {
       if (busy) return;
       setBusy(true);
       say('');
       steps.reset(WILD_STEPS);
       let current = 'terrain';
+      const o = { ...loadOpts };
       try {
         teardownWorld();
         CONFIG.applyScale(worldSizeChoice().scale);
-        const w = new WildWorld(seed);
+        const w = new MixWorld(null, seed, o);
 
         steps.start('terrain', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
         await paint();
@@ -12228,11 +12386,15 @@
         steps.start('cabins');
         await paint();
         w.cabinStep();
-        steps.done('cabins', `${w.cabins.length} cabins, ${fmt(pebbles.data.length)} pebbles.`);
+        const [groveTrees, groves] = w.treeStep();
+        steps.done('cabins', `${w.cabins.length} cabins, ${fmt(groveTrees)} trees in ${fmt(groves)} groves, ` +
+          `${fmt(pebbles.data.length)} pebbles.`);
 
         current = 'people';
-        steps.start('people', `Spawning up to ${fmt(CONFIG.initialHumans)} people, ${fmt(CONFIG.initialCoyotes)} coyotes, ` +
-          `${fmt(CONFIG.initialDeer)} deer and ${fmt(CONFIG.initialPlants)} plants…`);
+        const plan = w.population();
+        const planned = t => plan.reduce((n, g) => n + (g.type === t ? g.count : 0), 0);
+        steps.start('people', `Spawning up to ${fmt(planned('human'))} people, ${fmt(planned('coyote'))} coyotes, ` +
+          `${fmt(planned('deer'))} deer and ${fmt(planned('plant'))} plants…`);
         await paint();
         world.initialize(w);
         const made = { human: 0, coyote: 0, deer: 0 };
@@ -12249,12 +12411,13 @@
         updateSky();
         startClock();
 
+        driving = false;
         const st = w.playerStart();
         player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
         player.vel.set(0, 0, 0);
         player.yaw = st.yaw; player.pitch = -0.3;
         player.grounded = false;
-        if (loadOpts.car && !parkBesideCabin(w.cabins[0], st.yaw)) placeCar([], player.pos.x, player.pos.z);
+        if (o.car && !parkBesideCabin(w.cabins[0], st.yaw)) placeCar([], player.pos.x, player.pos.z);
 
         current = 'scene';
         await finishLoad(w);
@@ -12525,13 +12688,13 @@
 
     function newEcosystem() {
       if (!activeWorld || activeWorld.kind === 'city' || busy) return;
-      const kind = activeWorld.kind;
+      const noCity = !activeWorld.city;
       const seed = String(Math.floor(Math.random() * 1e12));
       seedEl.value = seed;
       returnToIntro();
       randomSky = true;
-      setMode(kind);
-      if (kind === 'wild') loadWild(seed);
+      setMode(noCity ? 'wild' : 'mix');
+      if (noCity) loadWild(seed);
       else loadPlace(lastQuery, 'mix');
     }
 
@@ -12607,6 +12770,7 @@
     // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
     const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, live: false };
     for (const el of document.querySelectorAll('#more .switch')) {
+      if (el.dataset.opt === 'city') continue;   // the City switch picks the world (setMode), not a build option
       el.addEventListener('click', () => {
         const k = el.dataset.opt;
         loadOpts[k] = !loadOpts[k];
@@ -12616,22 +12780,21 @@
       });
     }
 
-    // START SCREEN: Wild or Mix; the card shows the chosen world's fields.
+    // START SCREEN: the City switch (More World Options) picks a city in the wilderness (mode 'mix', on) or the
+    // wilderness alone (mode 'wild', off: loadWild); the card shows that world's fields.
+    const citySwitchEl = document.querySelector('#more .switch[data-opt="city"]');
     function setMode(m) {
       startMode = m;
       cardEl.dataset.mode = m;
-      for (const b of modesEl.children) {
-        const on = b.dataset.mode === m;
-        b.classList.toggle('sel', on);
-        b.setAttribute('aria-checked', String(on));
-      }
+      const on = m === 'mix';
+      citySwitchEl.classList.toggle('on', on);
+      citySwitchEl.setAttribute('aria-checked', String(on));
       say('');
     }
-    modesEl.addEventListener('click', e => {
-      const b = e.target.closest('button');
-      if (!b || busy) return;
-      setMode(b.dataset.mode);
-      b.blur();
+    citySwitchEl.addEventListener('click', () => {
+      if (busy) return;
+      setMode(startMode === 'mix' ? 'wild' : 'mix');
+      citySwitchEl.blur();
     });
 
     // the Arena's seed field: digits only, the default seed when left empty
