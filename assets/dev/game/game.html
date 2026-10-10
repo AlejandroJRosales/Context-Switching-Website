@@ -1674,6 +1674,7 @@
       },
       'Millennium Park, Chicago, IL': {
         file: 'chicago.json', lat: 41.8825754, lon: -87.6225361,
+        aliases: ['The Loop, Chicago, IL', 'The Loop, IL', 'The Loop'],
         label: 'Millennium Park, 201, Loop, Chicago, South Chicago Township, Cook County, Illinois, 60601, United States'
       },
       '1 Park Place, Athens, OH': {
@@ -1687,6 +1688,7 @@
       const q = query.trim().toLowerCase();
       for (const [pick, entry] of Object.entries(CITY_FILES)) {
         if (pick.toLowerCase() === q || entry.label.toLowerCase() === q) return entry;
+        if (entry.aliases && entry.aliases.some(a => a.toLowerCase() === q)) return entry;
       }
       return null;
     }
@@ -11140,7 +11142,7 @@
     let swimming = false;
 
     function step(dt) {
-      if (driving) { player.running = false; swimming = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
+      if (driving) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
       // an empty car still rolling (left at speed) brakes to a stop
       if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
@@ -12334,12 +12336,20 @@
         // the cache only counts when it was downloaded for this city size (older entries were Medium)
         const cacheFits = !!storedPlace && (storedPlace.want ?? 500) === ladder[0];
         let radius = cacheFits ? storedPlace.radius : ladder[0];
-        const cached = (cacheFits && place.label === storedPlace.label &&
+        let cached = (cacheFits && place.label === storedPlace.label &&
           storedPlace.v === FEATURES_VERSION)
           ? localStorage.getItem('lastFeatures')
           : null;
 
         current = 'map';
+        // a suggested place loads from this site's own file first; the device cache is only its fallback
+        const cityFile = pick && ladder[0] === CITY_FILE_RADIUS ? pick.file : null;
+        let hosted = null;
+        if (cityFile) {
+          steps.start('map', `Looking for ${cityFile} on this site…`);
+          hosted = await fetchCityFile(cityFile);
+          if (hosted) { cached = null; radius = ladder[0]; }
+        }
         if (cached) {
           steps.done('map', `Loaded from this device's cache (${radius} m radius).`);
           current = 'sort';
@@ -12347,14 +12357,8 @@
           await paint();
           features = JSON.parse(cached);
         } else {
-          steps.start('map');
-          // after the cache: this site's own file for a suggested place, then the public map servers
-          const cityFile = pick && ladder[0] === CITY_FILE_RADIUS ? pick.file : null;
-          let hosted = null;
-          if (cityFile) {
-            steps.note('map', `Looking for ${cityFile} on this site…`);
-            hosted = await fetchCityFile(cityFile);
-          }
+          if (!cityFile) steps.start('map');
+          // this site's own file for a suggested place, then the public map servers
           let fetched;
           if (hosted) {
             fetched = { json: hosted, radius: CITY_FILE_RADIUS };
