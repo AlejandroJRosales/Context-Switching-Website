@@ -1128,8 +1128,7 @@
       document.getElementById('addr').value = storedPlace.label;
     }
 
-    // World size: `scale` is the ecosystem's World Size (wilderness extent and populations). The city keeps one size
-    // for every choice for now: CITY_LADDER is its half-extent in metres, tried in order.
+    // World size: `scale` sets wilderness extent and populations; the city's half-extent is CITY_LADDER, tried in order.
     const WORLD_SIZES = { small: { scale: 10 }, medium: { scale: 30 }, large: { scale: 60 } };
     let worldSize = 'medium';
     const CITY_LADDER = [500, 350, 200];
@@ -1185,8 +1184,7 @@
     ];
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
-    // Elevation: AWS Terrain Tiles (Terrarium, no key); height = R * 256 + G + B / 256 - 32768 m.
-    // Credit: "Terrain Tiles, Mapzen and AWS Open Data; US data from USGS 3DEP."
+    // Elevation: AWS Terrain Tiles (Terrarium), h = R*256 + G + B/256 - 32768 m. Credit: Mapzen, AWS Open Data, USGS 3DEP.
     const TERRAIN_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
     const TERRAIN_MAX_Z = 15;      // deepest level served (~3.7 m/px at 40 N)
     const TERRAIN_MIN_Z = 12;
@@ -1229,8 +1227,7 @@
       orchard: 0x5f7f45, greenfield: 0x6d8a4c
     };
 
-    // green land cover takes the wild ground's palette, keeping a trace of its own shade in the middle of the city
-    // and fading to the wild grass exactly at the edge of the city square, so the two grounds meet without a seam.
+    // Green land cover takes the wild grass palette, fading to it fully at the city square's edge so the grounds meet.
     const MIX_GREEN_PULL = 0.8;
     const MIX_EDGE_FADE = 0.25;   // outer fraction of the square over which the pull rises to 1
     const MIX_GREEN_KINDS = new Set([
@@ -1239,8 +1236,7 @@
     ]);
     let groundMatchHalf = 0;
 
-    // Per vertex, after draping: green toward the wild grass (fully at the square's edge), then paintSlope's rock blend
-    // with the same normal-z test, so land cover shades like the wild mesh it sits on.
+    // Per vertex after draping: green toward wild grass (full at the edge), then paintSlope's rock blend, like the wild mesh.
     function matchWildGround(g, green) {
       const p = g.attributes.position.array, n = g.attributes.normal.array, c = g.attributes.color.array;
       const gr = wildTerrain.grassColor, r = wildTerrain.rockColor;
@@ -1365,8 +1361,7 @@
       statEl.className = isError ? 'error' : '';
     }
 
-    // LOADING STEPS
-    // One row per load() stage; parallel fetches can be active together. States: wait, active, done, off, error.
+    // LOADING STEPS: one row per load() stage, parallel fetches can be active together (wait, active, done, off, error).
     const cardEl = document.getElementById('card');
     const stepsEl = document.getElementById('steps');
     // A city load: the city, then the wilderness grown around it.
@@ -1446,34 +1441,44 @@
     const fmt = n => n.toLocaleString('en-US');
 
 
-    // LOW-POWER (Graphics: low): pixel ratio capped at LOW_PIXEL_RATIO, renders at LOW_RENDER_FPS and no MSAA (see
-    // graphics.apply, frame, msaa). The GPU preference is fixed when the WebGL context is made, so it follows the starting
-    // setting (low on touch devices, as graphics.high defaults). The context has no antialiasing of its own: high
-    // graphics antialiases through msaa below, so it switches live.
-    const LOW_PIXEL_RATIO = 1.25;
+    // LOW-POWER (Graphics: low): lower pixel ratio, fps cap, no MSAA, shorter view, nearer LODs, fewer updates; saved choice.
+    const LOW_PIXEL_RATIO = 1;
     const LOW_RENDER_FPS = 30;
-    const MSAA_SAMPLES = 4;
-    const startLowPower = matchMedia('(pointer: coarse)').matches;
-    const renderer = new THREE.WebGLRenderer({
-      antialias: false,
-      powerPreference: startLowPower ? 'low-power' : 'default'
-    });
+    const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays at FOG_NEAR
+    const FOG_NEAR = 120;
+    const HIGH_CAMERA_FAR = 2000, LOW_CAMERA_FAR = 600;  // past the fog's far edge, so nothing pops at the clip
+    const LOW_NPC_LOD_DIST = 35;     // metres (high: HIGH_NPC_LOD_DIST)
+    const LOW_FAR_STAT_DIST = 60;    // metres (high: HIGH_FAR_STAT_DIST)
+    const HIGH_LABEL_TICKS = 2, LOW_LABEL_TICKS = 4;    // NPC ticks between stat-label target picks
+    const HIGH_HUD_TICKS = 60, LOW_HUD_TICKS = 120;     // NPC ticks between HUD text refreshes
+    const LOW_WATER_FPS = 15;        // water-flow texture offsets advance at most this often on low (every draw on high)
+    const MSAA_SAMPLES_WANTED = 8;   // high graphics' MSAA, capped at what the GPU supports (MSAA_SAMPLES)
+    const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low', the last Graphics choice
+    function savedGraphics() {
+      try { const v = localStorage.getItem(GRAPHICS_KEY); return v === 'high' || v === 'low' ? v : null; }
+      catch (e) { return null; }
+    }
+    const startGraphics = savedGraphics();
+    const startLowPower = startGraphics ? startGraphics === 'low' : matchMedia('(pointer: coarse)').matches;
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
     renderer.setSize(innerWidth, innerHeight);
-    // skip three's per-program getProgramInfoLog/getShaderInfoLog/getProgramParameter checks (~0.5 s of load);
-    // the cost is that a shader that fails to compile no longer logs why
+    // Skip three's shader log checks (~0.5 s of load); a shader that fails to compile no longer logs why.
     renderer.debug.checkShaderErrors = false;
     document.body.appendChild(renderer.domElement);
     renderer.xr.enabled = true;
     renderer.shadowMap.enabled = false;          // Graphics: high turns sun shadows on over wild terrain
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCF (not PCF soft): three's soft variant ignores shadow.radius; this one widens its taps by it (SHADOW_SOFTNESS)
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    const MSAA_SAMPLES = Math.min(MSAA_SAMPLES_WANTED, renderer.capabilities.maxSamples || 4);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x9fb4c8);
-    scene.fog = new THREE.Fog(0x9fb4c8, 120, 900);
+    scene.fog = new THREE.Fog(0x9fb4c8, FOG_NEAR, startLowPower ? LOW_FOG_FAR : HIGH_FOG_FAR);
 
     // near stays inside PLAYER_RADIUS; 0.1 would starve depth precision for the ground layers
-    const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25, 2000);
+    const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25,
+      startLowPower ? LOW_CAMERA_FAR : HIGH_CAMERA_FAR);
     // VR moves this rig; out of VR it stays at the origin, so camera.position is the world position.
     const rig = new THREE.Group();
     rig.add(camera);
@@ -1491,15 +1496,38 @@
     sun.position.set(-0.5, 1, 0.4).multiplyScalar(100);
     scene.add(sun);
     scene.add(sun.target);
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = sun.shadow.camera.bottom = -60;
-    sun.shadow.camera.right = sun.shadow.camera.top = 60;
+    // Shadow box: SHADOW_BOX_HALF either side of a centre SHADOW_AHEAD in front of the player, so shadows reach down the view.
+    const SHADOW_BOX_HALF = 120;   // with SHADOW_AHEAD: ~190 m ahead, ~6 cm per texel at 4096
+    const SHADOW_AHEAD = 70;
+    // shadows fade out over this fraction of the map at each edge, so the box edge never shows as a line
+    const SHADOW_EDGE_FADE = 0.15;
+    const SHADOW_MAP_MAX = 4096;          // texels a side (less where the GPU's texture limit is lower)
+    const SHADOW_DEPTH = 800;             // metres the light's box reaches along the light
+    const SHADOW_BIAS_M = 0.25;           // depth bias in metres, whatever SHADOW_DEPTH is
+    // city buildings are cut into square cells this wide, so the box's cull skips the cells outside it
+    const BUILDING_CHUNK_M = 150;
+    const shadowMapSize = Math.min(SHADOW_MAP_MAX, renderer.capabilities.maxTextureSize);
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -SHADOW_BOX_HALF;
+    sun.shadow.camera.right = sun.shadow.camera.top = SHADOW_BOX_HALF;
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 500;
-    sun.shadow.bias = -0.0005;
+    sun.shadow.camera.far = SHADOW_DEPTH;
+    sun.shadow.bias = -SHADOW_BIAS_M / (SHADOW_DEPTH - 1);
+    const SHADOW_SOFTNESS = 2.5;   // filter radius in texels: smooths the stair-steps along shadow edges
+    sun.shadow.radius = SHADOW_SOFTNESS;
     sun.shadow.autoUpdate = false;
-    // Night key light: a fixed low direction so facades differ once the sun is down.
-    // Always present (0 by day) so shaders never recompile; follows the moon while up, blending to MOON_FALLBACK below.
+    // the edge fade, in three's shared shadow lookup (patched before any material compiles)
+    {
+      const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
+      const at = 'return shadow;';
+      if (chunk.split(at).length === 2) {
+        THREE.ShaderChunk.shadowmap_pars_fragment = chunk.replace(at,
+          `vec2 shadowEdge = min( shadowCoord.xy, 1.0 - shadowCoord.xy );
+          shadow = mix( 1.0, shadow, smoothstep( 0.0, ${SHADOW_EDGE_FADE.toFixed(4)}, min( shadowEdge.x, shadowEdge.y ) ) );
+          ${at}`);
+      } else console.warn('Shadow edge fade not applied: three\'s shadow chunk changed');
+    }
+    // Night key light: fixed low direction after sunset; always present (0 by day) so shaders never recompile; follows the moon.
     const MOON_FALLBACK = new THREE.Vector3(Math.sin(0.35), Math.tan(35 * Math.PI / 180), -Math.cos(0.35)).normalize();
     const MOON_BLEND_DEG = 5;
     const moon = new THREE.DirectionalLight(0xaebfe0, 0);
@@ -1511,14 +1539,12 @@
       new THREE.MeshLambertMaterial({ color: 0x5c5f57 })
     );
     ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;   // the flat city's ground when there is no terrain
     scene.add(ground);
 
     const layers = [];
 
-    // HIGH-GRAPHICS MSAA: the scene is drawn into a MSAA_SAMPLES multisampled target, then copied to the screen by a
-    // full-screen pass that applies the renderer's tone mapping and output colour space (what drawing straight to the
-    // screen does). Graphics: low and VR draw straight to the screen. Half-float when the GPU can render to it, else
-    // 8-bit sRGB storage, so dark tones keep their precision either way.
+    // HIGH-GRAPHICS MSAA: draw into a multisampled target, then a tone-mapping full-screen pass; low and VR draw directly.
     const msaa = {
       target: null, qScene: null, qCam: null, quad: null, _size: new THREE.Vector2(),
 
@@ -1595,8 +1621,7 @@ void main() {
       };
     }
 
-    // One attempt on one mirror; a `fatal` error (bad query) ends the search. `cancel` aborts it from outside
-    // (another mirror answered first).
+    // One attempt on one mirror; a `fatal` error (bad query) ends the search, `cancel` aborts it when another mirror won.
     async function overpassTry(url, query, cancel) {
       const host = new URL(url).hostname;
       const ctrl = new AbortController();
@@ -1625,9 +1650,7 @@ void main() {
       }
     }
 
-    // Each mirror at most once for this query, in order. A failure moves straight to the next mirror; a mirror still
-    // silent after OVERPASS_HEDGE_MS gets the next one asked alongside it (at most OVERPASS_MAX_PARALLEL at once).
-    // The first answer wins and the rest are cancelled. Rejects with the last error when every mirror failed.
+    // Each mirror once, in order; a slow one gets the next asked alongside it; first answer wins; rejects if all fail.
     function overpassHedged(q, radius, onNote, prevErr) {
       return new Promise((resolve, reject) => {
         const cancel = new AbortController();
@@ -1722,10 +1745,7 @@ void main() {
       );
     }
 
-    // HOSTED CITY FILES: the map download for each suggested place, saved once (city-data.html) and served from this
-    // site, so loading one asks nothing of the public map servers or the geocoder. Keyed by the suggested place's
-    // query; each file is the raw Overpass answer for CITY_FILE_RADIUS metres around lat/lon, which with the label are
-    // what the geocoder gave for that query when the file was saved.
+    // HOSTED CITY FILES: each suggested place's saved Overpass answer (CITY_FILE_RADIUS), served here, no public servers asked.
     const CITY_FILE_DIR = '';        // folder of the files, relative to this page ('' = beside it); end it with '/'
     const CITY_FILE_RADIUS = 500;
     const CITY_FILES = {
@@ -2215,7 +2235,7 @@ void main() {
           if (m.material.map) m.material.map.dispose();
           if (m.material.normalMap) m.material.normalMap.dispose();
           if (m.material.clearcoatNormalMap) m.material.clearcoatNormalMap.dispose();
-          m.material.dispose();
+          m.material.dispose();   // building chunks share one material: disposing it again is a no-op
         }
       }
       layers.length = 0;
@@ -2249,9 +2269,7 @@ void main() {
       return m;
     }
 
-    // BUILDING SHELLS
-    // Per footprint: thick wall pieces (also the collision rings), a doorway with lintel, floor, ceiling/roof.
-    // Each edge's left normal points into the wall (outer rings positive, courtyards negative).
+    // BUILDING SHELLS: thick walls (also collision rings), doorway, floor, ceiling/roof; edge left normals point into the wall.
 
     function dedupeRing(pts) {
       const out = [];
@@ -2845,11 +2863,20 @@ void main() {
     function buildCity(features) {
       clearLayers();
 
-      const buf = newBuf();
-      const roofBuf = newBuf();
+      // BUILDING CHUNKS: one facade mesh per BUILDING_CHUNK_M cell, so view and shadow culling skip whole cells.
+      const chunks = new Map();
+      const chunkOf = sh => {
+        const k = Math.floor((sh.minX + sh.maxX) / 2 / BUILDING_CHUNK_M) + ',' +
+          Math.floor((sh.minZ + sh.maxZ) / 2 / BUILDING_CHUNK_M);
+        let c = chunks.get(k);
+        if (!c) {
+          c = { buf: newBuf(), roofBuf: newBuf() };
+          c.buf.win = []; c.roofBuf.win = [];
+          chunks.set(k, c);
+        }
+        return c;
+      };
       const floorBuf = newBuf();
-      // FACADE: both buffers merge into one mesh, so both need the window attribute.
-      buf.win = []; roofBuf.win = [];
       const list = [];
       let skipped = 0;
 
@@ -2933,6 +2960,7 @@ void main() {
       const solids = [];
 
       for (const s of list) {
+        const { buf, roofBuf } = chunkOf(s);
         const tags = s.tags;
         const named = wallColorOf(tags);
         let wc;
@@ -2988,10 +3016,15 @@ void main() {
       }
 
       const count = list.length;
-      const geoms = [bufGeom(buf), bufGeom(roofBuf)].filter(Boolean);
-      addLayer(geoms, facadeMaterial());
+      // one facade material shared by every chunk (one program, one set of uniforms)
+      const facade = facadeMaterial();
+      for (const c of chunks.values()) {
+        const mesh = addLayer([bufGeom(c.buf), bufGeom(c.roofBuf)].filter(Boolean), facade);
+        if (mesh) mesh.castShadow = mesh.receiveShadow = true;
+      }
       const fg = bufGeom(floorBuf);
-      if (fg) addLayer([fg], litMaterial(LAYER_BIAS.floor));
+      const floorMesh = fg ? addLayer([fg], litMaterial(LAYER_BIAS.floor)) : null;
+      if (floorMesh) floorMesh.receiveShadow = true;
 
       buildGround(features);
       buildTrees(features.trees);
@@ -3045,8 +3078,11 @@ void main() {
         waterMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         waterMesh.renderOrder = 1;
       }
-      if (rg) addLayer(lay([rg]), litMaterial(LAYER_BIAS.road));
-      if (pg) addLayer(lay([pg]), litMaterial(LAYER_BIAS.path));
+      // roads and paths take the buildings' and animals' shadows like the ground under them
+      const roadMesh = rg ? addLayer(lay([rg]), litMaterial(LAYER_BIAS.road)) : null;
+      if (roadMesh) roadMesh.receiveShadow = true;
+      const pathMesh = pg ? addLayer(lay([pg]), litMaterial(LAYER_BIAS.path)) : null;
+      if (pathMesh) pathMesh.receiveShadow = true;
     }
 
     // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
@@ -3181,8 +3217,7 @@ void main() {
       addLayer(geoms, litMaterial());
     }
 
-    // ELEVATION
-    // One height grid per city every ELEV_STEP m; elevation.at(x, z) is 0 without terrain.
+    // ELEVATION: one height grid per city every ELEV_STEP m; elevation.at(x, z) is 0 without terrain.
     const elevation = {
       active: false, half: 0, step: ELEV_STEP, n: 0, data: null, min: 0, max: 0,
 
@@ -3396,15 +3431,14 @@ void main() {
       return g;
     }
 
-    // Plain ground over the area plus margin; the far plane drops beneath the lowest point.
-    // `paint(geometry)` returns the material (slope-painted like the wild ground) and the base is built even when flat.
+    // Plain ground over the area plus margin; `paint(geometry)` gives the slope-painted material and forces the base when flat.
     function buildTerrainBase(radius, paint = null) {
       ground.position.y = elevation.active ? elevation.min - 0.3 : 0;
       if (!elevation.active && !paint) return;
       const h = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
       const g = terrainGrid(-h, h, -h, h, -0.02);
       const mesh = new THREE.Mesh(g, waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 })));
-      if (paint) mesh.receiveShadow = true;
+      mesh.receiveShadow = true;
       scene.add(mesh);
       layers.push(mesh);
       invalidate();
@@ -3649,16 +3683,14 @@ void main() {
       invalidate();
     }
 
-    // COLLISION
-    // grid/gridWalls: solids pushed against and stood on. shellGrid/shells: footprints for roofs, floors, ceilings, signs.
+    // COLLISION: grid/gridWalls are solids pushed against and stood on; shellGrid/shells are footprints for roofs and floors.
 
     let wallGrid = new Map();
     let gridWalls = [];
     let shellGrid = new Map();
     let shells = [];
 
-    // SHELL RASTER
-    // shellAt in one typed-array read for most points; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
+    // SHELL RASTER: shellAt in one typed-array read; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
     const SHELL_CELL = 0.5;    // metres; finer cells shrink the AMBIG band around walls that falls back to shellAtExact
     const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
     const SHELL_OUT = -1;
@@ -3678,9 +3710,7 @@ void main() {
       stampNo = 0;
     }
 
-    // OBSTACLE INDEX: one grid for every provider's solids (city walls and barriers, wild cabins), queried by
-    // resolveCollisions / supportAt / solidOverlap and rasterised into the NPC occupancy grid. Providers fill it when they build.
-    // Doorway lanes of provider solids (cabin doors), carved through the occupancy grid like building throats.
+    // OBSTACLE INDEX: one grid of every provider's solids and doorway lanes, for collisions and the NPC occupancy grid.
     let obstacleThroats = [];
 
     function resetObstacles() {
@@ -3723,8 +3753,7 @@ void main() {
     // Where feet rest: the base, or the bed below it in water.
     function surfaceY(x, z) { activeWorld.surface(x, z, _surf); return _surf.base + _surf.dip; }
 
-    // Per-entity memo of the footing sample (the Arena's heightAtFor): recomputed only when the entity moves.
-    // Returns the dip below the base (negative in water); leaves _b (base) and _fd (float depth) on the entity.
+    // Per-entity footing memo, recomputed on move; returns the dip below the base, leaves _b (base) and _fd (float) on it.
     function surfaceFor(ent, x, z) {
       if (ent._hx === x && ent._hz === z && ent._hv === perf.terrainVersion) return ent._h;
       activeWorld.surface(x, z, _surf);
@@ -3899,14 +3928,9 @@ void main() {
       return best;
     }
 
-    // NPCS: THE SHARED ECOSYSTEM ENGINE
-    // Ported from AIEcosystemArena, behaviour unchanged except where marked "City:". One Animal class for every world:
-    // people think with the two-lobe network; deer (the Arena's sheep) and coyotes run the species.py AI
-    // (thinkDeer), no brain. People follow City's rules everywhere (they graze, food carries water). Stats stay in Arena
-    // units; NPC_UNIT converts to metres. The engine sees the world only through the active provider (WORLD PROVIDERS).
+    // NPCS: the AIEcosystemArena engine (changes marked "City:"); people use the two-lobe brain, deer and coyotes thinkDeer.
 
-    // One NPC tick is NPC_TICK_S of sim time (16 ms, 62.5 ticks per sim second); every per-tick constant, movement step
-    // and the sim clock (NpcWorld.time) use it. frame() runs at most one tick per frame.
+    // One NPC tick is NPC_TICK_S (16 ms) of sim time; per-tick constants and NpcWorld.time use it; at most one tick per frame.
     const NPC_TICK_S = 0.016;
     const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
     const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
@@ -3954,11 +3978,7 @@ void main() {
     // heightScale of the mean person; other species use it too to stay in proportion.
     const NPC_HUMAN_HS = NPC_HEIGHT_MEAN / (NPC_RIG_TOP.human * NPC_UNIT);
 
-    // SPECIES: the per-type stats the Arena and City hard-coded by type name, in Arena units.
-    // brain: two-lobe network (else the species.py rules); hunts: the types it kills on contact and a brain senses as
-    // food (a hunter of this type is sensed as a predator; a pair that hunts each other fights, see NpcWorld.fight).
-    // food: what the species.py rules look for ('plant', or an animal type, chased at a sprint); grazes: eats plants
-    // it touches. lift: feet to body centre, the rig's leg reach; eye: eye above body centre; childDrop: newborn offset.
+    // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fight for pairs.
     const SPECIES = {
       human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
       coyote: { brain: false, hunts: { deer: true, human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
@@ -3968,7 +3988,8 @@ void main() {
     const HUNTED = {};
     for (const t of NPC_TYPES) HUNTED[t] = NPC_TYPES.some(h => SPECIES[h].hunts[t] === true);
     const WATER_SIGHT_CELL = 20;
-    const NPC_LOD_DIST = 60;      // metres from the camera past which a body swaps to its low-detail version
+    const HIGH_NPC_LOD_DIST = 60;      // metres past which a body goes low-detail on high (live: perf.npcLodDist)
+    const HIGH_FAR_STAT_DIST = 120;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
     const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
     const NPC_STATS_R = 0.7;
     const NPC_STATS_UP = 0.55;
@@ -4129,10 +4150,7 @@ void main() {
       }
     }
 
-    // CONTACT GRID: animals counting-sorted into small hashed cells (typed arrays, no per-cell arrays), rebuilt with
-    // NpcWorld.animalGrid, for contact-range queries (hunt, mate). The vision grid's 7.2 m cells made each contact query scan
-    // ~200 m² for a 1.3 m contact circle. A hash collision only adds candidates (the distance test filters); hashes
-    // repeated within one query box are visited once. Within a cell, items keep world.animals order.
+    // CONTACT GRID: animals counting-sorted into small hashed cells for hunt/mate queries; collisions only add candidates.
     class ContactGrid {
       constructor(cellSize, bits = 16) {
         this.cellSize = cellSize;
@@ -4775,9 +4793,7 @@ void main() {
         return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
       }
 
-      // Brained senses (vision cone), memories kept until out of range. What a species hunts is food, what hunts it
-      // is a predator (people and coyotes are both to each other), plants are food, opposite-sex kin are mates, and
-      // the game-mode player is a predator to whatever people hunt. Everyone looks for water.
+      // Brained senses (vision cone): hunted types are food, hunters are predators, plants food, opposite-sex kin mates, water.
       locate(grid) {
         const px = this.position.x, pz = this.position.z;
         const py = this.eyeY();
@@ -4788,8 +4804,7 @@ void main() {
         const hunts = this.spec.hunts, type = this.type;
         let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
-        // Buckets are read in place, in queryInto's order (no copy). The horizontal-distance reject is the one
-        // senseTarget would make anyway (3D distance >= horizontal), so what is sensed is unchanged.
+        // Buckets read in place; the horizontal-distance reject matches senseTarget's, so what is sensed is unchanged.
         const r = this.visionDistance;
         const gCells = grid.cells;
         const gcs = grid.cellSize, gcols = grid.cols, grows = grid.rows;
@@ -4855,8 +4870,7 @@ void main() {
           this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
         }
 
-        // City: plants are food for people too (nearer of plant and animal food wins), from the sight grid.
-        // (read in place, in queryInto's order)
+        // City: plants are food for people too (nearer of plant and animal wins), read in place from the sight grid.
         const ps = world.plantSight, pCells = ps.cells;
         const pcs = ps.cellSize, pcols = ps.cols, prows = ps.rows;
         const pcx0 = Math.floor((px - r) / pcs), pcx1 = Math.floor((px + r) / pcs);
@@ -4966,9 +4980,7 @@ void main() {
         this.moving = true;
       }
 
-      // DEER AND COYOTE AI (species.py): thinkDeer, every DEER_THINK_TICKS, picks the highest need with a known location
-      // (predator, food, water, mate; ties in that order) and flees or heads for it; steerDeer moves every tick.
-      // A predator within DEER_SPRINT_DIST is fled at a sprint; a coyote sprints toward its food (a deer) too.
+      // DEER AND COYOTE AI (species.py): thinkDeer picks the top known need to flee or seek; steerDeer moves every tick.
       thinkDeer(grid) {
         if (Math.random() <= 1 - Math.pow(1 - DEER_EXPLORE_P, DEER_THINK_TICKS)) this.newExploreCoords();
         this.searchDeer(grid);
@@ -5529,7 +5541,7 @@ void main() {
         this.antlers = {};
         this.renderCache = { deer: null, coyote: null, human: null };
 
-        // LOW DETAIL: past NPC_LOD_DIST a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
+        // LOW DETAIL: past perf.npcLodDist a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
         const dh = this.PART_OFFSETS.deer.head;
         const ch = this.PART_OFFSETS.coyote.head;
         this.FAR_GEOMETRIES = {
@@ -5627,7 +5639,7 @@ void main() {
           const walkSwing = this.WALK[type], legLen = this.LEG_LEN[type];
           const limbHalf = this.LIMB_HALF[type];
           const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z;
-          const lod2 = NPC_LOD_DIST * NPC_LOD_DIST;
+          const lod2 = perf.npcLodDist * perf.npcLodDist;
           let idx = 0, fidx = 0, aidx = 0;
           let colorsDirty = false, farColorsDirty = false;
 
@@ -5973,14 +5985,42 @@ void main() {
     const perf = {
       BRAIN_UPDATE_INTERVAL: 30,
       terrainVersion: 0,
-      // Upload only the first n instances (three clears the range after each upload, so set it every frame).
+      // set by graphics.apply: Graphics low, and the LOD distances that go with the setting
+      lowPower: startLowPower,
+      npcLodDist: startLowPower ? LOW_NPC_LOD_DIST : HIGH_NPC_LOD_DIST,
+      farStatDist: startLowPower ? LOW_FAR_STAT_DIST : HIGH_FAR_STAT_DIST,
+      // Upload the first n instances; on low only the changed span, merged with ranges still waiting for a draw.
       instances(mesh, n) {
         mesh.count = n;
         mesh.visible = n > 0;
         if (n === 0) return;
         const attr = mesh.instanceMatrix;
+        if (!this.lowPower) {
+          attr._sent = null;
+          attr.clearUpdateRanges();
+          attr.addUpdateRange(0, n * 16);
+          attr.needsUpdate = true;
+          return;
+        }
+        const a = attr.array, len = n * 16;
+        let sent = attr._sent;
+        if (!sent || sent.length !== a.length) sent = attr._sent = new Float32Array(a.length).fill(NaN);
+        let lo = 0;
+        while (lo < len && a[lo] === sent[lo]) lo++;
+        if (lo === len) return;
+        let hi = len - 1;
+        while (hi > lo && a[hi] === sent[hi]) hi--;
+        lo -= lo % 16;
+        hi += 16 - (hi % 16);   // exclusive end, whole matrices
+        sent.set(a.subarray(lo, hi), lo);
+        const pending = attr.updateRanges;
+        for (let i = 0; i < pending.length; i++) {
+          const r = pending[i];
+          if (r.start < lo) lo = r.start;
+          if (r.start + r.count > hi) hi = r.start + r.count;
+        }
         attr.clearUpdateRanges();
-        attr.addUpdateRange(0, n * 16);
+        attr.addUpdateRange(lo, hi - lo);
         attr.needsUpdate = true;
       },
       instanceColors(mesh, n) {
@@ -6023,8 +6063,7 @@ void main() {
       }
     };
 
-    // FOOD BOXES: one crate per restaurant and grocery store. An eaten crate reappears at another
-    // of those places, so the number of crates never changes.
+    // FOOD BOXES: one crate per restaurant and grocery store; an eaten crate reappears at another, so the count is fixed.
     const FOOD_BOX_KINDS = { food: true, grocery: true };
     const FOOD_BOX_SIZE = 0.35;      // metres, cube edge
     const FOOD_BOX_REACH = 1.1;      // metres from the crate's centre that count as touching
@@ -6128,8 +6167,7 @@ void main() {
         this.dirty = true;
       },
 
-      // VIEW CULL, as AnimalRenderer does it: only crates inside the camera's view are drawn. Call after
-      // updateNpcFrustum. The instance buffer is rewritten only when the visible set or a position changed.
+      // VIEW CULL like AnimalRenderer (call after updateNpcFrustum); the buffer is rewritten only when visible crates change.
       render() {
         const mesh = this.mesh;
         if (!mesh) return;
@@ -6193,10 +6231,7 @@ void main() {
       clear() { this.list.length = 0; this.spots.length = 0; this.mesh = null; this.city = null; }
     };
 
-    // WATER CLIP: the ground layers (terrain base, land cover) are draped on the same surface as the
-    // painted water, centimetres below it and with different triangles, so they poked through it over deep water.
-    // Their fragments over water are discarded instead, from a texture of cityWater's cells, leaving the bed mesh
-    // below as the only ground there. Cells within a metre of the shore keep their ground, so no gap opens at the bank.
+    // WATER CLIP: ground fragments over painted water are discarded (shore cells kept), so ground never pokes through it.
     const waterClip = {
       WET_MIN: 2,                    // shore distance (half cells) above which the ground is cut away
       dry: null, tex: null,
@@ -6252,9 +6287,7 @@ void main() {
       }
     };
 
-    // Painted water in a 1 m mask, roads stamped dry on top (bridges). Read through the City provider.
-    // Like the wild lakes it has a bed: depth grows with distance from the shore (SHORE_SLOPE) up to MAX_DEPTH, so
-    // narrow streams stay wadeable and wide rivers and lakes are deep enough to swim and float in.
+    // Painted water in a 1 m mask with roads stamped dry (bridges); its bed deepens from the shore up to MAX_DEPTH.
     const cityWater = {
       MAX_DEPTH: 4,                  // metres of water at the deepest
       SHORE_SLOPE: 0.35,
@@ -6264,8 +6297,7 @@ void main() {
       BED_COLOR: 0x4b5a48,
       locations: [],
       mask: new Uint8Array(0), x0: 0, z0: 0, cols: 0, rows: 0,
-      // chamfer distance to the shore in half cells (0 = dry), from the water before roads were stamped on it,
-      // so the bed runs on under bridges
+      // Chamfer distance to shore in half cells (0 = dry), from water before roads were stamped, so beds run under bridges.
       dist: new Uint8Array(0),
 
       clear() {
@@ -6329,8 +6361,7 @@ void main() {
         this.locations = stride === 1 ? pts : pts.filter((_, i) => i % stride === 0);
       },
 
-      // Two-pass chamfer distance (2 straight, 3 diagonal, in half cells) from every wet cell to the nearest dry one;
-      // off the grid counts as dry, so water shoals at the city's edge instead of ending in an underwater wall.
+      // Two-pass chamfer distance (2 straight, 3 diagonal) to the nearest dry cell; off-grid is dry, so water shoals at edges.
       buildDist() {
         const cols = this.cols, rows = this.rows, m = this.mask;
         const d = this.dist = new Uint8Array(cols * rows);
@@ -6359,12 +6390,7 @@ void main() {
         }
       },
 
-      // LEVEL WATER: measured ground tilts across a lake, and the surface is draped on it, so it tilted too. Before
-      // anything is draped, every body of mapped water (areas; waterway lines keep their fall) takes the height midway
-      // between the lowest and highest ground found on it, and the ground nodes under and just around it are moved
-      // to that height. Banks further out are only moved where they would stand steeper than BANK_SLOPE above or
-      // below the water, so the low side gets a rising bank instead of a wall of water.
-      // Works on a copy of the height grid, so the cached terrain stays as measured. Returns the number of bodies.
+      // LEVEL WATER: each mapped water body and the ground under it go to mid height, banks eased to BANK_SLOPE; on a copy.
       BANK_SLOPE: 0.5,
       LEVEL_MARGIN: 1.5,             // metres past a wet cell's centre that must also be level (cell size, outline)
       levelGround(features, h) {
@@ -6421,8 +6447,7 @@ void main() {
           bodies++;
         }
 
-        // banks, one pass down and one up from the levelled nodes: move any node that stands steeper than BANK_SLOPE
-        // above (then below) a moved neighbour
+        // Banks: one pass down and one up, moving any node steeper than BANK_SLOPE above (then below) a moved neighbour.
         for (const sign of [1, -1]) {
           const work = queue.slice();
           for (let q = 0; q < work.length; q++) {
@@ -6444,8 +6469,7 @@ void main() {
         return bodies;
       },
 
-      // The bed under the painted surface, as one indexed mesh over every BED_STEP cell that touches water;
-      // shore vertices sit at the ground, so it meets the banks. Returns { geometry, minY } or null.
+      // The bed under painted water: one mesh over every wet BED_STEP cell, shore at ground; returns { geometry, minY } or null.
       bedGeometry() {
         const d = this.dist, cols = this.cols, rows = this.rows;
         if (!d.length) return null;
@@ -6548,8 +6572,7 @@ void main() {
       }
     };
 
-    // NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell, so walkability is one read.
-    // Kept as 32 m tiles made on first write, so a wide world only pays where there are solids.
+    // NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell, in 32 m tiles made on first write.
     const OCC_TILE_BITS = 7;                                   // 128 cells a tile side
     const OCC_TILE_MASK = (1 << OCC_TILE_BITS) - 1;
     const OCC_TILE_WORDS = (1 << (2 * OCC_TILE_BITS)) >>> 5;
@@ -6886,9 +6909,7 @@ void main() {
       return [x, z];
     }
 
-    // WILD: THE ARENA'S PROCEDURAL WORLD, IN METRES
-    // The generator still works in Arena units, so a seed grows the same land it grew in the Arena; NPC_UNIT scales it
-    // to metres, centred on the origin. Heights are cached in a grid (bilinear), so no fBm runs per animal per tick.
+    // WILD: the Arena's procedural world in metres (generator in Arena units, scaled by NPC_UNIT); heights cached in a grid.
 
     class WorldConfig {
       constructor(scale = 20) {
@@ -7082,8 +7103,7 @@ void main() {
       baseMetresAt(x, z) { return this.baseHeightAt(this.arenaX(x), this.arenaZ(z)) * NPC_UNIT; }
       metresAt(x, z) { return this.heightAt(this.arenaX(x), this.arenaZ(z)) * NPC_UNIT; }
 
-      // The Arena's water.computeLevel: the uncarved height under `waterCoverage` of the samples, over a region in metres.
-      // `skip(x, z)` leaves points out (the city square).
+      // The Arena's water.computeLevel: uncarved height under `waterCoverage` of samples in a region; `skip` drops points.
       computeLevel(b, skip = null) {
         if (this.params.waterLevelOverride !== null) return this.params.waterLevelOverride * NPC_UNIT;
         const N = 96;
@@ -7130,8 +7150,7 @@ void main() {
       }
     }
 
-    // The Arena's paintBySlope. Its plane was built flat in XY and turned to lie down, so it read the normal's local y,
-    // which is world z: rock shows on north- and south-facing slopes. Kept as the Arena drew it.
+    // The Arena's paintBySlope: reads the normal's world z, so rock shows on north- and south-facing slopes, as it drew it.
     function paintSlope(geometry) {
       const normals = geometry.getAttribute('normal').array;
       const count = normals.length / 3;
@@ -7251,9 +7270,7 @@ void main() {
       invalidate();
     }
 
-    // WATER: the Arena's one world-spanning surface (built-in physical material, two scrolling normal maps).
-    // ISLAND COAST: wilderness worlds are islands. Near each edge the land falls to a sea floor under the water level along a
-    // wavering coastline, and the sea runs on past the edge to the horizon; the edge itself is the limit nothing crosses.
+    // WATER: one world-spanning surface; ISLAND COAST: land falls to sea floor near each edge and the sea runs to the horizon.
     const COAST_SEA = 30;
     const COAST_LAND = 70;
     const COAST_WOBBLE = 20;     // metres the coastline wanders (under COAST_SEA, so the edge is always water)
@@ -7358,8 +7375,7 @@ void main() {
         return this.envMap;
       }
 
-      // The surface over bounds `b` at `level`; `hole` leaves out the square |x|, |z| < hole, where the city's own water is.
-      // The open sea continues OCEAN_REACH past the bounds, over a sea floor at OCEAN_DEPTH.
+      // Surface over bounds `b` at `level`, minus the `hole` square (city water); sea runs OCEAN_REACH past bounds at OCEAN_DEPTH.
       ensureNormals() {
         if (this.normalA) return;
         this.normalA = this.buildNormalTexture(this.NORMAL_SIZE, this.NORMAL_CELLS, this.NORMAL_STRENGTH);
@@ -7391,8 +7407,7 @@ void main() {
         });
       }
 
-      // The same surface for the city's painted water: a mesh draped on the ground, so it takes world-metre UVs and
-      // its own copies of the normal maps (scrolled by update), and a pull toward the camera to stay over the ground layers.
+      // The same surface for city water: draped mesh, world-metre UVs, own normal maps, pulled toward the camera over the ground.
       cityMaterial(bias) {
         this.ensureNormals();
         const a = this.normalA.clone(), b = this.normalA.clone();
@@ -7789,8 +7804,7 @@ void main() {
     const vrOverlayEl = document.getElementById('vr-overlay');
     const vrStatsEl = document.getElementById('vr-stats');
 
-    // CAT COMPANION: Nibbler, from the Arena. The rig stays in Arena units under a group scaled to the player;
-    // distances and speeds are the Arena's in metres. Worlds with wilderness bring him along (provider.companion).
+    // CAT COMPANION: Nibbler from the Arena, rig in Arena units scaled to the player; comes with wilderness (provider.companion).
     const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
     const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // passenger seat in the car's frame (+x passenger side, -z forward)
     const CAT_DOOR = 0.95;         // m from the car's centre line to where he stands at the passenger door
@@ -7933,8 +7947,7 @@ void main() {
         return out;
       }
 
-      // Next point on his way to the passenger door, from where he is now in the car's frame;
-      // from the driver's side (or in front/behind) he goes round the nearer end instead of through the car.
+      // Next point on his way to the passenger door, in the car's frame; from the driver's side he goes round the nearer end.
       boardTarget(lx, lf) {
         const L = CAR_LEN / 2 + 0.5, end = lf >= 0 ? L : -L;
         if (lx >= CAT_DOOR - 0.15) return [CAT_DOOR, 0];
@@ -8585,19 +8598,27 @@ void main() {
       }
     };
 
-    // GRAPHICS: the Arena's high/low switch. High casts sun shadows over wild terrain (the city never had them);
-    // the shadow box follows the player and refreshes on a step or every SHADOW_MAX_INTERVAL ms.
-    const SHADOW_FOLLOW_STEP = 11;       // metres (the Arena's 250 units)
-    const SHADOW_MAX_INTERVAL = 50;       // ms
-    const SUN_DIST = 200;
-    const SHADOWS_ENABLED = false;        // master switch: shadows disabled for now; set true to restore
+    // GRAPHICS: high has shadow-map shadows, redrawn only on player/sun moves or nearby casters (SHADOW_MOVER_HZ); low has blobs.
+    const SHADOW_FOLLOW_STEP = 20;       // metres the box centre may drift before it is redrawn where it should be
+    const SHADOW_SUN_STEP_DEG = 0.5;
+    const SHADOW_SUN_STEP_COS = Math.cos(SHADOW_SUN_STEP_DEG * Math.PI / 180);
+    const SHADOW_MOVER_HZ = 15;
+    // only casters this close to the player trigger a redraw when they move; farther ones are redrawn with the box
+    const SHADOW_MOVER_DIST = 60;
+    const SUN_DIST = 300;                // metres from the box centre to the light, inside SHADOW_DEPTH
+    const SHADOWS_ENABLED = true;        // master switch
 
     const graphics = {
-      high: !matchMedia('(pointer: coarse)').matches,
+      high: !startLowPower,
       anchor: new THREE.Vector3(Infinity, 0, Infinity),
       sunDir: new THREE.Vector3(-0.5, 1, 0.4).normalize(),
+      drawnSunDir: new THREE.Vector3(),   // sunDir when the map was last drawn
       lastRefresh: -1e9,
       force: true,
+      // what the last drawn map saw of the moving casters: animals near the player, and the cat and body poses
+      nearAnimals: -1,
+      _moverSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // 64-bit: compared to positions exactly
+      _aim: new THREE.Vector3(),
 
       shadowsOn() { return SHADOWS_ENABLED && this.high && !!activeWorld && activeWorld.shadows; },
 
@@ -8607,11 +8628,19 @@ void main() {
         const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
         if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
         if (!this.high) msaa.dispose();
+        perf.lowPower = !this.high;
+        perf.npcLodDist = this.high ? HIGH_NPC_LOD_DIST : LOW_NPC_LOD_DIST;
+        perf.farStatDist = this.high ? HIGH_FAR_STAT_DIST : LOW_FAR_STAT_DIST;
+        scene.fog.far = this.high ? HIGH_FOG_FAR : LOW_FOG_FAR;
+        const far = this.high ? HIGH_CAMERA_FAR : LOW_CAMERA_FAR;
+        if (camera.far !== far) { camera.far = far; camera.updateProjectionMatrix(); }
         if (renderer.shadowMap.enabled !== on) {
           renderer.shadowMap.enabled = on;
           scene.traverse(o => { if (o.material) { for (const m of [].concat(o.material)) m.needsUpdate = true; } });
         }
         sun.castShadow = on;
+        // high: the shadow map replaces the blobs (low redraws them on its next NPC tick)
+        if (this.high) blobShadows.hide();
         this.force = true;
         this.placeSun();
         invalidate();
@@ -8619,10 +8648,12 @@ void main() {
 
       toggle() {
         this.high = !this.high;
+        // the next load starts on this setting
+        try { localStorage.setItem(GRAPHICS_KEY, this.high ? 'high' : 'low'); } catch (e) { }
         this.apply();
       },
 
-      // Keep the light's direction and aim it at the anchor, so the shadow box sits around the player.
+      // Keep the light's direction and aim it at the anchor, so the shadow box sits around and ahead of the player.
       placeSun() {
         const a = Number.isFinite(this.anchor.x) ? this.anchor : this.anchor.set(0, 0, 0);
         sun.target.position.copy(a);
@@ -8630,18 +8661,61 @@ void main() {
         sun.position.copy(a).addScaledVector(this.sunDir, SUN_DIST);
       },
 
+      // The sky turned the sun: redraw once it has moved SHADOW_SUN_STEP_DEG from where the map was drawn.
+      sunTurned() {
+        if (this.sunDir.dot(this.drawnSunDir) < SHADOW_SUN_STEP_COS) this.force = true;
+      },
+
+      // Did a caster near the player (animals within SHADOW_MOVER_DIST, cat, body) change since the last draw? `record` stores it.
+      moversChanged(record) {
+        const px = player.pos.x, pz = player.pos.z, r2 = SHADOW_MOVER_DIST * SHADOW_MOVER_DIST;
+        let near = 0, moving = false;
+        if (world.ready) for (const a of world.animals) {
+          if (!a.alive) continue;
+          const dx = a.position.x - px, dz = a.position.z - pz;
+          if (dx * dx + dz * dz > r2) continue;
+          near++;
+          if (a.moving) moving = true;
+        }
+        let changed = moving || near !== this.nearAnimals;
+        const movers = [cat.mesh, pov.body];
+        for (let i = 0; i < movers.length; i++) {
+          const o = movers[i], snap = this._moverSnaps[i];
+          const vis = o && o.visible ? 1 : 0;
+          const p = o ? o.position : null, q = o ? o.quaternion : null;
+          if (record) {
+            snap[0] = vis;
+            if (vis) { snap[1] = p.x; snap[2] = p.y; snap[3] = p.z; snap[4] = q.x; snap[5] = q.y; snap[6] = q.z; snap[7] = q.w; }
+          } else if (snap[0] !== vis || (vis && (snap[1] !== p.x || snap[2] !== p.y || snap[3] !== p.z ||
+            snap[4] !== q.x || snap[5] !== q.y || snap[6] !== q.z || snap[7] !== q.w))) changed = true;
+        }
+        if (record) this.nearAnimals = near;
+        return changed;
+      },
+
       update(now) {
         if (!renderer.shadowMap.enabled) return;
-        const dx = player.pos.x - this.anchor.x, dz = player.pos.z - this.anchor.z;
+        // sun below the horizon: it lights nothing, so the map is not drawn; redraw as soon as it is back
+        if (sun.intensity <= 0) { this.force = true; return; }
+        // where the box centre should be: SHADOW_AHEAD in front of the player, at the feet
+        const aim = this._aim.set(player.pos.x - Math.sin(player.yaw) * SHADOW_AHEAD, player.pos.y - EYE_HEIGHT,
+          player.pos.z - Math.cos(player.yaw) * SHADOW_AHEAD);
+        const dx = aim.x - this.anchor.x, dz = aim.z - this.anchor.z;
         const moved = !(dx * dx + dz * dz <= SHADOW_FOLLOW_STEP * SHADOW_FOLLOW_STEP);
-        const stale = now - this.lastRefresh >= SHADOW_MAX_INTERVAL;
-        if (!(this.force || moved || stale)) return;
+        const due = this.force || moved ||
+          (now - this.lastRefresh >= 1000 / SHADOW_MOVER_HZ && this.moversChanged(false));
+        if (!due) return;
         if (this.force || moved) {
-          this.anchor.set(player.pos.x, player.pos.y - EYE_HEIGHT, player.pos.z);
+          this.anchor.copy(aim);
           this.placeSun();
           sun.shadow.camera.updateProjectionMatrix();
         }
         sun.shadow.needsUpdate = true;
+        // the render sets these matrices again; set here so what the new map sees is recorded in its own space
+        sun.updateMatrixWorld();
+        sun.shadow.updateMatrices(sun);
+        this.moversChanged(true);
+        this.drawnSunDir.copy(this.sunDir);
         this.lastRefresh = now;
         this.force = false;
       }
@@ -8650,23 +8724,9 @@ void main() {
     const cat = new CatCompanion();
     const labels = new StatLabelSystem();
     const visionRays = new VisionRaySystem();
-    // WORLD PROVIDERS
-    // The ecosystem engine (Animal, NpcWorld, the player, car, cat and renderers) asks the active world only this,
-    // in metres on the scene's axes (-z north):
-    //   bounds { minX, maxX, minZ, maxZ }, wraps   extent; every world clamps (wilderness worlds are islands, see ISLAND COAST)
-    //   heightAt(x, z)          terrain height (no buildings, no water)
-    //   isWater(x, z)           standing water here
-    //   surface(x, z, out)      footing: out.base (floor indoors, water surface, else ground), out.dip (bed below the
-    //                           base, 0 on land), out.float (how far under the surface a swimmer floats)
-    //   waterSources()          [[x, z, y], ...] points animals can see water at
-    //   population()            [{ type, count, src }] to spawn; src.spawnPoint(type) gives candidate [x, z] spots
-    //   regrow(world)           per-tick plant regrowth
-    // Obstacles are not asked per agent: each provider adds its solids to the shared obstacle index when it builds, and
-    // the engine's collision (resolveCollisions, supportAt, the NPC occupancy grid) reads that index.
-    // Presentation flags: shadows (wild terrain casts), companion (Nibbler comes), rays (default vision-ray mode).
+    // WORLD PROVIDERS: bounds, wraps, heightAt, isWater, surface, waterSources, population, regrow; flags shadows/companion/rays.
 
-    // CITY: the OpenStreetMap / Terrarium city. Geometry is built by the City pipeline (buildCity and friends);
-    // this adds the NPC-side data and answers the queries.
+    // CITY: the OpenStreetMap / Terrarium city; buildCity makes the geometry, this adds NPC data and answers queries.
     class CityWorld {
       constructor(features, radius, opts, habitat = null) {
         this.kind = 'city';
@@ -8676,7 +8736,7 @@ void main() {
         this.habitat = habitat;
         this.bounds = { minX: -radius, maxX: radius, minZ: -radius, maxZ: radius };
         this.wraps = false;
-        this.shadows = false;
+        this.shadows = true;
         this.companion = false;
         this.rays = 'off';
         this.city = this;
@@ -8723,8 +8783,7 @@ void main() {
       heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z); }
       isWater(x, z) { return cityWater.wetAt(x, z); }
 
-      // the floor indoors (raised floors are stood on through the solids), else the ground; over water the surface,
-      // with the bed `dip` below it and the wild water's float depth, so people and animals swim and float alike
+      // Floor indoors, else ground; over water the surface with bed `dip` and float depth, so everyone swims alike.
       surface(x, z, out) {
         const i = shellAt(x, z);
         out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
@@ -8747,8 +8806,7 @@ void main() {
         if (this.opts.plants && Math.random() < PLANT_REGROW_P) w.spawnPlant(this);
       }
 
-      // Candidate spots; the engine checks isOpen and spacing. People: mostly sidewalks weighted by street length,
-      // plus some open ground. Deer (and the wilderness's park coyotes): mostly green areas by area. Plants: see plantSpot.
+      // Spawn candidates (engine checks isOpen, spacing): people on sidewalks and open ground, deer on green areas, see plantSpot.
       spawnPoint(type) {
         if (type === 'plant') return this.plantSpot();
         if (type === 'human') {
@@ -8843,10 +8901,7 @@ void main() {
       }
     }
 
-    // WILD: the Arena's procedural world, centred on the origin, wrapping at its edges.
-    // The groves every wilderness map carries: the mapped trees within 500 m of Millennium Park, Chicago (OpenStreetMap),
-    // grouped where they stand within 12 m of each other and cut into pieces of at most 80 m so each fits a small
-    // wilderness. Groves are separated by "|"; a grove is "dx dz dx dz …" in decimetres from its own centre.
+    // WILD_GROVES: Millennium Park's mapped trees as groves (12 m clusters, <= 80 m), "|"-separated, dx dz in decimetres.
     const WILD_GROVES = [
       '303 -242 325 -256 334 -223 304 -289 297 -126 332 -98 315 -27 278 9 233 -53 173 -89 69 -77 22 126 4 87 -15 75',
       '-44 67 176 221 274 267 270 306 239 321 241 372 265 344 188 376 187 346 187 307 -177 291 -198 313 -223 327',
@@ -9100,11 +9155,7 @@ void main() {
       return wildGroveList;
     }
 
-    // WILDERNESS: the world, with the city (if any) in the middle. With City off (city null) there is no measured
-    // square: the procedural land, lakes, groves, cabins and wildlife run through the centre too. With a city, the
-    // measured Terrarium ground rules the square it covers (the loaded radius plus ELEV_MARGIN), so every draped street
-    // and building still fits; past it, height blends from the city's edge into the procedural land over MIX_BLEND
-    // metres, along a seeded, wavering distance so the seam is not a square.
+    // WILDERNESS: procedural land around the city; measured ground rules the city square, blending out over MIX_BLEND metres.
     const MIX_BLEND = 250;    // metres from the measured edge to pure wilderness
     const MIX_RING_MIN = 300;    // wilderness width around the city, metres
     const MIX_RING_MAX = 1500;
@@ -9144,8 +9195,7 @@ void main() {
       inside(x, z) { return this.city !== null && Math.abs(x) <= this.h && Math.abs(z) <= this.h; }
       inCity(x, z) { return this.city !== null && Math.abs(x) <= this.R && Math.abs(z) <= this.R; }
 
-      // Height outside the measured square: the edge's measured height fades toward its mean, then into the
-      // procedural ground (offset to meet the city) as the wavering distance grows.
+      // Height outside the measured square: the edge's height fades to its mean, then into the offset procedural ground.
       blend(x, z) {
         if (!this.city) return wildTerrain.metresAt(x, z) + this.offset;
         const h = this.h;
@@ -9161,8 +9211,7 @@ void main() {
         return real + (proc - real) * t;
       }
 
-      // Level, offset and heights. The procedural median is lifted to the city edge's mean; the lakes stay under the
-      // lowest measured edge point so no wild water reaches the city square.
+      // Level, offset and heights: procedural median lifted to the city edge's mean; lakes kept below the lowest edge point.
       terrainStep() {
         const b = this.bounds, h = this.h;
         wildTerrain.initSeed(this.seed);
@@ -9204,8 +9253,7 @@ void main() {
         this.grid = new HeightGrid(b.minX, b.minZ, step, nx, nx);
         this.grid.fill((x, z) => coastHeight(x, z, this.blend(x, z), b, this.level));
 
-        // The city's own terrain mesh covers the square at ELEV_STEP; the wild mesh drops the quads well inside it and
-        // tucks the one-quad overlap ring under it, so no crack opens where the two meet.
+        // The wild mesh drops quads inside the city's terrain mesh and tucks a one-quad ring under it, so no crack opens.
         const inner = h - step + 1e-6;
         const skip = (i, j) => {
           const xa = b.minX + i * step, xb = xa + step, za = b.minZ + j * step, zb = za + step;
@@ -9241,11 +9289,7 @@ void main() {
         pebbles.place(() => this.wildAnyPoint(), (x, z) => this.heightAt(x, z));
       }
 
-      // WILD GROVES: every wilderness map gets the same WILD_GROVES (the Loop's trees, as groves), each set down whole at a
-      // random spot with a random turn. Math.random, not the seed: the groves land somewhere new on every load.
-      // A tree may not stand in water, in the measured square, on a cabin or off the map. A grove takes the first
-      // spot that fits all of it (the best of GROVE_TRIES otherwise), and a tree still without a place is moved,
-      // first within the grove's own reach and then anywhere, so the count stays the same. Returns [trees, groves].
+      // WILD GROVES: each grove placed whole at a random spot and turn, off water, city, cabins and edges; tree count kept.
       treeStep() {
         const GROVE_TRIES = 60, TREE_TRIES = 40;
         const b = this.bounds, dry = this.level + 0.3, clear = 44 * CABIN_SCALE * CABIN_M;
@@ -9292,8 +9336,7 @@ void main() {
         return [out.length, placed];
       }
 
-      // Nearest dry, level spot outside the measured square: rings outward from its edge, the flattest spot on the
-      // first ring that has one. Footprint and the car's parking side are both sampled.
+      // Nearest dry, level spot outside the measured square: rings outward, flattest spot on the first ring with one.
       cabinSite() {
         const b = this.bounds, dry = this.level + 4 * NPC_UNIT;
         const reach = 44 * CABIN_SCALE * CABIN_M + CAR_WID + 4.5;
@@ -9354,9 +9397,7 @@ void main() {
 
       waterSources() { return this.city ? this.city.waterSources().concat(this.locations) : this.locations; }
 
-      // Both ecosystems, each from its own spawn rules: the city's people, deer and plants; the wilderness's
-      // (the Arena's counts for the chosen size) people, coyotes, deer and plants.
-      // (the People and Plants build options cover both)
+      // Both ecosystems from their own spawn rules (city: people, deer, plants; wilderness: people, coyotes, deer, plants).
       population() {
         const o = this.opts;
         return (this.city ? this.city.population() : []).concat([
@@ -9410,8 +9451,7 @@ void main() {
 
         this.animalGrid = null;
         this.plantGrid = null;
-        // Plants for vision queries, so sight reads nearby cells instead of every plant. Plants never move, so this
-        // cannot change what is seen; rebuilt with plantGrid to drop the dead.
+        // Plants for vision queries, so sight reads nearby cells; plants never move, rebuilt with plantGrid to drop the dead.
         this.plantSight = null;
         // The provider's water points, for vision queries; they never move.
         this.waterSight = null;
@@ -9433,8 +9473,7 @@ void main() {
         this._contactR = NpcWorld.CONTACT_DIST;
       }
 
-      // SIM CLOCK: seconds of sim time since this world was initialized. Aging and mate readiness run on it, so they
-      // keep pace with the per-tick needs and stop while the sim is paused (hidden tab, slow device).
+      // SIM CLOCK: sim seconds since init; aging and mate readiness run on it, so they pause with the sim.
       get time() { return this.ticks * NPC_TICK_S; }
 
       // Keep a coordinate in the world: the Arena's torus wrap, or City's clamp.
@@ -9455,6 +9494,7 @@ void main() {
         this._plantDrops.length = 0;
         this.ready = false;
         animalRenderer.update(this.animals, 0);
+        blobShadows.update(this.animals);
         plantRenderer.rebuild(this.plants);
         plantRenderer.update(this.plants);
         healthBars.update(this.animals);
@@ -9500,6 +9540,7 @@ void main() {
         this.ready = true;
         // write instance data now so compileAsync warms the instance-colour shader
         animalRenderer.update(this.animals, 0);
+        blobShadows.update(this.animals);
         foodBoxes.render();
         plantRenderer.update(this.plants);
         this.shownPop = -1;
@@ -9540,8 +9581,7 @@ void main() {
         return !solidOverlap(x, z, NPC_RADIUS + 0.15, g, g + NPC_COLLIDE_H);
       }
 
-      // `count` of `type` at spots `src.spawnPoint(type)` proposes, each open and NPC_SPAWN_GAP from the others
-      // (the gap halves when crowding stalls); returns how many were placed.
+      // Places `count` of `type` at open spawn spots NPC_SPAWN_GAP apart (gap halves when crowded); returns how many.
       spawn(type, count, src) {
         if (count <= 0) return 0;
         const cell = NPC_SPAWN_GAP;
@@ -9608,12 +9648,10 @@ void main() {
         }
       }
 
-      // Contact: hunters kill what they hunt (people: deer, coyotes; coyotes: deer, people); everyone mates and drinks;
-      // grazers (people and deer, not coyotes) eat plants.
+      // Contact: hunters kill what they hunt, everyone mates and drinks, grazers (people, deer) eat plants.
       handleCollisions() {
         if (this.ticks % 3 === 0) this.syncPlantGrids();
-        // contact candidates come from the contact grid, built from positions up to 2 ticks old: the query reaches
-        // the contact distance plus the largest move since, so every animal now in contact is found
+        // Contact candidates come from a grid up to 2 ticks old, queried at contact distance plus the largest move since.
         this._contactR = NpcWorld.CONTACT_DIST + Math.sqrt(this.drift2);
         const cg = this.contact, items = cg.items, start = cg.start;
 
@@ -9656,8 +9694,7 @@ void main() {
         }
       }
 
-      // Two animals that hunt each other (a person and a coyote) meet: the one with more health kills the other and
-      // eats it; equal health, both walk away.
+      // Two mutual hunters meet: the one with more health kills and eats the other; equal health, both walk away.
       fight(a, b) {
         if (a.health === b.health) return;
         const win = a.health > b.health ? a : b, lose = win === a ? b : a;
@@ -9681,9 +9718,7 @@ void main() {
         if (!this.ready || this.animals.length === 0) return false;
         const now = this.time;
 
-        // Grid sync every 3 ticks, incremental: only an animal whose cell changed moves bucket. Which animals each
-        // bucket holds matches a full rebuild exactly (dead and removed animals leave at the same sync, newborns join
-        // at it); only the order inside a bucket can differ.
+        // Grid sync every 3 ticks, incremental: only animals whose cell changed move bucket; same sets as a full rebuild.
         if (this.ticks % 3 === 0) {
           const g = this.animalGrid, drops = this._animalGridDrops;
           for (let i = 0; i < drops.length; i++) {
@@ -9759,13 +9794,14 @@ void main() {
         activeWorld.regrow(this);
 
         animalRenderer.update(this.animals, dt);
+        blobShadows.update(this.animals);
         foodBoxes.render();
         plantRenderer.update(this.plants);
         healthBars.update(this.animals);
-        if (this.ticks % 2 === 0) labels.updateTarget();
+        if (this.ticks % (perf.lowPower ? LOW_LABEL_TICKS : HIGH_LABEL_TICKS) === 0) labels.updateTarget();
         visionRays.update(this.animals);
         this.syncPopulation();
-        if (this.ticks % 60 === 0) refreshHud();
+        if (this.ticks % (perf.lowPower ? LOW_HUD_TICKS : HIGH_HUD_TICKS) === 0) refreshHud();
         this.ticks++;
         return true;
       }
@@ -9775,10 +9811,86 @@ void main() {
     const brains = new BrainFactory();
     const animalRenderer = new AnimalRenderer();
     const plantRenderer = new PlantRenderer();
+
+    // BLOB SHADOWS (low): one soft ellipse per nearby on-screen animal, sized and turned with it; faded with the sun.
+    const BLOB_DIST = 40;            // metres from the camera
+    const BLOB_MAX = 2048;
+    const BLOB_OPACITY = 0.42;
+    const BLOB_FULL_SUN = 1.35;      // sun intensity at which blobs reach BLOB_OPACITY (the SKY table's day value)
+    const BLOB_LIFT = 0.04;          // metres above the feet, against z-fighting on flat ground
+    const BLOB_SPREAD = 1.25;        // blob size over the body's footprint
+    class BlobShadows {
+      constructor() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 64;
+        const g = c.getContext('2d');
+        const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.55, 'rgba(255,255,255,0.7)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+        const tex = new THREE.CanvasTexture(c);
+        const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+        this.material = new THREE.MeshBasicMaterial({
+          color: 0x000000, map: tex, transparent: true, depthWrite: false, opacity: BLOB_OPACITY,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+        });
+        this.mesh = new THREE.InstancedMesh(geo, this.material, BLOB_MAX);
+        this.mesh.count = 0;
+        this.mesh.visible = false;
+        this.mesh.frustumCulled = false;
+        scene.add(this.mesh);
+        // body footprint per type in model units (x across, z along the facing), from the low-detail bodies
+        this.foot = {};
+        for (const type of animalRenderer.TYPES) {
+          const bb = animalRenderer.FAR_GEOMETRIES[type].boundingBox ||
+            (animalRenderer.FAR_GEOMETRIES[type].computeBoundingBox(), animalRenderer.FAR_GEOMETRIES[type].boundingBox);
+          this.foot[type] = { x: bb.max.x - bb.min.x, z: bb.max.z - bb.min.z };
+        }
+        this._m = new THREE.Matrix4();
+        this._p = new THREE.Vector3();
+        this._q = new THREE.Quaternion();
+        this._s = new THREE.Vector3();
+        this._y = new THREE.Vector3(0, 1, 0);
+      }
+
+      hide() {
+        perf.instances(this.mesh, 0);
+      }
+
+      update(animals) {
+        const light = Math.min(1, sun.intensity / BLOB_FULL_SUN);
+        if (!perf.lowPower || !activeWorld || light <= 0) { this.hide(); return; }
+        this.material.opacity = BLOB_OPACITY * light;
+        updateNpcFrustum();
+        const r = animalRenderer, mesh = this.mesh;
+        const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z, d2 = BLOB_DIST * BLOB_DIST;
+        let n = 0;
+        for (const a of animals) {
+          if (n >= BLOB_MAX) break;
+          if (!a.alive || a.submerged || a.floating) continue;
+          const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
+          if (ex * ex + ey * ey + ez * ez > d2) continue;
+          const hs = a.heightScale;
+          if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
+          // the same size the body is drawn at (AnimalRenderer.update)
+          const age = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / r.MATURITY_TICKS);
+          const kp = (r.MIN_SCALE + (1 - r.MIN_SCALE) * age) * NPC_UNIT * hs * BLOB_SPREAD;
+          const f = this.foot[a.type];
+          this._p.set(a.position.x, a.position.y - a.footLift() * NPC_UNIT + BLOB_LIFT, a.position.z);
+          this._q.setFromAxisAngle(this._y, a.facingAngle);
+          this._s.set(f.x * kp, 1, f.z * kp);
+          this._m.compose(this._p, this._q, this._s);
+          mesh.setMatrixAt(n++, this._m);
+        }
+        perf.instances(mesh, n);
+      }
+    }
+    const blobShadows = new BlobShadows();
     const world = new NpcWorld();
 
-    // SURVIVOR MODE: what people hunt (deer, coyotes) flees the player, who eats it on contact, drinks in water, and gets hungry and thirsty
-    // (NPC 0..100 scale, no mate need). Advanced from NpcWorld.step.
+    // SURVIVOR MODE: prey flees the player, who eats on contact, drinks in water, and grows hungry and thirsty (0..100).
     const PLAYER_FOOD_RATE = 100 / (20 * 60);   // need per second: fed to starving in 20 min
     const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
     const PLAYER_DRINK_RATE = 10;                // need per second removed while standing in water
@@ -9890,10 +10002,9 @@ void main() {
     const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
     const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-    // Past NPC_LOD_DIST, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
+    // Past perf.npcLodDist, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
     const FAR_STAT_MAX = 12000;
     // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
-    const FAR_STAT_DIST = 120;
     const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;
     const BAR_PX = BAR_W_M / BAR_CANVAS_W;
     const LOBE_RADIUS = 0.7;
@@ -10203,7 +10314,7 @@ void main() {
         const cam = viewPos, cq = viewQuat;
         this._right.set(1, 0, 0).applyQuaternion(cq);
         this._up.set(0, 1, 0).applyQuaternion(cq);
-        const lod2 = NPC_LOD_DIST * NPC_LOD_DIST, farMax2 = FAR_STAT_DIST * FAR_STAT_DIST;
+        const lod2 = perf.npcLodDist * perf.npcLodDist, farMax2 = perf.farStatDist * perf.farStatDist;
         const rows = BAR_ICONS.length;
         const lobeOff = 1.1 * BRAIN_SCALE;
         let nf = 0;
@@ -10225,7 +10336,7 @@ void main() {
           let bar = this.bars.get(a);
           if (bar) seen.add(a);
 
-          // distance first (cheap), then the frustum: stats past FAR_STAT_DIST would be under a pixel tall
+          // distance first (cheap), then the frustum: stats past perf.farStatDist are not drawn (on high they would be under a pixel tall)
           const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;
           const d2 = ex * ex + ey * ey + ez * ez;
           if (d2 > farMax2) continue;
@@ -10575,8 +10686,7 @@ void main() {
         g.add(b);
         return b;
       };
-      // Lower body: a narrow full core plus two side panels whose side profile has arches cut over the wheels,
-      // with dark liners on the core behind each arch (the wheel wells).
+      // Lower body: narrow core plus side panels with arches cut over the wheels, dark liners behind each arch.
       {
         const yb = 0.31, yt = 0.93, L = LEN / 2, R = WR + 0.09;
         const arches = [-WB / 2, WB / 2];
@@ -10727,8 +10837,7 @@ void main() {
       invalidate();
     }
 
-    // Parked in front of a cabin, off to one side of the doorway (right first, as seen looking out the door),
-    // nose pointing away from the cabin the same way as the door. `yaw` is the look-out-the-door heading.
+    // Parked beside a cabin's doorway (right side first, looking out), nose pointing the door's way; `yaw` is that heading.
     const CABIN_CAR_GAP = 1.5;       // metres of clear ground between the cabin's floor edge and the car's rear
     const CABIN_CAR_WALKWAY = 1.2;   // metres of clear ground between the doorway's edge and the car's side
     function parkBesideCabin(c, yaw) {
@@ -11066,9 +11175,7 @@ void main() {
     let timePreset = 'Game';
     let skyPreset = 'Game';
 
-    // GAME SKY: every world runs the game's own clock and weather. It opens in the afternoon under 30 s of rain,
-    // clears, then changes weather at random; a full day lasts 20 minutes, as in Minecraft. An Observer preset
-    // overrides it.
+    // GAME SKY: own clock and weather (opens to afternoon rain, then random; 20-minute day); an Observer preset overrides it.
     const simSky = {
       running: false,              // a world is in play
       DAY_S: 1200,                 // real seconds per game day
@@ -11376,6 +11483,8 @@ void main() {
     let drawnYaw = NaN, drawnPitch = NaN, drawnCrouch = NaN;
     // low-power frame cap: a draw wanted inside the cap waits for the next allowed frame (sim ticks are unaffected)
     let drawPending = false, drawnAt = -1e9;
+    // Graphics low: when the water-flow offsets last advanced (see LOW_WATER_FPS)
+    let waterAt = -1e9;
 
     // NPC ticks: one per NPC_TICK_S of real time at most (Arena constants are per tick); player motion renders at the display rate.
     const NPC_DRINK_SECONDS = 10;   // seconds in water for an animal's empty water bar to fill
@@ -11413,11 +11522,6 @@ void main() {
       simSky.update(now);
       skyFade.tick(now);
 
-      if (knobDirty) {
-        knobEl.style.transform = `translate(${knobDx}px, ${knobDy}px)`;
-        knobDirty = false;
-      }
-
       const rainDue = rainTick(dt, now);
       const npcLive = world.ready && world.animals.length > 0;
       let npcDue = false;
@@ -11436,10 +11540,18 @@ void main() {
       const wantDraw = xr || posed || sceneDirty || rainDue || npcDue || drawPending;
       const capped = !xr && !graphics.high && now - drawnAt < 1000 / LOW_RENDER_FPS - NPC_TICK_SLACK * 1000;
       drawPending = wantDraw && capped;
+      // the touch knob moves with the drawn frames on low (a capped frame leaves it dirty for the next draw)
+      if (knobDirty && !capped) {
+        knobEl.style.transform = `translate(${knobDx}px, ${knobDy}px)`;
+        knobDirty = false;
+      }
       if (wantDraw && !capped) {
         drawnAt = now;
         placeSkyBodies();
-        wildWater.update(now * 0.001);
+        if (graphics.high || now - waterAt >= 1000 / LOW_WATER_FPS) {
+          waterAt = now;
+          wildWater.update(now * 0.001);
+        }
         graphics.update(now);
         // the view under a water surface is tinted (the Arena's water-tint)
         if (activeWorld) {
@@ -11487,8 +11599,7 @@ void main() {
     }
     wake();
 
-    // City wall clock now. The epoch is pre-shifted, so use getUTC* only.
-    // City time minus UTC, seconds: the site's own (estimated from its longitude; City off: this device's), else UTC.
+    // City wall clock (pre-shifted epoch, use getUTC*); offset from the site's longitude, this device's with City off, else UTC.
     function zoneOffset() {
       return (site && site.offset) || 0;
     }
@@ -11583,8 +11694,9 @@ void main() {
     const OVERCAST = new THREE.Color(0x8b8f96);
     const FOGGY = new THREE.Color(0xb9bcc0);
 
-    // SUN AND MOON DISCS: camera-facing quads at SKY_DIST along the true directions, occluded by depth, ~3x real size.
-    const SKY_DIST = 1500;   // metres; inside the camera's far plane (2000), past the loaded area
+    // SUN AND MOON DISCS: camera-facing quads at SKY_DIST (nearer on Graphics: low) along the true directions, occluded by depth, ~3x real size.
+    const SKY_DIST = 1500;   // metres; inside the camera's far plane (HIGH_CAMERA_FAR), past the loaded area; sizes the quads
+    const SKY_FAR_FRACTION = 0.9;   // a shorter far plane (LOW_CAMERA_FAR) places the discs at this fraction of it
     const SKY_BODY_DEG = 1.6;
     const SKY_TEX = 128;
 
@@ -11663,9 +11775,13 @@ void main() {
 
     function placeSkyBodies() {
       if (!sunDisc.visible) return;
-      sunDisc.position.copy(camera.position).addScaledVector(sunDir, SKY_DIST);
+      // inside the far plane: a nearer camera.far (Graphics: low) brings the discs in, scaled to keep their angular size
+      const dist = Math.min(SKY_DIST, camera.far * SKY_FAR_FRACTION), k = dist / SKY_DIST;
+      sunDisc.scale.setScalar(k);
+      moonDisc.scale.setScalar(k);
+      sunDisc.position.copy(camera.position).addScaledVector(sunDir, dist);
       sunDisc.lookAt(camera.position);
-      moonDisc.position.copy(camera.position).addScaledVector(moonDir, SKY_DIST);
+      moonDisc.position.copy(camera.position).addScaledVector(moonDir, dist);
     }
 
     function sampleSky(alt) {
@@ -11680,8 +11796,7 @@ void main() {
 
     let site = null;
 
-    // SKY FADE: when the weather changes, cloud cover and fog take SKY_FADE_S to reach their new values (the first
-    // sky of a world is set at once). The frame loop redraws the sky while a fade runs.
+    // SKY FADE: on a weather change cloud and fog ease over SKY_FADE_S (a world's first sky is set at once).
     const SKY_FADE_S = 5;
     const skyFade = {
       cloud: 0, fog: 0,                  // what the sky is drawn with now
@@ -11735,11 +11850,10 @@ void main() {
       skyCol.lerp(FOGGY, 0.6 * day * fog);
       power *= 1 - 0.7 * cloud - 0.2 * fog;
 
-      // below the horizon the light is off, so its position stays true
-      // the light keeps this direction; graphics aims it at the player's shadow box
+      // Below the horizon the light is off; it keeps this direction and graphics aims it at the player's shadow box.
       graphics.sunDir.set(s.east, s.up, -s.north).normalize();
       graphics.placeSun();
-      graphics.force = true;
+      graphics.sunTurned();
       sun.color.copy(sunCol);
       sun.intensity = power;
       // not dimmed by cloud: kept for facade readability rather than realism
@@ -11766,8 +11880,7 @@ void main() {
       invalidate();
     }
 
-    // RAIN: one LineSegments draw, positions computed in the vertex shader; intensity moves the draw range.
-    // A roof height map around the player cuts streaks below roofs. Built on rain start, disposed on stop.
+    // RAIN: one LineSegments draw, positions in the vertex shader; a roof height map cuts streaks under roofs.
 
     const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
     const RAIN_SPAN = 44;           // box width and depth around the camera, meters
@@ -12002,8 +12115,7 @@ void main() {
 
     function rainTick(dt, now) {
       if (!rain) return false;
-      // rain fades in when it starts and out when it stops, however the change came about
-      // timed on the frame clock, not the clamped physics step, so a slow frame rate cannot stretch the fade
+      // Rain fades in and out on the frame clock, not the clamped physics step, so a slow frame rate cannot stretch it.
       const since = rain.fadeAt ? Math.min(Math.max(now - rain.fadeAt, 0), 1000) / 1000 : 0;
       rain.fadeAt = now;
       if (rain.fade !== rain.target) {
@@ -12157,9 +12269,7 @@ void main() {
       invalidate();
     }
 
-    // WILD: the Arena's world from a seed; nothing is downloaded.
-    // CITY OFF: the wilderness world with no city in the middle (WildernessWorld with city null): seeded land, lakes, cabins, groves
-    // and wildlife across the whole map. Nothing is downloaded.
+    // WILD: the Arena's world from a seed; CITY OFF: the same wilderness with no city in the middle. Nothing is downloaded.
     async function loadWilderness(seed) {
       if (busy) return;
       setBusy(true);
@@ -12461,8 +12571,7 @@ void main() {
       setBusy(false);
     }
 
-    // NEW ECOSYSTEM (the Arena's): a fresh random seed; the wilderness regrows, around the same city when there is one.
-    // set by New ecosystem, used up when its world finishes loading; a load started from the intro clears it
+    // NEW ECOSYSTEM: a fresh seed for the next load (same city if any), used up when it loads; an intro load clears it.
     let randomSky = false;
     goEl.addEventListener('click', () => { randomSky = false; }, true);
     startGoEl.addEventListener('click', () => { randomSky = false; }, true);
@@ -12505,8 +12614,7 @@ void main() {
       // no flying in Survivor mode: land and hide the button
       if (game.on && flying) toggleFly();
       flyEl.classList.toggle('on', active && !driving && !game.on);
-      // the city's deer only in Survivor mode: the Deer build switch follows, and a live city gains or loses its own
-      // deer (the wilderness's deer stay)
+      // The city's deer only in Survivor mode: the Deer switch follows and a live city gains or loses its own deer.
       loadOpts.deer = game.on;
       const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
       deerSwitch.classList.toggle('on', game.on);
@@ -12520,8 +12628,7 @@ void main() {
       wake();
     });
 
-    // OBSERVER OR SURVIVOR: asked once the world is ready. The two buttons only select; Go launches. Survivor is
-    // also the Other row's toggle.
+    // OBSERVER OR SURVIVOR: asked once the world is ready; buttons only select, Go launches.
     const chooseObsEl = document.getElementById('chooseObs');
     const chooseGameEl = document.getElementById('chooseGame');
     const chooseGoEl = document.getElementById('chooseGo');
@@ -12559,8 +12666,7 @@ void main() {
       });
     }
 
-    // START SCREEN: the City switch (More World Options) picks a city in the wilderness (mode 'city', on) or the
-    // wilderness alone (mode 'wilderness', off: loadWilderness); the card shows that world's fields.
+    // START SCREEN: the City switch picks a city in the wilderness ('city') or the wilderness alone ('wilderness').
     const citySwitchEl = document.querySelector('#more .switch[data-opt="city"]');
     function setMode(m) {
       startMode = m;
