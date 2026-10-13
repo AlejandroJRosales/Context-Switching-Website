@@ -4350,8 +4350,8 @@ void main() {
     const LIF_RESET = -0.1;             // membrane right after a spike
     const TAG_DECAY = 0.5;              // per decision: eligibility tags and each neuron's activity average
     const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
-    const BRAIN_LEARNING_RATE = 0.001;
-    const BRAIN_WEIGHT_DECAY = 0.001;   // per weight update (one per decision)
+    const BRAIN_LEARNING_RATE = 0.01;
+    const BRAIN_WEIGHT_DECAY = 0.00001; // per weight update (one per decision): half-life ~69,000 decisions, ~19 sim hours
     const HEADING_JITTER = 0.3;         // radians: the turn taken is the population vector plus up to this much noise
 
     class SpikingNetwork {
@@ -4498,7 +4498,8 @@ void main() {
         return actO;
       }
 
-      // Returns the turn (radians, relative to facing): the population vector of the output ring plus jitter.
+      // Returns the turn (radians, relative to facing): the direction of forward plus the output ring's population vector,
+      // plus jitter. A flat ring (no preference) keeps going straight; a confident ring turns up to nearly 90 degrees per decision.
       think(inputs) {
         this.input.set(inputs);
         this.prevB.set(this.actB);
@@ -4507,7 +4508,7 @@ void main() {
         const O = this.outputDims;
         let vx = 0, vz = 0;
         for (let i = 0; i < O; i++) { vx += values[i] * this.prefSin[i]; vz += values[i] * this.prefCos[i]; }
-        let turn = vx * vx + vz * vz > 1e-12 ? Math.atan2(vx, vz) : this.turnAngle;
+        let turn = Math.atan2(vx, 1 + vz);
         // exploration: the turn taken deviates a little from the one the brain chose, and the tags credit what was taken
         turn += (Math.random() * 2 - 1) * HEADING_JITTER;
         const TWO_PI = Math.PI * 2;
