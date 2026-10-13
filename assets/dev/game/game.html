@@ -882,21 +882,30 @@
       cursor: pointer;
     }
 
-    /* optional: its own row under the choice, in the chip style */
-    #choose #chooseFs {
+    /* optional settings: their own row of switches under the choice, applied on Go */
+    #choose .switches {
       flex-basis: 100%;
-      padding: 8px 10px;
-      background: rgba(16, 19, 26, 0.45);
-      color: rgba(232, 228, 220, 0.75);
-      border: 1px solid rgba(232, 228, 220, 0.3);
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
-      touch-action: manipulation;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      margin-top: 6px;
     }
 
-    #choose #chooseFs.sel {
-      background: rgba(232, 228, 220, 0.85);
-      color: #10131a;
-      border-color: transparent;
+    #choose .switch {
+      flex: none;
+      padding: 0;
+      background: none;
+      border-radius: 0;
+      color: rgba(232, 228, 220, 0.75);
+      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    #choose .switch+.switch {
+      margin-top: 0;
+    }
+
+    #choose .switch.on {
+      color: #e8e4dc;
     }
 
     /* Observer and Survivor are a two-way toggle: the unselected one is dimmed, Go launches */
@@ -1004,7 +1013,12 @@
       <div id="choose">
         <button id="chooseObs" aria-pressed="true" class="sel">Observer</button>
         <button id="chooseGame" aria-pressed="false">Survivor</button>
-        <button id="chooseFs" aria-pressed="false">Fullscreen</button>
+        <div class="switches">
+          <button id="chooseFsSwitch" class="switch" role="switch" aria-checked="false"><span class="track"><span
+              class="thumb"></span></span>Fullscreen</button>
+          <button id="chooseGfxSwitch" class="switch" role="switch" aria-checked="false"><span class="track"><span
+              class="thumb"></span></span>High graphics</button>
+        </div>
         <button id="chooseGo">Go</button>
       </div>
       <p class="mode-note for-city">Choose any US city by address to replicate at the center of a procedurally generated
@@ -4212,6 +4226,61 @@ void main() {
         this.LOBE_SIZE_MIN = 4;
         this.LOBE_SIZE_MAX = 10;
         this.LOBE_SPARSITY = 0.20;
+        // TOPOLOGY MUTATION at birth, scaled by the child's mutationMulti (0.5 = these rates)
+        this.LOBE_RESIZE_P = 0.1;      // chance per lobe of gaining or losing one neuron
+        this.SYNAPSE_FLIP_P = 0.01;    // chance per possible synapse of being added or removed
+      }
+
+      // Copy of a [pre * nPost + post] mask at a new size; entries for new neurons are drawn at LOBE_SPARSITY.
+      resizeMask(mask, nPre, nPost, newPre, newPost) {
+        if (nPre === newPre && nPost === newPost) return mask.slice();
+        const out = new Uint8Array(newPre * newPost);
+        for (let i = 0; i < newPre; i++) {
+          for (let j = 0; j < newPost; j++) {
+            out[i * newPost + j] = i < nPre && j < nPost
+              ? mask[i * nPost + j]
+              : (Math.random() < this.LOBE_SPARSITY ? 1 : 0);
+          }
+        }
+        return out;
+      }
+
+      // Flip each entry with probability p, keeping at least one synapse; true if anything changed.
+      flipMask(mask, p) {
+        let changed = false, on = 0;
+        for (let k = 0; k < mask.length; k++) {
+          if (Math.random() < p) { mask[k] ^= 1; changed = true; }
+          on += mask[k];
+        }
+        if (on === 0) { mask[Math.floor(Math.random() * mask.length)] = 1; changed = true; }
+        return changed;
+      }
+
+      // A child's wiring: the parent's masks with lobes resized by one neuron and synapses flipped now and then.
+      // Returns the parent's own masks object when nothing changed, so unchanged children share its synapse lists.
+      mutateMasks(m, I, O, strength) {
+        const resizeP = Math.min(1, this.LOBE_RESIZE_P * strength);
+        const flipP = Math.min(0.5, this.SYNAPSE_FLIP_P * strength);
+        const resize = n => {
+          if (Math.random() >= resizeP) return n;
+          const d = Math.random() < 0.5 ? -1 : 1;
+          return Math.max(this.LOBE_SIZE_MIN, Math.min(this.LOBE_SIZE_MAX, n + d));
+        };
+        const NA = m.lobeSizeA, NB = m.lobeSizeB, nA = resize(NA), nB = resize(NB);
+        const c = {
+          lobeSizeA: nA, lobeSizeB: nB,
+          maskIA: this.resizeMask(m.maskIA, I, NA, I, nA),
+          maskIB: this.resizeMask(m.maskIB, I, NB, I, nB),
+          maskAB: this.resizeMask(m.maskAB, NA, NB, nA, nB),
+          maskBA: this.resizeMask(m.maskBA, NB, NA, nB, nA),
+          maskAO: this.resizeMask(m.maskAO, NA, O, nA, O),
+          maskBO: this.resizeMask(m.maskBO, NB, O, nB, O),
+        };
+        let changed = nA !== NA || nB !== NB;
+        for (const k of ['maskIA', 'maskIB', 'maskAB', 'maskBA', 'maskAO', 'maskBO']) {
+          if (this.flipMask(c[k], flipP)) changed = true;
+        }
+        return changed ? c : m;
       }
 
       randLobeSize() {
@@ -4272,30 +4341,28 @@ void main() {
       return L;
     }
 
-    // TWO-LOBE NETWORK
-    // Input -> A, Input -> B, A <-> B (B -> A lags a step), A,B -> Output; LIF lobes. Learning: tagSynapses + adjustWeights.
-    class DenseNetwork {
-      // Plasticity time constants, per think() step (~1 s at ACTION_HOLD 60).
-      static TAG_DECAY = 0.5;    // synaptic tag (eligibility) kept per step
-      static CA_DECAY = 0.5;    // each neuron's running activity average (sliding LTP/LTD threshold)
-      static DA_TONIC_RATE = 0.05;   // how fast tonic dopamine tracks reward
+    // TWO-LOBE SPIKING NETWORK
+    // Input -> A, Input -> B, A <-> B (A reads B's spikes from the previous step), A,B -> Output.
+    // Lobes are leaky integrate-and-fire neurons with binary spikes. Outputs are a ring of preferred turns.
+    // Learning is three-factor: tagSynapses after each decision, adjustWeights when the next reward arrives.
+    const LIF_LEAK = 0.85;              // share of the membrane kept each step
+    const LIF_THRESHOLD = 0.25;         // membrane at which a neuron spikes
+    const LIF_RESET = -0.1;             // membrane right after a spike
+    const TAG_DECAY = 0.5;              // per decision: eligibility tags and each neuron's activity average
+    const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
+    const BRAIN_LEARNING_RATE = 0.001;
+    const BRAIN_WEIGHT_DECAY = 0.001;   // per weight update (one per decision)
+    const HEADING_JITTER = 0.3;         // radians: the turn taken is the population vector plus up to this much noise
 
-      constructor(inputDims, learningRate = 0.001, weightDecay = 0.0001, masks = null) {
+    class SpikingNetwork {
+      constructor(inputDims, learningRate = BRAIN_LEARNING_RATE, weightDecay = BRAIN_WEIGHT_DECAY, masks = null) {
         this.inputDims = inputDims;
-        // Outputs are a ring of preferred headings; their weighted vector sum is the heading.
         this.outputDims = 8;
         this.learningRate = learningRate;
         this.weightDecay = weightDecay;
-        this.cost = 0.0;
-        this.lastCost = 0.0;
-        this.costHistoryLen = 0;
         this.output = null;
-        this.heading = Math.random() * Math.PI * 2;
-        this.EMA = 0.001;
-
-        this.runningMean = new Float32Array(inputDims);
-        this.runningVar = new Float32Array(inputDims).fill(1);
-        this._standardized = new Float32Array(inputDims);
+        this.turnAngle = 0;
+        this.input = new Float32Array(inputDims);   // last inputs read (the brain view shows them)
 
         const I = inputDims;
         const O = this.outputDims;
@@ -4307,7 +4374,6 @@ void main() {
           this.lobeSizeA = brains.randLobeSize();
           this.lobeSizeB = brains.randLobeSize();
         }
-
         const NA = this.lobeSizeA;
         const NB = this.lobeSizeB;
 
@@ -4341,51 +4407,34 @@ void main() {
         this.wAO = brains.makeMaskedWeights(NA, O, this.maskAO);
         this.wBO = brains.makeMaskedWeights(NB, O, this.maskBO);
 
-        this.wSelf = new Float32Array(NA);
-        const selfLimit = Math.sqrt(6.0 / (NA + NA));
-        for (let i = 0; i < NA; i++) this.wSelf[i] = tools.random(-selfLimit, selfLimit);
-
         this.biasA = new Float32Array(NA);
         this.biasB = new Float32Array(NB);
         this.biasO = new Float32Array(O);
 
-        // Plasticity state: tags per synapse and bias, activity average per neuron, tonic dopamine.
+        // Plasticity state: a tag per synapse and bias, an activity average per neuron, tonic dopamine.
         this.eIA = new Float32Array(I * NA);
         this.eIB = new Float32Array(I * NB);
         this.eAB = new Float32Array(NA * NB);
         this.eBA = new Float32Array(NB * NA);
         this.eAO = new Float32Array(NA * O);
         this.eBO = new Float32Array(NB * O);
-        this.eSelf = new Float32Array(NA);
         this.eBiasA = new Float32Array(NA);
         this.eBiasB = new Float32Array(NB);
         this.eBiasO = new Float32Array(O);
         this.caA = new Float32Array(NA);
         this.caB = new Float32Array(NB);
         this.caO = new Float32Array(O);
-        this.fA = new Float32Array(NA);   // post factor this step: activity minus its average
+        this.fA = new Float32Array(NA);      // post factor this step: activity minus its average
         this.fB = new Float32Array(NB);
         this.fO = new Float32Array(O);
-        this.prevB = new Float32Array(NB);   // B activity that A read this step (one-step lag)
-        this.selfIn = new Float32Array(NA);
+        this.prevB = new Float32Array(NB);   // B spikes that A read this step (one-step lag)
         this.daTonic = 0;
 
-        this.hA = new Float32Array(NA);
-
+        this.hA = new Float32Array(NA);      // membranes
         this.hB = new Float32Array(NB);
-
-        this.lifLeak = 0.85;
-        this.lifThresh = 0.25;
-        this.lifReset = -0.1;
-
-        this.refracA = new Uint8Array(NA);
-        this.refracB = new Uint8Array(NB);
-        this.REFRAC_PERIOD = 3;
-
-        this.actA = new Float32Array(NA);
+        this.actA = new Float32Array(NA);    // spikes, 0 or 1
         this.actB = new Float32Array(NB);
-        this.actO = new Float32Array(O);
-
+        this.actO = new Float32Array(O);     // softmax over the output ring
 
         this.prefSin = new Float32Array(O);
         this.prefCos = new Float32Array(O);
@@ -4394,7 +4443,6 @@ void main() {
           this.prefSin[i] = Math.sin(phi);
           this.prefCos[i] = Math.cos(phi);
         }
-
       }
 
       getMasks() {
@@ -4406,74 +4454,33 @@ void main() {
         };
       }
 
+      // One LIF step: leak, add the weighted input, spike (1) and reset at threshold, else 0.
+      static lifStep(h, act, i, net) {
+        const v = h[i] * LIF_LEAK + net;
+        if (v >= LIF_THRESHOLD) { act[i] = 1; h[i] = LIF_RESET; }
+        else { act[i] = 0; h[i] = v; }
+      }
+
       propagate(inp) {
-        const NA = this.lobeSizeA;
-        const NB = this.lobeSizeB;
-        const O = this.outputDims;
-        const actA = this.actA;
-        const actB = this.actB;
-        const actO = this.actO;
-        const hA = this.hA;
+        const NA = this.lobeSizeA, NB = this.lobeSizeB, O = this.outputDims;
+        const actA = this.actA, actB = this.actB, actO = this.actO;
         const lIA = this.lIA, lIB = this.lIB, lAB = this.lAB, lBA = this.lBA, lAO = this.lAO, lBO = this.lBO;
         const wIA = this.wIA, wIB = this.wIB, wAB = this.wAB, wBA = this.wBA, wAO = this.wAO, wBO = this.wBO;
 
-        const refracA = this.refracA;
-        const lifLeak = this.lifLeak;
-        const lifTh = this.lifThresh;
-        const lifRst = this.lifReset;
-        const refracPd = this.REFRAC_PERIOD;
+        // A first: inputs plus B's spikes from the previous step
         for (let i = 0; i < NA; i++) {
-          if (refracA[i] > 0) {
-            refracA[i]--;
-            hA[i] = lifRst;
-            actA[i] = 0.0;
-            this.selfIn[i] = 0;
-            continue;
-          }
-
-          hA[i] *= lifLeak;
-          this.selfIn[i] = hA[i];
-
-          let net = this.biasA[i] + this.wSelf[i] * hA[i];
+          let net = this.biasA[i];
           for (let m = lIA.colStart[i], mEnd = lIA.colStart[i + 1]; m < mEnd; m++) net += wIA[lIA.colK[m]] * inp[lIA.colPre[m]];
           for (let m = lBA.colStart[i], mEnd = lBA.colStart[i + 1]; m < mEnd; m++) net += wBA[lBA.colK[m]] * actB[lBA.colPre[m]];
-          hA[i] += net < -0.5 ? -0.5 : net > 0.5 ? 0.5 : net;
-
-          if (hA[i] >= lifTh) {
-            actA[i] = 1.0;
-            hA[i] = lifRst;
-            refracA[i] = refracPd;
-          } else {
-            const vRel = hA[i] - lifTh;
-            actA[i] = Math.exp(vRel) / (1 + Math.exp(vRel));
-          }
+          SpikingNetwork.lifStep(this.hA, actA, i, net);
         }
 
-        const hB = this.hB;
-        const refracB = this.refracB;
+        // B: inputs plus A's spikes from this step
         for (let i = 0; i < NB; i++) {
-          if (refracB[i] > 0) {
-            refracB[i]--;
-            hB[i] = lifRst;
-            actB[i] = 0.0;
-            continue;
-          }
-
-          hB[i] *= lifLeak;
-
           let net = this.biasB[i];
           for (let m = lIB.colStart[i], mEnd = lIB.colStart[i + 1]; m < mEnd; m++) net += wIB[lIB.colK[m]] * inp[lIB.colPre[m]];
           for (let m = lAB.colStart[i], mEnd = lAB.colStart[i + 1]; m < mEnd; m++) net += wAB[lAB.colK[m]] * actA[lAB.colPre[m]];
-          hB[i] += net < -10 ? -10 : net > 10 ? 10 : net;
-
-          if (hB[i] >= lifTh) {
-            actB[i] = 1.0;
-            hB[i] = lifRst;
-            refracB[i] = refracPd;
-          } else {
-            const vRel = hB[i] - lifTh;
-            actB[i] = Math.exp(vRel) / (1 + Math.exp(vRel));
-          }
+          SpikingNetwork.lifStep(this.hB, actB, i, net);
         }
 
         for (let i = 0; i < O; i++) {
@@ -4488,146 +4495,104 @@ void main() {
         let sum = 0;
         for (let i = 0; i < O; i++) { actO[i] = Math.exp(actO[i] - maxV); sum += actO[i]; }
         for (let i = 0; i < O; i++) actO[i] /= sum;
-
         return actO;
       }
 
+      // Returns the turn (radians, relative to facing): the population vector of the output ring plus jitter.
       think(inputs) {
-        const standardized = this._standardized;
-
-        for (let i = 0; i < inputs.length; i++) {
-          const delta = inputs[i] - this.runningMean[i];
-          this.runningMean[i] += this.EMA * delta;
-          this.runningVar[i] = (1 - this.EMA) * this.runningVar[i] + this.EMA * delta * delta;
-          let s = delta / Math.sqrt(this.runningVar[i] + 1e-8);
-          standardized[i] = s < -5 ? -5 : s > 5 ? 5 : s;
-        }
-
+        this.input.set(inputs);
         this.prevB.set(this.actB);
-        const values = this.propagate(standardized);
+        const values = this.propagate(inputs);
 
-        // Population vector: the heading is the angle of the activity-weighted sum, so small changes turn a little.
         const O = this.outputDims;
         let vx = 0, vz = 0;
         for (let i = 0; i < O; i++) { vx += values[i] * this.prefSin[i]; vz += values[i] * this.prefCos[i]; }
-        let heading = this.heading;
-        if (vx * vx + vz * vz > 1e-12) {
-          heading = Math.atan2(vx, vz);
-          if (heading < 0) heading += Math.PI * 2;
-        }
-        this.heading = heading;
-        this.output = Math.round(heading / (Math.PI * 2) * O) % O;
-        this.tagSynapses(standardized, heading);
-        return heading;
-      }
-
-      getAdaptiveLr() {
-        if (this.costHistoryLen > 0 && this.cost < this.lastCost) {
-          this.learningRate = Math.max(0.00001, Math.min(0.01, this.learningRate * 1.0005));
-        } else {
-          this.learningRate = Math.max(0.00001, Math.min(0.01, this.learningRate * 0.9995));
-        }
-        this.lastCost = this.cost;
-        this.costHistoryLen = Math.min(this.costHistoryLen + 1, 100);
-        return this.learningRate;
+        let turn = vx * vx + vz * vz > 1e-12 ? Math.atan2(vx, vz) : this.turnAngle;
+        // exploration: the turn taken deviates a little from the one the brain chose, and the tags credit what was taken
+        turn += (Math.random() * 2 - 1) * HEADING_JITTER;
+        const TWO_PI = Math.PI * 2;
+        turn = ((turn % TWO_PI) + TWO_PI) % TWO_PI;
+        this.turnAngle = turn;
+        this.output = Math.round(turn / TWO_PI * O) % O;
+        this.tagSynapses(inputs, turn);
+        return turn;
       }
 
       // SYNAPTIC TAGGING, once per think(): each decaying tag = pre activity x (post activity - its recent average).
-      // Outputs count as active by how well their heading matches the one taken, so reward credits the ones that pulled that way.
-      tagSynapses(inp, heading) {
+      // Outputs count as active by how well their turn matches the one taken, so reward credits the ones that pulled that way.
+      tagSynapses(inp, turn) {
         const NA = this.lobeSizeA, NB = this.lobeSizeB, O = this.outputDims;
-        const de = DenseNetwork.TAG_DECAY, g = 1 - de;
-        const dc = DenseNetwork.CA_DECAY, gc = 1 - dc;
+        const d = TAG_DECAY, g = 1 - d;
         const fA = this.fA, fB = this.fB, fO = this.fO;
 
         for (let i = 0; i < NA; i++) {
           const a = this.actA[i];
           fA[i] = a - this.caA[i];
-          this.caA[i] = this.caA[i] * dc + gc * a;
+          this.caA[i] = this.caA[i] * d + g * a;
         }
         for (let i = 0; i < NB; i++) {
           const a = this.actB[i];
           fB[i] = a - this.caB[i];
-          this.caB[i] = this.caB[i] * dc + gc * a;
+          this.caB[i] = this.caB[i] * d + g * a;
         }
-        const hs = Math.sin(heading), hc = Math.cos(heading);
+        const ts = Math.sin(turn), tc = Math.cos(turn);
         for (let i = 0; i < O; i++) {
-          const tuned = this.prefSin[i] * hs + this.prefCos[i] * hc;   // cos(preferred - heading)
+          const tuned = this.prefSin[i] * ts + this.prefCos[i] * tc;   // cos(preferred - turn)
           const a = tuned > 0 ? tuned : 0;
           fO[i] = a - this.caO[i];
-          this.caO[i] = this.caO[i] * dc + gc * a;
+          this.caO[i] = this.caO[i] * d + g * a;
         }
 
-        this._tag(this.eIA, this.lIA, inp, fA, de, g);
-        this._tag(this.eIB, this.lIB, inp, fB, de, g);
-        this._tag(this.eBA, this.lBA, this.prevB, fA, de, g);
-        this._tag(this.eAB, this.lAB, this.actA, fB, de, g);
-        this._tag(this.eAO, this.lAO, this.actA, fO, de, g);
-        this._tag(this.eBO, this.lBO, this.actB, fO, de, g);
+        this._tag(this.eIA, this.lIA, inp, fA, d, g);
+        this._tag(this.eIB, this.lIB, inp, fB, d, g);
+        this._tag(this.eBA, this.lBA, this.prevB, fA, d, g);
+        this._tag(this.eAB, this.lAB, this.actA, fB, d, g);
+        this._tag(this.eAO, this.lAO, this.actA, fO, d, g);
+        this._tag(this.eBO, this.lBO, this.actB, fO, d, g);
 
-        for (let i = 0; i < NA; i++) {
-          this.eSelf[i] = this.eSelf[i] * de + g * this.selfIn[i] * fA[i];
-          this.eBiasA[i] = this.eBiasA[i] * de + g * fA[i];
-        }
-        for (let i = 0; i < NB; i++) this.eBiasB[i] = this.eBiasB[i] * de + g * fB[i];
-        for (let i = 0; i < O; i++) this.eBiasO[i] = this.eBiasO[i] * de + g * fO[i];
+        // a bias is a weight from a constant input of 1
+        for (let i = 0; i < NA; i++) this.eBiasA[i] = this.eBiasA[i] * d + g * fA[i];
+        for (let i = 0; i < NB; i++) this.eBiasB[i] = this.eBiasB[i] * d + g * fB[i];
+        for (let i = 0; i < O; i++) this.eBiasO[i] = this.eBiasO[i] * d + g * fO[i];
       }
 
       // Weights are laid out [pre * nPost + post], as in propagate; only the mask's synapses, in ascending order.
-      _tag(e, L, pre, post, de, g) {
+      _tag(e, L, pre, post, d, g) {
         const idx = L.idx, pr = L.pre, po = L.post;
         for (let m = 0; m < idx.length; m++) {
           const k = idx[m];
-          e[k] = e[k] * de + (g * pre[pr[m]]) * post[po[m]];
+          e[k] = e[k] * d + (g * pre[pr[m]]) * post[po[m]];
         }
       }
 
-      // Tag capture, then the synapse's own intrinsic fluctuation (one independent draw per synapse), then decay.
-      _stepWeights(w, e, L, gain, wd1, r) {
+      _stepWeights(w, e, L, gain, keep) {
         const idx = L.idx;
         for (let m = 0; m < idx.length; m++) {
           const k = idx[m];
-          const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
-          w[k] = w[k] * wd1 + gain * e[k] + noise;
+          w[k] = w[k] * keep + gain * e[k];
         }
       }
 
-      _stepBias(b, e, len, gain, wdB) {
-        for (let k = 0; k < len; k++) b[k] = b[k] * wdB + gain * e[k];
+      _stepBias(b, e, gain, keep) {
+        for (let k = 0; k < b.length; k++) b[k] = b[k] * keep + gain * e[k];
       }
 
-      // THIRD FACTOR (dopamine): reward vs. its expected level turns tags into lasting change (burst) or reverses them (dip).
+      // THIRD FACTOR (dopamine): reward minus its expected level turns tags into lasting change (burst) or reverses them (dip).
       adjustWeights(reward) {
-        this.cost = reward;
-        const r = reward;
-        const lr = this.getAdaptiveLr();
-        const wd1 = 1 - this.weightDecay;
-        const wdB = 1 - this.weightDecay * 0.1;
+        const da = reward - this.daTonic;
+        this.daTonic += DA_TONIC_RATE * da;
+        const gain = this.learningRate * da;
+        const keep = 1 - this.weightDecay;
 
-        const da = r - this.daTonic;
-        this.daTonic += DenseNetwork.DA_TONIC_RATE * da;
-        const gain = lr * da;
-        const gainB = lr * 0.1 * da;
-
-        const NA = this.lobeSizeA;
-        const NB = this.lobeSizeB;
-        const O = this.outputDims;
-
-        this._stepWeights(this.wIA, this.eIA, this.lIA, gain, wd1, r);
-        this._stepWeights(this.wIB, this.eIB, this.lIB, gain, wd1, r);
-        this._stepWeights(this.wAB, this.eAB, this.lAB, gain, wd1, r);
-        this._stepWeights(this.wBA, this.eBA, this.lBA, gain, wd1, r);
-        this._stepWeights(this.wAO, this.eAO, this.lAO, gain, wd1, r);
-        this._stepWeights(this.wBO, this.eBO, this.lBO, gain, wd1, r);
-
-        for (let k = 0; k < NA; k++) {
-          const noise = (Math.random() - 0.5) * 0.001 * (1 - Math.abs(r));
-          this.wSelf[k] = this.wSelf[k] * wd1 + gain * this.eSelf[k] + noise;
-        }
-
-        this._stepBias(this.biasA, this.eBiasA, NA, gainB, wdB);
-        this._stepBias(this.biasB, this.eBiasB, NB, gainB, wdB);
-        this._stepBias(this.biasO, this.eBiasO, O, gainB, wdB);
+        this._stepWeights(this.wIA, this.eIA, this.lIA, gain, keep);
+        this._stepWeights(this.wIB, this.eIB, this.lIB, gain, keep);
+        this._stepWeights(this.wAB, this.eAB, this.lAB, gain, keep);
+        this._stepWeights(this.wBA, this.eBA, this.lBA, gain, keep);
+        this._stepWeights(this.wAO, this.eAO, this.lAO, gain, keep);
+        this._stepWeights(this.wBO, this.eBO, this.lBO, gain, keep);
+        this._stepBias(this.biasA, this.eBiasA, gain, keep);
+        this._stepBias(this.biasB, this.eBiasB, gain, keep);
+        this._stepBias(this.biasO, this.eBiasO, gain, keep);
       }
     }
 
@@ -4655,6 +4620,7 @@ void main() {
       static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
       static INPUT_DIMS = 19;
       static _hit = { d3sq: 0, sin: 0, cos: 0, elev: 0, dist: 0 };
+      static _ray = { sin: 0, cos: 0, elev: 0, dist: 0 };
 
       constructor(position, type) {
         super(position, type);
@@ -4710,12 +4676,13 @@ void main() {
         this.sprinting = false;
         this.bumpScale = 1;
 
-        this.rayFoodSin = 0; this.rayFoodCos = 0; this.rayFoodElev = 0; this.rayFoodDist = 0;
-        this.rayWaterSin = 0; this.rayWaterCos = 0; this.rayWaterElev = 0; this.rayWaterDist = 0;
-        this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 0;
-        this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 0;
+        // no target reads as distance 1 (the edge of sight), never 0, which would mean touching it
+        this.rayFoodSin = 0; this.rayFoodCos = 0; this.rayFoodElev = 0; this.rayFoodDist = 1;
+        this.rayWaterSin = 0; this.rayWaterCos = 0; this.rayWaterElev = 0; this.rayWaterDist = 1;
+        this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 1;
+        this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
-        this.brain = spec.brain ? new DenseNetwork(Animal.INPUT_DIMS, 0.001, 0.001) : null;
+        this.brain = spec.brain ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
         this.ACTION_HOLD = spec.brain ? 60 : DEER_THINK_TICKS;
         this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
         // City: heading in radians, direction (sin, cos) in (x, z); people turn toward targetHeading.
@@ -4933,50 +4900,92 @@ void main() {
         if (this.hasPredator && this.outOfRange(this.memPredatorX, this.memPredatorY, this.memPredatorZ)) {
           this.hasPredator = false;
           this.rayPredatorSin = 0; this.rayPredatorCos = 0;
-          this.rayPredatorElev = 0; this.rayPredatorDist = 0;
+          this.rayPredatorElev = 0; this.rayPredatorDist = 1;
         }
         if (this.hasFood && this.outOfRange(this.memFoodX, this.memFoodY, this.memFoodZ)) {
           this.hasFood = false;
           this.rayFoodSin = 0; this.rayFoodCos = 0;
-          this.rayFoodElev = 0; this.rayFoodDist = 0;
+          this.rayFoodElev = 0; this.rayFoodDist = 1;
         }
         if (this.hasWater && this.outOfRange(this.memWaterX, this.memWaterY, this.memWaterZ)) {
           this.hasWater = false;
           this.rayWaterSin = 0; this.rayWaterCos = 0;
-          this.rayWaterElev = 0; this.rayWaterDist = 0;
+          this.rayWaterElev = 0; this.rayWaterDist = 1;
         }
         if (this.hasMate && this.outOfRange(this.memMateX, this.memMateY, this.memMateZ)) {
           this.hasMate = false;
           this.rayMateSin = 0; this.rayMateCos = 0;
-          this.rayMateElev = 0; this.rayMateDist = 0;
+          this.rayMateElev = 0; this.rayMateDist = 1;
+        }
+        this.refreshRays();
+      }
+
+      // Remembered targets: ray (world-frame sin, cos, elevation, distance) from the current eye to the remembered spot,
+      // so a target walked past keeps pointing where it is, not where it was when last seen.
+      refreshRays() {
+        const px = this.position.x, py = this.eyeY(), pz = this.position.z, vd = this.visionDistance;
+        const ray = (mx, my, mz) => {
+          const dx = mx - px, dy = my - py, dz = mz - pz;
+          const h = Math.hypot(dx, dz), d3 = Math.hypot(h, dy);
+          const r = Animal._ray;
+          if (h === 0) { r.sin = 0; r.cos = 0; } else { r.sin = dx / h; r.cos = dz / h; }
+          r.elev = d3 === 0 ? 0 : dy / d3;
+          r.dist = Math.min(1, d3 / vd);
+          return r;
+        };
+        let r;
+        if (this.hasFood) {
+          r = ray(this.memFoodX, this.memFoodY, this.memFoodZ);
+          this.rayFoodSin = r.sin; this.rayFoodCos = r.cos; this.rayFoodElev = r.elev; this.rayFoodDist = r.dist;
+        }
+        if (this.hasWater) {
+          r = ray(this.memWaterX, this.memWaterY, this.memWaterZ);
+          this.rayWaterSin = r.sin; this.rayWaterCos = r.cos; this.rayWaterElev = r.elev; this.rayWaterDist = r.dist;
+        }
+        if (this.hasPredator) {
+          r = ray(this.memPredatorX, this.memPredatorY, this.memPredatorZ);
+          this.rayPredatorSin = r.sin; this.rayPredatorCos = r.cos;
+          this.rayPredatorElev = r.elev; this.rayPredatorDist = r.dist;
+        }
+        if (this.hasMate) {
+          r = ray(this.memMateX, this.memMateY, this.memMateZ);
+          this.rayMateSin = r.sin; this.rayMateCos = r.cos; this.rayMateElev = r.elev; this.rayMateDist = r.dist;
         }
       }
+
+      // World-frame (sin, cos) of a target rotated into the body's frame: (0, 1) is straight ahead, sin > 0 to the right
+      // of facing as atan2(x, z) measures it. No target (0, 0) stays (0, 0).
+      static egoSin(s, c, fs, fc) { return s * fc - c * fs; }
+      static egoCos(s, c, fs, fc) { return c * fc + s * fs; }
 
       think(grid) {
         this.locate(grid);
         const inp = this._inputs;
 
-        inp[0] = this.rayFoodSin;
-        inp[1] = this.rayFoodCos;
+        // directions relative to facing, so "food ahead and to the left" means the same thing whichever way the body points
+        const fs = Math.sin(this.facingAngle), fc = Math.cos(this.facingAngle);
+        const es = Animal.egoSin, ec = Animal.egoCos;
+        inp[0] = es(this.rayFoodSin, this.rayFoodCos, fs, fc);
+        inp[1] = ec(this.rayFoodSin, this.rayFoodCos, fs, fc);
         inp[2] = this.rayFoodElev;
         inp[3] = this.rayFoodDist;
-        inp[4] = this.rayWaterSin;
-        inp[5] = this.rayWaterCos;
+        inp[4] = es(this.rayWaterSin, this.rayWaterCos, fs, fc);
+        inp[5] = ec(this.rayWaterSin, this.rayWaterCos, fs, fc);
         inp[6] = this.rayWaterElev;
         inp[7] = this.rayWaterDist;
-        inp[8] = this.rayPredatorSin;
-        inp[9] = this.rayPredatorCos;
+        inp[8] = es(this.rayPredatorSin, this.rayPredatorCos, fs, fc);
+        inp[9] = ec(this.rayPredatorSin, this.rayPredatorCos, fs, fc);
         inp[10] = this.rayPredatorElev;
         inp[11] = this.rayPredatorDist;
-        inp[12] = this.rayMateSin;
-        inp[13] = this.rayMateCos;
+        inp[12] = es(this.rayMateSin, this.rayMateCos, fs, fc);
+        inp[13] = ec(this.rayMateSin, this.rayMateCos, fs, fc);
         inp[14] = this.rayMateElev;
         inp[15] = this.rayMateDist;
         inp[16] = this.foodNeed < 100 ? this.foodNeed / 100 : 1;
         inp[17] = this.waterNeed < 100 ? this.waterNeed / 100 : 1;
         inp[18] = this.health / this.maxHealth;
 
-        this.targetHeading = this.brain.think(inp);
+        this.targetHeading = Animal.wrapAngle(this.facingAngle + this.brain.think(inp));
         this.moving = true;
       }
 
@@ -5226,7 +5235,7 @@ void main() {
         this.position.y = this._b + (this.floating ? floatY : g) + lift;
       }
 
-      update(now, grid, animalIndex) {
+      update(now, grid) {
         this.waterNeed += this.waterIncrement;
         this.foodNeed += this.foodIncrement;
         if (!this.isAdult && world.ticks - this.birthTick >= NPC_MATURITY_TICKS) this.isAdult = true;
@@ -5249,30 +5258,25 @@ void main() {
           }
           this.steerDeer();
         } else if (--this.actionTimer <= 0) {
+          // credit the decision just held with what it earned, then make the next one (its tags are set by think)
+          this.learnFromLastDecision();
           this.think(grid);
           this.actionTimer = this.ACTION_HOLD;
         }
-
-        if (this.brain &&
-          world.ticks % perf.BRAIN_UPDATE_INTERVAL === animalIndex % perf.BRAIN_UPDATE_INTERVAL) {
-          const healthDelta = (this.health - this.prevHealth) / (this.startHealth * 0.05);
-          const waterDelta = (this.prevWaterNeed - this.waterNeed) / (this.startHealth * 0.05);
-          const foodDelta = (this.prevFoodNeed - this.foodNeed) / (this.startHealth * 0.05);
-
-          const waterUrgency = Math.min(1, this.waterNeed / 50);
-          const foodUrgency = Math.min(1, this.foodNeed / 50);
-
-          let reward = healthDelta * 0.5
-            + waterDelta * (0.25 + 0.25 * waterUrgency)
-            + foodDelta * (0.25 + 0.25 * foodUrgency);
-
-          reward = Math.max(-1, Math.min(1, reward));
-          this.brain.adjustWeights(reward);
-          this.prevHealth = this.health;
-          this.prevWaterNeed = this.waterNeed;
-          this.prevFoodNeed = this.foodNeed;
-        }
         this.move();
+      }
+
+      // Reward since the previous decision: the mean of health gained, food need met and water need met,
+      // in units of 5% of starting health, clipped to [-1, 1].
+      learnFromLastDecision() {
+        const gained = (this.health - this.prevHealth)
+          + (this.prevFoodNeed - this.foodNeed)
+          + (this.prevWaterNeed - this.waterNeed);
+        const reward = gained / (3 * this.startHealth * 0.05);
+        this.brain.adjustWeights(Math.max(-1, Math.min(1, reward)));
+        this.prevHealth = this.health;
+        this.prevWaterNeed = this.waterNeed;
+        this.prevFoodNeed = this.foodNeed;
       }
 
       attacked(predator) {
@@ -5339,12 +5343,15 @@ void main() {
 
         if (this.brain && partner.brain) {
           const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
-          child.brain = new DenseNetwork(
+          // the parent's wiring with small mutations (lobe sizes, synapses); weights start fresh
+          const childMasks = brains.mutateMasks(ParentBrain.getMasks(), ParentBrain.inputDims,
+            ParentBrain.outputDims, child.mutationMulti / 0.5);
+          child.brain = new SpikingNetwork(
             ParentBrain.inputDims,
             ((this.brain.learningRate + partner.brain.learningRate) / 2)
             * (0.5 + Math.random()),
             ParentBrain.weightDecay,
-            ParentBrain.getMasks()
+            childMasks
           );
         }
 
@@ -5983,7 +5990,6 @@ void main() {
     // SHARED ADAPTERS: the Arena's perf helper; below it, City-only data (places, painted water) its provider reads.
 
     const perf = {
-      BRAIN_UPDATE_INTERVAL: 30,
       terrainVersion: 0,
       // set by graphics.apply: Graphics low, and the LOD distances that go with the setting
       lowPower: startLowPower,
@@ -9748,7 +9754,7 @@ void main() {
         for (let ai = 0; ai < this.animals.length; ai++) {
           const a = this.animals[ai];
           if (a.alive) {
-            a.update(now, this.animalGrid, ai);
+            a.update(now, this.animalGrid);
             if (a.alive) {
               this.collide(a);
               const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
@@ -10099,15 +10105,6 @@ void main() {
       for (let i = 0; i < NB; i++) for (let j = 0; j < O; j++) {
         const k = i * O + j; if (nn.maskBO[k]) straight(oB + i, posB[i], posOut[j], nn.wBO[k]);
       }
-      const loopCol = new THREE.Color(0x00e5ff), R = 0.20, SEG = 12;
-      for (const p of posA) {
-        for (let i = 0; i < SEG; i++) {
-          const a0 = i / SEG * Math.PI * 2, a1 = (i + 1) / SEG * Math.PI * 2;
-          pushSeg(new THREE.Vector3(p.x + Math.cos(a0) * R, p.y + 0.28, p.z + Math.sin(a0) * R),
-            new THREE.Vector3(p.x + Math.cos(a1) * R, p.y + 0.28, p.z + Math.sin(a1) * R),
-            loopCol, 0.55);
-        }
-      }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
       const colorAttr = new THREE.Float32BufferAttribute(cols, 4);
@@ -10139,7 +10136,7 @@ void main() {
       let dirty = false;
       for (let k = 0; k < b.total; k++) {
         let f;
-        if (k < b.oA) f = Math.abs(nn._standardized[k]) > 0.5;
+        if (k < b.oA) f = Math.abs(nn.input[k]) > 0.5;
         else if (k < b.oB) f = nn.actA[k - b.oA] >= 1.0;
         else if (k < b.oOut) f = nn.actB[k - b.oB] >= 1.0;
         else f = (k - b.oOut) === out;
@@ -11325,15 +11322,10 @@ void main() {
       const req = root.requestFullscreen || root.webkitRequestFullscreen;
       if (req) Promise.resolve(req.call(root)).then(() => { if (canLock) return so.lock('landscape'); }).catch(() => { });
     });
-    // the Observer / Survivor choice's Fullscreen button shares the Settings one's toggle
-    const chooseFsEl = document.getElementById('chooseFs');
-    chooseFsEl.addEventListener('click', () => { chooseFsEl.blur(); fsEl.click(); });
     const syncFullscreen = () => {
       const on = !!fullscreenElement();
-      for (const el of [fsEl, chooseFsEl]) {
-        el.classList.toggle('sel', on);
-        el.setAttribute('aria-pressed', String(on));
-      }
+      fsEl.classList.toggle('sel', on);
+      fsEl.setAttribute('aria-pressed', String(on));
     };
     document.addEventListener('fullscreenchange', syncFullscreen);
     document.addEventListener('webkitfullscreenchange', syncFullscreen);
@@ -12632,6 +12624,16 @@ void main() {
     const chooseObsEl = document.getElementById('chooseObs');
     const chooseGameEl = document.getElementById('chooseGame');
     const chooseGoEl = document.getElementById('chooseGo');
+    // Fullscreen and High graphics switches: only flipped here, applied when Go is pressed
+    const chooseFsSwitchEl = document.getElementById('chooseFsSwitch');
+    const chooseGfxSwitchEl = document.getElementById('chooseGfxSwitch');
+    function setSwitch(el, on) {
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-checked', String(on));
+    }
+    for (const el of [chooseFsSwitchEl, chooseGfxSwitchEl]) {
+      el.addEventListener('click', () => { setSwitch(el, !el.classList.contains('on')); el.blur(); });
+    }
     function chooseMode() {
       cardEl.classList.add('choosing');
       return new Promise(resolve => {
@@ -12643,11 +12645,16 @@ void main() {
           }
         };
         show();
+        setSwitch(chooseFsSwitchEl, !!fullscreenElement());
+        setSwitch(chooseGfxSwitchEl, graphics.high);
         chooseObsEl.onclick = () => { wantGame = false; show(); chooseObsEl.blur(); };
         chooseGameEl.onclick = () => { wantGame = true; show(); chooseGameEl.blur(); };
         chooseGoEl.onclick = () => {
           cardEl.classList.remove('choosing');
           chooseObsEl.onclick = chooseGameEl.onclick = chooseGoEl.onclick = null;
+          // Go is the user gesture fullscreen needs; fsEl's handler toggles it (and locks landscape)
+          if (chooseFsSwitchEl.classList.contains('on') !== !!fullscreenElement()) fsEl.click();
+          if (chooseGfxSwitchEl.classList.contains('on') !== graphics.high) graphics.toggle();
           resolve(wantGame);
         };
       });
