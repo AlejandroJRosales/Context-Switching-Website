@@ -15,6 +15,7 @@
       overscroll-behavior: none;
       -webkit-user-select: none;
       user-select: none;
+      -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -1066,7 +1067,7 @@
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
-      <p class="credit">Game 1.0.0.3-opt by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
+      <p class="credit">Game 1.0.0.4 by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
     </div>
   </div>
   <div id="dot"></div>
@@ -1456,7 +1457,7 @@
 
 
     // LOW-POWER (Graphics: low): lower pixel ratio, fps cap, no MSAA, shorter view, nearer LODs, fewer updates; saved choice.
-    const LOW_PIXEL_RATIO = 1;
+    const LOW_PIXEL_RATIO = 1.5;
     const LOW_RENDER_FPS = 30;
     const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays at FOG_NEAR
     const FOG_NEAR = 120;
@@ -1903,21 +1904,6 @@ void main() {
       return null;
     }
 
-    // Mapped sidewalk sides of a road: undefined when untagged, else 'L', 'R', 'LR' or 'N' (none, or drawn as its own footway).
-    function sidewalkSides(tags) {
-      const v = tags.sidewalk || tags['sidewalk:both'];
-      let L = null, R = null;
-      if (v === 'both' || v === 'yes') L = R = true;
-      else if (v === 'left') { L = true; R = false; }
-      else if (v === 'right') { L = false; R = true; }
-      else if (v === 'no' || v === 'none' || v === 'separate') L = R = false;
-      const lv = tags['sidewalk:left'], rv = tags['sidewalk:right'];
-      if (lv) L = lv === 'yes';
-      if (rv) R = rv === 'yes';
-      if (L === null && R === null) return undefined;
-      return ((L ? 'L' : '') + (R ? 'R' : '')) || 'N';
-    }
-
     function featuresFrom(json, project) {
       const f = {
         buildings: [], roads: [], areas: [], waterways: [],
@@ -1968,8 +1954,7 @@ void main() {
               pts, kind: tags.highway, width: parseLength(tags.width),
               oneway: tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || tags.oneway === 'true' ||
                 tags.junction === 'roundabout',
-              lanes: parseInt(tags.lanes, 10) || null,
-              sw: sidewalkSides(tags)
+              lanes: parseInt(tags.lanes, 10) || null
             });
           }
           continue;
@@ -3233,9 +3218,9 @@ void main() {
 
       const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
 
-      // street lamps are built by streets.build; benches and hydrants stand on the sidewalk where there is one
+      // street lamps are built by streets.build
       for (const p of list) {
-        const gy = elevation.at(p.x, p.z) + streets.liftAt(p.x, p.z);
+        const gy = elevation.at(p.x, p.z);
         if (p.kind === 'bench') {
           const yaw = Math.random() * Math.PI * 2;
           const s = Math.sin(yaw), co = Math.cos(yaw);
@@ -6124,7 +6109,7 @@ void main() {
           const slots = [];
           const add = (x, z) => {
             const i = shellAt(x, z);
-            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z) + streets.liftAt(x, z);
+            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z);
             slots.push([x, floor + FOOD_BOX_SIZE / 2, z]);
           };
           const s = p.building >= 0 ? shells[p.building] : null;
@@ -6173,7 +6158,7 @@ void main() {
         if (Math.random() >= FOOD_BOX_OUTDOOR_CHANCE) return false;
         const q = this.outdoorPoint();
         if (!q) return false;
-        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + streets.liftAt(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
+        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
         crate.spot = null; crate.slot = 0; crate.kind = 'outdoor';
         return true;
       },
@@ -6606,17 +6591,11 @@ void main() {
       }
     };
 
-    // STREETS: sidewalks with curbs, lane markings, parked cars and street lamps along the city's vehicle roads.
-    // Sidewalks raise the ground by CURB_H (a step everyone walks or drives up); parked cars and lamp posts are solids,
-    // so the player, the car, deer and the NPC occupancy grid treat them as obstacles, and they block NPC sight (cover).
-    const CURB_H = 0.15;                   // metres the sidewalk stands above the road
-    const CURB_TOP_W = 0.15;               // metres of the sidewalk's road edge drawn in curb colour
-    const SIDEWALK_W_TRY = [2.5, 1.8, 1.2];   // widths tried in turn until a piece clears buildings, water and other roads
-    const SIDEWALK_PIECE = 2;              // metres per sidewalk piece along the road
-    const SIDEWALK_CELL = 0.25;            // metres per cell of the raised-ground mask
-    const SIDEWALK_KINDS = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'road',
-      'primary_link', 'secondary_link', 'tertiary_link']);
-    const SIDEWALK_COLOR = 0xa8a49b, CURB_COLOR = 0xc9c5bc, SIDEWALK_EDGE_COLOR = 0x8f8b82;
+    // STREETS: lane markings, parked cars and street lamps along the city's vehicle roads. Parked cars and lamp posts
+    // are solids, so the player, the car, deer and the NPC occupancy grid treat them as obstacles, and they block NPC sight (cover).
+    const CURB_PIECE = 2;                  // metres per piece a road edge is walked in, checking it is clear
+    const CURB_KINDS = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'road',
+      'primary_link', 'secondary_link', 'tertiary_link']);   // roads whose edges get lamps (and parking, see PARKING_KINDS)
 
     const MARK_KINDS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified',
       'road', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
@@ -6641,7 +6620,7 @@ void main() {
     const LAMP_SPACING = 30;               // metres between generated lamps along one side
     const LAMP_H = 5.4;                    // metres, pole height
     const LAMP_ARM = 1.3;                  // metres the head reaches out over the road
-    const LAMP_CURB_IN = 0.45;             // metres from the curb to the pole
+    const LAMP_CURB_IN = 0.45;             // metres from the road edge to the pole
     const LAMP_NEAR = 12;                  // metres kept from any other lamp (mapped ones first)
     const LAMP_DOOR_CLEAR = 2.5;           // metres kept from a doorway
     const LAMP_POLE_R = 0.15;              // metres, half side of the pole's collider
@@ -6898,11 +6877,10 @@ void main() {
     }
 
     const streets = {
-      bits: null, x0: 0, z0: 0, cols: 0, rows: 0, inv: 1 / SIDEWALK_CELL, half: 0,
-      headMat: null, halo: null,
+      half: 0, headMat: null, halo: null,
 
       clear() {
-        this.bits = null; this.cols = this.rows = 0; this.half = 0;
+        this.half = 0;
         this.headMat = null; this.halo = null;
       },
 
@@ -6911,41 +6889,6 @@ void main() {
       inSquare(x, z, margin) {
         const m = this.half - margin;
         return Math.abs(x) <= m && Math.abs(z) <= m;
-      },
-
-      // CURB_H on a sidewalk, else 0
-      liftAt(x, z) {
-        const b = this.bits;
-        if (b === null) return 0;
-        const c = Math.floor((x - this.x0) * this.inv), r = Math.floor((z - this.z0) * this.inv);
-        if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return 0;
-        const i = r * this.cols + c;
-        return ((b[i >>> 5] >>> (i & 31)) & 1) ? CURB_H : 0;
-      },
-
-      fillQuad(pts) {
-        let zMin = Infinity, zMax = -Infinity;
-        for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
-        const r0 = Math.max(0, Math.floor((zMin - this.z0) * this.inv));
-        const r1 = Math.min(this.rows - 1, Math.floor((zMax - this.z0) * this.inv));
-        const xs = [];
-        for (let r = r0; r <= r1; r++) {
-          const zc = this.z0 + (r + 0.5) * SIDEWALK_CELL;
-          xs.length = 0;
-          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-            const [xi, zi] = pts[i], [xj, zj] = pts[j];
-            if ((zi > zc) !== (zj > zc)) xs.push(xi + (zc - zi) * (xj - xi) / (zj - zi));
-          }
-          xs.sort((a, b) => a - b);
-          for (let k = 0; k + 1 < xs.length; k += 2) {
-            const c0 = Math.max(0, Math.ceil((xs[k] - this.x0) * this.inv - 0.5));
-            const c1 = Math.min(this.cols - 1, Math.floor((xs[k + 1] - this.x0) * this.inv - 0.5));
-            for (let c = c0; c <= c1; c++) {
-              const i = r * this.cols + c;
-              this.bits[i >>> 5] |= 1 << (i & 31);
-            }
-          }
-        }
       },
 
       // Night factor 0..1 from the sky: ground light, head glow and halos.
@@ -6961,11 +6904,8 @@ void main() {
       // After cityWater and the shells exist; `h` is the measured square's half-size. Adds solids, layers and cover.
       build(features, h, props) {
         const roads = features.roads;
-        this.x0 = -h; this.z0 = -h; this.half = h;
-        this.cols = this.rows = Math.ceil(2 * h * this.inv);
-        this.bits = new Uint32Array(Math.ceil(this.cols * this.rows / 32));
+        this.half = h;
         const vidx = vehicleRoadIndex(roads);
-        const g = (x, z) => elevation.at(x, z);
 
         // doorways, so lamps keep clear of them
         const doors = new Map();
@@ -7017,42 +6957,18 @@ void main() {
 
         const open = (x, z) => this.inSquare(x, z, 1) && roadGap(vidx, x, z, 0) >= 0 && shellAt(x, z) < 0 && !cityWater.wetAt(x, z);
 
-        const buf = newBuf();
-        const swC = rgb(SIDEWALK_COLOR), curbC = rgb(CURB_COLOR), edgeC = rgb(SIDEWALK_EDGE_COLOR);
         const cars = [];   // { x, z, yaw }
-        const v3 = (p, y) => [p[0], y, p[1]];
-        // vertical face along a -> b from just under the ground to the sidewalk top
-        const face = (a, b, c, ref) => {
-          pushQuad(buf, v3(a, g(a[0], a[1]) - 0.03), v3(b, g(b[0], b[1]) - 0.03),
-            v3(b, g(b[0], b[1]) + CURB_H), v3(a, g(a[0], a[1]) + CURB_H), c, ref);
-        };
-        let pieces = 0;
 
+        // each edge of a curb road, in CURB_PIECE pieces: a piece is clear when its edge points are off other roads,
+        // buildings and water; runs of clear pieces take parked cars, and a lamp stands every LAMP_SPACING on one
         for (let id = 0; id < roads.length; id++) {
           const r = roads[id];
-          if (!SIDEWALK_KINDS.has(r.kind)) continue;
-          const sw = r.sw;
-          // sides that get a generated sidewalk; parking lines both curbs either way (sidewalk=separate still has a curb)
-          const walkSides = sw === undefined ? [1, -1] : [].concat(sw.includes('R') ? [1] : [], sw.includes('L') ? [-1] : []);
+          if (!CURB_KINDS.has(r.kind)) continue;
           const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
           const parks = PARKING_KINDS.has(r.kind) && half >= PARK_MIN_HALF;
-          if (!walkSides.length && !parks) continue;
 
           for (const s of [1, -1]) {
-            if (!walkSides.includes(s)) {
-              if (parks) {
-                for (let i = 0; i < r.pts.length - 1; i++) {
-                  const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
-                  const len = Math.hypot(x1 - x0, z1 - z0);
-                  if (len < 0.05) continue;
-                  const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
-                  this.parkRun(cars, vidx, id, r, s, x0, z0, ux, uz, -uz * s, ux * s, half, 0, len);
-                }
-              }
-              continue;
-            }
             let dist = 0, lampNext = s > 0 ? LAMP_SPACING / 2 : LAMP_SPACING;
-            let last = null;   // the last kept piece's end edge [inner, outer, ux, uz], for end caps
 
             for (let i = 0; i < r.pts.length - 1; i++) {
               const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
@@ -7060,8 +6976,8 @@ void main() {
               if (len < 0.05) continue;
               const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
               const nx = -uz * s, nz = ux * s;
-              const n = Math.ceil(len / SIDEWALK_PIECE), step = len / n;
-              const inner = half + 0.03;
+              const n = Math.ceil(len / CURB_PIECE), step = len / n;
+              const edge = half + 0.03;
               let runStart = -1;
               const endRun = k => {
                 if (parks && runStart >= 0) this.parkRun(cars, vidx, id, r, s, x0, z0, ux, uz, nx, nz, half,
@@ -7070,60 +6986,29 @@ void main() {
               };
 
               for (let k = 0; k < n; k++) {
-                const a = [x0 + ux * k * step, z0 + uz * k * step];
-                const b = [a[0] + ux * step, a[1] + uz * step];
-                const ai = [a[0] + nx * inner, a[1] + nz * inner], bi = [b[0] + nx * inner, b[1] + nz * inner];
-                let w = 0, ao = null, bo = null;
-                for (const tw of SIDEWALK_W_TRY) {
-                  const o = half + tw;
-                  const pa = [a[0] + nx * o, a[1] + nz * o], pb = [b[0] + nx * o, b[1] + nz * o];
-                  const mx = (a[0] + b[0]) / 2 + nx * (half + tw / 2), mz = (a[1] + b[1]) / 2 + nz * (half + tw / 2);
-                  if (open(ai[0], ai[1]) && open(bi[0], bi[1]) && open(pa[0], pa[1]) && open(pb[0], pb[1]) && open(mx, mz)) {
-                    w = tw; ao = pa; bo = pb;
-                    break;
-                  }
-                }
-
-                if (!w) {
-                  if (last) { face(last[0], last[1], edgeC, [last[2], 0, last[3]]); last = null; }
+                const ta = k * step, tb = ta + step;
+                const clear = open(x0 + ux * ta + nx * edge, z0 + uz * ta + nz * edge) &&
+                  open(x0 + ux * tb + nx * edge, z0 + uz * tb + nz * edge);
+                if (!clear) {
                   endRun(k);
                   dist += step;
                   continue;
                 }
-
-                pieces++;
-                if (!last) face(ai, ao, edgeC, [-ux, 0, -uz]);
-                last = [bi, bo, ux, uz];
-                // top: a curb-coloured strip along the road edge, the rest sidewalk
-                const ci = CURB_TOP_W;
-                const ac = [ai[0] + nx * ci, ai[1] + nz * ci], bc = [bi[0] + nx * ci, bi[1] + nz * ci];
-                const top = p => v3(p, g(p[0], p[1]) + CURB_H);
-                pushQuad(buf, top(ai), top(bi), top(bc), top(ac), curbC, UP);
-                pushQuad(buf, top(ac), top(bc), top(bo), top(ao), swC, UP);
-                face(ai, bi, curbC, [-nx, 0, -nz]);
-                face(ao, bo, edgeC, [nx, 0, nz]);
-                this.fillQuad([ai, bi, bo, ao]);
                 if (runStart < 0) runStart = k;
 
-                // a lamp every LAMP_SPACING, on the sidewalk by the curb, its arm over the road
-                if (w >= 2 * LAMP_CURB_IN && dist + step / 2 >= lampNext) {
-                  const t = step / 2, off = half + LAMP_CURB_IN;
-                  const px = a[0] + ux * t + nx * off, pz = a[1] + uz * t + nz * off;
-                  if (!nearLamp(px, pz) && !nearDoor(px, pz)) addLamp({ x: px, z: pz, ax: -nx, az: -nz, arm: LAMP_ARM });
+                // a lamp every LAMP_SPACING just off the road edge, its arm over the road
+                if (dist + step / 2 >= lampNext) {
+                  const t = ta + step / 2, off = half + LAMP_CURB_IN;
+                  const px = x0 + ux * t + nx * off, pz = z0 + uz * t + nz * off;
+                  const room = open(px, pz) && open(px + nx * LAMP_CURB_IN, pz + nz * LAMP_CURB_IN);
+                  if (room && !nearLamp(px, pz) && !nearDoor(px, pz)) addLamp({ x: px, z: pz, ax: -nx, az: -nz, arm: LAMP_ARM });
                   while (lampNext <= dist + step) lampNext += LAMP_SPACING;
                 }
                 dist += step;
               }
               endRun(n);
             }
-            if (last) face(last[0], last[1], edgeC, [last[2], 0, last[3]]);
           }
-        }
-
-        const sg = bufGeom(buf);
-        if (sg) {
-          const m = addLayer([sg], lampLight.apply(litMaterial()));
-          if (m) m.receiveShadow = true;
         }
 
         this.buildMarkings(roads, vidx);
@@ -7132,7 +7017,7 @@ void main() {
         const solids = carSolids.concat(lampSolids);
         addSolids(solids);
         cover.add(solids);
-        return { pieces, cars: cars.length, lamps: lamps.length };
+        return { cars: cars.length, lamps: lamps.length };
       },
 
       // Parked cars along one curb run [tA, tB] of a segment, evenly spaced slots, each taken with chance PARK_P.
@@ -7196,7 +7081,7 @@ void main() {
         const post = rgb(0x50545c), headC = rgb(0xf5ead0);
         const poleGeoms = [], headGeoms = [], heads = [], halo = [];
         for (const l of lamps) {
-          const base = elevation.at(l.x, l.z) + this.liftAt(l.x, l.z);
+          const base = elevation.at(l.x, l.z);
           const topY = base + LAMP_H;
           poleGeoms.push(cyl(0.07, 0.11, LAMP_H, l.x, base, l.z, post));
           const hx = l.x + l.ax * l.arm, hz = l.z + l.az * l.arm;
@@ -9487,7 +9372,7 @@ void main() {
         this.buildGreens(f.areas);
         this.roadIdx = roadIndex(f.roads);
         this.buildSidewalks(f.roads);
-        // sidewalks, curbs, markings, parked cars and lamps, then the props that stand on the sidewalks
+        // markings, parked cars and lamps, then the benches and hydrants
         streets.build(f, h, f.props);
         buildProps(f.props);
         foodBoxes.build(this);
@@ -9514,13 +9399,13 @@ void main() {
       }
 
       // the bed under water, as the wild lakes; bridges (roads stamped dry) stay at the surface
-      heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z) + streets.liftAt(x, z); }
+      heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z); }
       isWater(x, z) { return cityWater.wetAt(x, z); }
 
       // Floor indoors, else ground; over water the surface with bed `dip` and float depth, so everyone swims alike.
       surface(x, z, out) {
         const i = shellAt(x, z);
-        out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z) + streets.liftAt(x, z);
+        out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
         out.dip = i >= 0 ? 0 : -cityWater.depthAt(x, z);
         out.float = WILD_FLOAT_DEPTH;
       }
@@ -11296,6 +11181,53 @@ void main() {
       };
       el.addEventListener('pointerup', endTouch);
       el.addEventListener('pointercancel', endTouch);
+    }
+
+    // MULTI-TOUCH BUTTONS: mobile browsers send no click for a tap while another finger is down (on the stick, the gas),
+    // so in-game buttons act on their own touch's pointerup instead; the native click that may follow is swallowed.
+    // Holds on the canvas and on these buttons cancel the browser's long-press, which would vibrate and open a menu.
+    const TAP_SLOP = 12;           // px a finger may drift and still count as a tap
+    const TAP_SWALLOW_MS = 600;    // a native click on the same button this soon after is the same tap
+    const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals and climb act on hold)
+    // buttons outside the scrollable settings sheet: their touches never scroll, so the long press is cancelled at touchstart
+    const HOLD_SAFE = '#fly, #car, .pedal, #climb button, #gear';
+    {
+      const taps = new Map();   // pointerId -> { btn, x, y }
+      let swallowBtn = null, swallowUntil = 0;
+
+      addEventListener('pointerdown', e => {
+        if (e.pointerType !== 'touch') return;
+        const btn = e.target instanceof Element ? e.target.closest(TAP_BUTTONS) : null;
+        if (btn) taps.set(e.pointerId, { btn, x: e.clientX, y: e.clientY });
+      }, true);
+      addEventListener('pointerup', e => {
+        const t = taps.get(e.pointerId);
+        if (!t) return;
+        taps.delete(e.pointerId);
+        if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_SLOP || t.btn.disabled) return;
+        // only a tap that ends on the button counts
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        if (!under || !t.btn.contains(under)) return;
+        swallowBtn = null;
+        t.btn.click();
+        swallowBtn = t.btn;
+        swallowUntil = performance.now() + TAP_SWALLOW_MS;
+      }, true);
+      addEventListener('pointercancel', e => { taps.delete(e.pointerId); }, true);
+      addEventListener('click', e => {
+        if (swallowBtn && performance.now() < swallowUntil && e.target instanceof Element && swallowBtn.contains(e.target)) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          swallowBtn = null;
+        }
+      }, true);
+
+      // no long-press haptics or menus while playing; touchstart is cancelled only where a touch never needs to scroll
+      addEventListener('contextmenu', e => { if (active) e.preventDefault(); });
+      addEventListener('touchstart', e => {
+        if (!active || !(e.target instanceof Element)) return;
+        if (e.target === renderer.domElement || e.target.closest(HOLD_SAFE)) e.preventDefault();
+      }, { passive: false });
     }
 
     // FLY
