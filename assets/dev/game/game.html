@@ -1186,7 +1186,7 @@
     const ROAD_NEAR = 35;
     const ROAD_FAR = 300;
     const ROAD_CELL = 32;
-    const FEATURES_VERSION = 4;     // bump when featuresFrom changes shape; drops stale caches
+    const FEATURES_VERSION = 5;     // bump when featuresFrom changes shape; drops stale caches
     const OVERPASS_TIMEOUT_MS = 50000;
     const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
     const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
@@ -1213,7 +1213,7 @@
     const GROUND_SNAP = 0.5;
 
     // Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
-    const LAYER_BIAS = { area: 2, water: 3, road: 4, path: 5, floor: 6 };
+    const LAYER_BIAS = { area: 2, water: 3, road: 4, mark: 4.5, path: 5, floor: 6 };
 
 
     // LAYER TABLES
@@ -1903,6 +1903,21 @@ void main() {
       return null;
     }
 
+    // Mapped sidewalk sides of a road: undefined when untagged, else 'L', 'R', 'LR' or 'N' (none, or drawn as its own footway).
+    function sidewalkSides(tags) {
+      const v = tags.sidewalk || tags['sidewalk:both'];
+      let L = null, R = null;
+      if (v === 'both' || v === 'yes') L = R = true;
+      else if (v === 'left') { L = true; R = false; }
+      else if (v === 'right') { L = false; R = true; }
+      else if (v === 'no' || v === 'none' || v === 'separate') L = R = false;
+      const lv = tags['sidewalk:left'], rv = tags['sidewalk:right'];
+      if (lv) L = lv === 'yes';
+      if (rv) R = rv === 'yes';
+      if (L === null && R === null) return undefined;
+      return ((L ? 'L' : '') + (R ? 'R' : '')) || 'N';
+    }
+
     function featuresFrom(json, project) {
       const f = {
         buildings: [], roads: [], areas: [], waterways: [],
@@ -1948,7 +1963,15 @@ void main() {
 
         if (tags.highway && ROAD_WIDTH[tags.highway]) {
           const pts = cleanPts(el.geometry || [], project, false);
-          if (pts.length >= 2) f.roads.push({ pts, kind: tags.highway, width: parseLength(tags.width) });
+          if (pts.length >= 2) {
+            f.roads.push({
+              pts, kind: tags.highway, width: parseLength(tags.width),
+              oneway: tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || tags.oneway === 'true' ||
+                tags.junction === 'roundabout',
+              lanes: parseInt(tags.lanes, 10) || null,
+              sw: sidewalkSides(tags)
+            });
+          }
           continue;
         }
 
@@ -3043,8 +3066,9 @@ void main() {
       buildGround(features);
       buildTrees(features.trees);
       const barrierBoxes = buildBarriers(features.barriers);
-      buildProps(features.props);
       buildGrid(solids.concat(barrierBoxes));
+      // building walls block NPC sight; fences, hedges and garden walls do not
+      cover.add(solids);
       buildSigns(signs);
       return { count, skipped };
     }
@@ -3080,7 +3104,7 @@ void main() {
       const areas = lay(areaGeoms), greens = lay(greenGeoms);
       for (const g of areas) matchWildGround(g, false);
       for (const g of greens) matchWildGround(g, true);
-      const areaMesh = addLayer(areas.concat(greens), waterClip.apply(litMaterial(LAYER_BIAS.area)));
+      const areaMesh = addLayer(areas.concat(greens), lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area))));
       // the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
       if (areaMesh) areaMesh.receiveShadow = true;
       // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
@@ -3093,9 +3117,9 @@ void main() {
         waterMesh.renderOrder = 1;
       }
       // roads and paths take the buildings' and animals' shadows like the ground under them
-      const roadMesh = rg ? addLayer(lay([rg]), litMaterial(LAYER_BIAS.road)) : null;
+      const roadMesh = rg ? addLayer(lay([rg]), lampLight.apply(litMaterial(LAYER_BIAS.road))) : null;
       if (roadMesh) roadMesh.receiveShadow = true;
-      const pathMesh = pg ? addLayer(lay([pg]), litMaterial(LAYER_BIAS.path)) : null;
+      const pathMesh = pg ? addLayer(lay([pg]), lampLight.apply(litMaterial(LAYER_BIAS.path))) : null;
       if (pathMesh) pathMesh.receiveShadow = true;
     }
 
@@ -3207,15 +3231,12 @@ void main() {
     function buildProps(list) {
       const geoms = [];
 
-      const post = rgb(0x50545c), lampHead = rgb(0xf5ead0);
       const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
 
+      // street lamps are built by streets.build; benches and hydrants stand on the sidewalk where there is one
       for (const p of list) {
-        const gy = elevation.at(p.x, p.z);
-        if (p.kind === 'lamp') {
-          geoms.push(cyl(0.07, 0.11, 4.6, p.x, gy, p.z, post));
-          geoms.push(box(0.5, 0.18, 0.28, p.x, gy + 4.7, p.z, 0, lampHead));
-        } else if (p.kind === 'bench') {
+        const gy = elevation.at(p.x, p.z) + streets.liftAt(p.x, p.z);
+        if (p.kind === 'bench') {
           const yaw = Math.random() * Math.PI * 2;
           const s = Math.sin(yaw), co = Math.cos(yaw);
           geoms.push(box(1.7, 0.09, 0.5, p.x, gy + 0.46, p.z, yaw, wood));
@@ -3451,7 +3472,7 @@ void main() {
       if (!elevation.active && !paint) return;
       const h = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
       const g = terrainGrid(-h, h, -h, h, -0.02);
-      const mesh = new THREE.Mesh(g, waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 })));
+      const mesh = new THREE.Mesh(g, lampLight.apply(waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 }))));
       mesh.receiveShadow = true;
       scene.add(mesh);
       layers.push(mesh);
@@ -4744,6 +4765,7 @@ void main() {
         const h = Math.sqrt(h2);
         if ((dx * ax + dz * az) < cosH * h) return false;
         if (Math.abs(dy) > tanV * h) return false;
+        if (cover.blocks(px, py, pz, tx, ty, tz)) return false;
         const d3 = Math.sqrt(d3sq);
         const hit = Animal._hit;
         hit.d3sq = d3sq;
@@ -5083,11 +5105,11 @@ void main() {
                   if (d2 > vd) continue;
                   const key = base + b;
                   if (obj.spec.hunts[type]) {
-                    if (d2 < bP || (d2 === bP && key > kP)) { bP = d2; kP = key; oP = obj; }
+                    if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
                   } else if (obj.type === food) {
-                    if (d2 < bF || (d2 === bF && key > kF)) { bF = d2; kF = key; oF = obj; }
+                    if ((d2 < bF || (d2 === bF && key > kF)) && this.inSight(ox, obj.position.y, oz)) { bF = d2; kF = key; oF = obj; }
                   } else if (obj.type === type && obj.sex !== sex) {
-                    if (d2 < bM || (d2 === bM && key > kM)) { bM = d2; kM = key; oM = obj; }
+                    if ((d2 < bM || (d2 === bM && key > kM)) && this.inSight(ox, obj.position.y, oz)) { bM = d2; kM = key; oM = obj; }
                   }
                 }
               }
@@ -5103,7 +5125,7 @@ void main() {
         if (gp.alive && SPECIES.human.hunts[type]) {
           const ox = gp.position.x, oz = gp.position.z;
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-          if (d2 <= vd && d2 <= bP) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
+          if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
         }
 
         if (food === 'plant') {
@@ -5113,6 +5135,11 @@ void main() {
 
         const w = world.waterSight.nearest(x, z, r, vd, false);
         if (w) this.seen(2, w.position.x, w.position.y, w.position.z);
+      }
+
+      // Is the line from this animal's eye to (tx, ty, tz) clear of cover (building and cabin walls, parked cars, lamp posts)?
+      inSight(tx, ty, tz) {
+        return !cover.blocks(this.position.x, this.eyeY(), this.position.z, tx, ty, tz);
       }
 
       // Metres moved this tick: a sprint (fleeing or chasing) at the fastest run of its own predators, else the Arena speed.
@@ -6097,7 +6124,7 @@ void main() {
           const slots = [];
           const add = (x, z) => {
             const i = shellAt(x, z);
-            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z);
+            const floor = i >= 0 && !shells[i].raised ? shells[i].floor + FLOOR_Y : elevation.at(x, z) + streets.liftAt(x, z);
             slots.push([x, floor + FOOD_BOX_SIZE / 2, z]);
           };
           const s = p.building >= 0 ? shells[p.building] : null;
@@ -6146,7 +6173,7 @@ void main() {
         if (Math.random() >= FOOD_BOX_OUTDOOR_CHANCE) return false;
         const q = this.outdoorPoint();
         if (!q) return false;
-        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
+        crate.position.x = q[0]; crate.position.y = elevation.at(q[0], q[1]) + streets.liftAt(q[0], q[1]) + FOOD_BOX_SIZE / 2; crate.position.z = q[1];
         crate.spot = null; crate.slot = 0; crate.kind = 'outdoor';
         return true;
       },
@@ -6576,6 +6603,700 @@ void main() {
             }
           }
         }
+      }
+    };
+
+    // STREETS: sidewalks with curbs, lane markings, parked cars and street lamps along the city's vehicle roads.
+    // Sidewalks raise the ground by CURB_H (a step everyone walks or drives up); parked cars and lamp posts are solids,
+    // so the player, the car, deer and the NPC occupancy grid treat them as obstacles, and they block NPC sight (cover).
+    const CURB_H = 0.15;                   // metres the sidewalk stands above the road
+    const CURB_TOP_W = 0.15;               // metres of the sidewalk's road edge drawn in curb colour
+    const SIDEWALK_W_TRY = [2.5, 1.8, 1.2];   // widths tried in turn until a piece clears buildings, water and other roads
+    const SIDEWALK_PIECE = 2;              // metres per sidewalk piece along the road
+    const SIDEWALK_CELL = 0.25;            // metres per cell of the raised-ground mask
+    const SIDEWALK_KINDS = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'road',
+      'primary_link', 'secondary_link', 'tertiary_link']);
+    const SIDEWALK_COLOR = 0xa8a49b, CURB_COLOR = 0xc9c5bc, SIDEWALK_EDGE_COLOR = 0x8f8b82;
+
+    const MARK_KINDS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified',
+      'road', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
+    const MARK_MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'motorway_link', 'trunk_link',
+      'primary_link', 'secondary_link']);
+    const MARK_MIN_WIDTH = 5.5;            // metres; narrower streets go unmarked
+    const MARK_W = 0.12;                   // metres, line width
+    const MARK_DASH = 3, MARK_GAP = 6;     // metres of dash and of gap
+    const MARK_Y = LAYER_Y.road + 0.004;
+    const MARK_JUNCTION_CLEAR = 0.3;       // metres outside another road's edge where a line stops
+    const MARK_WHITE = 0xe6e4dc, MARK_YELLOW = 0xd6ac34;
+    const LANE_W = 3.4;                    // metres per lane when the lanes tag is missing
+
+    const PARKING_KINDS = new Set(['secondary', 'tertiary', 'residential', 'unclassified', 'road']);
+    const PARK_MIN_HALF = 3.4;             // metres; a street narrower than twice this has no parking
+    const PARK_GAP = 1.6;                  // metres between parked cars
+    const PARK_CURB_GAP = 0.2;             // metres between a parked car and the curb
+    const PARK_P = 0.275;                  // chance a parking slot is taken
+    const PARK_CLEAR = 8;                  // metres a parked car keeps from a crossing road's edge
+    const PARKED_COLORS = [0x1c1f24, 0xe4e4e2, 0x9ea3a8, 0x5a5f66, 0x7a1f1f, 0x1f3a6b, 0x2f4a3a, 0xb8a98a, 0x3a3f46, 0xc9c9c4];
+
+    const LAMP_SPACING = 30;               // metres between generated lamps along one side
+    const LAMP_H = 5.4;                    // metres, pole height
+    const LAMP_ARM = 1.3;                  // metres the head reaches out over the road
+    const LAMP_CURB_IN = 0.45;             // metres from the curb to the pole
+    const LAMP_NEAR = 12;                  // metres kept from any other lamp (mapped ones first)
+    const LAMP_DOOR_CLEAR = 2.5;           // metres kept from a doorway
+    const LAMP_POLE_R = 0.15;              // metres, half side of the pole's collider
+    const LAMP_ROAD_REACH = 12;            // metres within which a mapped lamp's arm turns toward the road
+    const LAMP_REACH = 10;                 // metres of ground a lamp lights
+    const LAMP_MAP_CELL = 1;               // metres per cell of the ground light map
+    const LAMP_COLOR = new THREE.Color(0xffc98a);
+    const LAMP_GAIN = 2.2;                 // how bright lamp light is on the ground, times the surface colour
+
+    const COVER_CELL = 8;                  // metres, cover grid cell
+
+    // Vehicle-road segments with their road's id, for "is this point on another road" questions.
+    function vehicleRoadIndex(roads) {
+      const segs = [];
+      let reach = 0;
+      for (let id = 0; id < roads.length; id++) {
+        const r = roads[id];
+        if (PATH_KINDS.has(r.kind)) continue;
+        const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
+        if (half > reach) reach = half;
+        for (let i = 0; i < r.pts.length - 1; i++) {
+          const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+          segs.push({
+            x0, z0, x1, z1, half, id,
+            minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1)
+          });
+        }
+      }
+      return { segs, grid: gridOf(segs, ROAD_CELL), reach };
+    }
+
+    // Signed distance from (x, z) to the nearest carriageway edge of a road other than `skip` (negative inside),
+    // looking within maxR of an edge; Infinity if none. The centreline point measured to is left in roadGapAt.
+    const roadGapAt = { x: 0, z: 0 };
+    function roadGap(idx, x, z, maxR, skip = -1) {
+      let best = Infinity;
+      const r = maxR + idx.reach;
+      const cx0 = Math.floor((x - r) / ROAD_CELL), cx1 = Math.floor((x + r) / ROAD_CELL);
+      const cz0 = Math.floor((z - r) / ROAD_CELL), cz1 = Math.floor((z + r) / ROAD_CELL);
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (let cz = cz0; cz <= cz1; cz++) {
+          const bucket = idx.grid.get(cellKey(cx, cz));
+          if (!bucket) continue;
+          for (const k of bucket) {
+            const s = idx.segs[k];
+            if (s.id === skip) continue;
+            const dx = s.x1 - s.x0, dz = s.z1 - s.z0, l2 = dx * dx + dz * dz;
+            let t = l2 > 0 ? ((x - s.x0) * dx + (z - s.z0) * dz) / l2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const px = s.x0 + dx * t, pz = s.z0 + dz * t;
+            const g = Math.hypot(x - px, z - pz) - s.half;
+            if (g <= maxR && g < best) { best = g; roadGapAt.x = px; roadGapAt.z = pz; }
+          }
+        }
+      }
+      return best;
+    }
+
+    // COVER: solids that block NPC sight (building and cabin walls, parked cars, lamp posts), each a convex quad
+    // with a height range. Doorways are gaps between wall pieces, so NPCs see through open doors.
+    const cover = {
+      items: [], grid: new Map(), stamp: new Uint32Array(0), no: 0,
+
+      clear() { this.items = []; this.grid = new Map(); this.stamp = new Uint32Array(0); this.no = 0; },
+
+      // Appends `list` to the cover set, filing each piece in the grid cells its bounds touch.
+      add(list) {
+        if (!list.length) return;
+        const first = this.items.length;
+        for (const w of list) {
+          let cx = 0, cz = 0;
+          for (const p of w.pts) { cx += p[0]; cz += p[1]; }
+          cx /= w.pts.length; cz /= w.pts.length;
+          // outward edge normals: a point is inside when n . p <= c for every edge
+          w.cnx = []; w.cnz = []; w.cc = [];
+          for (let i = 0, j = w.pts.length - 1; i < w.pts.length; j = i++) {
+            const a = w.pts[j], b = w.pts[i];
+            let nx = b[1] - a[1], nz = a[0] - b[0];
+            if (nx * (cx - a[0]) + nz * (cz - a[1]) > 0) { nx = -nx; nz = -nz; }
+            w.cnx.push(nx); w.cnz.push(nz); w.cc.push(nx * a[0] + nz * a[1]);
+          }
+        }
+        this.items = this.items.concat(list);
+        for (let i = 0; i < list.length; i++) {
+          const w = list[i];
+          const x0 = Math.floor(w.minX / COVER_CELL), x1 = Math.floor(w.maxX / COVER_CELL);
+          const z0 = Math.floor(w.minZ / COVER_CELL), z1 = Math.floor(w.maxZ / COVER_CELL);
+          for (let cx = x0; cx <= x1; cx++) {
+            for (let cz = z0; cz <= z1; cz++) {
+              const k = cellKey(cx, cz);
+              let bucket = this.grid.get(k);
+              if (!bucket) this.grid.set(k, bucket = []);
+              bucket.push(first + i);
+            }
+          }
+        }
+        this.stamp = new Uint32Array(this.items.length);
+        this.no = 0;
+      },
+
+      // Does the sight line from a to b pass through any cover piece within its height range? Walks the grid cells
+      // the line crosses (Amanatides-Woo) and clips the line against each piece filed there (Cyrus-Beck).
+      blocks(ax, ay, az, bx, by, bz) {
+        if (this.items.length === 0) return false;
+        const C = COVER_CELL, dx = bx - ax, dz = bz - az, dy = by - ay;
+        let cx = Math.floor(ax / C), cz = Math.floor(az / C);
+        const ex = Math.floor(bx / C), ez = Math.floor(bz / C);
+        const sx = dx > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+        const tdx = dx !== 0 ? C / Math.abs(dx) : Infinity, tdz = dz !== 0 ? C / Math.abs(dz) : Infinity;
+        let tmx = dx !== 0 ? (dx > 0 ? (cx + 1) * C - ax : ax - cx * C) / Math.abs(dx) : Infinity;
+        let tmz = dz !== 0 ? (dz > 0 ? (cz + 1) * C - az : az - cz * C) / Math.abs(dz) : Infinity;
+        if (++this.no >= 0xffffffff) { this.stamp.fill(0); this.no = 1; }
+        for (let guard = 0; guard < 1024; guard++) {
+          const bucket = this.grid.get(cellKey(cx, cz));
+          if (bucket) {
+            for (const k of bucket) {
+              if (this.stamp[k] === this.no) continue;
+              this.stamp[k] = this.no;
+              const w = this.items[k];
+              let t0 = 0, t1 = 1;
+              for (let e = 0; e < w.cc.length && t0 <= t1; e++) {
+                const num = w.cc[e] - (w.cnx[e] * ax + w.cnz[e] * az);
+                const den = w.cnx[e] * dx + w.cnz[e] * dz;
+                if (den === 0) { if (num < 0) t1 = -1; }
+                else if (den > 0) { const t = num / den; if (t < t1) t1 = t; }
+                else { const t = num / den; if (t > t0) t0 = t; }
+              }
+              if (t0 > t1) continue;
+              const y0 = ay + dy * t0, y1 = ay + dy * t1;
+              if (Math.min(y0, y1) < w.top && Math.max(y0, y1) > w.base) return true;
+            }
+          }
+          if (cx === ex && cz === ez) break;
+          if (Math.min(tmx, tmz) > 1) break;
+          if (tmx < tmz) { tmx += tdx; cx += sx; } else { tmz += tdz; cz += sz; }
+        }
+        return false;
+      }
+    };
+
+    // LAMP LIGHT: a ground light map (sum of every lamp's falloff) that lit ground materials add, scaled by night.
+    const lampLight = {
+      dark: null, tex: null,
+      uniforms: {
+        uLampMap: { value: null }, uLampRect: { value: new THREE.Vector4(0, 0, 0, 0) },
+        uLampGlow: { value: 0 }, uLampColor: { value: LAMP_COLOR.clone().multiplyScalar(LAMP_GAIN) }
+      },
+
+      reset() {
+        if (this.tex) { this.tex.dispose(); this.tex = null; }
+        if (!this.dark) {
+          this.dark = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
+          this.dark.needsUpdate = true;
+        }
+        this.uniforms.uLampMap.value = this.dark;
+        this.uniforms.uLampRect.value.set(0, 0, 0, 0);
+      },
+
+      // heads: [[x, z], ...]; the map covers [-h, h] square
+      build(heads, h) {
+        this.reset();
+        if (!heads.length) return;
+        const cell = LAMP_MAP_CELL, n = Math.ceil(2 * h / cell), x0 = -h, z0 = -h;
+        const acc = new Float32Array(n * n), R = LAMP_REACH;
+        for (const [hx, hz] of heads) {
+          const c0 = Math.max(0, Math.floor((hx - R - x0) / cell)), c1 = Math.min(n - 1, Math.floor((hx + R - x0) / cell));
+          const r0 = Math.max(0, Math.floor((hz - R - z0) / cell)), r1 = Math.min(n - 1, Math.floor((hz + R - z0) / cell));
+          for (let r = r0; r <= r1; r++) {
+            const z = z0 + (r + 0.5) * cell;
+            for (let c = c0; c <= c1; c++) {
+              const x = x0 + (c + 0.5) * cell;
+              const q = 1 - ((x - hx) ** 2 + (z - hz) ** 2) / (R * R);
+              if (q > 0) acc[r * n + c] += q * q;
+            }
+          }
+        }
+        const data = new Uint8Array(n * n);
+        for (let i = 0; i < data.length; i++) data[i] = Math.round(Math.min(1, acc[i]) * 255);
+        const tex = new THREE.DataTexture(data, n, n, THREE.RedFormat);
+        tex.unpackAlignment = 1;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        this.tex = tex;
+        this.uniforms.uLampMap.value = tex;
+        this.uniforms.uLampRect.value.set(x0, z0, 1 / (n * cell), 1 / (n * cell));
+      },
+
+      // Adds lamp light to a built-in lit material, keeping any onBeforeCompile it already has (waterClip's).
+      apply(mat) {
+        if (!this.uniforms.uLampMap.value) this.reset();
+        const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+        const u = this.uniforms;
+        mat.onBeforeCompile = (sh, r) => {
+          prev.call(mat, sh, r);
+          sh.uniforms.uLampMap = u.uLampMap;
+          sh.uniforms.uLampRect = u.uLampRect;
+          sh.uniforms.uLampGlow = u.uLampGlow;
+          sh.uniforms.uLampColor = u.uLampColor;
+          sh.vertexShader = 'varying vec2 vLampXZ;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vLampXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+          sh.fragmentShader = 'uniform sampler2D uLampMap;\nuniform vec4 uLampRect;\nuniform float uLampGlow;\n' +
+            'uniform vec3 uLampColor;\nvarying vec2 vLampXZ;\n' +
+            sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (uLampGlow > 0.0) {
+    vec2 luv = (vLampXZ - uLampRect.xy) * uLampRect.zw;
+    if (luv.x > 0.0 && luv.y > 0.0 && luv.x < 1.0 && luv.y < 1.0)
+      totalEmissiveRadiance += diffuseColor.rgb * uLampColor * (uLampGlow * texture2D(uLampMap, luv).r);
+  }`);
+        };
+        mat.customProgramCacheKey = () => prevKey.call(mat) + '|lamplit';
+        return mat;
+      }
+    };
+
+    // Halo sprite texture for lamp heads at night.
+    function haloTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(c);
+    }
+
+    // One parked-car body, sized like the player's car; paint parts are white so the instance colour paints them.
+    let parkedCarGeom = null;
+    function parkedCarGeometry() {
+      if (parkedCarGeom) return parkedCarGeom;
+      const S = CAR_SCALE, LEN = CAR_LEN / S, WID = CAR_WID / S, WB = CAR_WHEELBASE / S;
+      const TRACK = CAR_TRACK / S, WR = CAR_WHEEL_R / S;
+      const paint = [1, 1, 1], glass = [0.05, 0.06, 0.07], trim = [0.08, 0.08, 0.09], tyre = [0.03, 0.03, 0.03];
+      const parts = [
+        box(WID, 0.62, LEN, 0, 0.62, 0, 0, paint),
+        box(WID - 0.2, 0.5, 2.2, 0, 1.18, 0.25, 0, glass),
+        box(WID - 0.24, 0.05, 2.0, 0, 1.44, 0.25, 0, paint),
+        box(WID + 0.02, 0.18, 0.12, 0, 0.42, -LEN / 2, 0, trim),
+        box(WID + 0.02, 0.18, 0.12, 0, 0.42, LEN / 2, 0, trim)
+      ];
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const w = new THREE.CylinderGeometry(WR, WR, 0.24, 10);
+        w.deleteAttribute('uv');
+        w.rotateZ(Math.PI / 2);
+        w.translate(sx * TRACK / 2, WR, sz * WB / 2);
+        parts.push(tint(nonIndexed(w), tyre));
+      }
+      parkedCarGeom = mergeGeometries(parts, false);
+      for (const g of parts) g.dispose();
+      parkedCarGeom.scale(S, S, S);
+      return parkedCarGeom;
+    }
+
+    const streets = {
+      bits: null, x0: 0, z0: 0, cols: 0, rows: 0, inv: 1 / SIDEWALK_CELL, half: 0,
+      headMat: null, halo: null,
+
+      clear() {
+        this.bits = null; this.cols = this.rows = 0; this.half = 0;
+        this.headMat = null; this.halo = null;
+      },
+
+      // Inside the measured square by at least `margin`; past it the ground is the wilderness, not elevation.at
+      // (which clamps to the edge), so OSM ways running out of the city would carry street objects into the air.
+      inSquare(x, z, margin) {
+        const m = this.half - margin;
+        return Math.abs(x) <= m && Math.abs(z) <= m;
+      },
+
+      // CURB_H on a sidewalk, else 0
+      liftAt(x, z) {
+        const b = this.bits;
+        if (b === null) return 0;
+        const c = Math.floor((x - this.x0) * this.inv), r = Math.floor((z - this.z0) * this.inv);
+        if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return 0;
+        const i = r * this.cols + c;
+        return ((b[i >>> 5] >>> (i & 31)) & 1) ? CURB_H : 0;
+      },
+
+      fillQuad(pts) {
+        let zMin = Infinity, zMax = -Infinity;
+        for (const p of pts) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
+        const r0 = Math.max(0, Math.floor((zMin - this.z0) * this.inv));
+        const r1 = Math.min(this.rows - 1, Math.floor((zMax - this.z0) * this.inv));
+        const xs = [];
+        for (let r = r0; r <= r1; r++) {
+          const zc = this.z0 + (r + 0.5) * SIDEWALK_CELL;
+          xs.length = 0;
+          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const [xi, zi] = pts[i], [xj, zj] = pts[j];
+            if ((zi > zc) !== (zj > zc)) xs.push(xi + (zc - zi) * (xj - xi) / (zj - zi));
+          }
+          xs.sort((a, b) => a - b);
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const c0 = Math.max(0, Math.ceil((xs[k] - this.x0) * this.inv - 0.5));
+            const c1 = Math.min(this.cols - 1, Math.floor((xs[k + 1] - this.x0) * this.inv - 0.5));
+            for (let c = c0; c <= c1; c++) {
+              const i = r * this.cols + c;
+              this.bits[i >>> 5] |= 1 << (i & 31);
+            }
+          }
+        }
+      },
+
+      // Night factor 0..1 from the sky: ground light, head glow and halos.
+      setGlow(g) {
+        lampLight.uniforms.uLampGlow.value = g;
+        if (this.headMat) this.headMat.emissive.copy(LAMP_COLOR).multiplyScalar(1.4 * g);
+        if (this.halo) {
+          this.halo.material.opacity = 0.85 * g;
+          this.halo.visible = g > 0.02;
+        }
+      },
+
+      // After cityWater and the shells exist; `h` is the measured square's half-size. Adds solids, layers and cover.
+      build(features, h, props) {
+        const roads = features.roads;
+        this.x0 = -h; this.z0 = -h; this.half = h;
+        this.cols = this.rows = Math.ceil(2 * h * this.inv);
+        this.bits = new Uint32Array(Math.ceil(this.cols * this.rows / 32));
+        const vidx = vehicleRoadIndex(roads);
+        const g = (x, z) => elevation.at(x, z);
+
+        // doorways, so lamps keep clear of them
+        const doors = new Map();
+        const doorKey = (x, z) => cellKey(Math.floor(x / LAMP_DOOR_CLEAR), Math.floor(z / LAMP_DOOR_CLEAR));
+        for (const s of shells) for (const t of s.throats) {
+          const k = doorKey(t[0], t[1]);
+          let b = doors.get(k);
+          if (!b) doors.set(k, b = []);
+          b.push(t[0], t[1]);
+        }
+        const nearDoor = (x, z) => {
+          const cx = Math.floor(x / LAMP_DOOR_CLEAR), cz = Math.floor(z / LAMP_DOOR_CLEAR);
+          for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+            const b = doors.get(cellKey(cx + i, cz + j));
+            if (b) for (let k = 0; k < b.length; k += 2) if (Math.hypot(b[k] - x, b[k + 1] - z) < LAMP_DOOR_CLEAR) return true;
+          }
+          return false;
+        };
+
+        // lamps: mapped ones first, then generated ones that keep LAMP_NEAR from every lamp
+        const lamps = [];   // { x, z, ax, az, arm }
+        const lampCells = new Map();
+        const lampKey = (x, z) => cellKey(Math.floor(x / LAMP_NEAR), Math.floor(z / LAMP_NEAR));
+        const nearLamp = (x, z) => {
+          const cx = Math.floor(x / LAMP_NEAR), cz = Math.floor(z / LAMP_NEAR);
+          for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+            const b = lampCells.get(cellKey(cx + i, cz + j));
+            if (b) for (const l of b) if (Math.hypot(l.x - x, l.z - z) < LAMP_NEAR) return true;
+          }
+          return false;
+        };
+        const addLamp = l => {
+          lamps.push(l);
+          const k = lampKey(l.x, l.z);
+          let b = lampCells.get(k);
+          if (!b) lampCells.set(k, b = []);
+          b.push(l);
+        };
+        for (const p of props) {
+          if (p.kind !== 'lamp' || !this.inSquare(p.x, p.z, 1)) continue;
+          const gap = roadGap(vidx, p.x, p.z, LAMP_ROAD_REACH);
+          let ax = 0, az = 0, arm = 0;
+          if (gap < Infinity && gap > 0.3) {
+            const dx = roadGapAt.x - p.x, dz = roadGapAt.z - p.z, d = Math.hypot(dx, dz);
+            if (d > 1e-6) { ax = dx / d; az = dz / d; arm = LAMP_ARM; }
+          }
+          addLamp({ x: p.x, z: p.z, ax, az, arm });
+        }
+
+        const open = (x, z) => this.inSquare(x, z, 1) && roadGap(vidx, x, z, 0) >= 0 && shellAt(x, z) < 0 && !cityWater.wetAt(x, z);
+
+        const buf = newBuf();
+        const swC = rgb(SIDEWALK_COLOR), curbC = rgb(CURB_COLOR), edgeC = rgb(SIDEWALK_EDGE_COLOR);
+        const cars = [];   // { x, z, yaw }
+        const v3 = (p, y) => [p[0], y, p[1]];
+        // vertical face along a -> b from just under the ground to the sidewalk top
+        const face = (a, b, c, ref) => {
+          pushQuad(buf, v3(a, g(a[0], a[1]) - 0.03), v3(b, g(b[0], b[1]) - 0.03),
+            v3(b, g(b[0], b[1]) + CURB_H), v3(a, g(a[0], a[1]) + CURB_H), c, ref);
+        };
+        let pieces = 0;
+
+        for (let id = 0; id < roads.length; id++) {
+          const r = roads[id];
+          if (!SIDEWALK_KINDS.has(r.kind)) continue;
+          const sw = r.sw;
+          // sides that get a generated sidewalk; parking lines both curbs either way (sidewalk=separate still has a curb)
+          const walkSides = sw === undefined ? [1, -1] : [].concat(sw.includes('R') ? [1] : [], sw.includes('L') ? [-1] : []);
+          const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
+          const parks = PARKING_KINDS.has(r.kind) && half >= PARK_MIN_HALF;
+          if (!walkSides.length && !parks) continue;
+
+          for (const s of [1, -1]) {
+            if (!walkSides.includes(s)) {
+              if (parks) {
+                for (let i = 0; i < r.pts.length - 1; i++) {
+                  const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+                  const len = Math.hypot(x1 - x0, z1 - z0);
+                  if (len < 0.05) continue;
+                  const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+                  this.parkRun(cars, vidx, id, r, s, x0, z0, ux, uz, -uz * s, ux * s, half, 0, len);
+                }
+              }
+              continue;
+            }
+            let dist = 0, lampNext = s > 0 ? LAMP_SPACING / 2 : LAMP_SPACING;
+            let last = null;   // the last kept piece's end edge [inner, outer, ux, uz], for end caps
+
+            for (let i = 0; i < r.pts.length - 1; i++) {
+              const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+              const len = Math.hypot(x1 - x0, z1 - z0);
+              if (len < 0.05) continue;
+              const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+              const nx = -uz * s, nz = ux * s;
+              const n = Math.ceil(len / SIDEWALK_PIECE), step = len / n;
+              const inner = half + 0.03;
+              let runStart = -1;
+              const endRun = k => {
+                if (parks && runStart >= 0) this.parkRun(cars, vidx, id, r, s, x0, z0, ux, uz, nx, nz, half,
+                  runStart * step, k * step);
+                runStart = -1;
+              };
+
+              for (let k = 0; k < n; k++) {
+                const a = [x0 + ux * k * step, z0 + uz * k * step];
+                const b = [a[0] + ux * step, a[1] + uz * step];
+                const ai = [a[0] + nx * inner, a[1] + nz * inner], bi = [b[0] + nx * inner, b[1] + nz * inner];
+                let w = 0, ao = null, bo = null;
+                for (const tw of SIDEWALK_W_TRY) {
+                  const o = half + tw;
+                  const pa = [a[0] + nx * o, a[1] + nz * o], pb = [b[0] + nx * o, b[1] + nz * o];
+                  const mx = (a[0] + b[0]) / 2 + nx * (half + tw / 2), mz = (a[1] + b[1]) / 2 + nz * (half + tw / 2);
+                  if (open(ai[0], ai[1]) && open(bi[0], bi[1]) && open(pa[0], pa[1]) && open(pb[0], pb[1]) && open(mx, mz)) {
+                    w = tw; ao = pa; bo = pb;
+                    break;
+                  }
+                }
+
+                if (!w) {
+                  if (last) { face(last[0], last[1], edgeC, [last[2], 0, last[3]]); last = null; }
+                  endRun(k);
+                  dist += step;
+                  continue;
+                }
+
+                pieces++;
+                if (!last) face(ai, ao, edgeC, [-ux, 0, -uz]);
+                last = [bi, bo, ux, uz];
+                // top: a curb-coloured strip along the road edge, the rest sidewalk
+                const ci = CURB_TOP_W;
+                const ac = [ai[0] + nx * ci, ai[1] + nz * ci], bc = [bi[0] + nx * ci, bi[1] + nz * ci];
+                const top = p => v3(p, g(p[0], p[1]) + CURB_H);
+                pushQuad(buf, top(ai), top(bi), top(bc), top(ac), curbC, UP);
+                pushQuad(buf, top(ac), top(bc), top(bo), top(ao), swC, UP);
+                face(ai, bi, curbC, [-nx, 0, -nz]);
+                face(ao, bo, edgeC, [nx, 0, nz]);
+                this.fillQuad([ai, bi, bo, ao]);
+                if (runStart < 0) runStart = k;
+
+                // a lamp every LAMP_SPACING, on the sidewalk by the curb, its arm over the road
+                if (w >= 2 * LAMP_CURB_IN && dist + step / 2 >= lampNext) {
+                  const t = step / 2, off = half + LAMP_CURB_IN;
+                  const px = a[0] + ux * t + nx * off, pz = a[1] + uz * t + nz * off;
+                  if (!nearLamp(px, pz) && !nearDoor(px, pz)) addLamp({ x: px, z: pz, ax: -nx, az: -nz, arm: LAMP_ARM });
+                  while (lampNext <= dist + step) lampNext += LAMP_SPACING;
+                }
+                dist += step;
+              }
+              endRun(n);
+            }
+            if (last) face(last[0], last[1], edgeC, [last[2], 0, last[3]]);
+          }
+        }
+
+        const sg = bufGeom(buf);
+        if (sg) {
+          const m = addLayer([sg], lampLight.apply(litMaterial()));
+          if (m) m.receiveShadow = true;
+        }
+
+        this.buildMarkings(roads, vidx);
+        const carSolids = this.buildCars(cars);
+        const lampSolids = this.buildLamps(lamps, h);
+        const solids = carSolids.concat(lampSolids);
+        addSolids(solids);
+        cover.add(solids);
+        return { pieces, cars: cars.length, lamps: lamps.length };
+      },
+
+      // Parked cars along one curb run [tA, tB] of a segment, evenly spaced slots, each taken with chance PARK_P.
+      parkRun(cars, vidx, id, r, s, x0, z0, ux, uz, nx, nz, half, tA, tB) {
+        const L = CAR_LEN + PARK_GAP;
+        const slots = Math.floor((tB - tA) / L);
+        if (slots < 1) return;
+        const pad = ((tB - tA) - slots * L) / 2;
+        const off = half - CAR_WID / 2 - PARK_CURB_GAP;
+        // right-side cars face the way the road runs; left-side cars face back unless the road is one-way
+        const fx = s > 0 || r.oneway ? ux : -ux, fz = s > 0 || r.oneway ? uz : -uz;
+        const yaw = Math.atan2(-fx, -fz);
+        for (let j = 0; j < slots; j++) {
+          if (Math.random() >= PARK_P) continue;
+          const t = tA + pad + (j + 0.5) * L;
+          const x = x0 + ux * t + nx * off, z = z0 + uz * t + nz * off;
+          if (!this.inSquare(x, z, CAR_LEN) || cityWater.wetAt(x, z) || shellAt(x, z) >= 0) continue;
+          if (roadGap(vidx, x, z, PARK_CLEAR, id) < PARK_CLEAR) continue;
+          cars.push({ x, z, yaw });
+        }
+      },
+
+      // One instanced mesh of parked cars settled on the road; returns their solids.
+      buildCars(cars) {
+        const solids = [];
+        if (!cars.length) return solids;
+        const mesh = new THREE.InstancedMesh(parkedCarGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }), cars.length);
+        const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ');
+        const p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), col = new THREE.Color();
+        const hl = CAR_LEN / 2, hw = CAR_WID / 2;
+        for (let i = 0; i < cars.length; i++) {
+          const c = cars[i];
+          const fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw), rx = Math.cos(c.yaw), rz = -Math.sin(c.yaw);
+          const hf = elevation.at(c.x + fx * hl, c.z + fz * hl), hr = elevation.at(c.x - fx * hl, c.z - fz * hl);
+          const y = (hf + hr) / 2;
+          e.set(Math.atan2(hf - hr, CAR_LEN), c.yaw, 0);
+          q.setFromEuler(e);
+          mesh.setMatrixAt(i, m.compose(p.set(c.x, y, c.z), q, one));
+          mesh.setColorAt(i, col.setHex(PARKED_COLORS[Math.floor(Math.random() * PARKED_COLORS.length)]));
+          const pts = [
+            [c.x + fx * hl + rx * hw, c.z + fz * hl + rz * hw], [c.x + fx * hl - rx * hw, c.z + fz * hl - rz * hw],
+            [c.x - fx * hl - rx * hw, c.z - fz * hl - rz * hw], [c.x - fx * hl + rx * hw, c.z - fz * hl + rz * hw]
+          ];
+          solids.push({ pts, ...bounds(pts), base: Math.min(hf, hr) - 0.05, top: Math.max(hf, hr) + CAR_TOP, tags: null });
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        mesh.castShadow = mesh.receiveShadow = true;
+        scene.add(mesh);
+        layers.push(mesh);
+        invalidate();
+        return solids;
+      },
+
+      // Poles and arms in one lit mesh, heads in one mesh whose glow follows the night, halos as points;
+      // the ground light map from the head positions. Returns the pole solids.
+      buildLamps(lamps, h) {
+        const solids = [];
+        if (!lamps.length) { lampLight.build([], h); return solids; }
+        const post = rgb(0x50545c), headC = rgb(0xf5ead0);
+        const poleGeoms = [], headGeoms = [], heads = [], halo = [];
+        for (const l of lamps) {
+          const base = elevation.at(l.x, l.z) + this.liftAt(l.x, l.z);
+          const topY = base + LAMP_H;
+          poleGeoms.push(cyl(0.07, 0.11, LAMP_H, l.x, base, l.z, post));
+          const hx = l.x + l.ax * l.arm, hz = l.z + l.az * l.arm;
+          const yaw = Math.atan2(-l.az, l.ax);
+          if (l.arm > 0) {
+            poleGeoms.push(box(l.arm, 0.08, 0.08, (l.x + hx) / 2, topY - 0.05, (l.z + hz) / 2, yaw, post));
+          }
+          headGeoms.push(box(0.7, 0.14, 0.32, hx, topY - 0.14, hz, yaw, headC));
+          heads.push([hx, hz]);
+          halo.push(hx, topY - 0.28, hz);
+          const r = LAMP_POLE_R;
+          const pts = [[l.x - r, l.z - r], [l.x + r, l.z - r], [l.x + r, l.z + r], [l.x - r, l.z + r]];
+          solids.push({ pts, ...bounds(pts), base: base - 0.05, top: topY, tags: null });
+        }
+        const poles = addLayer(poleGeoms, litMaterial());
+        if (poles) poles.castShadow = poles.receiveShadow = true;
+        this.headMat = new THREE.MeshLambertMaterial({ color: 0xf5ead0, emissive: 0x000000 });
+        addLayer(headGeoms, this.headMat);
+
+        const hg = new THREE.BufferGeometry();
+        hg.setAttribute('position', new THREE.Float32BufferAttribute(halo, 3));
+        hg.computeBoundingSphere();
+        const pm = new THREE.PointsMaterial({
+          size: 1.6, map: haloTexture(), color: LAMP_COLOR, transparent: true, opacity: 0,
+          depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+        });
+        this.halo = new THREE.Points(hg, pm);
+        this.halo.visible = false;
+        scene.add(this.halo);
+        layers.push(this.halo);
+
+        lampLight.build(heads, h);
+        this.setGlow(lampLight.uniforms.uLampGlow.value);
+        return solids;
+      },
+
+      // Centre lines, lane lines and edge lines, stopped where another road crosses; draped like the road.
+      buildMarkings(roads, vidx) {
+        const buf = newBuf();
+        const white = rgb(MARK_WHITE), yellow = rgb(MARK_YELLOW);
+        const line = (r, id, off, c, dashed) => {
+          const hw = MARK_W / 2;
+          let D0 = 0;
+          const P = MARK_DASH + MARK_GAP;
+          for (let i = 0; i < r.pts.length - 1; i++) {
+            const [x0, z0] = r.pts[i], [x1, z1] = r.pts[i + 1];
+            const len = Math.hypot(x1 - x0, z1 - z0);
+            if (len < 0.05) continue;
+            const ux = (x1 - x0) / len, uz = (z1 - z0) / len, nx = -uz, nz = ux;
+            const emit = (t0, t1) => {
+              if (t1 - t0 < 0.2) return;
+              const tm = (t0 + t1) / 2;
+              const mx = x0 + ux * tm + nx * off, mz = z0 + uz * tm + nz * off;
+              if (!this.inSquare(mx, mz, MARK_DASH) || roadGap(vidx, mx, mz, MARK_JUNCTION_CLEAR, id) < MARK_JUNCTION_CLEAR) return;
+              const p = (t, o) => [x0 + ux * t + nx * o, MARK_Y, z0 + uz * t + nz * o];
+              pushQuad(buf, p(t0, off - hw), p(t1, off - hw), p(t1, off + hw), p(t0, off + hw), c, UP);
+            };
+            if (dashed) {
+              for (let k = Math.floor(D0 / P); k * P < D0 + len; k++) {
+                const a = Math.max(k * P, D0), b = Math.min(k * P + MARK_DASH, D0 + len);
+                if (b > a) emit(a - D0, b - D0);
+              }
+            } else {
+              const n = Math.max(1, Math.ceil(len / MARK_DASH));
+              for (let k = 0; k < n; k++) emit(k * len / n, (k + 1) * len / n);
+            }
+            D0 += len;
+          }
+        };
+
+        for (let id = 0; id < roads.length; id++) {
+          const r = roads[id];
+          if (!MARK_KINDS.has(r.kind)) continue;
+          const width = r.width ?? ROAD_WIDTH[r.kind];
+          if (width < MARK_MIN_WIDTH) continue;
+          const half = width / 2;
+          if (r.oneway) {
+            const lanes = Math.max(1, r.lanes || Math.round(width / LANE_W));
+            for (let k = 1; k < lanes; k++) line(r, id, -half + k * width / lanes, white, true);
+          } else {
+            const lanes = Math.max(2, r.lanes || 2 * Math.max(1, Math.round(half / LANE_W)));
+            if (MARK_MAJOR.has(r.kind)) { line(r, id, -0.1, yellow, false); line(r, id, 0.1, yellow, false); }
+            else line(r, id, 0, yellow, true);
+            const per = Math.floor(lanes / 2);
+            for (let k = 1; k < per; k++) {
+              line(r, id, k * half / per, white, true);
+              line(r, id, -k * half / per, white, true);
+            }
+          }
+          if (!PARKING_KINDS.has(r.kind) && width >= 9) {
+            line(r, id, half - 0.3, white, false);
+            line(r, id, -(half - 0.3), white, false);
+          }
+        }
+
+        const mg = bufGeom(buf);
+        if (!mg) return;
+        const geoms = elevation.active ? [drape(mg)].filter(Boolean) : [mg];
+        const mesh = addLayer(geoms, lampLight.apply(litMaterial(LAYER_BIAS.mark)));
+        if (mesh) mesh.receiveShadow = true;
       }
     };
 
@@ -7702,6 +8423,7 @@ void main() {
         addWildLayer(c);
         const ob = cabinObstacles(cx, cz, scale, rotY, gy);
         addSolids(ob.solids);
+        cover.add(ob.solids.filter(w => !w.walkable));
         obstacleThroats.push(ob.throat);
         shelters.push(ob.shelter);
         placed.push({ x: cx, z: cz, y: gy, yaw: rotY, floor: gy + 2 * scale });
@@ -8765,10 +9487,15 @@ void main() {
         this.buildGreens(f.areas);
         this.roadIdx = roadIndex(f.roads);
         this.buildSidewalks(f.roads);
+        // sidewalks, curbs, markings, parked cars and lamps, then the props that stand on the sidewalks
+        streets.build(f, h, f.props);
+        buildProps(f.props);
         foodBoxes.build(this);
       }
 
       teardown() {
+        streets.clear();
+        cover.clear();
         cityWater.clear();
         places.list.length = 0;
         places.byKind = {};
@@ -8787,13 +9514,13 @@ void main() {
       }
 
       // the bed under water, as the wild lakes; bridges (roads stamped dry) stay at the surface
-      heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z); }
+      heightAt(x, z) { return elevation.at(x, z) - cityWater.depthAt(x, z) + streets.liftAt(x, z); }
       isWater(x, z) { return cityWater.wetAt(x, z); }
 
       // Floor indoors, else ground; over water the surface with bed `dip` and float depth, so everyone swims alike.
       surface(x, z, out) {
         const i = shellAt(x, z);
-        out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z);
+        out.base = i >= 0 && !shells[i].raised ? shells[i].floor : elevation.at(x, z) + streets.liftAt(x, z);
         out.dip = i >= 0 ? 0 : -cityWater.depthAt(x, z);
         out.float = WILD_FLOAT_DEPTH;
       }
@@ -11851,6 +12578,8 @@ void main() {
       sun.intensity = power;
       // not dimmed by cloud: kept for facade readability rather than realism
       moon.intensity = MOON_MAX * (1 - day);
+      // street lamps: on through dusk and under heavy cloud, off in daylight
+      streets.setGlow(Math.min(Math.max(((1 - day) + 0.35 * cloud - 0.3) / 0.45, 0), 1));
       hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
 
       // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
@@ -12193,6 +12922,9 @@ void main() {
       occ.clear();
       cityWater.clear();
       waterClip.reset();
+      streets.clear();
+      cover.clear();
+      lampLight.reset();
       elevation.clear();
       ground.visible = true;
       ground.position.y = 0;
