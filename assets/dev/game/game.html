@@ -1521,6 +1521,10 @@
     const SHADOW_BIAS_M = 0.25;           // depth bias in metres, whatever SHADOW_DEPTH is
     // city buildings are cut into square cells this wide, so the box's cull skips the cells outside it
     const BUILDING_CHUNK_M = 150;
+    // the big ground meshes are sorted into square cells this wide, so each frame draws only the cells in view
+    const GROUND_CELL_M = 150;
+    // height meshes hold fewer triangles a cell, so theirs are wider: fewer draws for nearly the same cull
+    const TERRAIN_CELL_M = 300;
     const shadowMapSize = Math.min(SHADOW_MAP_MAX, renderer.capabilities.maxTextureSize);
     sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     sun.shadow.camera.left = sun.shadow.camera.bottom = -SHADOW_BOX_HALF;
@@ -1601,6 +1605,7 @@ void main() {
       render() {
         renderer.setRenderTarget(this.ensure());
         renderer.render(scene, camera);
+        bench.gpuSwitch(2);   // BENCH
         renderer.setRenderTarget(null);
         renderer.render(this.qScene, this.qCam);
       },
@@ -2289,6 +2294,211 @@ void main() {
         m.polygonOffsetUnits = -bias;
       }
       return m;
+    }
+
+    // GROUND CELLS: a static mesh regrouped into square cells of `size` metres; each frame draws only the runs of cells in view.
+
+    // Non-indexed triangles by cell, kept in order inside each cell; `clip` cuts them at the cell lines, else each goes by its centre.
+    function cellSplitFlat(g, clip, S) {
+      const names = Object.keys(g.attributes);
+      if (names.some(n => !(g.attributes[n].array instanceof Float32Array) || g.attributes[n].normalized)) return null;
+      const src = names.map(n => g.attributes[n].array), size = names.map(n => g.attributes[n].itemSize);
+      let K = 0, po = 0;
+      names.forEach((n, a) => { if (n === 'position') po = K; K += size[a]; });
+      const P = g.attributes.position.array, nTri = g.attributes.position.count / 3;
+      // cells live on a dense grid over the mesh's extent; `cellOf` maps a grid square to its cell, made on first use
+      let gx0 = Infinity, gz0 = Infinity, gx1 = -Infinity, gz1 = -Infinity;
+      for (let i = 0; i < P.length; i += 3) {
+        if (P[i] < gx0) gx0 = P[i]; if (P[i] > gx1) gx1 = P[i];
+        if (P[i + 2] < gz0) gz0 = P[i + 2]; if (P[i + 2] > gz1) gz1 = P[i + 2];
+      }
+      const cx0g = Math.floor(gx0 / S), cz0g = Math.floor(gz0 / S), gw = Math.floor(gx1 / S) - cx0g + 1;
+      const cellOf = new Int32Array(gw * (Math.floor(gz1 / S) - cz0g + 1)).fill(-1), cellX = [], cellZ = [], cellN = [];
+      const cellAt = (cx, cz) => {
+        const k = (cz - cz0g) * gw + cx - cx0g;
+        if (cellOf[k] < 0) { cellOf[k] = cellN.length; cellX.push(cx); cellZ.push(cz); cellN.push(0); }
+        return cellOf[k];
+      };
+      const rec = v => {
+        const r = new Float64Array(K);
+        for (let a = 0, o = 0; a < src.length; a++) for (let c = 0; c < size[a]; c++) r[o++] = src[a][v * size[a] + c];
+        return r;
+      };
+      // the point where edge p-q crosses axis value c, always taken from its lower end so both cells get the same point
+      const cut = (p, q, ax, c) => {
+        if (p[po + ax] > q[po + ax]) { const t = p; p = q; q = t; }
+        const t = (c - p[po + ax]) / (q[po + ax] - p[po + ax]), r = new Float64Array(K);
+        for (let k = 0; k < K; k++) r[k] = p[k] + t * (q[k] - p[k]);
+        r[po + ax] = c;
+        return r;
+      };
+      // the part of a convex polygon on one side of the line where axis ax equals c (Sutherland-Hodgman)
+      const keepSide = (poly, ax, c, above) => {
+        const out = [];
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length];
+          const ina = above ? a[po + ax] >= c : a[po + ax] <= c, inb = above ? b[po + ax] >= c : b[po + ax] <= c;
+          if (ina) out.push(a);
+          if (ina !== inb) out.push(cut(a, b, ax, c));
+        }
+        return out;
+      };
+      const triCell = new Int32Array(nTri), pieces = [];
+      for (let t = 0; t < nTri; t++) {
+        const o = t * 9;
+        if (!clip) {
+          const ci = cellAt(Math.floor((P[o] + P[o + 3] + P[o + 6]) / 3 / S), Math.floor((P[o + 2] + P[o + 5] + P[o + 8]) / 3 / S));
+          triCell[t] = ci; cellN[ci] += 3; continue;
+        }
+        const minX = Math.min(P[o], P[o + 3], P[o + 6]), maxX = Math.max(P[o], P[o + 3], P[o + 6]);
+        const minZ = Math.min(P[o + 2], P[o + 5], P[o + 8]), maxZ = Math.max(P[o + 2], P[o + 5], P[o + 8]);
+        const cx0 = Math.floor(minX / S), cx1 = Math.max(cx0, Math.ceil(maxX / S) - 1);
+        const cz0 = Math.floor(minZ / S), cz1 = Math.max(cz0, Math.ceil(maxZ / S) - 1);
+        if (cx0 === cx1 && cz0 === cz1) { const ci = cellAt(cx0, cz0); triCell[t] = ci; cellN[ci] += 3; continue; }
+        triCell[t] = -1;
+        const tri = [rec(t * 3), rec(t * 3 + 1), rec(t * 3 + 2)], list = [];
+        for (let cx = cx0; cx <= cx1; cx++) {
+          let col = cx > cx0 ? keepSide(tri, 0, cx * S, true) : tri;
+          if (cx < cx1) col = keepSide(col, 0, (cx + 1) * S, false);
+          if (col.length < 3) continue;
+          for (let cz = cz0; cz <= cz1; cz++) {
+            let pc = cz > cz0 ? keepSide(col, 2, cz * S, true) : col;
+            if (cz < cz1) pc = keepSide(pc, 2, (cz + 1) * S, false);
+            if (pc.length < 3) continue;
+            const ci = cellAt(cx, cz), fan = [];
+            for (let i = 1; i < pc.length - 1; i++) fan.push(pc[0], pc[i], pc[i + 1]);
+            cellN[ci] += fan.length;
+            list.push(ci, fan);
+          }
+        }
+        pieces.push(list);
+      }
+      // cells in row order: each one's first vertex, then where every whole triangle and every cut piece lands
+      const n = cellN.length, order = cellN.map((_, i) => i).sort((a, b) => cellZ[a] - cellZ[b] || cellX[a] - cellX[b]);
+      const cur = new Int32Array(n), cells = new Float64Array(n * 8);
+      let total = 0;
+      order.forEach((ci, k) => { cur[ci] = total; cells[k * 8] = total; cells[k * 8 + 1] = cellN[ci]; total += cellN[ci]; });
+      const at = new Int32Array(nTri), cutAt = [];
+      for (let t = 0, pk = 0; t < nTri; t++) {
+        const ci = triCell[t];
+        if (ci >= 0) { at[t] = cur[ci]; cur[ci] += 3; continue; }
+        at[t] = -1;
+        const list = pieces[pk++];
+        for (let i = 0; i < list.length; i += 2) for (const r of list[i + 1]) cutAt.push(cur[list[i]]++, r);
+      }
+      const out = size.map(sz => new Float32Array(total * sz));
+      for (let a = 0, ro = 0; a < src.length; ro += size[a], a++) {
+        const from = src[a], to = out[a], sz = size[a], span = 3 * sz;
+        for (let t = 0; t < nTri; t++) {
+          if (at[t] < 0) continue;
+          const f = t * span, d = at[t] * sz;
+          for (let k = 0; k < span; k++) to[d + k] = from[f + k];
+        }
+        for (let i = 0; i < cutAt.length; i += 2) {
+          const d = cutAt[i] * sz, r = cutAt[i + 1];
+          for (let k = 0; k < sz; k++) to[d + k] = r[ro + k];
+        }
+      }
+      // each cell's box from the positions it ended up with
+      const pos = out[names.indexOf('position')];
+      for (let k = 0; k < n; k++) {
+        let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+        for (let v = cells[k * 8] * 3, e = v + cells[k * 8 + 1] * 3; v < e; v += 3) {
+          const x = pos[v], y = pos[v + 1], z = pos[v + 2];
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+        }
+        cells[k * 8 + 2] = x0; cells[k * 8 + 3] = y0; cells[k * 8 + 4] = z0;
+        cells[k * 8 + 5] = x1; cells[k * 8 + 6] = y1; cells[k * 8 + 7] = z1;
+      }
+      const geometry = new THREE.BufferGeometry();
+      names.forEach((nm, a) => geometry.setAttribute(nm, new THREE.BufferAttribute(out[a], size[a])));
+      return { geometry, cells };
+    }
+
+    // Indexed triangles regrouped by the cell of their centre, kept in their order inside each cell (for height meshes).
+    function cellSplitIndexed(g, S) {
+      const P = g.attributes.position.array, I = g.index.array, nTri = I.length / 3;
+      const keyIdx = new Map(), cellX = [], cellZ = [], cellN = [], triCell = new Int32Array(nTri);
+      for (let t = 0; t < nTri; t++) {
+        const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+        const cx = Math.floor((P[a] + P[b] + P[c]) / 3 / S), cz = Math.floor((P[a + 2] + P[b + 2] + P[c + 2]) / 3 / S);
+        const key = (cx + 32768) * 65536 + cz + 32768;
+        let i = keyIdx.get(key);
+        if (i === undefined) { i = cellN.length; keyIdx.set(key, i); cellX.push(cx); cellZ.push(cz); cellN.push(0); }
+        triCell[t] = i;
+        cellN[i] += 3;
+      }
+      const n = cellN.length, order = cellN.map((_, i) => i).sort((a, b) => cellZ[a] - cellZ[b] || cellX[a] - cellX[b]);
+      const cur = new Int32Array(n), slot = new Int32Array(n), cells = new Float64Array(n * 8);
+      let total = 0;
+      order.forEach((ci, k) => {
+        cur[ci] = total; slot[ci] = k * 8;
+        cells.set([total, cellN[ci], Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], k * 8);
+        total += cellN[ci];
+      });
+      const J = new I.constructor(I.length);
+      for (let t = 0; t < nTri; t++) {
+        const ci = triCell[t], o = slot[ci];
+        for (let k = 0; k < 3; k++) {
+          const v = I[t * 3 + k], x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
+          J[cur[ci]++] = v;
+          if (x < cells[o + 2]) cells[o + 2] = x; if (y < cells[o + 3]) cells[o + 3] = y; if (z < cells[o + 4]) cells[o + 4] = z;
+          if (x > cells[o + 5]) cells[o + 5] = x; if (y > cells[o + 6]) cells[o + 6] = y; if (z > cells[o + 7]) cells[o + 7] = z;
+        }
+      }
+      g.setIndex(new THREE.BufferAttribute(J, 1));
+      return cells;
+    }
+
+    const _cellFrustum = new THREE.Frustum(), _cellView = new THREE.Matrix4(), _cellBox = new THREE.Box3();
+
+    // Regroups the mesh by cell and hooks its draw: the first run of cells in view through three, the rest as plain GL draws.
+    // `clip` is for flat layers whose overlaps differ in colour, where the draw order must hold across cell lines too.
+    function cellCull(mesh, clip = false, size = GROUND_CELL_M) {
+      if (bench.noCells) return mesh;   // BENCH
+      let g = mesh.geometry, cells;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      if (g.index) cells = cellSplitIndexed(g, size);
+      else {
+        const split = cellSplitFlat(g, clip, size);
+        if (!split) return mesh;
+        split.geometry.boundingSphere = g.boundingSphere.clone();
+        g.dispose();
+        mesh.geometry = g = split.geometry;
+        cells = split.cells;
+      }
+      const n = cells.length / 8;
+      if (n < 2) return mesh;
+      const runs = [], idx = g.index;
+      mesh.onBeforeRender = (renderer, scene, camera, geometry) => {
+        _cellFrustum.setFromProjectionMatrix(_cellView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+        runs.length = 0;
+        for (let o = 0; o < cells.length; o += 8) {
+          _cellBox.min.set(cells[o + 2], cells[o + 3], cells[o + 4]);
+          _cellBox.max.set(cells[o + 5], cells[o + 6], cells[o + 7]);
+          if (!_cellFrustum.intersectsBox(_cellBox)) continue;
+          const s = cells[o], e = s + cells[o + 1];
+          if (runs.length && runs[runs.length - 1] === s) runs[runs.length - 1] = e;
+          else runs.push(s, e);
+        }
+        geometry.drawRange.start = runs.length ? runs[0] : 0;
+        geometry.drawRange.count = runs.length ? runs[1] - runs[0] : 0;
+      };
+      mesh.onAfterRender = (renderer, scene, camera, geometry) => {
+        if (runs.length > 2) {
+          const gl = renderer.getContext();
+          const type = idx ? (idx.array instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT) : 0;
+          for (let r = 2; r < runs.length; r += 2) {
+            const count = runs[r + 1] - runs[r];
+            if (idx) gl.drawElements(gl.TRIANGLES, count, type, runs[r] * idx.array.BYTES_PER_ELEMENT);
+            else gl.drawArrays(gl.TRIANGLES, runs[r], count);
+            renderer.info.update(count, gl.TRIANGLES, 1);
+          }
+        }
+        geometry.drawRange.start = 0;
+        geometry.drawRange.count = Infinity;
+      };
+      return mesh;
     }
 
     // BUILDING SHELLS: thick walls (also collision rings), doorway, floor, ceiling/roof; edge left normals point into the wall.
@@ -3091,7 +3301,7 @@ void main() {
       for (const g of greens) matchWildGround(g, true);
       const areaMesh = addLayer(areas.concat(greens), lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area))));
       // the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
-      if (areaMesh) areaMesh.receiveShadow = true;
+      if (areaMesh) cellCull(areaMesh, true).receiveShadow = true;
       // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
       wildWater.cityMaps = null;
       const waterMesh = addLayer(lay(waterGeoms), wildWater.cityMaterial(LAYER_BIAS.water));
@@ -3103,9 +3313,9 @@ void main() {
       }
       // roads and paths take the buildings' and animals' shadows like the ground under them
       const roadMesh = rg ? addLayer(lay([rg]), lampLight.apply(litMaterial(LAYER_BIAS.road))) : null;
-      if (roadMesh) roadMesh.receiveShadow = true;
+      if (roadMesh) cellCull(roadMesh).receiveShadow = true;
       const pathMesh = pg ? addLayer(lay([pg]), lampLight.apply(litMaterial(LAYER_BIAS.path))) : null;
-      if (pathMesh) pathMesh.receiveShadow = true;
+      if (pathMesh) cellCull(pathMesh).receiveShadow = true;
     }
 
     // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
@@ -3451,13 +3661,13 @@ void main() {
       return g;
     }
 
-    // Plain ground over the area plus margin; `paint(geometry)` gives the slope-painted material and forces the base when flat.
+    // Plain ground over the area plus margin, drawn by ground cell; `paint(geometry)` gives the slope-painted material and forces the base when flat.
     function buildTerrainBase(radius, paint = null) {
       ground.position.y = elevation.active ? elevation.min - 0.3 : 0;
       if (!elevation.active && !paint) return;
       const h = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
       const g = terrainGrid(-h, h, -h, h, -0.02);
-      const mesh = new THREE.Mesh(g, lampLight.apply(waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 }))));
+      const mesh = cellCull(new THREE.Mesh(g, lampLight.apply(waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 })))), false, TERRAIN_CELL_M);
       mesh.receiveShadow = true;
       scene.add(mesh);
       layers.push(mesh);
@@ -4005,8 +4215,16 @@ void main() {
       deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
-    const HUNTED = {};
-    for (const t of NPC_TYPES) HUNTED[t] = NPC_TYPES.some(h => SPECIES[h].hunts[t] === true);
+    // Species as small ids (index in NPC_TYPES) for per-tick checks; the masks are bit sets of those ids.
+    const NPC_TYPE_IDS = {};
+    NPC_TYPES.forEach((t, i) => { NPC_TYPE_IDS[t] = i; });
+    const NPC_TYPE_COUNT = NPC_TYPES.length;
+    const HUMAN_TYPE_ID = NPC_TYPE_IDS.human;
+    const HUNTS_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
+    const HUNTED_BY_MASK = NPC_TYPES.map(t => NPC_TYPES.reduce((m, h, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
+    // ids of each species' hunts keys, in key order (what `for (t in spec.hunts)` visits)
+    const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
+    const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
     const WATER_SIGHT_CELL = 20;
     const HIGH_NPC_LOD_DIST = 60;      // metres past which a body goes low-detail on high (live: perf.npcLodDist)
     const HIGH_FAR_STAT_DIST = 120;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
@@ -4633,6 +4851,7 @@ void main() {
         super(position, type);
         const spec = SPECIES[type];
         this.spec = spec;
+        this.typeId = NPC_TYPE_IDS[type];
         this.speed = spec.speed;
         this.WATER_SPEED_FACTOR = 0.45;
         this.submerged = false;
@@ -4776,7 +4995,8 @@ void main() {
         const ax = Math.sin(this.facingAngle), az = Math.cos(this.facingAngle);
         const cosH = this.cosFovH, tanV = this.tanFovV;
         const hit = Animal._hit;
-        const hunts = this.spec.hunts, type = this.type;
+        const type = this.type, tid = this.typeId;
+        const huntedBy = HUNTED_BY_MASK[tid], hunts = HUNTS_MASK[tid];
         let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
         // Buckets read in place; the horizontal-distance reject matches senseTarget's, so what is sensed is unchanged.
@@ -4796,9 +5016,10 @@ void main() {
           const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
           const hx = ox - px, hz = oz - pz;
           if (hx * hx + hz * hz > vd) continue;
-          const isPred = obj.spec.hunts[type] === true;
-          const isFood = hunts[obj.type] === true;
-          const isMate = obj.type === type && this.sex !== obj.sex;
+          const oid = obj.typeId, obit = 1 << oid;
+          const isPred = (huntedBy & obit) !== 0;
+          const isFood = (hunts & obit) !== 0;
+          const isMate = oid === tid && this.sex !== obj.sex;
           if (!isPred && !isFood && !isMate) continue;
           if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
 
@@ -4835,7 +5056,7 @@ void main() {
 
         // City: in Survivor mode the player is a predator too, to whatever people hunt
         const gp = game.predator;
-        if (SPECIES.human.hunts[type] && gp.alive &&
+        if ((HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && gp.alive &&
           this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
           hit.d3sq < bestPredDist) {
           bestPredDist = hit.d3sq;
@@ -5051,8 +5272,9 @@ void main() {
         const vd = this.visionDistSq, r = this.visionDistance;
         this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
         this.avoidNeed = 0;
-        const food = this.spec.food, type = this.type, sex = this.sex;
-        const needP = HUNTED[type], needF = food !== null && food !== 'plant';
+        const food = this.spec.food, tid = this.typeId, sex = this.sex;
+        const huntedBy = HUNTED_BY_MASK[tid], foodId = FOOD_TYPE_ID[tid];
+        const needP = huntedBy !== 0, needF = food !== null && food !== 'plant';
         let bP = Infinity, bF = Infinity, bM = Infinity, kP = -1, kF = -1, kM = -1;
         let oP = null, oF = null, oM = null;
 
@@ -5089,11 +5311,12 @@ void main() {
                   const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
                   if (d2 > vd) continue;
                   const key = base + b;
-                  if (obj.spec.hunts[type]) {
+                  const oid = obj.typeId;
+                  if ((huntedBy & (1 << oid)) !== 0) {
                     if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
-                  } else if (obj.type === food) {
+                  } else if (oid === foodId) {
                     if ((d2 < bF || (d2 === bF && key > kF)) && this.inSight(ox, obj.position.y, oz)) { bF = d2; kF = key; oF = obj; }
-                  } else if (obj.type === type && obj.sex !== sex) {
+                  } else if (oid === tid && obj.sex !== sex) {
                     if ((d2 < bM || (d2 === bM && key > kM)) && this.inSight(ox, obj.position.y, oz)) { bM = d2; kM = key; oM = obj; }
                   }
                 }
@@ -5107,7 +5330,7 @@ void main() {
 
         // City: in Survivor mode the player is a predator too, to whatever people hunt
         const gp = game.predator;
-        if (gp.alive && SPECIES.human.hunts[type]) {
+        if (gp.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0) {
           const ox = gp.position.x, oz = gp.position.z;
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
           if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
@@ -5130,7 +5353,7 @@ void main() {
       // Metres moved this tick: a sprint (fleeing or chasing) at the fastest run of its own predators, else the Arena speed.
       stepLength() {
         const ms = this.sprinting
-          ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMS[this.type])
+          ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMSById[this.typeId])
           : this.speed * this.speedScale * NPC_UNIT;
         return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
       }
@@ -5596,6 +5819,14 @@ void main() {
         this._quatFinal = new THREE.Quaternion();
         this._xAxis = new THREE.Vector3(1, 0, 0);
         this._pivot = new THREE.Vector3();
+
+        // per species id: that type's fixed tables plus the counters one update() pass fills
+        this.passById = NPC_TYPES.map(type => ({
+          type, offsets: this.PART_OFFSETS[type], pivots: this.PIVOT_OFFSETS[type], colors: this.SEX_COLORS[type],
+          walkSwing: this.WALK[type], legLen: this.LEG_LEN[type], limbHalf: this.LIMB_HALF[type],
+          im: null, cache: null, far: null, farColKeys: null, antlers: null,
+          idx: 0, fidx: 0, aidx: 0, colorsDirty: false, farColorsDirty: false, full: false
+        }));
       }
 
       init() {
@@ -5646,116 +5877,121 @@ void main() {
         return c;
       }
 
+      // One pass over the animals; each species keeps its own instance counters, so its instance order is unchanged.
       update(animals, deltaTime) {
         updateNpcFrustum();
-        for (const type of this.TYPES) {
-          const im = this.meshes[type];
-          const offsets = this.PART_OFFSETS[type];
-          const colors = this.SEX_COLORS[type];
+        const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z;
+        const lod2 = perf.npcLodDist * perf.npcLodDist;
+        const passes = this.passById;
+        for (let ti = 0; ti < passes.length; ti++) {
+          const p = passes[ti], im = this.meshes[p.type];
+          p.im = im || null;
           if (!im) continue;
-          const cache = this.cacheFor(type, im);
-          const far = this.far[type], farColKeys = this.farColKeys[type];
-          const antlers = this.antlers[type];
-          const walkSwing = this.WALK[type], legLen = this.LEG_LEN[type];
-          const limbHalf = this.LIMB_HALF[type];
-          const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z;
-          const lod2 = perf.npcLodDist * perf.npcLodDist;
-          let idx = 0, fidx = 0, aidx = 0;
-          let colorsDirty = false, farColorsDirty = false;
+          p.cache = this.cacheFor(p.type, im);
+          p.far = this.far[p.type]; p.farColKeys = this.farColKeys[p.type]; p.antlers = this.antlers[p.type];
+          p.idx = 0; p.fidx = 0; p.aidx = 0;
+          p.colorsDirty = false; p.farColorsDirty = false; p.full = false;
+        }
 
-          for (const a of animals) {
-            if (!a.alive || a.type !== type) continue;
-            if (idx + fidx >= this.MAX_INSTANCES) break;
+        for (const a of animals) {
+          if (!a.alive) continue;
+          const p = passes[a.typeId];
+          if (p.im === null || p.full) continue;
+          if (p.idx + p.fidx >= this.MAX_INSTANCES) { p.full = true; continue; }
+          const im = p.im;
 
+          const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
+          const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
+          const k = s * NPC_UNIT;
+          const hs = a.heightScale;
+          // City: rigs scale uniformly by heightScale
+          const kp = k * hs;
+          this._scale.set(kp, kp, kp);
 
-            const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
-            const s = this.MIN_SCALE + (1 - this.MIN_SCALE) * ageRatio;
-            const k = s * NPC_UNIT;
-            const hs = a.heightScale;
-            // City: rigs scale uniformly by heightScale
-            const kp = k * hs;
-            this._scale.set(kp, kp, kp);
-
-            const swing = a.sprinting ? GAIT_GALLOP_SWING : walkSwing;
-            if (deltaTime && a.moving) {
-              const v = a.stepLength() / NPC_TICK_S;
-              const perCycle = 4 * legLen * kp * Math.sin(swing);
-              const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
-              a.animTime += deltaTime * hz * 2 * Math.PI;
-            }
-
-            if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
-            this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
-
-            const groundOffset = a.footLift() * NPC_UNIT;
-            this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
-            this._mat4.compose(this._world, this._quat, this._scale);
-
-            const col = colors[a.sex];
-            const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
-            if (ex * ex + ey * ey + ez * ez > lod2) {
-              far.setMatrixAt(fidx, this._mat4);
-              if (farColKeys[fidx] !== col) {
-                farColKeys[fidx] = col;
-                far.setColorAt(fidx, col);
-                farColorsDirty = true;
-              }
-              fidx++;
-              continue;
-            }
-
-            if (cache.colKeys[idx] !== col) {
-              cache.colKeys[idx] = col;
-              for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
-                im[this.PART_NAMES[pi]].setColorAt(idx, col);
-              }
-              colorsDirty = true;
-            }
-
-            const isIdle = !a.moving;
-            const walkAmp = isIdle ? 0 : swing;
-            const t = a.animTime;
-
-            const sinT = Math.sin(t);
-            // FL/BR and FR/BL swing opposite: one sin/cos pair per NPC instead of four setFromAxisAngle calls
-            const legH = sinT * walkAmp * 0.5;
-            const legS = Math.sin(legH), legC = Math.cos(legH);
-            const legSign = this.LIMB_SIGNS;
-
-            im.body.setMatrixAt(idx, this._mat4);
-
-            this._local.copy(offsets.head);
-            this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
-            this._mat4.compose(this._local, this._quat, this._scale);
-            im.head.setMatrixAt(idx, this._mat4);
-            if (antlers && a.sex === 'male') antlers.setMatrixAt(aidx++, this._mat4);
-
-            for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
-              const part = this.LIMB_NAMES[pi];
-              this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
-              this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
-
-              this._pivot.copy(this.PIVOT_OFFSETS[type][part]);
-              this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
-
-              this._local.set(0, -limbHalf * kp, 0).applyQuaternion(this._quatFinal);
-              this._local.add(this._pivot);
-
-              this._mat4.compose(this._local, this._quatFinal, this._scale);
-              im[part].setMatrixAt(idx, this._mat4);
-            }
-
-            idx++;
+          const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
+          if (deltaTime && a.moving) {
+            const v = a.stepLength() / NPC_TICK_S;
+            const perCycle = 4 * p.legLen * kp * Math.sin(swing);
+            const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
+            a.animTime += deltaTime * hz * 2 * Math.PI;
           }
 
-          for (let mi = 0; mi < cache.list.length; mi++) {
-            const mesh = cache.list[mi];
-            perf.instances(mesh, idx);
-            if (colorsDirty) perf.instanceColors(mesh, idx);
+          if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
+          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
+
+          const groundOffset = a.footLift() * NPC_UNIT;
+          this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
+          this._mat4.compose(this._world, this._quat, this._scale);
+
+          const col = p.colors[a.sex];
+          const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
+          if (ex * ex + ey * ey + ez * ez > lod2) {
+            p.far.setMatrixAt(p.fidx, this._mat4);
+            if (p.farColKeys[p.fidx] !== col) {
+              p.farColKeys[p.fidx] = col;
+              p.far.setColorAt(p.fidx, col);
+              p.farColorsDirty = true;
+            }
+            p.fidx++;
+            continue;
           }
-          if (antlers) perf.instances(antlers, aidx);
-          perf.instances(far, fidx);
-          if (farColorsDirty) perf.instanceColors(far, fidx);
+
+          const idx = p.idx;
+          if (p.cache.colKeys[idx] !== col) {
+            p.cache.colKeys[idx] = col;
+            for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
+              im[this.PART_NAMES[pi]].setColorAt(idx, col);
+            }
+            p.colorsDirty = true;
+          }
+
+          const isIdle = !a.moving;
+          const walkAmp = isIdle ? 0 : swing;
+          const t = a.animTime;
+
+          const sinT = Math.sin(t);
+          // FL/BR and FR/BL swing opposite: one sin/cos pair per NPC instead of four setFromAxisAngle calls
+          const legH = sinT * walkAmp * 0.5;
+          const legS = Math.sin(legH), legC = Math.cos(legH);
+          const legSign = this.LIMB_SIGNS;
+
+          im.body.setMatrixAt(idx, this._mat4);
+
+          this._local.copy(p.offsets.head);
+          this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
+          this._mat4.compose(this._local, this._quat, this._scale);
+          im.head.setMatrixAt(idx, this._mat4);
+          if (p.antlers && a.sex === 'male') p.antlers.setMatrixAt(p.aidx++, this._mat4);
+
+          for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
+            const part = this.LIMB_NAMES[pi];
+            this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
+            this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
+
+            this._pivot.copy(p.pivots[part]);
+            this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
+
+            this._local.set(0, -p.limbHalf * kp, 0).applyQuaternion(this._quatFinal);
+            this._local.add(this._pivot);
+
+            this._mat4.compose(this._local, this._quatFinal, this._scale);
+            im[part].setMatrixAt(idx, this._mat4);
+          }
+
+          p.idx = idx + 1;
+        }
+
+        for (const type of this.TYPES) {
+          const p = passes[NPC_TYPE_IDS[type]];
+          if (p.im === null) continue;
+          for (let mi = 0; mi < p.cache.list.length; mi++) {
+            const mesh = p.cache.list[mi];
+            perf.instances(mesh, p.idx);
+            if (p.colorsDirty) perf.instanceColors(mesh, p.idx);
+          }
+          if (p.antlers) perf.instances(p.antlers, p.aidx);
+          perf.instances(p.far, p.fidx);
+          if (p.farColorsDirty) perf.instanceColors(p.far, p.fidx);
         }
       }
     }
@@ -5771,6 +6007,7 @@ void main() {
         const x = this.position.x, z = this.position.z;
         this.position.y = surfaceY(x, z) - 3 * NPC_UNIT;
         this._slot = -1;
+        this._cell = null;
         this._sightKey = -1;
         this._gridKey = -1;
         plantRenderer.add(this);
@@ -5784,9 +6021,12 @@ void main() {
       }
     }
 
+    // Plants are drawn per cell of a PLANT_GRID x PLANT_GRID split of the world, so view and shadow culling skip whole cells.
+    const PLANT_GRID = 3;
+
     class PlantRenderer {
       constructor() {
-        this.MAX_INSTANCES = 15000;
+        this.MAX_INSTANCES = 15000;   // plants drawn at most, over all cells
         this.GEOMETRIES = {
           stem: new THREE.CylinderGeometry(1, 1, 5, 3),
           leaf: new THREE.SphereGeometry(1, 2, 2),
@@ -5799,108 +6039,138 @@ void main() {
           color: 0x228b22,
           roughness: 0.85,
         });
-        this.meshes = null;
-        this.meshList = null;
-        this.stemArr = null;
-        this.leafArrs = null;
-        this.arrOwner = null;
-
-        this.slots = new Array(this.MAX_INSTANCES).fill(null);
+        // each cell: its plants' slots, a stem mesh and one leaf mesh (4 instances a plant), both grown as the cell fills
+        this.cells = null;
+        this.grid = null;
         this.count = 0;
-        this.lastCount = -1;
-        this.dirty = [];
-        this.dirtyFlag = new Uint8Array(this.MAX_INSTANCES);
+        this.fresh = false;
         this.MAX_RUNS = 32;
         this.pending = false;   // a plant is waiting for a free slot (see NpcWorld.step)
         this._sortBuf = [];
         this._runs = [];
       }
 
-      init() {
-        if (this.meshes) {
-          for (const mesh of Object.values(this.meshes)) { scene.remove(mesh); mesh.dispose(); }
+      init(bounds) {
+        this.disposeCells();
+        const n = bench.noCells ? 1 : PLANT_GRID, w = (bounds.maxX - bounds.minX) / n, d = (bounds.maxZ - bounds.minZ) / n;   // BENCH: bench.noCells ? 1 :
+        this.grid = { n, x0: bounds.minX, z0: bounds.minZ, w, d };
+        this.cells = [];
+        for (let k = 0; k < n * n; k++) {
+          this.cells.push({
+            id: k, x0: bounds.minX + (k % n) * w, z0: bounds.minZ + Math.floor(k / n) * d,
+            slots: [], count: 0, cap: 0, stem: null, leaves: null, dirty: [], dirtyFlag: null, shown: -1,
+            minY: Infinity, maxY: -Infinity, sphere: new THREE.Sphere(), sphereDirty: false
+          });
         }
-        const geos = this.GEOMETRIES;
-        this.meshes = {
-          stem: new THREE.InstancedMesh(geos.stem, this.MATERIAL, this.MAX_INSTANCES),
-          leaf0: new THREE.InstancedMesh(geos.leaf, this.MATERIAL, this.MAX_INSTANCES),
-          leaf1: new THREE.InstancedMesh(geometryView(geos.leaf, 1), this.MATERIAL, this.MAX_INSTANCES),
-          leaf2: new THREE.InstancedMesh(geometryView(geos.leaf, 2), this.MATERIAL, this.MAX_INSTANCES),
-          leaf3: new THREE.InstancedMesh(geometryView(geos.leaf, 3), this.MATERIAL, this.MAX_INSTANCES),
-        };
-        for (const mesh of Object.values(this.meshes)) {
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          mesh.frustumCulled = false;
-          mesh.count = 0;
-          mesh.visible = false;
-          scene.add(mesh);
-        }
-        this.arrOwner = null;
-        this.lastCount = -1;
+        this.count = 0;
+        this.fresh = true;
       }
 
-      refreshArrays() {
-        this.arrOwner = this.meshes;
-        this.meshList = Object.values(this.meshes);
-        this.stemArr = this.meshes.stem.instanceMatrix.array;
-        this.leafArrs = [
-          this.meshes.leaf0.instanceMatrix.array,
-          this.meshes.leaf1.instanceMatrix.array,
-          this.meshes.leaf2.instanceMatrix.array,
-          this.meshes.leaf3.instanceMatrix.array,
-        ];
+      disposeCells() {
+        if (!this.cells) return;
+        for (const c of this.cells) {
+          for (const mesh of [c.stem, c.leaves]) if (mesh) { scene.remove(mesh); mesh.dispose(); }
+        }
+        this.cells = null;
+      }
+
+      cellAt(x, z) {
+        const g = this.grid, n = g.n;
+        const i = Math.min(n - 1, Math.max(0, Math.floor((x - g.x0) / g.w)));
+        const j = Math.min(n - 1, Math.max(0, Math.floor((z - g.z0) / g.d)));
+        return this.cells[j * n + i];
       }
 
       add(p) {
-        if (p._slot >= 0) return;
+        if (p._slot >= 0 || !this.cells) return;
         if (this.count >= this.MAX_INSTANCES) { this.pending = true; return; }
-        const slot = this.count++;
-        this.slots[slot] = p;
+        const c = this.cellAt(p.position.x, p.position.z), slot = c.count++;
+        this.count++;
+        c.slots[slot] = p;
         p._slot = slot;
-        this.markDirty(slot);
+        p._cell = c;
+        const y = p.position.y;
+        if (y < c.minY) { c.minY = y; c.sphereDirty = true; }
+        if (y > c.maxY) { c.maxY = y; c.sphereDirty = true; }
+        this.markDirty(c, slot);
       }
 
       remove(p) {
         const slot = p._slot;
         if (slot < 0) return;
-        const last = --this.count;
+        const c = p._cell, last = --c.count;
+        this.count--;
         if (slot !== last) {
-          const moved = this.slots[last];
-          this.slots[slot] = moved;
+          const moved = c.slots[last];
+          c.slots[slot] = moved;
           moved._slot = slot;
-          this.markDirty(slot);
+          this.markDirty(c, slot);
         }
-        this.slots[last] = null;
+        c.slots[last] = null;
         p._slot = -1;
+        p._cell = null;
       }
 
       touch(p) {
-        const slot = p._slot;
-        if (slot < 0) return;
-        this.markDirty(slot);
+        if (p._slot >= 0) this.markDirty(p._cell, p._slot);
       }
 
-      markDirty(slot) {
-        if (this.dirtyFlag[slot]) return;
-        this.dirtyFlag[slot] = 1;
-        this.dirty.push(slot);
+      // slots past the cell's meshes need no mark: growing the meshes writes every slot
+      markDirty(c, slot) {
+        if (slot >= c.cap || c.dirtyFlag[slot]) return;
+        c.dirtyFlag[slot] = 1;
+        c.dirty.push(slot);
       }
 
       rebuild(plants) {
-        this.slots.fill(null);
-        this.dirtyFlag.fill(0);
-        this.dirty.length = 0;
+        if (!this.cells) return;
+        for (const c of this.cells) {
+          c.slots.length = 0;
+          c.count = 0;
+          c.dirty.length = 0;
+          if (c.dirtyFlag) c.dirtyFlag.fill(0);
+          c.shown = -1;
+        }
         this.count = 0;
-        this.lastCount = -1;
         for (const p of plants) {
           p._slot = -1;
+          p._cell = null;
           if (p.alive) this.add(p);
         }
       }
 
-      writeSlot(slot) {
-        const p = this.slots[slot];
+      // New meshes a quarter larger than the cell's plants, every slot written; the old ones are freed.
+      grow(c) {
+        const cap = Math.ceil(c.count * 1.25 / 64) * 64, geos = this.GEOMETRIES, old = [c.stem, c.leaves];
+        c.stem = new THREE.InstancedMesh(geometryView(geos.stem, c.id), this.MATERIAL, cap);
+        c.leaves = new THREE.InstancedMesh(geometryView(geos.leaf, c.id), this.MATERIAL, cap * 4);
+        for (const mesh of [c.stem, c.leaves]) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.boundingSphere = c.sphere;
+          mesh.count = 0;
+          mesh.visible = false;
+          scene.add(mesh);
+        }
+        for (const mesh of old) if (mesh) { scene.remove(mesh); mesh.dispose(); }
+        c.cap = cap;
+        c.dirtyFlag = new Uint8Array(cap);
+        c.dirty.length = 0;
+        c.shown = -1;
+        for (let s = 0; s < c.count; s++) this.writeSlot(c, s);
+      }
+
+      // The cell's square, padded by a leaf's reach, from its lowest plant's foot to its highest plant's top.
+      placeSphere(c) {
+        const U = NPC_UNIT, g = this.grid, pad = 3 * U;
+        const x0 = c.x0 - pad, x1 = c.x0 + g.w + pad, z0 = c.z0 - pad, z1 = c.z0 + g.d + pad, y0 = c.minY, y1 = c.maxY + 8 * U;
+        c.sphere.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        c.sphere.radius = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2;
+        c.sphereDirty = false;
+      }
+
+      writeSlot(c, slot) {
+        const p = c.slots[slot];
         if (!p) return;
 
         const U = NPC_UNIT;
@@ -5908,59 +6178,61 @@ void main() {
         const hs = h * U;
         const groundY = p.position.y;
         const px = p.position.x, pz = p.position.z;
+        const stemArr = c.stem.instanceMatrix.array, leafArr = c.leaves.instanceMatrix.array;
         const o = slot * 16;
 
-        this.stemArr[o] = hs;
-        this.stemArr[o + 5] = hs;
-        this.stemArr[o + 10] = hs;
-        this.stemArr[o + 12] = px;
-        this.stemArr[o + 13] = groundY + 5 * hs;
-        this.stemArr[o + 14] = pz;
-        this.stemArr[o + 15] = 1;
+        stemArr[o] = hs;
+        stemArr[o + 5] = hs;
+        stemArr[o + 10] = hs;
+        stemArr[o + 12] = px;
+        stemArr[o + 13] = groundY + 5 * hs;
+        stemArr[o + 14] = pz;
+        stemArr[o + 15] = 1;
 
         const leafY = groundY + 7 * hs;
         for (let li = 0; li < 4; li++) {
           const off = this.LEAF_OFFSETS_XZ[li];
-          const a = this.leafArrs[li];
-          a[o] = hs;
-          a[o + 5] = hs;
-          a[o + 10] = hs;
-          a[o + 12] = px + off.x * U;
-          a[o + 13] = leafY;
-          a[o + 14] = pz + off.y * U;
-          a[o + 15] = 1;
+          const a = (slot * 4 + li) * 16;
+          leafArr[a] = hs;
+          leafArr[a + 5] = hs;
+          leafArr[a + 10] = hs;
+          leafArr[a + 12] = px + off.x * U;
+          leafArr[a + 13] = leafY;
+          leafArr[a + 14] = pz + off.y * U;
+          leafArr[a + 15] = 1;
         }
       }
 
       update(plants) {
-        if (!this.meshes) return;
-        if (this.arrOwner !== this.meshes) {
-          this.refreshArrays();
+        if (!this.cells) return;
+        if (this.fresh) {
+          this.fresh = false;
           this.rebuild(plants);
         }
-
-        const count = this.count;
-        if (count !== this.lastCount) {
-          this.lastCount = count;
-          for (let i = 0; i < this.meshList.length; i++) {
-            this.meshList[i].count = count;
-            this.meshList[i].visible = count > 0;
+        for (const c of this.cells) {
+          if (c.count > c.cap) this.grow(c);
+          if (!c.stem) continue;
+          if (c.sphereDirty) this.placeSphere(c);
+          const count = c.count;
+          if (count !== c.shown) {
+            c.shown = count;
+            c.stem.count = count;
+            c.leaves.count = count * 4;
+            c.stem.visible = c.leaves.visible = count > 0;
           }
+          const dirty = c.dirty;
+          if (dirty.length === 0) continue;
+          for (let i = 0; i < dirty.length; i++) {
+            const slot = dirty[i];
+            c.dirtyFlag[slot] = 0;
+            if (slot < count) this.writeSlot(c, slot);
+          }
+          this.uploadDirty(c, dirty, count);
+          dirty.length = 0;
         }
-
-        const dirty = this.dirty;
-        if (dirty.length === 0) return;
-
-        for (let i = 0; i < dirty.length; i++) {
-          const slot = dirty[i];
-          this.dirtyFlag[slot] = 0;
-          if (slot < count) this.writeSlot(slot);
-        }
-        this.uploadDirty(dirty, count);
-        dirty.length = 0;
       }
 
-      uploadDirty(dirty, count) {
+      uploadDirty(c, dirty, count) {
         const sorted = this._sortBuf;
         sorted.length = 0;
         for (let i = 0; i < dirty.length; i++) {
@@ -5985,14 +6257,15 @@ void main() {
         const spanTo = runs[runs.length - 1];
         const useSpan = nRuns > this.MAX_RUNS;
 
-        for (let i = 0; i < this.meshList.length; i++) {
-          const attr = this.meshList[i].instanceMatrix;
+        // the leaf mesh holds 4 instances a plant, so its ranges are 4 times the stem's
+        for (const [mesh, per] of [[c.stem, 16], [c.leaves, 64]]) {
+          const attr = mesh.instanceMatrix;
           attr.clearUpdateRanges();
           if (useSpan) {
-            attr.addUpdateRange(spanFrom * 16, (spanTo - spanFrom + 1) * 16);
+            attr.addUpdateRange(spanFrom * per, (spanTo - spanFrom + 1) * per);
           } else {
             for (let r = 0; r < runs.length; r += 2) {
-              attr.addUpdateRange(runs[r] * 16, (runs[r + 1] - runs[r] + 1) * 16);
+              attr.addUpdateRange(runs[r] * per, (runs[r + 1] - runs[r] + 1) * per);
             }
           }
           attr.needsUpdate = true;
@@ -7787,7 +8060,7 @@ void main() {
       colorAttr.needsUpdate = true;
     }
 
-    // Terrain mesh straight from a HeightGrid. `skip(i, j)` drops a quad (inside the city); `sink(x, z)` lowers a vertex.
+    // Terrain mesh straight from a HeightGrid, drawn by ground cell. `skip(i, j)` drops a quad (inside the city); `sink(x, z)` lowers a vertex.
     function heightMesh(grid, skip = null, sink = null) {
       const { nx, nz, x0, z0, step, data } = grid;
       const pos = new Float32Array(nx * nz * 3);
@@ -7811,7 +8084,7 @@ void main() {
       g.computeVertexNormals();
       paintSlope(g);
       g.computeBoundingSphere();
-      const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
+      const mesh = cellCull(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })), false, TERRAIN_CELL_M);
       mesh.receiveShadow = true;
       return mesh;
     }
@@ -9234,12 +9507,12 @@ void main() {
       _moverSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // 64-bit: compared to positions exactly
       _aim: new THREE.Vector3(),
 
-      shadowsOn() { return SHADOWS_ENABLED && this.high && !!activeWorld && activeWorld.shadows; },
+      shadowsOn() { return SHADOWS_ENABLED && !bench.noShadows && this.high && !!activeWorld && activeWorld.shadows; },   // BENCH: !bench.noShadows
 
       apply() {
         const on = this.shadowsOn();
         gfxEl.textContent = `Graphics: ${this.high ? 'high' : 'low'}`;
-        const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
+        const pr = bench.pr || Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);   // BENCH: bench.pr ||
         if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
         if (!this.high) msaa.dispose();
         perf.lowPower = !this.high;
@@ -9325,6 +9598,7 @@ void main() {
           sun.shadow.camera.updateProjectionMatrix();
         }
         sun.shadow.needsUpdate = true;
+        bench.shadowSets++;   // BENCH
         // the render sets these matrices again; set here so what the new map sees is recorded in its own space
         sun.updateMatrixWorld();
         sun.shadow.updateMatrices(sun);
@@ -10076,10 +10350,9 @@ void main() {
         this.waterSight = null;
         // Food boxes, for vision and contact queries; they never move.
         this.foodSight = null;
-        this.typeAlive = {};
-        this.canHunt = {};
-        this.fastestHunterMS = {};            // per type: the fastest of its live hunters, metres per second
-        for (const t of NPC_TYPES) { this.typeAlive[t] = 0; this.canHunt[t] = false; this.fastestHunterMS[t] = 0; }
+        this.aliveById = new Int32Array(NPC_TYPE_COUNT);             // per species id: live count this tick
+        this.canHuntById = new Uint8Array(NPC_TYPE_COUNT);           // per species id: 1 while something it hunts lives
+        this.fastestHunterMSById = new Float64Array(NPC_TYPE_COUNT); // per species id: its fastest live hunter, metres per second
 
         this._qPlant = [];
         this._qWater = [];
@@ -10152,7 +10425,7 @@ void main() {
 
         occ.build();
         animalRenderer.init();
-        plantRenderer.init();
+        plantRenderer.init(b);
         const plan = provider.population();
         for (const g of plan) if (g.type === 'plant') for (let i = 0; i < g.count; i++) this.spawnPlant(g.src);
         for (const g of plan) if (g.type !== 'plant') this.spawn(g.type, g.count, g.src);
@@ -10278,15 +10551,15 @@ void main() {
           if (!a.alive) continue;
           const px = a.position.x, pz = a.position.z;
 
-          if (this.canHunt[a.type]) {
+          if (this.canHuntById[a.typeId]) {
             // with nothing it hunts alive the query can only return animals it would skip
-            const hunts = a.spec.hunts;
+            const hunts = HUNTS_MASK[a.typeId], abit = 1 << a.typeId;
             const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
             hunt: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
               const other = items[i];
-              if (other.alive && hunts[other.type] === true &&
+              if (other.alive && (hunts & (1 << other.typeId)) !== 0 &&
                 tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
-                if (other.spec.hunts[a.type]) this.fight(a, other);
+                if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fight(a, other);
                 else other.attacked(a);
                 if (!a.alive) break hunt;
               }
@@ -10336,6 +10609,7 @@ void main() {
       step(dt) {
         if (!this.ready || this.animals.length === 0) return false;
         const now = this.time;
+        let bt = performance.now();   // BENCH
 
         // Grid sync every 3 ticks, incremental: only animals whose cell changed move bucket; same sets as a full rebuild.
         if (this.ticks % 3 === 0) {
@@ -10361,9 +10635,10 @@ void main() {
           this.contact.rebuild(this.animals);
           this.drift2 = 0;
         }
+        bt = bench.add(BK.grid, bt);   // BENCH
 
-        const alive = this.typeAlive, fastest = this.fastestHunterMS;
-        for (const t of NPC_TYPES) { alive[t] = 0; fastest[t] = 0; }
+        const alive = this.aliveById, fastest = this.fastestHunterMSById;
+        alive.fill(0); fastest.fill(0);
         for (let ai = 0; ai < this.animals.length; ai++) {
           const a = this.animals[ai];
           if (a.alive) {
@@ -10372,17 +10647,19 @@ void main() {
               this.collide(a);
               const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
               if (f2 > this.drift2) this.drift2 = f2;
-              alive[a.type]++;
-              const ms = a.speed * NPC_UNIT;
-              for (const t in a.spec.hunts) if (ms > fastest[t]) fastest[t] = ms;
+              alive[a.typeId]++;
+              const ms = a.speed * NPC_UNIT, prey = HUNTS_LIST[a.typeId];
+              for (let k = 0; k < prey.length; k++) if (ms > fastest[prey[k]]) fastest[prey[k]] = ms;
             }
           }
         }
-        for (const t of NPC_TYPES) {
-          let any = false;
-          for (const h in SPECIES[t].hunts) if (alive[h]) { any = true; break; }
-          this.canHunt[t] = any;
+        for (let t = 0; t < NPC_TYPE_COUNT; t++) {
+          const prey = HUNTS_LIST[t];
+          let any = 0;
+          for (let k = 0; k < prey.length; k++) if (alive[prey[k]]) { any = 1; break; }
+          this.canHuntById[t] = any;
         }
+        bench.add(BK.animals, bt);   // BENCH
 
         // Plant.update only retries a render slot for a plant spawned past MAX_INSTANCES; skip the pass when there is none
         if (plantRenderer.pending) {
@@ -10392,7 +10669,9 @@ void main() {
           }
         }
 
+        bt = performance.now();   // BENCH
         this.handleCollisions();
+        bench.add(BK.collisions, bt);   // BENCH
         game.update(dt);
 
         for (let i = this.animals.length - 1; i >= 0; i--) {
@@ -10412,13 +10691,21 @@ void main() {
 
         activeWorld.regrow(this);
 
+        bt = performance.now();   // BENCH
         animalRenderer.update(this.animals, dt);
+        bt = bench.add(BK.animalRenderer, bt);   // BENCH
         blobShadows.update(this.animals);
+        bench.add(BK.blobs, bt);   // BENCH
         foodBoxes.render();
+        bt = performance.now();   // BENCH
         plantRenderer.update(this.plants);
+        bt = bench.add(BK.plants, bt);   // BENCH
         healthBars.update(this.animals);
+        bench.add(BK.bars, bt);   // BENCH
         if (this.ticks % (perf.lowPower ? LOW_LABEL_TICKS : HIGH_LABEL_TICKS) === 0) labels.updateTarget();
+        bt = performance.now();   // BENCH
         visionRays.update(this.animals);
+        bench.add(BK.rays, bt);   // BENCH
         this.syncPopulation();
         if (this.ticks % (perf.lowPower ? LOW_HUD_TICKS : HIGH_HUD_TICKS) === 0) refreshHud();
         this.ticks++;
@@ -10559,7 +10846,7 @@ void main() {
           const n = world.animalGrid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
           for (let i = 0; i < n; i++) {
             const d = this._q[i];
-            if (!d.alive || !SPECIES.human.hunts[d.type]) continue;
+            if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
             if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
             if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
             d.alive = false;
@@ -10813,6 +11100,18 @@ void main() {
         this._fill = [0, 0, 0, 0];
         this.tick = 0;
         this.enabled = true;
+
+        // Hidden stand-ins for a near stats sprite and a brain, never drawn, so the load's compileAsync builds their shaders.
+        this.warmBar = this.makeBar();
+        const warmGeo = new THREE.BufferGeometry();
+        warmGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+        warmGeo.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1], 4));
+        this.warmLines = new THREE.LineSegments(warmGeo, brainLineMat);
+        this.warmLines.visible = false;
+        this.warmNodes = new THREE.InstancedMesh(BRAIN_NODE_GEO, brainNodeMat, 1);
+        this.warmNodes.setColorAt(0, this._c);
+        this.warmNodes.visible = false;
+        scene.add(this.warmLines, this.warmNodes);
       }
 
       setEnabled(on) {
@@ -10885,6 +11184,7 @@ void main() {
           * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
         if (slot.key === key) return;
         slot.key = key;
+        bench.barDraws++;   // BENCH
         const { ctx, canvas } = slot;
         const W = canvas.width, H = canvas.height;
         const rows = BAR_ICONS.length;
@@ -11000,6 +11300,7 @@ void main() {
             seen.add(a);
           }
           bar.nearTick = tick;
+          bench.nearBars++;   // BENCH
 
           vals[0] = q(a.health / a.maxHealth);
           vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
@@ -11018,6 +11319,7 @@ void main() {
             if (bar.brain) disposeBrain(bar.brain);
             bar.brain = buildBrain(nn);
             bar.brainFor = nn;
+            bench.brainBuilds++;   // BENCH
           }
           const b = bar.brain;
           brainActivity(b, a);
@@ -12159,14 +12461,216 @@ void main() {
 
     let fpsFrames = 0, fpsAt = 0;
 
+    // BENCH (temporary timing harness for the performance pass): every line tagged BENCH goes when it is removed.
+    const BK = {
+      frame: 0, player: 1, step: 2, grid: 3, animals: 4, collisions: 5, animalRenderer: 6, blobs: 7, plants: 8,
+      bars: 9, rays: 10, shadows: 11, msaa: 12, direct: 13, shadowMap: 14
+    };
+    const BENCH_LABELS = ['frame (rAF callback)', 'playerStep', 'world.step', '  grid syncs', '  animal updates',
+      '  handleCollisions', '  AnimalRenderer.update', '  blobShadows.update', '  plantRenderer.update',
+      '  healthBars.update', '  visionRays.update', 'graphics.update', 'render: msaa.render', 'render: renderer.render',
+      '  shadow map pass'];
+    const benchParams = new URLSearchParams(location.search);
+    const bench = {
+      WINDOW_MS: 5000,
+      pr: parseFloat(benchParams.get('bench_pr')) || 0,   // ?bench_pr=1 forces this pixel ratio (GPU-bound test)
+      noMsaa: benchParams.get('bench_msaa') === '0',      // ?bench_msaa=0 draws high graphics without the MSAA pass
+      noShadows: benchParams.get('bench_shadows') === '0',   // ?bench_shadows=0 turns the sun's shadow map off on high
+      noCells: benchParams.get('bench_cells') === '0',     // ?bench_cells=0 draws the ground layers and plants as whole meshes
+      ready: false, el: null, gl: null, timer: null, query: null, querySlot: -1, pending: [], gpuFrame: 0,
+      cur: new Float64Array(BENCH_LABELS.length), sum: new Float64Array(BENCH_LABELS.length),
+      max: new Float64Array(BENCH_LABELS.length), calls: new Float64Array(BENCH_LABELS.length),
+      frames: 0, ticks: 0, drawn: 0, windowAt: -1, frameAt: 0, lastNow: -1, gapSum: 0, gapMax: 0, gaps: 0,
+      drawCalls: 0, drawCallsMax: 0, triangles: 0, shadowDue: false, shadowDrawn: false, shadowDraws: 0,
+      shadowCalls: 0, shadowSets: 0, last: null, barDraws: 0, brainBuilds: 0, nearBars: 0,
+      // GPU ms by pass (0 shadow map, 1 scene incl. MSAA resolve, 2 tonemap pass) and per whole frame
+      gpuPass: [0, 0, 0], gpuPassN: [0, 0, 0], gpuFrameSum: 0, gpuFrameN: 0, gpuFrameMax: 0, gpuOpen: null,
+
+      init() {
+        this.ready = true;
+        renderer.info.autoReset = false;
+        const sm = renderer.shadowMap, inner = sm.render;
+        sm.render = function (lights, sc, cam) {
+          const t = performance.now(), c0 = renderer.info.render.calls, due = bench.shadowDue;
+          if (due) bench.gpuSwitch(0);
+          inner.call(this, lights, sc, cam);
+          if (due) {
+            bench.shadowDue = false;
+            if (!sun.shadow.needsUpdate) {
+              bench.shadowDrawn = true; bench.shadowDraws++; bench.shadowCalls += renderer.info.render.calls - c0;
+            }
+            bench.gpuSwitch(1);
+          }
+          bench.add(BK.shadowMap, t);
+        };
+        this.gl = renderer.getContext();
+        this.timer = this.gl.getExtension('EXT_disjoint_timer_query_webgl2');
+        const el = this.el = document.createElement('pre');
+        el.style.cssText = 'position:fixed;left:14px;top:64px;z-index:9;margin:0;padding:6px 8px;pointer-events:none;' +
+          'font:10px/1.35 ui-monospace,Menlo,monospace;color:#e8e4dc;background:rgba(12,15,21,0.72);border-radius:6px';
+        document.body.appendChild(el);
+      },
+
+      add(k, t0) {
+        const t = performance.now();
+        this.cur[k] += t - t0;
+        this.calls[k]++;
+        return t;
+      },
+
+      begin(now) {
+        if (!this.ready) this.init();
+        if (this.windowAt < 0) this.windowAt = now;
+        if (this.lastNow >= 0) {
+          const gap = now - this.lastNow;
+          this.gapSum += gap; this.gaps++;
+          if (gap > this.gapMax) this.gapMax = gap;
+        }
+        this.lastNow = now;
+        this.cur.fill(0);
+        this.frameAt = performance.now();
+        this.pollGpu();
+      },
+
+      beforeDraw(xr) {
+        renderer.info.reset();
+        this.shadowDue = renderer.shadowMap.enabled && sun.castShadow && sun.shadow.needsUpdate;
+        this.shadowDrawn = false;
+        this.gpuFrame++;
+        this.gpuOpen = xr ? null : { left: 0, ms: 0, bad: false, pass: [0, 0, 0], shadow: false };
+        if (!xr) this.gpuSwitch(1);
+      },
+
+      // ends the open pass query (if any) and opens one for `slot`; slot -1 just closes
+      gpuSwitch(slot) {
+        if (!this.timer || !this.gpuOpen) return;
+        const gl = this.gl;
+        if (this.query !== null) {
+          gl.endQuery(this.timer.TIME_ELAPSED_EXT);
+          this.pending.push([this.query, this.querySlot, this.gpuOpen]);
+          this.query = null;
+        }
+        if (slot < 0) return;
+        this.query = gl.createQuery();
+        this.querySlot = slot;
+        this.gpuOpen.left++;
+        gl.beginQuery(this.timer.TIME_ELAPSED_EXT, this.query);
+      },
+
+      afterDraw(t0, viaMsaa) {
+        this.add(viaMsaa ? BK.msaa : BK.direct, t0);
+        this.gpuSwitch(-1);
+        this.gpuOpen = null;
+        const r = renderer.info.render;
+        this.drawn++;
+        this.drawCalls += r.calls; this.triangles += r.triangles;
+        if (r.calls > this.drawCallsMax) this.drawCallsMax = r.calls;
+      },
+
+      pollGpu() {
+        const gl = this.gl;
+        while (this.pending.length) {
+          const [q, slot, fr] = this.pending[0];
+          if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
+          const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+          gl.deleteQuery(q);
+          this.pending.shift();
+          if (gl.getParameter(this.timer.GPU_DISJOINT_EXT)) fr.bad = true;
+          fr.ms += ms; fr.pass[slot] += ms;
+          if (slot === 0) fr.shadow = true;
+          if (--fr.left === 0 && !fr.bad) {
+            this.gpuFrameSum += fr.ms; this.gpuFrameN++;
+            if (fr.ms > this.gpuFrameMax) this.gpuFrameMax = fr.ms;
+            for (let p = 0; p < 3; p++) this.gpuPass[p] += fr.pass[p];
+            if (fr.shadow) this.gpuPassN[0]++;
+          }
+        }
+      },
+
+      end(now) {
+        this.add(BK.frame, this.frameAt);
+        for (let k = 0; k < this.cur.length; k++) {
+          this.sum[k] += this.cur[k];
+          if (this.cur[k] > this.max[k]) this.max[k] = this.cur[k];
+        }
+        this.frames++;
+        if (now - this.windowAt >= this.WINDOW_MS) this.report(now);
+      },
+
+      report(now) {
+        const secs = (now - this.windowAt) / 1000, F = Math.max(1, this.frames), D = Math.max(1, this.drawn);
+        const avg = k => this.sum[k] / F;
+        const rows = BENCH_LABELS.map((name, k) => ({ name, avg: avg(k), worst: this.max[k], perFrame: this.calls[k] / F }));
+        const stepParts = [BK.grid, BK.animals, BK.collisions, BK.animalRenderer, BK.blobs, BK.plants, BK.bars, BK.rays];
+        rows.splice(BK.rays + 1, 0, { name: '  rest of world.step', avg: avg(BK.step) - stepParts.reduce((s, k) => s + avg(k), 0) });
+        rows.push({ name: 'rest of frame', avg: avg(BK.frame) - avg(BK.player) - avg(BK.step) - avg(BK.shadows) - avg(BK.msaa) - avg(BK.direct) });
+        const gap = this.gapSum / Math.max(1, this.gaps);
+        const types = { human: 0, deer: 0, coyote: 0 };
+        for (const a of world.animals) if (a.alive) types[a.type]++;
+        const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
+        const GF = Math.max(1, this.gpuFrameN), per = (s, n) => n ? (s / n).toFixed(1) : '-';
+        const gpuText = !this.timer ? 'GPU timer: not exposed by this browser (use the bench_ URL switches)' :
+          !this.gpuFrameN ? 'GPU timer: no results yet' :
+          `GPU ms/frame avg ${(this.gpuFrameSum / GF).toFixed(1)} worst ${this.gpuFrameMax.toFixed(1)} | scene+resolve ` +
+          `${per(this.gpuPass[1], this.gpuFrameN)}, shadow map ${per(this.gpuPass[0], this.gpuFrameN)} ` +
+          `(${per(this.gpuPass[0], this.gpuPassN[0])} per redraw), tonemap ${per(this.gpuPass[2], this.gpuFrameN)}`;
+        const pad = (s, n) => String(s).padEnd(n), num = (v, n) => (v === undefined ? '' : v.toFixed(2)).padStart(n);
+        const head = [
+          `bench ${secs.toFixed(1)} s | ${(this.frames / secs).toFixed(1)} fps | ${(this.ticks / secs).toFixed(1)} NPC ticks/s | ` +
+          `${game.on ? 'Survivor' : 'Observer'}, ${activeWorld && activeWorld.city ? 'City on' : 'City off'}, ${worldSize}`,
+          `${fmt(types.human)} people, ${fmt(types.deer)} deer, ${fmt(types.coyote)} coyotes, ${fmt(world.plants.length)} plants`,
+          `graphics ${graphics.high ? 'high' : 'low'} | pixel ratio ${renderer.getPixelRatio()} (${buf.x}x${buf.y}) | ` +
+          `MSAA ${graphics.high && !this.noMsaa ? MSAA_SAMPLES + 'x' : 'off'} | shadows ${renderer.shadowMap.enabled ? 'on' : 'off'} | cells ${this.noCells ? 'off' : 'on'}`,
+          `frame interval avg ${gap.toFixed(1)} worst ${this.gapMax.toFixed(1)} ms | rAF callback ${(100 * avg(BK.frame) / gap).toFixed(0)}% of interval`,
+          `draw calls avg ${(this.drawCalls / D).toFixed(0)} worst ${this.drawCallsMax} | triangles avg ${fmt(Math.round(this.triangles / D))}`,
+          `shadow map: needsUpdate set ${(this.shadowSets / secs).toFixed(1)}/s, drawn ${(this.shadowDraws / secs).toFixed(1)}/s, ` +
+          `${this.shadowDraws ? (this.shadowCalls / this.shadowDraws).toFixed(0) : '-'} draw calls each`,
+          gpuText,
+          `vitals: ${(this.nearBars / Math.max(1, this.ticks)).toFixed(1)} near bars per tick, ${(this.barDraws / secs).toFixed(1)} canvas ` +
+          `redraws/s, ${(this.brainBuilds / secs).toFixed(1)} brain builds/s`,
+          `${pad('subsystem', 26)}${'avg ms'.padStart(8)}${'worst'.padStart(8)}${'calls'.padStart(7)}`
+        ];
+        const lines = rows.map(r => `${pad(r.name, 26)}${num(r.avg, 8)}${num(r.worst, 8)}${num(r.perFrame, 7)}`);
+        const text = head.concat(lines).join('\n');
+        this.el.textContent = text;
+        console.log(text);
+        this.last = { secs, fps: this.frames / secs, ticksPerSec: this.ticks / secs, interval: gap, intervalWorst: this.gapMax,
+          drawCalls: this.drawCalls / D, drawCallsWorst: this.drawCallsMax, triangles: this.triangles / D,
+          shadowSetsPerSec: this.shadowSets / secs, shadowDrawsPerSec: this.shadowDraws / secs,
+          shadowCallsEach: this.shadowDraws ? this.shadowCalls / this.shadowDraws : 0,
+          gpu: this.gpuFrameN ? { avg: this.gpuFrameSum / GF, worst: this.gpuFrameMax, scene: this.gpuPass[1] / GF,
+            shadow: this.gpuPass[0] / GF, shadowPerRedraw: this.gpuPassN[0] ? this.gpuPass[0] / this.gpuPassN[0] : null,
+            tonemap: this.gpuPass[2] / GF } : null,
+          rows, types, plants: world.plants.length, pixelRatio: renderer.getPixelRatio(), buffer: [buf.x, buf.y],
+          nearBarsPerTick: this.nearBars / Math.max(1, this.ticks), barDrawsPerSec: this.barDraws / secs, brainBuildsPerSec: this.brainBuilds / secs };
+        window.benchReport = this.last;
+        this.windowAt = now;
+        this.sum.fill(0); this.max.fill(0); this.calls.fill(0);
+        this.frames = this.ticks = this.drawn = 0; this.gapSum = this.gapMax = 0; this.gaps = 0;
+        this.drawCalls = this.drawCallsMax = this.triangles = 0;
+        this.shadowDraws = this.shadowCalls = this.shadowSets = 0;
+        this.barDraws = this.brainBuilds = this.nearBars = 0;
+        this.gpuPass = [0, 0, 0]; this.gpuPassN = [0, 0, 0]; this.gpuFrameSum = this.gpuFrameN = this.gpuFrameMax = 0;
+      }
+    };
+
+    // BENCH wrapper around the frame body, so the whole callback is timed whichever way it returns.
     function frame(now) {
+      bench.begin(now);
+      frameWork(now);
+      bench.end(now);
+    }
+
+    function frameWork(now) {
       rafId = 0;
       const xr = renderer.xr.isPresenting;
       // first frame after a sleep: no elapsed time to integrate
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
       if (xr) vr.poll(dt);
+      let bt = performance.now();   // BENCH
       playerStep(dt);
+      bench.add(BK.player, bt);   // BENCH
       camera.updateMatrixWorld();
       camera.getWorldPosition(viewPos);
       camera.getWorldQuaternion(viewQuat);
@@ -12181,7 +12685,9 @@ void main() {
         npcAcc += dt;
         npcElapsed += dt;
         if (npcAcc >= NPC_TICK_S - NPC_TICK_SLACK) {
+          bt = performance.now();   // BENCH
           npcDue = world.step(npcElapsed);
+          bench.add(BK.step, bt); bench.ticks++;   // BENCH
           // carry the remainder, but bank at most one tick (no catch-up burst)
           npcAcc = Math.max(-NPC_TICK_SLACK, Math.min(npcAcc - NPC_TICK_S, NPC_TICK_S));
           npcElapsed = 0;
@@ -12204,14 +12710,19 @@ void main() {
           waterAt = now;
           wildWater.update(now * 0.001);
         }
+        bt = performance.now();   // BENCH
         graphics.update(now);
+        bench.add(BK.shadows, bt);   // BENCH
         // the view under a water surface is tinted (the Arena's water-tint)
         if (activeWorld) {
           activeWorld.surface(viewPos.x, viewPos.z, _surf);
           tintEl.classList.toggle('on', _surf.dip < 0 && viewPos.y < _surf.base);
         }
-        if (graphics.high && !xr) msaa.render();
+        bench.beforeDraw(xr);   // BENCH
+        bt = performance.now();   // BENCH
+        if (graphics.high && !xr && !bench.noMsaa) msaa.render();   // BENCH: !bench.noMsaa
         else renderer.render(scene, camera);
+        bench.afterDraw(bt, graphics.high && !xr && !bench.noMsaa);   // BENCH
         drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
         sceneDirty = false;
         rainDrawn = now;
