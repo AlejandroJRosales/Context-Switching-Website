@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// production-pipeline: compress-pipeline plus code protection, for single-file HTML/WebGL games.
-// Stages: shell split -> GLSL pass -> domain-lock inject -> terser -> obfuscate -> css/html squeeze -> license header -> verify
+// production-pipeline: compress-pipeline plus a domain lock and a license header, for single-file HTML/WebGL games.
+// Stages: shell split -> GLSL pass -> domain-lock inject -> terser -> css/html squeeze -> license header -> verify
 //
 //   node production-pipeline.mjs game.html --domains "example.com" [-o out.html] [--license file.txt]
-//        [--no-obfuscate] [--no-domain-lock] [--glsl-rename] [--no-glsl] [--no-html] [--quiet]
+//        [--no-domain-lock] [--glsl-rename] [--no-glsl] [--no-html] [--quiet]
 //
-// deps: terser acorn acorn-walk javascript-obfuscator (+ optional @shaderfrog/glsl-parser for shader parse checks)
+// deps: terser acorn acorn-walk (+ optional @shaderfrog/glsl-parser for shader parse checks)
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { minify } from 'terser';
@@ -23,13 +23,12 @@ const val = f => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : unde
 const VALUED = new Set(['-o', '--domains', '--license']);
 const input = argv.find((a, i) => !a.startsWith('-') && !VALUED.has(argv[i - 1]));
 const USAGE = 'usage: production-pipeline <in.html> --domains "a.com,b.com" [-o out.html] [--license file.txt]\n' +
-  '       [--no-obfuscate] [--no-domain-lock] [--glsl-rename] [--no-glsl] [--no-html] [--quiet]';
+  '       [--no-domain-lock] [--glsl-rename] [--no-glsl] [--no-html] [--quiet]';
 if (!input) { console.error(USAGE); process.exit(2); }
 const OPT = {
   output: val('-o') ?? input.replace(/\.html?$/, '') + '.prod.html',
   domains: (val('--domains') ?? '').split(',').map(d => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '').replace(/\.$/, '')).filter(Boolean),
   license: val('--license'),
-  obfuscate: !flag('--no-obfuscate'),
   lock: !flag('--no-domain-lock'),
   rename: flag('--glsl-rename'),
   glsl: !flag('--no-glsl'),
@@ -49,33 +48,6 @@ const TERSER = {
   output: { quote_style: 1 },
   parse: {},
   rename: {},
-};
-
-// Tuned for a per-frame game loop: everything that slows hot code or rewrites Three.js option / uniform objects is off;
-// the encoded string array is the protection that stays on.
-const OBFUSCATOR = {
-  compact: true,
-  target: 'browser',
-  sourceType: 'module',
-  controlFlowFlattening: false,
-  deadCodeInjection: false,
-  debugProtection: false,
-  selfDefending: false,
-  numbersToExpressions: false,
-  transformObjectKeys: false,
-  simplify: true,
-  splitStrings: false,
-  unicodeEscapeSequence: false,
-  renameGlobals: false,
-  identifierNamesGenerator: 'mangled',
-  stringArray: true,
-  stringArrayEncoding: ['base64'],
-  stringArrayThreshold: 0.75,
-  stringArrayRotate: true,
-  stringArrayShuffle: true,
-  stringArrayIndexShift: true,
-  stringArrayWrappersCount: 1,
-  stringArrayCallsTransform: false,
 };
 
 const src = fs.readFileSync(input, 'utf8').replace(/\r\n?/g, '\n');
@@ -258,7 +230,7 @@ if (!t0.code) fail('terser produced no code');
 const terserJs = t0.code;
 log(`terser     ${kb(main.text.length)} -> ${kb(terserJs.length)}`);
 
-// ---------- verify (pre-obfuscation JS: shader, GL-name and domain checks) ----------
+// ---------- verify (terser JS: shader, GL-name and domain checks) ----------
 {
   try { acorn.parse(terserJs, { ecmaVersion: 'latest', sourceType: 'module' }); }
   catch (e) { fail('terser output does not parse: ' + e.message); }
@@ -307,15 +279,7 @@ log(`terser     ${kb(main.text.length)} -> ${kb(terserJs.length)}`);
   }
 }
 
-// ---------- 5. obfuscate ----------
-let finalJs = terserJs;
-if (OPT.obfuscate) {
-  const { default: JavaScriptObfuscator } = await import('javascript-obfuscator');
-  finalJs = JavaScriptObfuscator.obfuscate(terserJs, OBFUSCATOR).getObfuscatedCode();
-  log(`obfuscate  ${kb(terserJs.length)} -> ${kb(finalJs.length)} (string array, base64)`);
-}
-
-// ---------- 6. license header ----------
+// ---------- 5. license header ----------
 let banner = '';
 {
   const year = new Date().getFullYear();
@@ -324,9 +288,9 @@ let banner = '';
     `No part of this software may be copied, modified, reverse engineered, or redistributed without written permission.`;
   banner = '/*!\n' + text.replace(/\*\//g, '* /').split('\n').map(l => ' * ' + l).join('\n') + '\n */\n';
 }
-finalJs = banner + finalJs;
+const finalJs = banner + terserJs;
 
-// ---------- 7. css / html squeeze ----------
+// ---------- 6. css / html squeeze ----------
 const squeezeCss = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ')
   .replace(/\s*([{};:,>])\s*/g, '$1').replace(/;}/g, '}').trim();
 const squeezeHtml = s => s.replace(/<!--(?!\[if)[\s\S]*?-->/g, '').replace(/\s+/g, ' ');

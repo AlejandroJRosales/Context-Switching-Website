@@ -1118,6 +1118,7 @@
       <button id="gfx">Graphics: high</button>
       <button id="fs" aria-pressed="false">Fullscreen</button>
       <button id="vr" hidden>Enter VR</button>
+      <button id="benchbtn" aria-pressed="false">Benchmark</button>
     </div>
     <h2 class="second">Other</h2>
     <div class="chips">
@@ -11490,7 +11491,7 @@ void main() {
     // Holds on the canvas and on these buttons cancel the browser's long-press, which would vibrate and open a menu.
     const TAP_SLOP = 12;           // px a finger may drift and still count as a tap
     const TAP_SWALLOW_MS = 600;    // a native click on the same button this soon after is the same tap
-    const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals and climb act on hold)
+    const TAP_BUTTONS = '#fly, #car, #gear, #settings button, #bench-copy';   // buttons that act on a tap (pedals and climb act on hold)
     // buttons outside the scrollable settings sheet: their touches never scroll, so the long press is cancelled at touchstart
     const HOLD_SAFE = '#fly, #car, .pedal, #climb button, #gear';
     {
@@ -12249,6 +12250,14 @@ void main() {
     // VIEW AND ECOSYSTEM SETTINGS (the Arena's panel rows, as chips)
     povEl.addEventListener('click', () => { pov.cycle(); povEl.blur(); });
     raysEl.addEventListener('click', () => { labels.toggleRayVis(); raysEl.blur(); invalidate(); });
+    const benchBtnEl = document.getElementById('benchbtn');
+    benchBtnEl.addEventListener('click', () => {
+      bench.setEnabled(!bench.enabled);
+      benchBtnEl.classList.toggle('sel', bench.enabled);
+      benchBtnEl.setAttribute('aria-pressed', String(bench.enabled));
+      benchBtnEl.blur();
+      invalidate();
+    });
     vitalsEl.addEventListener('click', () => {
       healthBars.setEnabled(!healthBars.enabled);
       vitalsEl.classList.toggle('sel', healthBars.enabled);
@@ -12477,7 +12486,7 @@ void main() {
       noMsaa: benchParams.get('bench_msaa') === '0',      // ?bench_msaa=0 draws high graphics without the MSAA pass
       noShadows: benchParams.get('bench_shadows') === '0',   // ?bench_shadows=0 turns the sun's shadow map off on high
       noCells: benchParams.get('bench_cells') === '0',     // ?bench_cells=0 draws the ground layers and plants as whole meshes
-      ready: false, el: null, gl: null, timer: null, query: null, querySlot: -1, pending: [], gpuFrame: 0,
+      enabled: false, ready: false, el: null, textEl: null, gl: null, timer: null, query: null, querySlot: -1, pending: [], gpuFrame: 0,
       cur: new Float64Array(BENCH_LABELS.length), sum: new Float64Array(BENCH_LABELS.length),
       max: new Float64Array(BENCH_LABELS.length), calls: new Float64Array(BENCH_LABELS.length),
       frames: 0, ticks: 0, drawn: 0, windowAt: -1, frameAt: 0, lastNow: -1, gapSum: 0, gapMax: 0, gaps: 0,
@@ -12505,10 +12514,53 @@ void main() {
         };
         this.gl = renderer.getContext();
         this.timer = this.gl.getExtension('EXT_disjoint_timer_query_webgl2');
-        const el = this.el = document.createElement('pre');
-        el.style.cssText = 'position:fixed;left:14px;top:64px;z-index:9;margin:0;padding:6px 8px;pointer-events:none;' +
+        const el = this.el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:14px;top:64px;z-index:9;pointer-events:none;';
+        const pre = this.textEl = document.createElement('pre');
+        pre.style.cssText = 'margin:0;padding:6px 8px;' +
           'font:10px/1.35 ui-monospace,Menlo,monospace;color:#e8e4dc;background:rgba(12,15,21,0.72);border-radius:6px';
+        const copy = document.createElement('button');
+        copy.id = 'bench-copy';
+        copy.textContent = 'Copy';
+        copy.style.cssText = 'position:absolute;top:4px;right:4px;pointer-events:auto;cursor:pointer;padding:2px 8px;' +
+          'font:10px ui-monospace,Menlo,monospace;color:#e8e4dc;background:rgba(255,255,255,0.14);' +
+          'border:1px solid rgba(255,255,255,0.25);border-radius:4px';
+        copy.addEventListener('click', () => {
+          const text = pre.textContent;
+          const done = ok => {
+            copy.textContent = ok ? 'Copied' : 'Copy failed';
+            setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+          };
+          const fallback = () => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { /* unsupported */ }
+            ta.remove();
+            done(ok);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), fallback);
+          else fallback();
+          copy.blur();
+        });
+        el.append(pre, copy);
         document.body.appendChild(el);
+      },
+
+      setEnabled(on) {
+        this.enabled = on;
+        renderer.info.autoReset = !on || !this.ready;
+        if (this.ready) {
+          this.el.hidden = !on;
+          this.el.style.display = on ? '' : 'none';
+        }
+        // start a fresh window so the first report does not span the time it was off
+        this.windowAt = -1; this.lastNow = -1;
+        this.sum.fill(0); this.max.fill(0); this.calls.fill(0);
+        this.frames = this.ticks = this.drawn = 0; this.gapSum = this.gapMax = 0; this.gaps = 0;
       },
 
       add(k, t0) {
@@ -12533,6 +12585,7 @@ void main() {
       },
 
       beforeDraw(xr) {
+        if (!this.enabled) return;
         renderer.info.reset();
         this.shadowDue = renderer.shadowMap.enabled && sun.castShadow && sun.shadow.needsUpdate;
         this.shadowDrawn = false;
@@ -12558,6 +12611,7 @@ void main() {
       },
 
       afterDraw(t0, viaMsaa) {
+        if (!this.enabled) return;
         this.add(viaMsaa ? BK.msaa : BK.direct, t0);
         this.gpuSwitch(-1);
         this.gpuOpen = null;
@@ -12632,7 +12686,7 @@ void main() {
         ];
         const lines = rows.map(r => `${pad(r.name, 26)}${num(r.avg, 8)}${num(r.worst, 8)}${num(r.perFrame, 7)}`);
         const text = head.concat(lines).join('\n');
-        this.el.textContent = text;
+        this.textEl.textContent = text;
         console.log(text);
         this.last = { secs, fps: this.frames / secs, ticksPerSec: this.ticks / secs, interval: gap, intervalWorst: this.gapMax,
           drawCalls: this.drawCalls / D, drawCallsWorst: this.drawCallsMax, triangles: this.triangles / D,
@@ -12656,9 +12710,9 @@ void main() {
 
     // BENCH wrapper around the frame body, so the whole callback is timed whichever way it returns.
     function frame(now) {
-      // bench.begin(now);
+      if (bench.enabled) bench.begin(now);
       frameWork(now);
-      // bench.end(now);
+      if (bench.enabled) bench.end(now);
     }
 
     function frameWork(now) {
