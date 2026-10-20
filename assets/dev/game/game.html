@@ -1118,7 +1118,6 @@
       <button id="gfx">Graphics: high</button>
       <button id="fs" aria-pressed="false">Fullscreen</button>
       <button id="vr" hidden>Enter VR</button>
-      <button id="benchbtn" aria-pressed="false">Benchmark</button>
     </div>
     <h2 class="second">Other</h2>
     <div class="chips">
@@ -1459,7 +1458,7 @@
 
     // LOW-POWER (Graphics: low): lower pixel ratio, fps cap, no MSAA, shorter view, nearer LODs, fewer updates; saved choice.
     const LOW_PIXEL_RATIO = 1.5;
-    const LOW_RENDER_FPS = 30;
+    const LOW_RENDER_FPS = 60;
     const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays at FOG_NEAR
     const FOG_NEAR = 120;
     const HIGH_CAMERA_FAR = 2000, LOW_CAMERA_FAR = 600;  // past the fog's far edge, so nothing pops at the clip
@@ -1606,7 +1605,6 @@ void main() {
       render() {
         renderer.setRenderTarget(this.ensure());
         renderer.render(scene, camera);
-        bench.gpuSwitch(2);   // BENCH
         renderer.setRenderTarget(null);
         renderer.render(this.qScene, this.qCam);
       },
@@ -2456,7 +2454,6 @@ void main() {
     // Regroups the mesh by cell and hooks its draw: the first run of cells in view through three, the rest as plain GL draws.
     // `clip` is for flat layers whose overlaps differ in colour, where the draw order must hold across cell lines too.
     function cellCull(mesh, clip = false, size = GROUND_CELL_M) {
-      if (bench.noCells) return mesh;   // BENCH
       let g = mesh.geometry, cells;
       if (!g.boundingSphere) g.computeBoundingSphere();
       if (g.index) cells = cellSplitIndexed(g, size);
@@ -4283,6 +4280,8 @@ void main() {
         this.rows = Math.ceil(worldH / cellSize);
         // Flat array of buckets, made on first insert and only emptied on rebuild: lookups are indexes, rebuilds allocate nothing.
         this.cells = null;
+        // One bit per cell, set while its bucket holds anything, so queryInto skips empty cells without reading `cells`.
+        this.filled = null;
         this.rb = { cx0: 0, cx1: 0, cy0: 0, cy1: 0, ccx: 0, ccy: 0, K: 0, edge: 0, W: 0 };
         this.nearD2 = Infinity;
       }
@@ -4295,28 +4294,37 @@ void main() {
         return this._key((cx + this.cols) % this.cols, (cy + this.rows) % this.rows);
       }
 
+      _alloc() {
+        this.cells = new Array(this.cols * this.rows).fill(null);
+        this.filled = new Int32Array((this.cols * this.rows + 31) >>> 5);
+      }
+
       insert(entity) {
-        if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
+        if (this.cells === null) this._alloc();
         const k = this._cell(entity.position.x, entity.position.z);
         let bucket = this.cells[k];
         if (bucket === null) bucket = this.cells[k] = [];
         bucket.push(entity);
+        this.filled[k >>> 5] |= 1 << (k & 31);
         return k;
       }
 
       // Append to bucket k (for a grid kept up to date by moves; insert() computes k itself).
       place(entity, k) {
-        if (this.cells === null) this.cells = new Array(this.cols * this.rows).fill(null);
+        if (this.cells === null) this._alloc();
         let bucket = this.cells[k];
         if (bucket === null) bucket = this.cells[k] = [];
         bucket.push(entity);
+        this.filled[k >>> 5] |= 1 << (k & 31);
       }
 
       remove(entity, k) {
         const bucket = this.cells === null ? null : this.cells[k];
         if (!bucket) return;
         const i = bucket.indexOf(entity);
-        if (i >= 0) bucket.splice(i, 1);
+        if (i < 0) return;
+        bucket.splice(i, 1);
+        if (bucket.length === 0) this.filled[k >>> 5] &= ~(1 << (k & 31));
       }
 
       ringBox(x, z, r) {
@@ -4374,14 +4382,15 @@ void main() {
         const cells = this.cells;
         if (cells === null) return 0;
         let n = 0;
-        const cs = this.cellSize, cols = this.cols, rows = this.rows;
+        const cs = this.cellSize, cols = this.cols, rows = this.rows, filled = this.filled;
         const cx0 = Math.floor((x - r) / cs), cx1 = Math.floor((x + r) / cs);
         const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
         for (let cy = cy0; cy <= cy1; cy++) {
           const row = (((cy % rows) + rows) % rows) * cols;
           for (let cx = cx0; cx <= cx1; cx++) {
-            const bucket = cells[row + ((cx % cols) + cols) % cols];
-            if (bucket === null) continue;
+            const k = row + ((cx % cols) + cols) % cols;
+            if ((filled[k >>> 5] & (1 << (k & 31))) === 0) continue;
+            const bucket = cells[k];
             for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
           }
         }
@@ -5612,7 +5621,7 @@ void main() {
         this.dietWater(nutrition * 0.01);
         plant.health -= 1;
         plantRenderer.touch(plant);
-        if (plant.health <= 0) plant.alive = false;
+        if (plant.health <= 0) { plant.alive = false; world.plantsDied = true; }
       }
 
       // A food box: full health, hunger cleared, and the water that comes with that much food. The crate then moves.
@@ -5884,6 +5893,12 @@ void main() {
         const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z;
         const lod2 = perf.npcLodDist * perf.npcLodDist;
         const passes = this.passById;
+        // npcOnScreen's plane tests inlined, the same sums in the same order; in VR every body counts as on screen, as it does there
+        const inVr = renderer.xr.isPresenting, fp = npcFrustum.planes;
+        const p0 = fp[0].normal, p1 = fp[1].normal, p2 = fp[2].normal, p3 = fp[3].normal, p4 = fp[4].normal, p5 = fp[5].normal;
+        const ax0 = p0.x, ay0 = p0.y, az0 = p0.z, d0 = fp[0].constant, ax1 = p1.x, ay1 = p1.y, az1 = p1.z, d1 = fp[1].constant;
+        const ax2 = p2.x, ay2 = p2.y, az2 = p2.z, d2 = fp[2].constant, ax3 = p3.x, ay3 = p3.y, az3 = p3.z, d3 = fp[3].constant;
+        const ax4 = p4.x, ay4 = p4.y, az4 = p4.z, d4 = fp[4].constant, ax5 = p5.x, ay5 = p5.y, az5 = p5.z, d5 = fp[5].constant;
         for (let ti = 0; ti < passes.length; ti++) {
           const p = passes[ti], im = this.meshes[p.type];
           p.im = im || null;
@@ -5917,7 +5932,12 @@ void main() {
             a.animTime += deltaTime * hz * 2 * Math.PI;
           }
 
-          if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
+          if (!inVr) {
+            const sx = a.position.x, sy = a.position.y, sz = a.position.z, nr = -(NPC_BODY_R * hs);
+            if (ax0 * sx + ay0 * sy + az0 * sz + d0 < nr || ax1 * sx + ay1 * sy + az1 * sz + d1 < nr ||
+              ax2 * sx + ay2 * sy + az2 * sz + d2 < nr || ax3 * sx + ay3 * sy + az3 * sz + d3 < nr ||
+              ax4 * sx + ay4 * sy + az4 * sz + d4 < nr || ax5 * sx + ay5 * sy + az5 * sz + d5 < nr) continue;
+          }
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
 
           const groundOffset = a.footLift() * NPC_UNIT;
@@ -6053,7 +6073,7 @@ void main() {
 
       init(bounds) {
         this.disposeCells();
-        const n = bench.noCells ? 1 : PLANT_GRID, w = (bounds.maxX - bounds.minX) / n, d = (bounds.maxZ - bounds.minZ) / n;   // BENCH: bench.noCells ? 1 :
+        const n = PLANT_GRID, w = (bounds.maxX - bounds.minX) / n, d = (bounds.maxZ - bounds.minZ) / n;
         this.grid = { n, x0: bounds.minX, z0: bounds.minZ, w, d };
         this.cells = [];
         for (let k = 0; k < n * n; k++) {
@@ -6957,8 +6977,10 @@ void main() {
     // with a height range. Doorways are gaps between wall pieces, so NPCs see through open doors.
     const cover = {
       items: [], grid: new Map(), stamp: new Uint32Array(0), no: 0,
+      // the grid's buckets laid out over the box of filed cells, so blocks() indexes an array instead of hashing a key per cell
+      flat: [], fx0: 0, fz0: 0, fw: 0, fh: 0,
 
-      clear() { this.items = []; this.grid = new Map(); this.stamp = new Uint32Array(0); this.no = 0; },
+      clear() { this.items = []; this.grid = new Map(); this.stamp = new Uint32Array(0); this.no = 0; this.flat = []; this.fw = this.fh = 0; },
 
       // Appends `list` to the cover set, filing each piece in the grid cells its bounds touch.
       add(list) {
@@ -6993,6 +7015,26 @@ void main() {
         }
         this.stamp = new Uint32Array(this.items.length);
         this.no = 0;
+        this.index();
+      },
+
+      // Rebuilds `flat` from the grid's keys (cellKey's layout).
+      index() {
+        let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity;
+        for (const k of this.grid.keys()) {
+          const cx = Math.floor(k / 16384) - 8192, cz = k % 16384 - 8192;
+          if (cx < c0) c0 = cx;
+          if (cx > c1) c1 = cx;
+          if (cz < r0) r0 = cz;
+          if (cz > r1) r1 = cz;
+        }
+        if (c0 > c1) { this.flat = []; this.fw = this.fh = 0; return; }
+        this.fx0 = c0; this.fz0 = r0; this.fw = c1 - c0 + 1; this.fh = r1 - r0 + 1;
+        const flat = this.flat = new Array(this.fw * this.fh).fill(null);
+        for (const [k, bucket] of this.grid) {
+          const cx = Math.floor(k / 16384) - 8192, cz = k % 16384 - 8192;
+          flat[(cz - r0) * this.fw + (cx - c0)] = bucket;
+        }
       },
 
       // Does the sight line from a to b pass through any cover piece within its height range? Walks the grid cells
@@ -7007,8 +7049,10 @@ void main() {
         let tmx = dx !== 0 ? (dx > 0 ? (cx + 1) * C - ax : ax - cx * C) / Math.abs(dx) : Infinity;
         let tmz = dz !== 0 ? (dz > 0 ? (cz + 1) * C - az : az - cz * C) / Math.abs(dz) : Infinity;
         if (++this.no >= 0xffffffff) { this.stamp.fill(0); this.no = 1; }
+        const flat = this.flat, fx0 = this.fx0, fz0 = this.fz0, fw = this.fw, fh = this.fh;
         for (let guard = 0; guard < 1024; guard++) {
-          const bucket = this.grid.get(cellKey(cx, cz));
+          const fc = cx - fx0, fr = cz - fz0;
+          const bucket = fc >= 0 && fr >= 0 && fc < fw && fr < fh ? flat[fr * fw + fc] : null;
           if (bucket) {
             for (const k of bucket) {
               if (this.stamp[k] === this.no) continue;
@@ -9508,12 +9552,12 @@ void main() {
       _moverSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // 64-bit: compared to positions exactly
       _aim: new THREE.Vector3(),
 
-      shadowsOn() { return SHADOWS_ENABLED && !bench.noShadows && this.high && !!activeWorld && activeWorld.shadows; },   // BENCH: !bench.noShadows
+      shadowsOn() { return SHADOWS_ENABLED && this.high && !!activeWorld && activeWorld.shadows; },
 
       apply() {
         const on = this.shadowsOn();
         gfxEl.textContent = `Graphics: ${this.high ? 'high' : 'low'}`;
-        const pr = bench.pr || Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);   // BENCH: bench.pr ||
+        const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
         if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
         if (!this.high) msaa.dispose();
         perf.lowPower = !this.high;
@@ -9599,7 +9643,6 @@ void main() {
           sun.shadow.camera.updateProjectionMatrix();
         }
         sun.shadow.needsUpdate = true;
-        bench.shadowSets++;   // BENCH
         // the render sets these matrices again; set here so what the new map sees is recorded in its own space
         sun.updateMatrixWorld();
         sun.shadow.updateMatrices(sun);
@@ -10361,6 +10404,7 @@ void main() {
         this._plantAdds = [];
         this._plantDrops = [];
         this._animalGridDrops = [];    // animals removed from `animals` since the last grid sync, still filed in the grid
+        this.plantsDied = false;       // set where a plant dies (eaten), so step's removal pass runs only on those ticks
         this.drift2 = 0;
         this.contact = null;
         this._contactR = NpcWorld.CONTACT_DIST;
@@ -10385,6 +10429,7 @@ void main() {
         this.plants.length = 0;
         this._plantAdds.length = 0;
         this._plantDrops.length = 0;
+        this.plantsDied = false;
         this.ready = false;
         animalRenderer.update(this.animals, 0);
         blobShadows.update(this.animals);
@@ -10406,6 +10451,7 @@ void main() {
         this.plants.length = 0;
         this._plantAdds.length = 0;
         this._plantDrops.length = 0;
+        this.plantsDied = false;
         this.ticks = 0;
         this._animalGridDrops.length = 0;
         game.reset();
@@ -10610,7 +10656,6 @@ void main() {
       step(dt) {
         if (!this.ready || this.animals.length === 0) return false;
         const now = this.time;
-        let bt = performance.now();   // BENCH
 
         // Grid sync every 3 ticks, incremental: only animals whose cell changed move bucket; same sets as a full rebuild.
         if (this.ticks % 3 === 0) {
@@ -10636,7 +10681,6 @@ void main() {
           this.contact.rebuild(this.animals);
           this.drift2 = 0;
         }
-        bt = bench.add(BK.grid, bt);   // BENCH
 
         const alive = this.aliveById, fastest = this.fastestHunterMSById;
         alive.fill(0); fastest.fill(0);
@@ -10660,7 +10704,6 @@ void main() {
           for (let k = 0; k < prey.length; k++) if (alive[prey[k]]) { any = 1; break; }
           this.canHuntById[t] = any;
         }
-        bench.add(BK.animals, bt);   // BENCH
 
         // Plant.update only retries a render slot for a plant spawned past MAX_INSTANCES; skip the pass when there is none
         if (plantRenderer.pending) {
@@ -10670,9 +10713,7 @@ void main() {
           }
         }
 
-        bt = performance.now();   // BENCH
         this.handleCollisions();
-        bench.add(BK.collisions, bt);   // BENCH
         game.update(dt);
 
         for (let i = this.animals.length - 1; i >= 0; i--) {
@@ -10682,31 +10723,26 @@ void main() {
             this.animals.splice(i, 1);
           }
         }
-        for (let i = this.plants.length - 1; i >= 0; i--) {
-          if (!this.plants[i].alive) {
-            this.plants[i].remove();
-            this._plantDrops.push(this.plants[i]);
-            this.plants.splice(i, 1);
+        if (this.plantsDied) {
+          this.plantsDied = false;
+          for (let i = this.plants.length - 1; i >= 0; i--) {
+            if (!this.plants[i].alive) {
+              this.plants[i].remove();
+              this._plantDrops.push(this.plants[i]);
+              this.plants.splice(i, 1);
+            }
           }
         }
 
         activeWorld.regrow(this);
 
-        bt = performance.now();   // BENCH
         animalRenderer.update(this.animals, dt);
-        bt = bench.add(BK.animalRenderer, bt);   // BENCH
         blobShadows.update(this.animals);
-        bench.add(BK.blobs, bt);   // BENCH
         foodBoxes.render();
-        bt = performance.now();   // BENCH
         plantRenderer.update(this.plants);
-        bt = bench.add(BK.plants, bt);   // BENCH
         healthBars.update(this.animals);
-        bench.add(BK.bars, bt);   // BENCH
         if (this.ticks % (perf.lowPower ? LOW_LABEL_TICKS : HIGH_LABEL_TICKS) === 0) labels.updateTarget();
-        bt = performance.now();   // BENCH
         visionRays.update(this.animals);
-        bench.add(BK.rays, bt);   // BENCH
         this.syncPopulation();
         if (this.ticks % (perf.lowPower ? LOW_HUD_TICKS : HIGH_HUD_TICKS) === 0) refreshHud();
         this.ticks++;
@@ -10869,7 +10905,7 @@ void main() {
               food * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
             p.health -= 1;
             plantRenderer.touch(p);
-            if (p.health <= 0) p.alive = false;
+            if (p.health <= 0) { p.alive = false; world.plantsDied = true; }
           }
 
           // a food box fills the hunger bar, with the water that comes with that much food
@@ -11185,7 +11221,6 @@ void main() {
           * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
         if (slot.key === key) return;
         slot.key = key;
-        bench.barDraws++;   // BENCH
         const { ctx, canvas } = slot;
         const W = canvas.width, H = canvas.height;
         const rows = BAR_ICONS.length;
@@ -11301,7 +11336,6 @@ void main() {
             seen.add(a);
           }
           bar.nearTick = tick;
-          bench.nearBars++;   // BENCH
 
           vals[0] = q(a.health / a.maxHealth);
           vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
@@ -11320,7 +11354,6 @@ void main() {
             if (bar.brain) disposeBrain(bar.brain);
             bar.brain = buildBrain(nn);
             bar.brainFor = nn;
-            bench.brainBuilds++;   // BENCH
           }
           const b = bar.brain;
           brainActivity(b, a);
@@ -11491,7 +11524,7 @@ void main() {
     // Holds on the canvas and on these buttons cancel the browser's long-press, which would vibrate and open a menu.
     const TAP_SLOP = 12;           // px a finger may drift and still count as a tap
     const TAP_SWALLOW_MS = 600;    // a native click on the same button this soon after is the same tap
-    const TAP_BUTTONS = '#fly, #car, #gear, #settings button, #bench-copy';   // buttons that act on a tap (pedals and climb act on hold)
+    const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals and climb act on hold)
     // buttons outside the scrollable settings sheet: their touches never scroll, so the long press is cancelled at touchstart
     const HOLD_SAFE = '#fly, #car, .pedal, #climb button, #gear';
     {
@@ -12250,14 +12283,6 @@ void main() {
     // VIEW AND ECOSYSTEM SETTINGS (the Arena's panel rows, as chips)
     povEl.addEventListener('click', () => { pov.cycle(); povEl.blur(); });
     raysEl.addEventListener('click', () => { labels.toggleRayVis(); raysEl.blur(); invalidate(); });
-    const benchBtnEl = document.getElementById('benchbtn');
-    benchBtnEl.addEventListener('click', () => {
-      bench.setEnabled(!bench.enabled);
-      benchBtnEl.classList.toggle('sel', bench.enabled);
-      benchBtnEl.setAttribute('aria-pressed', String(bench.enabled));
-      benchBtnEl.blur();
-      invalidate();
-    });
     vitalsEl.addEventListener('click', () => {
       healthBars.setEnabled(!healthBars.enabled);
       vitalsEl.classList.toggle('sel', healthBars.enabled);
@@ -12470,261 +12495,14 @@ void main() {
 
     let fpsFrames = 0, fpsAt = 0;
 
-    // BENCH (temporary timing harness for the performance pass): every line tagged BENCH goes when it is removed.
-    const BK = {
-      frame: 0, player: 1, step: 2, grid: 3, animals: 4, collisions: 5, animalRenderer: 6, blobs: 7, plants: 8,
-      bars: 9, rays: 10, shadows: 11, msaa: 12, direct: 13, shadowMap: 14
-    };
-    const BENCH_LABELS = ['frame (rAF callback)', 'playerStep', 'world.step', '  grid syncs', '  animal updates',
-      '  handleCollisions', '  AnimalRenderer.update', '  blobShadows.update', '  plantRenderer.update',
-      '  healthBars.update', '  visionRays.update', 'graphics.update', 'render: msaa.render', 'render: renderer.render',
-      '  shadow map pass'];
-    const benchParams = new URLSearchParams(location.search);
-    const bench = {
-      WINDOW_MS: 5000,
-      pr: parseFloat(benchParams.get('bench_pr')) || 0,   // ?bench_pr=1 forces this pixel ratio (GPU-bound test)
-      noMsaa: benchParams.get('bench_msaa') === '0',      // ?bench_msaa=0 draws high graphics without the MSAA pass
-      noShadows: benchParams.get('bench_shadows') === '0',   // ?bench_shadows=0 turns the sun's shadow map off on high
-      noCells: benchParams.get('bench_cells') === '0',     // ?bench_cells=0 draws the ground layers and plants as whole meshes
-      enabled: false, ready: false, el: null, textEl: null, gl: null, timer: null, query: null, querySlot: -1, pending: [], gpuFrame: 0,
-      cur: new Float64Array(BENCH_LABELS.length), sum: new Float64Array(BENCH_LABELS.length),
-      max: new Float64Array(BENCH_LABELS.length), calls: new Float64Array(BENCH_LABELS.length),
-      frames: 0, ticks: 0, drawn: 0, windowAt: -1, frameAt: 0, lastNow: -1, gapSum: 0, gapMax: 0, gaps: 0,
-      drawCalls: 0, drawCallsMax: 0, triangles: 0, shadowDue: false, shadowDrawn: false, shadowDraws: 0,
-      shadowCalls: 0, shadowSets: 0, last: null, barDraws: 0, brainBuilds: 0, nearBars: 0,
-      // GPU ms by pass (0 shadow map, 1 scene incl. MSAA resolve, 2 tonemap pass) and per whole frame
-      gpuPass: [0, 0, 0], gpuPassN: [0, 0, 0], gpuFrameSum: 0, gpuFrameN: 0, gpuFrameMax: 0, gpuOpen: null,
-
-      init() {
-        this.ready = true;
-        renderer.info.autoReset = false;
-        const sm = renderer.shadowMap, inner = sm.render;
-        sm.render = function (lights, sc, cam) {
-          const t = performance.now(), c0 = renderer.info.render.calls, due = bench.shadowDue;
-          if (due) bench.gpuSwitch(0);
-          inner.call(this, lights, sc, cam);
-          if (due) {
-            bench.shadowDue = false;
-            if (!sun.shadow.needsUpdate) {
-              bench.shadowDrawn = true; bench.shadowDraws++; bench.shadowCalls += renderer.info.render.calls - c0;
-            }
-            bench.gpuSwitch(1);
-          }
-          bench.add(BK.shadowMap, t);
-        };
-        this.gl = renderer.getContext();
-        this.timer = this.gl.getExtension('EXT_disjoint_timer_query_webgl2');
-        const el = this.el = document.createElement('div');
-        el.style.cssText = 'position:fixed;left:14px;top:64px;z-index:9;pointer-events:none;';
-        const pre = this.textEl = document.createElement('pre');
-        pre.style.cssText = 'margin:0;padding:6px 8px;' +
-          'font:10px/1.35 ui-monospace,Menlo,monospace;color:#e8e4dc;background:rgba(12,15,21,0.72);border-radius:6px';
-        const copy = document.createElement('button');
-        copy.id = 'bench-copy';
-        copy.textContent = 'Copy';
-        copy.style.cssText = 'position:absolute;top:4px;right:4px;pointer-events:auto;cursor:pointer;padding:2px 8px;' +
-          'font:10px ui-monospace,Menlo,monospace;color:#e8e4dc;background:rgba(255,255,255,0.14);' +
-          'border:1px solid rgba(255,255,255,0.25);border-radius:4px';
-        copy.addEventListener('click', () => {
-          const text = pre.textContent;
-          const done = ok => {
-            copy.textContent = ok ? 'Copied' : 'Copy failed';
-            setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
-          };
-          const fallback = () => {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.cssText = 'position:fixed;opacity:0';
-            document.body.appendChild(ta);
-            ta.select();
-            let ok = false;
-            try { ok = document.execCommand('copy'); } catch (e) { /* unsupported */ }
-            ta.remove();
-            done(ok);
-          };
-          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), fallback);
-          else fallback();
-          copy.blur();
-        });
-        el.append(pre, copy);
-        document.body.appendChild(el);
-      },
-
-      setEnabled(on) {
-        this.enabled = on;
-        renderer.info.autoReset = !on || !this.ready;
-        if (this.ready) {
-          this.el.hidden = !on;
-          this.el.style.display = on ? '' : 'none';
-        }
-        // start a fresh window so the first report does not span the time it was off
-        this.windowAt = -1; this.lastNow = -1;
-        this.sum.fill(0); this.max.fill(0); this.calls.fill(0);
-        this.frames = this.ticks = this.drawn = 0; this.gapSum = this.gapMax = 0; this.gaps = 0;
-      },
-
-      add(k, t0) {
-        const t = performance.now();
-        this.cur[k] += t - t0;
-        this.calls[k]++;
-        return t;
-      },
-
-      begin(now) {
-        if (!this.ready) this.init();
-        if (this.windowAt < 0) this.windowAt = now;
-        if (this.lastNow >= 0) {
-          const gap = now - this.lastNow;
-          this.gapSum += gap; this.gaps++;
-          if (gap > this.gapMax) this.gapMax = gap;
-        }
-        this.lastNow = now;
-        this.cur.fill(0);
-        this.frameAt = performance.now();
-        this.pollGpu();
-      },
-
-      beforeDraw(xr) {
-        if (!this.enabled) return;
-        renderer.info.reset();
-        this.shadowDue = renderer.shadowMap.enabled && sun.castShadow && sun.shadow.needsUpdate;
-        this.shadowDrawn = false;
-        this.gpuFrame++;
-        this.gpuOpen = xr ? null : { left: 0, ms: 0, bad: false, pass: [0, 0, 0], shadow: false };
-        if (!xr) this.gpuSwitch(1);
-      },
-
-      // ends the open pass query (if any) and opens one for `slot`; slot -1 just closes
-      gpuSwitch(slot) {
-        if (!this.timer || !this.gpuOpen) return;
-        const gl = this.gl;
-        if (this.query !== null) {
-          gl.endQuery(this.timer.TIME_ELAPSED_EXT);
-          this.pending.push([this.query, this.querySlot, this.gpuOpen]);
-          this.query = null;
-        }
-        if (slot < 0) return;
-        this.query = gl.createQuery();
-        this.querySlot = slot;
-        this.gpuOpen.left++;
-        gl.beginQuery(this.timer.TIME_ELAPSED_EXT, this.query);
-      },
-
-      afterDraw(t0, viaMsaa) {
-        if (!this.enabled) return;
-        this.add(viaMsaa ? BK.msaa : BK.direct, t0);
-        this.gpuSwitch(-1);
-        this.gpuOpen = null;
-        const r = renderer.info.render;
-        this.drawn++;
-        this.drawCalls += r.calls; this.triangles += r.triangles;
-        if (r.calls > this.drawCallsMax) this.drawCallsMax = r.calls;
-      },
-
-      pollGpu() {
-        const gl = this.gl;
-        while (this.pending.length) {
-          const [q, slot, fr] = this.pending[0];
-          if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
-          const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
-          gl.deleteQuery(q);
-          this.pending.shift();
-          if (gl.getParameter(this.timer.GPU_DISJOINT_EXT)) fr.bad = true;
-          fr.ms += ms; fr.pass[slot] += ms;
-          if (slot === 0) fr.shadow = true;
-          if (--fr.left === 0 && !fr.bad) {
-            this.gpuFrameSum += fr.ms; this.gpuFrameN++;
-            if (fr.ms > this.gpuFrameMax) this.gpuFrameMax = fr.ms;
-            for (let p = 0; p < 3; p++) this.gpuPass[p] += fr.pass[p];
-            if (fr.shadow) this.gpuPassN[0]++;
-          }
-        }
-      },
-
-      end(now) {
-        this.add(BK.frame, this.frameAt);
-        for (let k = 0; k < this.cur.length; k++) {
-          this.sum[k] += this.cur[k];
-          if (this.cur[k] > this.max[k]) this.max[k] = this.cur[k];
-        }
-        this.frames++;
-        if (now - this.windowAt >= this.WINDOW_MS) this.report(now);
-      },
-
-      report(now) {
-        const secs = (now - this.windowAt) / 1000, F = Math.max(1, this.frames), D = Math.max(1, this.drawn);
-        const avg = k => this.sum[k] / F;
-        const rows = BENCH_LABELS.map((name, k) => ({ name, avg: avg(k), worst: this.max[k], perFrame: this.calls[k] / F }));
-        const stepParts = [BK.grid, BK.animals, BK.collisions, BK.animalRenderer, BK.blobs, BK.plants, BK.bars, BK.rays];
-        rows.splice(BK.rays + 1, 0, { name: '  rest of world.step', avg: avg(BK.step) - stepParts.reduce((s, k) => s + avg(k), 0) });
-        rows.push({ name: 'rest of frame', avg: avg(BK.frame) - avg(BK.player) - avg(BK.step) - avg(BK.shadows) - avg(BK.msaa) - avg(BK.direct) });
-        const gap = this.gapSum / Math.max(1, this.gaps);
-        const types = { human: 0, deer: 0, coyote: 0 };
-        for (const a of world.animals) if (a.alive) types[a.type]++;
-        const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
-        const GF = Math.max(1, this.gpuFrameN), per = (s, n) => n ? (s / n).toFixed(1) : '-';
-        const gpuText = !this.timer ? 'GPU timer: not exposed by this browser (use the bench_ URL switches)' :
-          !this.gpuFrameN ? 'GPU timer: no results yet' :
-          `GPU ms/frame avg ${(this.gpuFrameSum / GF).toFixed(1)} worst ${this.gpuFrameMax.toFixed(1)} | scene+resolve ` +
-          `${per(this.gpuPass[1], this.gpuFrameN)}, shadow map ${per(this.gpuPass[0], this.gpuFrameN)} ` +
-          `(${per(this.gpuPass[0], this.gpuPassN[0])} per redraw), tonemap ${per(this.gpuPass[2], this.gpuFrameN)}`;
-        const pad = (s, n) => String(s).padEnd(n), num = (v, n) => (v === undefined ? '' : v.toFixed(2)).padStart(n);
-        const head = [
-          `bench ${secs.toFixed(1)} s | ${(this.frames / secs).toFixed(1)} fps | ${(this.ticks / secs).toFixed(1)} NPC ticks/s | ` +
-          `${game.on ? 'Survivor' : 'Observer'}, ${activeWorld && activeWorld.city ? 'City on' : 'City off'}, ${worldSize}`,
-          `${fmt(types.human)} people, ${fmt(types.deer)} deer, ${fmt(types.coyote)} coyotes, ${fmt(world.plants.length)} plants`,
-          `graphics ${graphics.high ? 'high' : 'low'} | pixel ratio ${renderer.getPixelRatio()} (${buf.x}x${buf.y}) | ` +
-          `MSAA ${graphics.high && !this.noMsaa ? MSAA_SAMPLES + 'x' : 'off'} | shadows ${renderer.shadowMap.enabled ? 'on' : 'off'} | cells ${this.noCells ? 'off' : 'on'}`,
-          `frame interval avg ${gap.toFixed(1)} worst ${this.gapMax.toFixed(1)} ms | rAF callback ${(100 * avg(BK.frame) / gap).toFixed(0)}% of interval`,
-          `draw calls avg ${(this.drawCalls / D).toFixed(0)} worst ${this.drawCallsMax} | triangles avg ${fmt(Math.round(this.triangles / D))}`,
-          `shadow map: needsUpdate set ${(this.shadowSets / secs).toFixed(1)}/s, drawn ${(this.shadowDraws / secs).toFixed(1)}/s, ` +
-          `${this.shadowDraws ? (this.shadowCalls / this.shadowDraws).toFixed(0) : '-'} draw calls each`,
-          gpuText,
-          `vitals: ${(this.nearBars / Math.max(1, this.ticks)).toFixed(1)} near bars per tick, ${(this.barDraws / secs).toFixed(1)} canvas ` +
-          `redraws/s, ${(this.brainBuilds / secs).toFixed(1)} brain builds/s`,
-          `${pad('subsystem', 26)}${'avg ms'.padStart(8)}${'worst'.padStart(8)}${'calls'.padStart(7)}`
-        ];
-        const lines = rows.map(r => `${pad(r.name, 26)}${num(r.avg, 8)}${num(r.worst, 8)}${num(r.perFrame, 7)}`);
-        const text = head.concat(lines).join('\n');
-        this.textEl.textContent = text;
-        console.log(text);
-        this.last = { secs, fps: this.frames / secs, ticksPerSec: this.ticks / secs, interval: gap, intervalWorst: this.gapMax,
-          drawCalls: this.drawCalls / D, drawCallsWorst: this.drawCallsMax, triangles: this.triangles / D,
-          shadowSetsPerSec: this.shadowSets / secs, shadowDrawsPerSec: this.shadowDraws / secs,
-          shadowCallsEach: this.shadowDraws ? this.shadowCalls / this.shadowDraws : 0,
-          gpu: this.gpuFrameN ? { avg: this.gpuFrameSum / GF, worst: this.gpuFrameMax, scene: this.gpuPass[1] / GF,
-            shadow: this.gpuPass[0] / GF, shadowPerRedraw: this.gpuPassN[0] ? this.gpuPass[0] / this.gpuPassN[0] : null,
-            tonemap: this.gpuPass[2] / GF } : null,
-          rows, types, plants: world.plants.length, pixelRatio: renderer.getPixelRatio(), buffer: [buf.x, buf.y],
-          nearBarsPerTick: this.nearBars / Math.max(1, this.ticks), barDrawsPerSec: this.barDraws / secs, brainBuildsPerSec: this.brainBuilds / secs };
-        window.benchReport = this.last;
-        this.windowAt = now;
-        this.sum.fill(0); this.max.fill(0); this.calls.fill(0);
-        this.frames = this.ticks = this.drawn = 0; this.gapSum = this.gapMax = 0; this.gaps = 0;
-        this.drawCalls = this.drawCallsMax = this.triangles = 0;
-        this.shadowDraws = this.shadowCalls = this.shadowSets = 0;
-        this.barDraws = this.brainBuilds = this.nearBars = 0;
-        this.gpuPass = [0, 0, 0]; this.gpuPassN = [0, 0, 0]; this.gpuFrameSum = this.gpuFrameN = this.gpuFrameMax = 0;
-      }
-    };
-
-    // BENCH wrapper around the frame body, so the whole callback is timed whichever way it returns.
     function frame(now) {
-      if (bench.enabled) bench.begin(now);
-      frameWork(now);
-      if (bench.enabled) bench.end(now);
-    }
-
-    function frameWork(now) {
       rafId = 0;
       const xr = renderer.xr.isPresenting;
       // first frame after a sleep: no elapsed time to integrate
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
       if (xr) vr.poll(dt);
-      let bt = performance.now();   // BENCH
       playerStep(dt);
-      bench.add(BK.player, bt);   // BENCH
       camera.updateMatrixWorld();
       camera.getWorldPosition(viewPos);
       camera.getWorldQuaternion(viewQuat);
@@ -12739,9 +12517,7 @@ void main() {
         npcAcc += dt;
         npcElapsed += dt;
         if (npcAcc >= NPC_TICK_S - NPC_TICK_SLACK) {
-          bt = performance.now();   // BENCH
           npcDue = world.step(npcElapsed);
-          bench.add(BK.step, bt); bench.ticks++;   // BENCH
           // carry the remainder, but bank at most one tick (no catch-up burst)
           npcAcc = Math.max(-NPC_TICK_SLACK, Math.min(npcAcc - NPC_TICK_S, NPC_TICK_S));
           npcElapsed = 0;
@@ -12764,19 +12540,14 @@ void main() {
           waterAt = now;
           wildWater.update(now * 0.001);
         }
-        bt = performance.now();   // BENCH
         graphics.update(now);
-        bench.add(BK.shadows, bt);   // BENCH
         // the view under a water surface is tinted (the Arena's water-tint)
         if (activeWorld) {
           activeWorld.surface(viewPos.x, viewPos.z, _surf);
           tintEl.classList.toggle('on', _surf.dip < 0 && viewPos.y < _surf.base);
         }
-        bench.beforeDraw(xr);   // BENCH
-        bt = performance.now();   // BENCH
-        if (graphics.high && !xr && !bench.noMsaa) msaa.render();   // BENCH: !bench.noMsaa
+        if (graphics.high && !xr) msaa.render();
         else renderer.render(scene, camera);
-        bench.afterDraw(bt, graphics.high && !xr && !bench.noMsaa);   // BENCH
         drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
         sceneDirty = false;
         rainDrawn = now;
