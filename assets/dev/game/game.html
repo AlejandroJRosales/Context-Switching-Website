@@ -789,7 +789,7 @@
       margin-right: 4px;
     }
 
-    #customrow {
+    .customrow {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -802,11 +802,11 @@
       display: none;
     }
 
-    #sizeOut {
-      min-width: 2.5em;
+    .customrow output {
+      min-width: 3.5em;
     }
 
-    #size {
+    .customrow input {
       flex: 1;
       max-width: 16em;
       accent-color: #e8e4dc;
@@ -1064,8 +1064,12 @@
         <button class="sizebtn" data-size="large" role="radio" aria-checked="false">Large</button>
         <button class="sizebtn" data-size="custom" role="radio" aria-checked="false">Custom</button>
       </div>
-      <label id="customrow" hidden>World Size <span id="sizeOut">30</span><input id="size" type="range" min="5" max="100"
-          step="0.5" value="30"></label>
+      <div id="customrow" hidden>
+        <label class="customrow">Map size <output id="sizeOut">5</output><input id="size" type="range" min="1" max="10"
+            step="1" value="5"></label>
+        <label class="customrow">People <output id="peopleOut">3,000</output><input id="people" type="range" min="1000"
+            max="10000" step="1000" value="3000"></label>
+      </div>
       <div id="seedrow" class="for-wilderness">
         <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
             maxlength="12" value="03132024"></label>
@@ -1169,20 +1173,28 @@
     }
 
     // World size: `scale` sets wilderness extent and populations; the city's half-extent is CITY_LADDER, tried in order.
-    const WORLD_SIZES = { small: { scale: 10 }, medium: { scale: 30 }, large: { scale: 60 } };
+    // Map size levels 1..10 -> world scale (1 = 20, +10 per level); small, medium and large are levels 4, 5 and 6.
+    const MAP_SIZE_SCALES = Array.from({ length: 10 }, (_, i) => 20 + 10 * i);
+    const WORLD_SIZES = {
+      small: { mapSize: 4, people: 1000 },
+      medium: { mapSize: 5, people: 3000 },
+      large: { mapSize: 6, people: 4000 }
+    };
     let worldSize = 'medium';
     const CITY_LADDER = [500, 350, 200];
 
-    // The chosen size as { scale, ladder }. Custom takes its scale from the slider.
+    // The chosen size as { scale, people, ladder }. Custom takes the map size level and people count from its sliders.
     function worldSizeChoice() {
-      const scale = worldSize === 'custom'
-        ? parseFloat(document.getElementById('size').value)
-        : WORLD_SIZES[worldSize].scale;
-      return { scale, ladder: CITY_LADDER };
+      const custom = worldSize === 'custom';
+      const mapSize = custom ? parseInt(document.getElementById('size').value, 10) : WORLD_SIZES[worldSize].mapSize;
+      const people = custom ? parseInt(document.getElementById('people').value, 10) : WORLD_SIZES[worldSize].people;
+      return { scale: MAP_SIZE_SCALES[mapSize - 1], people, ladder: CITY_LADDER };
     }
     const DEFAULT_LEVELS = 3;
     const METERS_PER_LVL = 3.2;
-    const EYE_HEIGHT = 1;
+    const HEAD_CLEAR = 0.15;   // metres from the eye to the top of the head
+    const PLAYER_HEIGHT = 1.753;   // metres (5'9"), feet to crown
+    const EYE_HEIGHT = PLAYER_HEIGHT - HEAD_CLEAR;
     const PLAYER_RADIUS = 0.35;
     const WALK_SPEED = 10.0;
     const RUN_SPEED = 15.0;
@@ -1193,7 +1205,6 @@
     const GRAVITY = 22.0;
     const GRID_CELL = 24;      // collision broadphase cell size, meters
     const LAND_EPS = 0.01;    // slack so a snapped-to roof still reads as clear
-    const HEAD_CLEAR = 0.15;
     const SUBSTEP = 0.25;    // max move per collision pass; under PLAYER_RADIUS so thin walls are not skipped
 
     // Enterable buildings: thick-walled hollow shells with a doorway and floor/ceiling/roof caps.
@@ -4192,8 +4203,10 @@ void main() {
 
     // One NPC tick is NPC_TICK_S (16 ms) of sim time; per-tick constants and NpcWorld.time use it; at most one tick per frame.
     const NPC_TICK_S = 0.016;
-    const NPC_POPULATION = 2000;   // city people, 4x the earlier 500
-    const NPC_DEER_POPULATION = Math.floor(NPC_POPULATION / 24);   // divisor raised 4x so deer stay at 83
+    // With a city, the starting people split city : wilderness as NPC_CITY_PEOPLE_WEIGHT : NPC_WILD_PEOPLE_WEIGHT.
+    const NPC_CITY_PEOPLE_WEIGHT = 3000;
+    const NPC_WILD_PEOPLE_WEIGHT = 900;
+    const NPC_DEER_POPULATION = 125;   // city deer
     const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
     // Share of water that comes with food for an eater keeping up with hunger (~30% for people).
     const DIET_WATER_SHARE = 0.3;
@@ -4219,7 +4232,11 @@ void main() {
     const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
     const MATE_TIME_MULT = 4;
     const REPRO_NEED_MAX = 100;       // ceiling for a brained animal's reproduction need, which doubles every tick         // default for every species: this many times longer to fill the mate bar
-    const NPC_MATURITY_TICKS = 3 * 24 * 60;   // ticks from birth to full size (72 s at 60 Hz); no mating before
+    const NPC_DAY_TICKS = 24 * 60;            // ticks per sim day (the HUD's day counter)
+    const NPC_MATURITY_TICKS = 3 * NPC_DAY_TICKS;   // ticks from birth to full size (72 s at 60 Hz); no mating before
+    const NPC_ADULT_AGE = 18;                 // years shown at maturity
+    const NPC_TICKS_PER_YEAR = 365 * NPC_DAY_TICKS;
+    const NPC_START_AGE = [18, 40];           // years: random age range of the initial (spawned) people
     const HUMAN_TURN_RATE = 3;      // radians per second people turn toward their brain's heading
     const DEER_GREEN_SHARE = 0.8;
     const DEER_AREAS = new Set([
@@ -4231,12 +4248,20 @@ void main() {
 
     const NPC_UNIT = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
     const NPC_RADIUS = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
-    const NPC_COLLIDE_H = 1.35;     // collision column height; under the lowest lintel (1.4 m) so no door refuses them
+    const NPC_COLLIDE_H = 1.35;     // collision column height; under the lowest lintel (player height + 0.25 m) so no door refuses them
     const NPC_SPAWN_GAP = 8;        // metres between spawn points before crowding forces it lower
-    const NPC_HEIGHT_MEAN = EYE_HEIGHT + HEAD_CLEAR;   // metres: the player's height is the centre of the NPC bell curve
-    const NPC_HEIGHT_STD = NPC_HEIGHT_MEAN * 0.11;    // metres: same ~11% spread the Arena's heightScale std gave
-    // heightScale of the mean person; other species use it too to stay in proportion.
-    const NPC_HUMAN_HS = NPC_HEIGHT_MEAN / (NPC_RIG_TOP.human * NPC_UNIT);
+    // heightScale of a person the player's height; the player's rig, cabins, cat and camera are sized by it.
+    const PLAYER_HS = PLAYER_HEIGHT / (NPC_RIG_TOP.human * NPC_UNIT);
+    // ADULT SIZE: a normal distribution per species and sex, [mean, std] in metres of one measure: standing height
+    // for people (US adults), shoulder height for deer (white-tailed) and coyotes. rig: that measure in rig units at heightScale 1.
+    const NPC_SIZE = {
+      human: { rig: NPC_RIG_TOP.human, male: [1.753, 0.0762], female: [1.613, 0.0711] },
+      deer: { rig: 20, male: [0.97, 0.05], female: [0.86, 0.045] },     // body centre 15 + half the 10-unit body
+      coyote: { rig: 15, male: [0.61, 0.03], female: [0.58, 0.03] }     // body centre 11.5 + half the 7-unit body
+    };
+    const NPC_SIZE_Z_MAX = 4;          // standard deviations; draws are cut here
+    const NPC_SIZE_HERITABILITY = 0.8;   // weight of the mid-parent z-score in a child's; the rest is fresh noise
+    const NPC_SHOWN_BMI = { male: 24, female: 22 };   // stats readout weight
 
     // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fight for pairs.
     const SPECIES = {
@@ -4583,10 +4608,6 @@ void main() {
         return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
       }
 
-      // Normal sample clamped to [0.55, 1.55]: only for scale factors centred near 1.
-      randNormalClamped(mean = 1.0, std = 0.12) {
-        return Math.max(0.55, Math.min(1.55, mean + std * this.gauss()));
-      }
     }
 
     // ACTIVE-SYNAPSE LISTS for a mask laid out [pre * nPost + post]: `idx`, the set entries in ascending order (as the
@@ -4913,22 +4934,13 @@ void main() {
 
         this.generation = 0;
 
-        if (type === 'human') {
-          // City: height ~ normal in metres (cut at 4 std), mapped to heightScale.
-          let u; do { u = Math.random(); } while (u === 0);
-          const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
-          const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
-          this.heightScale = metres / (38.55 * NPC_UNIT);
-        } else {
-          this.heightScale = NPC_HUMAN_HS * brains.randNormalClamped(1.0, 0.10);
-        }
-
         this.waterNeed = Math.random() * 0.05;
         this.foodNeed = Math.random() * 0.05;
         this.reproductionNeed = Math.random() * 0.05;
         this.avoidNeed = 0;
 
         this.sex = Math.random() < 0.5 ? 'male' : 'female';
+        this.setSizeZ(brains.gauss());
         this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), kept for life
         this.mutationMulti = 0.5;
         this.lastChildTime = world.time;   // sim seconds
@@ -4970,6 +4982,9 @@ void main() {
 
         this.isAdult = true;
         this.birthTick = 0;
+        // age in years at ageBaseTick: a random adult age when spawned, NPC_ADULT_AGE when a child matures
+        this.ageBaseTick = world.ticks;
+        this.ageBase = NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
 
         this.animTime = Math.random() * Math.PI * 2;
         // people's gait (render only, AnimalRenderer.stepGait): phase advanced by distance walked, swing and run share from speed
@@ -5525,7 +5540,11 @@ void main() {
       update(now, grid) {
         this.waterNeed += this.waterIncrement;
         this.foodNeed += this.foodIncrement;
-        if (!this.isAdult && world.ticks - this.birthTick >= NPC_MATURITY_TICKS) this.isAdult = true;
+        if (!this.isAdult && world.ticks - this.birthTick >= NPC_MATURITY_TICKS) {
+          this.isAdult = true;
+          this.ageBase = NPC_ADULT_AGE;
+          this.ageBaseTick = world.ticks;
+        }
         this.lookForMate = this.mateReady(now);
         // people: the Arena's rule; deer: species.py's, one increment per tick
         const rn = this.reproductionNeed;
@@ -5587,6 +5606,17 @@ void main() {
         this.waterNeed = Math.max(0, this.waterNeed - food * perFood);
       }
 
+      ageYears() {
+        return this.ageBase + (world.ticks - this.ageBaseTick) / NPC_TICKS_PER_YEAR;
+      }
+
+      // Adult size from a z-score on this species' and sex's normal curve (cut at NPC_SIZE_Z_MAX).
+      setSizeZ(z) {
+        this.sizeZ = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, z));
+        const sz = NPC_SIZE[this.type], [mean, std] = sz[this.sex];
+        this.heightScale = (mean + std * this.sizeZ) / (sz.rig * NPC_UNIT);
+      }
+
       // Mate bar fill (0..1); only an adult with a full bar may mate.
       mateFill(now) {
         return this.isAdult ? (now - this.lastChildTime) / this.childGracePeriod : 0;
@@ -5622,11 +5652,9 @@ void main() {
         child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
           * (0.9 + Math.random() * 0.2);
 
-        const parentAvg = (this.heightScale + partner.heightScale) / 2;
-        // the Arena's limits and mutation step assumed a mean heightScale of 1; here the mean is NPC_HUMAN_HS
-        const hsMean = NPC_HUMAN_HS;
-        child.heightScale = Math.max(0.55 * hsMean,
-          Math.min(1.55 * hsMean, parentAvg + 0.04 * hsMean * brains.gauss()));
+        // mid-parent z-score times the heritability plus noise; variance stays 1, so every generation keeps the bell curve
+        const midZ = (this.sizeZ + partner.sizeZ) / 2, h = NPC_SIZE_HERITABILITY;
+        child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss());
         if (child.look) inheritHumanLook(child.look, this.look, partner.look);
 
         if (this.brain && partner.brain) {
@@ -6169,7 +6197,7 @@ void main() {
           return g;
         };
 
-        // DEER RIG: rig units, origin at the body centre, head toward +z, sized against the mean person. Antlers: bucks only.
+        // DEER RIG: rig units, origin at the body centre, head toward +z; sized by NPC_SIZE.deer. Antlers: bucks only.
         const deerHead = mergeGeometries([
           boxAt(4.5, 8, 5, 0, 3.2, 1.5, 0.45),
           boxAt(5, 5, 7, 0, 7.8, 5),
@@ -8514,25 +8542,23 @@ void main() {
     class WorldConfig {
       constructor(scale = 20) {
         this.BASE = {
-          coyotes: 20,
-          deer: 20,
-          humans: 20,   // 4x the earlier 5 per unit of world scale
-          plants: 300,
-          worldWidth: 850,
+          worldWidth: 850,   // per unit of world scale
           worldHeight: 600,
         };
+        // wilderness animals and plants at the start; fixed, so the map size changes only the land
+        this.initialCoyotes = 600;
+        this.initialDeer = 600;
+        this.initialPlants = 9000;
         this.probSpawnPlant = 0.03;
         this.groundY = 5;
-        this.applyScale(scale);
+        this.applySize(scale, 3000);
       }
 
-      applyScale(scale) {
+      // Map size (world scale) and starting people (city and wilderness together); each sets only its own thing.
+      applySize(scale, people) {
         const B = this.BASE;
         this.scale = scale;
-        this.initialCoyotes = Math.trunc(B.coyotes * scale);
-        this.initialDeer = Math.trunc(B.deer * scale);
-        this.initialHumans = Math.trunc(B.humans * scale);
-        this.initialPlants = Math.trunc(B.plants * scale);
+        this.people = people;
         this.worldWidth = Math.trunc(B.worldWidth * scale);
         this.worldHeight = Math.trunc(B.worldHeight * scale);
       }
@@ -9104,7 +9130,7 @@ void main() {
 
     // CABINS: the Arena's log cabins, sized to the player (CABIN_M), their colliders turned into obstacle-index solids.
     const CABIN_SCALE = 1.75;
-    const CABIN_M = NPC_UNIT * NPC_HUMAN_HS;        // cabin rig units -> metres
+    const CABIN_M = NPC_UNIT * PLAYER_HS;        // cabin rig units -> metres
 
     class Cabin extends THREE.Group {
       constructor({
@@ -9406,7 +9432,7 @@ void main() {
     const vrStatsEl = document.getElementById('vr-stats');
 
     // CAT COMPANION: Nibbler from the Arena, rig in Arena units scaled to the player; comes with wilderness (provider.companion).
-    const CAT_SCALE = 0.85 * NPC_UNIT * NPC_HUMAN_HS;
+    const CAT_SCALE = 0.85 * NPC_UNIT * PLAYER_HS;
     const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // passenger seat in the car's frame (+x passenger side, -z forward)
     const CAT_DOOR = 0.95;         // m from the car's centre line to where he stands at the passenger door
     const CAT_RUN_FROM = 25;       // m from the car: starting farther than this (or the car moving) he runs...
@@ -9787,7 +9813,7 @@ void main() {
       pickTarget() {
         this._ray.origin.copy(viewPos);
         this._ray.direction.set(0, 0, -1).applyQuaternion(viewQuat).normalize();
-        const r = 15 * NPC_UNIT * NPC_HUMAN_HS;
+        const r = 15 * NPC_UNIT * PLAYER_HS;
         let closest = null, closestDist = Infinity;
         for (const a of world.animals) {
           if (!a.alive) continue;
@@ -10014,8 +10040,8 @@ void main() {
     }
 
     // CAMERA POV: '1st' or '3rd'; in third person the player's own body shows (the Arena's blue figure).
-    const TPP_BACK = 70 * NPC_UNIT * NPC_HUMAN_HS;   // the Arena's TPP_OFFSET, sized to the player
-    const TPP_UP = 18 * NPC_UNIT * NPC_HUMAN_HS;
+    const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, sized to the player
+    const TPP_UP = 18 * NPC_UNIT * PLAYER_HS;
 
     // The player's third-person box figure (the Arena's blue figure), in rig units; NPC people use the human rig.
     const PLAYER_FIGURE = {
@@ -10057,7 +10083,7 @@ void main() {
         group.userData.limbs = [limb(off.legFL.x, shoulderY), limb(off.legFR.x, shoulderY),
         limb(off.legBL.x, hipY), limb(off.legBR.x, hipY)];
         body.castShadow = head.castShadow = true;
-        group.scale.setScalar(NPC_UNIT * NPC_HUMAN_HS);
+        group.scale.setScalar(NPC_UNIT * PLAYER_HS);
         group.visible = false;
         scene.add(group);
         this.body = group;
@@ -10078,7 +10104,7 @@ void main() {
 
         const feet = player.pos.y - EYE_HEIGHT;
         const b = this.body;
-        b.position.set(player.pos.x, feet + SPECIES.human.lift * NPC_UNIT * NPC_HUMAN_HS, player.pos.z);
+        b.position.set(player.pos.x, feet + SPECIES.human.lift * NPC_UNIT * PLAYER_HS, player.pos.z);
         b.rotation.y = player.yaw + Math.PI;
 
         const moving = this._last.distanceToSquared(player.pos) > 1e-6;
@@ -10408,11 +10434,11 @@ void main() {
 
       waterSources() { return cityWater.locations; }
 
-      population() {
+      population(humans) {
         const o = this.opts;
         return [
           { type: 'plant', count: o.plants ? NPC_PLANT_POPULATION : 0, src: this },
-          { type: 'human', count: o.people ? NPC_POPULATION : 0, src: this },
+          { type: 'human', count: o.people ? humans : 0, src: this },
           { type: 'deer', count: o.deer ? NPC_DEER_POPULATION : 0, src: this }
         ];
       }
@@ -11014,12 +11040,14 @@ void main() {
 
       // Both ecosystems from their own spawn rules (city: people, deer, plants; wilderness: people, coyotes, deer, plants).
       population() {
-        const o = this.opts;
-        return (this.city ? this.city.population() : []).concat([
+        const o = this.opts, P = CONFIG.people;
+        const wildHumans = this.city
+          ? Math.round(P * NPC_WILD_PEOPLE_WEIGHT / (NPC_WILD_PEOPLE_WEIGHT + NPC_CITY_PEOPLE_WEIGHT)) : P;
+        return (this.city ? this.city.population(P - wildHumans) : []).concat([
           { type: 'plant', count: o.plants ? CONFIG.initialPlants : 0, src: this.wild },
           { type: 'coyote', count: CONFIG.initialCoyotes, src: this.wild },
           { type: 'deer', count: CONFIG.initialDeer, src: this.wild },
-          { type: 'human', count: o.people ? CONFIG.initialHumans : 0, src: this.wild }
+          { type: 'human', count: o.people ? wildHumans : 0, src: this.wild }
         ]);
       }
 
@@ -11615,8 +11643,7 @@ void main() {
     const BAR_STEPS = 40;     // redraw only when a bar moves a whole step
     const BAR_RELEASE_TICKS = 180;   // ~3 s out of close range before a slot is handed back
     const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
-    const BAR_W_M = 0.8;    // sprite size in metres (canvas is 2:1)
-    const BAR_H_M = 0.4;
+    const BAR_W_M = 0.8;    // sprite width in metres; the bars area is 2:1, the info row sits under it
     const BAR_ABOVE = 0.18;
     const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];
     const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
@@ -11625,8 +11652,11 @@ void main() {
     // Past perf.npcLodDist, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
     const FAR_STAT_MAX = 12000;
     // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
-    const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;
+    const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;   // bars area
+    const BAR_INFO_H = 14;                          // canvas px of the Gen/Age/Sex/Height/Weight row
+    const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_INFO_H;
     const BAR_PX = BAR_W_M / BAR_CANVAS_W;
+    const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // whole sprite height in metres
     const LOBE_RADIUS = 0.7;
     const LOBE_COLS = [0x00e5ff, 0xaaff00];
 
@@ -11847,7 +11877,7 @@ void main() {
 
       makeBar() {
         const canvas = document.createElement('canvas');
-        canvas.width = 192; canvas.height = 96;
+        canvas.width = BAR_CANVAS_W; canvas.height = BAR_SPRITE_CANVAS_H;
         const tex = new THREE.CanvasTexture(canvas);
         tex.colorSpace = THREE.SRGBColorSpace;
         const mat = new THREE.SpriteMaterial({
@@ -11860,7 +11890,7 @@ void main() {
         sprite.visible = false;
         scene.add(sprite);
         return {
-          sprite, canvas, ctx: canvas.getContext('2d'), tex, key: -1,
+          sprite, canvas, ctx: canvas.getContext('2d'), tex, key: -1, infoKey: -1,
           brain: null, brainFor: null, nearTick: 0
         };
       }
@@ -11891,23 +11921,44 @@ void main() {
         ctx.restore();
       }
 
-      draw(slot, vals, arrows) {
+      // People only (0 for others): age code (-1 child, else whole years), shown height in inches, weight in lb.
+      infoKey(a) {
+        if (a.type !== 'human') return 0;
+        const growth = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / NPC_MATURITY_TICKS);
+        const s = animalRenderer.MIN_SCALE + (1 - animalRenderer.MIN_SCALE) * growth;
+        const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * s;   // crown height as drawn
+        const build = 1 + (a.look ? a.look.buildDev : 0);
+        const lb = Math.round(NPC_SHOWN_BMI[a.sex] * build * build * metres * metres * 2.20462);
+        const inches = Math.round(metres / 0.0254);
+        const age = a.isAdult ? Math.floor(a.ageYears()) : -1;
+        return ((age + 2) * 1000 + inches) * 10000 + lb;
+      }
+
+      infoText(a, key) {
+        const lb = key % 10000, inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
+        return `Gen: ${a.generation}, Age: ${age < 0 ? '<' + NPC_ADULT_AGE : age}, Sex: ${a.sex === 'male' ? 'M' : 'F'}, `
+          + `Height: ${Math.floor(inches / 12)}'${inches % 12}", Weight: ${lb} lb`;
+      }
+
+      draw(slot, vals, arrows, a) {
         // packed integer key, no allocation per person per tick; exact in a double
         const V = BAR_STEPS + 1, A = ARROW_STEPS + 1;
         const key = ((((((vals[0] * V + vals[1]) * V + vals[2]) * V + vals[3])
           * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
-        if (slot.key === key) return;
+        const info = this.infoKey(a);
+        if (slot.key === key && slot.infoKey === info) return;
         slot.key = key;
-        const { ctx, canvas } = slot;
-        const W = canvas.width, H = canvas.height;
+        slot.infoKey = info;
+        const { ctx } = slot;
+        const W = BAR_CANVAS_W, H = BAR_CANVAS_H;
         const rows = BAR_ICONS.length;
         const pad = 4, gap = 3, rh = (H - 2 * pad - (rows - 1) * gap) / rows;
         const iconW = 24, arrowW = 22;
         const bx = pad + iconW, bw = W - bx - arrowW - pad;
         const bh = rh * 0.62;
-        ctx.clearRect(0, 0, W, H);
+        ctx.clearRect(0, 0, W, BAR_SPRITE_CANVAS_H);
         ctx.fillStyle = 'rgba(12, 15, 21, 0.7)';
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(0, 0, W, info ? BAR_SPRITE_CANVAS_H : H);
         ctx.font = `${Math.round(rh * 0.8)}px ${EMOJI_FONT}`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let i = 0; i < rows; i++) {
@@ -11918,6 +11969,17 @@ void main() {
           ctx.fillStyle = BAR_COLORS[i];
           ctx.fillRect(bx, cy - bh / 2, bw * vals[i] / BAR_STEPS, bh);
           if (arrows[i] >= 0) this.arrow(ctx, W - pad - arrowW / 2, cy, rh * 0.9, arrows[i], BAR_COLORS[i]);
+        }
+        if (info) {
+          // one line under the bars, shrunk to fit the width
+          const text = this.infoText(a, info), maxW = W - 2 * pad;
+          let px = BAR_INFO_H - 4;
+          ctx.font = `${px}px sans-serif`;
+          const tw = ctx.measureText(text).width;
+          if (tw > maxW) { px = Math.max(5, px * maxW / tw); ctx.font = `${px}px sans-serif`; }
+          ctx.fillStyle = 'rgba(232, 228, 220, 0.95)';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          ctx.fillText(text, pad, H + BAR_INFO_H / 2, maxW);
         }
         slot.tex.needsUpdate = true;
       }
@@ -12009,6 +12071,7 @@ void main() {
           if (!bar) {
             bar = this.spare.pop() || this.makeBar();
             bar.key = -1;
+            bar.infoKey = -1;
             this.bars.set(a, bar);
             seen.add(a);
           }
@@ -12021,7 +12084,7 @@ void main() {
           arrows[1] = this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos);
           arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
           arrows[3] = this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos);
-          this.draw(bar, vals, arrows);
+          this.draw(bar, vals, arrows, a);
           bar.sprite.position.set(a.position.x, barY, a.position.z);
           bar.sprite.visible = true;
 
@@ -13997,6 +14060,8 @@ void main() {
     const sizeBtns = [...document.querySelectorAll('.sizebtn')];
     const sizeEl = document.getElementById('size');
     const sizeOutEl = document.getElementById('sizeOut');
+    const peopleEl = document.getElementById('people');
+    const peopleOutEl = document.getElementById('peopleOut');
     const customRowEl = document.getElementById('customrow');
     const startGoEl = document.getElementById('startgo');
 
@@ -14101,10 +14166,11 @@ void main() {
       const o = { ...loadOpts };
       try {
         teardownWorld();
-        CONFIG.applyScale(worldSizeChoice().scale);
+        const sizeChoice = worldSizeChoice();
+        CONFIG.applySize(sizeChoice.scale, sizeChoice.people);
         const w = new WildernessWorld(null, seed, o);
 
-        steps.start('terrain', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
+        steps.start('terrain', `Seed ${seed}, map size ${CONFIG.scale}…`);
         await paint();
         w.terrainStep();
         activeWorld = w;
@@ -14175,7 +14241,7 @@ void main() {
       try {
         teardownWorld();
         const sizeChoice = worldSizeChoice(), ladder = sizeChoice.ladder;
-        CONFIG.applyScale(sizeChoice.scale);
+        CONFIG.applySize(sizeChoice.scale, sizeChoice.people);
 
         // The saved label is Nominatim's own, so re-submitting it skips the geocoder.
         const reuse = storedPlace && storedPlace.v === FEATURES_VERSION &&
@@ -14310,7 +14376,7 @@ void main() {
         activeWorld = cw;
         {
           current = 'wilderness';
-          steps.start('wilderness', `Seed ${seed}, ecosystem size ${CONFIG.scale}…`);
+          steps.start('wilderness', `Seed ${seed}, map size ${CONFIG.scale}…`);
           await paint();
           const mw = new WildernessWorld(cw, seed);
           mw.terrainStep();
@@ -14541,6 +14607,7 @@ void main() {
       });
     }
     sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
+    peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
     startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
 
     goEl.addEventListener('click', () => { loadPlace(addrEl.value); });
