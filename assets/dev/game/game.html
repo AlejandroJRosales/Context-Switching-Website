@@ -4904,6 +4904,7 @@ void main() {
         this.avoidNeed = 0;
 
         this.sex = Math.random() < 0.5 ? 'male' : 'female';
+        this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), kept for life
         this.mutationMulti = 0.5;
         this.lastChildTime = world.time;   // sim seconds
         this.childGracePeriod = (15 + Math.random() * 15) * spec.grace * MATE_TIME_MULT;   // sim seconds
@@ -4946,6 +4947,10 @@ void main() {
         this.birthTick = 0;
 
         this.animTime = Math.random() * Math.PI * 2;
+        // people's gait (render only, AnimalRenderer.stepGait): phase advanced by distance walked, swing and run share from speed
+        this.gaitPhase = Math.random() * Animal.TWO_PI;
+        this.gaitSwing = 0; this.gaitRun = 0; this.gaitSpeed = 0;
+        this.gaitX = NaN; this.gaitZ = NaN;
 
         this.focusX = this.position.x;
         this.focusZ = this.position.z;
@@ -5597,6 +5602,7 @@ void main() {
         const hsMean = NPC_HUMAN_HS;
         child.heightScale = Math.max(0.55 * hsMean,
           Math.min(1.55 * hsMean, parentAvg + 0.04 * hsMean * brains.gauss()));
+        if (child.look) inheritHumanLook(child.look, this.look, partner.look);
 
         if (this.brain && partner.brain) {
           const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -5664,13 +5670,466 @@ void main() {
       return views[slot] = g;
     }
 
+    // HUMAN RIG: PS2-era people; one merged low-poly body (part id + joint heights per vertex), posed in the vertex shader.
+    const HUMAN_ATLAS = 512;                   // texels a side of the paint and mask atlases
+    const HUMAN_FACE_TILE = [128, 64];         // head + neck wrap; 8 tiles (4 male, 4 female) fill the top-left quarter
+    const HUMAN_BODY_TILE = [256, 128];        // everything below the neck; one tile per outfit
+    const HUMAN_FACE_VARIANTS = 4;             // per sex
+    const HUMAN_OUTFITS = 6;                   // 0 tee + jeans, 1 shirt + slacks, 2 jacket, 3 hoodie, 4 tank + shorts, 5 suit
+    const HUMAN_OUTFIT_TILES = [[256, 0], [256, 128], [0, 256], [256, 256], [0, 384], [256, 384]];   // atlas texels, as the shader finds them
+    // Gait: a full cycle's stride in leg lengths grows with speed in leg lengths per second; cadence is capped.
+    const HUMAN_STRIDE_BASE = 0.95;
+    const HUMAN_STRIDE_PER_V = 0.48;
+    const HUMAN_STRIDE_MAX = 4.6;
+    const HUMAN_CADENCE_MAX = 2.6;             // gait cycles per second; anything faster slides its feet
+    const HUMAN_SWING_MAX = 0.62;              // radians of hip swing
+    const HUMAN_IDLE_SPEED = 0.45;             // m/s under which the stride shrinks toward the idle pose
+    const HUMAN_GAIT_EASE = 0.15;              // per-tick easing of the gait speed
+    const HUMAN_GAIT_JUMP = 1;                 // metres in one tick past which a move is a teleport, not a step
+    // Rig landmarks in rig units: origin at the body centre, feet at -lift, crown at NPC_RIG_TOP - lift; joints sit at z = 0.
+    const HUMAN_RIG = (() => {
+      const foot = -SPECIES.human.lift, at = f => foot + f * NPC_RIG_TOP.human;
+      return { at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625) };
+    })();
+    const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
+
+    // HUMAN LOOK (render only): skin tone, face variant and build pass to children; clothes are each person's own.
+    const HUMAN_SKIN = [0xf2d0b8, 0xe0b391, 0xc89068, 0xa56f48, 0x7a4e32, 0x4e3222];   // light to dark, sRGB
+    const HUMAN_SHIRTS = [0xd8d6cf, 0x8e9093, 0x2a2b2e, 0x2d3f66, 0x9c2f2a, 0x5b2430, 0x3f6a3c, 0x6d6b3a,
+      0xc59a37, 0x6c98c8, 0x6a4a33, 0xc8b48c, 0xc98299, 0x5e4a86, 0xc86f2e, 0x2f7576];
+    const HUMAN_PANTS = [0x3a5378, 0x24324d, 0x232325, 0x67686b, 0xa8956c, 0x5a4330, 0x4f5235, 0x283150, 0x6a86a8];
+    const HUMAN_SUITS = [0x26272a, 0x2b3346, 0x3e3f43, 0x4b3e31];
+
+    function humanLook(sex) {
+      const pick = list => list[Math.floor(Math.random() * list.length)];
+      const outfit = Math.floor(Math.random() * HUMAN_OUTFITS), shirt = outfit === 5 ? pick(HUMAN_SUITS) : pick(HUMAN_SHIRTS);
+      const look = {
+        tone: Math.random(), variant: Math.floor(Math.random() * HUMAN_FACE_VARIANTS), female: sex === 'female',
+        buildDev: Math.max(-0.12, Math.min(0.12, 0.05 * brains.gauss())), outfit, shirt,
+        pants: outfit === 5 ? shirt : pick(HUMAN_PANTS), skinRGB: 0, code: 0
+      };
+      packHumanLook(look);
+      return look;
+    }
+
+    // skinRGB: the tone's sRGB as one integer; code: face tile + outfit * 8 + build step * 64 (all exact in a float).
+    function packHumanLook(L) {
+      const t = L.tone * (HUMAN_SKIN.length - 1), i = Math.min(HUMAN_SKIN.length - 2, Math.floor(t)), f = t - i;
+      const mix = sh => Math.round(((HUMAN_SKIN[i] >> sh) & 255) * (1 - f) + ((HUMAN_SKIN[i + 1] >> sh) & 255) * f);
+      L.skinRGB = mix(16) * 65536 + mix(8) * 256 + mix(0);
+      const build = Math.max(0.8, Math.min(1.2, (L.female ? 0.93 : 1) + L.buildDev));
+      L.code = (L.female ? HUMAN_FACE_VARIANTS : 0) + L.variant + L.outfit * 8 + Math.round((build - 0.8) * 200) * 64;
+    }
+
+    function inheritHumanLook(L, a, b) {
+      L.tone = Math.max(0, Math.min(1, (a.tone + b.tone) / 2 + (Math.random() - 0.5) * 0.12));
+      L.variant = (Math.random() < 0.5 ? a : b).variant;
+      L.buildDev = Math.max(-0.12, Math.min(0.12, (a.buildDev + b.buildDev) / 2 + 0.02 * brains.gauss()));
+      packHumanLook(L);
+    }
+
+    // The rest-pose body: 16 parts (ids below) lofted from rings, ~490 triangles; uv is tile-local (0..1 in a face or outfit tile).
+    function buildHumanGeometry() {
+      const R = HUMAN_RIG, at = R.at;
+      const pos = [], nrm = [], uv = [], rig = [], piv = [], idx = [];
+      // ring points start at the back centre and run toward +x (the body's left), the front, then -x
+      const oval = (n, cx, y, cz, rx, rz) => Array.from({ length: n }, (_, i) => {
+        const a = Math.PI - i * 2 * Math.PI / n;
+        return [cx + rx * Math.sin(a), y, cz + rz * Math.cos(a)];
+      });
+      const boxy = (y, cz, rx, rz) => [[0, -rz], [0.62 * rx, -rz], [rx, -0.58 * rz], [rx, 0.58 * rz], [0.62 * rx, rz], [0, rz],
+        [-0.62 * rx, rz], [-rx, 0.58 * rz], [-rx, -0.58 * rz], [-0.62 * rx, -rz]].map(([x, z]) => [x, y, cz + z]);
+      const part = ({ rings, vs, rect, tile, id, limb = 0, side = 0, depth = 0, pivot = [0, 0, 0], capStart, capEnd }) => {
+        const n = rings[0].length, base = pos.length / 3, idx0 = idx.length, mid = rings[rings.length >> 1], us = [0];
+        for (let i = 1; i <= n; i++) {
+          const a = mid[i - 1], b = mid[i % n];
+          us.push(us[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+        }
+        const put = (p, u, v) => {
+          if (side < 0) u = 1 - u;   // right limbs mirror, so u 0.25 is always the outer side
+          pos.push(p[0], p[1], p[2]);
+          uv.push((rect[0] + 0.5 + u * (rect[2] - 1)) / tile[0], (rect[1] + 0.5 + v * (rect[3] - 1)) / tile[1]);
+          rig.push(id, limb, side, depth);
+          piv.push(pivot[0], pivot[1], pivot[2]);
+        };
+        rings.forEach((ring, r) => { for (let i = 0; i <= n; i++) put(ring[i % n], us[i] / us[n], vs[r]); });
+        for (let r = 0; r + 1 < rings.length; r++) for (let i = 0; i < n; i++) {
+          const a = base + r * (n + 1) + i, c = a + n + 1;
+          idx.push(a, a + 1, c, a + 1, c + 1, c);
+        }
+        const cap = (c, r, start) => {
+          const ci = pos.length / 3, r0 = base + r * (n + 1);
+          put(c, 0.5, c[3] ?? vs[r]);
+          for (let i = 0; i < n; i++) start ? idx.push(ci, r0 + i + 1, r0 + i) : idx.push(ci, r0 + i, r0 + i + 1);
+        };
+        if (capStart) cap(capStart, 0, true);
+        if (capEnd) cap(capEnd, rings.length - 1, false);
+        // smooth normals, welded by position so the back seam and cap edges do not show
+        const acc = new Map(), key = i => `${pos[3 * i].toFixed(3)} ${pos[3 * i + 1].toFixed(3)} ${pos[3 * i + 2].toFixed(3)}`;
+        for (let t = idx0; t < idx.length; t += 3) {
+          const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]].map(i => new THREE.Vector3(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]));
+          const fn = b.clone().sub(a).cross(c.clone().sub(a));
+          for (const i of [idx[t], idx[t + 1], idx[t + 2]]) {
+            const k = key(i);
+            acc.set(k, (acc.get(k) || new THREE.Vector3()).add(fn));
+          }
+        }
+        for (let i = base; i < pos.length / 3; i++) {
+          const v = (acc.get(key(i)) || new THREE.Vector3(0, 1, 0)).normalize();
+          nrm.push(v.x, v.y, v.z);
+        }
+      };
+      const F = HUMAN_FACE_TILE, B = HUMAN_BODY_TILE, arm = [R.shoulder, R.elbow, 0], leg = [R.hip, R.knee, R.ankle];
+      // head (0) and neck (1) on the face tile; texture v runs with height so features sit where the paint expects
+      const chin = at(0.864), hv = y => (R.crown - y) / (R.crown - chin);
+      const headRing = (f, k, nose, fwd) => { const r = oval(8, 0, at(f), fwd - 0.15, 1.72 * k, 2.1 * k); r[4][2] += nose; return r; };
+      const head = [headRing(0.985, 0.62, 0, 0), headRing(0.945, 1, 0, 0), headRing(0.905, 0.97, 0.32, 0.05), headRing(0.875, 0.78, 0.25, 0.2)];
+      part({ rings: head, vs: head.map(r => hv(r[0][1])), rect: [0, 0, 128, 48], tile: F, id: 0, capStart: [0, R.crown, -0.1, 0], capEnd: [0, chin, 0.3, 1] });
+      part({ rings: [oval(6, 0, at(0.885), -0.25, 1.36, 1.3), oval(6, 0, at(0.825), -0.25, 1.36, 1.3)], vs: [0, 1], rect: [0, 48, 128, 16], tile: F, id: 1 });
+      // torso (2) and pelvis (3)
+      part({ rings: [boxy(at(0.842), -0.2, 1.2, 1.1), boxy(at(0.814), -0.15, 4.4, 2.2), boxy(at(0.725), 0.1, 3.75, 2.55), boxy(at(0.6), 0, 3.0, 2.05)],
+        vs: [0, 0.26, 0.56, 1], rect: [0, 0, 128, 60], tile: B, id: 2 });
+      part({ rings: [boxy(at(0.615), 0, 3.08, 2.1), boxy(at(0.545), 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
+        vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, capEnd: [0, at(0.468), 0, 1] });
+      for (const s of [1, -1]) {
+        const L = s > 0 ? 0 : 1, ax = y => s * (4.25 + (R.shoulder - y) * 0.06), lx = y => s * (1.85 - (R.hip - y) * 0.02);
+        const armRing = (f, r, rz = r * 1.05) => oval(6, ax(at(f)), at(f), 0, r, rz);
+        // upper arm (4, 5), lower arm (6, 7), hand (12, 13): arms hang slightly out from the shoulder
+        part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), armRing(0.615, 0.86)], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
+          id: 4 + L, limb: 1, side: s, depth: 1, pivot: arm, capStart: [ax(at(0.822)), at(0.822), 0, 0] });
+        part({ rings: [armRing(0.635, 0.84), armRing(0.58, 0.9, 0.95), armRing(0.49, 0.6, 0.66)], vs: [0, 0.3, 1], rect: [128, 36, 48, 32], tile: B,
+          id: 6 + L, limb: 1, side: s, depth: 2, pivot: arm });
+        part({ rings: [armRing(0.495, 0.42, 0.75), armRing(0.388, 0.3, 0.68)], vs: [0, 0.95], rect: [128, 68, 48, 20], tile: B,
+          id: 12 + L, limb: 1, side: s, depth: 2, pivot: arm, capEnd: [ax(at(0.382)), at(0.382), 0.1, 1] });
+        // upper leg (8, 9), lower leg (10, 11), foot (14, 15)
+        const legRing = (f, rx, rz, cz = 0) => oval(6, lx(at(f)), at(f), cz, rx, rz);
+        part({ rings: [legRing(0.56, 1.95, 2.05, 0.1), legRing(0.43, 1.72, 1.82), legRing(0.275, 1.18, 1.25)], vs: [0, 0.5, 1], rect: [176, 0, 80, 40], tile: B,
+          id: 8 + L, limb: 2, side: s, depth: 1, pivot: leg });
+        part({ rings: [legRing(0.3, 1.16, 1.16), legRing(0.2, 1.22, 1.32, -0.18), legRing(0.05, 0.7, 0.74)], vs: [0, 0.42, 1], rect: [176, 40, 80, 48], tile: B,
+          id: 10 + L, limb: 2, side: s, depth: 2, pivot: leg });
+        // the shoe lofts heel to toe; its rings start at the sole's centre; toes turn out a little
+        const cx = lx(R.ankle), turn = s * 0.1, ct = Math.cos(turn), st = Math.sin(turn);
+        const toWorld = (x, y, z) => [cx + x * ct + z * st, y, z * ct - x * st];
+        const shoe = (z, w, top) => [[0, 0], [w, 0], [0.78 * w, top], [-0.78 * w, top], [-w, 0]].map(([x, y]) => toWorld(x, R.foot + y, z));
+        part({ rings: [shoe(-1.35, 0.9, 1.9), shoe(2.9, 1.2, 1.05), shoe(4.7, 0.85, 0.6)], vs: [0, 0.68, 1], rect: [128, 88, 128, 40], tile: B,
+          id: 14 + L, limb: 2, side: s, depth: 3, pivot: leg, capStart: [...toWorld(0, R.foot + 0.9, -1.35), 0], capEnd: [...toWorld(0, R.foot + 0.3, 4.7), 1] });
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('rig', new THREE.Float32BufferAttribute(rig, 4));
+      g.setAttribute('pivot', new THREE.Float32BufferAttribute(piv, 3));
+      g.setIndex(idx);
+      return g;
+    }
+
+    // Paint and mask atlases, drawn texel by texel at startup: grey paint is tinted per person by the mask (r skin, g shirt, b pants).
+    function paintHumanAtlas() {
+      const S = HUMAN_ATLAS, paint = new Uint8ClampedArray(S * S * 4), mask = new Uint8ClampedArray(S * S * 4);
+      let seed = 7;
+      const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+      const hash = (x, y) => {
+        let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+      };
+      const mott = (x, y) => {
+        const fx = x / 7, fy = y / 7, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+        const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+        return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+      };
+      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const tent = (x, w) => Math.max(0, 1 - Math.abs(x) / w);
+      const fold = (u, v) => Math.max(0, Math.sin(u * 47 + v * 13 + Math.sin(u * 9 + v * 5) * 2) - 0.55) * 2.2;
+      const o = { r: 0, g: 0, b: 0, s: 0, t: 0, p: 0 };
+      const tint = (g, ch) => { o.r = o.g = o.b = g; o.s = +(ch === 0); o.t = +(ch === 1); o.p = +(ch === 2); };
+      const over = (hex, a = 1, k = 1) => {
+        o.r += (((hex >> 16) & 255) / 255 * k - o.r) * a; o.g += (((hex >> 8) & 255) / 255 * k - o.g) * a; o.b += ((hex & 255) / 255 * k - o.b) * a;
+        o.s *= 1 - a; o.t *= 1 - a; o.p *= 1 - a;
+      };
+      const shade = k => { o.r *= k; o.g *= k; o.b *= k; };
+      let col = 0;
+      const region = (x0, y0, w, h, fn) => {
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          col = x;
+          fn((x + 0.5) / w, (y + 0.5) / h);
+          const X = x0 + x, Y = y0 + y, i = (Y * S + X) * 4, k = (1 + (rnd() - 0.5) * 0.07) * (0.96 + 0.08 * mott(X, Y)) * 255;
+          paint[i] = o.r * k; paint[i + 1] = o.g * k; paint[i + 2] = o.b * k; paint[i + 3] = 255;
+          mask[i] = o.s * 255; mask[i + 1] = o.t * 255; mask[i + 2] = o.p * 255; mask[i + 3] = 255;
+        }
+      };
+
+      // FACES: u around the head (0.5 = the face), hv crown to chin; hair, brows and eyes are painted colour, skin is tinted
+      const HAIR = [[0x17120f, 0x2e1d12, 0x5c3b21, 0x9c7b48], [0x1b1411, 0x4b2c17, 0x86522b, 0xc4a062]];
+      const IRIS = [0x2a1c12, 0x3b2a1b, 0x41606e, 0x4a3a20];
+      const headTexel = (u, hv, fem, v4, hair) => {
+        const th = (u - 0.5) * 2 * Math.PI, a = Math.abs(th);
+        tint(0.86 + 0.05 * ss(0.5, 0, a) - 0.12 * ss(1.0, 2.2, a)
+          - 0.12 * tent(hv - 0.5, 0.08) * tent(a - 0.42, 0.26)              // eye sockets
+          + 0.07 * tent(a, 0.09) * ss(0.45, 0.6, hv) * ss(0.75, 0.68, hv)    // nose ridge
+          - 0.18 * tent(hv - 0.735, 0.03) * tent(a, 0.16)                    // under the nose
+          - 0.08 * tent(hv - 0.85, 0.05) * tent(a, 0.25)                     // under the lip
+          + 0.05 * tent(a - 0.65, 0.25) * tent(hv - 0.64, 0.08)              // cheekbones
+          - 0.14 * ss(0.86, 1.0, hv), 0);                                     // jaw shadow
+        const ear = tent(a - 1.57, 0.17) * tent(hv - 0.58, 0.13);
+        if (ear > 0.1) shade(ear < 0.3 ? 0.8 : 0.95);
+        if (Math.abs(hv - 0.5) < 0.027 && a > 0.28 && a < 0.56) {
+          over(0xe2ddd4, 0.9);
+          if (Math.abs(a - 0.42) < 0.06) over(IRIS[v4]);
+          if (hv < 0.49) over(0x2a1f18, 0.7);
+        }
+        if (Math.abs(hv - 0.445 + 0.03 * (a - 0.42)) < 0.017 && a > 0.24 && a < 0.62) over(hair, 0.85, 0.8);
+        if (a < 0.26) {
+          if (Math.abs(hv - 0.8) < 0.011) shade(0.62);
+          else if (hv > 0.811 && hv < 0.835) shade(1.04);
+          if (fem && Math.abs(hv - 0.812) < 0.024) over(0xa04848, 0.35);
+        }
+        if (Math.abs(hv - 0.725) < 0.012 && Math.abs(a - 0.08) < 0.04) shade(0.7);
+        if (!fem && v4 === 2 && hv > 0.7 && a < 1.5 && !(a < 0.26 && hv > 0.78 && hv < 0.84)) shade(1 - 0.45 * ss(0.7, 0.78, hv));   // stubble
+        const hlAt = a => {
+          let l = fem ? 0.17 + 0.83 * ss(0.72, 1.0, a) : 0.2 + 0.28 * ss(0.45, 1.15, a) + 0.4 * ss(1.75, 2.5, a);
+          if (!fem && a > 1.12 && a < 1.38) l = Math.max(l, 0.62);       // sideburns
+          if (fem && v4 === 1) l = Math.max(l, 0.33 * ss(0.55, 0.25, a)); // fringe
+          return l;
+        };
+        const hl = hlAt(a);
+        // the hair's edge texels stay skin-tinted (just dark), so filtering never blends tinted and untinted into grey
+        if (hv < hl) {
+          if (hv > hl - 0.03 || hv > Math.min(hlAt(a - 0.05), hlAt(a + 0.05))) tint(0.2, 0);
+          else over(hair, 1, 0.8 + 0.32 * hash(col >> 1, v4) - 0.25 * ss(hl - 0.08, hl, hv) + 0.18 * tent(hv - 0.12, 0.08) * ss(1.6, 0, a));
+        }
+      };
+      for (let f = 0; f < HUMAN_FACE_VARIANTS * 2; f++) {
+        const fem = f >= HUMAN_FACE_VARIANTS, v4 = f % HUMAN_FACE_VARIANTS, hair = HAIR[+fem][v4], fx = (f % 2) * 128, fy = (f >> 1) * 64;
+        region(fx, fy, 128, 48, (u, v) => headTexel(u, v, fem, v4, hair));
+        region(fx, fy + 48, 128, 16, (u, v) => {
+          const a = Math.abs((u - 0.5) * 2 * Math.PI);
+          tint(0.7 + 0.14 * ss(0, 0.6, v) - 0.08 * ss(1.0, 2.6, a) - 0.1 * ss(0.8, 1, v), 0);
+          if ((fem && a > 1.9) || (!fem && a > 2.3 && v < 0.3)) over(hair, 1, 0.72 + 0.25 * hash(col >> 1, 9));
+        });
+      }
+
+      // OUTFITS: u around each part (0 back, 0.25 outer side / the body's left, 0.5 front, 0.75 inner side), v down the part
+      const SHOES = [[0xd8d5ce, 0xe9e7e1], [0x4a2f1d, 0x2a1d14], [0x2c2521, 0x1c1714], [0x484b53, 0xdcdad4], [0xd8d5ce, 0xe9e7e1], [0x1c1a19, 0x131211]];
+      const sides = u => Math.min(Math.abs(u - 0.25), Math.abs(u - 0.75));
+      const torso = (u, v, k) => {
+        const f = Math.abs(u - 0.5), sd = sides(u), back = Math.min(u, 1 - u);
+        let g = 0.88 + 0.08 * ss(0.3, 0.05, v) - 0.08 * ss(0.1, 0, sd)
+          - 0.3 * ss(0.07, 0, sd) * tent(v - 0.56, 0.14)                     // armpits
+          - 0.07 * tent(v - 0.64, 0.05) * ss(0.2, 0.05, f)                    // under the chest
+          - 0.12 * ss(0.88, 1, v) - 0.1 * ss(0.72, 0.95, v) * fold(u, v);     // tucked in, waist wrinkles
+        if (k === 2) g *= 0.86;
+        tint(g, 1);
+        if (k === 0 && v < 0.05) shade(0.8);
+        if (k === 1) {
+          if (v < 0.13 && f < 0.09) shade(v > 0.11 || f > 0.08 ? 0.72 : 1.06);   // collar points
+          if (f < 0.01 && v > 0.12) shade(0.82);
+          if (f < 0.009 && v > 0.15 && (v * 9) % 1 < 0.12) over(0xdcd6c6);
+          if (Math.abs(u - 0.4) < 0.04 && Math.abs(v - 0.37) < 0.05 && (Math.abs(u - 0.4) > 0.032 || v > 0.41)) shade(0.8);
+        }
+        if (k === 2) {
+          if (f < 0.05 && v > 0.04) over(0xcdc8bd, 1, 0.9 - 0.2 * ss(0.85, 1, v));
+          if (Math.abs(f - 0.05) < 0.007) over(0x2a2724, 0.8);
+          if (v < 0.1) shade(0.82);
+          if (Math.abs(f - 0.15) < 0.05 && Math.abs(v - 0.82) < 0.008) shade(0.6);
+        }
+        if (k === 3) {
+          if (back < 0.14 && v < 0.35) shade(1 - 0.3 * fold(u * 3, v));
+          if (Math.abs(f - 0.03) < 0.006 && v > 0.04 && v < 0.3) over(0xe0ddd5);
+          if (f < 0.13 && v > 0.66 && v < 0.9) shade(f > 0.12 || v < 0.672 ? 0.72 : 0.94);
+          if (v > 0.92) shade(col % 2 ? 0.88 : 1);
+        }
+        if (k === 4 && ((sd < 0.09 && v < 0.62) || (v < 0.27 && sd < 0.17) || (f < 0.12 && v < 0.2) || (back < 0.1 && v < 0.14))) {
+          tint(0.85 + 0.05 * ss(0.3, 0, v) - 0.25 * ss(0.07, 0, sd) * tent(v - 0.56, 0.14), 0);
+        }
+        if (k === 5) {
+          const edge = 0.1 * (1 - v / 0.58) + 0.012;
+          if (v < 0.58 && f < edge) { over(0xe6e4de, 1, g); if (f < 0.022 + 0.015 * ss(0.1, 0.03, v)) over(0x6b1f25, 1, g * 0.95); }
+          if (v < 0.58 && Math.abs(f - edge) < 0.008) shade(0.6);
+          if (f < 0.008 && (Math.abs(v - 0.66) < 0.012 || Math.abs(v - 0.78) < 0.012)) over(0x1a1918);
+          if (Math.abs(f - 0.16) < 0.04 && Math.abs(v - 0.83) < 0.006) shade(0.6);
+        }
+      };
+      const pelvis = (u, v, k) => {
+        const f = Math.abs(u - 0.5), back = Math.min(u, 1 - u);
+        tint(0.86 - 0.07 * ss(0.1, 0, sides(u)) - 0.28 * ss(0.6, 1, v) * Math.min(1, ss(0.15, 0, f) + ss(0.12, 0, back)) - 0.08 * ss(0.85, 1, v), 2);
+        if (k === 0 || k === 1 || k === 5) {
+          if (v < 0.16) { over(k === 5 ? 0x191716 : 0x33241a, 1, 0.9 + 0.15 * ss(0.16, 0, v)); if (f < 0.035) over(k === 0 ? 0xa59372 : 0x9a9a9a); }
+          if (k === 0 && f < 0.008 && v > 0.16 && v < 0.62) shade(0.75);
+          if (k === 0 && Math.abs(f - (0.13 + 0.06 * v)) < 0.006 && v > 0.16 && v < 0.5) shade(0.8);
+          if (k === 0 && Math.abs(back - 0.12) < 0.06 && Math.abs(v - 0.42) < 0.12 && (Math.abs(back - 0.12) > 0.052 || v > 0.52)) shade(0.8);
+        }
+        if (k === 2 && v < 0.3) tint(0.76 * (v > 0.27 ? 0.7 : 1), 1);
+        if (k === 3 && v < 0.32) tint(0.84 * (v > 0.18 && col % 2 ? 0.88 : 1) * (v > 0.3 ? 0.75 : 1), 1);
+        if (k === 4 && v < 0.14) shade(col % 2 ? 0.85 : 0.95);
+      };
+      const upperArm = (u, v, k) => {
+        const inner = Math.abs(u - 0.75), bare = k === 4 || (k === 0 && v > 0.5);
+        const g = 0.86 + 0.06 * ss(0.2, 0, v) - 0.22 * ss(0.12, 0, inner) * ss(0.4, 0.05, v) - 0.08 * ss(0.15, 0, inner)
+          - (bare ? 0.04 : 0.14) * ss(0.85, 1, v) * ss(0.2, 0, inner);
+        tint(bare ? g : g * (k === 2 ? 0.86 : 1), bare ? 0 : 1);
+        if (k === 0 && v > 0.45 && v < 0.5) tint(g * 0.8, 1);
+      };
+      const lowerArm = (u, v, k) => {
+        const inner = Math.abs(u - 0.75), bare = k === 0 || k === 4;
+        const g = 0.86 - 0.18 * ss(0.15, 0, v) * ss(0.2, 0, inner) - 0.06 * ss(0.2, 0, inner);
+        tint(bare ? g : g * (k === 2 ? 0.86 : 1), bare ? 0 : 1);
+        if (!bare && v > 0.86) shade(k === 3 ? (col % 2 ? 0.8 : 0.9) : 0.8);
+        if (k === 5 && v > 0.93) over(0xe6e4de, 1, 0.9);
+      };
+      const hand = (u, v) => {
+        const back = Math.abs(u - 0.25), palm = Math.abs(u - 0.75);
+        let g = 0.84 + 0.05 * ss(0.15, 0, palm);
+        if (v > 0.5 && Math.min(back, palm) < 0.15 && col % 4 === 0) g -= 0.18;
+        if (Math.abs(v - 0.48) < 0.03 && back < 0.15) g -= 0.1;
+        if (Math.abs(u - 0.5) < 0.05 && v > 0.15 && v < 0.6) g -= 0.12;
+        tint(g - 0.1 * ss(0.9, 1, v), 0);
+      };
+      const upperLeg = (u, v, k) => {
+        const inner = Math.abs(u - 0.75), back = Math.min(u, 1 - u), f = Math.abs(u - 0.5);
+        if (k === 4 && v > 0.6) { tint(0.85 - 0.06 * ss(0.15, 0, inner) - 0.15 * ss(0.9, 1, v) * ss(0.12, 0, back), 0); return; }
+        tint(0.86 + 0.04 * ss(0.2, 0, f) - 0.18 * ss(0.12, 0, inner) * ss(0.3, 0, v) - 0.07 * ss(0.2, 0, inner)
+          - 0.22 * ss(0.82, 1, v) * ss(0.15, 0, back) - 0.1 * ss(0.8, 1, v) * ss(0.2, 0, f) * fold(u * 2, v * 4), 2);
+        if (k === 0 && Math.abs(u - 0.25) < 0.006) shade(1.12);
+        if (k === 4 && v > 0.55) shade(0.75);
+        if ((k === 1 || k === 5) && f < 0.006) shade(0.88);
+      };
+      const lowerLeg = (u, v, k) => {
+        const f = Math.abs(u - 0.5), back = Math.min(u, 1 - u);
+        if (k === 4) {
+          tint(0.85 + 0.05 * ss(0.15, 0, f) * tent(v - 0.35, 0.3) - 0.12 * ss(0.15, 0, back) * ss(0.2, 0, v), 0);
+          if (v > 0.86) over(0xdedbd3, 1, 0.92 - 0.12 * (Math.floor(v * 44) % 2));
+          return;
+        }
+        tint(0.86 - 0.2 * ss(0.15, 0, v) * ss(0.15, 0, back) - 0.12 * ss(0.75, 1, v) * fold(u, v * 6) - 0.1 * ss(0.94, 1, v)
+          - 0.06 * ss(0.12, 0, Math.abs(u - 0.75)), 2);
+        if (k === 0 && Math.abs(u - 0.25) < 0.006) shade(1.12);
+        if ((k === 1 || k === 5) && f < 0.006) shade(0.88);
+      };
+      const shoe = (u, v, k) => {
+        const s = SHOES[k], f = Math.abs(u - 0.5), side = Math.min(u, 1 - u);
+        tint(0, 3);
+        over(side < 0.18 ? s[1] : s[0], 1, 0.92 + 0.16 * ss(0.3, 0, f) * ss(0.55, 0.9, v) - 0.12 * ss(0.3, 0, v) * ss(0.2, 0.4, f));
+        if (Math.abs(side - 0.18) < 0.012) shade(0.6);
+        if ((k === 0 || k === 3 || k === 4) && f < 0.06 && v > 0.12 && v < 0.55) shade(Math.floor(v * 40) % 2 ? 0.75 : 1.05);
+        if ((k === 0 || k === 4) && Math.abs(f - 0.22) < 0.02 && v > 0.25 && v < 0.6) over(0x7a7d85, 0.8);
+      };
+      HUMAN_OUTFIT_TILES.forEach(([ox, oy], k) => {
+        region(ox, oy, 128, 60, (u, v) => torso(u, v, k));
+        region(ox, oy + 60, 128, 28, (u, v) => pelvis(u, v, k));
+        region(ox, oy + 88, 128, 40, () => tint(0.8, 1));
+        region(ox + 128, oy, 48, 36, (u, v) => upperArm(u, v, k));
+        region(ox + 128, oy + 36, 48, 32, (u, v) => lowerArm(u, v, k));
+        region(ox + 128, oy + 68, 48, 20, hand);
+        region(ox + 176, oy, 80, 40, (u, v) => upperLeg(u, v, k));
+        region(ox + 176, oy + 40, 80, 48, (u, v) => lowerLeg(u, v, k));
+        region(ox + 128, oy + 88, 128, 40, (u, v) => shoe(u, v, k));
+      });
+      const texture = (data, srgb) => {
+        const t = new THREE.DataTexture(new Uint8Array(data.buffer), S, S, THREE.RGBAFormat);
+        t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        t.magFilter = THREE.LinearFilter;
+        t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.generateMipmaps = true;
+        t.needsUpdate = true;
+        return t;
+      };
+      return { paint: texture(paint, true), mask: texture(mask, false) };
+    }
+
+    // Shared by the lit and shadow-depth materials: per-vertex rig data, per-instance pose, gait and look.
+    const HUMAN_VERTEX_PARS = /* glsl */`
+      attribute vec4 rig;
+      attribute vec3 pivot;
+      attribute vec4 iPose;
+      attribute vec4 iGait;
+      attribute vec4 iLook;
+      vec2 humanTurn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
+      // rig space to world for this instance: build, walk cycle (joints turn about x), lean, bob, size, facing
+      void humanPose(inout vec3 p, inout vec3 n) {
+        float girth = rig.x > 0.5 ? 0.8 + floor(iLook.w / 64.0) / 200.0 : 1.0;
+        p.xz *= girth; n.xz /= girth;
+        float t = iGait.y, sw = iGait.z, run = iGait.w, s = sin(t) * rig.z, c = cos(t) * rig.z;
+        float a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        if (rig.y > 1.5) {
+          a1 = -sw * s;
+          a2 = sw * (0.3 + (2.1 + 1.4 * run) * max(c, 0.0));
+          a3 = -(a1 + a2) * 0.8 - 0.45 * sw * s;
+        } else if (rig.y > 0.5) {
+          a1 = sw * (0.85 + 0.5 * run) * s;
+          a2 = -(0.14 + sw * (0.3 + 0.35 * max(-s, 0.0)) + 1.15 * run);
+        }
+        a2 *= step(1.5, rig.w); a3 *= step(2.5, rig.w);
+        vec2 q = p.yz;
+        if (rig.w > 0.5) {
+          q = vec2(pivot.z, 0.0) + humanTurn(q - vec2(pivot.z, 0.0), a3);
+          q = vec2(pivot.y, 0.0) + humanTurn(q - vec2(pivot.y, 0.0), a2);
+          q = vec2(pivot.x, 0.0) + humanTurn(q - vec2(pivot.x, 0.0), a1);
+        }
+        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 : 0.0;
+        q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
+        p.yz = q;
+        p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85;
+        n.yz = humanTurn(n.yz, a1 + a2 + a3 + lean);
+        float cy = cos(iPose.w), sy = sin(iPose.w);
+        p = vec3(p.x * cy + p.z * sy, p.y, p.z * cy - p.x * sy) * iGait.x + iPose.xyz;
+        n = vec3(n.x * cy + n.z * sy, n.y, n.z * cy - n.x * sy);
+      }
+      #ifndef HUMAN_DEPTH
+      varying vec2 vHumanUv;
+      varying vec3 vHumanSkin, vHumanShirt, vHumanPants;
+      vec3 humanColor(float c) { vec3 v = floor(c / vec3(65536.0, 256.0, 1.0)); v.yz -= v.xy * 256.0; return pow(v / 255.0, vec3(2.2)); }
+      #endif
+    `;
+    const HUMAN_VERTEX_MAIN = /* glsl */`
+      vec3 objectNormal = vec3(normal);
+      vec3 humanPos = vec3(position);
+      humanPose(humanPos, objectNormal);
+      float hBuild = floor(iLook.w / 64.0), hRest = iLook.w - hBuild * 64.0, hOutfit = floor(hRest / 8.0), hFace = hRest - hOutfit * 8.0;
+      vec2 hTile = rig.x < 1.5 ? vec2(mod(hFace, 2.0) * ${HUMAN_FACE_TILE[0]}.0, floor(hFace / 2.0) * ${HUMAN_FACE_TILE[1]}.0)
+        : (hOutfit < 1.5 ? vec2(${HUMAN_ATLAS / 2}.0, hOutfit * ${HUMAN_BODY_TILE[1]}.0)
+          : vec2(mod(hOutfit, 2.0) * ${HUMAN_BODY_TILE[0]}.0, ${HUMAN_ATLAS / 2}.0 + floor(hOutfit / 2.0 - 1.0) * ${HUMAN_BODY_TILE[1]}.0));
+      vHumanUv = (hTile + uv * (rig.x < 1.5 ? vec2(${HUMAN_FACE_TILE[0]}.0, ${HUMAN_FACE_TILE[1]}.0) : vec2(${HUMAN_BODY_TILE[0]}.0, ${HUMAN_BODY_TILE[1]}.0))) / ${HUMAN_ATLAS}.0;
+      vHumanSkin = humanColor(iLook.x);
+      vHumanShirt = humanColor(iLook.y);
+      vHumanPants = humanColor(iLook.z);
+    `;
+
+    // Lambert (scene sun, hemisphere and fog, shadows when the map is on) plus a depth twin so shadows follow the pose.
+    function humanMaterials(paint, mask) {
+      const lit = new THREE.MeshLambertMaterial();
+      lit.onBeforeCompile = sh => {
+        sh.uniforms.humanPaint = { value: paint };
+        sh.uniforms.humanMask = { value: mask };
+        sh.vertexShader = HUMAN_VERTEX_PARS + sh.vertexShader
+          .replace('#include <beginnormal_vertex>', HUMAN_VERTEX_MAIN)
+          .replace('#include <begin_vertex>', 'vec3 transformed = humanPos;');
+        sh.fragmentShader = `uniform sampler2D humanPaint, humanMask;
+          varying vec2 vHumanUv;
+          varying vec3 vHumanSkin, vHumanShirt, vHumanPants;
+          ` + sh.fragmentShader.replace('#include <map_fragment>', `
+          vec3 hMask = texture2D(humanMask, vHumanUv).rgb;
+          diffuseColor.rgb *= texture2D(humanPaint, vHumanUv).rgb * (vHumanSkin * hMask.r + vHumanShirt * hMask.g + vHumanPants * hMask.b
+            + max(0.0, 1.0 - hMask.r - hMask.g - hMask.b));`);
+      };
+      lit.customProgramCacheKey = () => 'human-rig-lit';
+      const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+      depth.onBeforeCompile = sh => {
+        sh.vertexShader = '#define HUMAN_DEPTH\n' + HUMAN_VERTEX_PARS + sh.vertexShader.replace('#include <begin_vertex>',
+          'vec3 transformed = vec3(position); vec3 humanNormal = vec3(normal); humanPose(transformed, humanNormal);');
+      };
+      depth.customProgramCacheKey = () => 'human-rig-depth';
+      return { lit, depth };
+    }
+
     class AnimalRenderer {
       constructor() {
         this.MAX_INSTANCES = 12000;
         this.MATURITY_TICKS = NPC_MATURITY_TICKS;
         this.MIN_SCALE = 0.25;
 
-        this.TYPES = ['deer', 'coyote', 'human'];
+        this.BOX_RIG_TYPES = ['deer', 'coyote'];   // drawn from box parts; people use the human rig (this.human)
         this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
         this.LIMB_NAMES = ['legFL', 'legFR', 'legBL', 'legBR'];
         this.LIMB_SIGNS = [1, -1, -1, 1];
@@ -5727,24 +6186,17 @@ void main() {
             body: coyoteBody,
             head: coyoteHead,
             leg: new THREE.BoxGeometry(1.8, 10, 1.8)
-          },
-          human: {
-            body: new THREE.BoxGeometry(8, 17, 6),
-            head: new THREE.BoxGeometry(8.6, 8.6, 8.6),
-            leg: new THREE.BoxGeometry(2, 12.5, 2)
           }
         };
 
         this.MATERIALS = {
           deer: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
-          coyote: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false }),
-          human: new THREE.MeshStandardMaterial({ color: 0xF4A460, vertexColors: false })
+          coyote: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: false })
         };
 
         this.SEX_COLORS = {
           deer: { male: new THREE.Color(0x6f4a2a), female: new THREE.Color(0x93683f) },
-          coyote: { male: new THREE.Color(0x8a7658), female: new THREE.Color(0xa38e6c) },
-          human: { male: new THREE.Color(0xD2956A), female: new THREE.Color(0xF4C090) }
+          coyote: { male: new THREE.Color(0x8a7658), female: new THREE.Color(0xa38e6c) }
         };
 
         // Male-only parts: one extra mesh per type, placed with the head's matrix.
@@ -5767,13 +6219,6 @@ void main() {
             legBL: new THREE.Vector3(-3.2, -8.5, -10),
             legBR: new THREE.Vector3(3.2, -8.5, -10),
           },
-          human: {
-            head: new THREE.Vector3(0, 13, 0),
-            legFL: new THREE.Vector3(-6, 2, 0),
-            legFR: new THREE.Vector3(6, 2, 0),
-            legBL: new THREE.Vector3(-2, -15, 0),
-            legBR: new THREE.Vector3(2, -15, 0),
-          },
         };
 
         this.PIVOT_OFFSETS = {
@@ -5783,12 +6228,6 @@ void main() {
             legBL: new THREE.Vector3(-2.2, -1.5, -6.5),
             legBR: new THREE.Vector3(2.2, -1.5, -6.5),
           },
-          human: {
-            legFL: new THREE.Vector3(-6, 8.25, 0),
-            legFR: new THREE.Vector3(6, 8.25, 0),
-            legBL: new THREE.Vector3(-2, -8.75, 0),
-            legBR: new THREE.Vector3(2, -8.75, 0),
-          },
           deer: {
             legFL: new THREE.Vector3(-3.2, -2, 10),
             legFR: new THREE.Vector3(3.2, -2, 10),
@@ -5797,13 +6236,13 @@ void main() {
           },
         };
 
-        this.LIMB_HALF = { deer: 6.5, coyote: 5, human: 6.25 };
-        this.WALK = { deer: 0.45, coyote: 0.55, human: 0.65 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
-        this.LEG_LEN = { deer: 13, coyote: 10, human: 12.5 };
+        this.LIMB_HALF = { deer: 6.5, coyote: 5 };
+        this.WALK = { deer: 0.45, coyote: 0.55 };   // walking leg swing, radians (cadence comes from speed, see GAIT)
+        this.LEG_LEN = { deer: 13, coyote: 10 };
 
         this.meshes = {};
         this.antlers = {};
-        this.renderCache = { deer: null, coyote: null, human: null };
+        this.renderCache = { deer: null, coyote: null };
 
         // LOW DETAIL: past perf.npcLodDist a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
         const dh = this.PART_OFFSETS.deer.head;
@@ -5815,11 +6254,6 @@ void main() {
             boxAt(6.2, 10, 1.8, 0, -6.5, 6.5),
             boxAt(6.2, 10, 1.8, 0, -6.5, -6.5)
           ], false),
-          human: mergeGeometries([
-            boxAt(8.6, 8.6, 8.6, 0, 13, 0),
-            boxAt(14, 17, 6, 0, 0, 0),
-            boxAt(6, 12.5, 2, 0, -15, 0)
-          ], false),
           deer: mergeGeometries([
             deerBody.clone(),
             deerHead.clone().translate(dh.x, dh.y, dh.z),
@@ -5828,7 +6262,7 @@ void main() {
           ], false)
         };
         this.far = {};
-        this.farColKeys = { deer: [], coyote: [], human: [] };
+        this.farColKeys = { deer: [], coyote: [] };
 
         this._mat4 = new THREE.Matrix4();
         this._local = new THREE.Vector3();
@@ -5848,10 +6282,79 @@ void main() {
           im: null, cache: null, far: null, farColKeys: null, antlers: null,
           idx: 0, fidx: 0, aidx: 0, colorsDirty: false, farColorsDirty: false, full: false
         }));
+
+        // PEOPLE: one instanced mesh, every person at every distance; per instance a pose, gait and look (4 floats each).
+        const rest = buildHumanGeometry(), atlas = paintHumanAtlas(), mats = humanMaterials(atlas.paint, atlas.mask);
+        const geometry = new THREE.InstancedBufferGeometry();
+        geometry.setIndex(rest.index);
+        for (const k in rest.attributes) geometry.setAttribute(k, rest.attributes[k]);
+        const perInstance = name => {
+          const attr = new THREE.InstancedBufferAttribute(new Float32Array(this.MAX_INSTANCES * 4), 4);
+          attr.setUsage(THREE.DynamicDrawUsage);
+          geometry.setAttribute(name, attr);
+          return attr;
+        };
+        geometry.instanceCount = 0;
+        const mesh = new THREE.Mesh(geometry, mats.lit);
+        mesh.customDepthMaterial = mats.depth;
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        this.human = {
+          rest, geometry, mesh,
+          pose: perInstance('iPose'),   // x, y, z of the rig origin, facing angle
+          gait: perInstance('iGait'),   // metres per rig unit, phase, hip swing, run share
+          look: perInstance('iLook'),   // skin, shirt, pants (packed sRGB), face/outfit/build code
+          lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot's look was written for
+        };
+      }
+
+      // Rest-pose bounds of a type's whole body in rig units (blob shadow footprints).
+      restBox(type) {
+        const g = type === 'human' ? this.human.rest : this.FAR_GEOMETRIES[type];
+        if (!g.boundingBox) g.computeBoundingBox();
+        return g.boundingBox;
+      }
+
+      // Queue items [lo, n) of an instanced attribute for upload, keeping any range not yet drawn.
+      static queueUpload(attr, lo, n) {
+        const per = attr.itemSize, pending = attr.updateRanges;
+        let a = lo * per, b = n * per;
+        for (let i = 0; i < pending.length; i++) {
+          const r = pending[i];
+          if (r.start < a) a = r.start;
+          if (r.start + r.count > b) b = r.start + r.count;
+        }
+        attr.clearUpdateRanges();
+        attr.addUpdateRange(a, b - a);
+        attr.needsUpdate = true;
+      }
+
+      // A person's gait from the ground actually covered this tick: phase by distance over stride, so feet keep pace (render only).
+      stepGait(a, deltaTime, kp) {
+        const dx = a.position.x - a.gaitX, dz = a.position.z - a.gaitZ;
+        a.gaitX = a.position.x; a.gaitZ = a.position.z;
+        if (!deltaTime) return;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (!(d < HUMAN_GAIT_JUMP)) return;   // first sight or a teleport: hold the pose
+        if (d === 0 && a.gaitSpeed < 1e-3) { a.gaitSpeed = a.gaitSwing = a.gaitRun = 0; return; }   // settled idle
+        const leg = HUMAN_LEG * kp;           // hip to sole, metres
+        a.gaitSpeed += (d / NPC_TICK_S - a.gaitSpeed) * HUMAN_GAIT_EASE;
+        const vl = a.gaitSpeed / leg;          // leg lengths per second
+        const stride = Math.min(HUMAN_STRIDE_MAX, HUMAN_STRIDE_BASE + HUMAN_STRIDE_PER_V * vl);
+        const ph = a.gaitPhase + Animal.TWO_PI * Math.min(d / (stride * leg), HUMAN_CADENCE_MAX * NPC_TICK_S);
+        a.gaitPhase = ph >= Animal.TWO_PI ? ph - Animal.TWO_PI : ph;
+        a.gaitSwing = Math.min(HUMAN_SWING_MAX, Math.asin(Math.min(1, stride / 4))) * Math.min(1, a.gaitSpeed / HUMAN_IDLE_SPEED);
+        a.gaitRun = Math.max(0, Math.min(1, (vl - 2.6) / 2.6));
       }
 
       init() {
-        for (const type of this.TYPES) {
+        const H = this.human;
+        if (!H.mesh.parent) scene.add(H.mesh);
+        H.lookOwner.fill(null);
+        H.geometry.instanceCount = 0;
+        H.mesh.visible = false;
+        for (const type of this.BOX_RIG_TYPES) {
           if (this.meshes[type]) {
             for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
           }
@@ -5920,11 +6423,19 @@ void main() {
           p.colorsDirty = false; p.farColorsDirty = false; p.full = false;
         }
 
+        const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, owners = H.lookOwner;
+        let hn = 0, lookFrom = this.MAX_INSTANCES;
+
         for (const a of animals) {
           if (!a.alive) continue;
+          const human = a.typeId === HUMAN_TYPE_ID;
           const p = passes[a.typeId];
-          if (p.im === null || p.full) continue;
-          if (p.idx + p.fidx >= this.MAX_INSTANCES) { p.full = true; continue; }
+          if (human) {
+            if (hn >= this.MAX_INSTANCES) continue;
+          } else {
+            if (p.im === null || p.full) continue;
+            if (p.idx + p.fidx >= this.MAX_INSTANCES) { p.full = true; continue; }
+          }
           const im = p.im;
 
           const ageRatio = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / this.MATURITY_TICKS);
@@ -5936,7 +6447,8 @@ void main() {
           this._scale.set(kp, kp, kp);
 
           const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
-          if (deltaTime && a.moving) {
+          if (human) this.stepGait(a, deltaTime, kp);
+          else if (deltaTime && a.moving) {
             const v = a.stepLength() / NPC_TICK_S;
             const perCycle = 4 * p.legLen * kp * Math.sin(swing);
             const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
@@ -5949,9 +6461,21 @@ void main() {
               ax2 * sx + ay2 * sy + az2 * sz + d2 < nr || ax3 * sx + ay3 * sy + az3 * sz + d3 < nr ||
               ax4 * sx + ay4 * sy + az4 * sz + d4 < nr || ax5 * sx + ay5 * sy + az5 * sz + d5 < nr) continue;
           }
-          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
-
           const groundOffset = a.footLift() * NPC_UNIT;
+          if (human) {
+            const o = hn * 4;
+            hPose[o] = a.position.x; hPose[o + 1] = a.position.y - (1 - s) * groundOffset; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
+            hGait[o] = kp; hGait[o + 1] = a.gaitPhase; hGait[o + 2] = a.gaitSwing; hGait[o + 3] = a.gaitRun;
+            if (owners[hn] !== a) {
+              owners[hn] = a;
+              const L = a.look;
+              hLook[o] = L.skinRGB; hLook[o + 1] = L.shirt; hLook[o + 2] = L.pants; hLook[o + 3] = L.code;
+              if (hn < lookFrom) lookFrom = hn;
+            }
+            hn++;
+            continue;
+          }
+          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
           this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
           this._mat4.compose(this._world, this._quat, this._scale);
 
@@ -6013,7 +6537,14 @@ void main() {
           p.idx = idx + 1;
         }
 
-        for (const type of this.TYPES) {
+        H.geometry.instanceCount = hn;
+        H.mesh.visible = hn > 0;
+        if (hn > 0) {
+          AnimalRenderer.queueUpload(H.pose, 0, hn);
+          AnimalRenderer.queueUpload(H.gait, 0, hn);
+          if (lookFrom < hn) AnimalRenderer.queueUpload(H.look, lookFrom, hn);
+        }
+        for (const type of this.BOX_RIG_TYPES) {
           const p = passes[NPC_TYPE_IDS[type]];
           if (p.im === null) continue;
           for (let mi = 0; mi < p.cache.list.length; mi++) {
@@ -9459,6 +9990,15 @@ void main() {
     const TPP_BACK = 70 * NPC_UNIT * NPC_HUMAN_HS;   // the Arena's TPP_OFFSET, sized to the player
     const TPP_UP = 18 * NPC_UNIT * NPC_HUMAN_HS;
 
+    // The player's third-person box figure (the Arena's blue figure), in rig units; NPC people use the human rig.
+    const PLAYER_FIGURE = {
+      geom: { body: new THREE.BoxGeometry(8, 17, 6), head: new THREE.BoxGeometry(8.6, 8.6, 8.6), leg: new THREE.BoxGeometry(2, 12.5, 2) },
+      offsets: {
+        head: new THREE.Vector3(0, 13, 0), legFL: new THREE.Vector3(-6, 2, 0), legFR: new THREE.Vector3(6, 2, 0),
+        legBL: new THREE.Vector3(-2, -15, 0), legBR: new THREE.Vector3(2, -15, 0)
+      }
+    };
+
     const pov = {
       mode: '1st',
       body: null,
@@ -9467,8 +10007,8 @@ void main() {
 
       build() {
         const mat = new THREE.MeshStandardMaterial({ color: 0x2255dd });
-        const geom = animalRenderer.GEOMETRIES.human;
-        const off = animalRenderer.PART_OFFSETS.human;
+        const geom = PLAYER_FIGURE.geom;
+        const off = PLAYER_FIGURE.offsets;
         const group = new THREE.Group();
         const body = new THREE.Mesh(geom.body, mat);
         group.add(body);
@@ -10895,11 +11435,10 @@ void main() {
         this.mesh.visible = false;
         this.mesh.frustumCulled = false;
         scene.add(this.mesh);
-        // body footprint per type in model units (x across, z along the facing), from the low-detail bodies
+        // body footprint per type in model units (x across, z along the facing), from the rest-pose bodies
         this.foot = {};
-        for (const type of animalRenderer.TYPES) {
-          const bb = animalRenderer.FAR_GEOMETRIES[type].boundingBox ||
-            (animalRenderer.FAR_GEOMETRIES[type].computeBoundingBox(), animalRenderer.FAR_GEOMETRIES[type].boundingBox);
+        for (const type of NPC_TYPES) {
+          const bb = animalRenderer.restBox(type);
           this.foot[type] = { x: bb.max.x - bb.min.x, z: bb.max.z - bb.min.z };
         }
         this._m = new THREE.Matrix4();
