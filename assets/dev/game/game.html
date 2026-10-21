@@ -4281,7 +4281,7 @@ void main() {
     const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
     const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
     const WATER_SIGHT_CELL = 20;
-    const HIGH_NPC_LOD_DIST = 60;      // metres past which a body goes low-detail on high (live: perf.npcLodDist)
+    const HIGH_NPC_LOD_DIST = 60;      // metres past which a body is drawn as a billboard on high (live: perf.npcLodDist)
     const HIGH_FAR_STAT_DIST = 120;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
     const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
     const NPC_STATS_R = 0.7;
@@ -5752,6 +5752,7 @@ void main() {
       0xc59a37, 0x6c98c8, 0x6a4a33, 0xc8b48c, 0xc98299, 0x5e4a86, 0xc86f2e, 0x2f7576];
     const HUMAN_PANTS = [0x3a5378, 0x24324d, 0x232325, 0x67686b, 0xa8956c, 0x5a4330, 0x4f5235, 0x283150, 0x6a86a8];
     const HUMAN_SUITS = [0x26272a, 0x2b3346, 0x3e3f43, 0x4b3e31];
+    const HUMAN_HAIR = [[0x17120f, 0x2e1d12, 0x5c3b21, 0x9c7b48], [0x1b1411, 0x4b2c17, 0x86522b, 0xc4a062]];   // [female][face variant], sRGB
 
     function humanLook(sex) {
       const pick = list => list[Math.floor(Math.random() * list.length)];
@@ -5895,12 +5896,14 @@ void main() {
       const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
       const tent = (x, w) => Math.max(0, 1 - Math.abs(x) / w);
       const fold = (u, v) => Math.max(0, Math.sin(u * 47 + v * 13 + Math.sin(u * 9 + v * 5) * 2) - 0.55) * 2.2;
-      const o = { r: 0, g: 0, b: 0, s: 0, t: 0, p: 0 };
-      const tint = (g, ch) => { o.r = o.g = o.b = g; o.s = +(ch === 0); o.t = +(ch === 1); o.p = +(ch === 2); };
+      const o = { r: 0, g: 0, b: 0, s: 0, t: 0, p: 0, h: 0 };
+      const tint = (g, ch) => { o.r = o.g = o.b = g; o.s = +(ch === 0); o.t = +(ch === 1); o.p = +(ch === 2); o.h = 0; };
       const over = (hex, a = 1, k = 1) => {
         o.r += (((hex >> 16) & 255) / 255 * k - o.r) * a; o.g += (((hex >> 8) & 255) / 255 * k - o.g) * a; o.b += ((hex & 255) / 255 * k - o.b) * a;
-        o.s *= 1 - a; o.t *= 1 - a; o.p *= 1 - a;
+        o.s *= 1 - a; o.t *= 1 - a; o.p *= 1 - a; o.h *= 1 - a;
       };
+      // hair colour; its coverage goes in the mask's alpha, which only the billboard bake reads (far people get their own hair colour)
+      const overHair = (hex, a = 1, k = 1) => { over(hex, a, k); o.h += a; };
       const shade = k => { o.r *= k; o.g *= k; o.b *= k; };
       let col = 0;
       const region = (x0, y0, w, h, fn) => {
@@ -5909,12 +5912,11 @@ void main() {
           fn((x + 0.5) / w, (y + 0.5) / h);
           const X = x0 + x, Y = y0 + y, i = (Y * S + X) * 4, k = (1 + (rnd() - 0.5) * 0.07) * (0.96 + 0.08 * mott(X, Y)) * 255;
           paint[i] = o.r * k; paint[i + 1] = o.g * k; paint[i + 2] = o.b * k; paint[i + 3] = 255;
-          mask[i] = o.s * 255; mask[i + 1] = o.t * 255; mask[i + 2] = o.p * 255; mask[i + 3] = 255;
+          mask[i] = o.s * 255; mask[i + 1] = o.t * 255; mask[i + 2] = o.p * 255; mask[i + 3] = o.h * 255;
         }
       };
 
       // FACES: u around the head (0.5 = the face), hv crown to chin; hair, brows and eyes are painted colour, skin is tinted
-      const HAIR = [[0x17120f, 0x2e1d12, 0x5c3b21, 0x9c7b48], [0x1b1411, 0x4b2c17, 0x86522b, 0xc4a062]];
       const IRIS = [0x2a1c12, 0x3b2a1b, 0x41606e, 0x4a3a20];
       const headTexel = (u, hv, fem, v4, hair) => {
         const th = (u - 0.5) * 2 * Math.PI, a = Math.abs(th);
@@ -5932,7 +5934,7 @@ void main() {
           if (Math.abs(a - 0.42) < 0.06) over(IRIS[v4]);
           if (hv < 0.49) over(0x2a1f18, 0.7);
         }
-        if (Math.abs(hv - 0.445 + 0.03 * (a - 0.42)) < 0.017 && a > 0.24 && a < 0.62) over(hair, 0.85, 0.8);
+        if (Math.abs(hv - 0.445 + 0.03 * (a - 0.42)) < 0.017 && a > 0.24 && a < 0.62) overHair(hair, 0.85, 0.8);
         if (a < 0.26) {
           if (Math.abs(hv - 0.8) < 0.011) shade(0.62);
           else if (hv > 0.811 && hv < 0.835) shade(1.04);
@@ -5950,16 +5952,16 @@ void main() {
         // the hair's edge texels stay skin-tinted (just dark), so filtering never blends tinted and untinted into grey
         if (hv < hl) {
           if (hv > hl - 0.03 || hv > Math.min(hlAt(a - 0.05), hlAt(a + 0.05))) tint(0.2, 0);
-          else over(hair, 1, 0.8 + 0.32 * hash(col >> 1, v4) - 0.25 * ss(hl - 0.08, hl, hv) + 0.18 * tent(hv - 0.12, 0.08) * ss(1.6, 0, a));
+          else overHair(hair, 1, 0.8 + 0.32 * hash(col >> 1, v4) - 0.25 * ss(hl - 0.08, hl, hv) + 0.18 * tent(hv - 0.12, 0.08) * ss(1.6, 0, a));
         }
       };
       for (let f = 0; f < HUMAN_FACE_VARIANTS * 2; f++) {
-        const fem = f >= HUMAN_FACE_VARIANTS, v4 = f % HUMAN_FACE_VARIANTS, hair = HAIR[+fem][v4], fx = (f % 2) * 128, fy = (f >> 1) * 64;
+        const fem = f >= HUMAN_FACE_VARIANTS, v4 = f % HUMAN_FACE_VARIANTS, hair = HUMAN_HAIR[+fem][v4], fx = (f % 2) * 128, fy = (f >> 1) * 64;
         region(fx, fy, 128, 48, (u, v) => headTexel(u, v, fem, v4, hair));
         region(fx, fy + 48, 128, 16, (u, v) => {
           const a = Math.abs((u - 0.5) * 2 * Math.PI);
           tint(0.7 + 0.14 * ss(0, 0.6, v) - 0.08 * ss(1.0, 2.6, a) - 0.1 * ss(0.8, 1, v), 0);
-          if ((fem && a > 1.9) || (!fem && a > 2.3 && v < 0.3)) over(hair, 1, 0.72 + 0.25 * hash(col >> 1, 9));
+          if ((fem && a > 1.9) || (!fem && a > 2.3 && v < 0.3)) overHair(hair, 1, 0.72 + 0.25 * hash(col >> 1, 9));
         });
       }
 
@@ -6178,6 +6180,113 @@ void main() {
       return { lit, depth };
     }
 
+    // FAR BILLBOARDS (render only): past perf.npcLodDist a body is a viewer-facing card cut from atlases baked from the real rigs at load.
+    const BB_CELL = 40;                          // atlas texels a side of one frame
+    const BB_DIRS = 8;                           // views round a body, 45 degrees apart
+    const BB_BAKED_DIRS = BB_DIRS / 2 + 1;       // front round the body's left to its back; right-hand views mirror these
+    const BB_PHASES = 8;                         // walk frames per gait cycle
+    const BB_POSES = BB_PHASES + 1;              // pose 0 stands, poses 1.. walk
+    const BB_BLOCK = BB_BAKED_DIRS * BB_POSES;   // frames per look
+    const BB_FRAME = { human: [40, -22], deer: [50, -15.75], coyote: [40, -12.25] };   // rig units: a frame's side, its bottom below the body centre
+    const BB_FACE_VARIANT = 3;                   // the face baked for people; its light hair keeps the baked hair weight precise
+    // walk frames' hip swing: stepGait's swing for an adult at the species' speed
+    const BB_HUMAN_SWING = Math.min(HUMAN_SWING_MAX, Math.asin(Math.min(1, (HUMAN_STRIDE_BASE + HUMAN_STRIDE_PER_V * SPECIES.human.speed / HUMAN_LEG) / 4)));
+    const BB_STAND_SWING = BB_HUMAN_SWING / 2;   // a far person swinging less than this shows the standing frame
+    const BB_PHASE_K = BB_PHASES / (2 * Math.PI);
+    const BB_MIP_BIAS = -1.5;                    // atlas reads take a finer mip, so thin limbs stay solid as a card shrinks, as the rig's do
+
+    // Shared by the billboard lit and shadow-depth materials: per-card pose, frame and tints.
+    const BB_VERTEX_PARS = /* glsl */`
+      attribute vec4 bPose;    // rig origin x, y, z, facing
+      attribute vec4 bFrame;   // frame side and bottom (metres), look, pose
+      uniform vec2 bbGrid;     // atlas frames across and down
+      varying vec2 vBbUv;
+      #ifndef BB_DEPTH
+      attribute vec4 bTint;    // packed sRGB: people skin, shirt, pants, hair; animals their coat
+      varying vec3 vBbAxes;    // toward the baked view's eye (x, z), mirror sign: orients the frame's normals
+      varying vec3 vBbTint0, vBbTint1, vBbTint2, vBbTint3;
+      vec3 bbColor(float c) { vec3 v = floor(c / vec3(65536.0, 256.0, 1.0)); v.yz -= v.xy * 256.0; return pow(v / 255.0, vec3(2.2)); }
+      #endif
+    `;
+    // Sets bbPos (the card corner, turned about y to face the viewer), bbAxis (the body's centre line at that height) and bbToward.
+    const BB_VERTEX_MAIN = /* glsl */`
+      // toward the viewer in xz: to a perspective eye, or back along an orthographic one (the sun's shadow camera)
+      vec2 bbTo = isPerspectiveMatrix(projectionMatrix) ? cameraPosition.xz - bPose.xz : vec2(viewMatrix[0][2], viewMatrix[2][2]);
+      float bbLen = length(bbTo);
+      bbTo = bbLen > 1e-6 ? bbTo / bbLen : vec2(0.0, 1.0);
+      float bbCos = cos(bPose.w), bbSin = sin(bPose.w);
+      // the view in the body's frame (0 front, + its left) snapped to a baked one; right-hand views mirror a left-hand frame
+      float bbDir = floor(atan(bbTo.x * bbCos - bbTo.y * bbSin, bbTo.x * bbSin + bbTo.y * bbCos) * ${(BB_DIRS / (2 * Math.PI)).toFixed(6)} + 0.5);
+      float bbFlip = bbDir < -0.5 ? -1.0 : 1.0;
+      // a mirror swaps the legs, so a walk frame shows half a cycle on
+      float bbPose = bbFlip < 0.0 && bFrame.w > 0.5 ? 1.0 + floor(mod(bFrame.w + ${(BB_PHASES / 2 - 0.5).toFixed(1)}, ${BB_PHASES}.0)) : bFrame.w;
+      float bbCell = bFrame.z * ${BB_BLOCK}.0 + abs(bbDir) * ${BB_POSES}.0 + bbPose;
+      float bbRow = floor((bbCell + 0.5) / bbGrid.x);
+      vBbUv = vec2(bbCell - bbRow * bbGrid.x + (bbFlip > 0.0 ? position.x : 1.0 - position.x), bbRow + position.y) / bbGrid;
+      vec3 bbToward = vec3(bbTo.x, 0.0, bbTo.y);
+      vec3 bbAxis = bPose.xyz + vec3(0.0, bFrame.y + position.y * bFrame.x, 0.0);
+      vec3 bbPos = bbAxis + vec3(bbTo.y, 0.0, -bbTo.x) * ((position.x - 0.5) * bFrame.x);
+      #ifndef BB_DEPTH
+      float bbView = bPose.w + bbDir * ${(2 * Math.PI / BB_DIRS).toFixed(6)};
+      vBbAxes = vec3(sin(bbView), cos(bbView), bbFlip);
+      vBbTint0 = bbColor(bTint.x); vBbTint1 = bbColor(bTint.y); vBbTint2 = bbColor(bTint.z); vBbTint3 = bbColor(bTint.w);
+      #endif
+    `;
+    // Bake output, coverage-weighted (cleared texels stay 0): mode 0 sqrt tint weights and coverage, 1 sqrt untinted colour and hair weight, 2 normal.
+    const BB_BAKE_OUT = /* glsl */`
+      uniform int bakeMode;
+      vec4 bakeOut(vec3 tints, vec3 fixedColor, float hairWeight, vec3 n) {
+        if (bakeMode == 0) return vec4(sqrt(tints), 1.0);
+        if (bakeMode == 1) return vec4(sqrt(fixedColor), sqrt(0.5 * hairWeight));
+        return vec4(normalize(n) * 0.5 + 0.5, 1.0);
+      }
+    `;
+
+    // Lambert (scene sun, hemisphere, fog, shadows) on the atlas's normals and per-body tints, plus a depth twin cut to the frame's coverage.
+    function billboardMaterials(atlases, grid) {
+      const lit = new THREE.MeshLambertMaterial();
+      lit.shadowSide = THREE.DoubleSide;   // when casting, the card turns to the sun, so neither face may be culled
+      lit.onBeforeCompile = sh => {
+        sh.uniforms.bbAtlas0 = { value: atlases[0] };
+        sh.uniforms.bbAtlas1 = { value: atlases[1] };
+        sh.uniforms.bbAtlas2 = { value: atlases[2] };
+        sh.uniforms.bbGrid = { value: grid };
+        // shadows are looked up on the body's centre line, so the card is not shadowed by its own sun-facing twin
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', BB_VERTEX_PARS + '\n#include <common>')
+          .replace('#include <beginnormal_vertex>', BB_VERTEX_MAIN + '\nvec3 objectNormal = bbToward;')
+          .replace('#include <begin_vertex>', 'vec3 transformed = bbPos;')
+          .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = vec4(bbAxis, 1.0);\n#endif');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `uniform sampler2D bbAtlas0, bbAtlas1, bbAtlas2;
+          varying vec2 vBbUv;
+          varying vec3 vBbAxes, vBbTint0, vBbTint1, vBbTint2, vBbTint3;
+#include <common>`).replace('#include <map_fragment>', `
+          vec4 bbCover = texture2D(bbAtlas0, vBbUv, ${BB_MIP_BIAS.toFixed(2)});
+          if (bbCover.a < 0.5) discard;
+          float bbInv = 1.0 / bbCover.a;
+          vec3 bbW = bbCover.rgb * bbInv;
+          vec4 bbFix = texture2D(bbAtlas1, vBbUv, ${BB_MIP_BIAS.toFixed(2)}) * bbInv;
+          diffuseColor.rgb *= vBbTint0 * (bbW.r * bbW.r) + vBbTint1 * (bbW.g * bbW.g) + vBbTint2 * (bbW.b * bbW.b)
+            + vBbTint3 * (2.0 * bbFix.a * bbFix.a) + bbFix.rgb * bbFix.rgb;`).replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+          vec3 bbN = texture2D(bbAtlas2, vBbUv, ${BB_MIP_BIAS.toFixed(2)}).rgb * (2.0 * bbInv) - 1.0;
+          bbN.x *= vBbAxes.z;
+          normal = normalize((viewMatrix * vec4(vBbAxes.y * bbN.x + vBbAxes.x * bbN.z, bbN.y, vBbAxes.y * bbN.z - vBbAxes.x * bbN.x, 0.0)).xyz);`);
+      };
+      lit.customProgramCacheKey = () => 'npc-billboard-lit';
+      const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+      depth.onBeforeCompile = sh => {
+        sh.uniforms.bbAtlas0 = { value: atlases[0] };
+        sh.uniforms.bbGrid = { value: grid };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#define BB_DEPTH\n' + BB_VERTEX_PARS + '\n#include <common>')
+          .replace('#include <begin_vertex>', BB_VERTEX_MAIN + '\nvec3 transformed = bbPos;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `uniform sampler2D bbAtlas0;
+          varying vec2 vBbUv;
+#include <common>`).replace('#include <map_fragment>', `if (texture2D(bbAtlas0, vBbUv, ${BB_MIP_BIAS.toFixed(2)}).a < 0.5) discard;`);
+      };
+      depth.customProgramCacheKey = () => 'npc-billboard-depth';
+      return { lit, depth };
+    }
+
     class AnimalRenderer {
       constructor() {
         this.MAX_INSTANCES = 12000;
@@ -6299,25 +6408,19 @@ void main() {
         this.antlers = {};
         this.renderCache = { deer: null, coyote: null };
 
-        // LOW DETAIL: past perf.npcLodDist a body is one merged rest-pose instance on the body's matrix (no legs, no antlers).
-        const dh = this.PART_OFFSETS.deer.head;
-        const ch = this.PART_OFFSETS.coyote.head;
-        this.FAR_GEOMETRIES = {
-          coyote: mergeGeometries([
-            coyoteBody.clone(),
-            coyoteHead.clone().translate(ch.x, ch.y, ch.z),
-            boxAt(6.2, 10, 1.8, 0, -6.5, 6.5),
-            boxAt(6.2, 10, 1.8, 0, -6.5, -6.5)
-          ], false),
-          deer: mergeGeometries([
-            deerBody.clone(),
-            deerHead.clone().translate(dh.x, dh.y, dh.z),
-            boxAt(8.8, 13, 2.4, 0, -8.5, 10),
-            boxAt(8.8, 13, 2.4, 0, -8.5, -10)
-          ], false)
-        };
-        this.far = {};
-        this.farColKeys = { deer: [], coyote: [] };
+        // Rest-pose bounds of each box rig in rig units: body, head and legs at their offsets.
+        this.REST_BOUNDS = {};
+        for (const type of this.BOX_RIG_TYPES) {
+          const box = new THREE.Box3(), part = new THREE.Box3(), g = this.GEOMETRIES[type], at = this.PART_OFFSETS[type];
+          const add = (geo, offset) => {
+            if (!geo.boundingBox) geo.computeBoundingBox();
+            box.union(part.copy(geo.boundingBox).translate(offset));
+          };
+          add(g.body, new THREE.Vector3());
+          add(g.head, at.head);
+          for (const leg of this.LIMB_NAMES) add(g.leg, at[leg]);
+          this.REST_BOUNDS[type] = box;
+        }
 
         this._mat4 = new THREE.Matrix4();
         this._local = new THREE.Vector3();
@@ -6334,11 +6437,12 @@ void main() {
         this.passById = NPC_TYPES.map(type => ({
           type, offsets: this.PART_OFFSETS[type], pivots: this.PIVOT_OFFSETS[type], colors: this.SEX_COLORS[type],
           walkSwing: this.WALK[type], legLen: this.LEG_LEN[type], limbHalf: this.LIMB_HALF[type],
-          im: null, cache: null, far: null, farColKeys: null, antlers: null,
-          idx: 0, fidx: 0, aidx: 0, colorsDirty: false, farColorsDirty: false, full: false
+          cardFrame: BB_FRAME[type], cardLooks: null, cardTints: null,   // billboard frame (rig units), look and coat tint by sex
+          im: null, cache: null, antlers: null,
+          idx: 0, billboarded: 0, aidx: 0, colorsDirty: false, full: false
         }));
 
-        // PEOPLE: one instanced mesh, every person at every distance; per instance a pose, gait and look (4 floats each).
+        // PEOPLE: one instanced mesh for everyone nearer than perf.npcLodDist; per instance a pose, gait and look (4 floats each).
         const rest = buildHumanGeometry(), atlas = paintHumanAtlas(), mats = humanMaterials(atlas.paint, atlas.mask);
         const geometry = new THREE.InstancedBufferGeometry();
         geometry.setIndex(rest.index);
@@ -6362,11 +6466,217 @@ void main() {
           look: perInstance('iLook'),   // skin, shirt, pants (packed sRGB), face/outfit/build code
           lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot's look was written for
         };
+
+        // FAR BILLBOARDS: looks in atlas order: people by outfit and sex, then each box rig's (does then bucks; coyote coats are tints)
+        const looks = [];
+        for (let outfit = 0; outfit < HUMAN_OUTFITS; outfit++) for (let female = 0; female < 2; female++) looks.push({ type: 'human', outfit, female: female === 1 });
+        for (const type of this.BOX_RIG_TYPES) {
+          const p = this.passById[NPC_TYPE_IDS[type]], c = this.SEX_COLORS[type];
+          p.cardLooks = { female: looks.length, male: looks.length };
+          looks.push({ type, male: false });
+          if (this.ANTLERS[type]) { p.cardLooks.male = looks.length; looks.push({ type, male: true }); }
+          p.cardTints = { female: c.female.getHex(), male: c.male.getHex() };
+        }
+        const grid = new THREE.Vector2(Math.floor(2048 / BB_CELL), 0);
+        grid.y = Math.ceil(looks.length * BB_BLOCK / grid.x);
+        const atlases = this.bakeBillboards(looks, grid, rest, atlas.paint, atlas.mask);
+        // a restored WebGL context comes back with empty render targets: draw the frames again
+        renderer.domElement.addEventListener('webglcontextrestored', () => this.bakeBillboards(looks, grid, rest, atlas.paint, atlas.mask, atlases));
+        const cardMats = billboardMaterials(atlases.map(t => t.texture), grid);
+        const cards = new THREE.InstancedBufferGeometry();
+        cards.setIndex([0, 1, 2, 0, 2, 3]);
+        cards.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));   // corner: x right, y up
+        const cardMax = this.MAX_INSTANCES * NPC_TYPE_COUNT;
+        const perCard = name => {
+          const attr = new THREE.InstancedBufferAttribute(new Float32Array(cardMax * 4), 4);
+          attr.setUsage(THREE.DynamicDrawUsage);
+          cards.setAttribute(name, attr);
+          return attr;
+        };
+        cards.instanceCount = 0;
+        const cardMesh = new THREE.Mesh(cards, cardMats.lit);
+        cardMesh.customDepthMaterial = cardMats.depth;
+        cardMesh.castShadow = cardMesh.receiveShadow = true;
+        cardMesh.frustumCulled = false;
+        cardMesh.visible = false;
+        this.billboards = {
+          geometry: cards, mesh: cardMesh, max: cardMax,
+          pose: perCard('bPose'),     // x, y, z of the rig origin, facing angle
+          frame: perCard('bFrame'),   // frame side and bottom (metres), look, pose
+          tint: perCard('bTint'),     // packed sRGB tints
+          tintOwner: new Array(cardMax).fill(null)   // who each slot's tints were written for
+        };
+      }
+
+      // Draw every billboard frame with the real rigs (each look from BB_BAKED_DIRS views, standing and walking) into three atlas targets.
+      bakeBillboards(looks, grid, rest, paint, mask, atlases = null) {
+        const W = grid.x * BB_CELL, H = grid.y * BB_CELL;
+        const bakeScene = new THREE.Scene(), cam = new THREE.OrthographicCamera(0, grid.x, grid.y, 0, -10, 10);
+        const mode = { value: 0 }, trash = [];
+        // a frame's cell in atlas units: where the rig origin goes, and atlas units per rig unit
+        const place = (cell, type) => {
+          const [side, bottom] = BB_FRAME[type];
+          return [cell % grid.x + 0.5, Math.floor(cell / grid.x) - bottom / side, 1 / side];
+        };
+        const phase = q => (q - 1) * 2 * Math.PI / BB_PHASES;   // walk pose q's gait phase
+        const turn = d => -d * 2 * Math.PI / BB_DIRS;            // the facing that shows view d to a camera looking down -z
+
+        // people: the lit rig's geometry and vertex shader, one instance per frame
+        const people = looks.flatMap((l, i) => l.type === 'human' ? [i] : []);
+        const hg = new THREE.InstancedBufferGeometry().copy(rest);
+        const n = people.length * BB_BLOCK, iPose = new Float32Array(n * 4), iGait = new Float32Array(n * 4), iLook = new Float32Array(n * 4);
+        let j = 0;
+        for (const li of people) {
+          const L = { tone: 0, variant: BB_FACE_VARIANT, female: looks[li].female, buildDev: 0, outfit: looks[li].outfit, skinRGB: 0, code: 0 };
+          packHumanLook(L);
+          for (let d = 0; d < BB_BAKED_DIRS; d++) for (let q = 0; q < BB_POSES; q++, j += 4) {
+            const [x, y, k] = place(li * BB_BLOCK + d * BB_POSES + q, 'human');
+            iPose.set([x, y, 0, turn(d)], j);
+            iGait.set([k, q ? phase(q) : 0, q ? BB_HUMAN_SWING : 0, 0], j);
+            iLook.set([HUMAN_HAIR[+L.female][BB_FACE_VARIANT], 0, 0, L.code], j);   // the baked face's hair colour rides in the skin slot
+          }
+        }
+        hg.setAttribute('iPose', new THREE.InstancedBufferAttribute(iPose, 4));
+        hg.setAttribute('iGait', new THREE.InstancedBufferAttribute(iGait, 4));
+        hg.setAttribute('iLook', new THREE.InstancedBufferAttribute(iLook, 4));
+        hg.instanceCount = n;
+        const humanBake = new THREE.ShaderMaterial({
+          uniforms: { humanPaint: { value: paint }, humanMask: { value: mask }, bakeMode: mode },
+          vertexShader: HUMAN_VERTEX_PARS + `
+            varying vec3 vBakeNormal;
+            void main() {
+              ${HUMAN_VERTEX_MAIN}
+              vBakeNormal = objectNormal;
+              gl_Position = projectionMatrix * viewMatrix * vec4(humanPos, 1.0);
+            }`,
+          fragmentShader: `uniform sampler2D humanPaint, humanMask;
+            varying vec2 vHumanUv;
+            varying vec3 vHumanSkin, vBakeNormal;
+            ${BB_BAKE_OUT}
+            void main() {
+              vec3 paint = texture2D(humanPaint, vHumanUv).rgb;
+              vec4 mask = texture2D(humanMask, vHumanUv);
+              float grey = dot(paint, vec3(0.2126, 0.7152, 0.0722));
+              float hairWeight = mask.a * grey / max(dot(vHumanSkin, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+              gl_FragColor = bakeOut(grey * mask.rgb, paint * max(0.0, 1.0 - mask.r - mask.g - mask.b - mask.a), hairWeight, vBakeNormal);
+            }`
+        });
+        const hm = new THREE.Mesh(hg, humanBake);
+        hm.frustumCulled = false;
+        bakeScene.add(hm);
+        trash.push(hg, humanBake);
+
+        // animals: the near rigs' parts and posing (poseBoxRig), one instance per frame; antlers only in bucks' frames
+        const boxBake = (tinted, fixedColor) => {
+          const m = new THREE.ShaderMaterial({
+            uniforms: { bakeMode: mode, bakeTinted: { value: tinted }, bakeFixed: { value: fixedColor } },
+            vertexShader: `varying vec3 vBakeNormal;
+              void main() {
+                vBakeNormal = (instanceMatrix * vec4(normal, 0.0)).xyz;
+                gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.0);
+              }`,
+            fragmentShader: `uniform float bakeTinted;
+              uniform vec3 bakeFixed;
+              varying vec3 vBakeNormal;
+              ${BB_BAKE_OUT}
+              void main() { gl_FragColor = bakeOut(vec3(bakeTinted, 0.0, 0.0), bakeFixed * (1.0 - bakeTinted), 0.0, vBakeNormal); }`
+          });
+          trash.push(m);
+          return m;
+        };
+        const coat = boxBake(1, new THREE.Color(0x000000));   // the coat colour is each body's tint
+        for (const type of this.BOX_RIG_TYPES) {
+          const p = this.passById[NPC_TYPE_IDS[type]], g = this.GEOMETRIES[type], ant = this.ANTLERS[type];
+          const own = looks.flatMap((l, i) => l.type === type ? [i] : []), count = own.length * BB_BLOCK;
+          const parts = {};
+          for (const name of this.PART_NAMES) parts[name] = new THREE.InstancedMesh(name === 'body' ? g.body : name === 'head' ? g.head : g.leg, coat, count);
+          const antlers = ant ? new THREE.InstancedMesh(ant.geom, boxBake(0, ant.mat.color), count) : null;
+          let i = 0, ai = 0;
+          for (const li of own) for (let d = 0; d < BB_BAKED_DIRS; d++) for (let q = 0; q < BB_POSES; q++, i++) {
+            const [x, y, k] = place(li * BB_BLOCK + d * BB_POSES + q, type);
+            const male = antlers !== null && looks[li].male;
+            this._world.set(x, y, 0);
+            this._quat.setFromAxisAngle(this._yAxis, turn(d));
+            this.poseBoxRig(p, parts, i, male ? antlers : null, ai, k, q ? Math.sin(phase(q)) * p.walkSwing * 0.5 : 0);
+            if (male) ai++;
+          }
+          for (const m of Object.values(parts)) m.count = i;
+          if (antlers) antlers.count = ai;
+          for (const m of antlers ? [...Object.values(parts), antlers] : Object.values(parts)) {
+            m.frustumCulled = false;
+            bakeScene.add(m);
+            trash.push(m);
+          }
+        }
+
+        // draw each output into a multisampled target (antialiased coverage), then copy it into its atlas, which builds the mips
+        const target = new THREE.WebGLRenderTarget(W, H, { samples: Math.min(4, renderer.capabilities.maxSamples || 0) });
+        if (!atlases) atlases = [0, 1, 2].map(() => new THREE.WebGLRenderTarget(W, H, {
+          depthBuffer: false, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter
+        }));
+        const copy = new THREE.ShaderMaterial({
+          uniforms: { src: { value: target.texture } },
+          vertexShader: 'varying vec2 vUv;\nvoid main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+          fragmentShader: 'uniform sampler2D src;\nvarying vec2 vUv;\nvoid main() { gl_FragColor = texture2D(src, vUv); }',
+          depthTest: false, depthWrite: false
+        });
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), copy), copyScene = new THREE.Scene();
+        quad.frustumCulled = false;
+        copyScene.add(quad);
+        trash.push(target, copy, quad.geometry);
+        const prevTarget = renderer.getRenderTarget(), prevColor = renderer.getClearColor(new THREE.Color());
+        const prevAlpha = renderer.getClearAlpha(), prevAuto = renderer.autoClear;
+        renderer.autoClear = true;
+        renderer.setClearColor(0x000000, 0);
+        for (let m = 0; m < atlases.length; m++) {
+          mode.value = m;
+          renderer.setRenderTarget(target);
+          renderer.render(bakeScene, cam);
+          renderer.setRenderTarget(atlases[m]);
+          renderer.render(copyScene, cam);
+        }
+        renderer.setRenderTarget(prevTarget);
+        renderer.setClearColor(prevColor, prevAlpha);
+        renderer.autoClear = prevAuto;
+        for (const t of trash) t.dispose();
+        return atlases;
+      }
+
+      // Near box rig at this._world / this._quat, kp metres per rig unit: body, head (and antlers if given), four legs swung by legH.
+      poseBoxRig(p, im, idx, antlers, aidx, kp, legH) {
+        this._scale.set(kp, kp, kp);
+        this._mat4.compose(this._world, this._quat, this._scale);
+        im.body.setMatrixAt(idx, this._mat4);
+
+        this._local.copy(p.offsets.head);
+        this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
+        this._mat4.compose(this._local, this._quat, this._scale);
+        im.head.setMatrixAt(idx, this._mat4);
+        if (antlers) antlers.setMatrixAt(aidx, this._mat4);
+
+        // FL/BR and FR/BL swing opposite: one sin/cos pair per body instead of four setFromAxisAngle calls
+        const legS = Math.sin(legH), legC = Math.cos(legH);
+        const legSign = this.LIMB_SIGNS;
+        for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
+          const part = this.LIMB_NAMES[pi];
+          this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
+          this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
+
+          this._pivot.copy(p.pivots[part]);
+          this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
+
+          this._local.set(0, -p.limbHalf * kp, 0).applyQuaternion(this._quatFinal);
+          this._local.add(this._pivot);
+
+          this._mat4.compose(this._local, this._quatFinal, this._scale);
+          im[part].setMatrixAt(idx, this._mat4);
+        }
       }
 
       // Rest-pose bounds of a type's whole body in rig units (blob shadow footprints).
       restBox(type) {
-        const g = type === 'human' ? this.human.rest : this.FAR_GEOMETRIES[type];
+        if (type !== 'human') return this.REST_BOUNDS[type];
+        const g = this.human.rest;
         if (!g.boundingBox) g.computeBoundingBox();
         return g.boundingBox;
       }
@@ -6409,18 +6719,16 @@ void main() {
         H.lookOwner.fill(null);
         H.geometry.instanceCount = 0;
         H.mesh.visible = false;
+        const B = this.billboards;
+        if (!B.mesh.parent) scene.add(B.mesh);
+        B.tintOwner.fill(null);
+        B.geometry.instanceCount = 0;
+        B.mesh.visible = false;
         for (const type of this.BOX_RIG_TYPES) {
           if (this.meshes[type]) {
             for (const part of Object.values(this.meshes[type])) { scene.remove(part); part.dispose(); }
           }
-          if (this.far[type]) { scene.remove(this.far[type]); this.far[type].dispose(); }
           if (this.antlers[type]) { scene.remove(this.antlers[type]); this.antlers[type].dispose(); }
-          const far = new THREE.InstancedMesh(this.FAR_GEOMETRIES[type], this.MATERIALS[type], this.MAX_INSTANCES);
-          far.castShadow = true;
-          far.frustumCulled = false;
-          scene.add(far);
-          this.far[type] = far;
-          this.farColKeys[type] = [];
           const geom = this.GEOMETRIES[type];
           const mat = this.MATERIALS[type];
           this.meshes[type] = {
@@ -6471,25 +6779,27 @@ void main() {
         for (let ti = 0; ti < passes.length; ti++) {
           const p = passes[ti], im = this.meshes[p.type];
           p.im = im || null;
+          p.idx = 0; p.billboarded = 0; p.aidx = 0;
+          p.colorsDirty = false; p.full = false;
           if (!im) continue;
           p.cache = this.cacheFor(p.type, im);
-          p.far = this.far[p.type]; p.farColKeys = this.farColKeys[p.type]; p.antlers = this.antlers[p.type];
-          p.idx = 0; p.fidx = 0; p.aidx = 0;
-          p.colorsDirty = false; p.farColorsDirty = false; p.full = false;
+          p.antlers = this.antlers[p.type];
         }
 
         const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, owners = H.lookOwner;
         let hn = 0, lookFrom = this.MAX_INSTANCES;
+        const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, tintOwners = B.tintOwner;
+        let bn = 0, tintFrom = B.max;
 
         for (const a of animals) {
           if (!a.alive) continue;
           const human = a.typeId === HUMAN_TYPE_ID;
           const p = passes[a.typeId];
           if (human) {
-            if (hn >= this.MAX_INSTANCES) continue;
+            if (hn + p.billboarded >= this.MAX_INSTANCES) continue;
           } else {
             if (p.im === null || p.full) continue;
-            if (p.idx + p.fidx >= this.MAX_INSTANCES) { p.full = true; continue; }
+            if (p.idx + p.billboarded >= this.MAX_INSTANCES) { p.full = true; continue; }
           }
           const im = p.im;
 
@@ -6499,7 +6809,6 @@ void main() {
           const hs = a.heightScale;
           // City: rigs scale uniformly by heightScale
           const kp = k * hs;
-          this._scale.set(kp, kp, kp);
 
           const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
           if (human) this.stepGait(a, deltaTime, kp);
@@ -6516,10 +6825,38 @@ void main() {
               ax2 * sx + ay2 * sy + az2 * sz + d2 < nr || ax3 * sx + ay3 * sy + az3 * sz + d3 < nr ||
               ax4 * sx + ay4 * sy + az4 * sz + d4 < nr || ax5 * sx + ay5 * sy + az5 * sz + d5 < nr) continue;
           }
-          const groundOffset = a.footLift() * NPC_UNIT;
+          const originY = a.position.y - (1 - s) * a.footLift() * NPC_UNIT;
+          const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
+          if (ex * ex + ey * ey + ez * ez > lod2) {
+            // FAR: one billboard; its frame is picked here (look, pose) and in the shader (view)
+            const o = bn * 4, fr = p.cardFrame;
+            bPose[o] = a.position.x; bPose[o + 1] = originY; bPose[o + 2] = a.position.z; bPose[o + 3] = a.facingAngle;
+            bFrame[o] = fr[0] * kp; bFrame[o + 1] = fr[1] * kp;
+            if (human) {
+              const L = a.look;
+              bFrame[o + 2] = L.outfit * 2 + (L.female ? 1 : 0);
+              bFrame[o + 3] = a.gaitSwing < BB_STAND_SWING ? 0 : 1 + Math.round(a.gaitPhase * BB_PHASE_K) % BB_PHASES;
+            } else {
+              bFrame[o + 2] = p.cardLooks[a.sex];
+              bFrame[o + 3] = a.moving ? 1 + ((Math.round(a.animTime * BB_PHASE_K) % BB_PHASES) + BB_PHASES) % BB_PHASES : 0;
+            }
+            if (tintOwners[bn] !== a) {
+              tintOwners[bn] = a;
+              if (human) {
+                const L = a.look;
+                bTint[o] = L.skinRGB; bTint[o + 1] = L.shirt; bTint[o + 2] = L.pants; bTint[o + 3] = HUMAN_HAIR[+L.female][L.variant];
+              } else {
+                bTint[o] = p.cardTints[a.sex]; bTint[o + 1] = bTint[o + 2] = bTint[o + 3] = 0;
+              }
+              if (bn < tintFrom) tintFrom = bn;
+            }
+            bn++;
+            p.billboarded++;
+            continue;
+          }
           if (human) {
             const o = hn * 4;
-            hPose[o] = a.position.x; hPose[o + 1] = a.position.y - (1 - s) * groundOffset; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
+            hPose[o] = a.position.x; hPose[o + 1] = originY; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
             hGait[o] = kp; hGait[o + 1] = a.gaitPhase; hGait[o + 2] = a.gaitSwing; hGait[o + 3] = a.gaitRun;
             if (owners[hn] !== a) {
               owners[hn] = a;
@@ -6530,24 +6867,8 @@ void main() {
             hn++;
             continue;
           }
-          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
-          this._world.set(a.position.x, a.position.y - (1 - s) * groundOffset, a.position.z);
-          this._mat4.compose(this._world, this._quat, this._scale);
 
-          const col = p.colors[a.sex];
-          const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
-          if (ex * ex + ey * ey + ez * ez > lod2) {
-            p.far.setMatrixAt(p.fidx, this._mat4);
-            if (p.farColKeys[p.fidx] !== col) {
-              p.farColKeys[p.fidx] = col;
-              p.far.setColorAt(p.fidx, col);
-              p.farColorsDirty = true;
-            }
-            p.fidx++;
-            continue;
-          }
-
-          const idx = p.idx;
+          const idx = p.idx, col = p.colors[a.sex];
           if (p.cache.colKeys[idx] !== col) {
             p.cache.colKeys[idx] = col;
             for (let pi = 0; pi < this.PART_NAMES.length; pi++) {
@@ -6555,40 +6876,11 @@ void main() {
             }
             p.colorsDirty = true;
           }
-
-          const isIdle = !a.moving;
-          const walkAmp = isIdle ? 0 : swing;
-          const t = a.animTime;
-
-          const sinT = Math.sin(t);
-          // FL/BR and FR/BL swing opposite: one sin/cos pair per NPC instead of four setFromAxisAngle calls
-          const legH = sinT * walkAmp * 0.5;
-          const legS = Math.sin(legH), legC = Math.cos(legH);
-          const legSign = this.LIMB_SIGNS;
-
-          im.body.setMatrixAt(idx, this._mat4);
-
-          this._local.copy(p.offsets.head);
-          this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
-          this._mat4.compose(this._local, this._quat, this._scale);
-          im.head.setMatrixAt(idx, this._mat4);
-          if (p.antlers && a.sex === 'male') p.antlers.setMatrixAt(p.aidx++, this._mat4);
-
-          for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
-            const part = this.LIMB_NAMES[pi];
-            this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
-            this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
-
-            this._pivot.copy(p.pivots[part]);
-            this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
-
-            this._local.set(0, -p.limbHalf * kp, 0).applyQuaternion(this._quatFinal);
-            this._local.add(this._pivot);
-
-            this._mat4.compose(this._local, this._quatFinal, this._scale);
-            im[part].setMatrixAt(idx, this._mat4);
-          }
-
+          this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
+          this._world.set(a.position.x, originY, a.position.z);
+          const antlers = p.antlers && a.sex === 'male' ? p.antlers : null;
+          this.poseBoxRig(p, im, idx, antlers, p.aidx, kp, a.moving ? Math.sin(a.animTime) * swing * 0.5 : 0);
+          if (antlers) p.aidx++;
           p.idx = idx + 1;
         }
 
@@ -6599,6 +6891,13 @@ void main() {
           AnimalRenderer.queueUpload(H.gait, 0, hn);
           if (lookFrom < hn) AnimalRenderer.queueUpload(H.look, lookFrom, hn);
         }
+        B.geometry.instanceCount = bn;
+        B.mesh.visible = bn > 0;
+        if (bn > 0) {
+          AnimalRenderer.queueUpload(B.pose, 0, bn);
+          AnimalRenderer.queueUpload(B.frame, 0, bn);
+          if (tintFrom < bn) AnimalRenderer.queueUpload(B.tint, tintFrom, bn);
+        }
         for (const type of this.BOX_RIG_TYPES) {
           const p = passes[NPC_TYPE_IDS[type]];
           if (p.im === null) continue;
@@ -6608,8 +6907,6 @@ void main() {
             if (p.colorsDirty) perf.instanceColors(mesh, p.idx);
           }
           if (p.antlers) perf.instances(p.antlers, p.aidx);
-          perf.instances(p.far, p.fidx);
-          if (p.farColorsDirty) perf.instanceColors(p.far, p.fidx);
         }
       }
     }
@@ -13093,9 +13390,9 @@ void main() {
           Object.entries(p.getAttributes()).map(([k, v]) => `${k}@${v.location}`).join(' ');
       },
 
-      // draw only the people from the live camera into a small target and count what lands
+      // draw only the detailed (near) people from the live camera into a small target and count what lands
       runProbe(n) {
-        if (n === 0) return 'Probe: no people to draw this tick';
+        if (n === 0) return 'Probe: no detailed people to draw this tick';
         if (renderer.xr.isPresenting) return 'Probe: skipped in VR';
         if (sun.shadow.needsUpdate) return 'Probe: skipped while the shadow map redraws';
         if (!this.probe) {
@@ -13122,7 +13419,7 @@ void main() {
         scene.background = bg;
         let drawn = 0;
         for (let i = 0; i < px.length; i += 4) if (!(px[i] > 235 && px[i + 1] < 20 && px[i + 2] > 235)) drawn++;
-        return `Probe (people only, your camera, ${DEBUG_PROBE_PX}x${DEBUG_PROBE_PX}): ${drawn} px drawn, GL errors ${this.glErrors()}`;
+        return `Probe (detailed people only, your camera, ${DEBUG_PROBE_PX}x${DEBUG_PROBE_PX}): ${drawn} px drawn, GL errors ${this.glErrors()}`;
       },
 
       refresh() {
@@ -13151,7 +13448,7 @@ void main() {
               if (d < near) { near = d; nearest = a; }
             }
             const p = nearest && nearest.position;
-            lines.push(`People: ${alive} alive, ${n} drawn this tick, nearest ` +
+            lines.push(`People: ${alive} alive, ${n} detailed and ${animalRenderer.passById[HUMAN_TYPE_ID].billboarded} billboards drawn this tick, nearest ` +
               (p ? `${near.toFixed(1)} m, on screen ${yn(npcOnScreen(p.x, p.y, p.z, NPC_BODY_R))}` : 'none'),
               `People mesh: in scene ${yn(H.mesh.parent === scene)}, visible ${yn(H.mesh.visible)}, instance count ${n}, max ${g._maxInstanceCount ?? 'unset'}`,
               `Slot 0: pose [${f3(H.pose.array.subarray(0, 4))}] gait [${f3(H.gait.array.subarray(0, 4))}] look [${f3(H.look.array.subarray(0, 4))}]`,
@@ -13163,7 +13460,7 @@ void main() {
               if (!r.ok) { failed++; lines.push(`FAILED program ${prog.id} (${prog.name}): ${r.log}`); }
             }
             lines.push(`Shaders: ${renderer.info.programs.length} programs, ${failed} failed to link`, this.runProbe(n));
-            const rig = t => animalRenderer.meshes[t] ? `near ${animalRenderer.meshes[t].body.count}, far ${animalRenderer.far[t].count}` : 'none';
+            const rig = t => animalRenderer.meshes[t] ? `near ${animalRenderer.meshes[t].body.count}, billboards ${animalRenderer.passById[NPC_TYPE_IDS[t]].billboarded}` : 'none';
             lines.push(`Deer drawn: ${rig('deer')} | Coyotes drawn: ${rig('coyote')}`);
           } else lines.push('World: not loaded yet');
         } catch (e) {
