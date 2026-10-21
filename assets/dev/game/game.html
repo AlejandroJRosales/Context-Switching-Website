@@ -1214,7 +1214,7 @@
     const GROUND_SNAP = 0.5;
 
     // Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
-    const LAYER_BIAS = { area: 2, water: 3, road: 4, mark: 4.5, path: 5, floor: 6 };
+    const LAYER_BIAS = { area: 2, water: 3, road: 4, mark: 4.5, path: 5 };
 
 
     // LAYER TABLES
@@ -1474,7 +1474,8 @@
       catch (e) { return null; }
     }
     const startGraphics = savedGraphics();
-    const startLowPower = startGraphics ? startGraphics === 'low' : matchMedia('(pointer: coarse)').matches;
+    // high graphics unless the player last chose low
+    const startLowPower = startGraphics === 'low';
     const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
     renderer.setSize(innerWidth, innerHeight);
@@ -3188,6 +3189,7 @@ void main() {
       const ents = pointIndex(features.entrances);
       const iw = rgb(0xe4ded2), floorC = rgb(0x8f7358), ceilC = rgb(0xf1eee8), trim = rgb(0x4e3d30);
       const solids = [];
+      indoorClip.begin(list);
 
       for (const s of list) {
         const { buf, roofBuf } = chunkOf(s);
@@ -3233,7 +3235,11 @@ void main() {
 
         pushCap(buf, s.cap, s.top, wc, [0, 1, 0]);
         pushCap(buf, s.cap, s.ceil, ceilC, [0, -1, 0]);
-        pushCap(floorBuf, s.cap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
+        // floor inside the walls (inner outline), so its depth bias never reaches the outer face
+        const floorCap = capOf(R.inner, HR.map(h => h.inner)) || s.cap;
+        // ground layers are cut away inside the walls, so the floor needs no depth bias
+        indoorClip.fill([R.inner, ...HR.map(h => h.inner)]);
+        pushCap(floorBuf, floorCap, s.base + FLOOR_Y, floorC, [0, 1, 0]);
         if (s.raised) pushCap(buf, s.cap, s.base, wc, [0, -1, 0]);
         // FACADE: parapet and rooftop plant on flat roofs only.
         if (!s.roofShape) roofDetail(buf, s, R, wc);
@@ -3245,6 +3251,7 @@ void main() {
         }
       }
 
+      indoorClip.finish();
       const count = list.length;
       // one facade material shared by every chunk (one program, one set of uniforms)
       const facade = facadeMaterial();
@@ -3253,7 +3260,7 @@ void main() {
         if (mesh) mesh.castShadow = mesh.receiveShadow = true;
       }
       const fg = bufGeom(floorBuf);
-      const floorMesh = fg ? addLayer([fg], litMaterial(LAYER_BIAS.floor)) : null;
+      const floorMesh = fg ? addLayer([fg], litMaterial()) : null;
       if (floorMesh) floorMesh.receiveShadow = true;
 
       buildGround(features);
@@ -3297,7 +3304,7 @@ void main() {
       const areas = lay(areaGeoms), greens = lay(greenGeoms);
       for (const g of areas) matchWildGround(g, false);
       for (const g of greens) matchWildGround(g, true);
-      const areaMesh = addLayer(areas.concat(greens), lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area))));
+      const areaMesh = addLayer(areas.concat(greens), indoorClip.apply(lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area)))));
       // the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
       if (areaMesh) cellCull(areaMesh, true).receiveShadow = true;
       // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
@@ -3310,9 +3317,9 @@ void main() {
         waterMesh.renderOrder = 1;
       }
       // roads and paths take the buildings' and animals' shadows like the ground under them
-      const roadMesh = rg ? addLayer(lay([rg]), lampLight.apply(litMaterial(LAYER_BIAS.road))) : null;
+      const roadMesh = rg ? addLayer(lay([rg]), indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.road)))) : null;
       if (roadMesh) cellCull(roadMesh).receiveShadow = true;
-      const pathMesh = pg ? addLayer(lay([pg]), lampLight.apply(litMaterial(LAYER_BIAS.path))) : null;
+      const pathMesh = pg ? addLayer(lay([pg]), indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.path)))) : null;
       if (pathMesh) cellCull(pathMesh).receiveShadow = true;
     }
 
@@ -4544,12 +4551,16 @@ void main() {
         return w;
       }
 
-      randNormal(mean = 1.0, std = 0.12) {
-        let u, v;
+      // Standard normal sample (Box-Muller), unclamped.
+      gauss() {
+        let u;
         do { u = Math.random(); } while (u === 0);
-        v = Math.random();
-        const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-        return Math.max(0.55, Math.min(1.55, mean + std * n));
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+      }
+
+      // Normal sample clamped to [0.55, 1.55]: only for scale factors centred near 1.
+      randNormalClamped(mean = 1.0, std = 0.12) {
+        return Math.max(0.55, Math.min(1.55, mean + std * this.gauss()));
       }
     }
 
@@ -4884,7 +4895,7 @@ void main() {
           const metres = NPC_HEIGHT_MEAN + NPC_HEIGHT_STD * Math.max(-4, Math.min(4, z));
           this.heightScale = metres / (38.55 * NPC_UNIT);
         } else {
-          this.heightScale = NPC_HUMAN_HS * brains.randNormal(1.0, 0.10);
+          this.heightScale = NPC_HUMAN_HS * brains.randNormalClamped(1.0, 0.10);
         }
 
         this.waterNeed = Math.random() * 0.05;
@@ -5585,7 +5596,7 @@ void main() {
         // the Arena's limits and mutation step assumed a mean heightScale of 1; here the mean is NPC_HUMAN_HS
         const hsMean = NPC_HUMAN_HS;
         child.heightScale = Math.max(0.55 * hsMean,
-          Math.min(1.55 * hsMean, parentAvg + brains.randNormal(0, 0.04 * hsMean)));
+          Math.min(1.55 * hsMean, parentAvg + 0.04 * hsMean * brains.gauss()));
 
         if (this.brain && partner.brain) {
           const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -6600,6 +6611,106 @@ void main() {
       }
     };
 
+    // INDOOR CLIP: ground layers (land cover, roads, paths, markings) are discarded inside each building's inner wall
+    // outline, so the floor wins with no depth bias. Texels are filled by centre; at INDOOR_CELL a texel reaches at most
+    // ~0.2 m past the inner outline, which stays inside the wall's thickness.
+    const INDOOR_CELL = 0.25;
+    const indoorClip = {
+      empty: null, tex: null, data: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: INDOOR_CELL,
+      uniforms: { uIndoorMap: { value: null }, uIndoorRect: { value: new THREE.Vector4(0, 0, 0, 0) } },
+
+      reset() {
+        if (this.tex) { this.tex.dispose(); this.tex = null; }
+        if (!this.empty) {
+          this.empty = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
+          this.empty.needsUpdate = true;
+        }
+        this.data = null; this.cols = this.rows = 0;
+        this.uniforms.uIndoorMap.value = this.empty;
+        this.uniforms.uIndoorRect.value.set(0, 0, 0, 0);
+      },
+
+      // a mask over every building's bounds, coarsened if needed to fit the GPU's texture limit
+      begin(list) {
+        this.reset();
+        if (!list.length) return;
+        let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+        for (const s of list) {
+          if (s.minX < minX) minX = s.minX; if (s.maxX > maxX) maxX = s.maxX;
+          if (s.minZ < minZ) minZ = s.minZ; if (s.maxZ > maxZ) maxZ = s.maxZ;
+        }
+        const lim = renderer.capabilities.maxTextureSize;
+        const cell = Math.max(INDOOR_CELL, (maxX - minX + 2) / lim, (maxZ - minZ + 2) / lim);
+        this.cell = cell;
+        this.x0 = minX - 1; this.z0 = minZ - 1;
+        this.cols = Math.min(lim, Math.ceil((maxX - minX + 2) / cell));
+        this.rows = Math.min(lim, Math.ceil((maxZ - minZ + 2) / cell));
+        this.data = new Uint8Array(this.cols * this.rows);
+      },
+
+      // even-odd scanline fill of one building's inner outline and its courtyard outlines
+      fill(rings) {
+        if (!this.data) return;
+        let zMin = Infinity, zMax = -Infinity;
+        for (const p of rings[0]) { if (p[1] < zMin) zMin = p[1]; if (p[1] > zMax) zMax = p[1]; }
+        const cell = this.cell, cols = this.cols;
+        const r0 = Math.max(0, Math.floor((zMin - this.z0) / cell));
+        const r1 = Math.min(this.rows - 1, Math.floor((zMax - this.z0) / cell));
+        const xs = [];
+        for (let r = r0; r <= r1; r++) {
+          const zc = this.z0 + (r + 0.5) * cell;
+          xs.length = 0;
+          for (const pts of rings) {
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+              const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+              if ((zi > zc) !== (zj > zc)) xs.push(xi + (zc - zi) * (xj - xi) / (zj - zi));
+            }
+          }
+          xs.sort((a, b) => a - b);
+          const row = r * cols;
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const c0 = Math.max(0, Math.ceil((xs[k] - this.x0) / cell - 0.5));
+            const c1 = Math.min(cols - 1, Math.floor((xs[k + 1] - this.x0) / cell - 0.5));
+            for (let c = c0; c <= c1; c++) this.data[row + c] = 255;
+          }
+        }
+      },
+
+      finish() {
+        if (!this.data) return;
+        const tex = new THREE.DataTexture(this.data, this.cols, this.rows, THREE.RedFormat);
+        tex.unpackAlignment = 1;
+        tex.minFilter = tex.magFilter = THREE.NearestFilter;
+        tex.needsUpdate = true;
+        this.tex = tex;
+        this.uniforms.uIndoorMap.value = tex;
+        this.uniforms.uIndoorRect.value.set(this.x0, this.z0, 1 / (this.cols * this.cell), 1 / (this.rows * this.cell));
+        this.data = null;
+      },
+
+      // Adds the discard to a built-in material, keeping any onBeforeCompile it already has.
+      apply(mat) {
+        if (!this.uniforms.uIndoorMap.value) this.reset();
+        const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+        const u = this.uniforms;
+        mat.onBeforeCompile = (sh, r) => {
+          prev.call(mat, sh, r);
+          sh.uniforms.uIndoorMap = u.uIndoorMap;
+          sh.uniforms.uIndoorRect = u.uIndoorRect;
+          sh.vertexShader = 'varying vec2 vIndoorXZ;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vIndoorXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+          sh.fragmentShader = 'uniform sampler2D uIndoorMap;\nuniform vec4 uIndoorRect;\nvarying vec2 vIndoorXZ;\n' +
+            sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  {
+    vec2 iuv = (vIndoorXZ - uIndoorRect.xy) * uIndoorRect.zw;
+    if (iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0 && texture2D(uIndoorMap, iuv).r > 0.5) discard;
+  }`);
+        };
+        mat.customProgramCacheKey = () => prevKey.call(mat) + '|indoor';
+        return mat;
+      }
+    };
+
     // Painted water in a 1 m mask with roads stamped dry (bridges); its bed deepens from the shore up to MAX_DEPTH.
     const cityWater = {
       MAX_DEPTH: 4,                  // metres of water at the deepest
@@ -7498,7 +7609,7 @@ void main() {
         const mg = bufGeom(buf);
         if (!mg) return;
         const geoms = elevation.active ? [drape(mg)].filter(Boolean) : [mg];
-        const mesh = addLayer(geoms, lampLight.apply(litMaterial(LAYER_BIAS.mark)));
+        const mesh = addLayer(geoms, indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.mark))));
         if (mesh) mesh.receiveShadow = true;
       }
     };
@@ -13190,6 +13301,7 @@ void main() {
       occ.clear();
       cityWater.clear();
       waterClip.reset();
+      indoorClip.reset();
       streets.clear();
       cover.clear();
       lampLight.reset();
