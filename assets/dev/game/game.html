@@ -947,6 +947,29 @@
       display: block;
     }
 
+    /* Debug readout: selectable text in a game that otherwise blocks selection */
+    #debuginfo {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      height: 240px;
+      margin: 12px 0 0;
+      padding: 8px;
+      resize: vertical;
+      background: rgba(16, 19, 26, 0.6);
+      color: rgba(232, 228, 220, 0.85);
+      border: 1px solid rgba(232, 228, 220, 0.3);
+      border-radius: 3px;
+      font: 400 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
+    }
+
+    #debuginfo[hidden] {
+      display: none;
+    }
+
     #fps {
       margin: 12px 0 0;
       font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
@@ -1124,7 +1147,9 @@
       <button id="game" aria-pressed="false">Survivor</button>
       <button id="neweco" hidden>New ecosystem</button>
       <button id="tomenu">Back to intro</button>
+      <button id="debug" aria-pressed="false">Debug</button>
     </div>
+    <textarea id="debuginfo" readonly hidden spellcheck="false" aria-label="Debug info"></textarea>
     <p id="fps"></p>
   </div>
   <div id="vr-overlay">
@@ -1480,7 +1505,7 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
     renderer.setSize(innerWidth, innerHeight);
     // Skip three's shader log checks (~0.5 s of load); a shader that fails to compile no longer logs why.
-    renderer.debug.checkShaderErrors = true;   // DEBUG BUILD: report shader errors
+    renderer.debug.checkShaderErrors = false;
     document.body.appendChild(renderer.domElement);
     renderer.xr.enabled = true;
     renderer.shadowMap.enabled = false;          // Graphics: high turns sun shadows on over wild terrain
@@ -12940,6 +12965,157 @@ void main() {
       vitalsEl.blur();
       invalidate();
     });
+
+    // DEBUG (settings): a copyable readout of the GPU, the people renderer and recent errors, refreshed each second while shown.
+    const debugEl = document.getElementById('debug');
+    const debugInfoEl = document.getElementById('debuginfo');
+    const DEBUG_PROBE_LAYER = 7;                       // the probe camera sees only the people and the scene lights
+    const DEBUG_PROBE_PX = 64;
+    const DEBUG_PROBE_BG = new THREE.Color(1, 0, 1);   // magenta clear, so any drawn texel counts
+    const debugErrors = [];                            // the last few script errors since load
+    const debugError = msg => { debugErrors.push(msg); if (debugErrors.length > 5) debugErrors.shift(); };
+    addEventListener('error', e => debugError(`${e.message} (line ${e.lineno})`));
+    addEventListener('unhandledrejection', e => debugError('unhandled: ' + (e.reason && e.reason.message || e.reason)));
+
+    const debugReadout = {
+      timer: 0,
+      baseRender: null,     // renderer.render as the game set it up; wrapped only while Debug is on
+      mainCalls: -1,        // the last frame's main-scene draw calls and triangles (-1: none drawn yet)
+      mainTris: 0,
+      linked: new Map(),    // program id -> { ok, log }
+      probe: null,
+
+      show(on) {
+        debugInfoEl.hidden = !on;
+        debugEl.classList.toggle('sel', on);
+        debugEl.setAttribute('aria-pressed', String(on));
+        clearInterval(this.timer);
+        if (!this.baseRender) this.baseRender = renderer.render;
+        if (!on) { renderer.render = this.baseRender; return; }
+        const base = this.baseRender, self = this;
+        renderer.render = function (s, c) {
+          base.call(this, s, c);
+          if (s === scene) { self.mainCalls = renderer.info.render.calls; self.mainTris = renderer.info.render.triangles; }
+        };
+        this.refresh();
+        this.timer = setInterval(() => this.refresh(), 1000);
+      },
+
+      glErrors() {
+        const gl = renderer.getContext(), out = [];
+        let e;
+        while ((e = gl.getError()) !== gl.NO_ERROR && out.length < 4) out.push('0x' + e.toString(16));
+        return out.join(' ') || 'none';
+      },
+
+      // link status and logs read from GL once per program, so the game can keep three's own checks off
+      link(p) {
+        let r = this.linked.get(p.id);
+        if (!r) {
+          const gl = renderer.getContext(), ok = !!gl.getProgramParameter(p.program, gl.LINK_STATUS);
+          const log = ok ? '' : [gl.getProgramInfoLog(p.program), ...(gl.getAttachedShaders(p.program) || []).map(sh => gl.getShaderInfoLog(sh))]
+            .filter(Boolean).join(' | ').slice(0, 1500);
+          this.linked.set(p.id, r = { ok, log });
+        }
+        return r;
+      },
+
+      programInfo(mat) {
+        const p = renderer.properties.get(mat).currentProgram;
+        if (!p) return 'not compiled yet';
+        const r = this.link(p);
+        return `program ${p.id}, linked ${r.ok ? 'yes' : 'NO: ' + r.log}, inputs ` +
+          Object.entries(p.getAttributes()).map(([k, v]) => `${k}@${v.location}`).join(' ');
+      },
+
+      // draw only the people from the live camera into a small target and count what lands
+      runProbe(n) {
+        if (n === 0) return 'Probe: no people to draw this tick';
+        if (renderer.xr.isPresenting) return 'Probe: skipped in VR';
+        if (sun.shadow.needsUpdate) return 'Probe: skipped while the shadow map redraws';
+        if (!this.probe) {
+          animalRenderer.human.mesh.layers.enable(DEBUG_PROBE_LAYER);
+          for (const l of [hemi, sun, moon]) l.layers.enable(DEBUG_PROBE_LAYER);
+          this.probe = {
+            target: new THREE.WebGLRenderTarget(DEBUG_PROBE_PX, DEBUG_PROBE_PX), cam: new THREE.PerspectiveCamera(),
+            px: new Uint8Array(DEBUG_PROBE_PX * DEBUG_PROBE_PX * 4)
+          };
+        }
+        const { target, cam, px } = this.probe;
+        cam.copy(camera, false);
+        cam.layers.set(DEBUG_PROBE_LAYER);
+        cam.updateMatrixWorld();
+        // the same output encoding as the real frame, so the probe uses the same shader variant
+        target.texture.colorSpace = graphics.high ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+        const bg = scene.background, prevTarget = renderer.getRenderTarget();
+        scene.background = DEBUG_PROBE_BG;
+        this.glErrors();
+        renderer.setRenderTarget(target);
+        this.baseRender.call(renderer, scene, cam);
+        renderer.readRenderTargetPixels(target, 0, 0, DEBUG_PROBE_PX, DEBUG_PROBE_PX, px);
+        renderer.setRenderTarget(prevTarget);
+        scene.background = bg;
+        let drawn = 0;
+        for (let i = 0; i < px.length; i += 4) if (!(px[i] > 235 && px[i + 1] < 20 && px[i + 2] > 235)) drawn++;
+        return `Probe (people only, your camera, ${DEBUG_PROBE_PX}x${DEBUG_PROBE_PX}): ${drawn} px drawn, GL errors ${this.glErrors()}`;
+      },
+
+      refresh() {
+        // only while the settings sheet shows it, and held still while you select
+        if (!settingsEl.classList.contains('on') || document.activeElement === debugInfoEl) return;
+        const lines = [];
+        try {
+          const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+          const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+          const yn = b => (b ? 'yes' : 'no'), f3 = a => Array.from(a, v => +v.toFixed(3)).join(', ');
+          lines.push(`Nova Orbis debug, ${new Date().toISOString()}`,
+            `GPU: ${ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)} | ${gl.getParameter(gl.VERSION)} | context lost: ${yn(gl.isContextLost())}`,
+            `Browser: ${navigator.userAgent}`,
+            `Screen: ${innerWidth}x${innerHeight} css, dpr ${devicePixelRatio}, render scale ${renderer.getPixelRatio()}, buffer ${size.x}x${size.y}`,
+            `Limits: attributes ${gl.getParameter(gl.MAX_VERTEX_ATTRIBS)}, texture units ${gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)}, MSAA ${renderer.capabilities.maxSamples}`,
+            `Graphics: ${graphics.high ? 'high' : 'low'} | shadow map ${renderer.shadowMap.enabled ? 'on' : 'off'} | world ${activeWorld ? activeWorld.kind : 'none'}`,
+            `Main render: ${this.mainCalls < 0 ? 'no frame drawn since Debug was turned on' : `${this.mainCalls} draw calls, ${this.mainTris} triangles in the last frame`}`,
+            `GL errors since last refresh: ${this.glErrors()}`);
+          if (world.ready) {
+            const H = animalRenderer.human, g = H.geometry, n = g.instanceCount;
+            let alive = 0, near = Infinity, nearest = null;
+            for (const a of world.animals) {
+              if (!a.alive || a.typeId !== HUMAN_TYPE_ID) continue;
+              alive++;
+              const d = Math.hypot(a.position.x - viewPos.x, a.position.z - viewPos.z);
+              if (d < near) { near = d; nearest = a; }
+            }
+            const p = nearest && nearest.position;
+            lines.push(`People: ${alive} alive, ${n} drawn this tick, nearest ` +
+              (p ? `${near.toFixed(1)} m, on screen ${yn(npcOnScreen(p.x, p.y, p.z, NPC_BODY_R))}` : 'none'),
+              `People mesh: in scene ${yn(H.mesh.parent === scene)}, visible ${yn(H.mesh.visible)}, instance count ${n}, max ${g._maxInstanceCount ?? 'unset'}`,
+              `Slot 0: pose [${f3(H.pose.array.subarray(0, 4))}] gait [${f3(H.gait.array.subarray(0, 4))}] look [${f3(H.look.array.subarray(0, 4))}]`,
+              'People shader (lit): ' + this.programInfo(H.mesh.material),
+              'People shader (shadow): ' + this.programInfo(H.mesh.customDepthMaterial));
+            let failed = 0;
+            for (const prog of renderer.info.programs) {
+              const r = this.link(prog);
+              if (!r.ok) { failed++; lines.push(`FAILED program ${prog.id} (${prog.name}): ${r.log}`); }
+            }
+            lines.push(`Shaders: ${renderer.info.programs.length} programs, ${failed} failed to link`, this.runProbe(n));
+            const rig = t => animalRenderer.meshes[t] ? `near ${animalRenderer.meshes[t].body.count}, far ${animalRenderer.far[t].count}` : 'none';
+            lines.push(`Deer drawn: ${rig('deer')} | Coyotes drawn: ${rig('coyote')}`);
+          } else lines.push('World: not loaded yet');
+        } catch (e) {
+          lines.push('Readout error: ' + e.message);
+        }
+        lines.push('Script errors: ' + (debugErrors.length ? '\n  ' + debugErrors.join('\n  ') : 'none'));
+        debugInfoEl.value = lines.join('\n');
+      }
+    };
+
+    debugEl.addEventListener('click', () => {
+      debugReadout.show(debugInfoEl.hidden);
+      debugEl.blur();
+    });
+    debugInfoEl.addEventListener('focus', () => debugInfoEl.select());                // one tap selects it all for copying
+    debugInfoEl.addEventListener('contextmenu', e => e.stopPropagation());           // keeps the long-press copy menu while playing
+    debugInfoEl.addEventListener('keydown', e => { if (e.code !== 'Escape') e.stopPropagation(); });   // keys here do not steer the player
     // HUD off: the Arena's clearHud (text, crosshair, vitals and vision rays hide together)
     let hudOn = true, raysBeforeHud = 'single';
     function setHud(on) {
@@ -13821,75 +13997,6 @@ void main() {
     const sizeOutEl = document.getElementById('sizeOut');
     const customRowEl = document.getElementById('customrow');
     const startGoEl = document.getElementById('startgo');
-    // DEBUG BUILD ONLY: on-screen diagnostics for the people renderer; remove before release.
-    {
-      const box = document.createElement('pre');
-      box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;margin:0;padding:4px 6px;font:10px/1.3 ui-monospace,monospace;color:#d8ffd8;background:rgba(0,0,0,0.78);white-space:pre-wrap;word-break:break-all;pointer-events:none;max-height:75vh;overflow:hidden';
-      document.body.appendChild(box);
-      const notes = [];
-      const note = s => { notes.push(String(s).slice(0, 900)); if (notes.length > 6) notes.shift(); };
-      addEventListener('error', e => note('JS error: ' + e.message + ' @' + e.lineno));
-      addEventListener('unhandledrejection', e => note('promise: ' + (e.reason && e.reason.message || e.reason)));
-      renderer.debug.onShaderError = (g, program, vs, fs) => note('SHADER FAILED\nprogram: ' + g.getProgramInfoLog(program) + '\nvertex: ' + g.getShaderInfoLog(vs) + '\nfragment: ' + g.getShaderInfoLog(fs));
-      const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-      const glErrors = () => { const out = []; let e; while ((e = gl.getError()) !== gl.NO_ERROR && out.length < 4) out.push('0x' + e.toString(16)); return out.join(' ') || 'none'; };
-      // after one main-scene render a second: GL errors and draw stats
-      const baseRender = renderer.render.bind(renderer);
-      let wantMain = false, mainLine = 'main render: not sampled yet';
-      renderer.render = (s, c) => {
-        baseRender(s, c);
-        if (wantMain && s === scene) {
-          wantMain = false;
-          const r = renderer.info.render;
-          mainLine = `main render: calls ${r.calls} triangles ${r.triangles} GL errors ${glErrors()}`;
-        }
-      };
-      // probe: draw only the people (plus the scene's lights) from the live camera into a 64x64 target
-      const H = animalRenderer.human, LAYER = 7, PX = 64;
-      H.mesh.layers.enable(LAYER);
-      for (const l of [hemi, sun, moon]) l.layers.enable(LAYER);
-      const probeTarget = new THREE.WebGLRenderTarget(PX, PX), probeCam = new THREE.PerspectiveCamera(), px = new Uint8Array(PX * PX * 4);
-      const f3 = a => Array.from(a, v => +v.toFixed(3)).join(', ');
-      setInterval(() => {
-        const lines = [`GPU ${gpu} | context lost ${gl.isContextLost()} | graphics ${graphics.high ? 'high' : 'low'} | shadow map ${renderer.shadowMap.enabled}`, mainLine];
-        wantMain = true;
-        try {
-          if (world.ready) {
-            const g = H.geometry, n = g.instanceCount;
-            let people = 0, near = Infinity;
-            for (const a of world.animals) if (a.alive && a.typeId === HUMAN_TYPE_ID) { people++; near = Math.min(near, Math.hypot(a.position.x - viewPos.x, a.position.z - viewPos.z)); }
-            lines.push(`people alive ${people}, nearest ${near.toFixed(1)} m | mesh in scene ${H.mesh.parent === scene}, visible ${H.mesh.visible}, instanceCount ${n}, max ${g._maxInstanceCount}`);
-            lines.push(`slot 0 pose [${f3(H.pose.array.subarray(0, 4))}] gait [${f3(H.gait.array.subarray(0, 4))}] look [${f3(H.look.array.subarray(0, 4))}]`);
-            const prog = renderer.properties.get(H.mesh.material).currentProgram;
-            if (prog) {
-              lines.push('people program ' + prog.id + ': ' + Object.entries(prog.getAttributes()).map(([k, v]) => k + '@' + v.location).join(' ') + (prog.diagnostics ? ' | runnable ' + prog.diagnostics.runnable : ''));
-            } else lines.push('people program: not compiled yet');
-            const failed = renderer.info.programs.filter(p => p.diagnostics && !p.diagnostics.runnable).length;
-            lines.push(`programs ${renderer.info.programs.length}, failed ${failed}`);
-            if (n > 0 && !sun.shadow.needsUpdate) {
-              probeCam.copy(camera, false);
-              probeCam.layers.set(LAYER);
-              probeCam.updateMatrixWorld();
-              probeTarget.texture.colorSpace = graphics.high ? THREE.NoColorSpace : THREE.SRGBColorSpace;
-              const bg = scene.background;
-              scene.background = new THREE.Color(1, 0, 1);
-              glErrors();
-              renderer.setRenderTarget(probeTarget);
-              baseRender(scene, probeCam);
-              renderer.readRenderTargetPixels(probeTarget, 0, 0, PX, PX, px);
-              renderer.setRenderTarget(null);
-              scene.background = bg;
-              let drawn = 0;
-              for (let i = 0; i < px.length; i += 4) if (!(px[i] > 235 && px[i + 1] < 20 && px[i + 2] > 235)) drawn++;
-              lines.push(`probe, people only from your camera: ${drawn} of ${PX * PX} px drawn | GL errors ${glErrors()}`);
-            }
-          } else lines.push('world not loaded yet');
-        } catch (e) { lines.push('debug error: ' + e.message); }
-        box.textContent = lines.concat(notes).join('\n');
-      }, 1000);
-    }
-
 
     function seedValue() {
       return seedEl.value || DEFAULT_SEED;
