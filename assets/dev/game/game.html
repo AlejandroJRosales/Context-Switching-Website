@@ -6122,18 +6122,20 @@ void main() {
     `;
 
     // Lambert (scene sun, hemisphere and fog, shadows when the map is on) plus a depth twin so shadows follow the pose.
+    // The people code goes in front of three's '#include <common>' line, so no minifier can glue its closing #endif to a directive.
     function humanMaterials(paint, mask) {
       const lit = new THREE.MeshLambertMaterial();
       lit.onBeforeCompile = sh => {
         sh.uniforms.humanPaint = { value: paint };
         sh.uniforms.humanMask = { value: mask };
-        sh.vertexShader = HUMAN_VERTEX_PARS + sh.vertexShader
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', HUMAN_VERTEX_PARS + '\n#include <common>')
           .replace('#include <beginnormal_vertex>', HUMAN_VERTEX_MAIN)
           .replace('#include <begin_vertex>', 'vec3 transformed = humanPos;');
-        sh.fragmentShader = `uniform sampler2D humanPaint, humanMask;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `uniform sampler2D humanPaint, humanMask;
           varying vec2 vHumanUv;
           varying vec3 vHumanSkin, vHumanShirt, vHumanPants;
-          ` + sh.fragmentShader.replace('#include <map_fragment>', `
+#include <common>`).replace('#include <map_fragment>', `
           vec3 hMask = texture2D(humanMask, vHumanUv).rgb;
           diffuseColor.rgb *= texture2D(humanPaint, vHumanUv).rgb * (vHumanSkin * hMask.r + vHumanShirt * hMask.g + vHumanPants * hMask.b
             + max(0.0, 1.0 - hMask.r - hMask.g - hMask.b));`);
@@ -6141,7 +6143,7 @@ void main() {
       lit.customProgramCacheKey = () => 'human-rig-lit';
       const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
       depth.onBeforeCompile = sh => {
-        sh.vertexShader = '#define HUMAN_DEPTH\n' + HUMAN_VERTEX_PARS + sh.vertexShader.replace('#include <begin_vertex>',
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#define HUMAN_DEPTH\n' + HUMAN_VERTEX_PARS + '\n#include <common>').replace('#include <begin_vertex>',
           'vec3 transformed = vec3(position); vec3 humanNormal = vec3(normal); humanPose(transformed, humanNormal);');
       };
       depth.customProgramCacheKey = () => 'human-rig-depth';
