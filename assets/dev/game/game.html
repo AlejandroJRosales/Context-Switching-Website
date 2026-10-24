@@ -285,7 +285,7 @@
     #hud {
       position: fixed;
       left: 14px;
-      bottom: 12px;
+      top: 16px;
       font: 400 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
       color: rgba(232, 228, 220, 0.55);
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
@@ -584,7 +584,7 @@
       position: fixed;
       right: 18px;
       top: 16px;
-      z-index: 7;
+      z-index: 10;
       display: none;
     }
 
@@ -592,32 +592,47 @@
       display: block;
     }
 
+    /* the settings icon; an X while the sheet is open */
+    #gear {
+      padding: 11px;
+    }
+
+    #gear svg {
+      display: block;
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #gear .icon-close,
+    #gear.open .icon-gear {
+      display: none;
+    }
+
+    #gear.open .icon-close {
+      display: block;
+    }
+
+    /* full screen while open (the world is paused behind it); the gear stays above it to close it */
     #settings {
       position: fixed;
-      right: 18px;
-      top: 62px;
+      inset: 0;
       box-sizing: border-box;
-      width: min(380px, calc(100vw - 36px));
-      padding: 14px;
-      max-height: calc(100vh - 74px);
-      max-height: calc(100dvh - 74px);
+      padding: 62px max(18px, calc((100vw - 560px) / 2)) 18px;
       overflow-y: auto;
       background: rgba(12, 15, 21, 0.86);
-      border: 1px solid rgba(232, 228, 220, 0.18);
-      border-radius: 4px;
       z-index: 9;
       display: none;
     }
 
-    /* phones in landscape: beside the gear */
+    /* phones in landscape: content beside the gear */
     @media (orientation: landscape) and (max-height: 500px) {
       #settings {
-        top: 12px;
-        right: 76px;
-        padding: 8px 10px;
-        width: min(380px, calc(100vw - 94px));
-        max-height: calc(100vh - 24px);
-        max-height: calc(100dvh - 24px);
+        padding: 12px 76px 12px max(18px, calc((100vw - 560px) / 2));
       }
 
       #settings h2 {
@@ -970,7 +985,7 @@
       display: none;
     }
 
-    #fps {
+    #avg-fps {
       margin: 12px 0 0;
       font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
       color: rgba(232, 228, 220, 0.45);
@@ -1040,6 +1055,8 @@
         <div class="switches">
           <button id="chooseFsSwitch" class="switch" role="switch" aria-checked="false"><span class="track"><span
               class="thumb"></span></span>Fullscreen</button>
+          <button id="choosePovSwitch" class="switch" role="switch" aria-checked="false"><span class="track"><span
+              class="thumb"></span></span>Third person</button>
           <button id="chooseGfxSwitch" class="switch" role="switch" aria-checked="false"><span class="track"><span
               class="thumb"></span></span>High graphics</button>
         </div>
@@ -1094,7 +1111,7 @@
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
-      <p class="credit">Game 1.0.0.4-opt by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
+      <p class="credit">Game 1.0.0.5-opt by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
     </div>
   </div>
   <div id="dot"></div>
@@ -1128,7 +1145,15 @@
         d="M508 711 c-66 -13 -100 -86 -68 -143 45 -79 163 -60 181 29 13 66 -48 126 -113 114z M45 575 c-56 -14 -60 -94 -5 -112 9 -3 6 -5 48 31 l39 32 18 7 c10 4 36 16 58 25 22 9 41 17 41 18 1 1 -194 0 -199 -1z M356 575 c-8 -1 -21 -5 -31 -8 -8 -3 -17 -7 -59 -24 -27 -12 -88 -38 -100 -43 -4 -2 -10 -4 -12 -5 -4 -2 -16 -11 -33 -26 -16 -12 -44 -35 -62 -51 -41 -33 -45 -37 -50 -45 -28 -46 17 -101 68 -85 10 3 14 6 60 44 l44 37 -4 -8 c-32 -65 -27 -107 16 -130 5 -3 20 -8 99 -38 17 -6 31 -11 31 -12 0 0 12 -34 26 -76 30 -91 32 -94 48 -102 l5 -3 26 0 26 0 5 3 c12 5 23 22 26 37 3 16 4 13 -34 127 l-34 103 -4 2 c-3 1 -8 4 -12 6 -5 3 -16 9 -25 13 -9 5 -22 12 -29 16 l-13 7 1 4 c10 33 36 73 75 113 20 22 30 38 34 55 12 51 -34 98 -88 89z M395 326 c1 -1 14 -8 28 -16 l26 -13 29 -88 29 -88 5 -4 c27 -25 41 -30 64 -25 39 8 59 54 37 88 -5 8 -4 7 -86 77 l-75 65 -7 0 c-4 1 -16 2 -27 2 -11 1 -21 2 -22 3 -2 0 -2 0 -1 -1z" />
     </svg></button>
   <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
-  <button id="gear">=</button>
+  <button id="gear" aria-label="Settings">
+    <svg class="icon-gear" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+    <svg class="icon-close" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  </button>
   <div id="settings">
     <div id="skyset">
       <h2>Time of day</h2>
@@ -1154,7 +1179,7 @@
       <button id="debug" aria-pressed="false">Debug</button>
     </div>
     <textarea id="debuginfo" readonly hidden spellcheck="false" aria-label="Debug info"></textarea>
-    <p id="fps"></p>
+    <p id="avg-fps" hidden></p>
   </div>
   <div id="vr-overlay">
     <div id="vr-hud">
@@ -9723,7 +9748,7 @@ void main() {
     const fsEl = document.getElementById('fs');
     const vrEl = document.getElementById('vr');
     const newEcoEl = document.getElementById('neweco');
-    const fpsEl = document.getElementById('fps');
+    const avgFpsEl = document.getElementById('avg-fps');
     const tintEl = document.getElementById('water-tint');
     const vrOverlayEl = document.getElementById('vr-overlay');
     const vrStatsEl = document.getElementById('vr-stats');
@@ -10336,54 +10361,73 @@ void main() {
       }
     }
 
-    // CAMERA POV: '1st' or '3rd'; in third person the player's own body shows (the Arena's blue figure).
+    // CAMERA POV: '1st' or '3rd'; in third person the player's own body shows (a person drawn with the NPC human rig).
     const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, sized to the player
     const TPP_UP = 18 * NPC_UNIT * PLAYER_HS;
-
-    // The player's third-person box figure (the Arena's blue figure), in rig units; NPC people use the human rig.
-    const PLAYER_FIGURE = {
-      geom: { body: new THREE.BoxGeometry(8, 17, 6), head: new THREE.BoxGeometry(8.6, 8.6, 8.6), leg: new THREE.BoxGeometry(2, 12.5, 2) },
-      offsets: {
-        head: new THREE.Vector3(0, 13, 0), legFL: new THREE.Vector3(-6, 2, 0), legFR: new THREE.Vector3(6, 2, 0),
-        legBL: new THREE.Vector3(-2, -15, 0), legBR: new THREE.Vector3(2, -15, 0)
-      }
-    };
 
     const pov = {
       mode: '1st',
       body: null,
-      animTime: 0,
-      _last: new THREE.Vector3(NaN, NaN, NaN),
+      // the player's body: a random person (sex, height, build, skin, face, clothes), drawn anew each time a world spawns.
+      // Only the drawn body changes; the player's eye height and collision stay PLAYER_HEIGHT's.
+      look: null,
+      heightScale: PLAYER_HS,
+      gait: { x: NaN, z: NaN, speed: 0, phase: 0, swing: 0, run: 0 },
 
+      // one instance of the people renderer's rig and materials; posed by the mesh's own transform, so iPose stays at the origin
       build() {
-        const mat = new THREE.MeshStandardMaterial({ color: 0x2255dd });
-        const geom = PLAYER_FIGURE.geom;
-        const off = PLAYER_FIGURE.offsets;
-        const group = new THREE.Group();
-        const body = new THREE.Mesh(geom.body, mat);
-        group.add(body);
-        const head = new THREE.Mesh(geom.head, mat);
-        head.position.copy(off.head);
-        group.add(head);
-        const limbHalf = 6.25;
-        const limb = (px, py) => {
-          const pivot = new THREE.Object3D();
-          pivot.position.set(px, py, 0);
-          const mesh = new THREE.Mesh(geom.leg, mat);
-          mesh.position.set(0, -limbHalf, 0);
-          mesh.castShadow = true;
-          pivot.add(mesh);
-          group.add(pivot);
-          return pivot;
-        };
-        const shoulderY = off.legFL.y + limbHalf, hipY = off.legBL.y + limbHalf;
-        group.userData.limbs = [limb(off.legFL.x, shoulderY), limb(off.legFR.x, shoulderY),
-        limb(off.legBL.x, hipY), limb(off.legBR.x, hipY)];
-        body.castShadow = head.castShadow = true;
-        group.scale.setScalar(NPC_UNIT * PLAYER_HS);
-        group.visible = false;
-        scene.add(group);
-        this.body = group;
+        const H = animalRenderer.human;
+        const g = new THREE.InstancedBufferGeometry();
+        g.setIndex(H.rest.index);
+        for (const k in H.rest.attributes) g.setAttribute(k, H.rest.attributes[k]);
+        for (const name of ['iPose', 'iGait', 'iLook']) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
+        g.instanceCount = 1;
+        const mesh = new THREE.Mesh(g, H.mesh.material);
+        mesh.customDepthMaterial = H.mesh.customDepthMaterial;
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        scene.add(mesh);
+        this.body = mesh;
+        if (!this.look) this.newBody();
+        else this.writeLook();
+      },
+
+      // a fresh random person, sized like NPC adults of the same sex
+      newBody() {
+        const sex = Math.random() < 0.5 ? 'male' : 'female';
+        this.look = humanLook(sex);
+        const sz = NPC_SIZE.human, [mean, std] = sz[sex];
+        const z = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
+        this.heightScale = (mean + std * z) / (sz.rig * NPC_UNIT);
+        const G = this.gait;
+        G.x = G.z = NaN; G.speed = G.phase = G.swing = G.run = 0;
+        if (this.body) this.writeLook();
+      },
+
+      writeLook() {
+        const L = this.look, attr = this.body.geometry.attributes.iLook;
+        attr.array.set([L.skinRGB, L.shirt, L.pants, L.code]);
+        attr.needsUpdate = true;
+      },
+
+      // the NPC gait (AnimalRenderer.stepGait) on the frame's step instead of the NPC tick
+      stepGait(dt, kp) {
+        const G = this.gait;
+        const dx = player.pos.x - G.x, dz = player.pos.z - G.z;
+        G.x = player.pos.x; G.z = player.pos.z;
+        if (!dt) return;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (!(d < HUMAN_GAIT_JUMP)) return;   // first sight or a teleport: hold the pose
+        if (d === 0 && G.speed < 1e-3) { G.speed = G.swing = G.run = 0; return; }
+        const leg = HUMAN_LEG * kp;
+        G.speed += (d / dt - G.speed) * (1 - Math.pow(1 - HUMAN_GAIT_EASE, dt / NPC_TICK_S));
+        const vl = G.speed / leg;
+        const stride = Math.min(HUMAN_STRIDE_MAX, HUMAN_STRIDE_BASE + HUMAN_STRIDE_PER_V * vl);
+        const ph = G.phase + Animal.TWO_PI * Math.min(d / (stride * leg), HUMAN_CADENCE_MAX * dt);
+        G.phase = ph >= Animal.TWO_PI ? ph - Animal.TWO_PI : ph;
+        G.swing = Math.min(HUMAN_SWING_MAX, Math.asin(Math.min(1, stride / 4))) * Math.min(1, G.speed / HUMAN_IDLE_SPEED);
+        G.run = Math.max(0, Math.min(1, (vl - 2.6) / 2.6));
       },
 
       cycle() {
@@ -10400,21 +10444,16 @@ void main() {
         if (!show) return;
 
         const feet = player.pos.y - EYE_HEIGHT;
-        const b = this.body;
-        b.position.set(player.pos.x, feet + SPECIES.human.lift * NPC_UNIT * PLAYER_HS, player.pos.z);
-        b.rotation.y = player.yaw + Math.PI;
+        const b = this.body, kp = NPC_UNIT * this.heightScale;
+        b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
+        b.rotation.y = player.yaw + Math.PI;   // the rig faces +z at rotation 0, the camera -z at yaw 0
 
-        const moving = this._last.distanceToSquared(player.pos) > 1e-6;
-        this._last.copy(player.pos);
-        const [armL, armR, legL, legR] = b.userData.limbs;
-        if (moving) {
-          this.animTime += dt;
-          const swing = Math.sin(this.animTime * 5.5) * 0.6;
-          armL.rotation.x = -swing; armR.rotation.x = swing;
-          legL.rotation.x = swing; legR.rotation.x = -swing;
-        } else {
-          for (const l of b.userData.limbs) l.rotation.x *= 0.8;
-        }
+        const G = this.gait, gait = b.geometry.attributes.iGait;
+        // flying: the standing pose (no walk or run cycle); the gait starts from rest on landing
+        if (flying) { G.x = player.pos.x; G.z = player.pos.z; G.speed = G.swing = G.run = 0; }
+        else this.stepGait(dt, kp);
+        gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = G.run;
+        gait.needsUpdate = true;
 
         const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
         const bx = Math.sin(player.yaw), bz = Math.cos(player.yaw);
@@ -10581,6 +10620,8 @@ void main() {
 
       toggle() {
         this.high = !this.high;
+        // Survivor mode's average fps measures one quality setting at a time
+        avgFps.reset();
         // the next load starts on this setting
         try { localStorage.setItem(GRAPHICS_KEY, this.high ? 'high' : 'low'); } catch (e) { }
         this.apply();
@@ -11458,6 +11499,8 @@ void main() {
         this.ticks = 0;
         this._animalGridDrops.length = 0;
         game.reset();
+        // each spawned world gives the player a new random body
+        pov.newBody();
         const b = provider.bounds;
         this.minX = b.minX; this.maxX = b.maxX;
         this.minZ = b.minZ; this.maxZ = b.maxZ;
@@ -12451,7 +12494,7 @@ void main() {
       locked = document.pointerLockElement === renderer.domElement;
       if (!locked) keys.clear();
       // Esc releasing pointer lock never reaches the page, so losing the lock opens settings.
-      if (!locked && active) settingsEl.classList.add('on');
+      if (!locked && active) setSettingsOpen(true);
       wake();
     });
 
@@ -12473,8 +12516,9 @@ void main() {
       showControls(false);
     }
 
+    // Escape toggles the settings sheet (while the pointer is locked, Esc only releases it, which opens the sheet)
     addEventListener('keydown', e => {
-      if (e.code === 'Escape' && !locked && active) settingsEl.classList.add('on');
+      if (e.code === 'Escape' && !e.repeat && !locked && active) setSettingsOpen(!settingsEl.classList.contains('on'));
     });
 
     // TOUCH
@@ -13312,8 +13356,17 @@ void main() {
       returnToIntro();
     });
 
+    // open or close the settings sheet; the gear becomes its close X, and closing resumes the paused world
+    function setSettingsOpen(open) {
+      const wasOpen = settingsEl.classList.contains('on');
+      settingsEl.classList.toggle('on', open);
+      gearEl.classList.toggle('open', open);
+      gearEl.setAttribute('aria-label', open ? 'Close settings' : 'Settings');
+      if (wasOpen && !open) wake();
+    }
+
     gearEl.addEventListener('click', () => {
-      settingsEl.classList.toggle('on');
+      setSettingsOpen(!settingsEl.classList.contains('on'));
       gearEl.blur();
     });
 
@@ -13520,7 +13573,7 @@ void main() {
       flyEl.classList.toggle('on', on && !driving && !game.on);
       climbEl.classList.toggle('on', on && flying);
       gearEl.classList.toggle('on', on);
-      if (!on) settingsEl.classList.remove('on');
+      if (!on) setSettingsOpen(false);
       updateCarButton();
     }
 
@@ -13681,13 +13734,42 @@ void main() {
         (flying && (keys.has('ShiftLeft') || keys.has('ShiftRight')));
     }
 
+    // drawn frames in the current one-second window; Observer mode shows the rate on the HUD
     let fpsFrames = 0, fpsAt = 0;
+    let hudFps = 0;
+    // Survivor mode (settings sheet): drawn frames per second averaged since the quality setting last changed.
+    // Time with the loop asleep or paused is left out.
+    const avgFps = {
+      frames: 0, ms: 0,
+      reset() { this.frames = 0; this.ms = 0; this.show(); },
+      show() {
+        perf.setText(avgFpsEl, this.ms < 1000 ? 'Average fps: measuring' :
+          `Average ${Math.round(this.frames * 1000 / this.ms)} fps`);
+      }
+    };
 
     function frame(now) {
       rafId = 0;
       const xr = renderer.xr.isPresenting;
+      // settings open: the world is paused (no sim time passes, the loop sleeps); only a change made in the sheet redraws
+      if (!xr && settingsEl.classList.contains('on')) {
+        last = -1;
+        simSky.lastNow = 0;
+        if (sceneDirty) {
+          placeSkyBodies();
+          graphics.update(now);
+          if (graphics.high) msaa.render();
+          else renderer.render(scene, camera);
+          sceneDirty = false;
+        }
+        return;
+      }
       // first frame after a sleep: no elapsed time to integrate
-      const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
+      const resumed = last < 0;
+      const dt = resumed ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
+      // a fresh fps window after a sleep or pause, so the time asleep is not counted as slow frames
+      if (resumed) { fpsFrames = 0; fpsAt = now; }
+      else avgFps.ms += now - last;
       last = now;
       if (xr) vr.poll(dt);
       playerStep(dt);
@@ -13740,9 +13822,12 @@ void main() {
         sceneDirty = false;
         rainDrawn = now;
         fpsFrames++;
+        avgFps.frames++;
       }
       if (now - fpsAt >= 1000) {
-        if (settingsEl.classList.contains('on')) perf.setText(fpsEl, `${fpsFrames} fps`);
+        const fps = Math.round(fpsFrames * 1000 / (now - fpsAt));
+        if (game.on) avgFps.show();
+        else if (fps !== hudFps) { hudFps = fps; refreshHud(); }
         if (xr) vr.updateHud();
         fpsFrames = 0; fpsAt = now;
       }
@@ -14343,7 +14428,8 @@ void main() {
       }
       const c = conditions();
       const sky = site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '';
-      perf.setText(hudEl, head + '\n' + populationText() + (sky ? '\n' + sky : ''));
+      const fps = !game.on && hudFps ? `, ${hudFps} fps` : '';
+      perf.setText(hudEl, head + '\n' + populationText() + fps + (sky ? '\n' + sky : ''));
     }
 
     // LOAD
@@ -14793,6 +14879,9 @@ void main() {
       // no Vision rays, Vitals or HUD chips in Survivor mode
       syncSkyset();
       raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = game.on;
+      // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
+      avgFpsEl.hidden = !game.on;
+      if (game.on) avgFps.show();
       newEcoEl.textContent = game.on ? 'New game' : 'New ecosystem';
       updateSky();
       refreshHud();
@@ -14817,14 +14906,15 @@ void main() {
     const chooseObsEl = document.getElementById('chooseObs');
     const chooseGameEl = document.getElementById('chooseGame');
     const chooseGoEl = document.getElementById('chooseGo');
-    // Fullscreen and High graphics switches: only flipped here, applied when Go is pressed
+    // Fullscreen, Third person and High graphics switches: only flipped here, applied when Go is pressed
     const chooseFsSwitchEl = document.getElementById('chooseFsSwitch');
+    const choosePovSwitchEl = document.getElementById('choosePovSwitch');
     const chooseGfxSwitchEl = document.getElementById('chooseGfxSwitch');
     function setSwitch(el, on) {
       el.classList.toggle('on', on);
       el.setAttribute('aria-checked', String(on));
     }
-    for (const el of [chooseFsSwitchEl, chooseGfxSwitchEl]) {
+    for (const el of [chooseFsSwitchEl, choosePovSwitchEl, chooseGfxSwitchEl]) {
       el.addEventListener('click', () => { setSwitch(el, !el.classList.contains('on')); el.blur(); });
     }
     function chooseMode() {
@@ -14839,6 +14929,7 @@ void main() {
         };
         show();
         setSwitch(chooseFsSwitchEl, !!fullscreenElement());
+        setSwitch(choosePovSwitchEl, pov.mode === '3rd');
         setSwitch(chooseGfxSwitchEl, graphics.high);
         chooseObsEl.onclick = () => { wantGame = false; show(); chooseObsEl.blur(); };
         chooseGameEl.onclick = () => { wantGame = true; show(); chooseGameEl.blur(); };
@@ -14847,6 +14938,7 @@ void main() {
           chooseObsEl.onclick = chooseGameEl.onclick = chooseGoEl.onclick = null;
           // Go is the user gesture fullscreen needs; fsEl's handler toggles it (and locks landscape)
           if (chooseFsSwitchEl.classList.contains('on') !== !!fullscreenElement()) fsEl.click();
+          if (choosePovSwitchEl.classList.contains('on') !== (pov.mode === '3rd')) pov.cycle();
           if (chooseGfxSwitchEl.classList.contains('on') !== graphics.high) graphics.toggle();
           resolve(wantGame);
         };
