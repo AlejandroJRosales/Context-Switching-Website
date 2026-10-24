@@ -1111,7 +1111,7 @@
       </details>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
-      <p class="credit">Game 1.0.0.5-opt by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
+      <p class="credit">Game 1.0.0.5 by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
     </div>
   </div>
   <div id="dot"></div>
@@ -1163,7 +1163,7 @@
     </div>
     <h2 class="second">View</h2>
     <div class="chips">
-      <button id="pov">1st person</button>
+      <button id="pov">3rd person</button>
       <button id="rays">Vision rays: single</button>
       <button id="vitals" class="sel" aria-pressed="true">Vitals</button>
       <button id="hudbtn" class="sel" aria-pressed="true">HUD</button>
@@ -1225,6 +1225,7 @@
     const RUN_SPEED = 15.0;
     const JUMP_SPEED = 7.0;
     const CROUCH_SPEED = 4.0;
+    const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
     const CROUCH_DROP = 0.45;    // metres the eye lowers when crouched
     const CROUCH_RATE = 3.0;     // metres per second the eye moves into/out of a crouch
     const GRAVITY = 22.0;
@@ -9754,7 +9755,9 @@ void main() {
     const vrStatsEl = document.getElementById('vr-stats');
 
     // CAT COMPANION: Nibbler from the Arena, rig in Arena units scaled to the player; comes with wilderness (provider.companion).
-    const CAT_SCALE = 0.85 * NPC_UNIT * PLAYER_HS;
+    // sized to a real house cat: the rig's head top (12.5 units) at CAT_HEAD_TOP metres
+    const CAT_HEAD_TOP = 0.3;
+    const CAT_SCALE = CAT_HEAD_TOP / 12.5;
     const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // passenger seat in the car's frame (+x passenger side, -z forward)
     const CAT_DOOR = 0.95;         // m from the car's centre line to where he stands at the passenger door
     const CAT_RUN_FROM = 25;       // m from the car: starting farther than this (or the car moving) he runs...
@@ -9777,7 +9780,7 @@ void main() {
         this.WATER_SPEED_FACTOR = 0.45;
         this.FLOAT = 1.5 * NPC_UNIT;
         this.active = false;
-        this.riding = false;
+        this.inCar = false;
         this.boarding = null;          // walk-to-the-door state while the player gets in
         this._w = new THREE.Vector3();
         this._seat = new THREE.Vector3();
@@ -9877,7 +9880,7 @@ void main() {
 
       // Gets in with the player: walks round to the passenger door, hops onto the seat, then rides.
       board() {
-        if (!this.active || this.riding || this.boarding) return;
+        if (!this.active || this.inCar || this.boarding) return;
         const [cx, cf] = this.carLocal(this.position.x, this.position.z);
         this.boarding = { t: 0, jump: -1, from: new THREE.Vector3(), run: Math.hypot(cx, cf) > CAT_RUN_FROM };
         sceneDirty = true;
@@ -9984,11 +9987,22 @@ void main() {
         sceneDirty = true;
       }
 
+      // No shadow while he rides in the car; out of it, the parts that cast one when built cast again.
+      setCastShadow(on) {
+        this.mesh.traverse(o => {
+          if (!o.isMesh) return;
+          if (o.userData.builtCastShadow === undefined) o.userData.builtCastShadow = o.castShadow;
+          o.castShadow = on && o.userData.builtCastShadow;
+        });
+        graphics.force = true;
+      }
+
       // A passenger on the car's mesh, still, facing forward (his update pauses).
       seat() {
         this.boarding = null;
-        this.riding = true;
+        this.inCar = true;
         car.mesh.add(this.mesh);
+        this.setCastShadow(false);
         this.mesh.position.set(CAT_SEAT.x, CAT_SEAT.y, CAT_SEAT.z);
         this.mesh.rotation.set(0, Math.PI, 0);   // his forward is +z, the car's is -z
         for (const leg of this.mesh.userData.legs) leg.rotation.x = 0;
@@ -9998,9 +10012,10 @@ void main() {
       // Gets out with the player: by the passenger door if there is room, else beside the player.
       alight() {
         if (this.boarding) { this.boarding = null; return; }   // player got out before he got in
-        if (!this.riding) return;
-        this.riding = false;
+        if (!this.inCar) return;
+        this.inCar = false;
         scene.add(this.mesh);
+        this.setCastShadow(true);
         const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
         let x = car.x + rx * CAT_DOOR, z = car.z + rz * CAT_DOOR;
         const g = this.groundAt(x, z);
@@ -10014,7 +10029,7 @@ void main() {
       // In front of the player, a little to the right, facing the player.
       place(show) {
         this.boarding = null;
-        if (this.riding) { this.riding = false; scene.add(this.mesh); }
+        if (this.inCar) { this.inCar = false; scene.add(this.mesh); this.setCastShadow(true); }
         this.active = show;
         this.mesh.visible = show;
         if (!show) return;
@@ -10036,7 +10051,7 @@ void main() {
       }
 
       update(deltaTime) {
-        if (!this.active || this.riding) return;
+        if (!this.active || this.inCar) return;
         if (this.boarding) { this.updateBoarding(deltaTime); return; }
         this.animTime += deltaTime;
         activeWorld.surface(this.position.x, this.position.z, _surf);
@@ -10365,8 +10380,10 @@ void main() {
     const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, sized to the player
     const TPP_UP = 18 * NPC_UNIT * PLAYER_HS;
 
+    const PLAYER_JOG_ANIM = 0.5;   // share of the real step the gait animates when not sprinting
+
     const pov = {
-      mode: '1st',
+      mode: '3rd',
       body: null,
       // the player's body: a random person (sex, height, build, skin, face, clothes), drawn anew each time a world spawns.
       // Only the drawn body changes; the player's eye height and collision stay PLAYER_HEIGHT's.
@@ -10411,14 +10428,16 @@ void main() {
         attr.needsUpdate = true;
       },
 
-      // the NPC gait (AnimalRenderer.stepGait) on the frame's step instead of the NPC tick
+      // the NPC gait (AnimalRenderer.stepGait) on the frame's step instead of the NPC tick;
+      // off a sprint the legs animate as if covering PLAYER_JOG_ANIM of the ground (a slower cycle)
       stepGait(dt, kp) {
         const G = this.gait;
         const dx = player.pos.x - G.x, dz = player.pos.z - G.z;
         G.x = player.pos.x; G.z = player.pos.z;
         if (!dt) return;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        if (!(d < HUMAN_GAIT_JUMP)) return;   // first sight or a teleport: hold the pose
+        const moved = Math.sqrt(dx * dx + dz * dz);
+        if (!(moved < HUMAN_GAIT_JUMP)) return;   // first sight or a teleport: hold the pose
+        const d = player.running ? moved : moved * PLAYER_JOG_ANIM;
         if (d === 0 && G.speed < 1e-3) { G.speed = G.swing = G.run = 0; return; }
         const leg = HUMAN_LEG * kp;
         G.speed += (d / dt - G.speed) * (1 - Math.pow(1 - HUMAN_GAIT_EASE, dt / NPC_TICK_S));
@@ -10438,7 +10457,7 @@ void main() {
 
       // After step(): move the camera behind the player (boom shortened before walls) and pose the body.
       apply(dt) {
-        const show = this.mode === '3rd' && !driving && active && !renderer.xr.isPresenting;
+        const show = this.mode === '3rd' && !player.inCar && active && !renderer.xr.isPresenting;
         if (!this.body) this.build();
         this.body.visible = show;
         if (!show) return;
@@ -11920,7 +11939,7 @@ void main() {
         this.foodNeed = Math.min(100, this.foodNeed + PLAYER_FOOD_RATE * cost * dt);
         this.waterNeed = Math.min(100, this.waterNeed + PLAYER_WATER_RATE * cost * dt);
 
-        if (!driving) {
+        if (!player.inCar) {
           if (!flying && (player.grounded || swimming) && isWaterAt(px, pz)) {
             this.waterNeed = Math.max(0, this.waterNeed - PLAYER_DRINK_RATE * dt);
           }
@@ -12468,7 +12487,8 @@ void main() {
       yaw: 0,
       pitch: 0,
       grounded: true,
-      running: false     // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
+      running: false,    // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
+      inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
     };
     const keys = new Set();
     let active = false;   // in play: panel closed, input accepted
@@ -12549,11 +12569,11 @@ void main() {
           stickEl.style.left = stickCx + 'px';
           stickEl.style.top = stickCy + 'px';
           knobEl.style.transform = 'translate(0px, 0px)';
-          stickEl.classList.toggle('flick', driving);
+          stickEl.classList.toggle('flick', player.inCar);
           stickEl.classList.add('on');
           const now = performance.now();
           if (now - lastStickTapAt < TAP_GAP_MS) {
-            if (!driving && !flying) crouching = !crouching;
+            if (!player.inCar && !flying) crouching = !crouching;
             lastStickTapAt = 0;
           } else lastStickTapAt = now;
         } else if (lookId === null) {
@@ -12566,8 +12586,8 @@ void main() {
       el.addEventListener('pointermove', e => {
         if (e.pointerId === stickId) {
           let dx = e.clientX - stickCx, dy = e.clientY - stickCy;
-          if (driving) dy = 0;
-          const reach = driving ? FLICK_RADIUS : STICK_RADIUS;
+          if (player.inCar) dy = 0;
+          const reach = player.inCar ? FLICK_RADIUS : STICK_RADIUS;
           const d = Math.hypot(dx, dy);
           if (d > reach) { dx *= reach / d; dy *= reach / d; }
           knobDx = dx; knobDy = dy; knobDirty = true;
@@ -12673,7 +12693,7 @@ void main() {
     holdClimb(downEl, -1);
 
     function toggleFly() {
-      if (driving) return;
+      if (player.inCar) return;
       flying = !flying;
       crouching = false;
       flyEl.classList.toggle('flying', flying);
@@ -12739,7 +12759,6 @@ void main() {
       mesh: null, front: [], wheels: []
     };
 
-    let driving = false;
     const drive = { camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false };
 
     // Mesh: body, glasshouse, roof, lamps, four wheels (front two on steer pivots).
@@ -13090,7 +13109,7 @@ void main() {
     // Touch sprint and jump, shown on foot in the gas pedal's slot, hidden while flying.
     let footTouch = false, sprintShown = false;
     function updateSprintButton() {
-      const foot = active && !driving && touchUi();
+      const foot = active && !player.inCar && touchUi();
       if (foot !== footTouch) {
         footTouch = foot;
         document.body.classList.toggle('foot-touch', foot);
@@ -13108,7 +13127,7 @@ void main() {
     let carBtnState = '';
     function updateCarButton() {
       updateSprintButton();
-      const state = !active ? '' : driving ? 'exit' : carNear() ? 'enter' : '';
+      const state = !active ? '' : player.inCar ? 'exit' : carNear() ? 'enter' : '';
       if (state === carBtnState) return;
       carBtnState = state;
       carEl.classList.toggle('on', state !== '');
@@ -13121,9 +13140,16 @@ void main() {
       if (!pedals) pedal.gas = pedal.brake = false;
     }
 
+    // The player in or out of the car: no body shadow while in it (the body is hidden there too).
+    function setPlayerInCar(on) {
+      player.inCar = on;
+      if (pov.body) pov.body.castShadow = !on;
+      graphics.force = true;
+    }
+
     function enterCar() {
-      if (driving || !carNear()) return;
-      driving = true;
+      if (player.inCar || !carNear()) return;
+      setPlayerInCar(true);
       crouching = false; crouchY = 0;
       drive.camYaw = car.yaw;
       drive.lookYaw = 0; drive.lookPitch = 0; drive.lookAt = 0;
@@ -13138,7 +13164,7 @@ void main() {
     }
 
     function exitCar() {
-      if (!driving) return;
+      if (!player.inCar) return;
       const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
       const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
       for (const [l0, f0] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
@@ -13146,7 +13172,7 @@ void main() {
         const px = car.x + rx * l + fx * f, pz = car.z + rz * l + fz * f, g = groundAt(px, pz);
         if (shellAt(px, pz) >= 0) continue;
         if (solidOverlap(px, pz, PLAYER_RADIUS + 0.05, g, g + EYE_HEIGHT + HEAD_CLEAR)) continue;
-        driving = false;
+        setPlayerInCar(false);
         player.pos.set(px, g + EYE_HEIGHT, pz);
         player.vel.set(0, 0, 0);
         player.grounded = false;
@@ -13160,7 +13186,7 @@ void main() {
     }
 
     function toggleCar() {
-      if (driving) exitCar(); else enterCar();
+      if (player.inCar) exitCar(); else enterCar();
     }
 
     carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
@@ -13570,7 +13596,7 @@ void main() {
 
     function showControls(on) {
       needsEl.classList.toggle('on', on && game.on);
-      flyEl.classList.toggle('on', on && !driving && !game.on);
+      flyEl.classList.toggle('on', on && !player.inCar && !game.on);
       climbEl.classList.toggle('on', on && flying);
       gearEl.classList.toggle('on', on);
       if (!on) setSettingsOpen(false);
@@ -13589,7 +13615,7 @@ void main() {
     let swimming = false;
 
     function playerStep(dt) {
-      if (driving) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
+      if (player.inCar) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
       // an empty car still rolling (left at speed) brakes to a stop
       if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
@@ -13613,8 +13639,9 @@ void main() {
       const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
       // while flying, shift means down rather than run
       const speed = swimming ? WALK_SPEED * SWIM_SPEED :
-        (crouching && !flying) ? CROUCH_SPEED :
-          ((shiftHeld || pedal.sprint) && !flying) ? RUN_SPEED : WALK_SPEED;
+        flying ? FLY_SPEED :
+          crouching ? CROUCH_SPEED :
+            (shiftHeld || pedal.sprint) ? RUN_SPEED : WALK_SPEED;
       const len = Math.hypot(mx, mz);
       player.running = speed === RUN_SPEED && len > 0 && active;
       let dx = 0, dz = 0, dy = 0;
@@ -13834,8 +13861,8 @@ void main() {
       if (xr) return;
 
       // falling rain and live NPCs keep the loop awake
-      const settled = !posed && (player.grounded || flying || driving) && player.vel.y === 0 &&
-        car.speed === 0 && !(driving && drive.settling) && !cat.boarding;
+      const settled = !posed && (player.grounded || flying || player.inCar) && player.vel.y === 0 &&
+        car.speed === 0 && !(player.inCar && drive.settling) && !cat.boarding;
       if (settled && !drawPending && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
         last = -1;
         return;
@@ -14478,7 +14505,7 @@ void main() {
       site = null;
       disposeRain();
       cat.place(false);
-      driving = false;
+      setPlayerInCar(false);
       car.placed = false; car.mesh.visible = false; car.speed = car.steer = car.spin = 0;
       labels.locked = labels.current = null;
       hudPlace = ''; hudBuildings = 0;
@@ -14591,7 +14618,7 @@ void main() {
         site = { lat: 40, lon: tz / 60 * 15, offset: tz * 60 };
         updateSky();
 
-        driving = false;
+        setPlayerInCar(false);
         const st = w.playerStart();
         player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
         player.vel.set(0, 0, 0);
@@ -14804,7 +14831,7 @@ void main() {
         site = { lat: place.lat, lon: place.lon, offset: Math.round(place.lon / 15) * 3600 };
         updateSky();
 
-        driving = false;
+        setPlayerInCar(false);
         if (provider.cabins.length) {
           // in the edge cabin, looking out the door at the city; the car parked in front, beside the doorway
           const st = provider.playerStart();
@@ -14887,7 +14914,7 @@ void main() {
       refreshHud();
       // no flying in Survivor mode: land and hide the button
       if (game.on && flying) toggleFly();
-      flyEl.classList.toggle('on', active && !driving && !game.on);
+      flyEl.classList.toggle('on', active && !player.inCar && !game.on);
       // The city's deer only in Survivor mode: the Deer switch follows and a live city gains or loses its own deer.
       loadOpts.deer = game.on;
       const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
