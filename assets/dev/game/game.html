@@ -304,6 +304,10 @@
       pointer-events: none;
       z-index: 5;
       display: none;
+      /* one source for the panel's geometry: a full row is icon + gap + bar; the food/water pair shares one row */
+      --need-icon-w: 16px;
+      --need-gap: 7px;
+      --need-bar-w: 110px;
     }
 
     #needs.on {
@@ -313,19 +317,131 @@
     #needs .need {
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: var(--need-gap);
       height: 20px;
     }
 
+    #needs .need-pair {
+      display: flex;
+      gap: var(--need-gap);
+      width: calc(var(--need-icon-w) + var(--need-gap) + var(--need-bar-w));
+    }
+
+    #needs .need-pair .need {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #needs .need-pair .need i {
+      flex: 1;
+      width: auto;
+    }
+
+    #needDay {
+      height: 18px;
+      font: 400 11px/18px ui-monospace, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.08em;
+      color: rgba(232, 228, 220, 0.8);
+    }
+
+    #slots {
+      margin-top: 5px;
+    }
+
+    #slots button {
+      flex: 1;
+      position: relative;
+      height: 30px;
+      padding: 0;
+      background: rgba(232, 228, 220, 0.08);
+      border: 1px solid rgba(232, 228, 220, 0.25);
+      border-radius: 5px;
+      font: 17px/1 "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+      pointer-events: auto;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #slots button:disabled {
+      cursor: default;
+    }
+
+    #slots kbd {
+      position: absolute;
+      left: 4px;
+      top: 3px;
+      font: 400 9px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      color: rgba(232, 228, 220, 0.45);
+    }
+
+    /* damage: a faint soft red edge (opacity driven by game.flash) */
+    #hurtflash {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 4;
+      opacity: 0;
+      box-shadow: inset 0 0 18vmin 6vmin rgba(200, 20, 20, 0.9);
+    }
+
+    #runover {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      padding: 16px;
+      background: rgba(12, 15, 21, 0.72);
+    }
+
+    #runover.on {
+      display: grid;
+    }
+
+    #runover .card {
+      min-width: 220px;
+      max-width: 360px;
+      padding: 18px 20px;
+      border-radius: 8px;
+      background: rgba(16, 19, 26, 0.92);
+      color: rgba(232, 228, 220, 0.9);
+      font: 400 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    #runover h2 {
+      margin: 0 0 6px;
+      font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(232, 228, 220, 0.45);
+    }
+
+    #runover p {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+
+    #runover dl {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2px 16px;
+      margin: 0 0 16px;
+    }
+
+    #runover dd {
+      margin: 0;
+      text-align: right;
+    }
+
     #needs .need span {
-      width: 16px;
+      width: var(--need-icon-w);
       text-align: center;
       font: 13px/1 "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
     }
 
     #needs .need i {
       display: block;
-      width: 110px;
+      width: var(--need-bar-w);
       height: 7px;
       border-radius: 4px;
       overflow: hidden;
@@ -1123,10 +1239,26 @@
     <div id="knob"></div>
   </div>
   <div id="hud"></div>
-  <div id="needs" aria-hidden="true">
-    <div class="need"><span>❤️</span><i><b id="needHealth"></b></i></div>
-    <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
-    <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
+  <div id="needs">
+    <div id="needDay" aria-live="polite">Day 1</div>
+    <div class="need" aria-hidden="true"><span>❤️</span><i><b id="needHealth"></b></i></div>
+    <div class="need-pair" aria-hidden="true">
+      <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
+      <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
+    </div>
+    <div id="slots" class="need-pair">
+      <button disabled aria-label="Empty slot"><span></span><kbd>1</kbd></button>
+      <button disabled aria-label="Empty slot"><span></span><kbd>2</kbd></button>
+    </div>
+  </div>
+  <div id="hurtflash"></div>
+  <div id="runover">
+    <div class="card">
+      <h2>Run over</h2>
+      <p id="runCause"></p>
+      <dl id="runStats"></dl>
+      <div class="chips"><button id="runNew">New game</button></div>
+    </div>
   </div>
   <button id="fly" aria-label="Fly"><svg viewBox="0 0 48 48" aria-hidden="true">
       <path
@@ -4260,6 +4392,15 @@ void main() {
     const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
     const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
     const DEER_EXPLORE_P = 0.0001;   // species.py: chance per tick of a new random explore point
+    const NPC_ATTACK_COOLDOWN_S = 0.5;     // sim seconds between one hunter's attacks
+    const NPC_ATTACK_DAMAGE_PER_S = 0.2;   // share of the victim's starting health lost per second of attacks (~5 s to kill)
+    const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between one grazer's plant bites
+    const NPC_HIT_NO_EAT_S = 2;
+    const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per point of the plant's max health            // sim seconds an animal cannot eat (plants or food boxes) after being hit
+    // FIGHTS (two animals that hunt each other): each side's hit scales with its height x mass x health.
+    const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by a reference fighter (below): 0.2 of a human's 120
+    const NPC_FIGHT_REF_STRENGTH = 1.753 * (24 * 1.753 * 1.753) * 120;   // average adult man: 1.753 m, ~73.8 kg, 120 health
+    const NPC_AGE_DEPLETION_RATE = 0;  // health lost per sim second of age, per point of starting health (was 0.000001); 0 = off
     const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
     const MATE_TIME_MULT = 4;
     const REPRO_NEED_MAX = 100;       // ceiling for a brained animal's reproduction need, which doubles every tick         // default for every species: this many times longer to fill the mate bar
@@ -4293,8 +4434,18 @@ void main() {
     const NPC_SIZE_Z_MAX = 4;          // standard deviations; draws are cut here
     const NPC_SIZE_HERITABILITY = 0.8;   // weight of the mid-parent z-score in a child's; the rest is fresh noise
     const NPC_SHOWN_BMI = { male: 24, female: 22 };   // stats readout weight
+    // A person's mass in kg: BMI x build^2 x height^2 (people's stats readout, fights and the player's body all use it).
+    function humanMassKg(sex, buildDev, heightM) {
+      const build = 1 + buildDev;
+      return NPC_SHOWN_BMI[sex] * build * build * heightM * heightM;
+    }
+    // Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use NPC_SHOWN_BMI.
+    const NPC_REF_MASS_KG = {
+      deer: { male: 70, female: 50 },      // white-tailed deer
+      coyote: { male: 15, female: 13 }
+    };
 
-    // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fight for pairs.
+    // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fightHit for pairs.
     const SPECIES = {
       human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
       coyote: { brain: false, hunts: { deer: true, human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
@@ -4981,7 +5132,7 @@ void main() {
         this.waterIncrement = this.health * 0.000001;
         this.foodIncrement = this.health * 0.000003;
         this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;
-        this.ageDepl = this.health * 0.000001;
+        this.ageDepl = this.health * NPC_AGE_DEPLETION_RATE;
 
         this.memPredatorX = 0; this.memPredatorY = 0; this.memPredatorZ = 0; this.hasPredator = false;
         this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
@@ -4990,6 +5141,9 @@ void main() {
         this.priority = null;          // deer: 'predator', 'food', 'water', 'mate', or null while exploring
         this.speedScale = 1;
         this.sprinting = false;
+        this.nextAttackAt = 0;   // sim seconds: when this hunter may attack again
+        this.nextBiteAt = 0;     // sim seconds: when this grazer may bite a plant again
+        this.noEatUntil = 0;     // sim seconds: eating is blocked until then after being hit
         this.bumpScale = 1;
 
         // no target reads as distance 1 (the edge of sight), never 0, which would mean touching it
@@ -5151,9 +5305,9 @@ void main() {
           }
         }
 
-        // City: in Survivor mode the player is a predator too, to whatever people hunt
-        const gp = game.predator;
-        if ((HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && gp.alive &&
+        // City: in Survivor mode the player is a predator too, to whatever people hunt (game.avatar decides)
+        const gp = game.avatar;
+        if (gp.isThreatTo(tid) &&
           this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
           hit.d3sq < bestPredDist) {
           bestPredDist = hit.d3sq;
@@ -5425,12 +5579,14 @@ void main() {
         if (oF) this.seen(1, oF.position.x, oF.position.y, oF.position.z);
         if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
 
-        // City: in Survivor mode the player is a predator too, to whatever people hunt
-        const gp = game.predator;
-        if (gp.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0) {
+        // City: in Survivor mode the player is a predator to whatever people hunt, and at night prey to what hunts people
+        const gp = game.avatar;
+        if (gp.isThreatTo(tid) || gp.isPreyFor(tid)) {
           const ox = gp.position.x, oz = gp.position.z;
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-          if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
+          if (gp.isThreatTo(tid)) {
+            if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
+          } else if (d2 <= vd && d2 < bF && this.inSight(ox, gp.position.y, oz)) { bF = d2; this.seen(1, ox, gp.position.y, oz); }
         }
 
         if (food === 'plant') {
@@ -5616,11 +5772,18 @@ void main() {
         this.prevFoodNeed = this.foodNeed;
       }
 
+      // One hit; the per-hit share keeps the damage rate at NPC_ATTACK_DAMAGE_PER_S whatever the cooldown.
       attacked(predator) {
-        this.health -= this.startHealth * 0.1;
+        this.takeHit(predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
+      }
+
+      // Damage from a hit: no eating for NPC_HIT_NO_EAT_S, and a kill feeds the attacker.
+      takeHit(attacker, damage) {
+        this.health -= damage;
+        this.noEatUntil = world.time + NPC_HIT_NO_EAT_S;
         if (this.health <= 1) {
           this.alive = false;
-          predator.feedOn(this);
+          attacker.feedOn(this);
         }
       }
 
@@ -5639,6 +5802,21 @@ void main() {
 
       ageYears() {
         return this.ageBase + (world.ticks - this.ageBaseTick) / NPC_TICKS_PER_YEAR;
+      }
+
+      // Height in metres as drawn (children grow into it), as the stats readout measures it.
+      bodyHeightM() {
+        const growth = this.isAdult ? 1 : Math.min(1, (world.ticks - this.birthTick) / NPC_MATURITY_TICKS);
+        const s = animalRenderer.MIN_SCALE + (1 - animalRenderer.MIN_SCALE) * growth;
+        return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * s;
+      }
+
+      // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
+      bodyMassKg() {
+        const h = this.bodyHeightM();
+        if (this.type === 'human') return humanMassKg(this.sex, this.look ? this.look.buildDev : 0, h);
+        const k = h / NPC_SIZE[this.type][this.sex][0];
+        return NPC_REF_MASS_KG[this.type][this.sex] * k * k * k;
       }
 
       // Adult size from a z-score on this species' and sex's normal curve (cut at NPC_SIZE_Z_MAX).
@@ -5716,7 +5894,7 @@ void main() {
       }
 
       eatPlant(plant) {
-        const nutrition = plant.maxHealth * 5;
+        const nutrition = plant.maxHealth * PLANT_BITE_NUTRITION;
         this.health = Math.min(this.health + nutrition, this.maxHealth);
         this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
         this.dietWater(nutrition * 0.01);
@@ -9621,7 +9799,10 @@ void main() {
         cx, cz, cosR, sinR,
         minX: -shMaxX, maxX: shMaxX, minZ: -shMaxZ, maxZ: shMaxZ,
         topY: by + roofTop + 5 * s,
-        reach: Math.hypot(shMaxX, shMaxZ)
+        reach: Math.hypot(shMaxX, shMaxZ),
+        // the room inside the walls (cabinAt)
+        inHalfX: CW / 2 - WALL_THICK, inHalfZ: CD / 2 - WALL_THICK,
+        floorY: by + FLOOR_Y, ceilY: by + FLOOR_Y + WALL_H
       };
       const o = toWorld(0, frontLZ + WALL_THICK), q = toWorld(0, frontLZ - WALL_THICK);
       return { solids, shelter, throat: [o[0], o[1], q[0], q[1]] };
@@ -10418,6 +10599,7 @@ void main() {
       // a fresh random person, sized like NPC adults of the same sex
       newBody() {
         const sex = Math.random() < 0.5 ? 'male' : 'female';
+        this.sex = sex;
         this.look = humanLook(sex);
         const sz = NPC_SIZE.human, [mean, std] = sz[sex];
         const z = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
@@ -11663,6 +11845,7 @@ void main() {
         // Contact candidates come from a grid up to 2 ticks old, queried at contact distance plus the largest move since.
         this._contactR = NpcWorld.CONTACT_DIST + Math.sqrt(this.drift2);
         const cg = this.contact, items = cg.items, start = cg.start;
+        const now = this.time;
 
         for (const a of this.animals) {
           if (!a.alive) continue;
@@ -11676,8 +11859,12 @@ void main() {
               const other = items[i];
               if (other.alive && (hunts & (1 << other.typeId)) !== 0 &&
                 tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
-                if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fight(a, other);
-                else other.attacked(a);
+                if (a.nextAttackAt <= now) {
+                  // one hit per cooldown, on the first prey in reach; prey that hunts back strikes on its own turn
+                  if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
+                  else other.attacked(a);
+                  a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+                }
                 if (!a.alive) break hunt;
               }
             }
@@ -11685,16 +11872,20 @@ void main() {
           }
           if (a.lookForMate) this.tryMate(a, px, pz);
 
-          const nPlant = a.spec.grazes ? this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
+          const canEat = a.noEatUntil <= now;
+          const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, NpcWorld.CONTACT_QUERY_RADIUS) : 0;
           for (let i = 0; i < nPlant; i++) {
             const plant = this._qPlant[i];
             if (plant.alive &&
               tools.distSq(px, pz, plant.position.x, plant.position.z) < NpcWorld.CONTACT_DIST_SQ) {
+              // one bite per cooldown; the plant lives on until its health runs out
               a.eatPlant(plant);
+              a.nextBiteAt = now + NPC_BITE_COOLDOWN_S;
+              break;
             }
           }
 
-          const crate = a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
+          const crate = canEat && a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
           if (crate) { a.eatBox(); foodBoxes.eat(crate); }
 
           if (surfaceFor(a, px, pz) < 0) {
@@ -11703,12 +11894,11 @@ void main() {
         }
       }
 
-      // Two mutual hunters meet: the one with more health kills and eats the other; equal health, both walk away.
-      fight(a, b) {
-        if (a.health === b.health) return;
-        const win = a.health > b.health ? a : b, lose = win === a ? b : a;
-        lose.alive = false;
-        win.feedOn(lose);
+      // Two mutual hunters in contact: a strikes b once, scaled by a's height x mass x health against the reference
+      // fighter; b strikes a on its own turn, and whoever drops to 1 health is eaten by the other.
+      fightHit(a, b) {
+        const strength = a.bodyHeightM() * a.bodyMassKg() * Math.max(0, a.health);
+        b.takeHit(a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
       }
 
       // Occupancy-grid wall check: a step into a blocked cell keeps its free axis (slides) or is undone.
@@ -11902,123 +12092,311 @@ void main() {
     const blobShadows = new BlobShadows();
     const world = new NpcWorld();
 
-    // SURVIVOR MODE: prey flees the player, who eats on contact, drinks in water, and grows hungry and thirsty (0..100).
-    const PLAYER_FOOD_RATE = 100 / (20 * 60);   // need per second: fed to starving in 20 min
-    const PLAYER_WATER_RATE = 100 / (10 * 60);   // need per second: watered to parched in 10 min
-    const PLAYER_DRINK_RATE = 10;                // need per second removed while standing in water
-    const PLAYER_RUN_COST = 2;                 // hunger and thirst rise this many times faster while running
-    const PLAYER_EAT_REACH = PLAYER_RADIUS + 0.45;   // metres, player to a deer's centre, that count as touching
-    const PLAYER_EAT_HEIGHT = 1.5;               // metres of height difference past which a deer is out of reach
-    const FALL_SAFE_HEIGHT = 3;                  // metres a player can drop unhurt (about one storey)
-    const FALL_DAMAGE_PER_M = 10;                // health lost per metre fallen past the safe height: ~13 m is lethal
+    // SURVIVOR MODE: every player rule and number lives in SURVIVOR_CONFIG; `game` is the one interface that applies them.
+    // Health only changes through game.hurt / game.heal; the NPC world sees the player through game.avatar.
+    const SURVIVOR_CONFIG = {
+      maxHealth: 100,
+      needs: {
+        foodPerS: 100 / (20 * 60),    // need per second: fed to starving in 20 min
+        waterPerS: 100 / (10 * 60),   // need per second: watered to parched in 10 min
+        drinkPerS: 10,                // need per second removed while standing in water
+        sprintCost: 2,                // hunger and thirst rise this many times faster while sprinting
+        starvingPerS: 0.5,            // health per second lost with the food bar empty (0 = off)
+        parchedPerS: 1                // health per second lost with the water bar empty (0 = off)
+      },
+      reach: { radius: PLAYER_RADIUS + 0.45, height: 1.5 },   // metres: contact with animals, plants and crates
+      fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
+      plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
+      shelter: { healPerS: 0.2 },       // health per second regained inside a cabin
+      night: { sunAltDeg: -6 },         // the sun below this (civil twilight) is night: coyotes hunt the player
+      flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+ (not the steady starving drain)
+      inventory: {
+        slots: 2,
+        keys: ['Digit1', 'Digit2'],     // one per slot; tapping a slot works too
+        items: {
+          crate: { icon: '📦', label: 'Food box' },
+          plant: { icon: '🌿', label: 'Plant' }
+        }
+      },
+      causes: {
+        fall: 'Fell to your death',
+        coyote: 'Killed by a coyote',
+        starving: 'Starved',
+        parched: 'Died of thirst'
+      }
+    };
 
     const needsEl = document.getElementById('needs');
     const needHealthEl = document.getElementById('needHealth');
     const needFoodEl = document.getElementById('needFood');
     const needWaterEl = document.getElementById('needWater');
+    const needDayEl = document.getElementById('needDay');
+    const slotEls = [...document.querySelectorAll('#slots button')];
+    const hurtFlashEl = document.getElementById('hurtflash');
+    const runOverEl = document.getElementById('runover');
+    const runCauseEl = document.getElementById('runCause');
+    const runStatsEl = document.getElementById('runStats');
+
+    // Inside a cabin's walls at feet height (x, y, z): the cabins' shelter rectangles carry their interior.
+    function cabinAt(x, y, z) {
+      for (const c of shelters) {
+        const qx = x - c.cx, qz = z - c.cz;
+        const lx = qx * c.cosR - qz * c.sinR, lz = qx * c.sinR + qz * c.cosR;
+        if (Math.abs(lx) < c.inHalfX && Math.abs(lz) < c.inHalfZ && y >= c.floorY - 0.5 && y < c.ceilY) return true;
+      }
+      return false;
+    }
 
     const game = {
       on: false,
-      health: 100,
+      dead: false,
+      health: SURVIVOR_CONFIG.maxHealth,
       foodNeed: 0,
       waterNeed: 0,
-      // what deer sense: an NPC-shaped stand-in, alive only in Survivor mode while in play
-      predator: { type: 'player', alive: false, position: new THREE.Vector3() },
-      _q: [],
-      _qp: [],
-      _qb: [],
-      _shown: -1,
+      sheltered: false,       // in the car or a cabin: nothing can hurt the player
+      night: false,
+      inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // { kind, food } or null
+      run: null,              // this run's record: hours, eaten counts, cause
+      _lastHour: null,
+      _q: [], _qp: [], _qb: [],
+      _shown: -1, _shownDay: -1, _shownSlots: '',
+
+      // The NPC world's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
+      // It is a predator to what people hunt, prey at night to what hunts people, and trades fight hits like an animal.
+      avatar: {
+        type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
+        startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
+        get health() { return game.health; },
+        bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
+        bodyMassKg() { return humanMassKg(pov.sex, pov.look ? pov.look.buildDev : 0, this.bodyHeightM()); },
+        // the animal `tid` flees the player
+        isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
+        // the animal `tid` hunts the player
+        isPreyFor(tid) { return this.alive && this.prey && (HUNTS_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
+        takeHit(attacker, damage) {
+          if (game.sheltered || game.dead) return;
+          game.hurt(damage, attacker.type);
+          if (game.dead) attacker.feedOn(this);
+        },
+        feedOn(victim) {
+          game.eat(victim.startHealth);
+          game.tally(victim.type);
+        }
+      },
 
       reset() {
-        this.health = 100;
+        this.dead = false;
+        this.health = SURVIVOR_CONFIG.maxHealth;
         this.foodNeed = 0;
         this.waterNeed = 0;
+        this.inventory.fill(null);
+        this.run = { hours: 0, eaten: {}, cause: null };
+        this._lastHour = null;
+        this.avatar.nextAttackAt = 0;
+        this.showPanel();
         this.draw();
       },
 
+      // Health loss from any source; `cause` names it for the run summary. A hit flashes the screen edge.
+      hurt(amount, cause) {
+        if (amount <= 0 || this.dead) return;
+        this.health = Math.max(0, this.health - amount);
+        this.flash(amount);
+        if (this.health <= 0) this.die(cause);
+        this.draw();
+      },
+
+      heal(amount) {
+        if (amount <= 0 || this.dead) return;
+        this.health = Math.min(SURVIVOR_CONFIG.maxHealth, this.health + amount);
+      },
+
+      // `food` units of food, with the water that comes with that much food (DIET_WATER_SHARE)
+      eat(food) {
+        const N = SURVIVOR_CONFIG.needs;
+        this.foodNeed = Math.max(0, this.foodNeed - food);
+        this.waterNeed = Math.max(0, this.waterNeed - food * DIET_WATER_SHARE * N.waterPerS / N.foodPerS);
+      },
+
+      tally(kind) { this.run.eaten[kind] = (this.run.eaten[kind] || 0) + 1; },
+
+      // Landing at impactSpeed (m/s, downward): the drop height that speed implies, v^2 / 2g, so a teleport
+      // (which zeroes velocity) never counts as a fall.
+      land(impactSpeed) {
+        if (!this.on || !active || this.dead) return;
+        const F = SURVIVOR_CONFIG.fall;
+        const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
+        if (dropHeight > F.safeM) this.hurt((dropHeight - F.safeM) * F.damagePerM, 'fall');
+      },
+
       update(dt) {
-        const pred = this.predator;
-        pred.alive = this.on && active;
-        if (!pred.alive) return;
+        const av = this.avatar;
+        av.alive = this.on && active && !this.dead;
+        if (!av.alive) { av.prey = false; return; }
+        const N = SURVIVOR_CONFIG.needs, R = SURVIVOR_CONFIG.reach;
 
         const px = player.pos.x, pz = player.pos.z;
         const feet = player.pos.y - EYE_HEIGHT;
-        pred.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);
+        av.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);
+        this.sheltered = player.inCar || cabinAt(px, feet, pz);
+        this.night = sunAltDeg < SURVIVOR_CONFIG.night.sunAltDeg;
+        av.prey = this.night && !this.sheltered;
 
-        const cost = player.running ? PLAYER_RUN_COST : 1;
-        this.foodNeed = Math.min(100, this.foodNeed + PLAYER_FOOD_RATE * cost * dt);
-        this.waterNeed = Math.min(100, this.waterNeed + PLAYER_WATER_RATE * cost * dt);
+        // days survived run on the sky's own clock
+        const hour = simSky.hour;
+        if (this._lastHour !== null) this.run.hours += (hour - this._lastHour + 24) % 24;
+        this._lastHour = hour;
+
+        const cost = player.running ? N.sprintCost : 1;
+        this.foodNeed = Math.min(100, this.foodNeed + N.foodPerS * cost * dt);
+        this.waterNeed = Math.min(100, this.waterNeed + N.waterPerS * cost * dt);
+        if (this.foodNeed >= 100) this.hurt(N.starvingPerS * dt, 'starving');
+        if (this.waterNeed >= 100) this.hurt(N.parchedPerS * dt, 'parched');
+        if (this.dead) return;
+        if (this.sheltered && !player.inCar) this.heal(SURVIVOR_CONFIG.shelter.healPerS * dt);
 
         if (!player.inCar) {
           if (!flying && (player.grounded || swimming) && isWaterAt(px, pz)) {
-            this.waterNeed = Math.max(0, this.waterNeed - PLAYER_DRINK_RATE * dt);
+            this.waterNeed = Math.max(0, this.waterNeed - N.drinkPerS * dt);
           }
-
-          const n = world.animalGrid.queryInto(this._q, px, pz, PLAYER_EAT_REACH);
-          for (let i = 0; i < n; i++) {
-            const d = this._q[i];
-            if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
-            if (Math.abs(d.position.y - pred.position.y) > PLAYER_EAT_HEIGHT) continue;
-            if (tools.distSq(px, pz, d.position.x, d.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
-            d.alive = false;
-            this.foodNeed = Math.max(0, this.foodNeed - d.startHealth);
-            this.waterNeed = Math.max(0, this.waterNeed -
-              d.startHealth * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
-          }
-
-          // plants, bitten as people bite them: 1% of Plant nutrition a bite, far less than a deer
-          const np = world.plantGrid.queryInto(this._qp, px, pz, PLAYER_EAT_REACH);
-          for (let i = 0; i < np; i++) {
-            const p = this._qp[i];
-            if (!p.alive) continue;
-            if (Math.abs(p.position.y - feet) > PLAYER_EAT_HEIGHT) continue;
-            if (tools.distSq(px, pz, p.position.x, p.position.z) > PLAYER_EAT_REACH * PLAYER_EAT_REACH) continue;
-            const food = p.maxHealth * 5 * 0.01;
-            this.foodNeed = Math.max(0, this.foodNeed - food);
-            this.waterNeed = Math.max(0, this.waterNeed -
-              food * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
-            p.health -= 1;
-            plantRenderer.touch(p);
-            if (p.health <= 0) { p.alive = false; world.plantsDied = true; }
-          }
-
-          // a food box fills the hunger bar, with the water that comes with that much food
-          const crate = this.foodNeed > 0 ? foodBoxes.touching(this._qb, px, feet, pz) : null;
-          if (crate) {
-            foodBoxes.eat(crate);
-            this.waterNeed = Math.max(0, this.waterNeed -
-              this.foodNeed * DIET_WATER_SHARE * PLAYER_WATER_RATE / PLAYER_FOOD_RATE);
-            this.foodNeed = 0;
-          }
+          this.touchAnimals(px, pz, R);
+          if (this.dead) return;
+          this.pickUp(px, feet, pz, R);
         }
         this.draw();
       },
 
-      // Landing at impactSpeed (m/s, downward): the drop height that speed implies, v^2 / 2g, so a teleport
-      // (which zeroes velocity) never counts as a fall. Drops up to FALL_SAFE_HEIGHT do no harm.
-      land(impactSpeed) {
-        if (!this.on || !active) return;
-        const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
-        if (dropHeight <= FALL_SAFE_HEIGHT) return;
-        this.health = Math.max(0, this.health - (dropHeight - FALL_SAFE_HEIGHT) * FALL_DAMAGE_PER_M);
+      // Contact with animals: prey that cannot fight back is eaten on touch; one that hunts people trades fight hits.
+      touchAnimals(px, pz, R) {
+        const av = this.avatar, now = world.time;
+        const n = world.animalGrid.queryInto(this._q, px, pz, R.radius);
+        for (let i = 0; i < n; i++) {
+          const d = this._q[i];
+          if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
+          if (Math.abs(d.position.y - av.position.y) > R.height) continue;
+          if (tools.distSq(px, pz, d.position.x, d.position.z) > R.radius * R.radius) continue;
+          if ((HUNTS_MASK[d.typeId] & (1 << HUMAN_TYPE_ID)) === 0) {
+            d.alive = false;
+            av.feedOn(d);
+            continue;
+          }
+          if (av.nextAttackAt <= now) {
+            world.fightHit(av, d);
+            av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+          }
+          if (d.alive && d.nextAttackAt <= now) {
+            world.fightHit(d, av);
+            d.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+            if (this.dead) return;
+          }
+        }
+      },
+
+      // Plants and food boxes in reach go into the first free slot; with the slots full they stay where they are.
+      pickUp(px, feet, pz, R) {
+        let free = this.inventory.indexOf(null);
+        if (free < 0) return;
+        const np = world.plantGrid.queryInto(this._qp, px, pz, R.radius);
+        for (let i = 0; i < np && free >= 0; i++) {
+          const p = this._qp[i];
+          if (!p.alive) continue;
+          if (Math.abs(p.position.y - feet) > R.height) continue;
+          if (tools.distSq(px, pz, p.position.x, p.position.z) > R.radius * R.radius) continue;
+          // the whole plant: its remaining bites, each the player's share of a bite's nutrition
+          const food = p.health * p.maxHealth * PLANT_BITE_NUTRITION * SURVIVOR_CONFIG.plantShare;
+          p.health = 0;
+          p.alive = false;
+          world.plantsDied = true;
+          plantRenderer.touch(p);
+          this.inventory[free] = { kind: 'plant', food };
+          free = this.inventory.indexOf(null);
+        }
+        if (free < 0) return;
+        const crate = foodBoxes.touching(this._qb, px, feet, pz);
+        if (crate) {
+          foodBoxes.eat(crate);
+          this.inventory[free] = { kind: 'crate', food: Infinity };   // a food box fills the hunger bar
+        }
+      },
+
+      // Eat the item in slot i (key or tap).
+      useSlot(i) {
+        const item = this.inventory[i];
+        if (!item || !this.on || this.dead) return;
+        this.inventory[i] = null;
+        this.eat(Math.min(item.food, this.foodNeed));
+        this.tally(item.kind);
         this.draw();
+      },
+
+      die(cause) {
+        this.dead = true;
+        this.avatar.alive = false;
+        this.run.cause = cause;
+        const r = this.run, eaten = Object.entries(r.eaten);
+        runCauseEl.textContent = SURVIVOR_CONFIG.causes[cause] ?? 'Died';
+        runStatsEl.textContent = '';
+        const row = (k, v) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; runStatsEl.append(dt, dd); };
+        row('Days survived', (r.hours / 24).toFixed(1));
+        for (const [kind, n] of eaten) row(`Ate (${SURVIVOR_CONFIG.inventory.items[kind]?.label.toLowerCase() ?? kind})`, n);
+        if (!eaten.length) row('Ate', 'nothing');
+        this.showPanel();
+        if (locked) document.exitPointerLock();
+      },
+
+      // A soft red edge whose strength follows the hit, fading out.
+      flash(amount) {
+        const F = SURVIVOR_CONFIG.flash;
+        if (amount < F.minDamage) return;
+        const s = hurtFlashEl.style;
+        s.transition = 'none';
+        s.opacity = String(F.maxOpacity * Math.min(1, amount / F.fullAtDamage + 0.25));
+        void hurtFlashEl.offsetWidth;
+        s.transition = `opacity ${F.fadeS}s ease-out`;
+        s.opacity = '0';
       },
 
       draw() {
         const h = Math.round(this.health);
         const f = Math.round(100 - this.foodNeed), w = Math.round(100 - this.waterNeed);
         const key = h * 1000000 + f * 1000 + w;
-        if (key === this._shown) return;
-        this._shown = key;
-        needHealthEl.style.width = h + '%';
-        needFoodEl.style.width = f + '%';
-        needWaterEl.style.width = w + '%';
+        if (key !== this._shown) {
+          this._shown = key;
+          needHealthEl.style.width = h + '%';
+          needFoodEl.style.width = f + '%';
+          needWaterEl.style.width = w + '%';
+        }
+        const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
+        if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
+        const slots = this.inventory.map(it => it ? it.kind : '').join(',');
+        if (slots !== this._shownSlots) {
+          this._shownSlots = slots;
+          this.inventory.forEach((it, i) => {
+            const el = slotEls[i], item = it && SURVIVOR_CONFIG.inventory.items[it.kind];
+            el.querySelector('span').textContent = item ? item.icon : '';
+            el.disabled = !item;
+            el.setAttribute('aria-label', item ? `Eat ${item.label.toLowerCase()}` : 'Empty slot');
+          });
+        }
       },
 
-      showPanel() {
-        needsEl.classList.toggle('on', this.on && active);
+      // the needs panel, and the run summary after a death, show while Survivor mode is in play
+      showPanel(inPlay = active) {
+        needsEl.classList.toggle('on', inPlay && this.on);
+        runOverEl.classList.toggle('on', inPlay && this.on && this.dead);
       }
     };
+
+    // inventory: a slot's key or a tap eats its item
+    addEventListener('keydown', e => {
+      const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
+      if (i >= 0 && !e.repeat && active) game.useSlot(i);
+    });
+    slotEls.forEach((el, i) => el.addEventListener('click', () => { game.useSlot(i); el.blur(); }));
+    document.getElementById('runNew').addEventListener('click', e => {
+      e.currentTarget.blur();
+      newEcosystem();   // back to the intro's loading view, which hides the summary
+    });
 
     // HEALTH BARS: a stats sprite and brain over each nearby person; slots are reused. Bars show fullness (1 - need).
     const BAR_STEPS = 40;     // redraw only when a bar moves a whole step
@@ -12308,8 +12686,7 @@ void main() {
         const growth = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / NPC_MATURITY_TICKS);
         const s = animalRenderer.MIN_SCALE + (1 - animalRenderer.MIN_SCALE) * growth;
         const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * s;   // crown height as drawn
-        const build = 1 + (a.look ? a.look.buildDev : 0);
-        const lb = Math.round(NPC_SHOWN_BMI[a.sex] * build * build * metres * metres * 2.20462);
+        const lb = Math.round(humanMassKg(a.sex, a.look ? a.look.buildDev : 0, metres) * 2.20462);
         const inches = Math.round(metres / 0.0254);
         const age = a.isAdult ? Math.floor(a.ageYears()) : -1;
         return ((age + 2) * 1000 + inches) * 10000 + lb;
@@ -12536,7 +12913,7 @@ void main() {
       locked = document.pointerLockElement === renderer.domElement;
       if (!locked) keys.clear();
       // Esc releasing pointer lock never reaches the page, so losing the lock opens settings.
-      if (!locked && active) setSettingsOpen(true);
+      if (!locked && active && !game.dead) setSettingsOpen(true);
       wake();
     });
 
@@ -13617,7 +13994,7 @@ void main() {
     newEcoEl.addEventListener('click', () => { newEcoEl.blur(); newEcosystem(); });
 
     function showControls(on) {
-      needsEl.classList.toggle('on', on && game.on);
+      game.showPanel(on);
       flyEl.classList.toggle('on', on && !player.inCar && !game.on);
       climbEl.classList.toggle('on', on && flying);
       gearEl.classList.toggle('on', on);
@@ -14106,6 +14483,7 @@ void main() {
     }
 
     let site = null;
+    let sunAltDeg = 90;   // the drawn sun's altitude (degrees), set by updateSky; Survivor mode reads night from it
 
     // SKY FADE: on a weather change cloud and fog ease over SKY_FADE_S (a world's first sky is set at once).
     const SKY_FADE_S = 5;
@@ -14148,6 +14526,7 @@ void main() {
 
       const inst = skyInstant();
       const s = solarVector(site.lat, site.lon, inst);
+      sunAltDeg = s.altDeg;
       let power = sampleSky(s.altDeg);
 
       // cloud and fog fade out through twilight, so night is not greyed
