@@ -1367,8 +1367,7 @@
     const FOOT_CAM_FOLLOW = 1;    // 1/s the view drifts behind the body while moving, CAM_LOOK_HOLD after the last look
     const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit for mouse, touch and the walking camera
     const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
-    const CROUCH_DROP = 0.45;    // metres the eye lowers when crouched
-    const CROUCH_RATE = 3.0;     // metres per second the eye moves into/out of a crouch
+    const CROUCH_RATE = 3.0;     // metres per second the eye moves into/out of a crouch (CROUCH_DROP: the body's crouch pose)
     const GRAVITY = 22.0;
     const GRID_CELL = 24;      // collision broadphase cell size, meters
     const LAND_EPS = 0.01;    // slack so a snapped-to roof still reads as clear
@@ -5958,6 +5957,12 @@ void main() {
       return { at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625) };
     })();
     const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
+    // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
+    // The body drops by what the folded legs lose in height, so the soles stay on the ground; the eye drops the same.
+    const HUMAN_CROUCH = { hip: -1.0, knee: 1.9, lean: 0.35, arm: -0.4, elbow: -0.5, swingKept: 0.6 };
+    const HUMAN_CROUCH_DROP = (HUMAN_RIG.hip - HUMAN_RIG.knee) * (1 - Math.cos(HUMAN_CROUCH.hip)) +
+      (HUMAN_RIG.knee - HUMAN_RIG.foot) * (1 - Math.cos(HUMAN_CROUCH.knee + HUMAN_CROUCH.hip));   // rig units
+    const CROUCH_DROP = HUMAN_CROUCH_DROP * NPC_UNIT * PLAYER_HS;   // metres the player's eye lowers at full crouch
 
     // HUMAN LOOK (render only): skin tone, face variant and build pass to children; clothes are each person's own.
     const HUMAN_SKIN = [0xf2d0b8, 0xe0b391, 0xc89068, 0xa56f48, 0x7a4e32, 0x4e3222];   // light to dark, sRGB
@@ -6318,15 +6323,20 @@ void main() {
       void humanPose(inout vec3 p, inout vec3 n) {
         float girth = rig.x > 0.5 ? 0.8 + floor(iLook.w / 64.0) / 200.0 : 1.0;
         p.xz *= girth; n.xz /= girth;
-        float t = iGait.y, sw = iGait.z, run = iGait.w, s = sin(t) * rig.z, c = cos(t) * rig.z;
+        // iGait.w: the run share when >= 0, the crouch share when < 0 (the player's stance never mixes them)
+        float run = max(iGait.w, 0.0), crouch = max(-iGait.w, 0.0);
+        float t = iGait.y, sw = iGait.z * (1.0 - ${(1 - HUMAN_CROUCH.swingKept).toFixed(3)} * crouch), s = sin(t) * rig.z, c = cos(t) * rig.z;
         float a1 = 0.0, a2 = 0.0, a3 = 0.0;
         if (rig.y > 1.5) {
           a1 = -sw * s;
           a2 = sw * (0.3 + (2.1 + 1.4 * run) * max(c, 0.0));
           a3 = -(a1 + a2) * 0.8 - 0.45 * sw * s;
+          a1 += ${HUMAN_CROUCH.hip.toFixed(3)} * crouch;
+          a2 += ${HUMAN_CROUCH.knee.toFixed(3)} * crouch;
+          a3 -= ${(HUMAN_CROUCH.hip + HUMAN_CROUCH.knee).toFixed(3)} * crouch;
         } else if (rig.y > 0.5) {
-          a1 = sw * (0.85 + 0.5 * run) * s;
-          a2 = -(0.14 + sw * (0.3 + 0.35 * max(-s, 0.0)) + 1.15 * run);
+          a1 = sw * (0.85 + 0.5 * run) * s + ${HUMAN_CROUCH.arm.toFixed(3)} * crouch;
+          a2 = -(0.14 + sw * (0.3 + 0.35 * max(-s, 0.0)) + 1.15 * run) + ${HUMAN_CROUCH.elbow.toFixed(3)} * crouch;
         }
         a2 *= step(1.5, rig.w); a3 *= step(2.5, rig.w);
         vec2 q = p.yz;
@@ -6335,10 +6345,14 @@ void main() {
           q = vec2(pivot.y, 0.0) + humanTurn(q - vec2(pivot.y, 0.0), a2);
           q = vec2(pivot.x, 0.0) + humanTurn(q - vec2(pivot.x, 0.0), a1);
         }
-        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 : 0.0;
+        // upper body (head, neck, torso, arms) leans with the gait; in a crouch the pelvis (3) tilts with it, so the
+        // waist stays joined and the pelvis's open top stays inside the torso
+        float crouchLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch;
+        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + crouchLean
+          : (abs(rig.x - 3.0) < 0.5 ? crouchLean : 0.0);
         q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
         p.yz = q;
-        p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85;
+        p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85 + ${HUMAN_CROUCH_DROP.toFixed(3)} * crouch;
         n.yz = humanTurn(n.yz, a1 + a2 + a3 + lean);
         float cy = cos(iPose.w), sy = sin(iPose.w);
         p = vec3(p.x * cy + p.z * sy, p.y, p.z * cy - p.x * sy) * iGait.x + iPose.xyz;
@@ -10662,7 +10676,9 @@ void main() {
         // flying: the standing pose (no walk or run cycle); the gait starts from rest on landing
         if (flying) { G.x = player.pos.x; G.z = player.pos.z; G.speed = G.swing = G.run = 0; }
         else this.stepGait(dt, kp);
-        gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = G.run;
+        // iGait.w: the crouch share as a negative number while crouching or easing out of it, else the run share
+        const crouchShare = crouchY / CROUCH_DROP;
+        gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = crouchShare > 0 ? -crouchShare : G.run;
         gait.needsUpdate = true;
 
         const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
@@ -12955,8 +12971,30 @@ void main() {
     let stickId = null, stickCx = 0, stickCy = 0;
     let lookId = null, lookX = 0, lookY = 0;
     let jumpQueued = false;
-    // double tap on the stick toggles crouch; crouchY eases the eye toward it
-    let lastStickTapAt = 0, crouching = false, crouchY = 0;
+    // double tap on the stick toggles crouch (stance); crouchY eases the eye toward it
+    let lastStickTapAt = 0, crouchY = 0;
+
+    // STANCE: crouch and sprint exclude each other and the latest input wins. Sprint is a hold (Shift, the sprint
+    // pedal), crouch a toggle. Pressing sprint stands up; crouching stops a held sprint until it is pressed again.
+    const stance = {
+      crouched: false,
+      sprintBlocked: false,   // crouched while sprint was held: that hold no longer runs
+      _sprintWas: false,
+
+      toggleCrouch() {
+        this.crouched = !this.crouched;
+        if (this.crouched) this.sprintBlocked = true;
+      },
+      stand() { this.crouched = false; },
+
+      // this frame's sprint input -> whether the player runs
+      sprinting(held) {
+        if (held && !this._sprintWas) { this.crouched = false; this.sprintBlocked = false; }
+        if (!held) this.sprintBlocked = false;
+        this._sprintWas = held;
+        return held && !this.sprintBlocked;
+      }
+    };
     // knob offset is written once per frame, not per pointermove
     let knobDx = 0, knobDy = 0, knobDirty = false;
 
@@ -12976,7 +13014,7 @@ void main() {
           stickEl.classList.add('on');
           const now = performance.now();
           if (now - lastStickTapAt < TAP_GAP_MS) {
-            if (!player.inCar && !flying) crouching = !crouching;
+            if (!player.inCar && !flying) stance.toggleCrouch();
             lastStickTapAt = 0;
           } else lastStickTapAt = now;
         } else if (lookId === null) {
@@ -13097,7 +13135,7 @@ void main() {
     function toggleFly() {
       if (player.inCar) return;
       flying = !flying;
-      crouching = false;
+      stance.stand();
       flyEl.classList.toggle('flying', flying);
       climbEl.classList.toggle('on', flying);
       climb = 0;
@@ -13610,7 +13648,7 @@ void main() {
     function enterCar() {
       if (player.inCar || !carNear()) return;
       setPlayerInCar(true);
-      crouching = false; crouchY = 0;
+      stance.stand(); crouchY = 0;
       chaseCam.reset(car.yaw);
       player.vel.set(0, 0, 0);
       jumpQueued = false;
@@ -14079,10 +14117,11 @@ void main() {
 
       const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
       // while flying, shift means down rather than run
+      const sprint = stance.sprinting(active && !flying && !swimming && (shiftHeld || pedal.sprint));
       const speed = swimming ? WALK_SPEED * SWIM_SPEED :
         flying ? FLY_SPEED :
-          crouching ? CROUCH_SPEED :
-            (shiftHeld || pedal.sprint) ? RUN_SPEED : WALK_SPEED;
+          stance.crouched ? CROUCH_SPEED :
+            sprint ? RUN_SPEED : WALK_SPEED;
       const len = Math.hypot(mx, mz);
       player.running = speed === RUN_SPEED && len > 0 && active;
       let dx = 0, dz = 0, dy = 0;
@@ -14175,7 +14214,7 @@ void main() {
       // every world stops the player at its edge (out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
 
-      const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
+      const crouchTo = stance.crouched && !flying ? CROUCH_DROP : 0;
       crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
         : Math.max(crouchTo, crouchY - CROUCH_RATE * dt);
       camera.position.copy(player.pos);
