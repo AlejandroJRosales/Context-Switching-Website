@@ -1362,7 +1362,7 @@
     const RUN_SPEED = 15.0;
     const JUMP_SPEED = 7.0;
     const CROUCH_SPEED = 4.0;
-    const FOOT_TURN_RATE = 2.5;   // rad/s the body turns at full left/right input on foot (the camera follows, as in the car)
+    const FOOT_TURN_RATE = 2.5;   // rad/s the body turns at full left/right input on foot (the view does not turn with it)
     const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit for mouse, touch and the walking camera
     const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
     const CROUCH_DROP = 0.45;    // metres the eye lowers when crouched
@@ -12887,7 +12887,7 @@ void main() {
       vel: new THREE.Vector3(),
       yaw: 0,            // the view (camera) direction; look input writes it
       pitch: 0,
-      heading: 0,        // the body's facing on foot; turn input steers it like the car, and the camera follows it
+      heading: 0,        // the body's facing on foot; turn input steers it like the car, independent of the view
       grounded: true,
       running: false,    // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
       inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
@@ -13159,8 +13159,8 @@ void main() {
       mesh: null, front: [], wheels: []
     };
 
-    // CHASE CAMERA: the car's and the walking player's shared view. Look input (player.yaw / pitch, written by mouse and
-    // touch) becomes an orbit offset from the followed heading, which eases back CAM_LOOK_HOLD after the last look while moving.
+    // CHASE CAMERA: the car's view. Look input (player.yaw / pitch, written by mouse and touch) becomes an orbit offset
+    // from the followed heading, which eases back CAM_LOOK_HOLD after the last look while moving.
     const chaseCam = {
       camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false,
 
@@ -13169,6 +13169,7 @@ void main() {
         this.camYaw = heading;
         this.lookYaw = this.lookPitch = this.lookAt = 0;
         this.shownYaw = player.yaw; this.shownPitch = player.pitch;
+        this.settling = false;
       },
 
       // Follow `heading`; the view's pitch is basePitch plus the look offset, kept within [minPitch, maxPitch].
@@ -14049,8 +14050,8 @@ void main() {
       if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
       if (renderer.xr.isPresenting) { mx += vr.moveX; mz -= vr.moveY; }
 
-      // On foot, left/right input steers the body like the car's wheel and forward/back moves along it; the view
-      // follows the body (chaseCam). In VR the head is the view, so moves stay relative to it.
+      // On foot, left/right input steers the body like the car's wheel and forward/back moves along it; only look input
+      // (mouse, drag) moves the view. In VR the head is the view, so moves stay relative to it.
       const steered = !renderer.xr.isPresenting;
       if (!steered) player.heading = player.yaw;
       else {
@@ -14150,9 +14151,6 @@ void main() {
       }
       // every world stops the player at its edge (out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
-
-      // the view eases back behind the body while walking (not while swimming, where the look pitch steers the dive)
-      if (steered) chaseCam.step(dt, player.heading, len > 0 && active && !swimming, 0, -LOOK_PITCH_MAX, LOOK_PITCH_MAX);
 
       const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
       crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
