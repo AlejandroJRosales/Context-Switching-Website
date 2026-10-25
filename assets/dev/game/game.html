@@ -1362,6 +1362,8 @@
     const RUN_SPEED = 15.0;
     const JUMP_SPEED = 7.0;
     const CROUCH_SPEED = 4.0;
+    const FOOT_TURN_RATE = 2.5;   // rad/s the body turns at full left/right input on foot (the camera follows, as in the car)
+    const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit for mouse, touch and the walking camera
     const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
     const CROUCH_DROP = 0.45;    // metres the eye lowers when crouched
     const CROUCH_RATE = 3.0;     // metres per second the eye moves into/out of a crouch
@@ -10220,8 +10222,8 @@ void main() {
         this.mesh.visible = show;
         if (!show) return;
         const feet = player.pos.y - EYE_HEIGHT;
-        const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);   // player forward
-        const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);    // player right
+        const fx = -Math.sin(player.heading), fz = -Math.cos(player.heading);   // player forward
+        const rx = Math.cos(player.heading), rz = -Math.sin(player.heading);    // player right
         const ahead = 28 * NPC_UNIT, side = 10 * NPC_UNIT;
         this.position.set(player.pos.x + fx * ahead + rx * side, feet,
           player.pos.z + fz * ahead + rz * side);
@@ -10255,11 +10257,11 @@ void main() {
 
         if (distToPlayer > catchUpDist) {
           // too far behind (car, fly, a sprint): appear just behind the player
-          const warpX = px + Math.sin(player.yaw) * followDist * 0.3;
-          const warpZ = pz + Math.cos(player.yaw) * followDist * 0.3;
+          const warpX = px + Math.sin(player.heading) * followDist * 0.3;
+          const warpZ = pz + Math.cos(player.heading) * followDist * 0.3;
           this.position.set(warpX, this.groundAt(warpX, warpZ), warpZ);
           this.velocity.y = 0;
-          this.yaw = player.yaw;
+          this.yaw = player.heading;
         } else if (distToPlayer + 50 * NPC_UNIT > followDist) {
           speed = (distToPlayer > 80 * NPC_UNIT ? 250 : 25) * NPC_UNIT * waterFactor;
           const dxRounded = Math.round(dx / (10 * NPC_UNIT)) * 10;
@@ -10652,7 +10654,7 @@ void main() {
         const feet = player.pos.y - EYE_HEIGHT;
         const b = this.body, kp = NPC_UNIT * this.heightScale;
         b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
-        b.rotation.y = player.yaw + Math.PI;   // the rig faces +z at rotation 0, the camera -z at yaw 0
+        b.rotation.y = player.heading + Math.PI;   // the rig faces +z at rotation 0, the camera -z at yaw 0
 
         const G = this.gait, gait = b.geometry.attributes.iGait;
         // flying: the standing pose (no walk or run cycle); the gait starts from rest on landing
@@ -12883,8 +12885,9 @@ void main() {
     const player = {
       pos: new THREE.Vector3(0, EYE_HEIGHT, 0),
       vel: new THREE.Vector3(),
-      yaw: 0,
+      yaw: 0,            // the view (camera) direction; look input writes it
       pitch: 0,
+      heading: 0,        // the body's facing on foot; turn input steers it like the car, and the camera follows it
       grounded: true,
       running: false,    // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
       inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
@@ -12921,8 +12924,7 @@ void main() {
       if (!locked) return;
       player.yaw -= e.movementX * 0.0022;
       player.pitch -= e.movementY * 0.0022;
-      const lim = Math.PI / 2 - 0.01;
-      player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
+      player.pitch = Math.max(-LOOK_PITCH_MAX, Math.min(LOOK_PITCH_MAX, player.pitch));
       wake();
     });
 
@@ -12995,8 +12997,7 @@ void main() {
         } else if (e.pointerId === lookId) {
           player.yaw -= (e.clientX - lookX) * 0.005;
           player.pitch -= (e.clientY - lookY) * 0.005;
-          const lim = Math.PI / 2 - 0.01;
-          player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
+          player.pitch = Math.max(-LOOK_PITCH_MAX, Math.min(LOOK_PITCH_MAX, player.pitch));
           lookX = e.clientX; lookY = e.clientY;
         } else {
           return;
@@ -13158,7 +13159,49 @@ void main() {
       mesh: null, front: [], wheels: []
     };
 
-    const drive = { camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false };
+    // CHASE CAMERA: the car's and the walking player's shared view. Look input (player.yaw / pitch, written by mouse and
+    // touch) becomes an orbit offset from the followed heading, which eases back CAM_LOOK_HOLD after the last look while moving.
+    const chaseCam = {
+      camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false,
+
+      // behind `heading`, no look offset
+      reset(heading) {
+        this.camYaw = heading;
+        this.lookYaw = this.lookPitch = this.lookAt = 0;
+        this.shownYaw = player.yaw; this.shownPitch = player.pitch;
+      },
+
+      // Follow `heading`; the view's pitch is basePitch plus the look offset, kept within [minPitch, maxPitch].
+      // Writes the result to player.yaw / pitch.
+      step(dt, heading, moving, basePitch, minPitch, maxPitch) {
+        const dYaw = player.yaw - this.shownYaw, dPitch = player.pitch - this.shownPitch;
+        const now = performance.now();
+        if (dYaw !== 0 || dPitch !== 0) this.lookAt = now;
+        this.lookYaw += dYaw;
+        this.lookPitch += dPitch;
+
+        let dy = heading - this.camYaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        this.camYaw += dy * (1 - Math.exp(-CAM_FOLLOW * dt));
+        if (now - this.lookAt > CAM_LOOK_HOLD && moving) {
+          const k = Math.exp(-2 * dt);
+          this.lookYaw *= k; this.lookPitch *= k;
+          if (Math.abs(this.lookYaw) < 1e-4) this.lookYaw = 0;
+          if (Math.abs(this.lookPitch) < 1e-4) this.lookPitch = 0;
+        }
+        this.lookPitch = Math.max(minPitch - basePitch, Math.min(maxPitch - basePitch, this.lookPitch));
+        player.yaw = this.shownYaw = this.camYaw + this.lookYaw;
+        player.pitch = this.shownPitch = basePitch + this.lookPitch;
+        this.settling = Math.abs(dy) > 1e-4 || this.lookYaw !== 0 || this.lookPitch !== 0;
+      }
+    };
+
+    // Face the player (body and view) along `yaw`, the camera straight behind: spawns and leaving the car.
+    function facePlayer(yaw, pitch) {
+      player.yaw = player.heading = yaw;
+      player.pitch = pitch;
+      chaseCam.reset(yaw);
+    }
 
     // Mesh: body, glasshouse, roof, lamps, four wheels (front two on steer pivots).
     {
@@ -13550,9 +13593,7 @@ void main() {
       if (player.inCar || !carNear()) return;
       setPlayerInCar(true);
       crouching = false; crouchY = 0;
-      drive.camYaw = car.yaw;
-      drive.lookYaw = 0; drive.lookPitch = 0; drive.lookAt = 0;
-      drive.shownYaw = player.yaw; drive.shownPitch = player.pitch;
+      chaseCam.reset(car.yaw);
       player.vel.set(0, 0, 0);
       jumpQueued = false;
       touchMove.z = 0;
@@ -13575,7 +13616,7 @@ void main() {
         player.pos.set(px, g + EYE_HEIGHT, pz);
         player.vel.set(0, 0, 0);
         player.grounded = false;
-        player.yaw = car.yaw; player.pitch = 0;
+        facePlayer(car.yaw, 0);
         flyEl.classList.toggle('on', active && !game.on);
         cat.alight();
         updateCarButton();
@@ -13594,12 +13635,6 @@ void main() {
     });
 
     function driveStep(dt) {
-      // this frame's look input, applied as an orbit offset
-      const dYaw = player.yaw - drive.shownYaw, dPitch = player.pitch - drive.shownPitch;
-      const now = performance.now();
-      if (dYaw !== 0 || dPitch !== 0) drive.lookAt = now;
-      drive.lookYaw += dYaw;
-      drive.lookPitch += dPitch;
       jumpQueued = false;
 
       let throttle = 0, steer = 0;
@@ -13616,17 +13651,8 @@ void main() {
       steer = Math.max(-1, Math.min(1, steer));
       carPhysics(dt, throttle, steer, active && keys.has('Space'));
 
-      let dy = car.yaw - drive.camYaw;
-      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      drive.camYaw += dy * (1 - Math.exp(-CAM_FOLLOW * dt));
-      if (now - drive.lookAt > CAM_LOOK_HOLD && Math.abs(car.speed) > 1) {
-        const k = Math.exp(-2 * dt);
-        drive.lookYaw *= k; drive.lookPitch *= k;
-        if (Math.abs(drive.lookYaw) < 1e-4) drive.lookYaw = 0;
-        if (Math.abs(drive.lookPitch) < 1e-4) drive.lookPitch = 0;
-      }
-      drive.lookPitch = Math.max(-1.1 - CAM_PITCH, Math.min(0.5 - CAM_PITCH, drive.lookPitch));
-      const yaw = drive.camYaw + drive.lookYaw, pitch = CAM_PITCH + drive.lookPitch;
+      chaseCam.step(dt, car.yaw, Math.abs(car.speed) > 1, CAM_PITCH, -1.1, 0.5);
+      const yaw = player.yaw, pitch = player.pitch;
 
       // boom from the pivot back along the view, shortened before any wall or building
       const px = car.x, py = car.y + CAM_PIVOT, pz = car.z;
@@ -13644,9 +13670,6 @@ void main() {
       const cy = Math.max(py + by * boom, groundAt(cx, cz) + 0.4);
 
       player.pos.set(cx, cy, cz);
-      player.yaw = yaw; player.pitch = pitch;
-      drive.shownYaw = yaw; drive.shownPitch = pitch;
-      drive.settling = Math.abs(dy) > 1e-4 || drive.lookYaw !== 0 || drive.lookPitch !== 0;
       camera.position.copy(player.pos);
       camera.rotation.set(pitch, yaw, 0, 'YXZ');
     }
@@ -14018,9 +14041,6 @@ void main() {
       // an empty car still rolling (left at speed) brakes to a stop
       if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
-      fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-
       let mx = 0, mz = 0;
       if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
       if (keys.has('KeyS') || keys.has('ArrowDown')) mz -= 1;
@@ -14028,6 +14048,17 @@ void main() {
       if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;
       if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
       if (renderer.xr.isPresenting) { mx += vr.moveX; mz -= vr.moveY; }
+
+      // On foot, left/right input steers the body like the car's wheel and forward/back moves along it; the view
+      // follows the body (chaseCam). In VR the head is the view, so moves stay relative to it.
+      const steered = !renderer.xr.isPresenting;
+      if (!steered) player.heading = player.yaw;
+      else {
+        if (active) player.heading -= Math.max(-1, Math.min(1, mx)) * FOOT_TURN_RATE * dt;
+        mx = 0;
+      }
+      fwd.set(-Math.sin(player.heading), 0, -Math.cos(player.heading));
+      right.set(Math.cos(player.heading), 0, -Math.sin(player.heading));
 
       // deep water under the eye: swim
       if (activeWorld) activeWorld.surface(player.pos.x, player.pos.z, _surf);
@@ -14119,6 +14150,9 @@ void main() {
       }
       // every world stops the player at its edge (out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
+
+      // the view eases back behind the body while walking (not while swimming, where the look pitch steers the dive)
+      if (steered) chaseCam.step(dt, player.heading, len > 0 && active && !swimming, 0, -LOOK_PITCH_MAX, LOOK_PITCH_MAX);
 
       const crouchTo = crouching && !flying ? CROUCH_DROP : 0;
       crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
@@ -14262,7 +14296,7 @@ void main() {
 
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || player.inCar) && player.vel.y === 0 &&
-        car.speed === 0 && !(player.inCar && drive.settling) && !cat.boarding;
+        car.speed === 0 && !chaseCam.settling && !cat.boarding;
       if (settled && !drawPending && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
         last = -1;
         return;
@@ -15024,7 +15058,7 @@ void main() {
         const st = w.playerStart();
         player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
         player.vel.set(0, 0, 0);
-        player.yaw = st.yaw; player.pitch = -0.3;
+        facePlayer(st.yaw, -0.3);
         player.grounded = false;
         if (o.car && !parkBesideCabin(w.cabins[0], st.yaw)) placeCar([], player.pos.x, player.pos.z);
 
@@ -15239,14 +15273,14 @@ void main() {
           const st = provider.playerStart();
           player.pos.set(st.x, st.y + EYE_HEIGHT, st.z);
           player.vel.set(0, 0, 0);
-          player.yaw = st.yaw; player.pitch = 0;
+          facePlayer(st.yaw, 0);
           player.grounded = false;
           if (o.car && !parkBesideCabin(provider.cabins[0], st.yaw)) placeCar(features.roads, player.pos.x, player.pos.z);
         } else {
           const [sx, sz] = streetSpawn(features.roads, 0, 0) ?? outdoorSpawn(0, 0);
           player.pos.set(sx, groundAt(sx, sz) + EYE_HEIGHT, sz);
           player.vel.set(0, 0, 0);
-          player.yaw = 0; player.pitch = 0;
+          facePlayer(0, 0);
           player.grounded = false;
           resolveCollisions(player.pos);
           if (o.car) placeCar(features.roads, player.pos.x, player.pos.z);
