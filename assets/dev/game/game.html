@@ -1362,7 +1362,9 @@
     const RUN_SPEED = 15.0;
     const JUMP_SPEED = 7.0;
     const CROUCH_SPEED = 4.0;
-    const FOOT_TURN_RATE = 2.5;   // rad/s the body turns at full left/right input on foot (the view does not turn with it)
+    // On foot (GTA-style): the stick moves relative to the view, the body turns to face the move, the view drifts back behind.
+    const FOOT_TURN_RATE = 10;    // rad/s the body turns toward the direction it is moving
+    const FOOT_CAM_FOLLOW = 1;    // 1/s the view drifts behind the body while moving, CAM_LOOK_HOLD after the last look
     const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit for mouse, touch and the walking camera
     const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
     const CROUCH_DROP = 0.45;    // metres the eye lowers when crouched
@@ -12887,7 +12889,7 @@ void main() {
       vel: new THREE.Vector3(),
       yaw: 0,            // the view (camera) direction; look input writes it
       pitch: 0,
-      heading: 0,        // the body's facing on foot; turn input steers it like the car, independent of the view
+      heading: 0,        // the body's facing on foot: it turns toward the direction of movement
       grounded: true,
       running: false,    // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
       inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
@@ -13159,8 +13161,9 @@ void main() {
       mesh: null, front: [], wheels: []
     };
 
-    // CHASE CAMERA: the car's view. Look input (player.yaw / pitch, written by mouse and touch) becomes an orbit offset
-    // from the followed heading, which eases back CAM_LOOK_HOLD after the last look while moving.
+    // CHASE CAMERA: the car's and the walking player's view. Look input (player.yaw / pitch, written by mouse and touch)
+    // is tracked here; CAM_LOOK_HOLD after the last look, while moving, the view swings back behind the heading.
+    // The car uses step (tight follow plus a look offset); on foot, drift (the view stays free, swinging back slowly).
     const chaseCam = {
       camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false,
 
@@ -13194,6 +13197,20 @@ void main() {
         player.yaw = this.shownYaw = this.camYaw + this.lookYaw;
         player.pitch = this.shownPitch = basePitch + this.lookPitch;
         this.settling = Math.abs(dy) > 1e-4 || this.lookYaw !== 0 || this.lookPitch !== 0;
+      },
+
+      // On foot: the view is player.yaw itself; while moving, CAM_LOOK_HOLD after the last look, it swings toward
+      // `heading` at `rate` (1/s). Pitch is left to the look input.
+      drift(dt, heading, moving, rate) {
+        const now = performance.now();
+        if (player.yaw !== this.shownYaw || player.pitch !== this.shownPitch) this.lookAt = now;
+        let dy = 0;
+        if (moving && now - this.lookAt > CAM_LOOK_HOLD) {
+          dy = Math.atan2(Math.sin(heading - player.yaw), Math.cos(heading - player.yaw));
+          player.yaw += dy * (1 - Math.exp(-rate * dt));
+        }
+        this.shownYaw = player.yaw; this.shownPitch = player.pitch;
+        this.settling = Math.abs(dy) > 1e-3;
       }
     };
 
@@ -14050,16 +14067,9 @@ void main() {
       if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
       if (renderer.xr.isPresenting) { mx += vr.moveX; mz -= vr.moveY; }
 
-      // On foot, left/right input steers the body like the car's wheel and forward/back moves along it; only look input
-      // (mouse, drag) moves the view. In VR the head is the view, so moves stay relative to it.
-      const steered = !renderer.xr.isPresenting;
-      if (!steered) player.heading = player.yaw;
-      else {
-        if (active) player.heading -= Math.max(-1, Math.min(1, mx)) * FOOT_TURN_RATE * dt;
-        mx = 0;
-      }
-      fwd.set(-Math.sin(player.heading), 0, -Math.cos(player.heading));
-      right.set(Math.cos(player.heading), 0, -Math.sin(player.heading));
+      // moves are relative to the view; the body turns to face them (below)
+      fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
 
       // deep water under the eye: swim
       if (activeWorld) activeWorld.surface(player.pos.x, player.pos.z, _surf);
@@ -14087,6 +14097,19 @@ void main() {
           dz = (fwd.z * mz * cp + right.z * mx) * speed * dt;
           dy = Math.sin(player.pitch) * mz * speed * dt;
         }
+      }
+
+      // 3rd person, GTA-style: the body turns toward the move, and the view drifts back behind it.
+      // 1st person and VR: the eyes are the view, so the body faces it.
+      if (pov.mode !== '3rd' || renderer.xr.isPresenting) player.heading = player.yaw;
+      else {
+        if (dx !== 0 || dz !== 0) {
+          let dh = Math.atan2(-dx, -dz) - player.heading;
+          dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+          const maxTurn = FOOT_TURN_RATE * dt;
+          player.heading += Math.max(-maxTurn, Math.min(maxTurn, dh));
+        }
+        chaseCam.drift(dt, player.heading, len > 0 && active && !swimming, FOOT_CAM_FOLLOW);
       }
 
       if (flying) {
