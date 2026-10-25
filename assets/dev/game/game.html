@@ -338,6 +338,10 @@
       width: 100%;
     }
 
+    #needHealth {
+      background: #e74c3c;
+    }
+
     #needFood {
       background: #e67e22;
     }
@@ -1120,6 +1124,7 @@
   </div>
   <div id="hud"></div>
   <div id="needs" aria-hidden="true">
+    <div class="need"><span>❤️</span><i><b id="needHealth"></b></i></div>
     <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
     <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
   </div>
@@ -11904,13 +11909,17 @@ void main() {
     const PLAYER_RUN_COST = 2;                 // hunger and thirst rise this many times faster while running
     const PLAYER_EAT_REACH = PLAYER_RADIUS + 0.45;   // metres, player to a deer's centre, that count as touching
     const PLAYER_EAT_HEIGHT = 1.5;               // metres of height difference past which a deer is out of reach
+    const FALL_SAFE_HEIGHT = 3;                  // metres a player can drop unhurt (about one storey)
+    const FALL_DAMAGE_PER_M = 10;                // health lost per metre fallen past the safe height: ~13 m is lethal
 
     const needsEl = document.getElementById('needs');
+    const needHealthEl = document.getElementById('needHealth');
     const needFoodEl = document.getElementById('needFood');
     const needWaterEl = document.getElementById('needWater');
 
     const game = {
       on: false,
+      health: 100,
       foodNeed: 0,
       waterNeed: 0,
       // what deer sense: an NPC-shaped stand-in, alive only in Survivor mode while in play
@@ -11921,6 +11930,7 @@ void main() {
       _shown: -1,
 
       reset() {
+        this.health = 100;
         this.foodNeed = 0;
         this.waterNeed = 0;
         this.draw();
@@ -11984,11 +11994,23 @@ void main() {
         this.draw();
       },
 
+      // Landing at impactSpeed (m/s, downward): the drop height that speed implies, v^2 / 2g, so a teleport
+      // (which zeroes velocity) never counts as a fall. Drops up to FALL_SAFE_HEIGHT do no harm.
+      land(impactSpeed) {
+        if (!this.on || !active) return;
+        const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
+        if (dropHeight <= FALL_SAFE_HEIGHT) return;
+        this.health = Math.max(0, this.health - (dropHeight - FALL_SAFE_HEIGHT) * FALL_DAMAGE_PER_M);
+        this.draw();
+      },
+
       draw() {
+        const h = Math.round(this.health);
         const f = Math.round(100 - this.foodNeed), w = Math.round(100 - this.waterNeed);
-        const key = f * 1000 + w;
+        const key = h * 1000000 + f * 1000 + w;
         if (key === this._shown) return;
         this._shown = key;
+        needHealthEl.style.width = h + '%';
         needFoodEl.style.width = f + '%';
         needWaterEl.style.width = w + '%';
       },
@@ -13711,6 +13733,7 @@ void main() {
           const reach = walk ? GROUND_SNAP : 0;
           const floorY = supportAt(player.pos.x, player.pos.z, fromFeet, toFeet - reach, walk ? STEP_UP : 0);
           if (toFeet - reach <= floorY) {
+            if (!wasGrounded) game.land(-player.vel.y);
             player.pos.y = floorY + EYE_HEIGHT;
             player.vel.y = 0;
             player.grounded = true;
