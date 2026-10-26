@@ -344,6 +344,14 @@
       color: rgba(232, 228, 220, 0.8);
     }
 
+    /* the player's stats under the bars, as people's labels show theirs; wraps to the panel's width */
+    #needInfo {
+      width: calc(var(--need-icon-w) + var(--need-gap) + var(--need-bar-w));
+      margin-top: 3px;
+      font: 400 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+      color: rgba(232, 228, 220, 0.8);
+    }
+
     #slots {
       margin-top: 5px;
     }
@@ -542,10 +550,11 @@
       display: block;
     }
 
+    /* the fly button's slot: the car button takes it when the car is in reach (updateFlyButton) */
     #car {
       position: fixed;
       right: 18px;
-      bottom: 131px;
+      bottom: 182px;
       width: 59px;
       padding: 12px 0;
       z-index: 6;
@@ -611,6 +620,7 @@
 
     #sprint svg,
     #jump svg,
+    #attack svg,
     #fly svg {
       display: block;
       margin: 0 auto;
@@ -644,6 +654,19 @@
       right: 89px;
       width: 59px;
       height: 70px;
+    }
+
+    /* touch attack on foot: above sprint, in the slot below the fly and car buttons */
+    #attack {
+      right: 18px;
+      bottom: 121px;
+      width: 59px;
+      height: 52px;
+    }
+
+    #attack svg {
+      width: 34px;
+      height: 34px;
     }
 
     /* flick steering: the floating stick narrows to a horizontal track */
@@ -1246,6 +1269,7 @@
       <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
       <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
     </div>
+    <div id="needInfo"></div>
     <div id="slots" class="need-pair">
       <button disabled aria-label="Empty slot"><span></span><kbd>1</kbd></button>
       <button disabled aria-label="Empty slot"><span></span><kbd>2</kbd></button>
@@ -1280,6 +1304,14 @@
   <button id="jump" class="pedal" aria-label="Jump"><svg viewBox="0 0 623 712" aria-hidden="true">
       <path transform="matrix(1 0 0 -1 0 712)"
         d="M508 711 c-66 -13 -100 -86 -68 -143 45 -79 163 -60 181 29 13 66 -48 126 -113 114z M45 575 c-56 -14 -60 -94 -5 -112 9 -3 6 -5 48 31 l39 32 18 7 c10 4 36 16 58 25 22 9 41 17 41 18 1 1 -194 0 -199 -1z M356 575 c-8 -1 -21 -5 -31 -8 -8 -3 -17 -7 -59 -24 -27 -12 -88 -38 -100 -43 -4 -2 -10 -4 -12 -5 -4 -2 -16 -11 -33 -26 -16 -12 -44 -35 -62 -51 -41 -33 -45 -37 -50 -45 -28 -46 17 -101 68 -85 10 3 14 6 60 44 l44 37 -4 -8 c-32 -65 -27 -107 16 -130 5 -3 20 -8 99 -38 17 -6 31 -11 31 -12 0 0 12 -34 26 -76 30 -91 32 -94 48 -102 l5 -3 26 0 26 0 5 3 c12 5 23 22 26 37 3 16 4 13 -34 127 l-34 103 -4 2 c-3 1 -8 4 -12 6 -5 3 -16 9 -25 13 -9 5 -22 12 -29 16 l-13 7 1 4 c10 33 36 73 75 113 20 22 30 38 34 55 12 51 -34 98 -88 89z M395 326 c1 -1 14 -8 28 -16 l26 -13 29 -88 29 -88 5 -4 c27 -25 41 -30 64 -25 39 8 59 54 37 88 -5 8 -4 7 -86 77 l-75 65 -7 0 c-4 1 -16 2 -27 2 -11 1 -21 2 -22 3 -2 0 -2 0 -1 -1z" />
+    </svg></button>
+  <button id="attack" class="pedal" aria-label="Attack"><svg viewBox="0 0 48 48" aria-hidden="true">
+      <rect x="10" y="9" width="6.4" height="15" rx="3.2" />
+      <rect x="17.2" y="7.5" width="6.4" height="16.5" rx="3.2" />
+      <rect x="24.4" y="7.5" width="6.4" height="16.5" rx="3.2" />
+      <rect x="31.6" y="9" width="6.4" height="15" rx="3.2" />
+      <rect x="10" y="25" width="28" height="13.5" rx="5" />
+      <rect x="15" y="39.5" width="18" height="6" rx="1.5" />
     </svg></button>
   <div id="climb"><button id="up">↑</button><button id="down">↓</button></div>
   <button id="gear" aria-label="Settings">
@@ -4403,6 +4435,67 @@ void main() {
     // FIGHTS (two animals that hunt each other): each side's hit scales with its height x mass x health.
     const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by a reference fighter (below): 0.2 of a human's 120
     const NPC_FIGHT_REF_STRENGTH = 1.753 * (24 * 1.753 * 1.753) * 120;   // average adult man: 1.753 m, ~73.8 kg, 120 health
+    // FIGHT MOVES: each species' move when it fights (moveS sim seconds; key t is a share of moveS). Strikers (people,
+    // coyotes) play theirs on landing a hit and hold their ground while hits keep coming; a species that `flees` plays
+    // its move on being hit (no damage dealt), then runs from the attacker, and moves again only after fleeS.
+    // Box-rig keys, rig units and radians: rise and lunge move the body (lunge forward), pitch tips it (+ nose down),
+    // head tips the head (+ nose down), front and back swing the legs from straight down (+ feet back).
+    // anchor: the leg joint a box rig tips about, so those legs stay planted (null: about the body centre).
+    const NPC_FIGHT_HOLD_PAD_S = 0.1;   // a striker's hold outlasts its next possible hit by this, so a running fight never lets go
+    const NPC_FIGHT_MOVES = {
+      // punch: alternating fists from a raised guard; arm angles in radians as HUMAN_CROUCH's (shoulder - forward, elbow - bent)
+      human: { moveS: 0.4, peak: 0.35, guardEaseS: 0.12, guardShoulder: -0.4, guardElbow: -2.35, punchShoulder: -1.55, punchElbow: -0.05, punchLean: 0.18 },
+      // lunge and pounce: coil, leap forward, bite, back to its spot
+      coyote: {
+        moveS: 0.8, anchor: null, keys: [
+          { t: 0, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 },
+          { t: 0.22, rise: -0.8, lunge: -1, pitch: 0, head: 0.25, front: 0.25, back: -0.35 },
+          { t: 0.45, rise: 4.5, lunge: 7, pitch: -0.2, head: -0.15, front: -1.0, back: 0.9 },
+          { t: 0.62, rise: 0.3, lunge: 5, pitch: 0.18, head: 0.5, front: -0.25, back: 0.35 },
+          { t: 1, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 }
+        ]
+      },
+      // buck: head down, rump up and both hind legs kicked back at the attacker, then a sprint away
+      deer: {
+        moveS: 0.55, flees: true, fleeS: 3, anchor: 'legFL', keys: [
+          { t: 0, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 },
+          { t: 0.18, rise: 0, lunge: 0, pitch: 0.12, head: 0.3, front: 0, back: -0.2 },
+          { t: 0.45, rise: 0, lunge: 0, pitch: 0.4, head: 0.5, front: 0, back: 1.3 },
+          { t: 0.72, rise: 0, lunge: 0, pitch: 0.1, head: 0.2, front: 0, back: 0.3 },
+          { t: 1, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 }
+        ]
+      }
+    };
+    const fightEase = x => x * x * (3 - 2 * x);
+    const fightClamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+
+    // Fight state shared by animals and the player's avatar: moveAt (start of the move playing), moveSide (people's
+    // punching arm, +1 left / -1 right), fightFrom / fightUntil (the hold). A move still playing is not restarted.
+    function startFightMove(f, move, now) {
+      if (now - f.moveAt >= move.moveS) { f.moveAt = now; f.moveSide = -f.moveSide; }
+      if (now >= f.fightUntil) f.fightFrom = now;
+      const holdS = move.flees ? move.moveS : Math.max(move.moveS, NPC_ATTACK_COOLDOWN_S + NPC_FIGHT_HOLD_PAD_S);
+      f.fightUntil = Math.max(f.fightUntil, now + holdS);
+    }
+
+    // A person's iAct at `now` into out[o..o+3]: punch reach (0..1), punching arm, guard share (0..1), unused.
+    function humanFightAct(f, now, out, o) {
+      const m = NPC_FIGHT_MOVES.human, u = (now - f.moveAt) / m.moveS;
+      out[o] = u >= 0 && u < 1 ? (u < m.peak ? fightEase(u / m.peak) : 1 - fightEase((u - m.peak) / (1 - m.peak))) : 0;
+      out[o + 1] = f.moveSide;
+      out[o + 2] = fightClamp01((f.fightUntil - now) / m.guardEaseS) * fightClamp01((now - f.fightFrom) / m.guardEaseS);
+      out[o + 3] = 0;
+    }
+
+    // A box rig's move pose at share u (0..1) of its keys into `out`, eased between keys.
+    const FIGHT_KEY_FIELDS = ['rise', 'lunge', 'pitch', 'head', 'front', 'back'];
+    function sampleFightKeys(keys, u, out) {
+      let i = 0;
+      while (i < keys.length - 2 && u > keys[i + 1].t) i++;
+      const a = keys[i], b = keys[i + 1], f = fightEase(fightClamp01((u - a.t) / (b.t - a.t)));
+      for (const k of FIGHT_KEY_FIELDS) out[k] = a[k] + (b[k] - a[k]) * f;
+      return out;
+    }
     const NPC_AGE_DEPLETION_RATE = 0;  // health lost per sim second of age, per point of starting health (was 0.000001); 0 = off
     const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
     const MATE_TIME_MULT = 4;
@@ -4441,6 +4534,19 @@ void main() {
     function humanMassKg(sex, buildDev, heightM) {
       const build = 1 + buildDev;
       return NPC_SHOWN_BMI[sex] * build * build * heightM * heightM;
+    }
+    // A person's stats readout (people's labels and the player's Survivor panel): age, sex, height, weight, in that order.
+    // The key packs what can change (age in whole years or -1 for a child, height in inches, weight in lb), so a
+    // display redraws only when it changes; heightM is the crown height as drawn.
+    function personInfoKey(age, sex, buildDev, heightM) {
+      const lb = Math.round(humanMassKg(sex, buildDev, heightM) * 2.20462);
+      const inches = Math.round(heightM / 0.0254);
+      return ((age + 2) * 1000 + inches) * 10000 + lb;
+    }
+    function personInfoText(key, sex) {
+      const lb = key % 10000, inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
+      return `Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}, ${sex === 'male' ? 'M' : 'F'}, `
+        + `${Math.floor(inches / 12)}'${inches % 12}", ${lb} lb`;
     }
     // Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use NPC_SHOWN_BMI.
     const NPC_REF_MASS_KG = {
@@ -5147,6 +5253,10 @@ void main() {
         this.nextAttackAt = 0;   // sim seconds: when this hunter may attack again
         this.nextBiteAt = 0;     // sim seconds: when this grazer may bite a plant again
         this.noEatUntil = 0;     // sim seconds: eating is blocked until then after being hit
+        // fight move and hold (startFightMove); while world.time < fightUntil the animal takes no steps
+        this.moveAt = -Infinity; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
+        this.fleeFrom = null;    // who a fleeing species' move answered; it runs from them once the move ends
+        this.fleeUntil = 0;      // sim seconds: a fleeing species plays no new move until then
         this.bumpScale = 1;
 
         // no target reads as distance 1 (the edge of sight), never 0, which would mean touching it
@@ -5691,7 +5801,7 @@ void main() {
 
       move() {
         const lift = this.footLift() * NPC_UNIT;
-        if (this.moving) {
+        if (this.moving && world.time >= this.fightUntil) {
           if (this.heading !== this.targetHeading) {
             this.heading = Animal.turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * NPC_TICK_S);
           }
@@ -5745,6 +5855,7 @@ void main() {
           + this.foodNeed * 0.0001;
         this.avoidNeed = 0;
         if (this.health <= 1) { this.alive = false; return; }
+        if (this.fleeFrom !== null && now >= this.fightUntil) this.fleeAttacker();
 
         if (!this.brain) {
           // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick
@@ -5787,7 +5898,44 @@ void main() {
         if (this.health <= 1) {
           this.alive = false;
           attacker.feedOn(this);
-        }
+        } else this.answerHit(attacker);
+      }
+
+      // A striker landing a hit on `target`: its fight move, facing the target, and it holds its ground (move()).
+      strike(target) {
+        this.faceToward(target.position.x, target.position.z, 1);
+        startFightMove(this, NPC_FIGHT_MOVES[this.type], world.time);
+      }
+
+      // A species that flees answers a hit with its move, rump to the attacker, then runs (update()); once per fleeS.
+      answerHit(attacker) {
+        const move = NPC_FIGHT_MOVES[this.type], now = world.time;
+        if (!move.flees || now < this.fleeUntil) return;
+        this.faceToward(attacker.position.x, attacker.position.z, -1);
+        startFightMove(this, move, now);
+        this.fleeFrom = attacker;
+        this.fleeUntil = now + move.moveS + move.fleeS;
+      }
+
+      // The move is over: sprint straight away from the attacker; the next decisions keep fleeing while it is in sight.
+      fleeAttacker() {
+        const f = this.fleeFrom;
+        this.fleeFrom = null;
+        this.seen(0, f.position.x, f.position.y, f.position.z);
+        this.priority = 'predator';
+        this.faceToward(f.position.x, f.position.z, -1);
+        this.sprinting = true;
+        this.speedScale = this.bumpScale = 1;
+        this.moving = true;
+        this.actionTimer = this.ACTION_HOLD;
+      }
+
+      // Turn the body toward (sign 1) or away from (sign -1) the point (x, z) at once; people's brains keep their own target.
+      faceToward(x, z, sign) {
+        const dx = (x - this.position.x) * sign, dz = (z - this.position.z) * sign;
+        if (dx === 0 && dz === 0) return;
+        this.heading = this.facingAngle = Animal.wrapAngle(Math.atan2(dx, dz));
+        if (!this.brain) this.targetHeading = this.heading;
       }
 
       // A kill's meal: the victim's starting health as health, food and the water that comes with it.
@@ -5960,6 +6108,7 @@ void main() {
     // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
     // The body drops by what the folded legs lose in height, so the soles stay on the ground; the eye drops the same.
     const HUMAN_CROUCH = { hip: -1.0, knee: 1.9, lean: 0.35, arm: -0.4, elbow: -0.5, swingKept: 0.6 };
+    const HUMAN_FIGHT = NPC_FIGHT_MOVES.human;   // guard and punch arm angles (radians) for the vertex shader
     const HUMAN_CROUCH_DROP = (HUMAN_RIG.hip - HUMAN_RIG.knee) * (1 - Math.cos(HUMAN_CROUCH.hip)) +
       (HUMAN_RIG.knee - HUMAN_RIG.foot) * (1 - Math.cos(HUMAN_CROUCH.knee + HUMAN_CROUCH.hip));   // rig units
     const CROUCH_DROP = HUMAN_CROUCH_DROP * NPC_UNIT * PLAYER_HS;   // metres the player's eye lowers at full crouch
@@ -6318,8 +6467,9 @@ void main() {
       attribute vec4 iPose;
       attribute vec4 iGait;
       attribute vec4 iLook;
+      attribute vec4 iAct;   // fight (humanFightAct): punch reach, punching arm (+1 left, -1 right), guard share
       vec2 humanTurn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
-      // rig space to world for this instance: build, walk cycle (joints turn about x), lean, bob, size, facing
+      // rig space to world for this instance: build, walk cycle (joints turn about x), fight arms, lean, bob, size, facing
       void humanPose(inout vec3 p, inout vec3 n) {
         float girth = rig.x > 0.5 ? 0.8 + floor(iLook.w / 64.0) / 200.0 : 1.0;
         p.xz *= girth; n.xz /= girth;
@@ -6337,6 +6487,10 @@ void main() {
         } else if (rig.y > 0.5) {
           a1 = sw * (0.85 + 0.5 * run) * s + ${HUMAN_CROUCH.arm.toFixed(3)} * crouch;
           a2 = -(0.14 + sw * (0.3 + 0.35 * max(-s, 0.0)) + 1.15 * run) + ${HUMAN_CROUCH.elbow.toFixed(3)} * crouch;
+          // fight: both fists up in the guard, the punching arm thrown straight out by the reach
+          float reach = iAct.x * step(0.5, iAct.y * rig.z), fight = max(iAct.z, reach);
+          a1 = mix(a1, mix(${HUMAN_FIGHT.guardShoulder.toFixed(3)}, ${HUMAN_FIGHT.punchShoulder.toFixed(3)}, reach), fight);
+          a2 = mix(a2, mix(${HUMAN_FIGHT.guardElbow.toFixed(3)}, ${HUMAN_FIGHT.punchElbow.toFixed(3)}, reach), fight);
         }
         a2 *= step(1.5, rig.w); a3 *= step(2.5, rig.w);
         vec2 q = p.yz;
@@ -6348,7 +6502,7 @@ void main() {
         // upper body (head, neck, torso, arms) leans with the gait; in a crouch the pelvis (3) tilts with it, so the
         // waist stays joined and the pelvis's open top stays inside the torso
         float crouchLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch;
-        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + crouchLean
+        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + crouchLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x
           : (abs(rig.x - 3.0) < 0.5 ? crouchLean : 0.0);
         q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
         p.yz = q;
@@ -6659,12 +6813,21 @@ void main() {
         this._quatFinal = new THREE.Quaternion();
         this._xAxis = new THREE.Vector3(1, 0, 0);
         this._pivot = new THREE.Vector3();
+        this._root = new THREE.Vector3();
+        this._quatBody = new THREE.Quaternion();
+        this._quatTip = new THREE.Quaternion();
+        this._quatHead = new THREE.Quaternion();
+        this._fightPose = {};
+        this.LIMB_FRONT = this.LIMB_NAMES.map(n => n[3] === 'F');   // legFL, legFR: front legs
 
         // per species id: that type's fixed tables plus the counters one update() pass fills
         this.passById = NPC_TYPES.map(type => ({
           type, offsets: this.PART_OFFSETS[type], pivots: this.PIVOT_OFFSETS[type], colors: this.SEX_COLORS[type],
           walkSwing: this.WALK[type], legLen: this.LEG_LEN[type], limbHalf: this.LIMB_HALF[type],
           cardFrame: BB_FRAME[type], cardLooks: null, cardTints: null,   // billboard frame (rig units), look and coat tint by sex
+          // fight move; box rigs tip about the anchor joint's height and depth (rig units), or the body centre
+          fight: NPC_FIGHT_MOVES[type],
+          fightAnchor: NPC_FIGHT_MOVES[type].anchor ? this.PIVOT_OFFSETS[type][NPC_FIGHT_MOVES[type].anchor] : null,
           im: null, cache: null, antlers: null,
           idx: 0, billboarded: 0, aidx: 0, colorsDirty: false, full: false
         }));
@@ -6691,6 +6854,7 @@ void main() {
           pose: perInstance('iPose'),   // x, y, z of the rig origin, facing angle
           gait: perInstance('iGait'),   // metres per rig unit, phase, hip swing, run share
           look: perInstance('iLook'),   // skin, shirt, pants (packed sRGB), face/outfit/build code
+          act: perInstance('iAct'),     // fight pose (humanFightAct)
           lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot's look was written for
         };
 
@@ -6766,6 +6930,7 @@ void main() {
         hg.setAttribute('iPose', new THREE.InstancedBufferAttribute(iPose, 4));
         hg.setAttribute('iGait', new THREE.InstancedBufferAttribute(iGait, 4));
         hg.setAttribute('iLook', new THREE.InstancedBufferAttribute(iLook, 4));
+        hg.setAttribute('iAct', new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));   // baked bodies do not fight
         hg.instanceCount = n;
         const humanBake = new THREE.ShaderMaterial({
           uniforms: { humanPaint: { value: paint }, humanMask: { value: mask }, bakeMode: mode },
@@ -6870,14 +7035,29 @@ void main() {
       }
 
       // Near box rig at this._world / this._quat, kp metres per rig unit: body, head (and antlers if given), four legs swung by legH.
-      poseBoxRig(p, im, idx, antlers, aidx, kp, legH) {
+      // `move` (sampleFightKeys) tips, lifts and lunges the body, tips the head and sets the legs from straight down.
+      poseBoxRig(p, im, idx, antlers, aidx, kp, legH, move = null) {
         this._scale.set(kp, kp, kp);
-        this._mat4.compose(this._world, this._quat, this._scale);
+        let bodyQ = this._quat, root = this._world, headQ = this._quat;
+        if (move) {
+          bodyQ = this._quatBody.multiplyQuaternions(this._quat, this._quatTip.setFromAxisAngle(this._xAxis, move.pitch));
+          headQ = this._quatHead.multiplyQuaternions(bodyQ, this._quatTip.setFromAxisAngle(this._xAxis, move.head));
+          // the root moves by the rise and lunge, plus what keeps the anchor joint where it stands at rest
+          let oy = move.rise, oz = move.lunge;
+          const an = p.fightAnchor;
+          if (an) {
+            const c = Math.cos(move.pitch), s = Math.sin(move.pitch);
+            oy += an.y - (an.y * c - an.z * s);
+            oz += an.z - (an.y * s + an.z * c);
+          }
+          root = this._root.set(0, oy * kp, oz * kp).applyQuaternion(this._quat).add(this._world);
+        }
+        this._mat4.compose(root, bodyQ, this._scale);
         im.body.setMatrixAt(idx, this._mat4);
 
         this._local.copy(p.offsets.head);
-        this._local.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
-        this._mat4.compose(this._local, this._quat, this._scale);
+        this._local.multiplyScalar(kp).applyQuaternion(bodyQ).add(root);
+        this._mat4.compose(this._local, headQ, this._scale);
         im.head.setMatrixAt(idx, this._mat4);
         if (antlers) antlers.setMatrixAt(aidx, this._mat4);
 
@@ -6886,11 +7066,15 @@ void main() {
         const legSign = this.LIMB_SIGNS;
         for (let pi = 0; pi < this.LIMB_NAMES.length; pi++) {
           const part = this.LIMB_NAMES[pi];
-          this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
-          this._quatFinal.multiplyQuaternions(this._quat, this._quatLeg);
+          if (move) {
+            // the key's angle is from straight down in the world, so the body's tip comes off it
+            const half = ((this.LIMB_FRONT[pi] ? move.front : move.back) - move.pitch) / 2 + legSign[pi] * legH;
+            this._quatLeg.set(Math.sin(half), 0, 0, Math.cos(half));
+          } else this._quatLeg.set(legSign[pi] * legS, 0, 0, legC);
+          this._quatFinal.multiplyQuaternions(bodyQ, this._quatLeg);
 
           this._pivot.copy(p.pivots[part]);
-          this._pivot.multiplyScalar(kp).applyQuaternion(this._quat).add(this._world);
+          this._pivot.multiplyScalar(kp).applyQuaternion(bodyQ).add(root);
 
           this._local.set(0, -p.limbHalf * kp, 0).applyQuaternion(this._quatFinal);
           this._local.add(this._pivot);
@@ -7013,7 +7197,8 @@ void main() {
           p.antlers = this.antlers[p.type];
         }
 
-        const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, owners = H.lookOwner;
+        const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, owners = H.lookOwner;
+        const now = world.time;
         let hn = 0, lookFrom = this.MAX_INSTANCES;
         const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, tintOwners = B.tintOwner;
         let bn = 0, tintFrom = B.max;
@@ -7085,6 +7270,7 @@ void main() {
             const o = hn * 4;
             hPose[o] = a.position.x; hPose[o + 1] = originY; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
             hGait[o] = kp; hGait[o + 1] = a.gaitPhase; hGait[o + 2] = a.gaitSwing; hGait[o + 3] = a.gaitRun;
+            humanFightAct(a, now, hAct, o);
             if (owners[hn] !== a) {
               owners[hn] = a;
               const L = a.look;
@@ -7106,7 +7292,10 @@ void main() {
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
           this._world.set(a.position.x, originY, a.position.z);
           const antlers = p.antlers && a.sex === 'male' ? p.antlers : null;
-          this.poseBoxRig(p, im, idx, antlers, p.aidx, kp, a.moving ? Math.sin(a.animTime) * swing * 0.5 : 0);
+          // a fight move playing takes over the legs from the walk cycle
+          const u = (now - a.moveAt) / p.fight.moveS;
+          const move = u >= 0 && u < 1 ? sampleFightKeys(p.fight.keys, u, this._fightPose) : null;
+          this.poseBoxRig(p, im, idx, antlers, p.aidx, kp, !move && a.moving ? Math.sin(a.animTime) * swing * 0.5 : 0, move);
           if (antlers) p.aidx++;
           p.idx = idx + 1;
         }
@@ -7116,6 +7305,7 @@ void main() {
         if (hn > 0) {
           AnimalRenderer.queueUpload(H.pose, 0, hn);
           AnimalRenderer.queueUpload(H.gait, 0, hn);
+          AnimalRenderer.queueUpload(H.act, 0, hn);
           if (lookFrom < hn) AnimalRenderer.queueUpload(H.look, lookFrom, hn);
         }
         B.geometry.instanceCount = bn;
@@ -10593,6 +10783,8 @@ void main() {
       // Only the drawn body changes; the player's eye height and collision stay PLAYER_HEIGHT's.
       look: null,
       heightScale: PLAYER_HS,
+      ageBase: NPC_ADULT_AGE,   // years at world tick 0 (newBody)
+      ageYears() { return this.ageBase + world.ticks / NPC_TICKS_PER_YEAR; },
       gait: { x: NaN, z: NaN, speed: 0, phase: 0, swing: 0, run: 0 },
 
       // one instance of the people renderer's rig and materials; posed by the mesh's own transform, so iPose stays at the origin
@@ -10601,7 +10793,7 @@ void main() {
         const g = new THREE.InstancedBufferGeometry();
         g.setIndex(H.rest.index);
         for (const k in H.rest.attributes) g.setAttribute(k, H.rest.attributes[k]);
-        for (const name of ['iPose', 'iGait', 'iLook']) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
+        for (const name of ['iPose', 'iGait', 'iLook', 'iAct']) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
         g.instanceCount = 1;
         const mesh = new THREE.Mesh(g, H.mesh.material);
         mesh.customDepthMaterial = H.mesh.customDepthMaterial;
@@ -10622,6 +10814,8 @@ void main() {
         const sz = NPC_SIZE.human, [mean, std] = sz[sex];
         const z = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
         this.heightScale = (mean + std * z) / (sz.rig * NPC_UNIT);
+        // an age like a spawned person's, aging on the same clock (Animal.ageYears); the world's ticks restart with it
+        this.ageBase = NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
         const G = this.gait;
         G.x = G.z = NaN; G.speed = G.phase = G.swing = G.run = 0;
         if (this.body) this.writeLook();
@@ -10680,6 +10874,9 @@ void main() {
         const crouchShare = crouchY / CROUCH_DROP;
         gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = crouchShare > 0 ? -crouchShare : G.run;
         gait.needsUpdate = true;
+        const act = b.geometry.attributes.iAct;
+        humanFightAct(game.avatar, world.time, act.array, 0);
+        act.needsUpdate = true;
 
         const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
         const bx = Math.sin(player.yaw), bz = Math.cos(player.yaw);
@@ -11881,6 +12078,7 @@ void main() {
                 tools.distSq(px, pz, other.position.x, other.position.z) < NpcWorld.CONTACT_DIST_SQ) {
                 if (a.nextAttackAt <= now) {
                   // one hit per cooldown, on the first prey in reach; prey that hunts back strikes on its own turn
+                  a.strike(other);
                   if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
                   else other.attacked(a);
                   a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
@@ -12125,6 +12323,7 @@ void main() {
         parchedPerS: 1                // health per second lost with the water bar empty (0 = off)
       },
       reach: { radius: PLAYER_RADIUS + 0.45, height: 1.5 },   // metres: contact with animals, plants and crates
+      punch: { reachM: 1.1, coneCos: 0.5 },   // the attack button: metres from the player, and how far off the facing (cos of the half angle)
       fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
       plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
       shelter: { healPerS: 0.2 },       // health per second regained inside a cabin
@@ -12151,6 +12350,7 @@ void main() {
     const needFoodEl = document.getElementById('needFood');
     const needWaterEl = document.getElementById('needWater');
     const needDayEl = document.getElementById('needDay');
+    const needInfoEl = document.getElementById('needInfo');
     const slotEls = [...document.querySelectorAll('#slots button')];
     const hurtFlashEl = document.getElementById('hurtflash');
     const runOverEl = document.getElementById('runover');
@@ -12179,14 +12379,16 @@ void main() {
       run: null,              // this run's record: hours, eaten counts, cause
       _lastHour: null,
       _q: [], _qp: [], _qb: [],
-      _shown: -1, _shownDay: -1, _shownSlots: '',
+      _shown: -1, _shownDay: -1, _shownSlots: '', _shownInfo: -1, _shownSex: '',
 
       // The NPC world's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
       // It is a predator to what people hunt, prey at night to what hunts people, and trades fight hits like an animal.
       avatar: {
         type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
         startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
+        moveAt: -Infinity, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move (startFightMove), drawn on the 3rd-person body
         get health() { return game.health; },
+        strike() { startFightMove(this, NPC_FIGHT_MOVES.human, world.time); },
         bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
         bodyMassKg() { return humanMassKg(pov.sex, pov.look ? pov.look.buildDev : 0, this.bodyHeightM()); },
         // the animal `tid` flees the player
@@ -12301,15 +12503,44 @@ void main() {
             continue;
           }
           if (av.nextAttackAt <= now) {
+            av.strike(d);
             world.fightHit(av, d);
             av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
           }
           if (d.alive && d.nextAttackAt <= now) {
+            d.strike(av);
             world.fightHit(d, av);
             d.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
             if (this.dead) return;
           }
         }
+      },
+
+      // The attack button: the body punches in either mode. Only in Survivor (out of shelter) does it land: the nearest
+      // animal people hunt within punch reach ahead takes a hit, at most once per NPC_ATTACK_COOLDOWN_S (shared with
+      // touch fights). A fighter trades it like a touch fight; other prey takes a hunter's hit (a deer bucks and flees).
+      punch() {
+        const av = this.avatar, now = world.time;
+        av.strike();
+        if (!av.alive || this.sheltered || av.nextAttackAt > now) return;
+        const P = SURVIVOR_CONFIG.punch, R = SURVIVOR_CONFIG.reach;
+        const px = player.pos.x, pz = player.pos.z;
+        const fx = -Math.sin(player.heading), fz = -Math.cos(player.heading);   // the body's facing (pov.apply)
+        const n = world.animalGrid.queryInto(this._q, px, pz, P.reachM);
+        let target = null, best = P.reachM * P.reachM;
+        for (let i = 0; i < n; i++) {
+          const d = this._q[i];
+          if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
+          if (Math.abs(d.position.y - av.position.y) > R.height) continue;
+          const dx = d.position.x - px, dz = d.position.z - pz, d2 = dx * dx + dz * dz;
+          if (d2 > best || dx * fx + dz * fz < P.coneCos * Math.sqrt(d2)) continue;
+          best = d2;
+          target = d;
+        }
+        if (!target) return;
+        av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+        if ((HUNTS_MASK[target.typeId] & (1 << HUMAN_TYPE_ID)) !== 0) world.fightHit(av, target);
+        else target.attacked(av);
       },
 
       // Plants and food boxes in reach go into the first free slot; with the slots full they stay where they are.
@@ -12388,6 +12619,15 @@ void main() {
         }
         const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
         if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
+        // the player's body, read out as people's labels read theirs (no generation: the player has none)
+        if (pov.look) {
+          const info = personInfoKey(Math.floor(pov.ageYears()), pov.sex, pov.look.buildDev, this.avatar.bodyHeightM());
+          if (info !== this._shownInfo || pov.sex !== this._shownSex) {
+            this._shownInfo = info; this._shownSex = pov.sex;
+            // fields keep their own spaces unbroken, so the line wraps only between fields
+            needInfoEl.textContent = personInfoText(info, pov.sex).split(', ').map(f => f.replace(/ /g, ' ')).join(', ');
+          }
+        }
         const slots = this.inventory.map(it => it ? it.kind : '').join(',');
         if (slots !== this._shownSlots) {
           this._shownSlots = slots;
@@ -12706,16 +12946,12 @@ void main() {
         const growth = a.isAdult ? 1 : Math.min(1, (world.ticks - a.birthTick) / NPC_MATURITY_TICKS);
         const s = animalRenderer.MIN_SCALE + (1 - animalRenderer.MIN_SCALE) * growth;
         const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * s;   // crown height as drawn
-        const lb = Math.round(humanMassKg(a.sex, a.look ? a.look.buildDev : 0, metres) * 2.20462);
-        const inches = Math.round(metres / 0.0254);
         const age = a.isAdult ? Math.floor(a.ageYears()) : -1;
-        return ((age + 2) * 1000 + inches) * 10000 + lb;
+        return personInfoKey(age, a.sex, a.look ? a.look.buildDev : 0, metres);
       }
 
       infoText(a, key) {
-        const lb = key % 10000, inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
-        return `Gen: ${a.generation}, Age: ${age < 0 ? '<' + NPC_ADULT_AGE : age}, Sex: ${a.sex === 'male' ? 'M' : 'F'}, `
-          + `Height: ${Math.floor(inches / 12)}'${inches % 12}", Weight: ${lb} lb`;
+        return `Gen ${a.generation}, ` + personInfoText(key, a.sex);
       }
 
       draw(slot, vals, arrows, a) {
@@ -13578,7 +13814,8 @@ void main() {
     const brakeEl = document.getElementById('brake');
     const sprintEl = document.getElementById('sprint');
     const jumpEl = document.getElementById('jump');
-    const pedal = { gas: false, brake: false, sprint: false, jump: false };
+    const attackEl = document.getElementById('attack');
+    const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
     const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
 
     function holdPedal(btn, name) {
@@ -13601,10 +13838,13 @@ void main() {
     holdPedal(brakeEl, 'brake');
     holdPedal(sprintEl, 'sprint');
     holdPedal(jumpEl, 'jump');
-    // a tap shorter than a frame still jumps
+    holdPedal(attackEl, 'attack');
+    // a tap shorter than a frame still jumps (or punches); holding attack keeps punching (playerStep)
     jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
+    let attackQueued = false;
+    attackEl.addEventListener('pointerdown', () => { attackQueued = true; });
 
-    // Touch sprint and jump, shown on foot in the gas pedal's slot, hidden while flying.
+    // Touch sprint, jump and attack, shown on foot (sprint in the gas pedal's slot), hidden while flying.
     let footTouch = false, sprintShown = false;
     function updateSprintButton() {
       const foot = active && !player.inCar && touchUi();
@@ -13615,17 +13855,28 @@ void main() {
       const show = foot && !flying;
       if (show === sprintShown) return;
       sprintShown = show;
-      for (const el of [sprintEl, jumpEl]) {
+      for (const el of [sprintEl, jumpEl, attackEl]) {
         el.classList.toggle('on', show);
         if (!show) el.classList.remove('held');
       }
-      if (!show) pedal.sprint = pedal.jump = false;
+      if (!show) pedal.sprint = pedal.jump = pedal.attack = attackQueued = false;
+    }
+
+    // Fly button: Observer mode on foot, unless the car is in reach; then the car button takes its slot.
+    // (carNear() is false while flying, so a flyer always keeps the button to land with.)
+    let flyShown = false;
+    function updateFlyButton(carState) {
+      const show = active && !game.on && carState === '';
+      if (show === flyShown) return;
+      flyShown = show;
+      flyEl.classList.toggle('on', show);
     }
 
     let carBtnState = '';
     function updateCarButton() {
       updateSprintButton();
       const state = !active ? '' : player.inCar ? 'exit' : carNear() ? 'enter' : '';
+      updateFlyButton(state);
       if (state === carBtnState) return;
       carBtnState = state;
       carEl.classList.toggle('on', state !== '');
@@ -13653,7 +13904,6 @@ void main() {
       player.vel.set(0, 0, 0);
       jumpQueued = false;
       touchMove.z = 0;
-      flyEl.classList.remove('on');
       cat.board();
       updateCarButton();
       wake();
@@ -13673,7 +13923,6 @@ void main() {
         player.vel.set(0, 0, 0);
         player.grounded = false;
         facePlayer(car.yaw, 0);
-        flyEl.classList.toggle('on', active && !game.on);
         cat.alight();
         updateCarButton();
         wake();
@@ -14074,7 +14323,6 @@ void main() {
 
     function showControls(on) {
       game.showPanel(on);
-      flyEl.classList.toggle('on', on && !player.inCar && !game.on);
       climbEl.classList.toggle('on', on && flying);
       gearEl.classList.toggle('on', on);
       if (!on) setSettingsOpen(false);
@@ -14150,6 +14398,10 @@ void main() {
         }
         chaseCam.drift(dt, player.heading, len > 0 && active && !swimming, FOOT_CAM_FOLLOW);
       }
+
+      // the attack button: a tap punches once, a hold keeps punching (game.punch paces the hits)
+      if (active && !flying && (attackQueued || pedal.attack)) game.punch();
+      attackQueued = false;
 
       if (flying) {
         // no collision while flying; it resumes on landing
@@ -14248,7 +14500,7 @@ void main() {
     }
 
     function movementHeld() {
-      return stickId !== null || climb !== 0 || jumpQueued || pedal.gas || pedal.brake || pedal.jump ||
+      return stickId !== null || climb !== 0 || jumpQueued || attackQueued || pedal.gas || pedal.brake || pedal.jump || pedal.attack ||
         keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
         keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
         keys.has('Space') ||
@@ -15410,7 +15662,7 @@ void main() {
       refreshHud();
       // no flying in Survivor mode: land and hide the button
       if (game.on && flying) toggleFly();
-      flyEl.classList.toggle('on', active && !player.inCar && !game.on);
+      updateCarButton();
       // The city's deer only in Survivor mode: the Deer switch follows and a live city gains or loses its own deer.
       loadOpts.deer = game.on;
       const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
