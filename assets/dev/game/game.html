@@ -585,7 +585,7 @@
     }
 
     /* the fly button's slot: the car button takes it when the car is in reach (updateFlyButton), the action button
-       (Collect, Harvest, Drink) when it is not (updateUseButton); the action button grows left to fit its word */
+       (Collect, Harvest, Drink, Pet) when it is not (updateUseButton); the action button grows left to fit its word */
     #car,
     #use {
       position: fixed;
@@ -4529,10 +4529,15 @@ void main() {
     const fightClamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
 
     // NIGHT HUNTS: with the sun below NIGHT_SUN_ALT_DEG (civil twilight) a species hunts its SPECIES nightPrey (the
-    // player included, out of shelter): it chases the nearest one in sight, re-aiming every tick, and pounces in reach.
-    // A `pack` species that sees a packmate hunting joins the nearest one's attack unless its own quarry is nearer, so
-    // one hunter draws in the packmates that can see it (and those that see them).
+    // player included, out of shelter): it chases its PREY CHOICE in sight, re-aiming every tick, and pounces in reach.
+    // A `pack` species that sees a packmate hunting joins the nearest one's attack unless its own pick ranks ahead
+    // (PREY CHOICE), so one hunter draws in the packmates that can see it (and those that see them).
     const NIGHT_SUN_ALT_DEG = -6;
+    // PREY CHOICE (hunters that use searchDeer: coyotes): of everything in sight the hunter would attack now (its food
+    // species, and at night its nightPrey, the player included), it takes the smallest first, by body mass counted in
+    // whole PREY_SIZE_STEP_KG steps (Animal.preySize), and of equal sizes the nearest. Night prey it picks is hunted;
+    // food it picks is chased when hunger is its top need.
+    const PREY_SIZE_STEP_KG = 1;
     // POUNCES: a hunter's leap at its quarry, moveS sim seconds: it crouches until share leapAt, then flies along the
     // heading it launched on at leapOver times its sprint speed, landing short of the quarry (pounceStep). It launches
     // when the quarry is within the leap's own length, at most once per moveS + cooldownS. keys: as NPC_FIGHT_MOVES'.
@@ -5784,10 +5789,14 @@ void main() {
         // at night, night prey is quarry even when it would be fled by day
         const quarryMask = world.night ? NIGHT_PREY_MASK[tid] : 0;
         const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = FOOD_TYPE_ID[tid];
-        const needP = huntedBy !== 0, needF = food !== null && food !== 'plant', needQ = quarryMask !== 0;
+        const needP = huntedBy !== 0, needQ = quarryMask !== 0;
+        // prey (PREY CHOICE): food animals and night prey in one pick; a smaller one may lie farther out, so no early stop
+        const needT = (food !== null && food !== 'plant') || needQ;
         const needJ = needQ && this.spec.pack === true;   // a pack hunter at night: packmates' hunts to join
-        let bP = Infinity, bF = Infinity, bM = Infinity, bQ = Infinity, bJ = Infinity, kP = -1, kF = -1, kM = -1, kQ = -1, kJ = -1;
-        let oP = null, oF = null, oM = null, oQ = null, oJ = null;
+        let bP = Infinity, bM = Infinity, bJ = Infinity, kP = -1, kM = -1, kJ = -1;
+        let oP = null, oM = null, oJ = null;
+        // the prey pick: its size step, squared distance, scan key (ties) and the target
+        let sT = Infinity, bT = Infinity, kT = -1, oT = null;
 
         const cells = grid.cells;
         if (cells !== null) {
@@ -5801,7 +5810,7 @@ void main() {
               if (L > r) break;
               if (L > 0) {
                 const L2 = L * L;
-                if ((!needP || bP < L2) && (!needF || bF < L2) && (!needQ || bQ < L2) && (!needJ || bJ < L2) && bM < L2) break;
+                if ((!needP || bP < L2) && !needT && (!needJ || bJ < L2) && bM < L2) break;
               }
             }
             const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
@@ -5823,12 +5832,12 @@ void main() {
                   if (d2 > vd) continue;
                   const key = base + b;
                   const oid = obj.typeId;
-                  if ((quarryMask & (1 << oid)) !== 0) {
-                    if ((d2 < bQ || (d2 === bQ && key > kQ)) && this.inSight(ox, obj.position.y, oz)) { bQ = d2; kQ = key; oQ = obj; }
+                  if ((quarryMask & (1 << oid)) !== 0 || oid === foodId) {
+                    const s = Animal.preySize(obj);
+                    if ((Animal.preyAhead(s, d2, sT, bT) || (s === sT && d2 === bT && key > kT)) &&
+                      this.inSight(ox, obj.position.y, oz)) { sT = s; bT = d2; kT = key; oT = obj; }
                   } else if ((huntedBy & (1 << oid)) !== 0) {
                     if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
-                  } else if (oid === foodId) {
-                    if ((d2 < bF || (d2 === bF && key > kF)) && this.inSight(ox, obj.position.y, oz)) { bF = d2; kF = key; oF = obj; }
                   } else if (oid === tid) {
                     if (needJ && obj.priority === 'hunt' && (d2 < bJ || (d2 === bJ && key > kJ)) && this.canHunt(obj.quarry) &&
                       this.inSight(ox, obj.position.y, oz)) { bJ = d2; kJ = key; oJ = obj; }
@@ -5840,7 +5849,6 @@ void main() {
           }
         }
         if (oP) { this.seen(0, oP.position.x, oP.position.y, oP.position.z); this.avoidNeed = Infinity; }
-        if (oF) this.seen(1, oF.position.x, oF.position.y, oF.position.z);
         if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
 
         // City: in Survivor mode the player is a predator to whatever people hunt, and at night quarry to people's night hunters
@@ -5850,19 +5858,25 @@ void main() {
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
           if (gp.isThreatTo(tid)) {
             if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
-          } else if (d2 <= vd && d2 < bQ && this.inSight(ox, gp.position.y, oz)) { bQ = d2; oQ = gp; }
+          } else {
+            const s = Animal.preySize(gp);
+            if (d2 <= vd && Animal.preyAhead(s, d2, sT, bT) && this.inSight(ox, gp.position.y, oz)) { sT = s; bT = d2; oT = gp; }
+          }
         }
-        // a pack hunter that sees a packmate hunting joins the nearest one's attack unless its own quarry is nearer;
+        // a pack hunter that sees a packmate hunting joins the nearest one's attack unless its own pick ranks ahead;
         // joiners draw in the packmates that see them, so a group closes on one quarry
         if (oJ) {
-          const q = oJ.quarry.position, dq = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z);
-          if (!oQ || dq < bQ) oQ = oJ.quarry;
+          const q = oJ.quarry, dq = (q.position.x - x) * (q.position.x - x) + (q.position.z - z) * (q.position.z - z);
+          if (Animal.preyAhead(Animal.preySize(q), dq, sT, bT)) oT = q;
         }
-        // the quarry's direction shows as the food ray
-        if (oQ) { this.quarry = oQ; this.seen(1, oQ.position.x, oQ.position.y, oQ.position.z); }
+        // the pick's direction shows as the food ray; night prey is hunted, food chased when hunger leads
+        if (oT) {
+          if (oT === gp || (quarryMask & (1 << oT.typeId)) !== 0) this.quarry = oT;
+          this.seen(1, oT.position.x, oT.position.y, oT.position.z);
+        }
 
         if (food === 'plant') {
-          const plant = world.plantSight.nearest(x, z, r, vd, true, bF);
+          const plant = world.plantSight.nearest(x, z, r, vd, true);
           if (plant) this.seen(1, plant.position.x, plant.position.y, plant.position.z);
         }
 
@@ -5948,6 +5962,11 @@ void main() {
       }
 
       static _wallPos = new THREE.Vector3();
+
+      // PREY CHOICE: `q`'s size (an animal or the player's avatar) in whole PREY_SIZE_STEP_KG steps of body mass
+      static preySize(q) { return Math.round(q.bodyMassKg() / PREY_SIZE_STEP_KG); }
+      // PREY CHOICE: does prey of size s at squared distance d2 rank ahead of the pick so far (sB, dB)? smaller, then nearer
+      static preyAhead(s, d2, sB, dB) { return s < sB || (s === sB && d2 < dB); }
 
       static wrapAngle(a) {
         a %= Animal.TWO_PI;
@@ -6265,7 +6284,8 @@ void main() {
     // Rig landmarks in rig units: origin at the body centre, feet at -lift, crown at NPC_RIG_TOP - lift; joints sit at z = 0.
     const HUMAN_RIG = (() => {
       const foot = -SPECIES.human.lift, at = f => foot + f * NPC_RIG_TOP.human;
-      return { at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625) };
+      // shoulderX: the shoulder joint's distance out from the centre line (the arms hang from it, flaring a little)
+      return { at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625), shoulderX: 4.25 };
     })();
     const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
     // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
@@ -6275,6 +6295,45 @@ void main() {
     const HUMAN_CROUCH_DROP = (HUMAN_RIG.hip - HUMAN_RIG.knee) * (1 - Math.cos(HUMAN_CROUCH.hip)) +
       (HUMAN_RIG.knee - HUMAN_RIG.foot) * (1 - Math.cos(HUMAN_CROUCH.knee + HUMAN_CROUCH.hip));   // rig units
     const CROUCH_DROP = HUMAN_CROUCH_DROP * NPC_UNIT * PLAYER_HS;   // metres the player's eye lowers at full crouch
+    const HUMAN_ARM_FLARE = 0.06;   // rig units an arm's axis moves out from the shoulder per rig unit down the arm
+    // PET (the player's Pet action, `petting`): crouched and bent further forward at the waist, the petting arm (arm: +1
+    // left, -1 right, as moveSide) reaches down until its hand point (handAt, a share of the rig's height as
+    // HUMAN_RIG.at) rests on the cat's head, elbow bent `elbow`, and rubs it from the player's left to right and back
+    // `strokes` times (strokeS seconds each), sweepM metres either side, turning about the shoulder's vertical; reachS
+    // eases the arm in and out. Each pet takes the shallowest of PET_BEND_LEVELS bends spread evenly over `bend`
+    // (radians) whose reach meets the head (a cat downhill needs a deeper one), and solves the shoulder angle within
+    // `shoulder` (radians) for it, so the hand meets the head at any body height; turnMax bounds the sweep angle.
+    // stayM: metres the player may drift from where the pet began before it ends.
+    // The pose reaches the shader in iAct.w (humanPetPack): reach share (6 bits), bend level (2), shoulder angle (8),
+    // sweep angle (8).
+    const HUMAN_PET = {
+      arm: -1, bend: [0.3, 0.9], elbow: -0.3, handAt: 0.4, reachS: 0.35, strokes: 3, strokeS: 0.7, sweepM: 0.07,
+      shoulder: [-1.6, 0.4], turnMax: 1.2, stayM: 0.05
+    };
+    const PET_BEND_LEVELS = 4;   // the 2 bits humanPetPack gives the bend level
+    const petBendAt = level => HUMAN_PET.bend[0] + (HUMAN_PET.bend[1] - HUMAN_PET.bend[0]) * level / (PET_BEND_LEVELS - 1);
+    const petQuant = (v, lo, hi, steps) => Math.round(fightClamp01((v - lo) / (hi - lo)) * steps);
+    function humanPetPack(share, bendLevel, shoulder, turn) {
+      const P = HUMAN_PET;
+      return petQuant(share, 0, 1, 63) + 64 * bendLevel + 256 * petQuant(shoulder, P.shoulder[0], P.shoulder[1], 255) +
+        65536 * petQuant(turn, -P.turnMax, P.turnMax, 255);
+    }
+    // The petting arm's hand point in rig space (body centre origin, +x the body's left, +z forward; before size and
+    // facing), posed as humanPose poses it at full crouch and full pet reach standing still, with the bend (radians),
+    // shoulder angle a1 and sweep angle turn.
+    function humanPetHand(bend, a1, turn, girth) {
+      const R = HUMAN_RIG, P = HUMAN_PET, y0 = R.at(P.handAt);
+      // humanTurn on (y, z) about (cy, 0)
+      const turnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
+      let [y, z] = turnYZ(y0, 0, R.elbow, P.elbow);
+      [y, z] = turnYZ(y, z, R.shoulder, a1);
+      const x0 = P.arm * R.shoulderX * girth, dx = P.arm * (R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * girth - x0;
+      const c = Math.cos(turn), s = Math.sin(turn);
+      const x = x0 + dx * c - z * s;
+      z = dx * s + z * c;
+      [y, z] = turnYZ(y, z, R.hip, HUMAN_CROUCH.lean + bend);
+      return { x, y: y - HUMAN_CROUCH_DROP, z };
+    }
 
     // HUMAN LOOK (render only): skin tone, face variant and build pass to children; clothes are each person's own.
     const HUMAN_SKIN = [0xf2d0b8, 0xe0b391, 0xc89068, 0xa56f48, 0x7a4e32, 0x4e3222];   // light to dark, sRGB
@@ -6376,7 +6435,7 @@ void main() {
       part({ rings: [boxy(at(0.615), 0, 3.08, 2.1), boxy(at(0.545), 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
         vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, capEnd: [0, at(0.468), 0, 1] });
       for (const s of [1, -1]) {
-        const L = s > 0 ? 0 : 1, ax = y => s * (4.25 + (R.shoulder - y) * 0.06), lx = y => s * (1.85 - (R.hip - y) * 0.02);
+        const L = s > 0 ? 0 : 1, ax = y => s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE), lx = y => s * (1.85 - (R.hip - y) * 0.02);
         const armRing = (f, r, rz = r * 1.05) => oval(6, ax(at(f)), at(f), 0, r, rz);
         // upper arm (4, 5), lower arm (6, 7), hand (12, 13): arms hang slightly out from the shoulder
         part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), armRing(0.615, 0.86)], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
@@ -6630,7 +6689,7 @@ void main() {
       attribute vec4 iPose;
       attribute vec4 iGait;
       attribute vec4 iLook;
-      attribute vec4 iAct;   // fight (humanFightAct): punch reach, punching arm (+1 left, -1 right), guard share
+      attribute vec4 iAct;   // fight (humanFightAct): punch reach, punching arm (+1 left, -1 right), guard share; pet (humanPetPack)
       vec2 humanTurn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
       // rig space to world for this instance: build, walk cycle (joints turn about x), fight arms, lean, bob, size, facing
       void humanPose(inout vec3 p, inout vec3 n) {
@@ -6639,7 +6698,10 @@ void main() {
         // iGait.w: the run share when >= 0, the crouch share when < 0 (the player's stance never mixes them)
         float run = max(iGait.w, 0.0), crouch = max(-iGait.w, 0.0);
         float t = iGait.y, sw = iGait.z * (1.0 - ${(1 - HUMAN_CROUCH.swingKept).toFixed(3)} * crouch), s = sin(t) * rig.z, c = cos(t) * rig.z;
-        float a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        // pet (iAct.w, humanPetPack): its reach share; the body bends further at the waist by it, to the pet's bend level
+        float petReach = mod(iAct.w, 64.0) / 63.0;
+        float petBend = ${HUMAN_PET.bend[0].toFixed(3)} + ${((HUMAN_PET.bend[1] - HUMAN_PET.bend[0]) / (PET_BEND_LEVELS - 1)).toFixed(4)} * mod(floor(iAct.w / 64.0), ${PET_BEND_LEVELS.toFixed(1)});
+        float a1 = 0.0, a2 = 0.0, a3 = 0.0, petTurn = 0.0;
         if (rig.y > 1.5) {
           a1 = -sw * s;
           a2 = sw * (0.3 + (2.1 + 1.4 * run) * max(c, 0.0));
@@ -6654,6 +6716,12 @@ void main() {
           float reach = iAct.x * step(0.5, iAct.y * rig.z), fight = max(iAct.z, reach);
           a1 = mix(a1, mix(${HUMAN_FIGHT.guardShoulder.toFixed(3)}, ${HUMAN_FIGHT.punchShoulder.toFixed(3)}, reach), fight);
           a2 = mix(a2, mix(${HUMAN_FIGHT.guardElbow.toFixed(3)}, ${HUMAN_FIGHT.punchElbow.toFixed(3)}, reach), fight);
+          // pet: the petting arm takes the solved shoulder angle and the pet's elbow by the reach share, and turns about
+          // its shoulder's vertical by the sweep angle
+          float pet = petReach * step(0.5, ${HUMAN_PET.arm.toFixed(1)} * rig.z);
+          a1 = mix(a1, ${HUMAN_PET.shoulder[0].toFixed(3)} + ${(HUMAN_PET.shoulder[1] - HUMAN_PET.shoulder[0]).toFixed(3)} * mod(floor(iAct.w / 256.0), 256.0) / 255.0, pet);
+          a2 = mix(a2, ${HUMAN_PET.elbow.toFixed(3)}, pet);
+          petTurn = pet * (floor(iAct.w / 65536.0) / 255.0 * ${(2 * HUMAN_PET.turnMax).toFixed(3)} - ${HUMAN_PET.turnMax.toFixed(3)});
         }
         a2 *= step(1.5, rig.w); a3 *= step(2.5, rig.w);
         vec2 q = p.yz;
@@ -6662,15 +6730,24 @@ void main() {
           q = vec2(pivot.y, 0.0) + humanTurn(q - vec2(pivot.y, 0.0), a2);
           q = vec2(pivot.x, 0.0) + humanTurn(q - vec2(pivot.x, 0.0), a1);
         }
-        // upper body (head, neck, torso, arms) leans with the gait; in a crouch the pelvis (3) tilts with it, so the
-        // waist stays joined and the pelvis's open top stays inside the torso
-        float crouchLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch;
-        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + crouchLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x
-          : (abs(rig.x - 3.0) < 0.5 ? crouchLean : 0.0);
+        // the petting arm's sweep, before the lean (as humanPetHand)
+        if (petTurn != 0.0) {
+          vec2 sh = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * girth, 0.0);
+          p.yz = q;
+          p.xz = sh + humanTurn(p.xz - sh, petTurn);
+          q = p.yz;
+        }
+        // upper body (head, neck, torso, arms) leans with the gait; in a crouch or a pet's bend the pelvis (3) tilts with
+        // it, so the waist stays joined and the pelvis's open top stays inside the torso
+        float bendLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch + petBend * petReach;
+        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + bendLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x
+          : (abs(rig.x - 3.0) < 0.5 ? bendLean : 0.0);
         q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
         p.yz = q;
         p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85 + ${HUMAN_CROUCH_DROP.toFixed(3)} * crouch;
-        n.yz = humanTurn(n.yz, a1 + a2 + a3 + lean);
+        n.yz = humanTurn(n.yz, a1 + a2 + a3);
+        n.xz = humanTurn(n.xz, petTurn);
+        n.yz = humanTurn(n.yz, lean);
         float cy = cos(iPose.w), sy = sin(iPose.w);
         p = vec3(p.x * cy + p.z * sy, p.y, p.z * cy - p.x * sy) * iGait.x + iPose.xyz;
         n = vec3(n.x * cy + n.z * sy, n.y, n.z * cy - n.x * sy);
@@ -10321,6 +10398,10 @@ void main() {
     const CAT_BOARD_SPEED = 2.2;   // m/s trot to the passenger door
     const CAT_JUMP_TIME = 0.55;    // s: door to seat
     const CAT_BOARD_TIMEOUT = 8;   // s: still not in, he appears at the passenger door and hops in
+    const CAT_HEAD_FWD = 9 * CAT_SCALE;   // m his head sits ahead of his body centre (the rig's head at z 9)
+    const CAT_PET_STEP_SPEED = 0.6;       // m/s he steps to where he is petted (CatCompanion.hold)
+    const CAT_PET_SETTLED = 0.01;         // m from that spot that counts as there (his legs stop)
+    const CAT_PET_TURN_RATE = 8;          // per second, his turn toward the petting's facing
 
     class CatCompanion {
       constructor() {
@@ -10337,6 +10418,7 @@ void main() {
         this.active = false;
         this.inCar = false;
         this.boarding = null;          // walk-to-the-door state while the player gets in
+        this.held = null;              // { x, z, yaw } while petted (hold): he steps to that spot, faces yaw and stays
         this._w = new THREE.Vector3();
         this._seat = new THREE.Vector3();
       }
@@ -10581,9 +10663,14 @@ void main() {
         this.update(0);
       }
 
+      // Petting (petting.start): he steps to (x, z), turns to yaw and stays there until release().
+      hold(x, z, yaw) { this.held = { x, z, yaw }; }
+      release() { this.held = null; }
+
       // In front of the player, a little to the right, facing the player.
       place(show) {
         this.boarding = null;
+        this.held = null;
         if (this.inCar) { this.inCar = false; scene.add(this.mesh); this.setCastShadow(true); }
         this.active = show;
         this.mesh.visible = show;
@@ -10622,7 +10709,17 @@ void main() {
         const catchUpDist = 360 * NPC_UNIT;
         let speed = 0;
 
-        if (distToPlayer > catchUpDist) {
+        if (this.held) {
+          // petted: a short step to the held spot, then still, facing the held way
+          const h = this.held, hx = h.x - this.position.x, hz = h.z - this.position.z, hd = Math.hypot(hx, hz);
+          const step = Math.min(hd, CAT_PET_STEP_SPEED * deltaTime);
+          if (hd > 1e-6) {
+            this.position.x += hx / hd * step;
+            this.position.z += hz / hd * step;
+          }
+          if (hd > CAT_PET_SETTLED) speed = CAT_PET_STEP_SPEED;
+          this.yaw += CatCompanion.wrap(h.yaw - this.yaw) * Math.min(1, deltaTime * CAT_PET_TURN_RATE);
+        } else if (distToPlayer > catchUpDist) {
           // too far behind (car, fly, a sprint): appear just behind the player
           const warpX = px + Math.sin(player.heading) * followDist * 0.3;
           const warpZ = pz + Math.cos(player.heading) * followDist * 0.3;
@@ -11041,6 +11138,7 @@ void main() {
         gait.needsUpdate = true;
         const act = b.geometry.attributes.iAct;
         humanFightAct(game.avatar, world.time, act.array, 0);
+        act.array[3] = petting.act();
         act.needsUpdate = true;
 
         const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
@@ -11284,6 +11382,88 @@ void main() {
     };
 
     const cat = new CatCompanion();
+
+    // PETTING (the Pet field action): the player squats for the pet's length (stance.squat), turns so the petting hand
+    // (HUMAN_PET) comes over the cat, and the cat steps under it facing the player (cat.hold); the hand reaches in, rubs
+    // his head from the player's left to right and back, and withdraws. Stepping off the spot, leaving the ground, the
+    // car, flying, dying, or the cat leaving (boarding, gone) ends it early.
+    const petting = {
+      t: -1,                       // seconds into the pet; -1: not petting
+      bendLevel: 0,                // the bend level (petBendAt) and shoulder angle solved for this pet (humanPetHand)
+      a1: 0,
+      turnAmp: 0,                  // the sweep angle that carries the hand sweepM to either side
+      at: new THREE.Vector3(),     // where the player stands for it
+      get on() { return this.t >= 0; },
+      get duration() { const P = HUMAN_PET; return 2 * P.reachS + P.strokes * P.strokeS; },
+
+      // the cat is free to be petted: out with the player, not boarding, not already being petted
+      canPet() { return !this.on && cat.active && !cat.inCar && !cat.boarding; },
+
+      start() {
+        if (!this.canPet() || !pov.look) return;
+        const P = HUMAN_PET, kp = NPC_UNIT * pov.heightScale, girth = 0.8 + Math.floor(pov.look.code / 64) / 200;
+        // the hand's height that meets his head top, in rig units over the body centre (pov.apply's placement)
+        const want = (cat.position.y + CAT_HEAD_TOP - (player.pos.y - EYE_HEIGHT)) / kp - SPECIES.human.lift;
+        // shallowest bend first, over the shoulder angles the pack can carry, forward first, until the hand (in front of
+        // the body) comes down to the head (deeper bends only reach lower); the pose that came nearest wins
+        let best = null, bestErr = Infinity;
+        search: for (let b = 0; b < PET_BEND_LEVELS; b++) {
+          for (let k = 0; k <= 255; k++) {
+            const a = P.shoulder[0] + (P.shoulder[1] - P.shoulder[0]) * k / 255, h = humanPetHand(petBendAt(b), a, 0, girth);
+            if (h.z <= 0) continue;
+            const err = Math.abs(h.y - want);
+            if (err < bestErr) { bestErr = err; best = [b, a]; }
+            if (h.y <= want) break search;
+          }
+        }
+        if (!best) return;
+        [this.bendLevel, this.a1] = best;
+        const bend = petBendAt(this.bendLevel), hand = humanPetHand(bend, this.a1, 0, girth);
+        // the sweep angle whose sideways reach is sweepM (bisection; the reach grows with the angle up to turnMax)
+        const side = P.sweepM / kp, reachAt = a => hand.x - humanPetHand(bend, this.a1, a, girth).x;
+        let lo = 0, hi = P.turnMax;
+        if (reachAt(hi) <= side) lo = hi;
+        else for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (reachAt(m) < side) lo = m; else hi = m; }
+        this.turnAmp = lo;
+        // his body centre in the player's frame (+x left, +z forward): under the hand, a head's length farther out,
+        // facing back at the player; the player turns so that spot lies the way the cat already is
+        const ox = hand.x * kp, oz = hand.z * kp + CAT_HEAD_FWD;
+        const toWorld = h => [-Math.cos(h) * ox - Math.sin(h) * oz, Math.sin(h) * ox - Math.cos(h) * oz];
+        const [wx, wz] = toWorld(player.heading);
+        player.heading += CatCompanion.wrap(Math.atan2(cat.position.x - player.pos.x, cat.position.z - player.pos.z) - Math.atan2(wx, wz));
+        const [cx, cz] = toWorld(player.heading);
+        cat.hold(player.pos.x + cx, player.pos.z + cz, player.heading);
+        this.at.copy(player.pos);
+        this.t = 0;
+        stance.squat(this.duration);
+      },
+
+      update(dt) {
+        if (!this.on) return;
+        this.t += dt;
+        const dx = player.pos.x - this.at.x, dz = player.pos.z - this.at.z, stay = HUMAN_PET.stayM;
+        if (this.t >= this.duration) this.end(false);
+        else if (dx * dx + dz * dz > stay * stay || !player.grounded || player.inCar || flying || game.dead ||
+          !cat.active || cat.inCar || cat.boarding) this.end(true);
+      },
+
+      // early: cut short, so the squat ends with it
+      end(early) {
+        this.t = -1;
+        cat.release();
+        if (early) stance.unsquat();
+      },
+
+      // the pose for the body's iAct.w (humanPetPack): reach eases in and out, the sweep runs left, right, left per stroke
+      act() {
+        if (!this.on) return 0;
+        const P = HUMAN_PET, t = this.t;
+        const share = fightEase(fightClamp01(Math.min(t, this.duration - t) / P.reachS));
+        const strokes = Math.max(0, Math.min(P.strokes, (t - P.reachS) / P.strokeS));
+        return humanPetPack(share, this.bendLevel, this.a1, -this.turnAmp * Math.cos(2 * Math.PI * strokes));
+      }
+    };
+
     const labels = new StatLabelSystem();
     const visionRays = new VisionRaySystem();
     // WORLD PROVIDERS: bounds, wraps, heightAt, isWater, surface, waterSources, population, regrow; flags shadows/companion/rays.
@@ -12622,6 +12802,7 @@ void main() {
         parchedPerS: 1                // health per second lost with the water bar empty (0 = off)
       },
       reach: { radius: PLAYER_RADIUS + 0.45, height: 1.5 },   // metres: contact with animals, plants and crates
+      squatS: 1,                        // seconds the body squats for a field action marked `squat` (Harvest, Collect), then stands
       punch: { reachM: 1.1, coneCos: 0.5 },   // the attack button: metres from the player, and how far off the facing (cos of the half angle)
       fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
       plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
@@ -12681,14 +12862,17 @@ void main() {
     // What the action button (the car button's slot) can do on foot, first in reach first: label is its text,
     // find(game, x, feet, z) its target in reach (null: none). run(game, target) acts once on the press; a `hold`
     // action runs run(game, target, dt) every tick instead, while held. Harvest and Collect need a free slot.
+    // A `squat` action squats the body for SURVIVOR_CONFIG.squatS (stance.squat) when it runs.
     const SURVIVOR_FIELD_ACTIONS = {
       collect: {
         label: 'Collect',
+        squat: true,
         find: (g, x, feet, z) => g.inventory.includes(null) ? foodBoxes.touching(g._qb, x, feet, z) : null,
         run: (g, crate) => g.collect(crate)
       },
       harvest: {
         label: 'Harvest',
+        squat: true,
         find: (g, x, feet, z) => g.inventory.includes(null) ? g.plantInReach(x, feet, z) : null,
         run: (g, plant) => g.harvest(plant)
       },
@@ -12697,6 +12881,12 @@ void main() {
         hold: true,
         find: (g, x, feet, z) => g.atWater(x, z) ? true : null,
         run: (g, target, dt) => g.drink(SURVIVOR_CONFIG.needs.drinkPerS * dt)
+      },
+      // last, so a plant, box or water by the cat keeps its button; the pet squats on its own (petting)
+      pet: {
+        label: 'Pet',
+        find: (g, x, feet, z) => petting.canPet() && g.catInReach(x, feet, z) ? cat : null,
+        run: () => petting.start()
       }
     };
 
@@ -12986,6 +13176,7 @@ void main() {
         const def = SURVIVOR_FIELD_ACTIONS[a.id];
         if (def.hold) { this.fieldHeld = a.id; return; }
         def.run(this, a.target);
+        if (def.squat) stance.squat(SURVIVOR_CONFIG.squatS);
         this.draw();
       },
 
@@ -13009,6 +13200,12 @@ void main() {
           if (d2 <= bestD2) { bestD2 = d2; best = p; }
         }
         return best;
+      },
+
+      // The cat within reach, as plants are.
+      catInReach(px, feet, pz) {
+        const R = SURVIVOR_CONFIG.reach, c = cat.position;
+        return Math.abs(c.y - feet) <= R.height && tools.distSq(px, pz, c.x, c.z) <= R.radius * R.radius;
       },
 
       // Standing in water, or swimming: where the player can drink.
@@ -13109,6 +13306,8 @@ void main() {
             el.disabled = !item;
             el.setAttribute('aria-label', item ? `${SURVIVOR_ACTIONS[item.action].verb} ${item.label.toLowerCase()}` : 'Empty slot');
           });
+          // any inventory change (craft, use, pick up) can free or fill the slot Harvest and Collect need
+          updateCarButton();
           // the craft slot shows what the carried items make
           const c = this.craftable(), made = c && SURVIVOR_CONFIG.inventory.items[c.recipe.makes];
           craftEl.querySelector('span').textContent = made ? made.icon : '';
@@ -13713,16 +13912,25 @@ void main() {
 
     // STANCE: crouch and sprint exclude each other and the latest input wins. Sprint is a hold (Shift, the sprint
     // pedal), crouch a toggle. Pressing sprint stands up; crouching stops a held sprint until it is pressed again.
+    // A squat (squat(seconds), e.g. picking something up) holds the body low for that long, then it stands again.
+    // `low` is the one rule for the crouched pose and speed: crouched or squatting.
     const stance = {
       crouched: false,
+      squatLeft: 0,           // seconds of squat left
       sprintBlocked: false,   // crouched while sprint was held: that hold no longer runs
       _sprintWas: false,
+
+      get squatting() { return this.squatLeft > 0; },
+      get low() { return this.crouched || this.squatting; },
 
       toggleCrouch() {
         this.crouched = !this.crouched;
         if (this.crouched) this.sprintBlocked = true;
       },
-      stand() { this.crouched = false; },
+      stand() { this.crouched = false; this.squatLeft = 0; },
+      squat(seconds) { this.squatLeft = Math.max(this.squatLeft, seconds); wake(); },   // a longer squat under way stands
+      unsquat() { this.squatLeft = 0; },
+      tick(dt) { this.squatLeft = Math.max(0, this.squatLeft - dt); },
 
       // this frame's sprint input -> whether the player runs
       sprinting(held) {
@@ -14451,9 +14659,9 @@ void main() {
     carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
     // The action button acts on its own pointer, like the pedals: a press acts at once, a hold (Drink) lasts until release.
     useEl.addEventListener('pointerdown', e => {
+      useEl.setPointerCapture(e.pointerId);   // before the action, which may hide the button (a full inventory)
       game.pressField();
       updateCarButton();
-      useEl.setPointerCapture(e.pointerId);
     });
     for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) useEl.addEventListener(ev, () => game.releaseField());
     // E is the slot's key: the car when the car button shows, else the action button's action (held while E is down)
@@ -14867,6 +15075,7 @@ void main() {
     let swimming = false;
 
     function playerStep(dt) {
+      petting.update(dt);
       if (player.inCar) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
       // an empty car still rolling (left at speed) brakes to a stop
       if (car.speed !== 0) carPhysics(dt, 0, 0, true);
@@ -14894,7 +15103,7 @@ void main() {
       const sprint = stance.sprinting(active && !flying && !swimming && game.canRun() && (shiftHeld || pedal.sprint));
       const speed = swimming ? WALK_SPEED * SWIM_SPEED :
         flying ? FLY_SPEED :
-          stance.crouched ? CROUCH_SPEED :
+          stance.low ? CROUCH_SPEED :
             sprint ? RUN_SPEED : WALK_SPEED;
       const len = Math.hypot(mx, mz);
       player.running = speed === RUN_SPEED && len > 0 && active;
@@ -14992,7 +15201,8 @@ void main() {
       // every world stops the player at its edge (out in the sea)
       if (world.ready) { player.pos.x = world.fitX(player.pos.x); player.pos.z = world.fitZ(player.pos.z); }
 
-      const crouchTo = stance.crouched && !flying ? CROUCH_DROP : 0;
+      stance.tick(dt);
+      const crouchTo = stance.low && !flying ? CROUCH_DROP : 0;
       crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
         : Math.max(crouchTo, crouchY - CROUCH_RATE * dt);
       camera.position.copy(player.pos);
@@ -15134,7 +15344,7 @@ void main() {
 
       // falling rain and live NPCs keep the loop awake
       const settled = !posed && (player.grounded || flying || player.inCar) && player.vel.y === 0 &&
-        car.speed === 0 && !chaseCam.settling && !cat.boarding;
+        car.speed === 0 && !chaseCam.settling && !cat.boarding && !stance.squatting;
       if (settled && !drawPending && !movementHeld() && !rainAnimating() && !npcLive && !simSky.on && !skyFade.fading) {
         last = -1;
         return;
