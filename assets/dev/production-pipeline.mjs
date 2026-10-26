@@ -149,6 +149,31 @@ function glslTokens(s) {
 }
 const sameTokens = (a, b) => a.length === b.length && a.every((t, i) => t === b[i]);
 
+// terser folds a constant interpolation into the literal (`${BIAS.toFixed(2)}` -> `-1.50`), so an interpolation
+// ('@@') in the source tokens matches either '@@' or up to FOLD_MAX_TOKENS tokens of folded text in the output.
+// Returns how many interpolations were folded, or -1 when the streams differ in any fixed token.
+const FOLD_MAX_TOKENS = 16;
+function foldedTokens(a, b) {
+  const memo = new Map();
+  const go = (i, j) => {
+    if (i === a.length) return j === b.length ? 0 : -1;
+    const key = i * (b.length + 1) + j;
+    if (memo.has(key)) return memo.get(key);
+    let r = -1;
+    if (a[i] === '@@') {
+      if (b[j] === '@@') r = go(i + 1, j + 1);
+      for (let k = j; r < 0 && k <= b.length && k - j <= FOLD_MAX_TOKENS; k++) {
+        if (b.slice(j, k).includes('@@')) break;
+        const s = go(i + 1, k);
+        if (s >= 0) r = s + 1;
+      }
+    } else if (a[i] === b[j]) r = go(i + 1, j + 1);
+    memo.set(key, r);
+    return r;
+  };
+  return go(0, 0);
+}
+
 function findShaders(code, useCooked) {
   const ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
   const found = [];
@@ -237,12 +262,19 @@ log(`terser     ${kb(main.text.length)} -> ${kb(terserJs.length)}`);
 
   if (OPT.glsl) {
     const outShaders = findShaders(terserJs, true).map(s => ({ tokens: glslTokens(s.qs.join('\n@@\n')), exprs: s.exprs, qs: s.qs, used: false }));
+    let foldedTotal = 0;
     shaderReport.before.forEach((sh, i) => {
-      const o = outShaders.find(c => !c.used && sameTokens(sh.tokens, c.tokens));
+      let o = outShaders.find(c => !c.used && sameTokens(sh.tokens, c.tokens)), folded = 0;
+      if (!o) for (const c of outShaders) {
+        if (c.used) continue;
+        const f = foldedTokens(sh.tokens, c.tokens);
+        if (f > 0) { o = c; folded = f; break; }
+      }
       if (!o && process.env.DBG) for (const c of outShaders) { const k = sh.tokens.findIndex((t, j) => t !== c.tokens[j]); console.error(k, sh.tokens.slice(Math.max(0, k - 5), k + 5).join(' '), ' || ', c.tokens.slice(Math.max(0, k - 5), k + 5).join(' ')); }
-      if (!o) fail(`shader ${i}: no shader in the terser output with an identical token stream`);
+      if (!o) fail(`shader ${i}: no shader in the terser output with an identical token stream (constant folds allowed)`);
       o.used = true;
-      if (o.exprs !== sh.exprs) fail(`shader ${i}: interpolation count ${sh.exprs} -> ${o.exprs}`);
+      if (o.exprs !== sh.exprs - folded) fail(`shader ${i}: interpolation count ${sh.exprs} -> ${o.exprs} with ${folded} folded`);
+      foldedTotal += folded;
       sh.out = o.qs;
     });
     // declared GL names still present in the shader text and in the JS that looks them up
@@ -270,7 +302,7 @@ log(`terser     ${kb(main.text.length)} -> ${kb(terserJs.length)}`);
         catch (e) { fail('a shader parsed before and not after: ' + e.message.split('\n')[0]); }
       }
     }
-    log(`verify     ${shaderReport.before.length} shader(s) token-identical, ${names.size} GL name(s) kept` +
+    log(`verify     ${shaderReport.before.length} shader(s) token-identical (${foldedTotal} constant interpolation(s) folded by terser), ${names.size} GL name(s) kept` +
       (parseGLSL ? `, ${parsed} parsed (${skipped} fragments skipped)` : ', GLSL parser absent'));
   }
   if (OPT.lock) {
