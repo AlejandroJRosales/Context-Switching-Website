@@ -4448,6 +4448,7 @@ void main() {
     const NPC_ATTACK_DAMAGE_PER_S = 0.2;   // share of the victim's starting health lost per second of attacks (~5 s to kill)
     const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between one grazer's plant bites
     const NPC_HIT_NO_EAT_S = 2;
+    const PLANT_MAX_HEALTH = 10;           // a plant's bites when whole
     const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per point of the plant's max health            // sim seconds an animal cannot eat (plants or food boxes) after being hit
     // FIGHTS (two animals that hunt each other): each side's hit scales with its height x mass x health.
     const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by a reference fighter (below): 0.2 of a human's 120
@@ -7443,8 +7444,8 @@ void main() {
     class Plant extends Entity {
       constructor(position) {
         super(position, 'plant');
-        this.health = 10;
-        this.maxHealth = 10;
+        this.health = PLANT_MAX_HEALTH;
+        this.maxHealth = PLANT_MAX_HEALTH;
         // On the provider's footing (a lake bed under water), sunk 3 Arena units as in the Arena.
         const x = this.position.x, z = this.position.z;
         this.position.y = surfaceY(x, z) - 3 * NPC_UNIT;
@@ -12442,14 +12443,22 @@ void main() {
       punch: { reachM: 1.1, coneCos: 0.5 },   // the attack button: metres from the player, and how far off the facing (cos of the half angle)
       fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
       plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
+      meatDeerShare: 0.1,               // a piece of meat feeds this share of what a kill of an average adult buck feeds
       shelter: { healPerS: 0.2 },       // health per second regained inside a cabin
       flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+ (not the steady starving drain)
+      // INVENTORY: each item kind names its action (SURVIVOR_ACTIONS) and what it gives; `loot` is its weight in a box
+      // (0 or absent: never in one). A box opens in its slot into one item drawn by weight. New kinds (weapons) add an
+      // entry here and, for a new kind of use, an action.
       inventory: {
         slots: 2,
         keys: ['Digit1', 'Digit2'],     // one per slot; tapping a slot works too
         items: {
-          crate: { icon: '📦', label: 'Food box' },
-          plant: { icon: '🌿', label: 'Plant' }
+          crate: { icon: '📦', label: 'Box', action: 'open' },
+          water: { icon: '💧', label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
+          // a whole plant, as picking one up gives (a picked plant carries its own food, from the bites it has left)
+          plant: { icon: '🌿', label: 'Plant', action: 'eat', loot: 45, get food() { return playerPlantFood(PLANT_MAX_HEALTH); } },
+          // a kill feeds its starting health (game.avatar.feedOn), which deer have whatever their size or sex
+          meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } }
         }
       },
       causes: {
@@ -12458,6 +12467,17 @@ void main() {
         starving: 'Starved',
         parched: 'Died of thirst'
       }
+    };
+
+    // Food the player gets from a plant with `bites` left: each bite is the player's share of a bite's nutrition.
+    function playerPlantFood(bites) { return bites * PLANT_MAX_HEALTH * PLANT_BITE_NUTRITION * SURVIVOR_CONFIG.plantShare; }
+
+    // What using an item does, by its kind's action: verb names the use (slot labels), past the run summary's row.
+    // run(game, slot, item) applies it; `consumed` actions empty the slot first and count toward the run summary.
+    const SURVIVOR_ACTIONS = {
+      open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
+      eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
+      drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } }
     };
 
     const needsEl = document.getElementById('needs');
@@ -12489,7 +12509,7 @@ void main() {
       foodNeed: 0,
       waterNeed: 0,
       sheltered: false,       // in the car or a cabin: nothing can hurt the player
-      inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // { kind, food } or null
+      inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // makeItem's { kind, food, water } or null
       run: null,              // this run's record: hours, eaten counts, cause
       _lastHour: null,
       _q: [], _qp: [], _qb: [],
@@ -12554,7 +12574,29 @@ void main() {
         this.waterNeed = Math.max(0, this.waterNeed - food * DIET_WATER_SHARE * N.waterPerS / N.foodPerS);
       },
 
+      // `water` units of water need removed
+      drink(water) { this.waterNeed = Math.max(0, this.waterNeed - water); },
+
       tally(kind) { this.run.eaten[kind] = (this.run.eaten[kind] || 0) + 1; },
+
+      // An inventory item of `kind`: its kind's food and water, unless `own` gives the item's own (a picked plant's).
+      makeItem(kind, own = null) {
+        const def = SURVIVOR_CONFIG.inventory.items[kind];
+        return { kind, food: def.food ?? 0, water: def.water ?? 0, ...own };
+      },
+
+      // A box's contents: one item kind drawn by its loot weight.
+      rollLoot() {
+        const items = SURVIVOR_CONFIG.inventory.items;
+        let total = 0;
+        for (const k in items) total += items[k].loot ?? 0;
+        let r = Math.random() * total;
+        for (const k in items) {
+          const w = items[k].loot ?? 0;
+          if (w > 0 && (r -= w) < 0) return this.makeItem(k);
+        }
+        return null;   // no loot weights: an empty box
+      },
 
       // Landing at impactSpeed (m/s, downward): the drop height that speed implies, v^2 / 2g, so a teleport
       // (which zeroes velocity) never counts as a fall.
@@ -12666,30 +12708,31 @@ void main() {
           if (!p.alive) continue;
           if (Math.abs(p.position.y - feet) > R.height) continue;
           if (tools.distSq(px, pz, p.position.x, p.position.z) > R.radius * R.radius) continue;
-          // the whole plant: its remaining bites, each the player's share of a bite's nutrition
-          const food = p.health * p.maxHealth * PLANT_BITE_NUTRITION * SURVIVOR_CONFIG.plantShare;
+          // the whole plant: the bites it has left
+          const food = playerPlantFood(p.health);
           p.health = 0;
           p.alive = false;
           world.plantsDied = true;
           plantRenderer.touch(p);
-          this.inventory[free] = { kind: 'plant', food };
+          this.inventory[free] = this.makeItem('plant', { food });
           free = this.inventory.indexOf(null);
         }
         if (free < 0) return;
         const crate = foodBoxes.touching(this._qb, px, feet, pz);
         if (crate) {
           foodBoxes.eat(crate);
-          this.inventory[free] = { kind: 'crate', food: Infinity };   // a food box fills the hunger bar
+          this.inventory[free] = this.makeItem('crate');   // closed: its contents are drawn when it is opened
         }
       },
 
-      // Eat the item in slot i (key or tap).
+      // Use the item in slot i (key or tap) by its kind's action: a box opens into its contents in the same slot,
+      // food is eaten, water drunk.
       useSlot(i) {
         const item = this.inventory[i];
         if (!item || !this.on || this.dead) return;
-        this.inventory[i] = null;
-        this.eat(Math.min(item.food, this.foodNeed));
-        this.tally(item.kind);
+        const act = SURVIVOR_ACTIONS[SURVIVOR_CONFIG.inventory.items[item.kind].action];
+        if (act.consumed) { this.inventory[i] = null; this.tally(item.kind); }
+        act.run(this, i, item);
         this.draw();
       },
 
@@ -12702,7 +12745,10 @@ void main() {
         runStatsEl.textContent = '';
         const row = (k, v) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; runStatsEl.append(dt, dd); };
         row('Days survived', (r.hours / 24).toFixed(1));
-        for (const [kind, n] of eaten) row(`Ate (${SURVIVOR_CONFIG.inventory.items[kind]?.label.toLowerCase() ?? kind})`, n);
+        for (const [kind, n] of eaten) {
+          const def = SURVIVOR_CONFIG.inventory.items[kind];   // none for kills (deer): eaten
+          row(`${def ? SURVIVOR_ACTIONS[def.action].past : 'Ate'} (${def?.label.toLowerCase() ?? kind})`, n);
+        }
         if (!eaten.length) row('Ate', 'nothing');
         this.showPanel();
         if (locked) document.exitPointerLock();
@@ -12752,7 +12798,7 @@ void main() {
             const el = slotEls[i], item = it && SURVIVOR_CONFIG.inventory.items[it.kind];
             el.querySelector('span').textContent = item ? item.icon : '';
             el.disabled = !item;
-            el.setAttribute('aria-label', item ? `Eat ${item.label.toLowerCase()}` : 'Empty slot');
+            el.setAttribute('aria-label', item ? `${SURVIVOR_ACTIONS[item.action].verb} ${item.label.toLowerCase()}` : 'Empty slot');
           });
         }
       },
@@ -12764,7 +12810,7 @@ void main() {
       }
     };
 
-    // inventory: a slot's key or a tap eats its item
+    // inventory: a slot's key or a tap uses its item (game.useSlot)
     addEventListener('keydown', e => {
       const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
       if (i >= 0 && !e.repeat && active) game.useSlot(i);
