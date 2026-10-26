@@ -307,7 +307,7 @@
       /* one source for the panel's geometry: a full row is icon + gap + bar; the food/water pair shares one row */
       --need-icon-w: 16px;
       --need-gap: 7px;
-      --need-bar-w: 110px;
+      --need-bar-w: 190px;   /* wide enough for the top row: the day and the player's stats, spaced */
     }
 
     #needs.on {
@@ -337,19 +337,22 @@
       width: auto;
     }
 
-    #needDay {
+    /* top row: the day, then the player's stats (people's label fields, no commas), spread across the bars' width */
+    #needTop {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      width: calc(var(--need-icon-w) + var(--need-gap) + var(--need-bar-w));
       height: 18px;
       font: 400 11px/18px ui-monospace, "SF Mono", Menlo, monospace;
       letter-spacing: 0.08em;
       color: rgba(232, 228, 220, 0.8);
+      white-space: nowrap;
     }
 
-    /* the player's stats under the bars, as people's labels show theirs; wraps to the panel's width */
     #needInfo {
-      width: calc(var(--need-icon-w) + var(--need-gap) + var(--need-bar-w));
-      margin-top: 3px;
-      font: 400 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
-      color: rgba(232, 228, 220, 0.8);
+      display: contents;
     }
 
     #slots {
@@ -1263,13 +1266,12 @@
   </div>
   <div id="hud"></div>
   <div id="needs">
-    <div id="needDay" aria-live="polite">Day 1</div>
+    <div id="needTop"><span id="needDay" aria-live="polite">Day 1</span><span id="needInfo"></span></div>
     <div class="need" aria-hidden="true"><span>❤️</span><i><b id="needHealth"></b></i></div>
     <div class="need-pair" aria-hidden="true">
       <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>
       <div class="need"><span>💧</span><i><b id="needWater"></b></i></div>
     </div>
-    <div id="needInfo"></div>
     <div id="slots" class="need-pair">
       <button disabled aria-label="Empty slot"><span></span><kbd>1</kbd></button>
       <button disabled aria-label="Empty slot"><span></span><kbd>2</kbd></button>
@@ -4543,10 +4545,10 @@ void main() {
       const inches = Math.round(heightM / 0.0254);
       return ((age + 2) * 1000 + inches) * 10000 + lb;
     }
-    function personInfoText(key, sex) {
+    // the readout's fields in order; each display joins them its own way (labels with commas, the panel spaced out)
+    function personInfoFields(key, sex) {
       const lb = key % 10000, inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
-      return `Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}, ${sex === 'male' ? 'M' : 'F'}, `
-        + `${Math.floor(inches / 12)}'${inches % 12}", ${lb} lb`;
+      return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', `${Math.floor(inches / 12)}'${inches % 12}"`, `${lb} lb`];
     }
     // Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use NPC_SHOWN_BMI.
     const NPC_REF_MASS_KG = {
@@ -10785,6 +10787,10 @@ void main() {
       heightScale: PLAYER_HS,
       ageBase: NPC_ADULT_AGE,   // years at world tick 0 (newBody)
       ageYears() { return this.ageBase + world.ticks / NPC_TICKS_PER_YEAR; },
+      // the player's stats readout key (personInfoKey; Survivor panel and Observer HUD), or -1 before the first body
+      infoKey() {
+        return this.look ? personInfoKey(Math.floor(this.ageYears()), this.sex, this.look.buildDev, game.avatar.bodyHeightM()) : -1;
+      },
       gait: { x: NaN, z: NaN, speed: 0, phase: 0, swing: 0, run: 0 },
 
       // one instance of the people renderer's rig and materials; posed by the mesh's own transform, so iPose stays at the origin
@@ -12620,12 +12626,16 @@ void main() {
         const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
         if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
         // the player's body, read out as people's labels read theirs (no generation: the player has none)
-        if (pov.look) {
-          const info = personInfoKey(Math.floor(pov.ageYears()), pov.sex, pov.look.buildDev, this.avatar.bodyHeightM());
+        const info = pov.infoKey();
+        if (info >= 0) {
           if (info !== this._shownInfo || pov.sex !== this._shownSex) {
             this._shownInfo = info; this._shownSex = pov.sex;
-            // fields keep their own spaces unbroken, so the line wraps only between fields
-            needInfoEl.textContent = personInfoText(info, pov.sex).split(', ').map(f => f.replace(/ /g, ' ')).join(', ');
+            // one span per field: the top row spaces them evenly after the day (#needTop)
+            needInfoEl.replaceChildren(...personInfoFields(info, pov.sex).map(f => {
+              const s = document.createElement('span');
+              s.textContent = f;
+              return s;
+            }));
           }
         }
         const slots = this.inventory.map(it => it ? it.kind : '').join(',');
@@ -12672,7 +12682,9 @@ void main() {
     const FAR_STAT_MAX = 12000;
     // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
     const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;   // bars area
-    const BAR_INFO_H = 14;                          // canvas px of the Gen/Age/Sex/Height/Weight row
+    const BAR_INFO_H = 20;                          // canvas px of the Gen/Age/Sex/Height/Weight row
+    const BAR_INFO_FONT = 15;                       // canvas px of its text, shrunk only when the fields would not fit
+    const BAR_INFO_GAP = 8;                         // least canvas px between its fields (spread across the width)
     const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_INFO_H;
     const BAR_PX = BAR_W_M / BAR_CANVAS_W;
     const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // whole sprite height in metres
@@ -12950,8 +12962,8 @@ void main() {
         return personInfoKey(age, a.sex, a.look ? a.look.buildDev : 0, metres);
       }
 
-      infoText(a, key) {
-        return `Gen ${a.generation}, ` + personInfoText(key, a.sex);
+      infoFields(a, key) {
+        return [`Gen ${a.generation}`, ...personInfoFields(key, a.sex)];
       }
 
       draw(slot, vals, arrows, a) {
@@ -12985,15 +12997,26 @@ void main() {
           if (arrows[i] >= 0) this.arrow(ctx, W - pad - arrowW / 2, cy, rh * 0.9, arrows[i], BAR_COLORS[i]);
         }
         if (info) {
-          // one line under the bars, shrunk to fit the width
-          const text = this.infoText(a, info), maxW = W - 2 * pad;
-          let px = BAR_INFO_H - 4;
-          ctx.font = `${px}px sans-serif`;
-          const tw = ctx.measureText(text).width;
-          if (tw > maxW) { px = Math.max(5, px * maxW / tw); ctx.font = `${px}px sans-serif`; }
+          // one row under the bars, the fields spread across the width like the player's panel row;
+          // the font shrinks only when the fields and their least gaps would not fit
+          const fields = this.infoFields(a, info), n = fields.length, maxW = W - 2 * pad;
+          const measure = px => {
+            ctx.font = `${px}px sans-serif`;
+            let tw = 0;
+            for (const f of fields) tw += ctx.measureText(f).width;
+            return tw;
+          };
+          let px = BAR_INFO_FONT, tw = measure(px);
+          const need = tw + BAR_INFO_GAP * (n - 1);
+          if (need > maxW) { px = Math.max(5, px * maxW / need); tw = measure(px); }
+          const fieldGap = (maxW - tw) / (n - 1);
           ctx.fillStyle = 'rgba(232, 228, 220, 0.95)';
           ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-          ctx.fillText(text, pad, H + BAR_INFO_H / 2, maxW);
+          let x = pad;
+          for (const f of fields) {
+            ctx.fillText(f, x, H + BAR_INFO_H / 2);
+            x += ctx.measureText(f).width + fieldGap;
+          }
         }
         slot.tex.needsUpdate = true;
       }
@@ -15179,7 +15202,6 @@ void main() {
 
     let hudPlace = '';
     let hudBuildings = 0;
-
     function populationText() {
       let people = 0, coyotes = 0, deer = 0;
       for (const a of world.animals) {
@@ -15201,10 +15223,12 @@ void main() {
         head = `${fmt(hudBuildings)} buildings ${hudPlace}`;
         head += `, wilderness seed ${activeWorld.seed}`;
       }
-      const c = conditions();
+      // last line: time and conditions, then (Observer) the player's stats, comma-separated like the rest of the HUD
+      const c = conditions(), info = game.on ? -1 : pov.infoKey();
       const sky = site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '';
+      const last = [sky, ...(info >= 0 ? personInfoFields(info, pov.sex) : [])].filter(Boolean).join(', ');
       const fps = !game.on && hudFps ? `, ${hudFps} fps` : '';
-      perf.setText(hudEl, head + '\n' + populationText() + fps + (sky ? '\n' + sky : ''));
+      perf.setText(hudEl, head + '\n' + populationText() + fps + (last ? '\n' + last : ''));
     }
 
     // LOAD
