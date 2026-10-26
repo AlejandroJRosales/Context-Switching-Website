@@ -2415,6 +2415,12 @@ void main() {
       return { minX, maxX, minZ, maxZ };
     }
 
+    // A pole's solid (lamp posts, tree trunks): a square of half side r around (x, z), from just under base up to top.
+    function poleSolid(x, z, r, base, top) {
+      const pts = [[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]];
+      return { pts, ...bounds(pts), base: base - 0.05, top, tags: null };
+    }
+
     // ROOFS
 
     // Oriented box around a footprint, long axis on the longest edge.
@@ -3500,11 +3506,11 @@ void main() {
       if (floorMesh) floorMesh.receiveShadow = true;
 
       buildGround(features);
-      buildTrees(features.trees);
+      const trunkSolids = buildTrees(features.trees);
       const barrierBoxes = buildBarriers(features.barriers);
-      buildGrid(solids.concat(barrierBoxes));
-      // building walls block NPC sight; fences, hedges and garden walls do not
-      cover.add(solids);
+      buildGrid(solids.concat(barrierBoxes, trunkSolids));
+      // building walls and tree trunks block NPC sight; fences, hedges and garden walls do not
+      cover.add(solids.concat(trunkSolids));
       buildSigns(signs);
       return { count, skipped };
     }
@@ -3559,11 +3565,18 @@ void main() {
       if (pathMesh) cellCull(pathMesh).receiveShadow = true;
     }
 
-    // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
-    function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj => { scene.add(obj); layers.push(obj); }) {
-      if (!trees.length) return;
+    // TREES: trunk radii in metres; each trunk is a pole solid (like a lamp post), so it blocks movement and NPC sight.
+    const TREE_TRUNK_TOP_R = 0.14;
+    const TREE_TRUNK_BASE_R = 0.2;
+    const TREE_TRUNK_SOLID_R = TREE_TRUNK_BASE_R * 0.9;   // half side of the trunk's square solid
 
-      const trunkG = new THREE.CylinderGeometry(0.14, 0.2, 1, 6);
+    // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
+    // Returns the trunk solids; the caller files them with the obstacle index and cover.
+    function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj => { scene.add(obj); layers.push(obj); }) {
+      const solids = [];
+      if (!trees.length) return solids;
+
+      const trunkG = new THREE.CylinderGeometry(TREE_TRUNK_TOP_R, TREE_TRUNK_BASE_R, 1, 6);
       trunkG.translate(0, 0.5, 0);
       const crownG = new THREE.IcosahedronGeometry(1, 0);
       const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x6b5136 }), trees.length);
@@ -3595,6 +3608,7 @@ void main() {
         scl.set(crownR, crownR * 1.15, crownR);
         crown.setMatrixAt(i, m.compose(pos, q, scl));
         crown.setColorAt(i, c.setHSL(0.24 + Math.random() * 0.07, 0.42, 0.20 + Math.random() * 0.09));
+        solids.push(poleSolid(t.x, t.z, TREE_TRUNK_SOLID_R, gy, gy + Math.max(trunkH, 0.5) + crownR * 1.7));
       }
 
       trunk.instanceMatrix.needsUpdate = true;
@@ -3605,6 +3619,7 @@ void main() {
       add(trunk);
       add(crown);
       invalidate();
+      return solids;
     }
 
     // Walls, fences and hedges; each segment is also a thin collision footprint.
@@ -4471,10 +4486,32 @@ void main() {
     const fightEase = x => x * x * (3 - 2 * x);
     const fightClamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
 
-    // Fight state shared by animals and the player's avatar: moveAt (start of the move playing), moveSide (people's
-    // punching arm, +1 left / -1 right), fightFrom / fightUntil (the hold). A move still playing is not restarted.
+    // NIGHT HUNTS: with the sun below NIGHT_SUN_ALT_DEG (civil twilight) a species hunts its SPECIES nightPrey (the
+    // player included, out of shelter): it chases the nearest one in sight, re-aiming every tick, and pounces in reach.
+    const NIGHT_SUN_ALT_DEG = -6;
+    // POUNCES: a hunter's leap at its quarry, moveS sim seconds: it crouches until share leapAt, then flies along the
+    // heading it launched on at leapOver times its sprint speed, landing short of the quarry (pounceStep). It launches
+    // when the quarry is within the leap's own length, at most once per moveS + cooldownS. keys: as NPC_FIGHT_MOVES'.
+    const COYOTE_LEAP_AT = 0.25;
+    const NPC_POUNCES = {
+      coyote: {
+        moveS: 0.5, leapAt: COYOTE_LEAP_AT, leapOver: 1.6, cooldownS: 1.2, anchor: null, keys: [
+          { t: 0, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 },
+          { t: COYOTE_LEAP_AT, rise: -1.2, lunge: -0.5, pitch: 0.12, head: 0.3, front: 0.35, back: -0.45 },
+          { t: 0.6, rise: 9, lunge: 0, pitch: -0.25, head: -0.2, front: -1.1, back: 1.0 },
+          { t: 0.85, rise: 1, lunge: 0, pitch: 0.2, head: 0.45, front: -0.3, back: 0.4 },
+          { t: 1, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 }
+        ]
+      }
+    };
+    // a pounce lands this share of the contact distance (NpcWorld.CONTACT_DIST) short of its quarry, so the landing bites
+    const POUNCE_LAND_SHORT = 0.5;
+
+    // Fight state shared by animals and the player's avatar: moveAt (start of the move playing), playing (that move:
+    // a fight move or a pounce; drawn by the renderer), moveSide (people's punching arm, +1 left / -1 right),
+    // fightFrom / fightUntil (the hold). A move still playing is not restarted.
     function startFightMove(f, move, now) {
-      if (now - f.moveAt >= move.moveS) { f.moveAt = now; f.moveSide = -f.moveSide; }
+      if (now - f.moveAt >= (f.playing ?? move).moveS) { f.moveAt = now; f.playing = move; f.moveSide = -f.moveSide; }
       if (now >= f.fightUntil) f.fightFrom = now;
       const holdS = move.flees ? move.moveS : Math.max(move.moveS, NPC_ATTACK_COOLDOWN_S + NPC_FIGHT_HOLD_PAD_S);
       f.fightUntil = Math.max(f.fightUntil, now + holdS);
@@ -4559,7 +4596,7 @@ void main() {
     // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fightHit for pairs.
     const SPECIES = {
       human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
-      coyote: { brain: false, hunts: { deer: true, human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
+      coyote: { brain: false, hunts: { deer: true, human: true }, nightPrey: { human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
       deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
@@ -4570,6 +4607,8 @@ void main() {
     const HUMAN_TYPE_ID = NPC_TYPE_IDS.human;
     const HUNTS_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
     const HUNTED_BY_MASK = NPC_TYPES.map(t => NPC_TYPES.reduce((m, h, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
+    // what each species chases at night (NIGHT HUNTS); a species it would flee by day is quarry then instead
+    const NIGHT_PREY_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].nightPrey?.[t] === true ? m | (1 << i) : m, 0));
     // ids of each species' hunts keys, in key order (what `for (t in spec.hunts)` visits)
     const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
     const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
@@ -5249,14 +5288,17 @@ void main() {
         this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
         this.memWaterX = 0; this.memWaterY = 0; this.memWaterZ = 0; this.hasWater = false;
         this.memMateX = 0; this.memMateY = 0; this.memMateZ = 0; this.hasMate = false;
-        this.priority = null;          // deer: 'predator', 'food', 'water', 'mate', or null while exploring
+        this.priority = null;          // deer: 'predator', 'hunt', 'food', 'water', 'mate', or null while exploring
         this.speedScale = 1;
         this.sprinting = false;
         this.nextAttackAt = 0;   // sim seconds: when this hunter may attack again
         this.nextBiteAt = 0;     // sim seconds: when this grazer may bite a plant again
         this.noEatUntil = 0;     // sim seconds: eating is blocked until then after being hit
         // fight move and hold (startFightMove); while world.time < fightUntil the animal takes no steps
-        this.moveAt = -Infinity; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
+        this.moveAt = -Infinity; this.playing = null; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
+        this.quarry = null;      // night hunts: the animal or player avatar being chased (priority 'hunt')
+        this.pounceAt = -Infinity;   // sim seconds: start of the current or last pounce (NPC_POUNCES)
+        this.nextPounceAt = 0;       // sim seconds: when this hunter may pounce again
         this.fleeFrom = null;    // who a fleeing species' move answered; it runs from them once the move ends
         this.fleeUntil = 0;      // sim seconds: a fleeing species plays no new move until then
         this.bumpScale = 1;
@@ -5591,6 +5633,8 @@ void main() {
 
         let best = null, bestV = -Infinity;
         if (this.hasPredator && this.avoidNeed > bestV) { best = 'predator'; bestV = this.avoidNeed; }
+        // a night hunt outranks every need but fleeing
+        if (this.quarry !== null && best === null) { best = 'hunt'; bestV = Infinity; }
         if (this.hasFood && this.foodNeed > bestV) { best = 'food'; bestV = this.foodNeed; }
         if (this.hasWater && this.waterNeed > bestV) { best = 'water'; bestV = this.waterNeed; }
         if (this.hasMate && this.reproductionNeed > bestV) { best = 'mate'; bestV = this.reproductionNeed; }
@@ -5600,12 +5644,13 @@ void main() {
         if (best === 'predator') {
           const ax = x - this.memPredatorX, az = z - this.memPredatorZ;
           if (ax !== 0 || az !== 0) this.heading = this.targetHeading = Animal.wrapAngle(Math.atan2(ax, az));
-        } else if (best === 'food') { this.focusX = this.memFoodX; this.focusZ = this.memFoodZ; }
+        } else if (best === 'hunt') { this.focusX = this.quarry.position.x; this.focusZ = this.quarry.position.z; }
+        else if (best === 'food') { this.focusX = this.memFoodX; this.focusZ = this.memFoodZ; }
         else if (best === 'water') { this.focusX = this.memWaterX; this.focusZ = this.memWaterZ; }
         else if (best === 'mate') { this.focusX = this.memMateX; this.focusZ = this.memMateZ; }
 
         const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
-        const chase = best === 'food' && this.spec.food !== 'plant';
+        const chase = best === 'hunt' || (best === 'food' && this.spec.food !== 'plant');
         this.sprinting = chase || (best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST);
         this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
         this.bumpScale = 1;
@@ -5622,6 +5667,7 @@ void main() {
         // sprinting burns DEER_SPRINT_ENERGY times walking energy; update() added the base
         if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
+        if (this.priority === 'hunt') { this.steerHunt(); return; }
         // the decision's heading holds until the next one; only arrival is checked (fleeing never arrives)
         if (this.priority === 'predator' || !this.moving) return;
         const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
@@ -5633,16 +5679,70 @@ void main() {
         }
       }
 
+      // Is `q` (an animal or the player's avatar) still fair game for this night hunter?
+      canHunt(q) {
+        if (q === null || !q.alive || !world.night) return false;
+        return q === game.avatar ? q.isPreyFor(this.typeId) : (NIGHT_PREY_MASK[this.typeId] & (1 << q.typeId)) !== 0;
+      }
+
+      // NIGHT HUNT, every tick: run at the quarry wherever it is now; within the leap's length, pounce. A pounce in the
+      // air keeps the heading it launched on. A lost quarry (dead, sheltered, daybreak) ends the hunt at once.
+      steerHunt() {
+        const q = this.quarry, now = world.time;
+        if (!this.canHunt(q)) {
+          this.quarry = null; this.priority = null; this.sprinting = false;
+          this.actionTimer = 0;   // decide again next tick
+          return;
+        }
+        if (this.pouncing(now)) return;
+        this.focusX = q.position.x; this.focusZ = q.position.z;
+        this.aimAtFocus();
+        this.moving = true;
+        const P = NPC_POUNCES[this.type];
+        if (P === undefined || now < this.nextPounceAt || now < this.fightUntil) return;
+        const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z, reach = this.leapLength(P);
+        if (dx * dx + dz * dz > reach * reach) return;
+        this.pounceAt = this.moveAt = now;
+        this.playing = P;
+        this.nextPounceAt = now + P.moveS + P.cooldownS;
+        this.bumpScale = 1;
+      }
+
+      pouncing(now) {
+        const P = NPC_POUNCES[this.type];
+        return P !== undefined && now - this.pounceAt < P.moveS;
+      }
+
+      // metres per second of a pounce's flight, and the metres the flight covers
+      leapSpeed(P) { return P.leapOver * this.sprintSpeed(); }
+      leapLength(P) { return this.leapSpeed(P) * P.moveS * (1 - P.leapAt); }
+
+      // A pounce's step this tick: 0 while crouched, then the flight, never past POUNCE_LAND_SHORT of the contact
+      // distance short of the quarry along the heading; -1 when not pouncing.
+      pounceStep() {
+        const now = world.time;
+        if (!this.pouncing(now)) return -1;
+        const P = NPC_POUNCES[this.type];
+        if ((now - this.pounceAt) / P.moveS < P.leapAt) return 0;
+        const q = this.quarry, flight = this.leapSpeed(P) * this.bumpScale * NPC_TICK_S;
+        if (q === null) return flight;   // the hunt ended in the air: the leap carries on
+        const along = (q.position.x - this.position.x) * Math.sin(this.heading) + (q.position.z - this.position.z) * Math.cos(this.heading);
+        return Math.max(0, Math.min(flight, along - NpcWorld.CONTACT_DIST * POUNCE_LAND_SHORT));
+      }
+
       searchDeer(grid) {
         const x = this.position.x, z = this.position.z;
         const vd = this.visionDistSq, r = this.visionDistance;
         this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
         this.avoidNeed = 0;
+        this.quarry = null;
         const food = this.spec.food, tid = this.typeId, sex = this.sex;
-        const huntedBy = HUNTED_BY_MASK[tid], foodId = FOOD_TYPE_ID[tid];
-        const needP = huntedBy !== 0, needF = food !== null && food !== 'plant';
-        let bP = Infinity, bF = Infinity, bM = Infinity, kP = -1, kF = -1, kM = -1;
-        let oP = null, oF = null, oM = null;
+        // at night, night prey is quarry even when it would be fled by day
+        const quarryMask = world.night ? NIGHT_PREY_MASK[tid] : 0;
+        const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = FOOD_TYPE_ID[tid];
+        const needP = huntedBy !== 0, needF = food !== null && food !== 'plant', needQ = quarryMask !== 0;
+        let bP = Infinity, bF = Infinity, bM = Infinity, bQ = Infinity, kP = -1, kF = -1, kM = -1, kQ = -1;
+        let oP = null, oF = null, oM = null, oQ = null;
 
         const cells = grid.cells;
         if (cells !== null) {
@@ -5656,7 +5756,7 @@ void main() {
               if (L > r) break;
               if (L > 0) {
                 const L2 = L * L;
-                if ((!needP || bP < L2) && (!needF || bF < L2) && bM < L2) break;
+                if ((!needP || bP < L2) && (!needF || bF < L2) && (!needQ || bQ < L2) && bM < L2) break;
               }
             }
             const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
@@ -5678,7 +5778,9 @@ void main() {
                   if (d2 > vd) continue;
                   const key = base + b;
                   const oid = obj.typeId;
-                  if ((huntedBy & (1 << oid)) !== 0) {
+                  if ((quarryMask & (1 << oid)) !== 0) {
+                    if ((d2 < bQ || (d2 === bQ && key > kQ)) && this.inSight(ox, obj.position.y, oz)) { bQ = d2; kQ = key; oQ = obj; }
+                  } else if ((huntedBy & (1 << oid)) !== 0) {
                     if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
                   } else if (oid === foodId) {
                     if ((d2 < bF || (d2 === bF && key > kF)) && this.inSight(ox, obj.position.y, oz)) { bF = d2; kF = key; oF = obj; }
@@ -5694,15 +5796,17 @@ void main() {
         if (oF) this.seen(1, oF.position.x, oF.position.y, oF.position.z);
         if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
 
-        // City: in Survivor mode the player is a predator to whatever people hunt, and at night prey to what hunts people
+        // City: in Survivor mode the player is a predator to whatever people hunt, and at night quarry to people's night hunters
         const gp = game.avatar;
         if (gp.isThreatTo(tid) || gp.isPreyFor(tid)) {
           const ox = gp.position.x, oz = gp.position.z;
           const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
           if (gp.isThreatTo(tid)) {
             if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
-          } else if (d2 <= vd && d2 < bF && this.inSight(ox, gp.position.y, oz)) { bF = d2; this.seen(1, ox, gp.position.y, oz); }
+          } else if (d2 <= vd && d2 < bQ && this.inSight(ox, gp.position.y, oz)) { bQ = d2; oQ = gp; }
         }
+        // the quarry's direction shows as the food ray
+        if (oQ) { this.quarry = oQ; this.seen(1, oQ.position.x, oQ.position.y, oQ.position.z); }
 
         if (food === 'plant') {
           const plant = world.plantSight.nearest(x, z, r, vd, true, bF);
@@ -5718,13 +5822,17 @@ void main() {
         return !cover.blocks(this.position.x, this.eyeY(), this.position.z, tx, ty, tz);
       }
 
-      // Metres moved this tick: a sprint (fleeing or chasing) at the fastest run of its own predators, else the Arena speed.
+      // Metres moved this tick: a pounce's (pounceStep), a sprint (fleeing or chasing) at the fastest run of its own
+      // predators, else the Arena speed.
       stepLength() {
-        const ms = this.sprinting
-          ? DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMSById[this.typeId])
-          : this.speed * this.speedScale * NPC_UNIT;
+        const leap = this.pounceStep();
+        if (leap >= 0) return leap;
+        const ms = this.sprinting ? this.sprintSpeed() : this.speed * this.speedScale * NPC_UNIT;
         return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
       }
+
+      // metres per second of a sprint (fleeing or chasing)
+      sprintSpeed() { return DEER_SPRINT_OVER * Math.max(RUN_SPEED, world.fastestHunterMSById[this.typeId]); }
 
       // City: deer collide like the car: substeps pushed out of walls, speed lost into the wall, glancing hits turn along it.
       moveDeer(step) {
@@ -5860,8 +5968,8 @@ void main() {
         if (this.fleeFrom !== null && now >= this.fightUntil) this.fleeAttacker();
 
         if (!this.brain) {
-          // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick
-          if (--this.actionTimer <= 0) {
+          // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick; a pounce in the air finishes first
+          if (--this.actionTimer <= 0 && !this.pouncing(now)) {
             this.thinkDeer(grid);
             this.actionTimer = this.ACTION_HOLD;
           }
@@ -7294,9 +7402,9 @@ void main() {
           this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
           this._world.set(a.position.x, originY, a.position.z);
           const antlers = p.antlers && a.sex === 'male' ? p.antlers : null;
-          // a fight move playing takes over the legs from the walk cycle
-          const u = (now - a.moveAt) / p.fight.moveS;
-          const move = u >= 0 && u < 1 ? sampleFightKeys(p.fight.keys, u, this._fightPose) : null;
+          // a move playing (fight move or pounce; both anchor at the body centre for coyotes) takes over the legs from the walk cycle
+          const played = a.playing ?? p.fight, u = (now - a.moveAt) / played.moveS;
+          const move = u >= 0 && u < 1 ? sampleFightKeys(played.keys, u, this._fightPose) : null;
           this.poseBoxRig(p, im, idx, antlers, p.aidx, kp, !move && a.moving ? Math.sin(a.animTime) * swing * 0.5 : 0, move);
           if (antlers) p.aidx++;
           p.idx = idx + 1;
@@ -8823,9 +8931,7 @@ void main() {
           headGeoms.push(box(0.7, 0.14, 0.32, hx, topY - 0.14, hz, yaw, headC));
           heads.push([hx, hz]);
           halo.push(hx, topY - 0.28, hz);
-          const r = LAMP_POLE_R;
-          const pts = [[l.x - r, l.z - r], [l.x + r, l.z - r], [l.x + r, l.z + r], [l.x - r, l.z + r]];
-          solids.push({ pts, ...bounds(pts), base: base - 0.05, top: topY, tags: null });
+          solids.push(poleSolid(l.x, l.z, LAMP_POLE_R, base, topY));
         }
         const poles = addLayer(poleGeoms, litMaterial());
         if (poles) poles.castShadow = poles.receiveShadow = true;
@@ -11740,7 +11846,9 @@ void main() {
           }
           if (any) placed++;
         }
-        buildTrees(out, (x, z) => this.grid.at(x, z), addWildLayer);
+        const trunkSolids = buildTrees(out, (x, z) => this.grid.at(x, z), addWildLayer);
+        addSolids(trunkSolids);
+        cover.add(trunkSolids);
         return [out.length, placed];
       }
 
@@ -11870,6 +11978,7 @@ void main() {
         this.aliveById = new Int32Array(NPC_TYPE_COUNT);             // per species id: live count this tick
         this.canHuntById = new Uint8Array(NPC_TYPE_COUNT);           // per species id: 1 while something it hunts lives
         this.fastestHunterMSById = new Float64Array(NPC_TYPE_COUNT); // per species id: its fastest live hunter, metres per second
+        this.night = false;   // the sun below NIGHT_SUN_ALT_DEG, set each step: night hunts (NIGHT_PREY_MASK) are on
 
         this._qPlant = [];
         this._qWater = [];
@@ -12140,6 +12249,7 @@ void main() {
       step(dt) {
         if (!this.ready || this.animals.length === 0) return false;
         const now = this.time;
+        this.night = sunAltDeg < NIGHT_SUN_ALT_DEG;
 
         // Grid sync every 3 ticks, incremental: only animals whose cell changed move bucket; same sets as a full rebuild.
         if (this.ticks % 3 === 0) {
@@ -12333,7 +12443,6 @@ void main() {
       fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
       plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
       shelter: { healPerS: 0.2 },       // health per second regained inside a cabin
-      night: { sunAltDeg: -6 },         // the sun below this (civil twilight) is night: coyotes hunt the player
       flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+ (not the steady starving drain)
       inventory: {
         slots: 2,
@@ -12380,7 +12489,6 @@ void main() {
       foodNeed: 0,
       waterNeed: 0,
       sheltered: false,       // in the car or a cabin: nothing can hurt the player
-      night: false,
       inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // { kind, food } or null
       run: null,              // this run's record: hours, eaten counts, cause
       _lastHour: null,
@@ -12388,19 +12496,19 @@ void main() {
       _shown: -1, _shownDay: -1, _shownSlots: '', _shownInfo: -1, _shownSex: '',
 
       // The NPC world's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
-      // It is a predator to what people hunt, prey at night to what hunts people, and trades fight hits like an animal.
+      // It is a predator to what people hunt, quarry at night to people's night hunters, and trades fight hits like an animal.
       avatar: {
         type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
         startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
-        moveAt: -Infinity, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move (startFightMove), drawn on the 3rd-person body
+        moveAt: -Infinity, playing: null, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move (startFightMove), drawn on the 3rd-person body
         get health() { return game.health; },
         strike() { startFightMove(this, NPC_FIGHT_MOVES.human, world.time); },
         bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
         bodyMassKg() { return humanMassKg(pov.sex, pov.look ? pov.look.buildDev : 0, this.bodyHeightM()); },
         // the animal `tid` flees the player
         isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
-        // the animal `tid` hunts the player
-        isPreyFor(tid) { return this.alive && this.prey && (HUNTS_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
+        // the animal `tid` hunts the player (night hunts: `prey` is night out of shelter)
+        isPreyFor(tid) { return this.alive && this.prey && (NIGHT_PREY_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
         takeHit(attacker, damage) {
           if (game.sheltered || game.dead) return;
           game.hurt(damage, attacker.type);
@@ -12467,8 +12575,7 @@ void main() {
         const feet = player.pos.y - EYE_HEIGHT;
         av.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);
         this.sheltered = player.inCar || cabinAt(px, feet, pz);
-        this.night = sunAltDeg < SURVIVOR_CONFIG.night.sunAltDeg;
-        av.prey = this.night && !this.sheltered;
+        av.prey = world.night && !this.sheltered;
 
         // days survived run on the sky's own clock
         const hour = simSky.hour;
