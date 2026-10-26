@@ -382,6 +382,11 @@
       border-style: dashed;
     }
 
+    /* a preview, not a held item: the result shows faded until crafted */
+    #slots button.craft span {
+      opacity: 0.35;
+    }
+
     /* injuries (game.injuries), in line with the slots; shown only while the player has one */
     #injuries {
       display: none;
@@ -12000,6 +12005,134 @@ void main() {
         return null;
       }
     }
+    // INTRO SCENE: the intro screen's backdrop before any world loads: a preset street front (built by buildCity) and a
+    // few people and animals walking lanes across the view. Metres; the camera stands at the origin looking down -z.
+    // Each lane: depth range (z), walkers per species, and speed shares (of the species' Arena speed). A walker past
+    // the view's edge at its depth by offscreenM comes back in at the other edge.
+    const INTRO_SCENE = {
+      hour: 20,                     // the sky's hour: dusk, lit windows
+      eye: { pitch: 0.12 },         // radians, looking slightly up at the facades
+      offscreenM: 3,
+      walkers: {
+        human: { count: 6, z: [[-6.2, -5.0], [-17.2, -16.0]], speed: [0.8, 1.1] },   // the two sidewalks
+        deer: { count: 2, z: [[-13.5, -8.5]], speed: [1.6, 2.0] },                  // across the road
+        coyote: { count: 2, z: [[-13.5, -8.5]], speed: [1.8, 2.4] }
+      },
+      // footprints [x0, z0, x1, z1] with their floors; the row stands behind the far sidewalk
+      buildings: [
+        [-58, -19, -35, -44, 11], [-34, -19, -15, -40, 15], [-14, -20, 5, -42, 24],
+        [6, -19, 22, -36, 9], [23, -19, 44, -45, 17], [45, -19, 66, -40, 12]
+      ],
+      road: { z: -11, kind: 'secondary', width: 9 },
+      sidewalks: [{ z: -5.6, width: 2.4 }, { z: -16.6, width: 2.4 }],
+      spanM: 80                     // half length of the road and sidewalks
+    };
+
+    // INTRO WORLD: the provider for the intro scene. It drives its walkers itself (drive, called from NpcWorld.step),
+    // so no brain, hunt or need runs; no HUD (hud: false).
+    class IntroWorld {
+      constructor() {
+        this.kind = 'intro';
+        this.bounds = { minX: -200, maxX: 200, minZ: -200, maxZ: 200 };
+        this.wraps = false;
+        this.shadows = true;
+        this.companion = false;
+        this.rays = 'off';
+        this.city = null;
+        this.hud = false;
+        this.lanes = new Map();   // walker -> { z, dir, speedScale }
+      }
+
+      build() {
+        const S = INTRO_SCENE, span = S.spanM;
+        const line = z => [[-span, z], [span, z]];
+        const features = {
+          buildings: S.buildings.map(([x0, z0, x1, z1, levels]) => ({
+            pts: [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], tags: { building: 'yes', 'building:levels': String(levels) }
+          })),
+          roads: [{ pts: line(S.road.z), kind: S.road.kind, width: S.road.width, oneway: false, lanes: null }]
+            .concat(S.sidewalks.map(s => ({ pts: line(s.z), kind: 'footway', width: s.width, oneway: false, lanes: null }))),
+          areas: [], waterways: [], trees: [], barriers: [], pois: [], props: [], entrances: [], places: []
+        };
+        resetObstacles();
+        buildCity(features);
+      }
+
+      // the sky hour the scene borrowed goes back (loadIntroScene sets INTRO_SCENE.hour)
+      teardown() { if (this.prevHour !== undefined) simSky.hour = this.prevHour; }
+
+      heightAt() { return 0; }
+      isWater() { return false; }
+      surface(x, z, out) { out.base = 0; out.dip = 0; out.float = WILD_FLOAT_DEPTH; }
+      waterSources() { return []; }
+      regrow() { }
+
+      population() {
+        return Object.entries(INTRO_SCENE.walkers).map(([type, w]) => ({ type, count: w.count, src: this }));
+      }
+
+      // A start on one of the species' lanes, somewhere across the view.
+      spawnPoint(type) {
+        const w = INTRO_SCENE.walkers[type];
+        if (!w) return null;
+        const [za, zb] = w.z[Math.floor(Math.random() * w.z.length)];
+        const z = za + Math.random() * (zb - za);
+        const half = this.viewHalfWidth(-z);
+        return [(Math.random() * 2 - 1) * half, z];
+      }
+
+      // Half the view's width at `depth` metres ahead of the camera.
+      viewHalfWidth(depth) {
+        return depth * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+      }
+
+      // One tick of the walkers: each keeps its lane and direction at its own pace, and comes back at the far edge
+      // once offscreenM past the near one.
+      drive(w, dt) {
+        const S = INTRO_SCENE;
+        for (const a of w.animals) {
+          let lane = this.lanes.get(a);
+          if (!lane) {
+            const sp = S.walkers[a.type].speed;
+            lane = { z: a.position.z, dir: Math.random() < 0.5 ? -1 : 1, speedScale: sp[0] + Math.random() * (sp[1] - sp[0]) };
+            this.lanes.set(a, lane);
+          }
+          a.heading = a.targetHeading = a.facingAngle = Animal.wrapAngle(Math.atan2(lane.dir, 0));
+          a.moving = true;
+          a.sprinting = false;
+          a.speedScale = lane.speedScale;
+          a.bumpScale = 1;
+          a.move();
+          a.position.z = lane.z;
+          const edge = this.viewHalfWidth(-lane.z) + S.offscreenM;
+          if (a.position.x * lane.dir > edge) a.position.x = -lane.dir * edge;
+        }
+        w.ticks++;
+        animalRenderer.update(w.animals, dt);
+        blobShadows.update(w.animals);
+        return true;
+      }
+    }
+
+    // The intro scene behind the intro card, until a world loads (teardownWorld clears it like any world).
+    function loadIntroScene() {
+      teardownWorld();
+      const iw = new IntroWorld();
+      iw.build();
+      activeWorld = iw;
+      world.initialize(iw);
+      const tz = -new Date().getTimezoneOffset();
+      site = { lat: 40, lon: tz / 60 * 15, offset: tz * 60 };
+      iw.prevHour = simSky.hour;
+      simSky.hour = INTRO_SCENE.hour;
+      updateSky();
+      player.pos.set(0, EYE_HEIGHT, 0);
+      player.vel.set(0, 0, 0);
+      facePlayer(0, INTRO_SCENE.eye.pitch);
+      graphics.apply();
+      wake();
+    }
+
     // NPC WORLD: the Arena's World loop, one engine for every provider; stepped from frame().
     class NpcWorld {
       static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
@@ -12296,6 +12429,8 @@ void main() {
 
       step(dt) {
         if (!this.ready || this.animals.length === 0) return false;
+        // a provider that drives its own NPCs (the intro scene) replaces the sim
+        if (activeWorld && activeWorld.drive) return activeWorld.drive(this, dt);
         const now = this.time;
         this.night = sunAltDeg < NIGHT_SUN_ALT_DEG;
 
@@ -12509,10 +12644,11 @@ void main() {
           bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 }
         }
       },
-      // INJURIES: each hit the player takes from an animal may cause one (chancePerHit); it shows beside the inventory
-      // until an item that `cures` it is used. noRun: the player cannot sprint while it lasts.
+      // INJURIES: each hit the player takes from an animal may cause one (chancePerHit), and so may a fall that hurts
+      // (fallChanceAtSafe at fall.safeM, growing in proportion to the drop height: twice that height, twice the chance).
+      // It shows beside the inventory until an item that `cures` it is used. noRun: the player cannot sprint while it lasts.
       injuries: {
-        brokenBone: { icon: '🦴', label: 'Broken bone', chancePerHit: 0.2, noRun: true }
+        brokenBone: { icon: '🦴', label: 'Broken bone', chancePerHit: 0.2, fallChanceAtSafe: 0.5, noRun: true }
       },
       // CRAFTING: the craft slot (after the inventory slots) shows what the carried items make, from the first recipe
       // whose `uses` (item kinds, any order) the inventory holds; pressing it uses them up and adds `makes`.
@@ -12621,7 +12757,7 @@ void main() {
           if (game.sheltered || game.dead) return;
           game.hurt(damage, attacker.type);
           if (game.dead) attacker.feedOn(this);
-          else game.rollInjuries();
+          else game.rollInjuries(d => d.chancePerHit ?? 0);
         },
         feedOn(victim) {
           game.eat(victim.startHealth);
@@ -12668,10 +12804,10 @@ void main() {
       // `water` units of water need removed
       drink(water) { this.waterNeed = Math.max(0, this.waterNeed - water); },
 
-      // A hit from an animal: each injury the player does not have yet may set in, by its chancePerHit.
-      rollInjuries() {
+      // A hit or a fall: each injury the player does not have yet sets in with chanceOf(its INJURIES entry).
+      rollInjuries(chanceOf) {
         const all = SURVIVOR_CONFIG.injuries;
-        for (const id in all) if (!this.injuries.has(id) && Math.random() < all[id].chancePerHit) this.injuries.add(id);
+        for (const id in all) if (!this.injuries.has(id) && Math.random() < chanceOf(all[id])) this.injuries.add(id);
         this.draw();
       },
 
@@ -12736,7 +12872,10 @@ void main() {
         if (!this.on || !active || this.dead) return;
         const F = SURVIVOR_CONFIG.fall;
         const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
-        if (dropHeight > F.safeM) this.hurt((dropHeight - F.safeM) * F.damagePerM, 'fall');
+        if (dropHeight <= F.safeM) return;
+        this.hurt((dropHeight - F.safeM) * F.damagePerM, 'fall');
+        // a hurting fall may injure: each injury's fallChanceAtSafe at the safe height, growing with the drop
+        if (!this.dead) this.rollInjuries(d => (d.fallChanceAtSafe ?? 0) * dropHeight / F.safeM);
       },
 
       update(dt) {
@@ -15580,7 +15719,7 @@ void main() {
     }
 
     function refreshHud() {
-      if (!activeWorld) { perf.setText(hudEl, ''); return; }
+      if (!activeWorld || activeWorld.hud === false) { perf.setText(hudEl, ''); return; }
       let head;
       if (!activeWorld.city) head = `Wilderness, seed ${activeWorld.seed}`;
       else {
@@ -16188,6 +16327,7 @@ void main() {
     });
 
     setMode('city');
+    loadIntroScene();
     graphics.apply();
     labels.bind();
     vr.bind();
