@@ -524,6 +524,7 @@
 
     #fly,
     #car,
+    #use,
     #gear,
     #climb button,
     .pedal {
@@ -553,18 +554,25 @@
       display: block;
     }
 
-    /* the fly button's slot: the car button takes it when the car is in reach (updateFlyButton) */
-    #car {
+    /* the fly button's slot: the car button takes it when the car is in reach (updateFlyButton), the action button
+       (Collect, Harvest, Drink) when it is not (updateUseButton); the action button grows left to fit its word */
+    #car,
+    #use {
       position: fixed;
       right: 18px;
       bottom: 182px;
-      width: 59px;
+      min-width: 59px;
       padding: 12px 0;
       z-index: 6;
       display: none;
     }
 
-    #car.on {
+    #use {
+      padding: 12px 10px;
+    }
+
+    #car.on,
+    #use.on {
       display: block;
     }
 
@@ -1291,6 +1299,7 @@
         d="M4 36C6 20 20 8 44 6C42 12 38 15 32 16C38 17 39 20 35 23C31 25 27 25 23 25C28 27 28 30 24 32C18 35 11 36 4 36Z" />
     </svg></button>
   <button id="car">Drive</button>
+  <button id="use"></button>
   <button id="brake" class="pedal" aria-label="Brake"><svg viewBox="0 0 64 40" aria-hidden="true">
       <path fill-rule="evenodd"
         d="M6 4H58Q62 4 61 8L57 32Q56 36 52 36H12Q8 36 7 32L3 8Q2 4 6 4ZM13.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 12a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 20a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M13.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M21.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M29.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M37.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0M45.7 28a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0" />
@@ -12434,7 +12443,7 @@ void main() {
       needs: {
         foodPerS: 100 / (20 * 60),    // need per second: fed to starving in 20 min
         waterPerS: 100 / (10 * 60),   // need per second: watered to parched in 10 min
-        drinkPerS: 10,                // need per second removed while standing in water
+        drinkPerS: 10,                // need per second removed while Drink is held, standing in water or swimming
         sprintCost: 2,                // hunger and thirst rise this many times faster while sprinting
         starvingPerS: 0.5,            // health per second lost with the food bar empty (0 = off)
         parchedPerS: 1                // health per second lost with the water bar empty (0 = off)
@@ -12480,6 +12489,28 @@ void main() {
       drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } }
     };
 
+    // What the action button (the car button's slot) can do on foot, first in reach first: label is its text,
+    // find(game, x, feet, z) its target in reach (null: none). run(game, target) acts once on the press; a `hold`
+    // action runs run(game, target, dt) every tick instead, while held. Harvest and Collect need a free slot.
+    const SURVIVOR_FIELD_ACTIONS = {
+      collect: {
+        label: 'Collect',
+        find: (g, x, feet, z) => g.inventory.includes(null) ? foodBoxes.touching(g._qb, x, feet, z) : null,
+        run: (g, crate) => g.collect(crate)
+      },
+      harvest: {
+        label: 'Harvest',
+        find: (g, x, feet, z) => g.inventory.includes(null) ? g.plantInReach(x, feet, z) : null,
+        run: (g, plant) => g.harvest(plant)
+      },
+      drink: {
+        label: 'Drink',
+        hold: true,
+        find: (g, x, feet, z) => g.atWater(x, z) ? true : null,
+        run: (g, target, dt) => g.drink(SURVIVOR_CONFIG.needs.drinkPerS * dt)
+      }
+    };
+
     const needsEl = document.getElementById('needs');
     const needHealthEl = document.getElementById('needHealth');
     const needFoodEl = document.getElementById('needFood');
@@ -12509,6 +12540,7 @@ void main() {
       foodNeed: 0,
       waterNeed: 0,
       sheltered: false,       // in the car or a cabin: nothing can hurt the player
+      fieldHeld: null,        // the hold field action (SURVIVOR_FIELD_ACTIONS) whose button or key is down, or null
       inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // makeItem's { kind, food, water } or null
       run: null,              // this run's record: hours, eaten counts, cause
       _lastHour: null,
@@ -12546,6 +12578,7 @@ void main() {
         this.foodNeed = 0;
         this.waterNeed = 0;
         this.inventory.fill(null);
+        this.fieldHeld = null;
         this.run = { hours: 0, eaten: {}, cause: null };
         this._lastHour = null;
         this.avatar.nextAttackAt = 0;
@@ -12632,13 +12665,11 @@ void main() {
         if (this.dead) return;
         if (this.sheltered && !player.inCar) this.heal(SURVIVOR_CONFIG.shelter.healPerS * dt);
 
+        // drinking, harvesting and collecting take the action button (pressField); contact only fights
         if (!player.inCar) {
-          if (!flying && (player.grounded || swimming) && isWaterAt(px, pz)) {
-            this.waterNeed = Math.max(0, this.waterNeed - N.drinkPerS * dt);
-          }
           this.touchAnimals(px, pz, R);
           if (this.dead) return;
-          this.pickUp(px, feet, pz, R);
+          if (this.fieldHeld !== null) this.holdField(dt);
         }
         this.draw();
       },
@@ -12698,31 +12729,72 @@ void main() {
         else target.attacked(av);
       },
 
-      // Plants and food boxes in reach go into the first free slot; with the slots full they stay where they are.
-      pickUp(px, feet, pz, R) {
-        let free = this.inventory.indexOf(null);
-        if (free < 0) return;
+      // FIELD ACTIONS: the action button's (pressField) choice, the first SURVIVOR_FIELD_ACTIONS entry with something in
+      // reach: { id, target } or null. Only on foot in Survivor mode, alive, not flying.
+      fieldAction() {
+        if (!this.on || this.dead || !active || player.inCar || flying || !world.ready) return null;
+        const px = player.pos.x, pz = player.pos.z, feet = player.pos.y - EYE_HEIGHT;
+        for (const id in SURVIVOR_FIELD_ACTIONS) {
+          const target = SURVIVOR_FIELD_ACTIONS[id].find(this, px, feet, pz);
+          if (target !== null) return { id, target };
+        }
+        return null;
+      },
+
+      // The action button (or E) pressed: a press action acts on what fieldAction finds now; a hold action is held
+      // (fieldHeld) and runs each tick in update() while it stays the action in reach, until releaseField.
+      pressField() {
+        const a = this.fieldAction();
+        if (!a) return;
+        const def = SURVIVOR_FIELD_ACTIONS[a.id];
+        if (def.hold) { this.fieldHeld = a.id; return; }
+        def.run(this, a.target);
+        this.draw();
+      },
+
+      releaseField() { this.fieldHeld = null; },
+
+      // A held action's tick: it runs while the held action is the one in reach (out of the water and back resumes).
+      holdField(dt) {
+        const a = this.fieldAction();
+        if (a && a.id === this.fieldHeld) SURVIVOR_FIELD_ACTIONS[a.id].run(this, a.target, dt);
+      },
+
+      // The nearest live plant in reach, or null.
+      plantInReach(px, feet, pz) {
+        const R = SURVIVOR_CONFIG.reach;
         const np = world.plantGrid.queryInto(this._qp, px, pz, R.radius);
-        for (let i = 0; i < np && free >= 0; i++) {
+        let best = null, bestD2 = R.radius * R.radius;
+        for (let i = 0; i < np; i++) {
           const p = this._qp[i];
-          if (!p.alive) continue;
-          if (Math.abs(p.position.y - feet) > R.height) continue;
-          if (tools.distSq(px, pz, p.position.x, p.position.z) > R.radius * R.radius) continue;
-          // the whole plant: the bites it has left
-          const food = playerPlantFood(p.health);
-          p.health = 0;
-          p.alive = false;
-          world.plantsDied = true;
-          plantRenderer.touch(p);
-          this.inventory[free] = this.makeItem('plant', { food });
-          free = this.inventory.indexOf(null);
+          if (!p.alive || Math.abs(p.position.y - feet) > R.height) continue;
+          const d2 = tools.distSq(px, pz, p.position.x, p.position.z);
+          if (d2 <= bestD2) { bestD2 = d2; best = p; }
         }
+        return best;
+      },
+
+      // Standing in water, or swimming: where the player can drink.
+      atWater(px, pz) { return (player.grounded || swimming) && isWaterAt(px, pz); },
+
+      // The whole plant goes into the first free slot, its food the bites it has left.
+      harvest(p) {
+        const free = this.inventory.indexOf(null);
         if (free < 0) return;
-        const crate = foodBoxes.touching(this._qb, px, feet, pz);
-        if (crate) {
-          foodBoxes.eat(crate);
-          this.inventory[free] = this.makeItem('crate');   // closed: its contents are drawn when it is opened
-        }
+        const food = playerPlantFood(p.health);
+        p.health = 0;
+        p.alive = false;
+        world.plantsDied = true;
+        plantRenderer.touch(p);
+        this.inventory[free] = this.makeItem('plant', { food });
+      },
+
+      // The box goes into the first free slot, closed (its contents are drawn when it is opened); the crate moves on.
+      collect(crate) {
+        const free = this.inventory.indexOf(null);
+        if (free < 0) return;
+        foodBoxes.eat(crate);
+        this.inventory[free] = this.makeItem('crate');
       },
 
       // Use the item in slot i (key or tap) by its kind's action: a box opens into its contents in the same slot,
@@ -13477,9 +13549,9 @@ void main() {
     // Holds on the canvas and on these buttons cancel the browser's long-press, which would vibrate and open a menu.
     const TAP_SLOP = 12;           // px a finger may drift and still count as a tap
     const TAP_SWALLOW_MS = 600;    // a native click on the same button this soon after is the same tap
-    const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals and climb act on hold)
+    const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals, climb and #use act on press)
     // buttons outside the scrollable settings sheet: their touches never scroll, so the long press is cancelled at touchstart
-    const HOLD_SAFE = '#fly, #car, .pedal, #climb button, #gear';
+    const HOLD_SAFE = '#fly, #car, #use, .pedal, #climb button, #gear';
     {
       const taps = new Map();   // pointerId -> { btn, x, y }
       let swallowBtn = null, swallowUntil = 0;
@@ -13601,6 +13673,7 @@ void main() {
     const CAM_LOOK_HOLD = 1500;    // ms after the last look input before it eases back
 
     const carEl = document.getElementById('car');
+    const useEl = document.getElementById('use');
 
     const car = {
       placed: false,
@@ -14048,11 +14121,23 @@ void main() {
       flyEl.classList.toggle('on', show);
     }
 
+    // Action button: Survivor mode on foot, the field action in reach (game.fieldAction), unless the car button has the slot.
+    let useShown = '';
+    function updateUseButton(carState) {
+      const a = carState === '' ? game.fieldAction() : null;
+      const id = a ? a.id : '';
+      if (id === useShown) return;
+      useShown = id;
+      useEl.classList.toggle('on', id !== '');
+      useEl.textContent = id ? SURVIVOR_FIELD_ACTIONS[id].label : '';
+    }
+
     let carBtnState = '';
     function updateCarButton() {
       updateSprintButton();
       const state = !active ? '' : player.inCar ? 'exit' : carNear() ? 'enter' : '';
       updateFlyButton(state);
+      updateUseButton(state);
       if (state === carBtnState) return;
       carBtnState = state;
       carEl.classList.toggle('on', state !== '');
@@ -14111,9 +14196,21 @@ void main() {
     }
 
     carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
-    addEventListener('keydown', e => {
-      if (e.code === 'KeyE' && !e.repeat && active) toggleCar();
+    // The action button acts on its own pointer, like the pedals: a press acts at once, a hold (Drink) lasts until release.
+    useEl.addEventListener('pointerdown', e => {
+      game.pressField();
+      updateCarButton();
+      useEl.setPointerCapture(e.pointerId);
     });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) useEl.addEventListener(ev, () => game.releaseField());
+    // E is the slot's key: the car when the car button shows, else the action button's action (held while E is down)
+    addEventListener('keydown', e => {
+      if (e.code !== 'KeyE' || e.repeat || !active) return;
+      if (carBtnState !== '') toggleCar();
+      else { game.pressField(); updateCarButton(); }
+    });
+    addEventListener('keyup', e => { if (e.code === 'KeyE') game.releaseField(); });
+    addEventListener('blur', () => game.releaseField());
 
     function driveStep(dt) {
       jumpQueued = false;
