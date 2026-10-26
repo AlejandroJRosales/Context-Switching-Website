@@ -377,6 +377,31 @@
       cursor: default;
     }
 
+    /* the craft slot: a placeholder for what the inventory slots combine into */
+    #slots button.craft {
+      border-style: dashed;
+    }
+
+    /* injuries (game.injuries), in line with the slots; shown only while the player has one */
+    #injuries {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-width: 30px;
+      height: 30px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      border: 1px solid rgba(220, 70, 60, 0.6);
+      border-radius: 5px;
+      background: rgba(220, 70, 60, 0.15);
+      font: 17px/1 "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    }
+
+    #injuries.on {
+      display: flex;
+    }
+
     #slots kbd {
       position: absolute;
       left: 4px;
@@ -1283,6 +1308,8 @@
     <div id="slots" class="need-pair">
       <button disabled aria-label="Empty slot"><span></span><kbd>1</kbd></button>
       <button disabled aria-label="Empty slot"><span></span><kbd>2</kbd></button>
+      <button class="craft" disabled aria-label="Nothing to craft"><span></span><kbd>3</kbd></button>
+      <span id="injuries" role="status"></span>
     </div>
   </div>
   <div id="hurtflash"></div>
@@ -4498,6 +4525,8 @@ void main() {
 
     // NIGHT HUNTS: with the sun below NIGHT_SUN_ALT_DEG (civil twilight) a species hunts its SPECIES nightPrey (the
     // player included, out of shelter): it chases the nearest one in sight, re-aiming every tick, and pounces in reach.
+    // A `pack` species that sees a packmate hunting joins the nearest one's attack unless its own quarry is nearer, so
+    // one hunter draws in the packmates that can see it (and those that see them).
     const NIGHT_SUN_ALT_DEG = -6;
     // POUNCES: a hunter's leap at its quarry, moveS sim seconds: it crouches until share leapAt, then flies along the
     // heading it launched on at leapOver times its sprint speed, landing short of the quarry (pounceStep). It launches
@@ -4606,7 +4635,7 @@ void main() {
     // SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see NpcWorld.fightHit for pairs.
     const SPECIES = {
       human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
-      coyote: { brain: false, hunts: { deer: true, human: true }, nightPrey: { human: true }, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
+      coyote: { brain: false, hunts: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
       deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
     };
     const NPC_TYPES = Object.keys(SPECIES);
@@ -5751,8 +5780,9 @@ void main() {
         const quarryMask = world.night ? NIGHT_PREY_MASK[tid] : 0;
         const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = FOOD_TYPE_ID[tid];
         const needP = huntedBy !== 0, needF = food !== null && food !== 'plant', needQ = quarryMask !== 0;
-        let bP = Infinity, bF = Infinity, bM = Infinity, bQ = Infinity, kP = -1, kF = -1, kM = -1, kQ = -1;
-        let oP = null, oF = null, oM = null, oQ = null;
+        const needJ = needQ && this.spec.pack === true;   // a pack hunter at night: packmates' hunts to join
+        let bP = Infinity, bF = Infinity, bM = Infinity, bQ = Infinity, bJ = Infinity, kP = -1, kF = -1, kM = -1, kQ = -1, kJ = -1;
+        let oP = null, oF = null, oM = null, oQ = null, oJ = null;
 
         const cells = grid.cells;
         if (cells !== null) {
@@ -5766,7 +5796,7 @@ void main() {
               if (L > r) break;
               if (L > 0) {
                 const L2 = L * L;
-                if ((!needP || bP < L2) && (!needF || bF < L2) && (!needQ || bQ < L2) && bM < L2) break;
+                if ((!needP || bP < L2) && (!needF || bF < L2) && (!needQ || bQ < L2) && (!needJ || bJ < L2) && bM < L2) break;
               }
             }
             const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
@@ -5794,8 +5824,10 @@ void main() {
                     if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
                   } else if (oid === foodId) {
                     if ((d2 < bF || (d2 === bF && key > kF)) && this.inSight(ox, obj.position.y, oz)) { bF = d2; kF = key; oF = obj; }
-                  } else if (oid === tid && obj.sex !== sex) {
-                    if ((d2 < bM || (d2 === bM && key > kM)) && this.inSight(ox, obj.position.y, oz)) { bM = d2; kM = key; oM = obj; }
+                  } else if (oid === tid) {
+                    if (needJ && obj.priority === 'hunt' && (d2 < bJ || (d2 === bJ && key > kJ)) && this.canHunt(obj.quarry) &&
+                      this.inSight(ox, obj.position.y, oz)) { bJ = d2; kJ = key; oJ = obj; }
+                    if (obj.sex !== sex && (d2 < bM || (d2 === bM && key > kM)) && this.inSight(ox, obj.position.y, oz)) { bM = d2; kM = key; oM = obj; }
                   }
                 }
               }
@@ -5814,6 +5846,12 @@ void main() {
           if (gp.isThreatTo(tid)) {
             if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
           } else if (d2 <= vd && d2 < bQ && this.inSight(ox, gp.position.y, oz)) { bQ = d2; oQ = gp; }
+        }
+        // a pack hunter that sees a packmate hunting joins the nearest one's attack unless its own quarry is nearer;
+        // joiners draw in the packmates that see them, so a group closes on one quarry
+        if (oJ) {
+          const q = oJ.quarry.position, dq = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z);
+          if (!oQ || dq < bQ) oQ = oJ.quarry;
         }
         // the quarry's direction shows as the food ray
         if (oQ) { this.quarry = oQ; this.seen(1, oQ.position.x, oQ.position.y, oQ.position.z); }
@@ -12453,7 +12491,6 @@ void main() {
       fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
       plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
       meatDeerShare: 0.1,               // a piece of meat feeds this share of what a kill of an average adult buck feeds
-      shelter: { healPerS: 0.2 },       // health per second regained inside a cabin
       flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+ (not the steady starving drain)
       // INVENTORY: each item kind names its action (SURVIVOR_ACTIONS) and what it gives; `loot` is its weight in a box
       // (0 or absent: never in one). A box opens in its slot into one item drawn by weight. New kinds (weapons) add an
@@ -12467,8 +12504,23 @@ void main() {
           // a whole plant, as picking one up gives (a picked plant carries its own food, from the bites it has left)
           plant: { icon: '🌿', label: 'Plant', action: 'eat', loot: 45, get food() { return playerPlantFood(PLANT_MAX_HEALTH); } },
           // a kill feeds its starting health (game.avatar.feedOn), which deer have whatever their size or sex
-          meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } }
+          meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } },
+          // the injuries it mends (INJURIES), no health; in boxes as often as meat, or crafted
+          bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 }
         }
+      },
+      // INJURIES: each hit the player takes from an animal may cause one (chancePerHit); it shows beside the inventory
+      // until an item that `cures` it is used. noRun: the player cannot sprint while it lasts.
+      injuries: {
+        brokenBone: { icon: '🦴', label: 'Broken bone', chancePerHit: 0.2, noRun: true }
+      },
+      // CRAFTING: the craft slot (after the inventory slots) shows what the carried items make, from the first recipe
+      // whose `uses` (item kinds, any order) the inventory holds; pressing it uses them up and adds `makes`.
+      craft: {
+        key: 'Digit3',
+        recipes: [
+          { uses: ['plant', 'plant'], makes: 'bandage' }
+        ]
       },
       causes: {
         fall: 'Fell to your death',
@@ -12486,7 +12538,8 @@ void main() {
     const SURVIVOR_ACTIONS = {
       open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
       eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
-      drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } }
+      drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } },
+      treat: { verb: 'Use', past: 'Used', consumed: true, run(g, slot, item) { g.cure(item.cures); } }
     };
 
     // What the action button (the car button's slot) can do on foot, first in reach first: label is its text,
@@ -12517,7 +12570,9 @@ void main() {
     const needWaterEl = document.getElementById('needWater');
     const needDayEl = document.getElementById('needDay');
     const needInfoEl = document.getElementById('needInfo');
-    const slotEls = [...document.querySelectorAll('#slots button')];
+    const slotEls = [...document.querySelectorAll('#slots button:not(.craft)')];
+    const craftEl = document.querySelector('#slots button.craft');
+    const injuriesEl = document.getElementById('injuries');
     const hurtFlashEl = document.getElementById('hurtflash');
     const runOverEl = document.getElementById('runover');
     const runCauseEl = document.getElementById('runCause');
@@ -12541,11 +12596,12 @@ void main() {
       waterNeed: 0,
       sheltered: false,       // in the car or a cabin: nothing can hurt the player
       fieldHeld: null,        // the hold field action (SURVIVOR_FIELD_ACTIONS) whose button or key is down, or null
-      inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // makeItem's { kind, food, water } or null
+      inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // makeItem's { kind, food, water, cures } or null
+      injuries: new Set(),    // SURVIVOR_CONFIG.injuries keys the player has
       run: null,              // this run's record: hours, eaten counts, cause
       _lastHour: null,
       _q: [], _qp: [], _qb: [],
-      _shown: -1, _shownDay: -1, _shownSlots: '', _shownInfo: -1, _shownSex: '',
+      _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownSex: '',
 
       // The NPC world's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
       // It is a predator to what people hunt, quarry at night to people's night hunters, and trades fight hits like an animal.
@@ -12565,6 +12621,7 @@ void main() {
           if (game.sheltered || game.dead) return;
           game.hurt(damage, attacker.type);
           if (game.dead) attacker.feedOn(this);
+          else game.rollInjuries();
         },
         feedOn(victim) {
           game.eat(victim.startHealth);
@@ -12578,6 +12635,7 @@ void main() {
         this.foodNeed = 0;
         this.waterNeed = 0;
         this.inventory.fill(null);
+        this.injuries.clear();
         this.fieldHeld = null;
         this.run = { hours: 0, eaten: {}, cause: null };
         this._lastHour = null;
@@ -12610,12 +12668,53 @@ void main() {
       // `water` units of water need removed
       drink(water) { this.waterNeed = Math.max(0, this.waterNeed - water); },
 
+      // A hit from an animal: each injury the player does not have yet may set in, by its chancePerHit.
+      rollInjuries() {
+        const all = SURVIVOR_CONFIG.injuries;
+        for (const id in all) if (!this.injuries.has(id) && Math.random() < all[id].chancePerHit) this.injuries.add(id);
+        this.draw();
+      },
+
+      // The injuries in `ids` mended.
+      cure(ids) { for (const id of ids) this.injuries.delete(id); },
+
+      // Whether the player may sprint: no injury that stops running (Survivor mode only).
+      canRun() {
+        if (!this.on) return true;
+        for (const id of this.injuries) if (SURVIVOR_CONFIG.injuries[id].noRun) return false;
+        return true;
+      },
+
       tally(kind) { this.run.eaten[kind] = (this.run.eaten[kind] || 0) + 1; },
 
       // An inventory item of `kind`: its kind's food and water, unless `own` gives the item's own (a picked plant's).
       makeItem(kind, own = null) {
         const def = SURVIVOR_CONFIG.inventory.items[kind];
-        return { kind, food: def.food ?? 0, water: def.water ?? 0, ...own };
+        return { kind, food: def.food ?? 0, water: def.water ?? 0, cures: def.cures ?? [], ...own };
+      },
+
+      // The craft slot's recipe: the first whose items the inventory holds, with the slots it would use up; or null.
+      craftable() {
+        for (const r of SURVIVOR_CONFIG.craft.recipes) {
+          const slots = [];
+          for (const kind of r.uses) {
+            const i = this.inventory.findIndex((it, j) => it !== null && it.kind === kind && !slots.includes(j));
+            if (i < 0) break;
+            slots.push(i);
+          }
+          if (slots.length === r.uses.length) return { recipe: r, slots };
+        }
+        return null;
+      },
+
+      // The craft slot pressed: its items used up, the made item in the first slot they freed.
+      craft() {
+        if (!this.on || this.dead) return;
+        const c = this.craftable();
+        if (!c) return;
+        for (const i of c.slots) this.inventory[i] = null;
+        this.inventory[Math.min(...c.slots)] = this.makeItem(c.recipe.makes);
+        this.draw();
       },
 
       // A box's contents: one item kind drawn by its loot weight.
@@ -12663,7 +12762,6 @@ void main() {
         if (this.foodNeed >= 100) this.hurt(N.starvingPerS * dt, 'starving');
         if (this.waterNeed >= 100) this.hurt(N.parchedPerS * dt, 'parched');
         if (this.dead) return;
-        if (this.sheltered && !player.inCar) this.heal(SURVIVOR_CONFIG.shelter.healPerS * dt);
 
         // drinking, harvesting and collecting take the action button (pressField); contact only fights
         if (!player.inCar) {
@@ -12872,6 +12970,19 @@ void main() {
             el.disabled = !item;
             el.setAttribute('aria-label', item ? `${SURVIVOR_ACTIONS[item.action].verb} ${item.label.toLowerCase()}` : 'Empty slot');
           });
+          // the craft slot shows what the carried items make
+          const c = this.craftable(), made = c && SURVIVOR_CONFIG.inventory.items[c.recipe.makes];
+          craftEl.querySelector('span').textContent = made ? made.icon : '';
+          craftEl.disabled = !made;
+          craftEl.setAttribute('aria-label', made ? `Craft ${made.label.toLowerCase()}` : 'Nothing to craft');
+        }
+        const hurt = [...this.injuries].join(',');
+        if (hurt !== this._shownInjuries) {
+          this._shownInjuries = hurt;
+          const defs = [...this.injuries].map(id => SURVIVOR_CONFIG.injuries[id]);
+          injuriesEl.textContent = defs.map(d => d.icon).join('');
+          injuriesEl.setAttribute('aria-label', defs.map(d => d.label).join(', '));
+          injuriesEl.classList.toggle('on', defs.length > 0);
         }
       },
 
@@ -12882,12 +12993,15 @@ void main() {
       }
     };
 
-    // inventory: a slot's key or a tap uses its item (game.useSlot)
+    // inventory: a slot's key or a tap uses its item (game.useSlot); the craft slot's crafts (game.craft)
     addEventListener('keydown', e => {
+      if (e.repeat || !active) return;
       const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
-      if (i >= 0 && !e.repeat && active) game.useSlot(i);
+      if (i >= 0) game.useSlot(i);
+      else if (e.code === SURVIVOR_CONFIG.craft.key) game.craft();
     });
     slotEls.forEach((el, i) => el.addEventListener('click', () => { game.useSlot(i); el.blur(); }));
+    craftEl.addEventListener('click', () => { game.craft(); craftEl.blur(); });
     document.getElementById('runNew').addEventListener('click', e => {
       e.currentTarget.blur();
       newEcosystem();   // back to the intro's loading view, which hides the summary
@@ -14638,7 +14752,7 @@ void main() {
 
       const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
       // while flying, shift means down rather than run
-      const sprint = stance.sprinting(active && !flying && !swimming && (shiftHeld || pedal.sprint));
+      const sprint = stance.sprinting(active && !flying && !swimming && game.canRun() && (shiftHeld || pedal.sprint));
       const speed = swimming ? WALK_SPEED * SWIM_SPEED :
         flying ? FLY_SPEED :
           stance.crouched ? CROUCH_SPEED :
