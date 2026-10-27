@@ -2758,8 +2758,22 @@ export const needFoodEl = document.getElementById('needFood');
 export const needWaterEl = document.getElementById('needWater');
 export const needDayEl = document.getElementById('needDay');
 export const needInfoEl = document.getElementById('needInfo');
-export const slotEls = [...document.querySelectorAll('#slots button:not(.craft)')];
-export const craftEl = document.querySelector('#slots button.craft');
+// INVENTORY SLOTS: one button per SURVIVOR_CONFIG.inventory.keys entry, then the craft slot, built here so the page
+// and the config can never disagree on how many slots there are. Each shows its key ('Digit3' shows 3).
+export const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
+export function slotButton(key, craft) {
+  const b = document.createElement('button');
+  b.disabled = true;
+  if (craft) b.className = 'craft';
+  b.setAttribute('aria-label', craft ? 'Nothing to craft' : 'Empty slot');
+  const kbd = document.createElement('kbd');
+  kbd.textContent = slotKeyLabel(key);
+  b.append(document.createElement('span'), kbd);
+  return b;
+}
+export const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
+export const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
+document.getElementById('slots').prepend(...slotEls, craftEl);   // ahead of the injuries badge
 export const injuriesEl = document.getElementById('injuries');
 export const hurtFlashEl = document.getElementById('hurtflash');
 export const runOverEl = document.getElementById('runover');
@@ -2784,7 +2798,7 @@ export const game = {
   waterNeed: 0,
   sheltered: false,       // in the car or a cabin: nothing can hurt the player
   fieldHeld: null,        // the hold field action (SURVIVOR_FIELD_ACTIONS) whose button or key is down, or null
-  inventory: new Array(SURVIVOR_CONFIG.inventory.slots).fill(null),   // makeItem's { kind, food, water, cures } or null
+  inventory: new Array(SURVIVOR_CONFIG.inventory.keys.length).fill(null),   // makeItem's { kind, food, water, cures } or null
   injuries: new Set(),    // SURVIVOR_CONFIG.injuries keys the player has
   run: null,              // this run's record: hours, eaten counts, cause
   _lastHour: null,

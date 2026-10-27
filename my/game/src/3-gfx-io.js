@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import {
   DEFAULT_LEVELS, METERS_PER_LVL, OVERPASS_TIMEOUT_MS, OVERPASS_QUERY_TIMEOUT, OVERPASS_HEDGE_MS,
   OVERPASS_MAX_PARALLEL, OVERPASS_MIRRORS, NOMINATIM_URL, TERRAIN_URL, TERRAIN_MAX_Z, TERRAIN_MIN_Z, TERRAIN_TILE_PX,
-  TERRAIN_MAX_TILES, TERRAIN_TIMEOUT_MS, TERRAIN_SPIKE_M, TERRAIN_SPIKE_FRAC, ELEV_STEP, ELEV_MARGIN, ROAD_WIDTH,
+  TERRAIN_MAX_TILES, TERRAIN_TIMEOUT_MS, ELEV_STEP, ELEV_MARGIN, ROAD_WIDTH,
   AREA_COLOR, WATERWAY_WIDTH, BARRIER, TREE_ROW_SPACING, LANDUSE_RE, LEISURE_RE, BARRIER_RE, PLACE_KEYS, PLACE_OF,
   PLACE_RE, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
   LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
@@ -20,7 +20,7 @@ import {
   HIGH_FAR_STAT_DIST
 } from './1-config.js';
 import {
-  fmt, ringArea, pointInRing
+  ringArea, pointInRing
 } from './2-core.js';
 
 // GFX HALF
@@ -934,7 +934,8 @@ export function signLabel(tags) {
   return null;
 }
 
-// Tiles resampled into the grid; null if any is missing or looks tampered with, so the city stays flat.
+// Tiles resampled into the grid; null if any is missing. Tile bytes are decoded directly (decodePng), never through a
+// canvas, so browser fingerprinting protection (Brave's farbling) cannot noise the heights.
 export async function fetchTerrain(lat, lon, radius, onNote = () => { }) {
   const half = radius + ELEV_MARGIN;
   const kx = 111320 * Math.cos(lat * Math.PI / 180), kz = 110540;
@@ -951,56 +952,40 @@ export async function fetchTerrain(lat, lon, radius, onNote = () => { }) {
     z--;
   }
 
+  // Heights in metres for the whole tile block, row-major, W x H pixels.
   const cols = x1 - x0 + 1, rows = y1 - y0 + 1, P = TERRAIN_TILE_PX;
-  const cv = document.createElement('canvas');
-  cv.width = cols * P; cv.height = rows * P;
-  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const W = cols * P, H = rows * P;
+  const raw = new Float32Array(W * H);
 
   let got = 0;
   const total = cols * rows;
   onNote(`Downloading ${total} height tiles at zoom ${z}…`);
+  const cancel = new AbortController();
+  const timer = setTimeout(() => cancel.abort(), TERRAIN_TIMEOUT_MS);
   const jobs = [];
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      jobs.push(loadImage(`${TERRAIN_URL}/${z}/${tx}/${ty}.png`, 0).then(img => {
+      jobs.push(fetchTile(`${TERRAIN_URL}/${z}/${tx}/${ty}.png`, cancel.signal).then(img => {
         if (!img) return;
-        ctx.drawImage(img, (tx - x0) * P, (ty - y0) * P, P, P);
+        if (img.width !== P || img.height !== P) {
+          console.warn(`Height tile ${z}/${tx}/${ty} is ${img.width}x${img.height}, expected ${P}x${P}.`);
+          return;
+        }
+        // Terrarium: metres = R * 256 + G + B / 256 - 32768
+        const px = img.data, left = (tx - x0) * P, top = (ty - y0) * P;
+        for (let y = 0; y < P; y++) {
+          for (let x = 0, k = y * P * 4, i = (top + y) * W + left; x < P; x++, k += 4, i++) {
+            raw[i] = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
+          }
+        }
         got++;
         onNote(`Downloaded ${got} of ${total} height tiles at zoom ${z}…`);
       }));
     }
   }
-  await Promise.race([
-    Promise.all(jobs),
-    new Promise(done => setTimeout(done, TERRAIN_TIMEOUT_MS))
-  ]);
+  await Promise.all(jobs);
+  clearTimeout(timer);
   if (got < total) { onNote(`Only ${got} of ${total} height tiles arrived.`); return null; }
-  onNote(`Decoding and checking ${total} tiles…`);
-
-  let px;
-  try { px = ctx.getImageData(0, 0, cv.width, cv.height).data; }
-  catch (e) { onNote('The browser would not let the tile pixels be read.'); return null; }
-  const W = cv.width, H = cv.height;
-  const raw = new Float32Array(W * H);
-  for (let i = 0, k = 0; i < raw.length; i++, k += 4) {
-    raw[i] = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
-  }
-
-  // Canvas readback can be noised by fingerprinting protection; it shows as isolated spikes.
-  let spikes = 0;
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      const a = raw[i - 1], b = raw[i + 1], c = raw[i - W], d = raw[i + W];
-      const med = (a + b + c + d - Math.min(a, b, c, d) - Math.max(a, b, c, d)) / 2;
-      if (Math.abs(raw[i] - med) > TERRAIN_SPIKE_M) spikes++;
-    }
-  }
-  if (spikes > (W - 2) * (H - 2) * TERRAIN_SPIKE_FRAC) {
-    console.warn(`Terrain rejected: ${spikes} spiked pixels (canvas readback may be noised).`);
-    onNote(`Rejected: ${fmt(spikes)} corrupted pixels, likely browser privacy protection.`);
-    return null;
-  }
 
   // Resample through the inverse of makeProjector; sea level is the floor, so harbours stay at the waterline.
   const sample = (fx, fy) => {
@@ -1044,6 +1029,89 @@ export function tileOf(lat, lon, z) {
     x: (lon + 180) / 360 * n,
     y: (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n
   };
+}
+
+// One height tile decoded, or null (HTTP error, timeout through `signal`, or a PNG decodePng cannot read); never rejects.
+export async function fetchTile(url, signal) {
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok) return null;
+    return await decodePng(await res.arrayBuffer());
+  } catch (err) {
+    if (err.name !== 'AbortError') console.warn(`Height tile ${url}: ${err.message}`);
+    return null;
+  }
+}
+
+// PNG DECODE: tile bytes to pixels with no canvas, so browser readback noise (Brave's anti-fingerprinting) never touches
+// the heights. Returns { width, height, data } shaped like ImageData (RGBA, 4 bytes per pixel), so code that read
+// getImageData() reads this unchanged. Handles 8-bit RGB and RGBA, non-interlaced: what Terrarium tiles are.
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+const PNG_BYTES_PER_PIXEL = { 2: 3, 6: 4 };   // PNG colour type -> bytes per pixel at bit depth 8 (2 = RGB, 6 = RGBA)
+
+export async function decodePng(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < PNG_SIGNATURE.length; i++) {
+    if (bytes[i] !== PNG_SIGNATURE[i]) throw new Error('decodePng: not a PNG');
+  }
+
+  // Chunks: IHDR gives the size and format, IDAT pieces join into one zlib stream, IEND ends it.
+  let width = 0, height = 0, bpp = 0;
+  const idat = [];
+  for (let p = PNG_SIGNATURE.length; p + 8 <= bytes.length;) {
+    const len = view.getUint32(p), body = p + 8;
+    const type = String.fromCharCode(bytes[p + 4], bytes[p + 5], bytes[p + 6], bytes[p + 7]);
+    if (type === 'IHDR') {
+      width = view.getUint32(body);
+      height = view.getUint32(body + 4);
+      const depth = bytes[body + 8], colour = bytes[body + 9], interlace = bytes[body + 12];
+      bpp = PNG_BYTES_PER_PIXEL[colour];
+      if (depth !== 8 || !bpp || interlace) {
+        throw new Error(`decodePng: unsupported PNG (bit depth ${depth}, colour type ${colour}, interlace ${interlace})`);
+      }
+    } else if (type === 'IDAT') {
+      idat.push(bytes.subarray(body, body + len));
+    } else if (type === 'IEND') {
+      break;
+    }
+    p = body + len + 4;   // past the body and its CRC
+  }
+
+  // Inflate: 'deflate' in DecompressionStream is the zlib format PNG uses.
+  const stream = new Blob(idat).stream().pipeThrough(new DecompressionStream('deflate'));
+  const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+
+  // Unfilter: each row is one filter byte, then the row's bytes as differences from its left (a), up (b), up-left (c).
+  const stride = width * bpp;
+  const data = new Uint8ClampedArray(width * height * 4);
+  let prev = new Uint8Array(stride), cur = new Uint8Array(stride);
+  for (let y = 0, r = 0; y < height; y++, r += stride + 1) {
+    const filter = raw[r];
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? cur[x - bpp] : 0, b = prev[x], c = x >= bpp ? prev[x - bpp] : 0;
+      let predict;
+      switch (filter) {
+        case 0: predict = 0; break;                     // None
+        case 1: predict = a; break;                     // Sub
+        case 2: predict = b; break;                     // Up
+        case 3: predict = (a + b) >> 1; break;          // Average
+        case 4: {                                       // Paeth: whichever of a, b, c is closest to a + b - c
+          const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+          predict = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+          break;
+        }
+        default: throw new Error(`decodePng: bad filter ${filter} on row ${y}`);
+      }
+      cur[x] = (raw[r + 1 + x] + predict) & 255;
+    }
+    for (let x = 0, s = 0, o = y * width * 4; x < width; x++, s += bpp, o += 4) {
+      data[o] = cur[s]; data[o + 1] = cur[s + 1]; data[o + 2] = cur[s + 2];
+      data[o + 3] = bpp === 4 ? cur[s + 3] : 255;
+    }
+    const t = prev; prev = cur; cur = t;
+  }
+  return { width, height, data };
 }
 
 // Resolves with the image or null, never rejects; crossOrigin keeps the pixels usable by WebGL.

@@ -74,8 +74,6 @@ export const TERRAIN_MIN_Z = 12;
 export const TERRAIN_TILE_PX = 256;
 export const TERRAIN_MAX_TILES = 16;
 export const TERRAIN_TIMEOUT_MS = 10000;
-export const TERRAIN_SPIKE_M = 30;      // a pixel this far off its neighbours' median is corrupt
-export const TERRAIN_SPIKE_FRAC = 0.005;
 export const ELEV_STEP = 5;       // metres between height samples and terrain mesh vertices
 export const ELEV_MARGIN = 100;
 export const STEP_UP = 0.45;    // highest ledge walked onto without a jump (player and NPCs)
@@ -956,8 +954,7 @@ export const SURVIVOR_CONFIG = {
   // (0 or absent: never in one). A box opens in its slot into one item drawn by weight. New kinds (weapons) add an
   // entry here and, for a new kind of use, an action.
   inventory: {
-    slots: 2,
-    keys: ['Digit1', 'Digit2'],     // one per slot; tapping a slot works too
+    keys: ['Digit1', 'Digit2'],     // one per slot, so this sets the slot count (the HUD buttons are built from it); tapping a slot works too
     items: {
       crate: { icon: '📦', label: 'Box', action: 'open' },
       water: { icon: '💧', label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
