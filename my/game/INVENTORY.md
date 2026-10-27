@@ -25,6 +25,8 @@ These settle the questions in section 8; later phases follow them.
 
 Check tools: `tools/split-check/` (see its README). `tools/split-check/placement.json` is the one copy of the placement; update it there if a placement changes, then rerun `inventory.mjs`.
 
+**Note (2026-10-27, after phase 8):** `tools/split-check/` has been removed. Its cut scripts, `placement.json`, `edits/`, `inventory.mjs` and `check-decls.mjs` only served the split, and this log keeps their references as they were. The placement is section 9 (phase 0) plus the changes listed under each phase below. `check-layers.mjs`, `smoke.mjs` and `listeners.mjs` moved to `tools/checks/` (see `tools/README.md`). `check-layers` now carries its own globals list instead of reading `game.html`. The hosted city files are in `maps/` (`CITY_FILE_DIR = 'maps/'`).
+
 **For phase 1 (found while testing the checks):** moving the script into `src/9-main.js` with its 4-space indent removed also changes the text of 13 multi-line template literals (the facade, human, billboard, water-clip, indoor-clip, lamp and rain shaders). GLSL ignores the whitespace and the pipeline's GLSL pass strips it, but the strings would no longer be byte-identical. Recommendation: dedent every line except those inside template literals (the cut script can use acorn's token ranges), so `check-decls.mjs` reports 0 whitespace-only changes.
 
 

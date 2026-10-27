@@ -244,7 +244,7 @@ export const SHADOW_SOFTNESS = 2.5;   // filter radius in texels: smooths the st
 export const MOON_BLEND_DEG = 5;
 
 // HOSTED CITY FILES: each suggested place's saved Overpass answer (CITY_FILE_RADIUS), served here, no public servers asked.
-export const CITY_FILE_DIR = '';        // folder of the files, relative to this page ('' = beside it); end it with '/'
+export const CITY_FILE_DIR = 'maps/';    // folder of the files, relative to this page ('' = beside it); end it with '/'
 export const CITY_FILE_RADIUS = 500;
 export const CITY_FILES = {
   'New York, NY': {

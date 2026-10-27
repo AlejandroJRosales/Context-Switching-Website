@@ -16,7 +16,7 @@
 //   7-sim.js           brains, Animal, Plant, Ecosystem, simSky
 //   8-render-player-game.js  renderers, human rig, sky, rain, graphics; player, input, car, cat, VR; game
 //   9-main.js          this file
-// Placement per identifier: tools/split-check/placement.json; plan and decisions: INVENTORY.md.
+// Placement per identifier (INVENTORY.md section 9), plan and decisions: INVENTORY.md.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {

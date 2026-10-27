@@ -1,32 +1,38 @@
 // LAYERS: the split's structural rules, on src/N-name.js.
-//   node check-layers.mjs <srcDir> [game.html]
+//   node check-layers.mjs <srcDir>
 // Errors (exit 1):
 //   - an import from a same- or higher-numbered module, or from a relative path that is not a src module
 //   - an imported name the target module does not export
 //   - a write to an imported binding (an `export let` another file reassigns; it would throw at runtime)
-//   - a free name no module declares or imports and the original never used as a global (a missing import);
-//     needs game.html for the original's globals
+//   - a free name no module declares or imports and that is not in KNOWN_GLOBALS (a missing import)
 // Reports (no failure): `export let` bindings and who writes them; top-level statements in files 1 to 8 that are not
 // declarations, imports or exports (the "files 1 to 8 declare; main starts" rule), with top-level listener
 // registration, wake() and invalidate() calls marked.
 import path from 'node:path';
 import * as eslintScope from 'eslint-scope';
-import { loadModules, loadHtmlModule, unwrap, declNames } from './lib/source.mjs';
+import { loadModules, unwrap, declNames } from './lib/source.mjs';
 
-const [srcDir, htmlPath] = process.argv.slice(2);
-if (!srcDir) { console.error('usage: node check-layers.mjs <srcDir> [game.html]'); process.exit(2); }
+const [srcDir] = process.argv.slice(2);
+if (!srcDir) { console.error('usage: node check-layers.mjs <srcDir>'); process.exit(2); }
 const mods = loadModules(srcDir);
 const byName = new Map(mods.map(m => [m.name, m]));
 const errors = [], notes = [];
 const BARE_OK = /^three(\/|$)/;   // three stays external through the importmap
 
-// globals the original used (anything else unresolved in a module is a missing import)
-let knownGlobals = null;
-if (htmlPath) {
-  const o = loadHtmlModule(htmlPath);
-  const sm = eslintScope.analyze(o.ast, { ecmaVersion: 2022, sourceType: 'module' });
-  knownGlobals = new Set(sm.scopes.find(s => s.type === 'module').through.map(r => r.identifier.name));
-}
+// Browser and language globals the code may use; any other unresolved name in a module is a missing import. The first
+// block is every global the original game.html used; the second, common ones it did not. Add a name here when the code
+// starts using a new global.
+const KNOWN_GLOBALS = new Set([
+  'AbortController', 'Array', 'Boolean', 'Date', 'Element', 'Error', 'Float32Array', 'Float64Array', 'Image',
+  'Infinity', 'Int16Array', 'Int32Array', 'Int8Array', 'JSON', 'Map', 'Math', 'NaN', 'Number', 'Object', 'Promise',
+  'Set', 'String', 'TypeError', 'URL', 'Uint32Array', 'Uint8Array', 'Uint8ClampedArray', 'WeakMap', 'addEventListener',
+  'cancelAnimationFrame', 'clearInterval', 'clearTimeout', 'console', 'devicePixelRatio', 'document', 'encodeURIComponent',
+  'fetch', 'innerHeight', 'innerWidth', 'localStorage', 'matchMedia', 'navigator', 'parseFloat', 'parseInt', 'performance',
+  'requestAnimationFrame', 'screen', 'setInterval', 'setTimeout', 'undefined',
+  'window', 'globalThis', 'Symbol', 'BigInt', 'RangeError', 'WeakSet', 'Uint16Array', 'DataView', 'ArrayBuffer',
+  'isFinite', 'isNaN', 'decodeURIComponent', 'queueMicrotask', 'structuredClone', 'location', 'sessionStorage',
+  'ResizeObserver', 'Blob', 'Response', 'TextDecoder', 'TextEncoder', 'Worker', 'alert'
+]);
 
 // exports per module
 const exportsOf = new Map();
@@ -69,11 +75,9 @@ for (const m of mods) {
     for (const r of v.references) if (r.isWrite()) errors.push(`${m.name}:${r.identifier.loc.start.line}: writes imported '${v.name}' (make it a field on an owning object)`);
   }
   // missing imports
-  if (knownGlobals) {
-    const free = new Map();
-    for (const r of scope.through) { const nm = r.identifier.name; if (!knownGlobals.has(nm)) free.set(nm, (free.get(nm) || r.identifier.loc.start.line)); }
-    for (const [nm, line] of free) errors.push(`${m.name}:${line}: '${nm}' is neither declared, imported nor a global the original used (missing import?)`);
-  }
+  const free = new Map();
+  for (const r of scope.through) { const nm = r.identifier.name; if (!KNOWN_GLOBALS.has(nm)) free.set(nm, (free.get(nm) || r.identifier.loc.start.line)); }
+  for (const [nm, line] of free) errors.push(`${m.name}:${line}: '${nm}' is neither declared, imported nor in KNOWN_GLOBALS (missing import?)`);
   // export let and its writers (only the owner may reassign)
   for (const [nm, kind] of exportsOf.get(m.name)) {
     if (kind !== 'let' && kind !== 'var') continue;
@@ -92,7 +96,6 @@ for (const m of mods) {
 }
 
 console.log(`modules: ${mods.map(m => m.name).join(', ') || '(none)'}`);
-if (!knownGlobals) console.log('(no game.html given: missing-import check skipped)');
 console.log(`\n# Errors: ${errors.length}`); for (const e of errors) console.log('  ' + e);
 console.log(`\n# Notes: ${notes.length}`); for (const n of notes) console.log('  ' + n);
 process.exit(errors.length ? 1 : 0);
