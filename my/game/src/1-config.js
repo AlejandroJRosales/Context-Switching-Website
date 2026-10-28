@@ -954,7 +954,7 @@ export const SURVIVOR_CONFIG = {
   // (0 or absent: never in one). A box opens in its slot into one item drawn by weight. New kinds (weapons) add an
   // entry here and, for a new kind of use, an action.
   inventory: {
-    keys: ['Digit1', 'Digit2'],     // one per slot, so this sets the slot count (the HUD buttons are built from it); tapping a slot works too
+    keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot, so this sets the slot count (the HUD buttons are built from it); tapping a slot works too
     items: {
       crate: { icon: '📦', label: 'Box', action: 'open' },
       water: { icon: '💧', label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
@@ -975,7 +975,7 @@ export const SURVIVOR_CONFIG = {
   // CRAFTING: the craft slot (after the inventory slots) shows what the carried items make, from the first recipe
   // whose `uses` (item kinds, any order) the inventory holds; pressing it uses them up and adds `makes`.
   craft: {
-    key: 'Digit3',
+    key: 'Digit4',                  // the craft slot's key, after the inventory slots; tapping it works too
     recipes: [
       { uses: ['plant', 'plant'], makes: 'bandage' }
     ]
