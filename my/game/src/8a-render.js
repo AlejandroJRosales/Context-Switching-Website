@@ -2282,7 +2282,7 @@ export class HealthBars {
     const s = GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * growth;
     const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * s;   // crown height as drawn
     const age = a.isAdult ? Math.floor(a.ageYears()) : -1;
-    return personInfoKey(age, a.sex, a.look ? a.look.buildDev : 0, metres);
+    return personInfoKey(age, a.sex, a.look, metres);
   }
 
   infoFields(a, key) {

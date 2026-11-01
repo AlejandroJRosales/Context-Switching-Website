@@ -431,8 +431,43 @@ export const NPC_SIZE = {
 };
 export const NPC_SIZE_Z_MAX = 4;          // standard deviations; draws are cut here
 export const NPC_SIZE_HERITABILITY = 0.8;   // weight of the mid-parent z-score in a child's; the rest is fresh noise
-export const NPC_SHOWN_BMI = { male: 24, female: 22 };   // stats readout weight
-// Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use NPC_SHOWN_BMI.
+// BMI that draws at build 1.0 (the unscaled body width); also the BMI of a person with no look.
+export const NPC_REF_BMI = { male: 24, female: 22 };
+
+// BODY COMPOSITION: a person's BMI comes from lean mass plus fat. Heath-Carter somatotype ratings (1 to 7) set the
+// lean mass index (kg of fat-free mass per m^2); body fat is a fraction of total mass. Both are fixed for life.
+// mass = leanIndex * height^2 / (1 - bodyFat).
+// Founders pick a type by weight, then vary within it: each rating by NPC_RATING_SPREAD, body fat by the type's [mean, sd].
+export const NPC_SOMATOTYPES = [
+  { name: 'ectomorph', weight: 0.22, ratings: { endo: 2.0, meso: 2.5, ecto: 5.5 }, bodyFat: { male: [0.13, 0.030], female: [0.20, 0.035] } },
+  { name: 'balanced', weight: 0.30, ratings: { endo: 3.5, meso: 3.5, ecto: 3.5 }, bodyFat: { male: [0.19, 0.040], female: [0.26, 0.040] } },
+  { name: 'mesomorph', weight: 0.22, ratings: { endo: 2.5, meso: 5.5, ecto: 2.0 }, bodyFat: { male: [0.15, 0.035], female: [0.23, 0.035] } },
+  { name: 'endomorph', weight: 0.20, ratings: { endo: 5.5, meso: 3.5, ecto: 1.5 }, bodyFat: { male: [0.27, 0.050], female: [0.35, 0.050] } }
+];
+export const NPC_RATING_SPREAD = 0.5;            // sd of each rating within a type
+export const NPC_RATING_LIMITS = [1, 7];         // Heath-Carter scale
+export const NPC_BODY_FAT_LIMITS = [0.05, 0.45]; // fraction of total mass
+export const NPC_LEAN_INDEX_BASE = { male: 19.5, female: 16.5 };   // lean kg/m^2 at the reference ratings
+export const NPC_LEAN_REF_RATING = 3.5;          // meso and ecto ratings where the base applies
+export const NPC_LEAN_PER_MESO = 0.55;           // lean kg/m^2 per mesomorphy point above the reference
+export const NPC_LEAN_PER_ECTO = -0.35;          // lean kg/m^2 per ectomorphy point above the reference
+// per trait, the weight of the mid-parent z-score in a child's (like NPC_SIZE_HERITABILITY); the rest is fresh noise
+export const NPC_BODY_HERITABILITY = { endo: 0.6, meso: 0.6, ecto: 0.6, bodyFat: 0.5 };
+export const NPC_BODY_TRAITS = Object.keys(NPC_BODY_HERITABILITY);
+// Population mean and sd of each trait (body fat per sex), mixed from the table above, so children are drawn on the founders' curve.
+export const NPC_BODY_POP = (() => {
+  const total = NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
+  const mix = pick => {
+    let mean = 0, second = 0;
+    for (const t of NPC_SOMATOTYPES) { const [m, sd] = pick(t), w = t.weight / total; mean += w * m; second += w * (sd * sd + m * m); }
+    return { mean, sd: Math.sqrt(second - mean * mean) };
+  };
+  const pop = {};
+  for (const k of ['endo', 'meso', 'ecto']) pop[k] = mix(t => [t.ratings[k], NPC_RATING_SPREAD]);
+  pop.bodyFat = { male: mix(t => t.bodyFat.male), female: mix(t => t.bodyFat.female) };
+  return pop;
+})();
+// Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use their look's bmi.
 export const NPC_REF_MASS_KG = {
   deer: { male: 70, female: 50 },      // white-tailed deer
   coyote: { male: 15, female: 13 }

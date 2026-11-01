@@ -16,7 +16,9 @@ import {
   PREY_SIZE_STEP_KG, NPC_POUNCES, POUNCE_LAND_SHORT, FIGHT_KEY_FIELDS, NPC_AGE_DEPLETION_RATE, DEER_REPRO_SHARE,
   MATE_TIME_MULT, REPRO_NEED_MAX, NPC_MATURITY_TICKS, GROWTH_MIN_SCALE, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
-  NPC_SIZE_HERITABILITY, NPC_SHOWN_BMI, NPC_REF_MASS_KG, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
+  NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG,
+  NPC_SOMATOTYPES, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
+  NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, LIF_LEAK, LIF_THRESHOLD, LIF_RESET,
   TAG_DECAY, DA_TONIC_RATE, BRAIN_LEARNING_RATE, BRAIN_WEIGHT_DECAY, HEADING_JITTER, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
@@ -63,16 +65,19 @@ export function sampleFightKeys(keys, u, out) {
   for (const k of FIGHT_KEY_FIELDS) out[k] = a[k] + (b[k] - a[k]) * f;
   return out;
 }
-// A person's mass in kg: BMI x build^2 x height^2 (people's stats readout, fights and the player's body all use it).
-export function humanMassKg(sex, buildDev, heightM) {
-  const build = 1 + buildDev;
-  return NPC_SHOWN_BMI[sex] * build * build * heightM * heightM;
+// A person's BMI: their look's bmi (lean mass plus fat, see humanLook), or the sex's reference BMI with no look.
+export function humanBmi(sex, look) {
+  return look ? look.bmi : NPC_REF_BMI[sex];
+}
+// A person's mass in kg: BMI x height^2 (people's stats readout, fights, prey size and the pack gate all use it).
+export function humanMassKg(sex, look, heightM) {
+  return humanBmi(sex, look) * heightM * heightM;
 }
 // A person's stats readout (people's labels and the player's Survivor panel): age, sex, height, weight, in that order.
 // The key packs what can change (age in whole years or -1 for a child, height in inches, weight in lb), so a
 // display redraws only when it changes; heightM is the crown height as drawn.
-export function personInfoKey(age, sex, buildDev, heightM) {
-  const lb = Math.round(humanMassKg(sex, buildDev, heightM) * 2.20462);
+export function personInfoKey(age, sex, look, heightM) {
+  const lb = Math.round(humanMassKg(sex, look, heightM) * 2.20462);
   const inches = Math.round(heightM / 0.0254);
   return ((age + 2) * 1000 + inches) * 10000 + lb;
 }
@@ -1340,7 +1345,7 @@ export class Animal extends Entity {
   // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
   bodyMassKg() {
     const h = this.bodyHeightM();
-    if (this.type === 'human') return humanMassKg(this.sex, this.look ? this.look.buildDev : 0, h);
+    if (this.type === 'human') return humanMassKg(this.sex, this.look, h);
     const k = h / NPC_SIZE[this.type][this.sex][0];
     return NPC_REF_MASS_KG[this.type][this.sex] * k * k * k;
   }
@@ -1448,11 +1453,35 @@ export function humanLook(sex) {
   const outfit = Math.floor(Math.random() * HUMAN_OUTFITS), shirt = outfit === 5 ? pick(HUMAN_SUITS) : pick(HUMAN_SHIRTS);
   const look = {
     tone: Math.random(), variant: Math.floor(Math.random() * HUMAN_FACE_VARIANTS), female: sex === 'female',
-    buildDev: Math.max(-0.12, Math.min(0.12, 0.05 * brains.gauss())), outfit, shirt,
+    endo: 0, meso: 0, ecto: 0, bodyFat: 0, bmi: 0, buildDev: 0, outfit, shirt,
     pants: outfit === 5 ? shirt : pick(HUMAN_PANTS), skinRGB: 0, code: 0
   };
+  drawFounderBody(look, sex);
+  setHumanBody(look);
   packHumanLook(look);
   return look;
+}
+
+const clampTo = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
+// a trait's population curve: body fat differs by sex, the ratings do not
+const bodyPop = (trait, female) => trait === 'bodyFat' ? NPC_BODY_POP.bodyFat[female ? 'female' : 'male'] : NPC_BODY_POP[trait];
+
+// A founder's somatotype ratings and body fat: a type picked by weight, then varied within it.
+function drawFounderBody(L, sex) {
+  let roll = Math.random() * NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
+  const type = NPC_SOMATOTYPES.find(t => (roll -= t.weight) < 0) || NPC_SOMATOTYPES[NPC_SOMATOTYPES.length - 1];
+  for (const k of ['endo', 'meso', 'ecto']) L[k] = clampTo(type.ratings[k] + NPC_RATING_SPREAD * brains.gauss(), NPC_RATING_LIMITS);
+  const [fatMean, fatSd] = type.bodyFat[sex];
+  L.bodyFat = clampTo(fatMean + fatSd * brains.gauss(), NPC_BODY_FAT_LIMITS);
+}
+
+// Derives bmi (lean mass index from the ratings, over the lean fraction) and buildDev (the drawn width, from bmi)
+// after the ratings and body fat are set. Mass reads bmi; the renderer reads buildDev through packHumanLook.
+function setHumanBody(L) {
+  const sex = L.female ? 'female' : 'male';
+  const leanIndex = NPC_LEAN_INDEX_BASE[sex] + NPC_LEAN_PER_MESO * (L.meso - NPC_LEAN_REF_RATING) + NPC_LEAN_PER_ECTO * (L.ecto - NPC_LEAN_REF_RATING);
+  L.bmi = leanIndex / (1 - L.bodyFat);                   // lean mass / (1 - fat fraction), per m^2
+  L.buildDev = Math.sqrt(L.bmi / NPC_REF_BMI[sex]) - 1;  // width scales as sqrt(BMI), so the drawn body matches the mass
 }
 
 // skinRGB: the tone's sRGB as one integer; code: face tile + outfit * 8 + build step * 64 (all exact in a float).
@@ -1467,7 +1496,14 @@ export function packHumanLook(L) {
 export function inheritHumanLook(L, a, b) {
   L.tone = Math.max(0, Math.min(1, (a.tone + b.tone) / 2 + (Math.random() - 0.5) * 0.12));
   L.variant = (Math.random() < 0.5 ? a : b).variant;
-  L.buildDev = Math.max(-0.12, Math.min(0.12, (a.buildDev + b.buildDev) / 2 + 0.02 * brains.gauss()));
+  // each trait as a z-score on its own curve (body fat per sex): mid-parent times heritability plus noise, variance kept
+  for (const k of NPC_BODY_TRAITS) {
+    const pa = bodyPop(k, a.female), pb = bodyPop(k, b.female), pc = bodyPop(k, L.female), h = NPC_BODY_HERITABILITY[k];
+    const midZ = ((a[k] - pa.mean) / pa.sd + (b[k] - pb.mean) / pb.sd) / 2;
+    const childZ = h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss();
+    L[k] = clampTo(pc.mean + pc.sd * childZ, k === 'bodyFat' ? NPC_BODY_FAT_LIMITS : NPC_RATING_LIMITS);
+  }
+  setHumanBody(L);
   packHumanLook(L);
 }
 

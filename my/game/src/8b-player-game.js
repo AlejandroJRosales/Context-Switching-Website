@@ -445,7 +445,7 @@ export const pov = {
   ageYears() { return this.ageBase + ecosystem.ticks / NPC_TICKS_PER_YEAR; },
   // the player's stats readout key (personInfoKey; Survivor panel and Observer HUD), or -1 before the first body
   infoKey() {
-    return this.look ? personInfoKey(Math.floor(this.ageYears()), this.sex, this.look.buildDev, game.avatar.bodyHeightM()) : -1;
+    return this.look ? personInfoKey(Math.floor(this.ageYears()), this.sex, this.look, game.avatar.bodyHeightM()) : -1;
   },
   gait: { x: NaN, z: NaN, speed: 0, phase: 0, swing: 0, run: 0 },
 
@@ -841,7 +841,7 @@ export const game = {
     get health() { return game.health; },
     strike() { startFightMove(this, NPC_FIGHT_MOVES.human, ecosystem.time); },
     bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
-    bodyMassKg() { return humanMassKg(pov.sex, pov.look ? pov.look.buildDev : 0, this.bodyHeightM()); },
+    bodyMassKg() { return humanMassKg(pov.sex, pov.look, this.bodyHeightM()); },
     // the animal `tid` flees the player
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
     // the animal `tid` hunts the player (night hunts: `prey` is night out of shelter)
