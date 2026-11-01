@@ -1511,17 +1511,15 @@ const clampTo = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
 // the somatotype table's pure type for each readout body type (BODY_TYPE_NAMES keys, which are also the ratings)
 const PURE_TYPE = { ecto: 'ectomorph', meso: 'mesomorph', endo: 'endomorph' };
 
-// The player's chosen body (pov.newBody) on a look from humanLook. Each part is optional: bodyType (a BODY_TYPE_NAMES
-// key) sets that pure somatotype at its mean ratings; bodyFat (fraction) replaces the drawn one; bmi replaces the one
-// the ratings and fat give; bmiScale multiplies whichever BMI results. Pace, shape and the packed look follow.
-export function reshapeHumanLook(L, { bodyType, bodyFat, bmi, bmiScale = 1 }) {
-  if (bodyType) {
-    L.bodyType = NPC_SOMATOTYPES.findIndex(t => t.name === PURE_TYPE[bodyType]);
-    for (const k in BODY_TYPE_NAMES) setBodyTrait(L, k, 0);
-  }
-  if (bodyFat != null) L.bodyFat = clampTo(bodyFat, NPC_BODY_FAT_LIMITS);
+// The player's Custom body (pov.newBody) on a look from humanLook: bodyType (a BODY_TYPE_NAMES key) sets that pure
+// somatotype at its mean ratings, bodyFat (fraction) replaces the drawn one, and bmi replaces the one the ratings and
+// fat give. Pace, shape and the packed look follow.
+export function customizeHumanLook(L, { bodyType, bodyFat, bmi }) {
+  L.bodyType = NPC_SOMATOTYPES.findIndex(t => t.name === PURE_TYPE[bodyType]);
+  for (const k in BODY_TYPE_NAMES) setBodyTrait(L, k, 0);
+  L.bodyFat = clampTo(bodyFat, NPC_BODY_FAT_LIMITS);
   setHumanBody(L);
-  L.bmi = (bmi ?? L.bmi) * bmiScale;
+  L.bmi = bmi;
   setHumanShape(L);
   packHumanLook(L);
 }

@@ -12,7 +12,7 @@ import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
   FOOT_CAM_FOLLOW, LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
-  NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, PLAYER_SIZES, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
+  NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
   HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V, HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED,
   HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_LEG, CROUCH_DROP, HUMAN_PET, PET_BEND_LEVELS, STREET_STEP, CABIN_SCALE,
   CABIN_M, CAT_HEAD_TOP, CAT_SCALE, CAT_SEAT, CAT_DOOR, CAT_RUN_FROM, CAT_WALK_WITHIN, CAT_RUN_SPEED, CAT_BOARD_SPEED,
@@ -40,7 +40,7 @@ import {
   foodBoxes, shelters
 } from './6-worlds.js';
 import {
-  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, reshapeHumanLook, ecosystem,
+  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, brains, ecosystem,
   simSky
 } from './7-sim.js';
 import {
@@ -469,18 +469,19 @@ export const pov = {
     else this.writeLook();
   },
 
-  // A fresh person for the player from the start screen's Player size (main's playerSizeChoice): a preset
-  // (PLAYER_SIZES: height z-score and BMI scale; sex, type, fat and looks random) or Custom
-  // ({ sex, bodyType, bodyFat, heightM, bmi }). Heights are NPC adults' of the same sex.
-  newBody(choice = PLAYER_SIZES.medium) {
-    const sex = choice.sex ?? (Math.random() < 0.5 ? 'male' : 'female');
+  // A fresh person for the player from the start screen's Player body (main's playerBodyChoice): null for Random, a
+  // person drawn like a spawned one (sex, height like NPC adults of that sex, body, looks, age); or Custom
+  // ({ sex, bodyType, bodyFat, heightM, bmi, age }), with only the looks drawn.
+  newBody(custom = null) {
+    const sex = custom ? custom.sex : (Math.random() < 0.5 ? 'male' : 'female');
     this.sex = sex;
     this.look = humanLook(sex);
-    reshapeHumanLook(this.look, choice);
+    if (custom) customizeHumanLook(this.look, custom);
     const sz = NPC_SIZE.human, [mean, std] = sz[sex];
-    this.heightScale = (choice.heightM ?? mean + std * choice.heightZ) / (sz.rig * NPC_UNIT);
-    // an age like a spawned person's, aging on the same clock (Animal.ageYears); the ecosystem's ticks restart with it
-    this.ageBase = NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
+    const heightM = custom ? custom.heightM : mean + std * Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
+    this.heightScale = heightM / (sz.rig * NPC_UNIT);
+    // years at world tick 0, aging on the same clock as people (Animal.ageYears); the ecosystem's ticks restart with it
+    this.ageBase = custom ? custom.age : NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
     const G = this.gait;
     G.x = G.z = NaN; G.speed = G.phase = G.swing = G.run = 0;
     if (this.body) this.writeLook();

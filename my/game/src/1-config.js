@@ -476,15 +476,11 @@ export const NPC_BODY_POP = (() => {
   pop.bodyFat = { male: mix(t => t.bodyFat.male), female: mix(t => t.bodyFat.female) };
   return pop;
 })();
-// PLAYER SIZE (start screen; pov.newBody): a preset fixes the drawn body's height, as a z-score on its sex's NPC_SIZE
-// curve, and scales the BMI its somatotype gives; sex, type, body fat and looks stay random. Custom sets them outright.
-export const PLAYER_SIZES = {
-  small: { heightZ: -1.5, bmiScale: 0.9 },
-  medium: { heightZ: 0, bmiScale: 1 },
-  large: { heightZ: 1.5, bmiScale: 1.15 }
-};
-// Custom's sliders as [min, max, start]: body fat in percent (NPC_BODY_FAT_LIMITS), crown height in inches, weight in lb
+// PLAYER BODY (start screen; pov.newBody): Random draws the player like a spawned person; Custom sets the sex and body
+// type by chip and these sliders as [min, max, start]: age in years (from NPC_ADULT_AGE), body fat in percent
+// (NPC_BODY_FAT_LIMITS), crown height in inches, weight in lb
 export const PLAYER_CUSTOM = {
+  age: [NPC_ADULT_AGE, 80, 25],
   bodyFat: [NPC_BODY_FAT_LIMITS[0] * 100, NPC_BODY_FAT_LIMITS[1] * 100, 24],
   heightIn: [54, 84, 69],
   weightLb: [80, 400, 170]

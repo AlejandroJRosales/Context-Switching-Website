@@ -25,7 +25,7 @@ import {
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
   NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
-  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_SIZES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN
+  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN
 } from './1-config.js';
 import {
   fmt, loop, wake, invalidate
@@ -659,8 +659,8 @@ function seedValue() {
 // own spawn, then its instance data and the HUD (the order initialize ran them in, renderer init moved ahead of it).
 function populate(provider) {
   game.reset();
-  // each spawned world gives the player a new body of the chosen Player size
-  pov.newBody(playerSizeChoice());
+  // each spawned world gives the player a new body: Random, or the Custom one
+  pov.newBody(playerBodyChoice());
   animalRenderer.init();
   plantRenderer.init(provider.bounds);
   ecosystem.initialize(provider);
@@ -1261,17 +1261,18 @@ function radioRow(field, pick) {
 radioRow('size', v => { worldSize = v; customRowEl.hidden = worldSize !== 'custom'; });
 sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
 
-// PLAYER SIZE: a preset (PLAYER_SIZES), or Custom's sex, body type and sliders; read by populate for pov.newBody.
-let playerSize = document.querySelector('.sizebtn.on[data-player]').dataset.player;
+// PLAYER BODY: Random, or Custom's sex, body type and sliders; read by populate for pov.newBody.
+let playerBody = document.querySelector('.sizebtn.on[data-player]').dataset.player;
 let playerSex = document.querySelector('.sizebtn.on[data-sex]').dataset.sex;
 let playerType = document.querySelector('.sizebtn.on[data-type]').dataset.type;
 const playerCustomEl = document.getElementById('playercustom');
-radioRow('player', v => { playerSize = v; playerCustomEl.hidden = playerSize !== 'custom'; });
+radioRow('player', v => { playerBody = v; playerCustomEl.hidden = playerBody !== 'custom'; });
 radioRow('sex', v => { playerSex = v; });
 radioRow('type', v => { playerType = v; });
 // Custom's sliders: range and start from PLAYER_CUSTOM, each with its readout
-const pFatEl = document.getElementById('pFat'), pHeightEl = document.getElementById('pHeight'), pWeightEl = document.getElementById('pWeight');
+const pAgeEl = document.getElementById('pAge'), pFatEl = document.getElementById('pFat'), pHeightEl = document.getElementById('pHeight'), pWeightEl = document.getElementById('pWeight');
 for (const [el, out, [min, max, start], show] of [
+  [pAgeEl, 'pAgeOut', PLAYER_CUSTOM.age, v => String(v)],
   [pFatEl, 'pFatOut', PLAYER_CUSTOM.bodyFat, v => `${v}%`],
   [pHeightEl, 'pHeightOut', PLAYER_CUSTOM.heightIn, feetInches],
   [pWeightEl, 'pWeightOut', PLAYER_CUSTOM.weightLb, v => `${v} lb`]
@@ -1283,21 +1284,21 @@ for (const [el, out, [min, max, start], show] of [
   sync();
 }
 // SAVED CHOICE: the preset and Custom's settings live in one localStorage entry, written on every change in the
-// Player size rows (their clicks and slider input bubble up here, after each control's own handler) and restored at load.
-const PLAYER_SIZE_KEY = 'playerSize';
+// Player body rows (their clicks and slider input bubble up here, after each control's own handler) and restored at load.
+const PLAYER_BODY_KEY = 'playerBody';
 const playerRowEl = document.getElementById('playerrow');
-const playerSliders = { fat: pFatEl, height: pHeightEl, weight: pWeightEl };   // saved field -> its slider
-function savePlayerSize() {
-  const saved = { size: playerSize, sex: playerSex, type: playerType };
+const playerSliders = { age: pAgeEl, fat: pFatEl, height: pHeightEl, weight: pWeightEl };   // saved field -> its slider
+function savePlayerBody() {
+  const saved = { body: playerBody, sex: playerSex, type: playerType };
   for (const k in playerSliders) saved[k] = +playerSliders[k].value;
-  try { localStorage.setItem(PLAYER_SIZE_KEY, JSON.stringify(saved)); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+  try { localStorage.setItem(PLAYER_BODY_KEY, JSON.stringify(saved)); } catch (e) { /* storage blocked: the choice lasts this visit */ }
 }
-function restorePlayerSize() {
+function restorePlayerBody() {
   let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(PLAYER_SIZE_KEY)); } catch (e) { /* unreadable: the page defaults stand */ }
+  try { saved = JSON.parse(localStorage.getItem(PLAYER_BODY_KEY)); } catch (e) { /* unreadable: the page defaults stand */ }
   if (!saved) return;
   // a click selects the button as the player would (each saved value is a button's data value); missing ones are skipped
-  for (const [field, value] of [['player', saved.size], ['sex', saved.sex], ['type', saved.type]]) {
+  for (const [field, value] of [['player', saved.body], ['sex', saved.sex], ['type', saved.type]]) {
     document.querySelector(`.sizebtn[data-${field}="${value}"]`)?.click();
   }
   // a slider clamps the value to its range; the input event updates its readout
@@ -1308,16 +1309,19 @@ function restorePlayerSize() {
   }
 }
 for (const el of [playerRowEl, playerCustomEl]) {
-  el.addEventListener('click', e => { if (e.target.closest('.sizebtn')) savePlayerSize(); });
-  el.addEventListener('input', savePlayerSize);
+  el.addEventListener('click', e => { if (e.target.closest('.sizebtn')) savePlayerBody(); });
+  el.addEventListener('input', savePlayerBody);
 }
-restorePlayerSize();
+restorePlayerBody();
 
-// The chosen body for pov.newBody: the preset, or Custom with its weight turned into BMI at its height.
-function playerSizeChoice() {
-  if (playerSize !== 'custom') return PLAYER_SIZES[playerSize];
+// The chosen body for pov.newBody: null for Random, or Custom with its weight turned into BMI at its height.
+function playerBodyChoice() {
+  if (playerBody !== 'custom') return null;
   const heightM = +pHeightEl.value * M_PER_IN, kg = +pWeightEl.value / LB_PER_KG;
-  return { sex: playerSex, bodyType: playerType, bodyFat: +pFatEl.value / 100, heightM, bmi: kg / (heightM * heightM) };
+  return {
+    sex: playerSex, bodyType: playerType, bodyFat: +pFatEl.value / 100, heightM, bmi: kg / (heightM * heightM),
+    age: +pAgeEl.value
+  };
 }
 peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
 startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
@@ -1327,10 +1331,10 @@ const picksEl = document.getElementById('picks');
 for (const [label, query] of PICKS) {
   const b = document.createElement('button');
   b.textContent = label;
+  // fills the address only; Load (or Enter) starts the world
   b.addEventListener('click', () => {
     addrEl.value = query;
     b.blur();
-    loadPlace(query);
   });
   picksEl.appendChild(b);
 }
