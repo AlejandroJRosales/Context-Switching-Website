@@ -4,9 +4,9 @@
 // settings chips, the debug readout, the HUD (refreshHud), fullscreen, the load functions (loadPlace, loadWilderness,
 // finishLoad, populate, clearEcosystem, teardownWorld, newEcosystem, loadIntroScene), the frame loop (frame,
 // drawEcosystem), visibility and resize, and the start sequence at the end (binds in the original listener order).
-// May import: three (importmap) and src/1 to src/8.
+// May import: three (importmap) and src/1 to src/8b.
 //
-// MODULE MAP (imports point down only; files 1 to 8 declare, main starts):
+// MODULE MAP (imports point down only; files 1 to 8b declare, main starts):
 //   1-config.js        tunable tables and derived constants; pure data, no imports
 //   2-core.js          math, grids, ring geometry, solar math, the loop object (wake, invalidate)
 //   3-gfx-io.js        renderer, scene, buffer helpers, culling | Nominatim, Overpass, city files, terrain, parsers
@@ -14,7 +14,8 @@
 //   5-collision.js     walls, shells, occupancy, cover, spawn checks, isOpen
 //   6-worlds.js        city and wilderness construction, providers (CityWorld, WildernessWorld, IntroWorld)
 //   7-sim.js           brains, Animal, Plant, Ecosystem, simSky
-//   8-render-player-game.js  renderers, human rig, sky, rain, graphics; player, input, car, cat, VR; game
+//   8a-render.js       renderers, human rig, sky, rain, graphics; reads the player and game through renderInputs
+//   8b-player-game.js  player, input, car, cat, petting, pov, VR; game (Survivor); fills renderInputs
 //   9-main.js          this file
 // Placement per identifier (INVENTORY.md section 9), plan and decisions: INVENTORY.md.
 import * as THREE from 'three';
@@ -48,13 +49,15 @@ import {
   personInfoFields, plantView, ecosystem, simSky
 } from './7-sim.js';
 import {
-  dotEl, knobEl, climbEl, npcOnScreen, foodBoxView, povEl, raysEl, gfxEl, avgFpsEl, pov, vr, graphics, cat, labels,
-  visionRays, animalRenderer, plantRenderer, blobShadows, game, bindInventory, healthBars, player, keys, play,
-  lastPointerType, bindKeys, bindMouseLook, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam,
-  facePlayer, placeCar, parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, skyChoice, skyInstant, conditions,
-  playerStep, movementHeld, avgFps, clockText, placeSkyBodies, skyFade, updateSky, rainClock, disposeRain, rainTick,
-  rainAnimating, populationText
-} from './8-render-player-game.js';
+  npcOnScreen, foodBoxView, raysEl, gfxEl, avgFpsEl, graphics, labels, visionRays, animalRenderer, plantRenderer,
+  blobShadows, healthBars, skyChoice, skyInstant, conditions, avgFps, clockText, placeSkyBodies, skyFade, updateSky,
+  rainClock, disposeRain, rainTick, rainAnimating, populationText
+} from './8a-render.js';
+import {
+  dotEl, knobEl, climbEl, povEl, pov, vr, cat, game, bindInventory, player, keys, play, lastPointerType, bindKeys,
+  bindMouseLook, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam, facePlayer, placeCar,
+  parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld
+} from './8b-player-game.js';
 
 // the core frame loop draws with this file's frame (wake() schedules loop.frame)
 loop.frame = frame;
