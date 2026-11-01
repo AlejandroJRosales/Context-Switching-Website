@@ -22,7 +22,7 @@ import {
   BB_STAND_SWING, BB_PHASE_K, BB_MIP_BIAS, PLANT_GRID, FOOD_BOX_SIZE, SHADOW_FOLLOW_STEP, SHADOW_SUN_STEP_COS,
   SHADOW_MOVER_HZ, SHADOW_MOVER_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
   BLOB_LIFT, BLOB_SPREAD, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
-  EMOJI_FONT, FAR_STAT_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_INFO_H, BAR_INFO_FONT, BAR_INFO_GAP, BAR_SPRITE_CANVAS_H,
+  EMOJI_FONT, FAR_STAT_MAX, FAR_PANEL_SCALE, FAR_PAGE_PX, FAR_CELL_GUTTER, FAR_REDRAW_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_ROW_H, BAR_TEXT_FONT, BAR_ROW_GAP, BAR_SPRITE_CANVAS_H,
   BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
@@ -44,7 +44,7 @@ import {
   facadeLit, foodBoxes, streets, shelters
 } from './6-worlds.js';
 import {
-  humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, Animal, averageHumanLook, plantView, ecosystem,
+  humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, personBodyFields, Animal, averageHumanLook, plantView, ecosystem,
   simSky, presetHour
 } from './7-sim.js';
 
@@ -2206,31 +2206,35 @@ export function brainActivity(b, a) {
   }
 }
 
+const STAT_LABEL_MAX = 100;   // top of the whole-number scale shown for each stat
+const BAR_PAD = 4;            // canvas px between the panel's edges and its rows
+const PERSON_ROWS = 3;        // panel rows for people: stats, body, info (others get the stat row only)
+const STAT_PART_GAP = 0.15;   // space between a stat's icon, number and arrow, as a share of the font px
+const STAT_ARROWED = [false, true, true, true];   // per stat, whether it can show a memory arrow (health never does); those cells keep room for one
+// the panel's three fonts, all at the one px a draw picks
+const FIELD_FONT = px => `${px}px sans-serif`;
+const STAT_FONT = px => `bold ${px}px sans-serif`;
+const ICON_FONT = px => `${px}px ${EMOJI_FONT}`;
+
 export class HealthBars {
   constructor() {
     this.bars = new Map();
     this.spare = [];
     this.seen = new Set();
 
-    const rows = BAR_ICONS.length, pad = 4, gap = 3;
-    const rh = (BAR_CANVAS_H - 2 * pad - (rows - 1) * gap) / rows;
-    this.farBarX = -BAR_W_M / 2 + (pad + 24) * BAR_PX;
-    this.farBarW = (BAR_CANVAS_W - (pad + 24) - 22 - pad) * BAR_PX;
-    this.farBarH = rh * 0.62 * BAR_PX;
-    this.farRowY = [];
-    for (let i = 0; i < rows; i++) this.farRowY.push(BAR_H_M - (pad + i * (rh + gap) + rh / 2) * BAR_PX);
+    // FAR PANELS: each far person's panel is the near canvas drawn at FAR_PANEL_SCALE into a cell of an atlas page.
+    this.cellW = Math.ceil(BAR_CANVAS_W * FAR_PANEL_SCALE);
+    this.cellH = Math.ceil(BAR_SPRITE_CANVAS_H * FAR_PANEL_SCALE);
+    this.pageCols = Math.floor(FAR_PAGE_PX / (this.cellW + 2 * FAR_CELL_GUTTER));
+    this.pageCells = this.pageCols * Math.floor(FAR_PAGE_PX / (this.cellH + 2 * FAR_CELL_GUTTER));
+    this.farPanelGeo = new THREE.PlaneGeometry(BAR_W_M, BAR_H_M);
+    this.farPanelGeo.translate(0, BAR_H_M / 2, 0);   // anchored at its bottom centre, like the near sprite
+    this.pages = [];
+    this.farCells = new Map();   // far person -> the atlas cell holding their panel
+    this.freeCells = [];
+    this.addPage();              // the first page is made at load so the load's compileAsync builds its shader
 
-    const barGeo = new THREE.PlaneGeometry(1, 1);
-    barGeo.translate(0.5, 0, 0);                                     // left-anchored, so scale.x is the fill
-    const barMat = new THREE.MeshBasicMaterial({ toneMapped: false, side: THREE.DoubleSide });
-    this.farBars = new THREE.InstancedMesh(barGeo, barMat, FAR_STAT_MAX * rows);
     const c = new THREE.Color();
-    for (let j = 0; j < FAR_STAT_MAX * rows; j++) this.farBars.setColorAt(j, c.set(BAR_COLORS[j % rows]));
-    this.farBars.instanceColor.needsUpdate = true;
-    this.farBars.frustumCulled = false;
-    this.farBars.count = 0;
-    this.farBars.visible = false;
-    scene.add(this.farBars);
 
     const lobeGeo = new THREE.IcosahedronGeometry(LOBE_RADIUS * BRAIN_SCALE, 0);
     this.farLobes = new THREE.InstancedMesh(lobeGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), FAR_STAT_MAX * 2);
@@ -2244,7 +2248,6 @@ export class HealthBars {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._c = new THREE.Color();
-    this._fill = [0, 0, 0, 0];
     this.tick = 0;
     this.enabled = true;
 
@@ -2268,7 +2271,7 @@ export class HealthBars {
       bar.sprite.visible = false;
       if (bar.brain) bar.brain.group.visible = false;
     }
-    perf.instances(this.farBars, 0);
+    for (const page of this.pages) perf.instances(page.mesh, 0);
     perf.instances(this.farLobes, 0);
   }
 
@@ -2276,6 +2279,67 @@ export class HealthBars {
     let n = 0;
     for (let i = 0; i < act.length; i++) if (act[i] >= 1.0) n++;
     return n / act.length;
+  }
+
+  // A new atlas page: its canvas and texture, and an instanced mesh whose instances each show one of its cells.
+  addPage() {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = FAR_PAGE_PX;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const geo = this.farPanelGeo.clone();
+    const cellUv = new THREE.InstancedBufferAttribute(new Float32Array(this.pageCells * 2), 2);   // per instance: its cell's bottom-left uv
+    cellUv.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('cellUv', cellUv);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: tex },
+        cellSize: { value: new THREE.Vector2(this.cellW / FAR_PAGE_PX, this.cellH / FAR_PAGE_PX) }
+      },
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `
+        attribute vec2 cellUv;
+        uniform vec2 cellSize;
+        varying vec2 vUv;
+        void main() {
+          vUv = cellUv + uv * cellSize;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform sampler2D map;
+        varying vec2 vUv;
+        void main() {
+          gl_FragColor = texture2D(map, vUv);
+          #include <colorspace_fragment>
+        }`
+    });
+    const mesh = new THREE.InstancedMesh(geo, mat, this.pageCells);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;   // same as the near sprites
+    mesh.count = 0;
+    mesh.visible = false;
+    scene.add(mesh);
+    const page = { canvas, ctx: canvas.getContext('2d'), tex, mesh, cellUv, used: 0, n: 0 };   // used: cells handed out; n: instances this frame
+    this.pages.push(page);
+    return page;
+  }
+
+  // An atlas cell for a far panel: a freed one, else the next one on the last page (a new page when that is full).
+  // Its x, y and scale place the near canvas's coordinates in the cell, so draw() paints it unchanged.
+  takeCell() {
+    if (this.freeCells.length) return this.freeCells.pop();
+    let page = this.pages[this.pages.length - 1];
+    if (page.used === this.pageCells) page = this.addPage();
+    const i = page.used++;
+    const x = (i % this.pageCols) * (this.cellW + 2 * FAR_CELL_GUTTER) + FAR_CELL_GUTTER;
+    const y = Math.floor(i / this.pageCols) * (this.cellH + 2 * FAR_CELL_GUTTER) + FAR_CELL_GUTTER;
+    return {
+      page, ctx: page.ctx, tex: page.tex, scale: FAR_PANEL_SCALE, x, y,
+      u: x / FAR_PAGE_PX, v: 1 - (y + this.cellH) / FAR_PAGE_PX,   // canvas textures are flipped, so v counts up from the page bottom
+      key: -1, infoKey: -1, tick: 0
+    };
   }
 
   makeBar() {
@@ -2293,7 +2357,7 @@ export class HealthBars {
     sprite.visible = false;
     scene.add(sprite);
     return {
-      sprite, canvas, ctx: canvas.getContext('2d'), tex, key: -1, infoKey: -1,
+      sprite, canvas, ctx: canvas.getContext('2d'), tex, scale: 1, x: 0, y: 0, key: -1, infoKey: -1,
       brain: null, brainFor: null, nearTick: 0
     };
   }
@@ -2324,6 +2388,23 @@ export class HealthBars {
     ctx.restore();
   }
 
+  // Height of the brain's centre for a panel whose sprite bottom is at barY: it sits BRAIN_ABOVE over the panel's top.
+  brainY(barY, info) {
+    return barY + (BAR_SPRITE_CANVAS_H - this.panelTop(info)) * BAR_PX + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+  }
+
+  // The panel's inputs for a: stat fullness in whole BAR_STEPS (rounded down) and memory arrow headings (-1 for none).
+  readStats(a, now, vals, arrows) {
+    const q = v => Math.floor(Math.max(0, Math.min(1, v)) * BAR_STEPS);
+    vals[0] = q(a.health / a.maxHealth);
+    vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
+    vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
+    vals[3] = q(a.mateFill(now));
+    arrows[1] = this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos);
+    arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
+    arrows[3] = this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos);
+  }
+
   // People only (0 for others): age code (-1 child, else whole years), shown height in inches, weight in lb.
   infoKey(a) {
     if (a.type !== 'human') return 0;
@@ -2338,68 +2419,118 @@ export class HealthBars {
     return [`Gen ${a.generation}`, ...personInfoFields(key, a.sex)];
   }
 
+  bodyFields(a, key) {
+    return personBodyFields(key, a.sex, a.look);
+  }
+
+  // Panel bounds in canvas px. People's panel runs to the canvas bottom, others' to the bottom of the bars area;
+  // it holds its rows plus BAR_PAD above and below. Brains, near and far, sit on panelTop (brainY).
+  panelBottom(info) {
+    return info ? BAR_SPRITE_CANVAS_H : BAR_CANVAS_H;
+  }
+
+  panelTop(info) {
+    return this.panelBottom(info) - (info ? PERSON_ROWS : 1) * BAR_ROW_H - 2 * BAR_PAD;
+  }
+
+  // Item widths of a row at font px: text fields, or the stat cells (icon, room for the widest number, arrow room).
+  fieldWidths(ctx, fields, px) {
+    ctx.font = FIELD_FONT(px);
+    return fields.map(f => ctx.measureText(f).width);
+  }
+
+  statWidths(ctx, px) {
+    ctx.font = STAT_FONT(px);
+    const numberW = ctx.measureText(String(STAT_LABEL_MAX)).width, gap = px * STAT_PART_GAP;
+    ctx.font = ICON_FONT(px);
+    return BAR_ICONS.map((icon, i) => ctx.measureText(icon).width + gap + numberW + (STAT_ARROWED[i] ? gap + px : 0));
+  }
+
+  // Largest font px, up to BAR_TEXT_FONT, at which a row measured at BAR_TEXT_FONT fits the width with its least
+  // gaps (text width scales with px).
+  fitPx(widths) {
+    let sum = 0;
+    for (const w of widths) sum += w;
+    const room = BAR_CANVAS_W - 2 * BAR_PAD - BAR_ROW_GAP * (widths.length - 1);
+    return Math.min(BAR_TEXT_FONT, Math.floor(BAR_TEXT_FONT * room / sum));
+  }
+
+  // Left x of each item of a row spread across the width: first and last at the pads, equal gaps between.
+  spreadX(widths) {
+    let sum = 0;
+    for (const w of widths) sum += w;
+    const gap = (BAR_CANVAS_W - 2 * BAR_PAD - sum) / (widths.length - 1);
+    const xs = [];
+    let x = BAR_PAD;
+    for (const w of widths) { xs.push(x); x += w + gap; }
+    return xs;
+  }
+
+  // One row of text fields spread across the width, centered at rowCy.
+  fieldRow(ctx, fields, rowCy, px) {
+    const xs = this.spreadX(this.fieldWidths(ctx, fields, px));   // leaves ctx.font at FIELD_FONT(px)
+    ctx.fillStyle = 'rgba(232, 228, 220, 0.95)';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < fields.length; i++) ctx.fillText(fields[i], xs[i], rowCy);
+  }
+
+  // The stat row spread across the width like the field rows: per stat its icon, its number centered in room
+  // for the widest number, then its arrow when it has one.
+  statRow(ctx, vals, arrows, rowCy, px) {
+    const xs = this.spreadX(this.statWidths(ctx, px)), gap = px * STAT_PART_GAP;
+    ctx.font = STAT_FONT(px);
+    const numberW = ctx.measureText(String(STAT_LABEL_MAX)).width;
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < BAR_ICONS.length; i++) {
+      ctx.font = ICON_FONT(px);
+      ctx.textAlign = 'left';
+      ctx.fillText(BAR_ICONS[i], xs[i], rowCy);
+      const numberX = xs[i] + ctx.measureText(BAR_ICONS[i]).width + gap;
+      ctx.font = STAT_FONT(px);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = BAR_COLORS[i];
+      ctx.fillText(String(Math.round(vals[i] / BAR_STEPS * STAT_LABEL_MAX)), numberX + numberW / 2, rowCy);   // stat as a whole number, 0 to STAT_LABEL_MAX
+      if (arrows[i] >= 0) this.arrow(ctx, numberX + numberW + gap + px / 2, rowCy, px, arrows[i], BAR_COLORS[i]);
+    }
+  }
+
   draw(slot, vals, arrows, a) {
     // packed integer key, no allocation per person per tick; exact in a double
     const V = BAR_STEPS + 1, A = ARROW_STEPS + 1;
     const key = ((((((vals[0] * V + vals[1]) * V + vals[2]) * V + vals[3])
       * A + arrows[1] + 1) * A + arrows[2] + 1) * A + arrows[3] + 1);
     const info = this.infoKey(a);
-    if (slot.key === key && slot.infoKey === info) return;
+    if (slot.key === key && slot.infoKey === info) return false;
     slot.key = key;
     slot.infoKey = info;
     const { ctx } = slot;
-    const W = BAR_CANVAS_W, H = BAR_CANVAS_H;
-    const rows = BAR_ICONS.length;
-    const pad = 4, gap = 3, rh = (H - 2 * pad - (rows - 1) * gap) / rows;
-    const iconW = 24, arrowW = 22;
-    const bx = pad + iconW, bw = W - bx - arrowW - pad;
-    const bh = rh * 0.62;
-    ctx.clearRect(0, 0, W, BAR_SPRITE_CANVAS_H);
+    ctx.setTransform(slot.scale, 0, 0, slot.scale, slot.x, slot.y);   // near: its own canvas; far: its atlas cell
+    const body = info ? this.bodyFields(a, info) : null;      // fat, muscle, body type
+    const details = info ? this.infoFields(a, info) : null;   // gen, age, sex, height, weight
+    // one font px for the whole panel: the largest at which every row fits
+    let px = this.fitPx(this.statWidths(ctx, BAR_TEXT_FONT));
+    if (info) px = Math.min(px, this.fitPx(this.fieldWidths(ctx, body, BAR_TEXT_FONT)), this.fitPx(this.fieldWidths(ctx, details, BAR_TEXT_FONT)));
+    const panelTop = this.panelTop(info);
+    const rowCy = r => panelTop + BAR_PAD + (r + 0.5) * BAR_ROW_H;   // vertical center of panel row r, 0 at the top
+    ctx.clearRect(0, 0, BAR_CANVAS_W, BAR_SPRITE_CANVAS_H);
     ctx.fillStyle = 'rgba(12, 15, 21, 0.7)';
-    ctx.fillRect(0, 0, W, info ? BAR_SPRITE_CANVAS_H : H);
-    ctx.font = `${Math.round(rh * 0.8)}px ${EMOJI_FONT}`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (let i = 0; i < rows; i++) {
-      const cy = pad + i * (rh + gap) + rh / 2;
-      ctx.fillText(BAR_ICONS[i], pad + iconW / 2, cy);
-      ctx.fillStyle = 'rgba(232, 228, 220, 0.12)';
-      ctx.fillRect(bx, cy - bh / 2, bw, bh);
-      ctx.fillStyle = BAR_COLORS[i];
-      ctx.fillRect(bx, cy - bh / 2, bw * vals[i] / BAR_STEPS, bh);
-      if (arrows[i] >= 0) this.arrow(ctx, W - pad - arrowW / 2, cy, rh * 0.9, arrows[i], BAR_COLORS[i]);
-    }
+    ctx.fillRect(0, panelTop, BAR_CANVAS_W, this.panelBottom(info) - panelTop);
+    this.statRow(ctx, vals, arrows, rowCy(0), px);
     if (info) {
-      // one row under the bars, the fields spread across the width like the player's panel row;
-      // the font shrinks only when the fields and their least gaps would not fit
-      const fields = this.infoFields(a, info), n = fields.length, maxW = W - 2 * pad;
-      const measure = px => {
-        ctx.font = `${px}px sans-serif`;
-        let tw = 0;
-        for (const f of fields) tw += ctx.measureText(f).width;
-        return tw;
-      };
-      let px = BAR_INFO_FONT, tw = measure(px);
-      const need = tw + BAR_INFO_GAP * (n - 1);
-      if (need > maxW) { px = Math.max(5, px * maxW / need); tw = measure(px); }
-      const fieldGap = (maxW - tw) / (n - 1);
-      ctx.fillStyle = 'rgba(232, 228, 220, 0.95)';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      let x = pad;
-      for (const f of fields) {
-        ctx.fillText(f, x, H + BAR_INFO_H / 2);
-        x += ctx.measureText(f).width + fieldGap;
-      }
+      this.fieldRow(ctx, body, rowCy(1), px);
+      this.fieldRow(ctx, details, rowCy(2), px);
     }
     slot.tex.needsUpdate = true;
+    return true;
   }
 
-  // Slots are taken up close and returned after BAR_RELEASE_TICKS away, so they track the nearby crowd.
+  // Near slots are taken up close and returned after BAR_RELEASE_TICKS away, so they track the nearby crowd.
+  // Far people get an atlas cell for as long as they are drawn far.
   update(animals) {
     if (!this.enabled) return;
     const tick = ++this.tick;
     const spin = performance.now() / 1000 * BRAIN_SPIN;
     const now = ecosystem.time;
-    const q = v => Math.floor(Math.max(0, Math.min(1, v)) * BAR_STEPS);   // bars round down
     const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
     const seen = this.seen;
     seen.clear();
@@ -2409,10 +2540,11 @@ export class HealthBars {
     this._right.set(1, 0, 0).applyQuaternion(cq);
     this._up.set(0, 1, 0).applyQuaternion(cq);
     const lod2 = perf.npcLodDist * perf.npcLodDist, farMax2 = perf.farStatDist * perf.farStatDist;
-    const rows = BAR_ICONS.length;
     const lobeOff = 1.1 * BRAIN_SCALE;
     let nf = 0;
     let nl = 0;
+    let redraws = 0;   // far panels painted this frame, up to FAR_REDRAW_MAX
+    for (const page of this.pages) page.n = 0;
 
     const qx = cq.x, qy = cq.y, qz = cq.z, qw = cq.w;
     const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;
@@ -2421,8 +2553,6 @@ export class HealthBars {
     const r0 = 1 - (yy + zz), r1 = xy + wz, r2 = xz - wy;
     const r4 = xy - wz, r5 = 1 - (xx + zz), r6 = yz + wx;
     const r8 = xz + wy, r9 = yz - wx, r10 = 1 - (xx + yy);
-    const barArr = this.farBars.instanceMatrix.array, barH = this.farBarH, barW = this.farBarW;
-    const rx = this._right.x, ry = this._right.y, rz = this._right.z, ux = this._up.x, uy = this._up.y, uz = this._up.z;
     const lobeArr = this.farLobes.instanceMatrix.array;
 
     for (const a of animals) {
@@ -2439,29 +2569,25 @@ export class HealthBars {
       if (d2 > lod2) {
         if (nf >= FAR_STAT_MAX) continue;
 
-        const fill = this._fill;
-        fill[0] = a.health / a.maxHealth;
-        fill[1] = 1 - Math.min(a.foodNeed, 100) / 100;
-        fill[2] = 1 - Math.min(a.waterNeed, 100) / 100;
-        fill[3] = a.mateFill(now);
-        const dx = this.farBarX;
-        for (let i = 0; i < rows; i++) {
-          const f = Math.max(0, Math.min(1, fill[i]));
-          const dy = this.farRowY[i];
-          const sx = Math.max(f * barW, 1e-4);
-          const o = (nf * rows + i) * 16;
-          barArr[o] = r0 * sx; barArr[o + 1] = r1 * sx; barArr[o + 2] = r2 * sx; barArr[o + 3] = 0;
-          barArr[o + 4] = r4 * barH; barArr[o + 5] = r5 * barH; barArr[o + 6] = r6 * barH; barArr[o + 7] = 0;
-          barArr[o + 8] = r8; barArr[o + 9] = r9; barArr[o + 10] = r10; barArr[o + 11] = 0;
-          barArr[o + 12] = a.position.x + rx * dx + ux * dy;
-          barArr[o + 13] = barY + ry * dx + uy * dy;
-          barArr[o + 14] = a.position.z + rz * dx + uz * dy;
-          barArr[o + 15] = 1;
+        let cell = this.farCells.get(a);
+        if (!cell) { cell = this.takeCell(); this.farCells.set(a, cell); }
+        cell.tick = tick;
+        this.readStats(a, now, vals, arrows);
+        if (redraws < FAR_REDRAW_MAX && this.draw(cell, vals, arrows, a)) redraws++;
+        if (cell.key !== -1) {   // a cell not painted yet waits for a frame with redraws to spare
+          const page = cell.page, k = page.n++, o = k * 16, arr = page.mesh.instanceMatrix.array;
+          // the camera's rotation, so the panel faces the viewer like the near sprite
+          arr[o] = r0; arr[o + 1] = r1; arr[o + 2] = r2; arr[o + 3] = 0;
+          arr[o + 4] = r4; arr[o + 5] = r5; arr[o + 6] = r6; arr[o + 7] = 0;
+          arr[o + 8] = r8; arr[o + 9] = r9; arr[o + 10] = r10; arr[o + 11] = 0;
+          arr[o + 12] = a.position.x; arr[o + 13] = barY; arr[o + 14] = a.position.z; arr[o + 15] = 1;
+          page.cellUv.array[k * 2] = cell.u;
+          page.cellUv.array[k * 2 + 1] = cell.v;
         }
 
         const nn = a.brain;
         if (nn) {
-          const by = barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+          const by = this.brainY(barY, cell.infoKey);
           const fireA = this.firing(nn.actA), fireB = this.firing(nn.actB);
           for (let l = 0; l < 2; l++) {
             const o = (nl * 2 + l) * 16;
@@ -2486,13 +2612,7 @@ export class HealthBars {
       }
       bar.nearTick = tick;
 
-      vals[0] = q(a.health / a.maxHealth);
-      vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
-      vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
-      vals[3] = q(a.mateFill(now));
-      arrows[1] = this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos);
-      arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
-      arrows[3] = this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos);
+      this.readStats(a, now, vals, arrows);
       this.draw(bar, vals, arrows, a);
       bar.sprite.position.set(a.position.x, barY, a.position.z);
       bar.sprite.visible = true;
@@ -2506,7 +2626,7 @@ export class HealthBars {
       }
       const b = bar.brain;
       brainActivity(b, a);
-      b.group.position.set(a.position.x, barY + BAR_H_M + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE, a.position.z);
+      b.group.position.set(a.position.x, this.brainY(barY, bar.infoKey), a.position.z);
       b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
       b.group.visible = true;
     }
@@ -2520,7 +2640,17 @@ export class HealthBars {
       this.spare.push(bar);
     }
 
-    perf.instances(this.farBars, nf * rows);
+    // far cells not drawn this frame go back to the free list (repainted before they are shown again)
+    for (const [a, cell] of this.farCells) {
+      if (cell.tick === tick) continue;
+      this.farCells.delete(a);
+      cell.key = -1;
+      this.freeCells.push(cell);
+    }
+    for (const page of this.pages) {
+      perf.instances(page.mesh, page.n);
+      if (page.n) page.cellUv.needsUpdate = true;
+    }
     perf.instances(this.farLobes, nl * 2);
     perf.instanceColors(this.farLobes, nl * 2);
   }

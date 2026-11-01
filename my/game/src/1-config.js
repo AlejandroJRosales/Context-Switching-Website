@@ -1120,14 +1120,19 @@ export const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];
 export const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
 export const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-// Past perf.npcLodDist, stats and brains become two shared InstancedMeshes: bar strips and one sphere per lobe.
+// Past perf.npcLodDist, stats and brains become shared InstancedMeshes: the near panel drawn small into atlas pages
+// (one mesh per page), and one sphere per lobe.
 export const FAR_STAT_MAX = 12000;
+export const FAR_PANEL_SCALE = 0.25;   // far atlas px per near canvas px (on high the panel is ~10 screen px wide out there)
+export const FAR_PAGE_PX = 512;        // width and height of one atlas page; pages are made only as the far crowd needs them
+export const FAR_CELL_GUTTER = 2;      // empty px around each cell so mipmaps don't bleed one panel into the next
+export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most; the rest show their last picture until a later frame
 // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
 export const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;   // bars area
-export const BAR_INFO_H = 20;                          // canvas px of the Gen/Age/Sex/Height/Weight row
-export const BAR_INFO_FONT = 15;                       // canvas px of its text, shrunk only when the fields would not fit
-export const BAR_INFO_GAP = 8;                         // least canvas px between its fields (spread across the width)
-export const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_INFO_H;
+export const BAR_ROW_H = 20;                           // canvas px of each panel row: stats, body (fat/muscle/type), info (gen/age/sex/height/weight)
+export const BAR_TEXT_FONT = 15;                       // canvas px of all panel text and icons, shrunk only when a row would not fit
+export const BAR_ROW_GAP = 8;                          // least canvas px between a row's items (spread across the width)
+export const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_ROW_H;
 export const BAR_PX = BAR_W_M / BAR_CANVAS_W;
 export const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // whole sprite height in metres
 export const LOBE_RADIUS = 0.7;

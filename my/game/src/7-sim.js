@@ -89,9 +89,31 @@ export function personInfoKey(age, sex, look, heightM) {
   const inches = Math.round(heightM / 0.0254);
   return ((age + 2) * 1000 + inches) * 10000 + lb;
 }
+// the weight in lb packed into a personInfoKey
+const personInfoLb = key => key % 10000;
+// Share of lean mass (mass less fat) counted as muscle; the rest is bone, organs and water. The sim has no muscle value
+// of its own, so the readout's muscle mass is lean mass at this share.
+const MUSCLE_SHARE_OF_LEAN = 0.5;
+// body type name per dominant somatotype rating, as the readout shows it
+const BODY_TYPE_NAMES = { meso: 'Meso', endo: 'Endo', ecto: 'Ecto' };
+// A person's body type name: the name of their highest somatotype rating (the population's mean ratings with no look).
+export function humanBodyType(look) {
+  let best = null;
+  for (const k in BODY_TYPE_NAMES) {
+    const rating = look ? look[k] : NPC_BODY_POP[k].mean;
+    if (best === null || rating > best.rating) best = { k, rating };
+  }
+  return BODY_TYPE_NAMES[best.k];
+}
+// the body readout's fields in order: fat in lb, muscle in lb, body type name. Read from the same key as
+// personInfoFields so the weights add up to the weight shown; each display joins them its own way.
+export function personBodyFields(key, sex, look) {
+  const lb = personInfoLb(key), fatShare = look ? look.bodyFat : NPC_REF_BODY_FAT[sex];
+  return [`Fat ${Math.round(lb * fatShare)} lb`, `Muscle ${Math.round(lb * (1 - fatShare) * MUSCLE_SHARE_OF_LEAN)} lb`, humanBodyType(look)];
+}
 // the readout's fields in order; each display joins them its own way (labels with commas, the panel spaced out)
 export function personInfoFields(key, sex) {
-  const lb = key % 10000, inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
+  const lb = personInfoLb(key), inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
   return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', `${Math.floor(inches / 12)}'${inches % 12}"`, `${lb} lb`];
 }
 
