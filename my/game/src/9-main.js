@@ -25,7 +25,7 @@ import {
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
   NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
-  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES
+  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_SIZES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN
 } from './1-config.js';
 import {
   fmt, loop, wake, invalidate
@@ -46,7 +46,7 @@ import {
   INTRO_SCENE, IntroWorld
 } from './6-worlds.js';
 import {
-  personInfoFields, plantView, ecosystem, simSky
+  personInfoFields, personBodyFields, feetInches, plantView, ecosystem, simSky
 } from './7-sim.js';
 import {
   npcOnScreen, foodBoxView, raysEl, gfxEl, avgFpsEl, graphics, labels, visionRays, animalRenderer, plantRenderer,
@@ -629,7 +629,8 @@ function refreshHud() {
   // last line: time and conditions, then (Observer) the player's stats, comma-separated like the rest of the HUD
   const c = conditions(), info = game.on ? -1 : pov.infoKey();
   const sky = simSky.site ? `${clockText(skyInstant())}${c ? '  ' + c.label : ''}` : '';
-  const last = [sky, ...(info >= 0 ? personInfoFields(info, pov.sex) : [])].filter(Boolean).join(', ');
+  const stats = info >= 0 ? [...personInfoFields(info, pov.sex), ...personBodyFields(info, pov.sex, pov.look)] : [];
+  const last = [sky, ...stats].filter(Boolean).join(', ');
   const fps = !game.on && hudFps ? `, ${hudFps} fps` : '';
   perf.setText(hudEl, head + '\n' + populationText() + fps + (last ? '\n' + last : ''));
 }
@@ -642,7 +643,7 @@ let lastQuery = '';
 let startMode = 'city';
 
 const seedEl = document.getElementById('seed');
-const sizeBtns = [...document.querySelectorAll('.sizebtn')];
+const sizeBtns = [...document.querySelectorAll('.sizebtn[data-size]')];
 const sizeEl = document.getElementById('size');
 const sizeOutEl = document.getElementById('sizeOut');
 const peopleEl = document.getElementById('people');
@@ -658,8 +659,8 @@ function seedValue() {
 // own spawn, then its instance data and the HUD (the order initialize ran them in, renderer init moved ahead of it).
 function populate(provider) {
   game.reset();
-  // each spawned world gives the player a new random body
-  pov.newBody();
+  // each spawned world gives the player a new body of the chosen Player size
+  pov.newBody(playerSizeChoice());
   animalRenderer.init();
   plantRenderer.init(provider.bounds);
   ecosystem.initialize(provider);
@@ -1244,17 +1245,49 @@ seedEl.addEventListener('keydown', e => {
   if (startMode === 'wilderness') { loadWilderness(seedValue()); }
   else { loadPlace(addrEl.value); }
 });
-for (const b of sizeBtns) {
-  b.addEventListener('click', () => {
-    worldSize = b.dataset.size;
-    for (const o of sizeBtns) {
-      o.classList.toggle('on', o === b);
-      o.setAttribute('aria-checked', o === b ? 'true' : 'false');
-    }
-    customRowEl.hidden = worldSize !== 'custom';
-  });
+// A row of radio buttons (.sizebtn): a click marks that one on and passes its data-<field> value to pick.
+function radioRow(field, pick) {
+  const btns = [...document.querySelectorAll(`.sizebtn[data-${field}]`)];
+  for (const b of btns) {
+    b.addEventListener('click', () => {
+      for (const o of btns) {
+        o.classList.toggle('on', o === b);
+        o.setAttribute('aria-checked', o === b ? 'true' : 'false');
+      }
+      pick(b.dataset[field]);
+    });
+  }
 }
+radioRow('size', v => { worldSize = v; customRowEl.hidden = worldSize !== 'custom'; });
 sizeEl.addEventListener('input', () => { sizeOutEl.textContent = sizeEl.value; });
+
+// PLAYER SIZE: a preset (PLAYER_SIZES), or Custom's sex, body type and sliders; read by populate for pov.newBody.
+let playerSize = document.querySelector('.sizebtn.on[data-player]').dataset.player;
+let playerSex = document.querySelector('.sizebtn.on[data-sex]').dataset.sex;
+let playerType = document.querySelector('.sizebtn.on[data-type]').dataset.type;
+const playerCustomEl = document.getElementById('playercustom');
+radioRow('player', v => { playerSize = v; playerCustomEl.hidden = playerSize !== 'custom'; });
+radioRow('sex', v => { playerSex = v; });
+radioRow('type', v => { playerType = v; });
+// Custom's sliders: range and start from PLAYER_CUSTOM, each with its readout
+const pFatEl = document.getElementById('pFat'), pHeightEl = document.getElementById('pHeight'), pWeightEl = document.getElementById('pWeight');
+for (const [el, out, [min, max, start], show] of [
+  [pFatEl, 'pFatOut', PLAYER_CUSTOM.bodyFat, v => `${v}%`],
+  [pHeightEl, 'pHeightOut', PLAYER_CUSTOM.heightIn, feetInches],
+  [pWeightEl, 'pWeightOut', PLAYER_CUSTOM.weightLb, v => `${v} lb`]
+]) {
+  const outEl = document.getElementById(out);
+  el.min = min; el.max = max; el.value = start;
+  const sync = () => { outEl.textContent = show(+el.value); };
+  el.addEventListener('input', sync);
+  sync();
+}
+// The chosen body for pov.newBody: the preset, or Custom with its weight turned into BMI at its height.
+function playerSizeChoice() {
+  if (playerSize !== 'custom') return PLAYER_SIZES[playerSize];
+  const heightM = +pHeightEl.value * M_PER_IN, kg = +pWeightEl.value / LB_PER_KG;
+  return { sex: playerSex, bodyType: playerType, bodyFat: +pFatEl.value / 100, heightM, bmi: kg / (heightM * heightM) };
+}
 peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
 startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
 

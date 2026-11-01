@@ -12,7 +12,7 @@ import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
   FOOT_CAM_FOLLOW, LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
-  NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
+  NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, PLAYER_SIZES, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
   HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V, HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED,
   HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_LEG, CROUCH_DROP, HUMAN_PET, PET_BEND_LEVELS, STREET_STEP, CABIN_SCALE,
   CABIN_M, CAT_HEAD_TOP, CAT_SCALE, CAT_SEAT, CAT_DOOR, CAT_RUN_FROM, CAT_WALK_WITHIN, CAT_RUN_SPEED, CAT_BOARD_SPEED,
@@ -40,7 +40,7 @@ import {
   foodBoxes, shelters
 } from './6-worlds.js';
 import {
-  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, Animal, humanLook, brains, ecosystem,
+  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, reshapeHumanLook, ecosystem,
   simSky
 } from './7-sim.js';
 import {
@@ -469,14 +469,16 @@ export const pov = {
     else this.writeLook();
   },
 
-  // a fresh random person, sized like NPC adults of the same sex
-  newBody() {
-    const sex = Math.random() < 0.5 ? 'male' : 'female';
+  // A fresh person for the player from the start screen's Player size (main's playerSizeChoice): a preset
+  // (PLAYER_SIZES: height z-score and BMI scale; sex, type, fat and looks random) or Custom
+  // ({ sex, bodyType, bodyFat, heightM, bmi }). Heights are NPC adults' of the same sex.
+  newBody(choice = PLAYER_SIZES.medium) {
+    const sex = choice.sex ?? (Math.random() < 0.5 ? 'male' : 'female');
     this.sex = sex;
     this.look = humanLook(sex);
+    reshapeHumanLook(this.look, choice);
     const sz = NPC_SIZE.human, [mean, std] = sz[sex];
-    const z = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
-    this.heightScale = (mean + std * z) / (sz.rig * NPC_UNIT);
+    this.heightScale = (choice.heightM ?? mean + std * choice.heightZ) / (sz.rig * NPC_UNIT);
     // an age like a spawned person's, aging on the same clock (Animal.ageYears); the ecosystem's ticks restart with it
     this.ageBase = NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
     const G = this.gait;
@@ -786,6 +788,7 @@ export const needFoodEl = document.getElementById('needFood');
 export const needWaterEl = document.getElementById('needWater');
 export const needDayEl = document.getElementById('needDay');
 export const needInfoEl = document.getElementById('needInfo');
+export const needBodyEl = document.getElementById('needBody');
 // INVENTORY SLOTS: one button per SURVIVOR_CONFIG.inventory.keys entry, then the craft slot, built here so the page
 // and the config can never disagree on how many slots there are. Each shows its key ('Digit3' shows 3).
 export const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
@@ -831,7 +834,7 @@ export const game = {
   run: null,              // this run's record: hours, eaten counts, cause
   _lastHour: null,
   _q: [], _qp: [], _qb: [],
-  _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownSex: '',
+  _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
 
   // The ecosystem's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
   // It is a predator to what people hunt, quarry at night to people's night hunters, and trades fight hits like an animal.
@@ -1189,18 +1192,19 @@ export const game = {
     }
     const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
     if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
-    // the player's body, read out as people's labels read theirs (no generation: the player has none)
+    // the player's body, read out as people's labels read theirs (no generation: the player has none): the top row
+    // after the day, then the body row (fat, muscle, type); a new body can keep the key, so the look is checked too
     const info = pov.infoKey();
-    if (info >= 0) {
-      if (info !== this._shownInfo || pov.sex !== this._shownSex) {
-        this._shownInfo = info; this._shownSex = pov.sex;
-        // one span per field: the top row spaces them evenly after the day (#needTop)
-        needInfoEl.replaceChildren(...personInfoFields(info, pov.sex).map(f => {
-          const s = document.createElement('span');
-          s.textContent = f;
-          return s;
-        }));
-      }
+    if (info >= 0 && (info !== this._shownInfo || pov.look !== this._shownLook)) {
+      this._shownInfo = info; this._shownLook = pov.look;
+      // one span per field: each row spaces them evenly (#needTop, #needBody)
+      const spans = fields => fields.map(f => {
+        const s = document.createElement('span');
+        s.textContent = f;
+        return s;
+      });
+      needInfoEl.replaceChildren(...spans(personInfoFields(info, pov.sex)));
+      needBodyEl.replaceChildren(...spans(personBodyFields(info, pov.sex, pov.look)));
     }
     const slots = this.inventory.map(it => it ? it.kind : '').join(',');
     if (slots !== this._shownSlots) {

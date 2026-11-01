@@ -19,7 +19,7 @@ import {
   NPC_START_AGE, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
   NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG, NPC_BUILD_BASE, NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS,
   NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
-  NPC_SOMATOTYPES, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
+  NPC_SOMATOTYPES, LB_PER_KG, M_PER_IN, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
   NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, LIF_LEAK, LIF_THRESHOLD, LIF_RESET,
   TAG_DECAY, DA_TONIC_RATE, BRAIN_LEARNING_RATE, BRAIN_WEIGHT_DECAY, HEADING_JITTER, HUMAN_FACE_VARIANTS,
@@ -85,8 +85,8 @@ export function humanFightMassKg(sex, look, heightM) {
 // The key packs what can change (age in whole years or -1 for a child, height in inches, weight in lb), so a
 // display redraws only when it changes; heightM is the crown height as drawn.
 export function personInfoKey(age, sex, look, heightM) {
-  const lb = Math.round(humanMassKg(sex, look, heightM) * 2.20462);
-  const inches = Math.round(heightM / 0.0254);
+  const lb = Math.round(humanMassKg(sex, look, heightM) * LB_PER_KG);
+  const inches = Math.round(heightM / M_PER_IN);
   return ((age + 2) * 1000 + inches) * 10000 + lb;
 }
 // the weight in lb packed into a personInfoKey
@@ -111,10 +111,12 @@ export function personBodyFields(key, sex, look) {
   const lb = personInfoLb(key), fatShare = look ? look.bodyFat : NPC_REF_BODY_FAT[sex];
   return [`Fat ${Math.round(lb * fatShare)} lb`, `Muscle ${Math.round(lb * (1 - fatShare) * MUSCLE_SHARE_OF_LEAN)} lb`, humanBodyType(look)];
 }
+// a height in whole inches as feet and inches, 5'9"
+export const feetInches = inches => `${Math.floor(inches / 12)}'${inches % 12}"`;
 // the readout's fields in order; each display joins them its own way (labels with commas, the panel spaced out)
 export function personInfoFields(key, sex) {
   const lb = personInfoLb(key), inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
-  return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', `${Math.floor(inches / 12)}'${inches % 12}"`, `${lb} lb`];
+  return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', feetInches(inches), `${lb} lb`];
 }
 
 export class BrainFactory {
@@ -1506,6 +1508,23 @@ export function humanLook(sex) {
 }
 
 const clampTo = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
+// the somatotype table's pure type for each readout body type (BODY_TYPE_NAMES keys, which are also the ratings)
+const PURE_TYPE = { ecto: 'ectomorph', meso: 'mesomorph', endo: 'endomorph' };
+
+// The player's chosen body (pov.newBody) on a look from humanLook. Each part is optional: bodyType (a BODY_TYPE_NAMES
+// key) sets that pure somatotype at its mean ratings; bodyFat (fraction) replaces the drawn one; bmi replaces the one
+// the ratings and fat give; bmiScale multiplies whichever BMI results. Pace, shape and the packed look follow.
+export function reshapeHumanLook(L, { bodyType, bodyFat, bmi, bmiScale = 1 }) {
+  if (bodyType) {
+    L.bodyType = NPC_SOMATOTYPES.findIndex(t => t.name === PURE_TYPE[bodyType]);
+    for (const k in BODY_TYPE_NAMES) setBodyTrait(L, k, 0);
+  }
+  if (bodyFat != null) L.bodyFat = clampTo(bodyFat, NPC_BODY_FAT_LIMITS);
+  setHumanBody(L);
+  L.bmi = (bmi ?? L.bmi) * bmiScale;
+  setHumanShape(L);
+  packHumanLook(L);
+}
 // a trait's population curve: body fat differs by sex, the ratings do not
 const bodyPop = (trait, female) => trait === 'bodyFat' ? NPC_BODY_POP.bodyFat[female ? 'female' : 'male'] : NPC_BODY_POP[trait];
 // a look's drawn widths (setHumanShape): the torso regions, then limb girth

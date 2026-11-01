@@ -337,8 +337,10 @@
       width: auto;
     }
 
-    /* top row: the day, then the player's stats (people's label fields, no commas), spread across the bars' width */
-    #needTop {
+    /* top row: the day, then the player's stats (people's label fields, no commas), spread across the bars' width;
+       the body row under it (fat, muscle, body type) is spread the same way */
+    #needTop,
+    #needBody {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
@@ -975,7 +977,7 @@
       border-color: transparent;
     }
 
-    #sizerow {
+    .sizerow {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -984,7 +986,7 @@
       color: rgba(232, 228, 220, 0.75);
     }
 
-    #sizerow span {
+    .sizerow>span {
       margin-right: 4px;
     }
 
@@ -997,8 +999,14 @@
       color: rgba(232, 228, 220, 0.75);
     }
 
-    #customrow[hidden] {
+    #customrow[hidden],
+    #playercustom[hidden] {
       display: none;
+    }
+
+    /* Custom player: Sex and Body type are chip rows like the size rows, without the sliders' flex */
+    .customrow.choices .sizebtn {
+      flex: none;
     }
 
     .customrow output {
@@ -1011,8 +1019,9 @@
       accent-color: #e8e4dc;
     }
 
-    #card.loading #sizerow,
-    #card.loading #customrow {
+    #card.loading .sizerow,
+    #card.loading #customrow,
+    #card.loading #playercustom {
       display: none;
     }
 
@@ -1258,7 +1267,7 @@
           autocomplete="off">
         <button id="go">Load</button>
       </div>
-      <div id="sizerow" role="radiogroup" aria-label="World size">
+      <div id="sizerow" class="sizerow" role="radiogroup" aria-label="World size">
         <span>World size</span>
         <button class="sizebtn" data-size="small" role="radio" aria-checked="false">Small</button>
         <button class="sizebtn on" data-size="medium" role="radio" aria-checked="true">Medium</button>
@@ -1270,6 +1279,28 @@
             step="1" value="5"></label>
         <label class="customrow">People <output id="peopleOut">3,000</output><input id="people" type="range" min="1000"
             max="10000" step="1000" value="3000"></label>
+      </div>
+      <div id="playerrow" class="sizerow" role="radiogroup" aria-label="Player size">
+        <span>Player size</span>
+        <button class="sizebtn" data-player="small" role="radio" aria-checked="false">Small</button>
+        <button class="sizebtn on" data-player="medium" role="radio" aria-checked="true">Medium</button>
+        <button class="sizebtn" data-player="large" role="radio" aria-checked="false">Large</button>
+        <button class="sizebtn" data-player="custom" role="radio" aria-checked="false">Custom</button>
+      </div>
+      <!-- slider ranges and starts come from PLAYER_CUSTOM (9-main) -->
+      <div id="playercustom" hidden>
+        <div class="customrow choices" role="radiogroup" aria-label="Sex">Sex
+          <button class="sizebtn on" data-sex="male" role="radio" aria-checked="true">M</button>
+          <button class="sizebtn" data-sex="female" role="radio" aria-checked="false">F</button>
+        </div>
+        <div class="customrow choices" role="radiogroup" aria-label="Body type">Body type
+          <button class="sizebtn" data-type="endo" role="radio" aria-checked="false">Endo</button>
+          <button class="sizebtn on" data-type="meso" role="radio" aria-checked="true">Meso</button>
+          <button class="sizebtn" data-type="ecto" role="radio" aria-checked="false">Ecto</button>
+        </div>
+        <label class="customrow">Body fat <output id="pFatOut"></output><input id="pFat" type="range" step="1"></label>
+        <label class="customrow">Height <output id="pHeightOut"></output><input id="pHeight" type="range" step="1"></label>
+        <label class="customrow">Weight <output id="pWeightOut"></output><input id="pWeight" type="range" step="1"></label>
       </div>
       <div id="seedrow" class="for-wilderness">
         <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
@@ -1305,6 +1336,7 @@
   <div id="hud"></div>
   <div id="needs">
     <div id="needTop"><span id="needDay" aria-live="polite">Day 1</span><span id="needInfo"></span></div>
+    <div id="needBody"></div>
     <div class="need" aria-hidden="true"><span>❤️</span><i><b id="needHealth"></b></i></div>
     <div class="need-pair" aria-hidden="true">
       <div class="need"><span>🍽️</span><i><b id="needFood"></b></i></div>

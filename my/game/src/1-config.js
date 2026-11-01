@@ -476,6 +476,21 @@ export const NPC_BODY_POP = (() => {
   pop.bodyFat = { male: mix(t => t.bodyFat.male), female: mix(t => t.bodyFat.female) };
   return pop;
 })();
+// PLAYER SIZE (start screen; pov.newBody): a preset fixes the drawn body's height, as a z-score on its sex's NPC_SIZE
+// curve, and scales the BMI its somatotype gives; sex, type, body fat and looks stay random. Custom sets them outright.
+export const PLAYER_SIZES = {
+  small: { heightZ: -1.5, bmiScale: 0.9 },
+  medium: { heightZ: 0, bmiScale: 1 },
+  large: { heightZ: 1.5, bmiScale: 1.15 }
+};
+// Custom's sliders as [min, max, start]: body fat in percent (NPC_BODY_FAT_LIMITS), crown height in inches, weight in lb
+export const PLAYER_CUSTOM = {
+  bodyFat: [NPC_BODY_FAT_LIMITS[0] * 100, NPC_BODY_FAT_LIMITS[1] * 100, 24],
+  heightIn: [54, 84, 69],
+  weightLb: [80, 400, 170]
+};
+export const LB_PER_KG = 2.20462;
+export const M_PER_IN = 0.0254;
 // DRAWN BODY SHAPE (render only): widths are multiples of the rig's rest width. A person's build (mean torso width)
 // is the sex's base build (NPC_BUILD_BASE_MEAN) plus sqrt(BMI / NPC_REF_BMI) - 1, so the drawn body matches the mass.
 // The sex's proportions (NPC_BUILD_BASE) then share that width out between the torso regions and set limb girth, and
@@ -1114,7 +1129,6 @@ export function playerPlantFood(bites) { return bites * PLANT_MAX_HEALTH * PLANT
 export const BAR_STEPS = 40;     // redraw only when a bar moves a whole step
 export const BAR_RELEASE_TICKS = 180;   // ~3 s out of close range before a slot is handed back
 export const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
-export const BAR_W_M = 0.8;    // sprite width in metres; the bars area is 2:1, the info row sits under it
 export const BAR_ABOVE = 0.18;
 export const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];
 export const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
@@ -1128,12 +1142,13 @@ export const FAR_PAGE_PX = 512;        // width and height of one atlas page; pa
 export const FAR_CELL_GUTTER = 2;      // empty px around each cell so mipmaps don't bleed one panel into the next
 export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most; the rest show their last picture until a later frame
 // Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
-export const BAR_CANVAS_W = 192, BAR_CANVAS_H = 96;   // bars area
+export const BAR_PX = 0.8 / 192;                       // metres per canvas px: the old 0.8 m, 192 px panel's, so BAR_TEXT_FONT is the size it was
+export const BAR_CANVAS_W = 272, BAR_CANVAS_H = 96;   // width fits the stat row at BAR_TEXT_FONT; height of the area above the info row
 export const BAR_ROW_H = 20;                           // canvas px of each panel row: stats, body (fat/muscle/type), info (gen/age/sex/height/weight)
 export const BAR_TEXT_FONT = 15;                       // canvas px of all panel text and icons, shrunk only when a row would not fit
 export const BAR_ROW_GAP = 8;                          // least canvas px between a row's items (spread across the width)
 export const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_ROW_H;
-export const BAR_PX = BAR_W_M / BAR_CANVAS_W;
+export const BAR_W_M = BAR_CANVAS_W * BAR_PX;          // sprite width in metres
 export const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // whole sprite height in metres
 export const LOBE_RADIUS = 0.7;
 export const LOBE_COLS = [0x00e5ff, 0xaaff00];
