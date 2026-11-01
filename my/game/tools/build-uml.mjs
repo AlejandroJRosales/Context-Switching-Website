@@ -12,7 +12,7 @@ import * as walk from 'acorn-walk';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC_DIR = join(ROOT, 'src');
 const OUT_FILE = join(ROOT, 'PROJECT-UML.json');
-const MODULE_RE = /^(\d+)-.+\.js$/;   // numbered modules; the number is the layer
+const MODULE_RE = /^(\d+)[a-z]?-.+\.js$/;   // numbered modules; the number is the layer (8a, 8b: one layer, in letter order)
 
 // Visibility marks, as in UML: + exported from its file, - private to it.
 const PUBLIC = '+', PRIVATE = '-';
@@ -222,7 +222,7 @@ function readModule(file) {
 
 // BUILD THE DIAGRAM
 
-const files = readdirSync(SRC_DIR).filter(f => MODULE_RE.test(f)).sort((a, b) => parseInt(a) - parseInt(b));
+const files = readdirSync(SRC_DIR).filter(f => MODULE_RE.test(f)).sort((a, b) => parseInt(a) - parseInt(b) || a.localeCompare(b));
 const mods = files.map(readModule);
 
 // Node ids: the file name for a file, "file#Name" for a class or object inside it.
