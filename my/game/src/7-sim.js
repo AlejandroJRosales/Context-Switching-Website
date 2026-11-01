@@ -13,7 +13,7 @@ import {
   DEER_SPRINT_DIST, DEER_SPRINT_OVER, DEER_SPRINT_ENERGY, NPC_SUBSTEP, DEER_EXPLORE_P, NPC_ATTACK_COOLDOWN_S,
   NPC_ATTACK_DAMAGE_PER_S, NPC_BITE_COOLDOWN_S, NPC_HIT_NO_EAT_S, PLANT_MAX_HEALTH, PLANT_BITE_NUTRITION,
   NPC_FIGHT_DAMAGE_PER_S, NPC_FIGHT_REF_STRENGTH, NPC_REF_BODY_FAT, fightMassShare, NPC_ANIMAL_FIGHT_SHARE,
-  NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS, NPC_FIGHT_HOLD_PAD_S, NPC_FIGHT_MOVES, NIGHT_SUN_ALT_DEG,
+  NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS, bodyJumpSpeed, NPC_FIGHT_HOLD_PAD_S, NPC_FIGHT_MOVES, NIGHT_SUN_ALT_DEG,
   PREY_SIZE_STEP_KG, NPC_POUNCES, POUNCE_LAND_SHORT, FIGHT_KEY_FIELDS, NPC_AGE_DEPLETION_RATE, DEER_REPRO_SHARE,
   MATE_TIME_MULT, REPRO_NEED_MAX, NPC_MATURITY_TICKS, GROWTH_MIN_SCALE, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
@@ -1350,8 +1350,12 @@ export class Animal extends Entity {
     return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * s;
   }
 
-  // Arena speed units per second: the inherited speed gene, times a person's pace from body composition (setHumanBody).
-  moveSpeed() { return this.look ? this.speed * this.look.pace : this.speed; }
+  // Body pace from composition (setHumanBody): a person's look's, 1 for animals (no composition yet).
+  pace() { return this.look ? this.look.pace : 1; }
+  // Arena speed units per second: the inherited speed gene, times the body's pace.
+  moveSpeed() { return this.speed * this.pace(); }
+  // Takeoff speed of a jump whose full-pace takeoff is baseSpeed (bodyJumpSpeed). Not called yet: no animal jumps.
+  jumpSpeed(baseSpeed) { return bodyJumpSpeed(baseSpeed, this.pace()); }
 
   // Fighting mass in kg (Ecosystem.fightHit): people by humanFightMassKg, animals at the reference man's share.
   fightMassKg() {

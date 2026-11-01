@@ -9,7 +9,7 @@
 // only through statements in 9-main.
 import * as THREE from 'three';
 import {
-  HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, CROUCH_SPEED, FOOT_TURN_RATE,
+  HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
   FOOT_CAM_FOLLOW, LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
@@ -1259,7 +1259,7 @@ export const player = {
   pitch: 0,
   heading: 0,        // the body's facing on foot: it turns toward the direction of movement
   grounded: true,
-  running: false,    // on foot, moving, at RUN_SPEED this frame (Survivor mode needs read it)
+  running: false,    // on foot, moving, sprinting this frame (Survivor mode needs read it)
   inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
 };
 export const keys = new Set();
@@ -2095,12 +2095,17 @@ export function playerStep(dt) {
   const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
   // while flying, shift means down rather than run
   const sprint = stance.sprinting(play.active && !flying && !swimming && game.canRun() && (shiftHeld || pedal.sprint));
-  const speed = swimming ? WALK_SPEED * SWIM_SPEED :
-    flying ? FLY_SPEED :
-      stance.low ? CROUCH_SPEED :
-        sprint ? RUN_SPEED : WALK_SPEED;
+  // on foot (swim, crouch, run, walk) the body's pace from its composition scales the speed, as people's moveSpeed
+  // does; 1 before the first body. Flying is not the body's, so it keeps FLY_SPEED.
+  const pace = pov.look ? pov.look.pace : 1;
+  const jumpSpeed = bodyJumpSpeed(JUMP_SPEED, pace);   // takeoff of a jump or a swimming kick, by the same pace
+  const footSpeed = swimming ? WALK_SPEED * SWIM_SPEED :
+    stance.low ? CROUCH_SPEED :
+      sprint ? RUN_SPEED : WALK_SPEED;
+  const speed = flying ? FLY_SPEED : footSpeed * pace;
   const len = Math.hypot(mx, mz);
-  player.running = speed === RUN_SPEED && len > 0 && play.active;
+  // running: on foot at the sprint speed (sprint already excludes flying and swimming)
+  player.running = sprint && !stance.low && len > 0 && play.active;
   let dx = 0, dz = 0, dy = 0;
   if (len > 0 && play.active) {
     const scale = Math.min(len, 1) / len;
@@ -2147,7 +2152,7 @@ export function playerStep(dt) {
     // walls still stop a swimmer; drag, the float cap and the bed bound the vertical
     moveAndCollide(player.pos, dx, dz, STEP_UP);
     player.vel.y *= Math.max(0, 1 - SWIM_DRAG * dt);
-    if (play.active && (keys.has('Space') || jumpQueued || pedal.jump)) player.vel.y = JUMP_SPEED * SWIM_JUMP;
+    if (play.active && (keys.has('Space') || jumpQueued || pedal.jump)) player.vel.y = jumpSpeed * SWIM_JUMP;
     jumpQueued = false;
     player.pos.y += player.vel.y * dt + dy;
     const cap = waterTop + SWIM_FLOAT;
@@ -2162,7 +2167,7 @@ export function playerStep(dt) {
     if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
 
     if (player.grounded && play.active && (keys.has('Space') || jumpQueued || pedal.jump)) {
-      player.vel.y = JUMP_SPEED;
+      player.vel.y = jumpSpeed;
       player.grounded = false;
     }
     jumpQueued = false;

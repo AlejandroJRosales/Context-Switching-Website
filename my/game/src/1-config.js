@@ -535,6 +535,10 @@ export const NPC_FIGHT_REF_STRENGTH = (() => {
 // raised to NPC_PACE_LEAN_EXP (running power scales with muscle, the load with total mass), within NPC_PACE_LIMITS.
 export const NPC_PACE_LEAN_EXP = 1;
 export const NPC_PACE_LIMITS = [0.5, 1.2];
+// Jumps: a body's jump height is the base height times pace^NPC_JUMP_PACE_EXP; height goes as takeoff speed squared,
+// so the takeoff speed takes the square root. Shared by the player and Animal.jumpSpeed.
+export const NPC_JUMP_PACE_EXP = 1;
+export const bodyJumpSpeed = (baseSpeed, pace) => baseSpeed * Math.sqrt(pace ** NPC_JUMP_PACE_EXP);
 // Species as small ids (index in NPC_TYPES) for per-tick checks; the masks are bit sets of those ids.
 export const NPC_TYPE_IDS = {};
 NPC_TYPES.forEach((t, i) => { NPC_TYPE_IDS[t] = i; });
