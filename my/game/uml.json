@@ -47,6 +47,13 @@
     "+PIER: number",
     "+PIER_MIN: number",
     "+FRAME_W: number",
+    "+FACADE_FLOOR_JITTER_M: number",
+    "+FACADE_SILL_M: number",
+    "+FACADE_WIN_HEADROOM_M: number",
+    "+FACADE_WIN_H_M: number",
+    "+FACADE_CURTAIN_SILL_M: number",
+    "+FACADE_CURTAIN_TOP_GAP_M: number",
+    "+FACADE_TALL_M: number[]",
     "+FLOOR_Y: number",
     "+CEIL_GAP: number",
     "+ENTRANCE_REACH: number",
@@ -101,6 +108,9 @@
     "+HIGH_HUD_TICKS: number",
     "+LOW_HUD_TICKS: number",
     "+LOW_WATER_FPS: number",
+    "+AUTO_GRAPHICS_LOW_FPS: number",
+    "+AUTO_GRAPHICS_SAMPLE_MS: number",
+    "+AUTO_GRAPHICS_WARMUP_FRAMES: number",
     "+MSAA_SAMPLES_WANTED: number",
     "+GRAPHICS_KEY: string",
     "+HEMI_DAY: number",
@@ -1861,6 +1871,11 @@
    "role": "SIM. The artificial life and the game clock: brains, entities, the ecosystem, the sky clock.",
    "attributes": [
     "+_maskLists: WeakMap",
+    "-_preyObj: array",
+    "-_preyD2: array",
+    "-_preyKey: array",
+    "-_preySight: array",
+    "-_nPrey: number",
     "+brains: BrainFactory",
     "+ecosystem: Ecosystem"
    ],
@@ -1872,6 +1887,7 @@
     "+personInfoKey(age, sex, buildDev, heightM): number",
     "+personInfoFields(key, sex): string[]",
     "+maskLists(mask, nPre, nPost): object",
+    "-addPrey(obj, d2, key, sight): void",
     "+humanLook(sex): object",
     "+packHumanLook(L): void",
     "+inheritHumanLook(L, a, b): void",
@@ -2064,6 +2080,8 @@
     "fightFrom: number",
     "fightUntil: number",
     "quarry: null|unknown",
+    "packMassKg: number",
+    "packHeightM: number",
     "pounceAt: number",
     "nextPounceAt: number",
     "fleeFrom: null|unknown",
@@ -2147,6 +2165,7 @@
     "aimAtFocus(): void",
     "steerDeer(): void",
     "canHunt(q): boolean",
+    "mayAttack(q): boolean",
     "steerHunt(): void",
     "pouncing(now): boolean",
     "leapSpeed(P): number",
@@ -2762,6 +2781,7 @@
    "methods": [
     "shadowsOn(): unknown",
     "apply(): void",
+    "set(high): void",
     "toggle(): void",
     "placeSun(): void",
     "sunTurned(): void",
@@ -3192,7 +3212,8 @@
     "-clearEcosystem(): void",
     "-teardownWorld(): void",
     "-setBusy(on): void",
-    "-finishLoad(provider): Promise<void>",
+    "-measureFps(): Promise<number>",
+    "-finishLoad(provider, autoGraphics?: boolean): Promise<void>",
     "-loadWilderness(seed): Promise<void>",
     "-loadPlace(query): Promise<void>",
     "-newEcosystem(): void",
@@ -3448,6 +3469,12 @@
    "type": "imports",
    "names": [
     "METERS_PER_LVL",
+    "FACADE_FLOOR_JITTER_M",
+    "FACADE_SILL_M",
+    "FACADE_WIN_H_M",
+    "FACADE_CURTAIN_SILL_M",
+    "FACADE_CURTAIN_TOP_GAP_M",
+    "FACADE_TALL_M",
     "HEAD_CLEAR",
     "EYE_HEIGHT",
     "GRID_CELL",
@@ -4234,7 +4261,10 @@
     "DEBUG_PROBE_LAYER",
     "DEBUG_PROBE_PX",
     "NPC_TICK_SLACK",
-    "PICKS"
+    "PICKS",
+    "AUTO_GRAPHICS_LOW_FPS",
+    "AUTO_GRAPHICS_SAMPLE_MS",
+    "AUTO_GRAPHICS_WARMUP_FRAMES"
    ]
   },
   {
@@ -4270,7 +4300,8 @@
     "fetchCityFile",
     "makeProjector",
     "featuresFrom",
-    "fetchTerrain"
+    "fetchTerrain",
+    "savedGraphics"
    ]
   },
   {

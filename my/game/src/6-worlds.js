@@ -11,7 +11,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  METERS_PER_LVL, HEAD_CLEAR, EYE_HEIGHT, GRID_CELL, WALL_T, WALL_T_MIN, DOOR_W, DOOR_MIN_W, DOOR_H, PIER, PIER_MIN,
+  METERS_PER_LVL, FACADE_FLOOR_JITTER_M, FACADE_SILL_M, FACADE_WIN_H_M, FACADE_CURTAIN_SILL_M, FACADE_CURTAIN_TOP_GAP_M,
+  FACADE_TALL_M, HEAD_CLEAR, EYE_HEIGHT, GRID_CELL, WALL_T, WALL_T_MIN, DOOR_W, DOOR_MIN_W, DOOR_H, PIER, PIER_MIN,
   FRAME_W, FLOOR_Y, CEIL_GAP, ENTRANCE_REACH, ROAD_NEAR, ROAD_FAR, ROAD_CELL, ELEV_STEP, ELEV_MARGIN, LAYER_BIAS,
   LAYER_Y, ROAD_WIDTH, PATH_KINDS, ROAD_COLOR, PATH_COLOR, AREA_COLOR, MIX_GREEN_PULL, MIX_EDGE_FADE, MIX_GREEN_KINDS,
   BARRIER, WALL_MATERIAL_COLOR, ROOF_MATERIAL_COLOR, ROOF_SHAPE, SIGN_COLS, SIGN_CELL_W, SIGN_CELL_H, SIGN_MAX,
@@ -558,7 +559,7 @@ export function facadeMaterial() {
                 float r1 = fract(seed * 7.13), r2 = fract(seed * 13.7), r3 = fract(seed * 29.3);
                 vec2 along = normalize(vec2(-vFacadeNrm.z, vFacadeNrm.x));
                 float u = dot(vFacadePos.xz, along) + seed * 37.0;
-                float tall = smoothstep(30.0, 60.0, wallH);
+                float tall = smoothstep(${FACADE_TALL_M[0].toFixed(1)}, ${FACADE_TALL_M[1].toFixed(1)}, wallH);
                 // ground-floor band only on buildings tall enough to have one
                 float gf = wallH > 7.0 ? 4.2 + r1 * 0.8 : 0.0;
                 vec3 glassCol = mix(vec3(0.030, 0.040, 0.055), vec3(0.060, 0.095, 0.130), r3);
@@ -578,14 +579,18 @@ export function facadeMaterial() {
                   lit = step(facadeHash(vec3(cell, 91.0, seed * 51.0)) + 0.0001, uFacadeLit.y);
                   litAvg = uFacadeLit.y;
                 } else {
-                  float floorH = 3.0 + r2 * 0.8;
+                  // a storey per level (METERS_PER_LVL), plus this building's share of the jitter
+                  float floorH = ${METERS_PER_LVL.toFixed(3)} + r2 * ${FACADE_FLOOR_JITTER_M.toFixed(3)};
                   float bayW = mix(2.2 + r1 * 1.6, 1.5 + r3 * 0.9, tall);
                   float fx = u / bayW, fy = (h - gf) / floorH;
                   float ex = fwidth(fx), ey = fwidth(fy);
                   fw = max(ex, ey);
                   float col = floor(fx), row = floor(fy);
-                  // tall towers read as curtain wall, low buildings as punched windows
-                  float x0 = mix(0.22, 0.05, tall), y0 = mix(0.30, 0.10, tall), y1 = mix(0.80, 0.93, tall);
+                  // tall towers read as curtain wall, low buildings as punched windows taller than the player;
+                  // sill and head in metres above the storey's floor (FACADE WINDOWS), y0 and y1 as shares of the storey
+                  float sill = mix(${FACADE_SILL_M.toFixed(3)}, ${FACADE_CURTAIN_SILL_M.toFixed(3)}, tall);
+                  float head = mix(${(FACADE_SILL_M + FACADE_WIN_H_M).toFixed(3)}, floorH - ${FACADE_CURTAIN_TOP_GAP_M.toFixed(3)}, tall);
+                  float x0 = mix(0.22, 0.05, tall), y0 = sill / floorH, y1 = head / floorH;
                   // no window on a partial top storey
                   float whole = step(floorH * 0.85, wallH - gf - row * floorH);
                   glass = facadeBox(fract(fx), x0, 1.0 - x0, ex) * facadeBox(fract(fy), y0, y1, ey) * whole;

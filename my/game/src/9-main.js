@@ -23,14 +23,15 @@ import {
   MAP_SIZE_SCALES, WORLD_SIZES, CITY_LADDER, EYE_HEIGHT, FEATURES_VERSION, ELEV_MARGIN, CITY_STEPS, WILDERNESS_STEPS,
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
   NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
-  MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS
+  MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
+  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES
 } from './1-config.js';
 import {
   fmt, loop, wake, invalidate
 } from './2-core.js';
 import {
   renderer, scene, camera, viewPos, viewQuat, hemi, sun, moon, resetGroundPlane, msaa, perf, geocode, fetchBuildings,
-  cityFileFor, fetchCityFile, makeProjector, featuresFrom, fetchTerrain
+  cityFileFor, fetchCityFile, makeProjector, featuresFrom, fetchTerrain, savedGraphics
 } from './3-gfx-io.js';
 import {
   providers, _surf, groundAt
@@ -716,13 +717,37 @@ function setBusy(on) {
   for (const b of picksEl.children) b.disabled = on;
 }
 
-// Shared tail of every load: warm the shaders, then hand the world to the player.
-async function finishLoad(provider) {
+// AUTO GRAPHICS: the loaded scene's frame rate on high, counted from requestAnimationFrame while the frame loop draws
+// every frame (invalidate) behind the loading card; the first AUTO_GRAPHICS_WARMUP_FRAMES are not counted.
+function measureFps() {
+  return new Promise(resolve => {
+    let seen = 0, t0 = 0;
+    const tick = now => {
+      seen++;
+      if (seen === AUTO_GRAPHICS_WARMUP_FRAMES) t0 = now;
+      if (seen > AUTO_GRAPHICS_WARMUP_FRAMES && now - t0 >= AUTO_GRAPHICS_SAMPLE_MS) {
+        resolve((seen - AUTO_GRAPHICS_WARMUP_FRAMES) * 1000 / (now - t0));
+        return;
+      }
+      invalidate();
+      requestAnimationFrame(tick);
+    };
+    invalidate();
+    requestAnimationFrame(tick);
+  });
+}
+
+// Shared tail of every load: warm the shaders, then hand the world to the player. autoGraphics (city loads): with no
+// saved Graphics choice, the scene is warmed and measured on high, and drops to low below AUTO_GRAPHICS_LOW_FPS.
+async function finishLoad(provider, autoGraphics = false) {
   steps.start('scene');
   await paint();
   cat.place(provider.companion);
   labels.setRayVis(hudOn ? provider.rays : 'off');
   raysBeforeHud = provider.rays;
+  // measured only when the player has never picked a setting (graphics.toggle saves one), and never in VR
+  const measure = autoGraphics && savedGraphics() === null && !renderer.xr.isPresenting;
+  if (measure) graphics.set(true);   // an earlier load's pick may have dropped to low; set() applies it
   graphics.apply();
   camera.position.copy(player.pos);
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
@@ -737,6 +762,13 @@ async function finishLoad(provider) {
   } catch (e) {
     // warm-up only: the scene still draws, compiling on first use
     console.warn('Shader warm-up failed:', e);
+  }
+  if (measure) {
+    steps.note('scene', 'Measuring the frame rate on high graphics…');
+    const fps = await measureFps();
+    const high = fps >= AUTO_GRAPHICS_LOW_FPS;
+    graphics.set(high);
+    steps.note('scene', `${Math.round(fps)} fps on high graphics: Graphics set to ${high ? 'high' : 'low'}.`);
   }
   refreshHud();
   steps.done('scene');
@@ -1053,7 +1085,7 @@ async function loadPlace(query) {
       ` (${skipped} skipped)`;
 
     current = 'scene';
-    await finishLoad(provider);
+    await finishLoad(provider, true);
     goEl.textContent = 'Load';
   } catch (err) {
     console.error(err);

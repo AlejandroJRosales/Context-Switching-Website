@@ -463,6 +463,14 @@ export class Entity {
   }
 }
 
+// PREY CHOICE scratch for searchDeer (one scan at a time): every prey candidate the scan meets, picked after it, once
+// the pack's sums are known (PACK STRENGTH). sight: 1 when the pick must still check inSight, 0 when already settled.
+const _preyObj = [], _preyD2 = [], _preyKey = [], _preySight = [];
+let _nPrey = 0;
+function addPrey(obj, d2, key, sight) {
+  _preyObj[_nPrey] = obj; _preyD2[_nPrey] = d2; _preyKey[_nPrey] = key; _preySight[_nPrey] = sight; _nPrey++;
+}
+
 export class Animal extends Entity {
   static TWO_PI = TWO_PI;
   static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
@@ -522,6 +530,9 @@ export class Animal extends Entity {
     // fight move and hold (startFightMove); while ecosystem.time < fightUntil the animal takes no steps
     this.moveAt = -Infinity; this.playing = null; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
     this.quarry = null;      // night hunts: the animal or player avatar being chased (priority 'hunt')
+    // PACK STRENGTH: body mass and height summed over this animal and its packmates within visionDistance, as of the
+    // last searchDeer; a pack species attacks only what these match or beat (mayAttack)
+    this.packMassKg = 0; this.packHeightM = 0;
     this.pounceAt = -Infinity;   // sim seconds: start of the current or last pounce (NPC_POUNCES)
     this.nextPounceAt = 0;       // sim seconds: when this hunter may pounce again
     this.fleeFrom = null;    // who a fleeing species' move answered; it runs from them once the move ends
@@ -910,6 +921,13 @@ export class Animal extends Entity {
     return q === ecosystem.avatar ? q.isPreyFor(this.typeId) : (NIGHT_PREY_MASK[this.typeId] & (1 << q.typeId)) !== 0;
   }
 
+  // PACK STRENGTH: may this animal attack `q` (an animal or the player's avatar)? A non-pack species always may; a pack
+  // species only when its pack's summed mass or summed height (packMassKg, packHeightM) matches or beats q's own.
+  mayAttack(q) {
+    if (this.spec.pack !== true) return true;
+    return this.packMassKg >= q.bodyMassKg() || this.packHeightM >= q.bodyHeightM();
+  }
+
   // NIGHT HUNT, every tick: run at the quarry wherever it is now; within the leap's length, pounce. A pounce in the
   // air keeps the heading it launched on. A lost quarry (dead, sheltered, daybreak) ends the hunt at once.
   steerHunt() {
@@ -968,11 +986,13 @@ export class Animal extends Entity {
     const needP = huntedBy !== 0, needQ = quarryMask !== 0;
     // prey (PREY CHOICE): food animals and night prey in one pick; a smaller one may lie farther out, so no early stop
     const needT = (food !== null && food !== 'plant') || needQ;
-    const needJ = needQ && this.spec.pack === true;   // a pack hunter at night: packmates' hunts to join
+    const pack = this.spec.pack === true;   // PACK STRENGTH: packmates in sight range are summed, so no early stop
+    const needJ = needQ && pack;   // a pack hunter at night: packmates' hunts to join
     let bP = Infinity, bM = Infinity, bJ = Infinity, kP = -1, kM = -1, kJ = -1;
     let oP = null, oM = null, oJ = null;
-    // the prey pick: its size step, squared distance, scan key (ties) and the target
-    let sT = Infinity, bT = Infinity, kT = -1, oT = null;
+    // the pack's sums start with this animal's own body
+    let packKg = this.bodyMassKg(), packM = this.bodyHeightM();
+    _nPrey = 0;   // prey candidates for the pick after the scan (addPrey)
 
     const cells = grid.cells;
     if (cells !== null) {
@@ -986,7 +1006,7 @@ export class Animal extends Entity {
           if (L > r) break;
           if (L > 0) {
             const L2 = L * L;
-            if ((!needP || bP < L2) && !needT && (!needJ || bJ < L2) && bM < L2) break;
+            if ((!needP || bP < L2) && !needT && !pack && (!needJ || bJ < L2) && bM < L2) break;
           }
         }
         const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
@@ -1009,12 +1029,11 @@ export class Animal extends Entity {
               const key = base + b;
               const oid = obj.typeId;
               if ((quarryMask & (1 << oid)) !== 0 || oid === foodId) {
-                const s = Animal.preySize(obj);
-                if ((Animal.preyAhead(s, d2, sT, bT) || (s === sT && d2 === bT && key > kT)) &&
-                  this.inSight(ox, obj.position.y, oz)) { sT = s; bT = d2; kT = key; oT = obj; }
+                addPrey(obj, d2, key, 1);
               } else if ((huntedBy & (1 << oid)) !== 0) {
                 if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
               } else if (oid === tid) {
+                if (pack) { packKg += obj.bodyMassKg(); packM += obj.bodyHeightM(); }
                 if (needJ && obj.priority === 'hunt' && (d2 < bJ || (d2 === bJ && key > kJ)) && this.canHunt(obj.quarry) &&
                   this.inSight(ox, obj.position.y, oz)) { bJ = d2; kJ = key; oJ = obj; }
                 if (obj.sex !== sex && (d2 < bM || (d2 === bM && key > kM)) && this.inSight(ox, obj.position.y, oz)) { bM = d2; kM = key; oM = obj; }
@@ -1034,16 +1053,27 @@ export class Animal extends Entity {
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (gp.isThreatTo(tid)) {
         if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
-      } else {
-        const s = Animal.preySize(gp);
-        if (d2 <= vd && Animal.preyAhead(s, d2, sT, bT) && this.inSight(ox, gp.position.y, oz)) { sT = s; bT = d2; oT = gp; }
-      }
+      } else if (d2 <= vd) addPrey(gp, d2, -1, 1);   // key -1: the avatar never wins a tie
     }
     // a pack hunter that sees a packmate hunting joins the nearest one's attack unless its own pick ranks ahead;
-    // joiners draw in the packmates that see them, so a group closes on one quarry
+    // joiners draw in the packmates that see them, so a group closes on one quarry (it need not see the quarry itself)
     if (oJ) {
-      const q = oJ.quarry, dq = (q.position.x - x) * (q.position.x - x) + (q.position.z - z) * (q.position.z - z);
-      if (Animal.preyAhead(Animal.preySize(q), dq, sT, bT)) oT = q;
+      const q = oJ.quarry;
+      addPrey(q, (q.position.x - x) * (q.position.x - x) + (q.position.z - z) * (q.position.z - z), -1, 0);
+    }
+
+    // PACK STRENGTH, then PREY CHOICE: of the candidates this pack can take (mayAttack), the smallest, then nearest
+    this.packMassKg = packKg; this.packHeightM = packM;
+    // the prey pick: its size step, squared distance, scan key (ties) and the target
+    let sT = Infinity, bT = Infinity, kT = -1, oT = null;
+    for (let i = 0; i < _nPrey; i++) {
+      const obj = _preyObj[i], d2 = _preyD2[i], key = _preyKey[i];
+      _preyObj[i] = null;   // let go of the reference once read
+      if (!this.mayAttack(obj)) continue;
+      const s = Animal.preySize(obj);
+      if (!(Animal.preyAhead(s, d2, sT, bT) || (s === sT && d2 === bT && key > kT))) continue;
+      if (_preySight[i] === 1 && !this.inSight(obj.position.x, obj.position.y, obj.position.z)) continue;
+      sT = s; bT = d2; kT = key; oT = obj;
     }
     // the pick's direction shows as the food ray; night prey is hunted, food chased when hunger leads
     if (oT) {
@@ -1683,8 +1713,9 @@ export class Ecosystem {
           const other = items[i];
           if (other.alive && (hunts & (1 << other.typeId)) !== 0 &&
             tools.distSq(px, pz, other.position.x, other.position.z) < Ecosystem.CONTACT_DIST_SQ) {
-            if (a.nextAttackAt <= now) {
-              // one hit per cooldown, on the first prey in reach; prey that hunts back strikes on its own turn
+            // PACK STRENGTH: a pack hunter strikes only what its pack can take (mayAttack)
+            if (a.nextAttackAt <= now && a.mayAttack(other)) {
+              // one hit per cooldown, on the first prey in reach it may attack; prey that hunts back strikes on its own turn
               a.strike(other);
               if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
               else other.attacked(a);

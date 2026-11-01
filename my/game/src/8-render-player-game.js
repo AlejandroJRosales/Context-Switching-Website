@@ -2479,13 +2479,19 @@ export const graphics = {
     invalidate();
   },
 
-  toggle() {
-    this.high = !this.high;
+  // Set high or low without saving it (the loading screen's AUTO GRAPHICS pick); toggle is the player's saved choice.
+  set(high) {
+    if (high === this.high) return;
+    this.high = high;
     // Survivor mode's average fps measures one quality setting at a time
     avgFps.reset();
+    this.apply();
+  },
+
+  toggle() {
+    this.set(!this.high);
     // the next load starts on this setting
     try { localStorage.setItem(GRAPHICS_KEY, this.high ? 'high' : 'low'); } catch (e) { }
-    this.apply();
   },
 
   // Keep the light's direction and aim it at the anchor, so the shadow box sits around and ahead of the player.

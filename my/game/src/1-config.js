@@ -49,6 +49,17 @@ export const DOOR_H = 2.2;
 export const PIER = 0.35;
 export const PIER_MIN = 0.12;
 export const FRAME_W = 0.09;
+// FACADE WINDOWS (facadeMaterial), metres. A storey is METERS_PER_LVL plus up to FACADE_FLOOR_JITTER_M per building, so
+// window rows match the levels heightOf counts. Punched windows (low buildings) run from FACADE_SILL_M above the floor
+// to FACADE_WIN_H_M above that, the player's height plus FACADE_WIN_HEADROOM_M; curtain wall (towers, FACADE_TALL_M)
+// runs from FACADE_CURTAIN_SILL_M to FACADE_CURTAIN_TOP_GAP_M under the next floor.
+export const FACADE_FLOOR_JITTER_M = 0.6;
+export const FACADE_SILL_M = 0.6;
+export const FACADE_WIN_HEADROOM_M = 0.45;
+export const FACADE_WIN_H_M = PLAYER_HEIGHT + FACADE_WIN_HEADROOM_M;
+export const FACADE_CURTAIN_SILL_M = 0.15;
+export const FACADE_CURTAIN_TOP_GAP_M = 0.2;
+export const FACADE_TALL_M = [30, 60];   // wall heights where punched windows blend into curtain wall
 export const FLOOR_Y = 0.055;
 export const CEIL_GAP = 0.02;
 export const ENTRANCE_REACH = 1.2;
@@ -217,7 +228,13 @@ export const LOW_NPC_LOD_DIST = 35;     // metres (high: HIGH_NPC_LOD_DIST)
 export const LOW_FAR_STAT_DIST = 60;    // metres (high: HIGH_FAR_STAT_DIST)
 export const HIGH_LABEL_TICKS = 2, LOW_LABEL_TICKS = 4;    // NPC ticks between stat-label target picks
 export const HIGH_HUD_TICKS = 60, LOW_HUD_TICKS = 120;     // NPC ticks between HUD text refreshes
-export const LOW_WATER_FPS = 15;        // water-flow texture offsets advance at most this often on low (every draw on high)
+export const LOW_WATER_FPS = 15;
+// AUTO GRAPHICS: with no saved Graphics choice, a city load measures its loaded scene on high behind the loading card
+// (after the shader warm-up, before the mode choice) and drops to low below AUTO_GRAPHICS_LOW_FPS. The first
+// AUTO_GRAPHICS_WARMUP_FRAMES frames (first uploads, the first shadow map) are not counted.
+export const AUTO_GRAPHICS_LOW_FPS = 30;
+export const AUTO_GRAPHICS_SAMPLE_MS = 1500;
+export const AUTO_GRAPHICS_WARMUP_FRAMES = 10;        // water-flow texture offsets advance at most this often on low (every draw on high)
 export const MSAA_SAMPLES_WANTED = 8;   // high graphics' MSAA, capped at what the GPU supports (MSAA_SAMPLES)
 export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low', the last Graphics choice
 
@@ -357,6 +374,8 @@ export const NIGHT_SUN_ALT_DEG = -6;
 // species, and at night its nightPrey, the player included), it takes the smallest first, by body mass counted in
 // whole PREY_SIZE_STEP_KG steps (Animal.preySize), and of equal sizes the nearest. Night prey it picks is hunted;
 // food it picks is chased when hunger is its top need.
+// PACK STRENGTH: a `pack` species attacks (picks, joins, strikes) only quarry whose body mass or body height is at most
+// the sum over itself and the packmates within its own visionDistance (Animal.mayAttack); either sum passing is enough.
 export const PREY_SIZE_STEP_KG = 1;
 // POUNCES: a hunter's leap at its quarry, moveS sim seconds: it crouches until share leapAt, then flies along the
 // heading it launched on at leapOver times its sprint speed, landing short of the quarry (pounceStep). It launches
