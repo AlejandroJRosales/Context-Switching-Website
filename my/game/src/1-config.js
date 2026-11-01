@@ -60,6 +60,10 @@ export const FACADE_WIN_H_M = PLAYER_HEIGHT + FACADE_WIN_HEADROOM_M;
 export const FACADE_CURTAIN_SILL_M = 0.15;
 export const FACADE_CURTAIN_TOP_GAP_M = 0.2;
 export const FACADE_TALL_M = [30, 60];   // wall heights where punched windows blend into curtain wall
+// Windows come on as the sun sinks from FACADE_LIGHTS_DEG[0] to FACADE_LIGHTS_DEG[1] degrees of altitude, and go off
+// along the same band at dawn: twice the sky's own twilight ramp (+6 to -6), so they light up more slowly. A wider band
+// is slower; the low end must stay above the sun's lowest night altitude (about -18 in a northern US June).
+export const FACADE_LIGHTS_DEG = [8, -16];
 export const FLOOR_Y = 0.055;
 export const CEIL_GAP = 0.02;
 export const ENTRANCE_REACH = 1.2;

@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   EYE_HEIGHT, GRID_CELL, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR,
-  LOW_NPC_LOD_DIST, LOW_FAR_STAT_DIST, GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
+  LOW_NPC_LOD_DIST, LOW_FAR_STAT_DIST, GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, FACADE_LIGHTS_DEG, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
   NPC_TICK_S, GAIT_MAX_HZ, GAIT_GALLOP_SWING, GAIT_CADENCE_SCALE, NPC_FIGHT_MOVES, NPC_MATURITY_TICKS,
   GROWTH_MIN_SCALE, NPC_RIG_TOP, NPC_UNIT, PLAYER_HS, NPC_TYPES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUMAN_TYPE_ID,
   HIGH_NPC_LOD_DIST, HIGH_FAR_STAT_DIST, NPC_BODY_R, NPC_STATS_R, NPC_STATS_UP, HUMAN_ATLAS, HUMAN_FACE_TILE,
@@ -2878,8 +2878,10 @@ export function updateSky() {
   // FACADE: windows come on through dusk, thin out after 22:00, return toward dawn.
   const hour = skyHour(timeMode());
   const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
-  // by day a quarter of the evening's lights stay on
-  const dark = Math.max(1 - day, 0.25);
+  // the windows' own dusk ramp over FACADE_LIGHTS_DEG (0 in daylight, 1 once dark); by day a quarter of the evening's
+  // lights stay on
+  const [litFrom, litFull] = FACADE_LIGHTS_DEG;
+  const dark = Math.max(Math.min(Math.max((litFrom - s.altDeg) / (litFrom - litFull), 0), 1), 0.25);
   facadeLit.value.set(dark * 0.1375 * late, dark * (hour >= 22 || hour < 6 ? 0.3 : 0.9));
 
   const m = moonVector(simSky.site.lat, simSky.site.lon, inst);
