@@ -330,9 +330,9 @@ export const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between one grazer'
 export const NPC_HIT_NO_EAT_S = 2;
 export const PLANT_MAX_HEALTH = 10;           // a plant's bites when whole
 export const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per point of the plant's max health            // sim seconds an animal cannot eat (plants or food boxes) after being hit
-// FIGHTS (two animals that hunt each other): each side's hit scales with its height x mass x health.
-export const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by a reference fighter (below): 0.2 of a human's 120
-export const NPC_FIGHT_REF_STRENGTH = 1.753 * (24 * 1.753 * 1.753) * 120;   // average adult man: 1.753 m, ~73.8 kg, 120 health
+// FIGHTS (two animals that hunt each other): each side's hit scales with its height x fighting mass x health
+// (BODY PERFORMANCE, after SPECIES).
+export const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by the reference fighter (NPC_FIGHT_REF_STRENGTH): 0.2 of a human's 120
 // FIGHT MOVES: each species' move when it fights (moveS sim seconds; key t is a share of moveS). Strikers (people,
 // coyotes) play theirs on landing a hit and hold their ground while hits keep coming; a species that `flees` plays
 // its move on being hit (no damage dealt), then runs from the attacker, and moves again only after fleeS.
@@ -431,30 +431,39 @@ export const NPC_SIZE = {
 };
 export const NPC_SIZE_Z_MAX = 4;          // standard deviations; draws are cut here
 export const NPC_SIZE_HERITABILITY = 0.8;   // weight of the mid-parent z-score in a child's; the rest is fresh noise
-// BMI that draws at build 1.0 (the unscaled body width); also the BMI of a person with no look.
+// BMI that draws at the sex's base build (NPC_BUILD_BASE_MEAN); also the BMI of a person with no look.
 export const NPC_REF_BMI = { male: 24, female: 22 };
 
 // BODY COMPOSITION: a person's BMI comes from lean mass plus fat. Heath-Carter somatotype ratings (1 to 7) set the
 // lean mass index (kg of fat-free mass per m^2); body fat is a fraction of total mass. Both are fixed for life.
 // mass = leanIndex * height^2 / (1 - bodyFat).
 // Founders pick a type by weight, then vary within it: each rating by NPC_RATING_SPREAD, body fat by the type's [mean, sd].
+// Fitted to US adults (CDC NHANES, Aug 2021 to Aug 2023, age 20+): BMI 25 to 30 for 35.5% of men and 28.1% of women,
+// 30 or over for 39.2% and 41.3%, 40 or over for 6.7% and 12.1%. Mean body fat comes out near 27% (men) and 38%
+// (women), close to NHANES DXA. Weights are shares of the population and sum to 1.
 export const NPC_SOMATOTYPES = [
-  { name: 'ectomorph', weight: 0.22, ratings: { endo: 2.0, meso: 2.5, ecto: 5.5 }, bodyFat: { male: [0.13, 0.030], female: [0.20, 0.035] } },
-  { name: 'balanced', weight: 0.30, ratings: { endo: 3.5, meso: 3.5, ecto: 3.5 }, bodyFat: { male: [0.19, 0.040], female: [0.26, 0.040] } },
-  { name: 'mesomorph', weight: 0.22, ratings: { endo: 2.5, meso: 5.5, ecto: 2.0 }, bodyFat: { male: [0.15, 0.035], female: [0.23, 0.035] } },
-  { name: 'endomorph', weight: 0.20, ratings: { endo: 5.5, meso: 3.5, ecto: 1.5 }, bodyFat: { male: [0.27, 0.050], female: [0.35, 0.050] } }
+  { name: 'ectomorph', weight: 0.13, ratings: { endo: 2.0, meso: 2.5, ecto: 5.5 }, bodyFat: { male: [0.14, 0.030], female: [0.24, 0.035] } },
+  { name: 'balanced', weight: 0.29, ratings: { endo: 3.5, meso: 3.5, ecto: 3.5 }, bodyFat: { male: [0.236, 0.040], female: [0.35, 0.040] } },
+  { name: 'mesomorph', weight: 0.13, ratings: { endo: 2.5, meso: 5.5, ecto: 2.0 }, bodyFat: { male: [0.184, 0.035], female: [0.274, 0.035] } },
+  { name: 'endomorph', weight: 0.25, ratings: { endo: 5.5, meso: 4.5, ecto: 1.5 }, bodyFat: { male: [0.34, 0.045], female: [0.454, 0.045] } },
+  { name: 'extreme endomorph', weight: 0.20, ratings: { endo: 7.0, meso: 5.0, ecto: 1.0 }, bodyFat: { male: [0.45, 0.050], female: [0.56, 0.050] } }
 ];
 export const NPC_RATING_SPREAD = 0.5;            // sd of each rating within a type
 export const NPC_RATING_LIMITS = [1, 7];         // Heath-Carter scale
-export const NPC_BODY_FAT_LIMITS = [0.05, 0.45]; // fraction of total mass
+export const NPC_BODY_FAT_LIMITS = [0.04, 0.6];  // fraction of total mass
 export const NPC_LEAN_INDEX_BASE = { male: 19.5, female: 16.5 };   // lean kg/m^2 at the reference ratings
 export const NPC_LEAN_REF_RATING = 3.5;          // meso and ecto ratings where the base applies
 export const NPC_LEAN_PER_MESO = 0.55;           // lean kg/m^2 per mesomorphy point above the reference
 export const NPC_LEAN_PER_ECTO = -0.35;          // lean kg/m^2 per ectomorphy point above the reference
-// per trait, the weight of the mid-parent z-score in a child's (like NPC_SIZE_HERITABILITY); the rest is fresh noise
+// INHERITANCE: a child takes one parent's somatotype (either parent, even odds) with probability
+// NPC_BODY_TYPE_HERITABILITY, else a fresh type by weight, so the type shares stay the table's every generation. Within
+// its type, each trait is a z-score on that type's curve: the weight of the mid-parent z (each parent's z on its own
+// type) is NPC_BODY_HERITABILITY, the rest is fresh noise, so each type's spread is kept too.
+export const NPC_BODY_TYPE_HERITABILITY = 0.6;
 export const NPC_BODY_HERITABILITY = { endo: 0.6, meso: 0.6, ecto: 0.6, bodyFat: 0.5 };
 export const NPC_BODY_TRAITS = Object.keys(NPC_BODY_HERITABILITY);
-// Population mean and sd of each trait (body fat per sex), mixed from the table above, so children are drawn on the founders' curve.
+// Population mean and sd of each trait (body fat per sex), mixed from the table above: the drawn shape's z-scores
+// (NPC_BODY_SHAPE) and the billboard bake's average body.
 export const NPC_BODY_POP = (() => {
   const total = NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
   const mix = pick => {
@@ -467,6 +476,32 @@ export const NPC_BODY_POP = (() => {
   pop.bodyFat = { male: mix(t => t.bodyFat.male), female: mix(t => t.bodyFat.female) };
   return pop;
 })();
+// DRAWN BODY SHAPE (render only): widths are multiples of the rig's rest width. A person's build (mean torso width)
+// is the sex's base build (NPC_BUILD_BASE_MEAN) plus sqrt(BMI / NPC_REF_BMI) - 1, so the drawn body matches the mass.
+// The sex's proportions (NPC_BUILD_BASE) then share that width out between the torso regions and set limb girth, and
+// body composition shifts it further: each NPC_BODY_SHAPE entry is the width change per standard deviation of a trait
+// on its population curve (NPC_BODY_POP). Endomorphy has no entry: body fat is the fat measure.
+// torso regions top to bottom, in iShape's x, y, z, w order; the heights where each is drawn in full: HUMAN_RIG.widthAt
+export const NPC_TORSO_REGIONS = ['shoulder', 'chest', 'waist', 'hip'];
+// Each sex's widths at the mean body (BMI at NPC_REF_BMI, every trait at its population mean). Men are the rig's
+// rest shape; women have narrower shoulders, chest and waist and slightly wider hips (a lower shoulder-to-hip and
+// waist-to-hip ratio), with slimmer limbs.
+export const NPC_BUILD_BASE = {
+  male: { shoulder: 1, chest: 1, waist: 1, hip: 1, limb: 1 },
+  female: { shoulder: 0.88, chest: 0.92, waist: 0.89, hip: 1.03, limb: 0.92 }
+};
+// each sex's base build: the mean of its torso widths in NPC_BUILD_BASE
+export const NPC_BUILD_BASE_MEAN = Object.fromEntries(Object.entries(NPC_BUILD_BASE).map(([sex, w]) =>
+  [sex, NPC_TORSO_REGIONS.reduce((s, k) => s + w[k], 0) / NPC_TORSO_REGIONS.length]));
+export const NPC_WIDTH_LIMITS = [0.7, 1.8];   // room for BMI 50 and over (class 3 obesity)
+export const NPC_GIRTH_STEPS = 200;   // limb girth steps per unit width, packed in iLook.w (packHumanLook)
+export const NPC_BODY_SHAPE = {
+  shoulder: { meso: 0.05, ecto: -0.01, bodyFat: 0.01 },
+  chest: { meso: 0.04, ecto: -0.015, bodyFat: 0.03 },
+  waist: { meso: -0.01, ecto: -0.015, bodyFat: 0.07 },
+  hip: { meso: 0, ecto: -0.01, bodyFat: 0.05 },
+  limb: { meso: 0.035, ecto: -0.015, bodyFat: 0.03 }
+};
 // Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use their look's bmi.
 export const NPC_REF_MASS_KG = {
   deer: { male: 70, female: 50 },      // white-tailed deer
@@ -480,6 +515,26 @@ export const SPECIES = {
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
+
+// BODY PERFORMANCE: strength and speed from body composition. The reference body is a person at NPC_REF_BMI whose
+// lean mass index is the base (NPC_LEAN_INDEX_BASE): the rig's rest build, about 19% body fat for men and 25% for women.
+export const NPC_REF_BODY_FAT = Object.fromEntries(Object.keys(NPC_REF_BMI).map(sex =>
+  [sex, 1 - NPC_LEAN_INDEX_BASE[sex] / NPC_REF_BMI[sex]]));
+// Strength: lean (fat-free) mass counts in full, fat at NPC_FAT_STRENGTH_SHARE (it adds weight behind a hit, not force).
+export const NPC_FAT_STRENGTH_SHARE = 0.25;
+// a body's fighting mass over its total mass, at body fat fraction f
+export const fightMassShare = f => 1 - f + NPC_FAT_STRENGTH_SHARE * f;
+// Animals have no body composition; they fight with the reference man's share, so their hits are as before.
+export const NPC_ANIMAL_FIGHT_SHARE = fightMassShare(NPC_REF_BODY_FAT.male);
+// the reference fighter: an average-height man (NPC_SIZE) with the reference body, at a human's full health
+export const NPC_FIGHT_REF_STRENGTH = (() => {
+  const h = NPC_SIZE.human.male[0];
+  return h * NPC_REF_BMI.male * h * h * NPC_ANIMAL_FIGHT_SHARE * SPECIES.human.health;
+})();
+// Speed: a person's pace (multiplying their inherited speed gene) is their lean fraction over the reference body's,
+// raised to NPC_PACE_LEAN_EXP (running power scales with muscle, the load with total mass), within NPC_PACE_LIMITS.
+export const NPC_PACE_LEAN_EXP = 1;
+export const NPC_PACE_LIMITS = [0.5, 1.2];
 // Species as small ids (index in NPC_TYPES) for per-tick checks; the masks are bit sets of those ids.
 export const NPC_TYPE_IDS = {};
 NPC_TYPES.forEach((t, i) => { NPC_TYPE_IDS[t] = i; });
@@ -536,7 +591,13 @@ export const HUMAN_GAIT_JUMP = 1;                 // metres in one tick past whi
 export const HUMAN_RIG = (() => {
   const foot = -SPECIES.human.lift, at = f => foot + f * NPC_RIG_TOP.human;
   // shoulderX: the shoulder joint's distance out from the centre line (the arms hang from it, flaring a little)
-  return { at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625), shoulderX: 4.25 };
+  return {
+    at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625), shoulderX: 4.25,
+    // legX: the leg axis's distance out from the centre line at the hip joint, closing by legSplay per rig unit down
+    legX: 1.85, legSplay: 0.02,
+    // widthAt: the torso rings where each NPC_TORSO_REGIONS width is drawn in full (widths blend between them)
+    widthAt: { shoulder: at(0.814), chest: at(0.725), waist: at(0.6), hip: at(0.545) }
+  };
 })();
 export const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
 // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.

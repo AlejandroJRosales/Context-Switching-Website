@@ -17,6 +17,7 @@ import {
   HUMAN_BODY_TILE, HUMAN_FACE_VARIANTS, HUMAN_OUTFITS, HUMAN_OUTFIT_TILES, HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V,
   HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED, HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_RIG,
   HUMAN_LEG, HUMAN_CROUCH, HUMAN_FIGHT, HUMAN_CROUCH_DROP, HUMAN_ARM_FLARE, HUMAN_PET, PET_BEND_LEVELS, HUMAN_HAIR,
+  NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS, NPC_GIRTH_STEPS, NPC_TORSO_REGIONS,
   BB_CELL, BB_DIRS, BB_BAKED_DIRS, BB_PHASES, BB_POSES, BB_BLOCK, BB_FRAME, BB_FACE_VARIANT, BB_HUMAN_SWING,
   BB_STAND_SWING, BB_PHASE_K, BB_MIP_BIAS, PLANT_GRID, FOOD_BOX_SIZE, SHADOW_FOLLOW_STEP, SHADOW_SUN_STEP_COS,
   SHADOW_MOVER_HZ, SHADOW_MOVER_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
@@ -43,7 +44,7 @@ import {
   facadeLit, foodBoxes, streets, shelters
 } from './6-worlds.js';
 import {
-  humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, Animal, packHumanLook, plantView, ecosystem,
+  humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, Animal, averageHumanLook, plantView, ecosystem,
   simSky, presetHour
 } from './7-sim.js';
 
@@ -100,14 +101,14 @@ export function humanPetPack(share, bendLevel, shoulder, turn) {
 }
 // The petting arm's hand point in rig space (body centre origin, +x the body's left, +z forward; before size and
 // facing), posed as humanPose poses it at full crouch and full pet reach standing still, with the bend (radians),
-// shoulder angle a1 and sweep angle turn.
-export function humanPetHand(bend, a1, turn, girth) {
+// shoulder angle a1, sweep angle turn and shoulder width shoulderW (the look's shape.shoulder).
+export function humanPetHand(bend, a1, turn, shoulderW) {
   const R = HUMAN_RIG, P = HUMAN_PET, y0 = R.at(P.handAt);
   // humanTurn on (y, z) about (cy, 0)
   const turnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
   let [y, z] = turnYZ(y0, 0, R.elbow, P.elbow);
   [y, z] = turnYZ(y, z, R.shoulder, a1);
-  const x0 = P.arm * R.shoulderX * girth, dx = P.arm * (R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * girth - x0;
+  const x0 = P.arm * R.shoulderX * shoulderW, dx = P.arm * (R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * shoulderW - x0;
   const c = Math.cos(turn), s = Math.sin(turn);
   const x = x0 + dx * c - z * s;
   z = dx * s + z * c;
@@ -115,9 +116,22 @@ export function humanPetHand(bend, a1, turn, girth) {
   return { x, y: y - HUMAN_CROUCH_DROP, z };
 }
 
+// The people rig's per-instance attributes (4 floats each), as the shaders declare them: every geometry drawn with
+// the rig (the crowd, the player's body, the billboard bake) carries all of them.
+export const HUMAN_INSTANCE_ATTRS = ['iPose', 'iGait', 'iLook', 'iAct', 'iShape'];
+// A look into one instance's iLook (skin, shirt, pants, face/outfit/limb girth code) and iShape (torso widths in
+// NPC_TORSO_REGIONS order) at offset o.
+export function writeHumanLook(L, look, shape, o) {
+  look[o] = L.skinRGB; look[o + 1] = L.shirt; look[o + 2] = L.pants; look[o + 3] = L.code;
+  for (let i = 0; i < NPC_TORSO_REGIONS.length; i++) shape[o + i] = L.shape[NPC_TORSO_REGIONS[i]];
+}
+// A far card's width over the baked body's: the bake draws everyone at the sex's base build and proportions
+// (averageHumanLook), so a card widens by build alone.
+export const humanCardWidth = L => L.build / NPC_BUILD_BASE_MEAN[L.female ? 'female' : 'male'];
+
 // The rest-pose body: 16 parts (ids below) lofted from rings, ~490 triangles; uv is tile-local (0..1 in a face or outfit tile).
 export function buildHumanGeometry() {
-  const R = HUMAN_RIG, at = R.at;
+  const R = HUMAN_RIG, at = R.at, W = R.widthAt;
   const pos = [], nrm = [], uv = [], rig = [], piv = [], idx = [];
   // ring points start at the back centre and run toward +x (the body's left), the front, then -x
   const oval = (n, cx, y, cz, rx, rz) => Array.from({ length: n }, (_, i) => {
@@ -174,12 +188,12 @@ export function buildHumanGeometry() {
   part({ rings: head, vs: head.map(r => hv(r[0][1])), rect: [0, 0, 128, 48], tile: F, id: 0, capStart: [0, R.crown, -0.1, 0], capEnd: [0, chin, 0.3, 1] });
   part({ rings: [oval(6, 0, at(0.885), -0.25, 1.36, 1.3), oval(6, 0, at(0.825), -0.25, 1.36, 1.3)], vs: [0, 1], rect: [0, 48, 128, 16], tile: F, id: 1 });
   // torso (2) and pelvis (3)
-  part({ rings: [boxy(at(0.842), -0.2, 1.2, 1.1), boxy(at(0.814), -0.15, 4.4, 2.2), boxy(at(0.725), 0.1, 3.75, 2.55), boxy(at(0.6), 0, 3.0, 2.05)],
+  part({ rings: [boxy(at(0.842), -0.2, 1.2, 1.1), boxy(W.shoulder, -0.15, 4.4, 2.2), boxy(W.chest, 0.1, 3.75, 2.55), boxy(W.waist, 0, 3.0, 2.05)],
     vs: [0, 0.26, 0.56, 1], rect: [0, 0, 128, 60], tile: B, id: 2 });
-  part({ rings: [boxy(at(0.615), 0, 3.08, 2.1), boxy(at(0.545), 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
+  part({ rings: [boxy(at(0.615), 0, 3.08, 2.1), boxy(W.hip, 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
     vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, capEnd: [0, at(0.468), 0, 1] });
   for (const s of [1, -1]) {
-    const L = s > 0 ? 0 : 1, ax = y => s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE), lx = y => s * (1.85 - (R.hip - y) * 0.02);
+    const L = s > 0 ? 0 : 1, ax = y => s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE), lx = y => s * (R.legX - (R.hip - y) * R.legSplay);
     const armRing = (f, r, rz = r * 1.05) => oval(6, ax(at(f)), at(f), 0, r, rz);
     // upper arm (4, 5), lower arm (6, 7), hand (12, 13): arms hang slightly out from the shoulder
     part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), armRing(0.615, 0.86)], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
@@ -426,7 +440,14 @@ export function paintHumanAtlas() {
   return { paint: texture(paint, true), mask: texture(mask, false) };
 }
 
-// Shared by the lit and shadow-depth materials: per-vertex rig data, per-instance pose, gait and look.
+// The torso's width at rest height y (GLSL): iShape's regions (NPC_TORSO_REGIONS) at HUMAN_RIG.widthAt, blended
+// linearly between neighbours, the end widths held above the shoulders and below the hips.
+const HUMAN_TORSO_WIDTH = NPC_TORSO_REGIONS.slice(1).reduce((expr, k, i) => {
+  const y0 = HUMAN_RIG.widthAt[NPC_TORSO_REGIONS[i]], y1 = HUMAN_RIG.widthAt[k];
+  return `mix(${expr}, iShape.${'xyzw'[i + 1]}, clamp((${y0.toFixed(3)} - y) / ${(y0 - y1).toFixed(3)}, 0.0, 1.0))`;
+}, 'iShape.x');
+
+// Shared by the lit and shadow-depth materials: per-vertex rig data, per-instance pose, gait, look and body shape.
 export const HUMAN_VERTEX_PARS = /* glsl */`
       attribute vec4 rig;
       attribute vec3 pivot;
@@ -434,11 +455,27 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
       attribute vec4 iGait;
       attribute vec4 iLook;
       attribute vec4 iAct;   // fight (humanFightAct): punch reach, punching arm (+1 left, -1 right), guard share; pet (humanPetPack)
+      attribute vec4 iShape; // torso widths in NPC_TORSO_REGIONS order (writeHumanLook); limb girth rides in iLook.w
+      float humanTorsoWidth(float y) { return ${HUMAN_TORSO_WIDTH}; }
       vec2 humanTurn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
-      // rig space to world for this instance: build, walk cycle (joints turn about x), fight arms, lean, bob, size, facing
+      // rig space to world for this instance: body shape, walk cycle (joints turn about x), fight arms, lean, bob, size, facing
       void humanPose(inout vec3 p, inout vec3 n) {
-        float girth = rig.x > 0.5 ? 0.8 + floor(iLook.w / 64.0) / 200.0 : 1.0;
-        p.xz *= girth; n.xz /= girth;
+        // BODY SHAPE: the head keeps its rest width; the neck takes limb girth (iLook.w); torso and pelvis take iShape's
+        // region width at their height; a limb's axis moves out with the shoulders (arms) or hips (legs) and the limb
+        // thickens about it by limb girth; shoes keep their size
+        float limbGirth = ${NPC_WIDTH_LIMITS[0].toFixed(3)} + floor(iLook.w / 64.0) / ${NPC_GIRTH_STEPS.toFixed(1)};
+        if (rig.x > 3.5) {
+          float axisX = rig.z * (rig.y < 1.5 ? ${HUMAN_RIG.shoulderX.toFixed(3)} + (${HUMAN_RIG.shoulder.toFixed(3)} - p.y) * ${HUMAN_ARM_FLARE.toFixed(3)}
+            : ${HUMAN_RIG.legX.toFixed(3)} - (${HUMAN_RIG.hip.toFixed(3)} - max(p.y, ${HUMAN_RIG.ankle.toFixed(3)})) * ${HUMAN_RIG.legSplay.toFixed(3)});
+          float g = rig.w > 2.5 ? 1.0 : limbGirth;
+          p.x = axisX * (rig.y < 1.5 ? iShape.x : iShape.w) + (p.x - axisX) * g;
+          p.z *= g; n.xz /= g;
+        } else if (rig.x > 1.5) {
+          float w = humanTorsoWidth(p.y);
+          p.xz *= w; n.xz /= w;
+        } else if (rig.x > 0.5) {
+          p.xz *= limbGirth; n.xz /= limbGirth;
+        }
         // iGait.w: the run share when >= 0, the crouch share when < 0 (the player's stance never mixes them)
         float run = max(iGait.w, 0.0), crouch = max(-iGait.w, 0.0);
         float t = iGait.y, sw = iGait.z * (1.0 - ${(1 - HUMAN_CROUCH.swingKept).toFixed(3)} * crouch), s = sin(t) * rig.z, c = cos(t) * rig.z;
@@ -476,7 +513,7 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
         }
         // the petting arm's sweep, before the lean (as humanPetHand)
         if (petTurn != 0.0) {
-          vec2 sh = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * girth, 0.0);
+          vec2 sh = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * iShape.x, 0.0);
           p.yz = q;
           p.xz = sh + humanTurn(p.xz - sh, petTurn);
           q = p.yz;
@@ -506,7 +543,7 @@ export const HUMAN_VERTEX_MAIN = /* glsl */`
       vec3 objectNormal = vec3(normal);
       vec3 humanPos = vec3(position);
       humanPose(humanPos, objectNormal);
-      float hBuild = floor(iLook.w / 64.0), hRest = iLook.w - hBuild * 64.0, hOutfit = floor(hRest / 8.0), hFace = hRest - hOutfit * 8.0;
+      float hLimb = floor(iLook.w / 64.0), hRest = iLook.w - hLimb * 64.0, hOutfit = floor(hRest / 8.0), hFace = hRest - hOutfit * 8.0;
       vec2 hTile = rig.x < 1.5 ? vec2(mod(hFace, 2.0) * ${HUMAN_FACE_TILE[0]}.0, floor(hFace / 2.0) * ${HUMAN_FACE_TILE[1]}.0)
         : (hOutfit < 1.5 ? vec2(${HUMAN_ATLAS / 2}.0, hOutfit * ${HUMAN_BODY_TILE[1]}.0)
           : vec2(mod(hOutfit, 2.0) * ${HUMAN_BODY_TILE[0]}.0, ${HUMAN_ATLAS / 2}.0 + floor(hOutfit / 2.0 - 1.0) * ${HUMAN_BODY_TILE[1]}.0));
@@ -549,6 +586,7 @@ export function humanMaterials(paint, mask) {
 export const BB_VERTEX_PARS = /* glsl */`
       attribute vec4 bPose;    // rig origin x, y, z, facing
       attribute vec4 bFrame;   // frame side and bottom (metres), look, pose
+      attribute float bWidth;  // card width over the baked body's (humanCardWidth; 1 for animals)
       uniform vec2 bbGrid;     // atlas frames across and down
       varying vec2 vBbUv;
       #ifndef BB_DEPTH
@@ -575,7 +613,7 @@ export const BB_VERTEX_MAIN = /* glsl */`
       vBbUv = vec2(bbCell - bbRow * bbGrid.x + (bbFlip > 0.0 ? position.x : 1.0 - position.x), bbRow + position.y) / bbGrid;
       vec3 bbToward = vec3(bbTo.x, 0.0, bbTo.y);
       vec3 bbAxis = bPose.xyz + vec3(0.0, bFrame.y + position.y * bFrame.x, 0.0);
-      vec3 bbPos = bbAxis + vec3(bbTo.y, 0.0, -bbTo.x) * ((position.x - 0.5) * bFrame.x);
+      vec3 bbPos = bbAxis + vec3(bbTo.y, 0.0, -bbTo.x) * ((position.x - 0.5) * bFrame.x * bWidth);
       #ifndef BB_DEPTH
       float bbView = bPose.w + bbDir * ${(2 * Math.PI / BB_DIRS).toFixed(6)};
       vBbAxes = vec3(sin(bbView), cos(bbView), bbFlip);
@@ -800,7 +838,7 @@ export class AnimalRenderer {
       idx: 0, billboarded: 0, aidx: 0, colorsDirty: false, full: false
     }));
 
-    // PEOPLE: one instanced mesh for everyone nearer than perf.npcLodDist; per instance a pose, gait and look (4 floats each).
+    // PEOPLE: one instanced mesh for everyone nearer than perf.npcLodDist; per instance HUMAN_INSTANCE_ATTRS (4 floats each).
     const rest = buildHumanGeometry(), atlas = paintHumanAtlas(), mats = humanMaterials(atlas.paint, atlas.mask);
     const geometry = new THREE.InstancedBufferGeometry();
     geometry.setIndex(rest.index);
@@ -823,7 +861,8 @@ export class AnimalRenderer {
       gait: perInstance('iGait'),   // metres per rig unit, phase, hip swing, run share
       look: perInstance('iLook'),   // skin, shirt, pants (packed sRGB), face/outfit/build code
       act: perInstance('iAct'),     // fight pose (humanFightAct)
-      lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot's look was written for
+      shape: perInstance('iShape'), // torso widths in NPC_TORSO_REGIONS order (limb girth rides in iLook)
+      lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot's look and shape were written for
     };
 
     // FAR BILLBOARDS: looks in atlas order: people by outfit and sex, then each box rig's (does then bucks; coyote coats are tints)
@@ -846,8 +885,8 @@ export class AnimalRenderer {
     cards.setIndex([0, 1, 2, 0, 2, 3]);
     cards.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));   // corner: x right, y up
     const cardMax = this.MAX_INSTANCES * NPC_TYPE_COUNT;
-    const perCard = name => {
-      const attr = new THREE.InstancedBufferAttribute(new Float32Array(cardMax * 4), 4);
+    const perCard = (name, size = 4) => {
+      const attr = new THREE.InstancedBufferAttribute(new Float32Array(cardMax * size), size);
       attr.setUsage(THREE.DynamicDrawUsage);
       cards.setAttribute(name, attr);
       return attr;
@@ -863,7 +902,8 @@ export class AnimalRenderer {
       pose: perCard('bPose'),     // x, y, z of the rig origin, facing angle
       frame: perCard('bFrame'),   // frame side and bottom (metres), look, pose
       tint: perCard('bTint'),     // packed sRGB tints
-      tintOwner: new Array(cardMax).fill(null)   // who each slot's tints were written for
+      width: perCard('bWidth', 1),   // card width over the baked body's (humanCardWidth)
+      cardOwner: new Array(cardMax).fill(null)   // who each slot's tints and width were written for
     };
   }
 
@@ -883,22 +923,23 @@ export class AnimalRenderer {
     // people: the lit rig's geometry and vertex shader, one instance per frame
     const people = looks.flatMap((l, i) => l.type === 'human' ? [i] : []);
     const hg = new THREE.InstancedBufferGeometry().copy(rest);
-    const n = people.length * BB_BLOCK, iPose = new Float32Array(n * 4), iGait = new Float32Array(n * 4), iLook = new Float32Array(n * 4);
+    const n = people.length * BB_BLOCK;
+    // every rig attribute, zero unless written below (baked bodies do not fight)
+    const inst = Object.fromEntries(HUMAN_INSTANCE_ATTRS.map(name => [name, new Float32Array(n * 4)]));
+    const { iPose, iGait, iLook, iShape } = inst;
     let j = 0;
     for (const li of people) {
-      const L = { tone: 0, variant: BB_FACE_VARIANT, female: looks[li].female, buildDev: 0, outfit: looks[li].outfit, skinRGB: 0, code: 0 };
-      packHumanLook(L);
+      const L = averageHumanLook(looks[li].female, looks[li].outfit, BB_FACE_VARIANT);
+      // at the mean body, so far cards widen from the sex's base build (humanCardWidth)
       for (let d = 0; d < BB_BAKED_DIRS; d++) for (let q = 0; q < BB_POSES; q++, j += 4) {
         const [x, y, k] = place(li * BB_BLOCK + d * BB_POSES + q, 'human');
         iPose.set([x, y, 0, turn(d)], j);
         iGait.set([k, q ? phase(q) : 0, q ? BB_HUMAN_SWING : 0, 0], j);
-        iLook.set([HUMAN_HAIR[+L.female][BB_FACE_VARIANT], 0, 0, L.code], j);   // the baked face's hair colour rides in the skin slot
+        writeHumanLook(L, iLook, iShape, j);
+        iLook[j] = HUMAN_HAIR[+L.female][BB_FACE_VARIANT];   // the baked face's hair colour rides in the skin slot
       }
     }
-    hg.setAttribute('iPose', new THREE.InstancedBufferAttribute(iPose, 4));
-    hg.setAttribute('iGait', new THREE.InstancedBufferAttribute(iGait, 4));
-    hg.setAttribute('iLook', new THREE.InstancedBufferAttribute(iLook, 4));
-    hg.setAttribute('iAct', new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4));   // baked bodies do not fight
+    for (const name of HUMAN_INSTANCE_ATTRS) hg.setAttribute(name, new THREE.InstancedBufferAttribute(inst[name], 4));
     hg.instanceCount = n;
     const humanBake = new THREE.ShaderMaterial({
       uniforms: { humanPaint: { value: paint }, humanMask: { value: mask }, bakeMode: mode },
@@ -1100,7 +1141,7 @@ export class AnimalRenderer {
     H.mesh.visible = false;
     const B = this.billboards;
     if (!B.mesh.parent) scene.add(B.mesh);
-    B.tintOwner.fill(null);
+    B.cardOwner.fill(null);
     B.geometry.instanceCount = 0;
     B.mesh.visible = false;
     for (const type of this.BOX_RIG_TYPES) {
@@ -1165,11 +1206,11 @@ export class AnimalRenderer {
       p.antlers = this.antlers[p.type];
     }
 
-    const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, owners = H.lookOwner;
+    const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, hShape = H.shape.array, owners = H.lookOwner;
     const now = ecosystem.time;
     let hn = 0, lookFrom = this.MAX_INSTANCES;
-    const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, tintOwners = B.tintOwner;
-    let bn = 0, tintFrom = B.max;
+    const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, bWidth = B.width.array, cardOwners = B.cardOwner;
+    let bn = 0, cardFrom = B.max;
 
     for (const a of animals) {
       if (!a.alive) continue;
@@ -1220,15 +1261,17 @@ export class AnimalRenderer {
           bFrame[o + 2] = p.cardLooks[a.sex];
           bFrame[o + 3] = a.moving ? 1 + ((Math.round(a.animTime * BB_PHASE_K) % BB_PHASES) + BB_PHASES) % BB_PHASES : 0;
         }
-        if (tintOwners[bn] !== a) {
-          tintOwners[bn] = a;
+        if (cardOwners[bn] !== a) {
+          cardOwners[bn] = a;
           if (human) {
             const L = a.look;
             bTint[o] = L.skinRGB; bTint[o + 1] = L.shirt; bTint[o + 2] = L.pants; bTint[o + 3] = HUMAN_HAIR[+L.female][L.variant];
+            bWidth[bn] = humanCardWidth(L);
           } else {
             bTint[o] = p.cardTints[a.sex]; bTint[o + 1] = bTint[o + 2] = bTint[o + 3] = 0;
+            bWidth[bn] = 1;
           }
-          if (bn < tintFrom) tintFrom = bn;
+          if (bn < cardFrom) cardFrom = bn;
         }
         bn++;
         p.billboarded++;
@@ -1242,7 +1285,7 @@ export class AnimalRenderer {
         if (owners[hn] !== a) {
           owners[hn] = a;
           const L = a.look;
-          hLook[o] = L.skinRGB; hLook[o + 1] = L.shirt; hLook[o + 2] = L.pants; hLook[o + 3] = L.code;
+          writeHumanLook(L, hLook, hShape, o);
           if (hn < lookFrom) lookFrom = hn;
         }
         hn++;
@@ -1274,14 +1317,20 @@ export class AnimalRenderer {
       AnimalRenderer.queueUpload(H.pose, 0, hn);
       AnimalRenderer.queueUpload(H.gait, 0, hn);
       AnimalRenderer.queueUpload(H.act, 0, hn);
-      if (lookFrom < hn) AnimalRenderer.queueUpload(H.look, lookFrom, hn);
+      if (lookFrom < hn) {
+        AnimalRenderer.queueUpload(H.look, lookFrom, hn);
+        AnimalRenderer.queueUpload(H.shape, lookFrom, hn);
+      }
     }
     B.geometry.instanceCount = bn;
     B.mesh.visible = bn > 0;
     if (bn > 0) {
       AnimalRenderer.queueUpload(B.pose, 0, bn);
       AnimalRenderer.queueUpload(B.frame, 0, bn);
-      if (tintFrom < bn) AnimalRenderer.queueUpload(B.tint, tintFrom, bn);
+      if (cardFrom < bn) {
+        AnimalRenderer.queueUpload(B.tint, cardFrom, bn);
+        AnimalRenderer.queueUpload(B.width, cardFrom, bn);
+      }
     }
     for (const type of this.BOX_RIG_TYPES) {
       const p = passes[NPC_TYPE_IDS[type]];

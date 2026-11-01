@@ -1,6 +1,6 @@
 // 7-sim.js: SIM. The artificial life and the game clock: brains, entities, the ecosystem, the sky clock.
 // Owns: BrainFactory (brains), SpikingNetwork, maskLists, Entity, Animal (with the human look genetics: humanLook,
-// packHumanLook, inheritHumanLook; fight helpers startFightMove, humanFightAct, sampleFightKeys; humanMassKg,
+// packHumanLook, inheritHumanLook, averageHumanLook; fight helpers startFightMove, humanFightAct, sampleFightKeys; humanMassKg, humanFightMassKg,
 // personInfoKey, personInfoFields), Plant and plantView, Ecosystem (ecosystem), simSky (game clock and weather, the
 // site and the drawn sun altitude) with presetHour.
 // May import: 1-config.js to 6-worlds.js and three. It never calls the render, player, game or main layers: they
@@ -12,13 +12,15 @@ import {
   RUN_SPEED, STEP_UP, NPC_TICK_S, DIET_WATER_SHARE, PLANT_SIGHT_CELL, NPC_CONTACT_CELL, DEER_CRUISE, DEER_THINK_TICKS,
   DEER_SPRINT_DIST, DEER_SPRINT_OVER, DEER_SPRINT_ENERGY, NPC_SUBSTEP, DEER_EXPLORE_P, NPC_ATTACK_COOLDOWN_S,
   NPC_ATTACK_DAMAGE_PER_S, NPC_BITE_COOLDOWN_S, NPC_HIT_NO_EAT_S, PLANT_MAX_HEALTH, PLANT_BITE_NUTRITION,
-  NPC_FIGHT_DAMAGE_PER_S, NPC_FIGHT_REF_STRENGTH, NPC_FIGHT_HOLD_PAD_S, NPC_FIGHT_MOVES, NIGHT_SUN_ALT_DEG,
+  NPC_FIGHT_DAMAGE_PER_S, NPC_FIGHT_REF_STRENGTH, NPC_REF_BODY_FAT, fightMassShare, NPC_ANIMAL_FIGHT_SHARE,
+  NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS, NPC_FIGHT_HOLD_PAD_S, NPC_FIGHT_MOVES, NIGHT_SUN_ALT_DEG,
   PREY_SIZE_STEP_KG, NPC_POUNCES, POUNCE_LAND_SHORT, FIGHT_KEY_FIELDS, NPC_AGE_DEPLETION_RATE, DEER_REPRO_SHARE,
   MATE_TIME_MULT, REPRO_NEED_MAX, NPC_MATURITY_TICKS, GROWTH_MIN_SCALE, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
-  NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG,
+  NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG, NPC_BUILD_BASE, NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS,
+  NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
   NPC_SOMATOTYPES, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
-  NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
+  NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, LIF_LEAK, LIF_THRESHOLD, LIF_RESET,
   TAG_DECAY, DA_TONIC_RATE, BRAIN_LEARNING_RATE, BRAIN_WEIGHT_DECAY, HEADING_JITTER, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
@@ -69,9 +71,15 @@ export function sampleFightKeys(keys, u, out) {
 export function humanBmi(sex, look) {
   return look ? look.bmi : NPC_REF_BMI[sex];
 }
-// A person's mass in kg: BMI x height^2 (people's stats readout, fights, prey size and the pack gate all use it).
+// A person's mass in kg: BMI x height^2 (people's stats readout, prey size and the pack gate use it; fights use
+// humanFightMassKg).
 export function humanMassKg(sex, look, heightM) {
   return humanBmi(sex, look) * heightM * heightM;
+}
+// A person's fighting mass in kg: humanMassKg with lean mass in full and fat at NPC_FAT_STRENGTH_SHARE (fightMassShare),
+// at the look's body fat, or the reference body's with no look.
+export function humanFightMassKg(sex, look, heightM) {
+  return humanMassKg(sex, look, heightM) * fightMassShare(look ? look.bodyFat : NPC_REF_BODY_FAT[sex]);
 }
 // A person's stats readout (people's labels and the player's Survivor panel): age, sex, height, weight, in that order.
 // The key packs what can change (age in whole years or -1 for a child, height in inches, weight in lb), so a
@@ -1105,7 +1113,7 @@ export class Animal extends Entity {
   stepLength() {
     const leap = this.pounceStep();
     if (leap >= 0) return leap;
-    const ms = this.sprinting ? this.sprintSpeed() : this.speed * this.speedScale * NPC_UNIT;
+    const ms = this.sprinting ? this.sprintSpeed() : this.moveSpeed() * this.speedScale * NPC_UNIT;
     return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
   }
 
@@ -1342,6 +1350,15 @@ export class Animal extends Entity {
     return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * s;
   }
 
+  // Arena speed units per second: the inherited speed gene, times a person's pace from body composition (setHumanBody).
+  moveSpeed() { return this.look ? this.speed * this.look.pace : this.speed; }
+
+  // Fighting mass in kg (Ecosystem.fightHit): people by humanFightMassKg, animals at the reference man's share.
+  fightMassKg() {
+    return this.type === 'human' ? humanFightMassKg(this.sex, this.look, this.bodyHeightM())
+      : this.bodyMassKg() * NPC_ANIMAL_FIGHT_SHARE;
+  }
+
   // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
   bodyMassKg() {
     const h = this.bodyHeightM();
@@ -1453,10 +1470,10 @@ export function humanLook(sex) {
   const outfit = Math.floor(Math.random() * HUMAN_OUTFITS), shirt = outfit === 5 ? pick(HUMAN_SUITS) : pick(HUMAN_SHIRTS);
   const look = {
     tone: Math.random(), variant: Math.floor(Math.random() * HUMAN_FACE_VARIANTS), female: sex === 'female',
-    endo: 0, meso: 0, ecto: 0, bodyFat: 0, bmi: 0, buildDev: 0, outfit, shirt,
+    bodyType: 0, endo: 0, meso: 0, ecto: 0, bodyFat: 0, bmi: 0, pace: 1, build: 0, shape: newShape(), outfit, shirt,
     pants: outfit === 5 ? shirt : pick(HUMAN_PANTS), skinRGB: 0, code: 0
   };
-  drawFounderBody(look, sex);
+  drawFounderBody(look);
   setHumanBody(look);
   packHumanLook(look);
   return look;
@@ -1465,43 +1482,102 @@ export function humanLook(sex) {
 const clampTo = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
 // a trait's population curve: body fat differs by sex, the ratings do not
 const bodyPop = (trait, female) => trait === 'bodyFat' ? NPC_BODY_POP.bodyFat[female ? 'female' : 'male'] : NPC_BODY_POP[trait];
+// a look's drawn widths (setHumanShape): the torso regions, then limb girth
+const newShape = () => Object.fromEntries([...NPC_TORSO_REGIONS, 'limb'].map(k => [k, 1]));
 
-// A founder's somatotype ratings and body fat: a type picked by weight, then varied within it.
-function drawFounderBody(L, sex) {
+// a somatotype (index into NPC_SOMATOTYPES) picked by weight
+function pickBodyType() {
   let roll = Math.random() * NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
-  const type = NPC_SOMATOTYPES.find(t => (roll -= t.weight) < 0) || NPC_SOMATOTYPES[NPC_SOMATOTYPES.length - 1];
-  for (const k of ['endo', 'meso', 'ecto']) L[k] = clampTo(type.ratings[k] + NPC_RATING_SPREAD * brains.gauss(), NPC_RATING_LIMITS);
-  const [fatMean, fatSd] = type.bodyFat[sex];
-  L.bodyFat = clampTo(fatMean + fatSd * brains.gauss(), NPC_BODY_FAT_LIMITS);
+  const i = NPC_SOMATOTYPES.findIndex(t => (roll -= t.weight) < 0);
+  return i < 0 ? NPC_SOMATOTYPES.length - 1 : i;
+}
+// A trait's curve within a somatotype, as [mean, sd]: the ratings share NPC_RATING_SPREAD; body fat is per sex.
+const typeCurve = (typeIndex, trait, female) => {
+  const t = NPC_SOMATOTYPES[typeIndex];
+  return trait === 'bodyFat' ? t.bodyFat[female ? 'female' : 'male'] : [t.ratings[trait], NPC_RATING_SPREAD];
+};
+// Sets a trait from its z-score on the look's own somatotype curve, within the trait's limits.
+function setBodyTrait(L, trait, z) {
+  const [mean, sd] = typeCurve(L.bodyType, trait, L.female);
+  L[trait] = clampTo(mean + sd * z, trait === 'bodyFat' ? NPC_BODY_FAT_LIMITS : NPC_RATING_LIMITS);
 }
 
-// Derives bmi (lean mass index from the ratings, over the lean fraction) and buildDev (the drawn width, from bmi)
-// after the ratings and body fat are set. Mass reads bmi; the renderer reads buildDev through packHumanLook.
+// A founder's somatotype ratings and body fat: a type picked by weight, then varied within it.
+function drawFounderBody(L) {
+  L.bodyType = pickBodyType();
+  for (const k of NPC_BODY_TRAITS) setBodyTrait(L, k, brains.gauss());
+}
+
+// Derives bmi (lean mass index from the ratings, over the lean fraction) after the ratings and body fat are set, then
+// the drawn widths from it (setHumanShape). Mass reads bmi; the renderer reads build and shape.
 function setHumanBody(L) {
   const sex = L.female ? 'female' : 'male';
   const leanIndex = NPC_LEAN_INDEX_BASE[sex] + NPC_LEAN_PER_MESO * (L.meso - NPC_LEAN_REF_RATING) + NPC_LEAN_PER_ECTO * (L.ecto - NPC_LEAN_REF_RATING);
   L.bmi = leanIndex / (1 - L.bodyFat);                   // lean mass / (1 - fat fraction), per m^2
-  L.buildDev = Math.sqrt(L.bmi / NPC_REF_BMI[sex]) - 1;  // width scales as sqrt(BMI), so the drawn body matches the mass
+  // pace: the lean fraction over the reference body's (NPC_PACE_LEAN_EXP), multiplying the speed gene (moveSpeed)
+  L.pace = clampTo(((1 - L.bodyFat) / (1 - NPC_REF_BODY_FAT[sex])) ** NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS);
+  setHumanShape(L);
 }
 
-// skinRGB: the tone's sRGB as one integer; code: face tile + outfit * 8 + build step * 64 (all exact in a float).
+// DRAWN BODY SHAPE (NPC_BODY_SHAPE): build, the torso's mean width, from bmi (width scales as sqrt(BMI), so the drawn
+// body matches the mass); each torso region's share of it and limb girth from the sex's proportions (NPC_BUILD_BASE)
+// and body composition.
+function setHumanShape(L) {
+  const sex = L.female ? 'female' : 'male', base = NPC_BUILD_BASE[sex], baseMean = NPC_BUILD_BASE_MEAN[sex];
+  L.build = clampTo(baseMean + Math.sqrt(L.bmi / NPC_REF_BMI[sex]) - 1, NPC_WIDTH_LIMITS);
+  // a region's width per unit of build: the sex's proportion of it, over the sex's base build
+  const share = k => base[k] / baseMean;
+  // a region's relative width: 1 plus its change per sd for each trait's z-score on that trait's population curve
+  const rel = {};
+  for (const k in NPC_BODY_SHAPE) {
+    rel[k] = 1;
+    for (const t in NPC_BODY_SHAPE[k]) {
+      const p = bodyPop(t, L.female);
+      rel[k] += NPC_BODY_SHAPE[k][t] * (L[t] - p.mean) / p.sd;
+    }
+  }
+  // the torso's mean width over the build, so body composition moves width between regions without changing the build
+  let torsoMean = 0;
+  for (const k of NPC_TORSO_REGIONS) torsoMean += share(k) * rel[k] / NPC_TORSO_REGIONS.length;
+  for (const k of NPC_TORSO_REGIONS) L.shape[k] = clampTo(L.build * share(k) * rel[k] / torsoMean, NPC_WIDTH_LIMITS);
+  L.shape.limb = clampTo(L.build * share('limb') * rel.limb, NPC_WIDTH_LIMITS);
+}
+
+// A person at the population's mean body (BMI at NPC_REF_BMI, so build is the sex's base and every width is the sex's
+// NPC_BUILD_BASE):
+// the billboard bake's bodies, which far cards widen from (humanCardWidth).
+export function averageHumanLook(female, outfit, variant) {
+  const sex = female ? 'female' : 'male';
+  const L = {
+    tone: 0, variant, female, endo: NPC_BODY_POP.endo.mean, meso: NPC_BODY_POP.meso.mean, ecto: NPC_BODY_POP.ecto.mean,
+    bodyFat: NPC_BODY_POP.bodyFat[sex].mean, bmi: NPC_REF_BMI[sex], build: 0, shape: newShape(), outfit, shirt: 0,
+    pants: 0, skinRGB: 0, code: 0
+  };
+  setHumanShape(L);
+  packHumanLook(L);
+  return L;
+}
+
+// skinRGB: the tone's sRGB as one integer; code: face tile + outfit * 8 + limb girth step * 64 (all exact in a float).
 export function packHumanLook(L) {
   const t = L.tone * (HUMAN_SKIN.length - 1), i = Math.min(HUMAN_SKIN.length - 2, Math.floor(t)), f = t - i;
   const mix = sh => Math.round(((HUMAN_SKIN[i] >> sh) & 255) * (1 - f) + ((HUMAN_SKIN[i + 1] >> sh) & 255) * f);
   L.skinRGB = mix(16) * 65536 + mix(8) * 256 + mix(0);
-  const build = Math.max(0.8, Math.min(1.2, (L.female ? 0.93 : 1) + L.buildDev));
-  L.code = (L.female ? HUMAN_FACE_VARIANTS : 0) + L.variant + L.outfit * 8 + Math.round((build - 0.8) * 200) * 64;
+  L.code = (L.female ? HUMAN_FACE_VARIANTS : 0) + L.variant + L.outfit * 8 +
+    Math.round((L.shape.limb - NPC_WIDTH_LIMITS[0]) * NPC_GIRTH_STEPS) * 64;
 }
 
 export function inheritHumanLook(L, a, b) {
   L.tone = Math.max(0, Math.min(1, (a.tone + b.tone) / 2 + (Math.random() - 0.5) * 0.12));
   L.variant = (Math.random() < 0.5 ? a : b).variant;
-  // each trait as a z-score on its own curve (body fat per sex): mid-parent times heritability plus noise, variance kept
+  // somatotype: a parent's by heritability, else fresh by weight (NPC_BODY_TYPE_HERITABILITY), so type shares hold
+  L.bodyType = Math.random() < NPC_BODY_TYPE_HERITABILITY ? (Math.random() < 0.5 ? a : b).bodyType : pickBodyType();
+  // each trait as a z-score on its type's curve (each parent's on its own type): mid-parent times heritability plus
+  // noise, so the child's z stays a standard normal and its type's spread is kept
+  const zOf = (P, k) => { const [mean, sd] = typeCurve(P.bodyType, k, P.female); return (P[k] - mean) / sd; };
   for (const k of NPC_BODY_TRAITS) {
-    const pa = bodyPop(k, a.female), pb = bodyPop(k, b.female), pc = bodyPop(k, L.female), h = NPC_BODY_HERITABILITY[k];
-    const midZ = ((a[k] - pa.mean) / pa.sd + (b[k] - pb.mean) / pb.sd) / 2;
-    const childZ = h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss();
-    L[k] = clampTo(pc.mean + pc.sd * childZ, k === 'bodyFat' ? NPC_BODY_FAT_LIMITS : NPC_RATING_LIMITS);
+    const h = NPC_BODY_HERITABILITY[k], midZ = (zOf(a, k) + zOf(b, k)) / 2;
+    setBodyTrait(L, k, h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss());
   }
   setHumanBody(L);
   packHumanLook(L);
@@ -1786,10 +1862,10 @@ export class Ecosystem {
     }
   }
 
-  // Two mutual hunters in contact: a strikes b once, scaled by a's height x mass x health against the reference
-  // fighter; b strikes a on its own turn, and whoever drops to 1 health is eaten by the other.
+  // Two mutual hunters in contact: a strikes b once, scaled by a's height x fighting mass x health against the
+  // reference fighter; b strikes a on its own turn, and whoever drops to 1 health is eaten by the other.
   fightHit(a, b) {
-    const strength = a.bodyHeightM() * a.bodyMassKg() * Math.max(0, a.health);
+    const strength = a.bodyHeightM() * a.fightMassKg() * Math.max(0, a.health);
     b.takeHit(a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
   }
 
@@ -1848,7 +1924,7 @@ export class Ecosystem {
           const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
           if (f2 > this.drift2) this.drift2 = f2;
           alive[a.typeId]++;
-          const ms = a.speed * NPC_UNIT, prey = HUNTS_LIST[a.typeId];
+          const ms = a.moveSpeed() * NPC_UNIT, prey = HUNTS_LIST[a.typeId];
           for (let k = 0; k < prey.length; k++) if (ms > fastest[prey[k]]) fastest[prey[k]] = ms;
         }
       }

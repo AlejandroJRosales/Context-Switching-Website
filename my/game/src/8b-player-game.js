@@ -40,11 +40,12 @@ import {
   foodBoxes, shelters
 } from './6-worlds.js';
 import {
-  startFightMove, humanFightAct, humanMassKg, personInfoKey, personInfoFields, Animal, humanLook, brains, ecosystem,
+  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, Animal, humanLook, brains, ecosystem,
   simSky
 } from './7-sim.js';
 import {
-  renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, populationText
+  renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, populationText,
+  HUMAN_INSTANCE_ATTRS, writeHumanLook
 } from './8a-render.js';
 
 export const dotEl = document.getElementById('dot');
@@ -455,7 +456,7 @@ export const pov = {
     const g = new THREE.InstancedBufferGeometry();
     g.setIndex(H.rest.index);
     for (const k in H.rest.attributes) g.setAttribute(k, H.rest.attributes[k]);
-    for (const name of ['iPose', 'iGait', 'iLook', 'iAct']) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
+    for (const name of HUMAN_INSTANCE_ATTRS) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
     g.instanceCount = 1;
     const mesh = new THREE.Mesh(g, H.mesh.material);
     mesh.customDepthMaterial = H.mesh.customDepthMaterial;
@@ -484,9 +485,9 @@ export const pov = {
   },
 
   writeLook() {
-    const L = this.look, attr = this.body.geometry.attributes.iLook;
-    attr.array.set([L.skinRGB, L.shirt, L.pants, L.code]);
-    attr.needsUpdate = true;
+    const { iLook, iShape } = this.body.geometry.attributes;
+    writeHumanLook(this.look, iLook.array, iShape.array, 0);
+    iLook.needsUpdate = iShape.needsUpdate = true;
   },
 
   // the NPC gait (AnimalRenderer.stepGait) on the frame's step instead of the NPC tick;
@@ -676,7 +677,7 @@ export const petting = {
 
   start() {
     if (!this.canPet() || !pov.look) return;
-    const P = HUMAN_PET, kp = NPC_UNIT * pov.heightScale, girth = 0.8 + Math.floor(pov.look.code / 64) / 200;
+    const P = HUMAN_PET, kp = NPC_UNIT * pov.heightScale, shoulderW = pov.look.shape.shoulder;
     // the hand's height that meets his head top, in rig units over the body centre (pov.apply's placement)
     const want = (cat.position.y + CAT_HEAD_TOP - (player.pos.y - EYE_HEIGHT)) / kp - SPECIES.human.lift;
     // shallowest bend first, over the shoulder angles the pack can carry, forward first, until the hand (in front of
@@ -684,7 +685,7 @@ export const petting = {
     let best = null, bestErr = Infinity;
     search: for (let b = 0; b < PET_BEND_LEVELS; b++) {
       for (let k = 0; k <= 255; k++) {
-        const a = P.shoulder[0] + (P.shoulder[1] - P.shoulder[0]) * k / 255, h = humanPetHand(petBendAt(b), a, 0, girth);
+        const a = P.shoulder[0] + (P.shoulder[1] - P.shoulder[0]) * k / 255, h = humanPetHand(petBendAt(b), a, 0, shoulderW);
         if (h.z <= 0) continue;
         const err = Math.abs(h.y - want);
         if (err < bestErr) { bestErr = err; best = [b, a]; }
@@ -693,9 +694,9 @@ export const petting = {
     }
     if (!best) return;
     [this.bendLevel, this.a1] = best;
-    const bend = petBendAt(this.bendLevel), hand = humanPetHand(bend, this.a1, 0, girth);
+    const bend = petBendAt(this.bendLevel), hand = humanPetHand(bend, this.a1, 0, shoulderW);
     // the sweep angle whose sideways reach is sweepM (bisection; the reach grows with the angle up to turnMax)
-    const side = P.sweepM / kp, reachAt = a => hand.x - humanPetHand(bend, this.a1, a, girth).x;
+    const side = P.sweepM / kp, reachAt = a => hand.x - humanPetHand(bend, this.a1, a, shoulderW).x;
     let lo = 0, hi = P.turnMax;
     if (reachAt(hi) <= side) lo = hi;
     else for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (reachAt(m) < side) lo = m; else hi = m; }
@@ -842,6 +843,7 @@ export const game = {
     strike() { startFightMove(this, NPC_FIGHT_MOVES.human, ecosystem.time); },
     bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
     bodyMassKg() { return humanMassKg(pov.sex, pov.look, this.bodyHeightM()); },
+    fightMassKg() { return humanFightMassKg(pov.sex, pov.look, this.bodyHeightM()); },   // Ecosystem.fightHit
     // the animal `tid` flees the player
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
     // the animal `tid` hunts the player (night hunts: `prey` is night out of shelter)

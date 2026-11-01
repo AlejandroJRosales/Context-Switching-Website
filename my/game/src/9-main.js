@@ -406,7 +406,7 @@ const debugReadout = {
         lines.push(`People: ${alive} alive, ${n} detailed and ${animalRenderer.passById[HUMAN_TYPE_ID].billboarded} billboards drawn this tick, nearest ` +
           (p ? `${near.toFixed(1)} m, on screen ${yn(npcOnScreen(p.x, p.y, p.z, NPC_BODY_R))}` : 'none'),
           `People mesh: in scene ${yn(H.mesh.parent === scene)}, visible ${yn(H.mesh.visible)}, instance count ${n}, max ${g._maxInstanceCount ?? 'unset'}`,
-          `Slot 0: pose [${f3(H.pose.array.subarray(0, 4))}] gait [${f3(H.gait.array.subarray(0, 4))}] look [${f3(H.look.array.subarray(0, 4))}]`,
+          `Slot 0: pose [${f3(H.pose.array.subarray(0, 4))}] gait [${f3(H.gait.array.subarray(0, 4))}] look [${f3(H.look.array.subarray(0, 4))}] shape [${f3(H.shape.array.subarray(0, 4))}]`,
           'People shader (lit): ' + this.programInfo(H.mesh.material),
           'People shader (shadow): ' + this.programInfo(H.mesh.customDepthMaterial));
         let failed = 0;
