@@ -1282,6 +1282,37 @@ for (const [el, out, [min, max, start], show] of [
   el.addEventListener('input', sync);
   sync();
 }
+// SAVED CHOICE: the preset and Custom's settings live in one localStorage entry, written on every change in the
+// Player size rows (their clicks and slider input bubble up here, after each control's own handler) and restored at load.
+const PLAYER_SIZE_KEY = 'playerSize';
+const playerRowEl = document.getElementById('playerrow');
+const playerSliders = { fat: pFatEl, height: pHeightEl, weight: pWeightEl };   // saved field -> its slider
+function savePlayerSize() {
+  const saved = { size: playerSize, sex: playerSex, type: playerType };
+  for (const k in playerSliders) saved[k] = +playerSliders[k].value;
+  try { localStorage.setItem(PLAYER_SIZE_KEY, JSON.stringify(saved)); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+}
+function restorePlayerSize() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(PLAYER_SIZE_KEY)); } catch (e) { /* unreadable: the page defaults stand */ }
+  if (!saved) return;
+  // a click selects the button as the player would (each saved value is a button's data value); missing ones are skipped
+  for (const [field, value] of [['player', saved.size], ['sex', saved.sex], ['type', saved.type]]) {
+    document.querySelector(`.sizebtn[data-${field}="${value}"]`)?.click();
+  }
+  // a slider clamps the value to its range; the input event updates its readout
+  for (const k in playerSliders) {
+    if (!Number.isFinite(saved[k])) continue;
+    playerSliders[k].value = saved[k];
+    playerSliders[k].dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+for (const el of [playerRowEl, playerCustomEl]) {
+  el.addEventListener('click', e => { if (e.target.closest('.sizebtn')) savePlayerSize(); });
+  el.addEventListener('input', savePlayerSize);
+}
+restorePlayerSize();
+
 // The chosen body for pov.newBody: the preset, or Custom with its weight turned into BMI at its height.
 function playerSizeChoice() {
   if (playerSize !== 'custom') return PLAYER_SIZES[playerSize];
