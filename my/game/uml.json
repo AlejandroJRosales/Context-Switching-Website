@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-01T22:45:59.290Z",
+ "generated": "2026-11-01T23:35:12.803Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -54,6 +54,7 @@
     "+FACADE_CURTAIN_SILL_M: number",
     "+FACADE_CURTAIN_TOP_GAP_M: number",
     "+FACADE_TALL_M: number[]",
+    "+FACADE_LIGHTS_DEG: number[]",
     "+FLOOR_Y: number",
     "+CEIL_GAP: number",
     "+ENTRANCE_REACH: number",
@@ -492,7 +493,6 @@
     "1-config.js#NPC_REF_BMI",
     "1-config.js#NPC_LEAN_INDEX_BASE",
     "1-config.js#NPC_BODY_HERITABILITY",
-    "1-config.js#PLAYER_SIZES",
     "1-config.js#PLAYER_CUSTOM",
     "1-config.js#NPC_BUILD_BASE",
     "1-config.js#NPC_BODY_SHAPE",
@@ -811,20 +811,11 @@
    ],
    "methods": []
   },
-  "1-config.js#PLAYER_SIZES": {
-   "kind": "object",
-   "visibility": "+",
-   "attributes": [
-    "small: object",
-    "medium: object",
-    "large: object"
-   ],
-   "methods": []
-  },
   "1-config.js#PLAYER_CUSTOM": {
    "kind": "object",
    "visibility": "+",
    "attributes": [
+    "age: number[]",
     "bodyFat: number[]",
     "heightIn: number[]",
     "weightLb: number[]"
@@ -1992,7 +1983,7 @@
     "-addPrey(obj, d2, key, sight): void",
     "+humanLook(sex): object",
     "-clampTo(v, […]): number",
-    "+reshapeHumanLook(L, {bodyType, bodyFat, bmi, bmiScale}): void",
+    "+customizeHumanLook(L, {bodyType, bodyFat, bmi}): void",
     "-bodyPop(trait, female): unknown",
     "-newShape(): unknown",
     "-pickBodyType(): number",
@@ -3056,7 +3047,7 @@
     "ageYears(): number",
     "infoKey(): number",
     "build(): void",
-    "newBody(choice?: unknown): void",
+    "newBody(custom?: null): void",
     "writeLook(): void",
     "stepGait(dt, kp): void",
     "cycle(): void",
@@ -3380,13 +3371,16 @@
     "-choosePovSwitchEl: HTMLElement",
     "-chooseGfxSwitchEl: HTMLElement",
     "-citySwitchEl: HTMLElement",
-    "-playerSize: unknown",
+    "-playerBody: unknown",
     "-playerSex: unknown",
     "-playerType: unknown",
     "-playerCustomEl: HTMLElement",
+    "-pAgeEl: HTMLElement",
     "-pFatEl: HTMLElement",
     "-pHeightEl: HTMLElement",
     "-pWeightEl: HTMLElement",
+    "-PLAYER_BODY_KEY: string",
+    "-playerRowEl: HTMLElement",
     "-picksEl: HTMLElement"
    ],
    "functions": [
@@ -3420,12 +3414,15 @@
     "-chooseMode(): Promise",
     "-setMode(m): void",
     "-radioRow(field, pick): void",
-    "-playerSizeChoice(): object"
+    "-savePlayerBody(): void",
+    "-restorePlayerBody(): void",
+    "-playerBodyChoice(): null|object"
    ],
    "contains": [
     "9-main.js#steps",
     "9-main.js#debugReadout",
-    "9-main.js#loadOpts"
+    "9-main.js#loadOpts",
+    "9-main.js#playerSliders"
    ]
   },
   "9-main.js#steps": {
@@ -3479,6 +3476,17 @@
     "deer: boolean",
     "plants: boolean",
     "buildings: boolean"
+   ],
+   "methods": []
+  },
+  "9-main.js#playerSliders": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "age: HTMLElement",
+    "fat: HTMLElement",
+    "height: HTMLElement",
+    "weight: HTMLElement"
    ],
    "methods": []
   }
@@ -4124,6 +4132,7 @@
     "GRAPHICS_KEY",
     "HEMI_DAY",
     "HEMI_NIGHT",
+    "FACADE_LIGHTS_DEG",
     "MOON_MAX",
     "SHADOW_AHEAD",
     "MOON_BLEND_DEG",
@@ -4373,7 +4382,7 @@
     "NPC_UNIT",
     "PLAYER_HS",
     "NPC_SIZE",
-    "PLAYER_SIZES",
+    "NPC_SIZE_Z_MAX",
     "SPECIES",
     "HUMAN_TYPE_ID",
     "HUNTS_MASK",
@@ -4534,7 +4543,8 @@
     "personBodyFields",
     "Animal",
     "humanLook",
-    "reshapeHumanLook",
+    "customizeHumanLook",
+    "brains",
     "ecosystem",
     "simSky"
    ]
@@ -4610,7 +4620,6 @@
     "AUTO_GRAPHICS_LOW_FPS",
     "AUTO_GRAPHICS_SAMPLE_MS",
     "AUTO_GRAPHICS_WARMUP_FRAMES",
-    "PLAYER_SIZES",
     "PLAYER_CUSTOM",
     "LB_PER_KG",
     "M_PER_IN"
@@ -5234,11 +5243,6 @@
   {
    "from": "8b-player-game.js#pov",
    "to": "8b-player-game.js#game",
-   "type": "uses"
-  },
-  {
-   "from": "8b-player-game.js#pov",
-   "to": "1-config.js#PLAYER_SIZES",
    "type": "uses"
   },
   {
