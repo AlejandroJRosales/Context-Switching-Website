@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-01T23:35:12.803Z",
+ "generated": "2026-11-05T04:19:57.540Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -15,7 +15,7 @@
  "nodes": {
   "1-config.js": {
    "kind": "file",
-   "role": "CONFIG. Every tunable table and derived constant: world size and city ladder, player and building dimensions, Overpass/Nominatim/terrain endpoints and limits, OSM layer tables, graphics numbers, the NPC tables (species, sizes, fight moves, pounces, ages), human rig and atlas numbers, food boxes, streets and lamps, coast, cabins, cat, car and camera, Survivor (SURVIVOR_CONFIG with playerPlantFood), sky, rain, CITY_FILES and PICKS.",
+   "role": "CONFIG. Every tunable table and derived constant: world size and city ladder, player and building dimensions, Overpass/Nominatim/terrain endpoints and limits, OSM layer tables, graphics numbers, the NPC tables (species, sizes, fight moves, pounces, ages), human rig and atlas numbers, food boxes, streets and lamps, coast, cabins, cat, car and camera, Survivor (SURVIVOR_CONFIG with playerPlantFood), sky, rain, CITY_FILES and PICKS. The brain's tunables live with the brain in 7a-ml.js.",
    "attributes": [
     "+MAP_SIZE_SCALES: array",
     "+CITY_LADDER: number[]",
@@ -233,14 +233,6 @@
     "+OCC_CELL: number",
     "+OCC_INV: number",
     "+OCC_CARVE_KEEP: number",
-    "+LIF_LEAK: number",
-    "+LIF_THRESHOLD: number",
-    "+LIF_RESET: number",
-    "+TAG_DECAY: number",
-    "+DA_TONIC_RATE: number",
-    "+BRAIN_LEARNING_RATE: number",
-    "+BRAIN_WEIGHT_DECAY: number",
-    "+HEADING_JITTER: number",
     "+HUMAN_ATLAS: number",
     "+HUMAN_FACE_TILE: number[]",
     "+HUMAN_BODY_TILE: number[]",
@@ -1086,7 +1078,8 @@
     "distSq(x1, y1, x2, y2): number",
     "clamp(value, minimum, maximum): number",
     "wrap(value, size): number",
-    "random(min?: number, max?: number): number"
+    "random(min?: number, max?: number): number",
+    "gauss(): number"
    ]
   },
   "2-core.js#SpatialGrid": {
@@ -1952,75 +1945,30 @@
     "drive(w, dt): boolean"
    ]
   },
-  "7-sim.js": {
+  "7a-ml.js": {
    "kind": "file",
-   "role": "SIM. The artificial life and the game clock: brains, entities, the ecosystem, the sky clock.",
+   "role": "ML. The in-game machine learning: the two-lobe spiking network people think with, its tunables, and the factory that wires and mutates brains for neuroevolution.",
    "attributes": [
-    "-MUSCLE_SHARE_OF_LEAN: number",
+    "+LIF_LEAK: number",
+    "+LIF_THRESHOLD: number",
+    "+LIF_RESET: number",
+    "+TAG_DECAY: number",
+    "+DA_TONIC_RATE: number",
+    "+BRAIN_LEARNING_RATE: number",
+    "+BRAIN_WEIGHT_DECAY: number",
+    "+HEADING_JITTER: number",
     "+_maskLists: WeakMap",
-    "-_preyObj: array",
-    "-_preyD2: array",
-    "-_preyKey: array",
-    "-_preySight: array",
-    "-_nPrey: number",
-    "+brains: BrainFactory",
-    "+ecosystem: Ecosystem"
+    "+brains: BrainFactory"
    ],
    "functions": [
-    "+startFightMove(f, move, now): void",
-    "+humanFightAct(f, now, out, o): void",
-    "+sampleFightKeys(keys, u, out): unknown",
-    "+humanBmi(sex, look): unknown",
-    "+humanMassKg(sex, look, heightM): number",
-    "+humanFightMassKg(sex, look, heightM): number",
-    "+personInfoKey(age, sex, look, heightM): number",
-    "-personInfoLb(key): number",
-    "+humanBodyType(look): unknown",
-    "+personBodyFields(key, sex, look): string[]",
-    "+feetInches(inches): string",
-    "+personInfoFields(key, sex): string[]",
-    "+maskLists(mask, nPre, nPost): object",
-    "-addPrey(obj, d2, key, sight): void",
-    "+humanLook(sex): object",
-    "-clampTo(v, […]): number",
-    "+customizeHumanLook(L, {bodyType, bodyFat, bmi}): void",
-    "-bodyPop(trait, female): unknown",
-    "-newShape(): unknown",
-    "-pickBodyType(): number",
-    "-typeCurve(typeIndex, trait, female): number[]",
-    "-setBodyTrait(L, trait, z): void",
-    "-drawFounderBody(L): void",
-    "-setHumanBody(L): void",
-    "-setHumanShape(L): void",
-    "+averageHumanLook(female, outfit, variant): object",
-    "+packHumanLook(L): void",
-    "+inheritHumanLook(L, a, b): void",
-    "+presetHour(name): unknown"
+    "+maskLists(mask, nPre, nPost): object"
    ],
    "contains": [
-    "7-sim.js#BODY_TYPE_NAMES",
-    "7-sim.js#BrainFactory",
-    "7-sim.js#SpikingNetwork",
-    "7-sim.js#Entity",
-    "7-sim.js#Animal",
-    "7-sim.js#PURE_TYPE",
-    "7-sim.js#plantView",
-    "7-sim.js#Plant",
-    "7-sim.js#Ecosystem",
-    "7-sim.js#simSky"
+    "7a-ml.js#BrainFactory",
+    "7a-ml.js#SpikingNetwork"
    ]
   },
-  "7-sim.js#BODY_TYPE_NAMES": {
-   "kind": "object",
-   "visibility": "-",
-   "attributes": [
-    "meso: string",
-    "endo: string",
-    "ecto: string"
-   ],
-   "methods": []
-  },
-  "7-sim.js#BrainFactory": {
+  "7a-ml.js#BrainFactory": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2037,11 +1985,10 @@
     "mutateMasks(m, I, O, strength): object",
     "randLobeSize(): number",
     "makeSparseMask(inD, outD, sparsity): Uint8Array",
-    "makeMaskedWeights(inD, outD, mask): Float32Array",
-    "gauss(): number"
+    "makeMaskedWeights(inD, outD, mask): Float32Array"
    ]
   },
-  "7-sim.js#SpikingNetwork": {
+  "7a-ml.js#SpikingNetwork": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2113,7 +2060,70 @@
     "adjustWeights(reward): void"
    ]
   },
-  "7-sim.js#Entity": {
+  "7b-sim.js": {
+   "kind": "file",
+   "role": "SIM. The artificial life and the game clock: entities, the ecosystem, the sky clock.",
+   "attributes": [
+    "-MUSCLE_SHARE_OF_LEAN: number",
+    "-_preyObj: array",
+    "-_preyD2: array",
+    "-_preyKey: array",
+    "-_preySight: array",
+    "-_nPrey: number",
+    "+ecosystem: Ecosystem"
+   ],
+   "functions": [
+    "+startFightMove(f, move, now): void",
+    "+humanFightAct(f, now, out, o): void",
+    "+sampleFightKeys(keys, u, out): unknown",
+    "+humanBmi(sex, look): unknown",
+    "+humanMassKg(sex, look, heightM): number",
+    "+humanFightMassKg(sex, look, heightM): number",
+    "+personInfoKey(age, sex, look, heightM): number",
+    "-personInfoLb(key): number",
+    "+humanBodyType(look): unknown",
+    "+personBodyFields(key, sex, look): string[]",
+    "+feetInches(inches): string",
+    "+personInfoFields(key, sex): string[]",
+    "-addPrey(obj, d2, key, sight): void",
+    "+humanLook(sex): object",
+    "-clampTo(v, […]): number",
+    "+customizeHumanLook(L, {bodyType, bodyFat, bmi}): void",
+    "-bodyPop(trait, female): unknown",
+    "-newShape(): unknown",
+    "-pickBodyType(): number",
+    "-typeCurve(typeIndex, trait, female): number[]",
+    "-setBodyTrait(L, trait, z): void",
+    "-drawFounderBody(L): void",
+    "-setHumanBody(L): void",
+    "-setHumanShape(L): void",
+    "+averageHumanLook(female, outfit, variant): object",
+    "+packHumanLook(L): void",
+    "+inheritHumanLook(L, a, b): void",
+    "+presetHour(name): unknown"
+   ],
+   "contains": [
+    "7b-sim.js#BODY_TYPE_NAMES",
+    "7b-sim.js#Entity",
+    "7b-sim.js#Animal",
+    "7b-sim.js#PURE_TYPE",
+    "7b-sim.js#plantView",
+    "7b-sim.js#Plant",
+    "7b-sim.js#Ecosystem",
+    "7b-sim.js#simSky"
+   ]
+  },
+  "7b-sim.js#BODY_TYPE_NAMES": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "meso: string",
+    "endo: string",
+    "ecto: string"
+   ],
+   "methods": []
+  },
+  "7b-sim.js#Entity": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2129,7 +2139,7 @@
     "remove(): void"
    ]
   },
-  "7-sim.js#Animal": {
+  "7b-sim.js#Animal": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2323,7 +2333,7 @@
     "drinkWater(): void"
    ]
   },
-  "7-sim.js#PURE_TYPE": {
+  "7b-sim.js#PURE_TYPE": {
    "kind": "object",
    "visibility": "-",
    "attributes": [
@@ -2333,7 +2343,7 @@
    ],
    "methods": []
   },
-  "7-sim.js#plantView": {
+  "7b-sim.js#plantView": {
    "kind": "object",
    "visibility": "+",
    "attributes": [
@@ -2344,7 +2354,7 @@
    ],
    "methods": []
   },
-  "7-sim.js#Plant": {
+  "7b-sim.js#Plant": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2361,7 +2371,7 @@
     "update(): void"
    ]
   },
-  "7-sim.js#Ecosystem": {
+  "7b-sim.js#Ecosystem": {
    "kind": "class",
    "visibility": "+",
    "attributes": [
@@ -2418,7 +2428,7 @@
     "endTick(): void"
    ]
   },
-  "7-sim.js#simSky": {
+  "7b-sim.js#simSky": {
    "kind": "object",
    "visibility": "+",
    "attributes": [
@@ -3498,17 +3508,17 @@
    "type": "instanceOf"
   },
   {
+   "from": "2-core.js#tools",
+   "to": "2-core.js#MathTools",
+   "type": "instanceOf"
+  },
+  {
    "from": "2-core.js",
    "to": "1-config.js",
    "type": "imports",
    "names": [
     "MITER_MAX"
    ]
-  },
-  {
-   "from": "2-core.js#tools",
-   "to": "2-core.js#MathTools",
-   "type": "instanceOf"
   },
   {
    "from": "3-gfx-io.js",
@@ -3639,6 +3649,21 @@
    "from": "6-worlds.js#Cabin",
    "to": "THREE.Group",
    "type": "extends"
+  },
+  {
+   "from": "6-worlds.js#wildTerrain",
+   "to": "6-worlds.js#WildTerrain",
+   "type": "instanceOf"
+  },
+  {
+   "from": "6-worlds.js#wildWater",
+   "to": "6-worlds.js#WildWater",
+   "type": "instanceOf"
+  },
+  {
+   "from": "6-worlds.js#pebbles",
+   "to": "6-worlds.js#PebbleRenderer",
+   "type": "instanceOf"
   },
   {
    "from": "6-worlds.js",
@@ -3863,42 +3888,35 @@
    ]
   },
   {
-   "from": "6-worlds.js#wildTerrain",
-   "to": "6-worlds.js#WildTerrain",
+   "from": "7a-ml.js#brains",
+   "to": "7a-ml.js#BrainFactory",
    "type": "instanceOf"
   },
   {
-   "from": "6-worlds.js#wildWater",
-   "to": "6-worlds.js#WildWater",
-   "type": "instanceOf"
+   "from": "7a-ml.js",
+   "to": "2-core.js",
+   "type": "imports",
+   "names": [
+    "tools"
+   ]
   },
   {
-   "from": "6-worlds.js#pebbles",
-   "to": "6-worlds.js#PebbleRenderer",
-   "type": "instanceOf"
-  },
-  {
-   "from": "7-sim.js#Animal",
-   "to": "7-sim.js#Entity",
+   "from": "7b-sim.js#Animal",
+   "to": "7b-sim.js#Entity",
    "type": "extends"
   },
   {
-   "from": "7-sim.js#Plant",
-   "to": "7-sim.js#Entity",
+   "from": "7b-sim.js#Plant",
+   "to": "7b-sim.js#Entity",
    "type": "extends"
   },
   {
-   "from": "7-sim.js#brains",
-   "to": "7-sim.js#BrainFactory",
+   "from": "7b-sim.js#ecosystem",
+   "to": "7b-sim.js#Ecosystem",
    "type": "instanceOf"
   },
   {
-   "from": "7-sim.js#ecosystem",
-   "to": "7-sim.js#Ecosystem",
-   "type": "instanceOf"
-  },
-  {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "three",
    "type": "imports",
    "names": [
@@ -3906,7 +3924,7 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "1-config.js",
    "type": "imports",
    "names": [
@@ -3992,14 +4010,6 @@
     "HUNTS_LIST",
     "FOOD_TYPE_ID",
     "WATER_SIGHT_CELL",
-    "LIF_LEAK",
-    "LIF_THRESHOLD",
-    "LIF_RESET",
-    "TAG_DECAY",
-    "DA_TONIC_RATE",
-    "BRAIN_LEARNING_RATE",
-    "BRAIN_WEIGHT_DECAY",
-    "HEADING_JITTER",
     "HUMAN_FACE_VARIANTS",
     "HUMAN_OUTFITS",
     "HUMAN_SKIN",
@@ -4014,7 +4024,7 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "2-core.js",
    "type": "imports",
    "names": [
@@ -4030,7 +4040,7 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "3-gfx-io.js",
    "type": "imports",
    "names": [
@@ -4038,7 +4048,7 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "4-provider.js",
    "type": "imports",
    "names": [
@@ -4049,7 +4059,7 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "5-collision.js",
    "type": "imports",
    "names": [
@@ -4062,11 +4072,20 @@
    ]
   },
   {
-   "from": "7-sim.js",
+   "from": "7b-sim.js",
    "to": "6-worlds.js",
    "type": "imports",
    "names": [
     "foodBoxes"
+   ]
+  },
+  {
+   "from": "7b-sim.js",
+   "to": "7a-ml.js",
+   "type": "imports",
+   "names": [
+    "brains",
+    "SpikingNetwork"
    ]
   },
   {
@@ -4319,7 +4338,7 @@
   },
   {
    "from": "8a-render.js",
-   "to": "7-sim.js",
+   "to": "7b-sim.js",
    "type": "imports",
    "names": [
     "humanFightAct",
@@ -4531,7 +4550,7 @@
   },
   {
    "from": "8b-player-game.js",
-   "to": "7-sim.js",
+   "to": "7b-sim.js",
    "type": "imports",
    "names": [
     "startFightMove",
@@ -4544,7 +4563,6 @@
     "Animal",
     "humanLook",
     "customizeHumanLook",
-    "brains",
     "ecosystem",
     "simSky"
    ]
@@ -4572,14 +4590,6 @@
    "type": "imports",
    "names": [
     "*"
-   ]
-  },
-  {
-   "from": "9-main.js",
-   "to": "three/addons/utils/BufferGeometryUtils.js",
-   "type": "imports",
-   "names": [
-    "mergeGeometries"
    ]
   },
   {
@@ -4714,7 +4724,7 @@
   },
   {
    "from": "9-main.js",
-   "to": "7-sim.js",
+   "to": "7b-sim.js",
    "type": "imports",
    "names": [
     "personInfoFields",
@@ -4986,132 +4996,132 @@
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
-   "to": "7-sim.js#Entity",
+   "from": "7b-sim.js#Animal",
+   "to": "7b-sim.js#Entity",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#SPECIES",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_TYPE_IDS",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
-   "to": "7-sim.js#SpikingNetwork",
+   "from": "7b-sim.js#Animal",
+   "to": "7a-ml.js#SpikingNetwork",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "5-collision.js#cover",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "6-worlds.js#foodBoxes",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_POUNCES",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
-   "to": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Animal",
+   "to": "7b-sim.js#Ecosystem",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "5-collision.js#occ",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_FIGHT_MOVES",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_SIZE",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_REF_MASS_KG",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Animal",
-   "to": "7-sim.js#plantView",
+   "from": "7b-sim.js#Animal",
+   "to": "7b-sim.js#plantView",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Plant",
-   "to": "7-sim.js#Entity",
+   "from": "7b-sim.js#Plant",
+   "to": "7b-sim.js#Entity",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Plant",
-   "to": "7-sim.js#plantView",
+   "from": "7b-sim.js#Plant",
+   "to": "7b-sim.js#plantView",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "5-collision.js#collision",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "2-core.js#SpatialGrid",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "2-core.js#ContactGrid",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "6-worlds.js#foodBoxes",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "5-collision.js#occ",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
-   "to": "7-sim.js#Plant",
+   "from": "7b-sim.js#Ecosystem",
+   "to": "7b-sim.js#Plant",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
-   "to": "7-sim.js#Animal",
+   "from": "7b-sim.js#Ecosystem",
+   "to": "7b-sim.js#Animal",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
+   "from": "7b-sim.js#Ecosystem",
    "to": "4-provider.js#providers",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
-   "to": "7-sim.js#simSky",
+   "from": "7b-sim.js#Ecosystem",
+   "to": "7b-sim.js#simSky",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#Ecosystem",
-   "to": "7-sim.js#plantView",
+   "from": "7b-sim.js#Ecosystem",
+   "to": "7b-sim.js#plantView",
    "type": "uses"
   },
   {
-   "from": "7-sim.js#simSky",
+   "from": "7b-sim.js#simSky",
    "to": "1-config.js#SKIES",
    "type": "uses"
   },
@@ -5132,7 +5142,7 @@
   },
   {
    "from": "8a-render.js#AnimalRenderer",
-   "to": "7-sim.js#Animal",
+   "to": "7b-sim.js#Animal",
    "type": "uses"
   },
   {
@@ -5142,7 +5152,7 @@
   },
   {
    "from": "8a-render.js#PlantRenderer",
-   "to": "7-sim.js#plantView",
+   "to": "7b-sim.js#plantView",
    "type": "uses"
   },
   {
@@ -5257,7 +5267,7 @@
   },
   {
    "from": "8b-player-game.js#pov",
-   "to": "7-sim.js#Animal",
+   "to": "7b-sim.js#Animal",
    "type": "uses"
   },
   {
@@ -5387,7 +5397,7 @@
   },
   {
    "from": "8b-player-game.js#game",
-   "to": "7-sim.js#simSky",
+   "to": "7b-sim.js#simSky",
    "type": "uses"
   },
   {
