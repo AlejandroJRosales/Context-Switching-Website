@@ -16,7 +16,7 @@ import {
   HIGH_NPC_LOD_DIST, HIGH_FAR_STAT_DIST, NPC_BODY_R, NPC_STATS_R, NPC_STATS_UP, HUMAN_ATLAS, HUMAN_FACE_TILE,
   HUMAN_BODY_TILE, HUMAN_FACE_VARIANTS, HUMAN_OUTFITS, HUMAN_OUTFIT_TILES, HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V,
   HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED, HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_RIG,
-  HUMAN_LEG, HUMAN_CROUCH, HUMAN_FIGHT, HUMAN_CROUCH_DROP, HUMAN_ARM_FLARE, HUMAN_PET, PET_BEND_LEVELS, HUMAN_HAIR,
+  HUMAN_LEG, HUMAN_JOINT_BLEND, HUMAN_CROUCH, HUMAN_FIGHT, HUMAN_CROUCH_DROP, HUMAN_ARM_FLARE, HUMAN_PET, PET_BEND_LEVELS, HUMAN_HAIR,
   NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS, NPC_GIRTH_STEPS, NPC_TORSO_REGIONS,
   BB_CELL, BB_DIRS, BB_BAKED_DIRS, BB_PHASES, BB_POSES, BB_BLOCK, BB_FRAME, BB_FACE_VARIANT, BB_HUMAN_SWING,
   BB_STAND_SWING, BB_PHASE_K, BB_MIP_BIAS, PLANT_GRID, FOOD_BOX_SIZE, SHADOW_FOLLOW_STEP, SHADOW_SUN_STEP_COS,
@@ -140,27 +140,29 @@ export function buildHumanGeometry() {
   });
   const boxy = (y, cz, rx, rz) => [[0, -rz], [0.62 * rx, -rz], [rx, -0.58 * rz], [rx, 0.58 * rz], [0.62 * rx, rz], [0, rz],
     [-0.62 * rx, rz], [-rx, 0.58 * rz], [-rx, -0.58 * rz], [-0.62 * rx, -rz]].map(([x, z]) => [x, y, cz + z]);
-  const part = ({ rings, vs, rect, tile, id, limb = 0, side = 0, depth = 0, pivot = [0, 0, 0], capStart, capEnd }) => {
+  const part = ({ rings, vs, rect, tile, id, limb = 0, side = 0, depth = 0, ringDepth = {}, pivot = [0, 0, 0], capStart, capEnd }) => {
+    // ringDepth: per-ring depth overrides by ring index (a joint seam ring); other rings take the part's depth
+    const depthOf = r => ringDepth[r] ?? depth;
     const n = rings[0].length, base = pos.length / 3, idx0 = idx.length, mid = rings[rings.length >> 1], us = [0];
     for (let i = 1; i <= n; i++) {
       const a = mid[i - 1], b = mid[i % n];
       us.push(us[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
     }
-    const put = (p, u, v) => {
+    const put = (p, u, v, d) => {
       if (side < 0) u = 1 - u;   // right limbs mirror, so u 0.25 is always the outer side
       pos.push(p[0], p[1], p[2]);
       uv.push((rect[0] + 0.5 + u * (rect[2] - 1)) / tile[0], (rect[1] + 0.5 + v * (rect[3] - 1)) / tile[1]);
-      rig.push(id, limb, side, depth);
+      rig.push(id, limb, side, d);
       piv.push(pivot[0], pivot[1], pivot[2]);
     };
-    rings.forEach((ring, r) => { for (let i = 0; i <= n; i++) put(ring[i % n], us[i] / us[n], vs[r]); });
+    rings.forEach((ring, r) => { for (let i = 0; i <= n; i++) put(ring[i % n], us[i] / us[n], vs[r], depthOf(r)); });
     for (let r = 0; r + 1 < rings.length; r++) for (let i = 0; i < n; i++) {
       const a = base + r * (n + 1) + i, c = a + n + 1;
       idx.push(a, a + 1, c, a + 1, c + 1, c);
     }
     const cap = (c, r, start) => {
       const ci = pos.length / 3, r0 = base + r * (n + 1);
-      put(c, 0.5, c[3] ?? vs[r]);
+      put(c, 0.5, c[3] ?? vs[r], depthOf(r));
       for (let i = 0; i < n; i++) start ? idx.push(ci, r0 + i + 1, r0 + i) : idx.push(ci, r0 + i, r0 + i + 1);
     };
     if (capStart) cap(capStart, 0, true);
@@ -194,20 +196,38 @@ export function buildHumanGeometry() {
     vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, capEnd: [0, at(0.468), 0, 1] });
   for (const s of [1, -1]) {
     const L = s > 0 ? 0 : 1, ax = y => s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE), lx = y => s * (R.legX - (R.hip - y) * R.legSplay);
-    const armRing = (f, r, rz = r * 1.05) => oval(6, ax(at(f)), at(f), 0, r, rz);
+    // inward: how far the ring's centre sits toward the body from the arm's axis (a hand's relaxed curl)
+    const armRingAt = (y, r, rz, inward = 0) => oval(6, ax(y) - s * inward, y, 0, r, rz);
+    const armRing = (f, r, rz = r * 1.05, inward = 0) => armRingAt(at(f), r, rz, inward);
+    // a joint seam ring (elbow, knee): one ring both limb parts end on, at the joint pivot, bent by HUMAN_JOINT_BLEND of the
+    // lower part's bend so the joint stays closed; seamDepth is the shader depth that makes it take that share
+    const seamDepth = 1 + HUMAN_JOINT_BLEND;
+    const elbowRing = armRingAt(R.elbow, 0.85, 0.85 * 1.05);
     // upper arm (4, 5), lower arm (6, 7), hand (12, 13): arms hang slightly out from the shoulder
-    part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), armRing(0.615, 0.86)], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
-      id: 4 + L, limb: 1, side: s, depth: 1, pivot: arm, capStart: [ax(at(0.822)), at(0.822), 0, 0] });
-    part({ rings: [armRing(0.635, 0.84), armRing(0.58, 0.9, 0.95), armRing(0.49, 0.6, 0.66)], vs: [0, 0.3, 1], rect: [128, 36, 48, 32], tile: B,
-      id: 6 + L, limb: 1, side: s, depth: 2, pivot: arm });
-    part({ rings: [armRing(0.495, 0.42, 0.75), armRing(0.388, 0.3, 0.68)], vs: [0, 0.95], rect: [128, 68, 48, 20], tile: B,
-      id: 12 + L, limb: 1, side: s, depth: 2, pivot: arm, capEnd: [ax(at(0.382)), at(0.382), 0.1, 1] });
+    part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), elbowRing], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
+      id: 4 + L, limb: 1, side: s, depth: 1, ringDepth: { 2: seamDepth }, pivot: arm, capStart: [ax(at(0.822)), at(0.822), 0, 0] });
+    part({ rings: [elbowRing, armRing(0.58, 0.9, 0.95), armRing(0.49, 0.6, 0.66)], vs: [0, 0.3, 1], rect: [128, 36, 48, 32], tile: B,
+      id: 6 + L, limb: 1, side: s, depth: 2, ringDepth: { 0: seamDepth }, pivot: arm });
+    // hand: the palm faces the thigh, so it is thin across the body (rx) and wide front to back (rz); rings run wrist, palm
+    // base, knuckles, mid finger, fingertip, and the fingers curl a little toward the palm (the last argument). vs puts the
+    // knuckles at the painted knuckle line (v 0.48)
+    part({ rings: [armRing(0.495, 0.4, 0.52), armRing(0.472, 0.4, 0.74), armRing(0.447, 0.36, 0.8, 0.03),
+      armRing(0.418, 0.3, 0.7, 0.12), armRing(0.393, 0.2, 0.5, 0.24)], vs: [0, 0.2, 0.48, 0.75, 0.95], rect: [128, 68, 48, 20], tile: B,
+      id: 12 + L, limb: 1, side: s, depth: 2, pivot: arm, capEnd: [ax(at(0.385)) - s * 0.3, at(0.385), 0, 1] });
+    // thumb (same ids as the hand): a four-sided tube from the front of the palm base, out and down along the front edge,
+    // curling toward the palm; it takes its skin from the top rows of the hand's paint, clear of the finger lines
+    const thumbRing = (f, inward, z, r) => oval(4, ax(at(f)) - s * inward, at(f), z, r, r);
+    part({ rings: [thumbRing(0.478, 0.12, 0.55, 0.24), thumbRing(0.452, 0.16, 0.78, 0.2), thumbRing(0.43, 0.2, 0.86, 0.15)],
+      vs: [0, 0.5, 1], rect: [128, 68, 48, 3], tile: B,
+      id: 12 + L, limb: 1, side: s, depth: 2, pivot: arm, capEnd: [ax(at(0.42)) - s * 0.21, at(0.42), 0.88, 1] });
     // upper leg (8, 9), lower leg (10, 11), foot (14, 15)
-    const legRing = (f, rx, rz, cz = 0) => oval(6, lx(at(f)), at(f), cz, rx, rz);
-    part({ rings: [legRing(0.56, 1.95, 2.05, 0.1), legRing(0.43, 1.72, 1.82), legRing(0.275, 1.18, 1.25)], vs: [0, 0.5, 1], rect: [176, 0, 80, 40], tile: B,
-      id: 8 + L, limb: 2, side: s, depth: 1, pivot: leg });
-    part({ rings: [legRing(0.3, 1.16, 1.16), legRing(0.2, 1.22, 1.32, -0.18), legRing(0.05, 0.7, 0.74)], vs: [0, 0.42, 1], rect: [176, 40, 80, 48], tile: B,
-      id: 10 + L, limb: 2, side: s, depth: 2, pivot: leg });
+    const legRingAt = (y, rx, rz, cz = 0) => oval(6, lx(y), y, cz, rx, rz);
+    const legRing = (f, rx, rz, cz = 0) => legRingAt(at(f), rx, rz, cz);
+    const kneeRing = legRingAt(R.knee, 1.17, 1.2);
+    part({ rings: [legRing(0.56, 1.95, 2.05, 0.1), legRing(0.43, 1.72, 1.82), kneeRing], vs: [0, 0.5, 1], rect: [176, 0, 80, 40], tile: B,
+      id: 8 + L, limb: 2, side: s, depth: 1, ringDepth: { 2: seamDepth }, pivot: leg });
+    part({ rings: [kneeRing, legRing(0.2, 1.22, 1.32, -0.18), legRing(0.05, 0.7, 0.74)], vs: [0, 0.42, 1], rect: [176, 40, 80, 48], tile: B,
+      id: 10 + L, limb: 2, side: s, depth: 2, ringDepth: { 0: seamDepth }, pivot: leg });
     // the shoe lofts heel to toe; its rings start at the sole's centre; toes turn out a little
     const cx = lx(R.ankle), turn = s * 0.1, ct = Math.cos(turn), st = Math.sin(turn);
     const toWorld = (x, y, z) => [cx + x * ct + z * st, y, z * ct - x * st];
@@ -504,7 +524,8 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           a2 = mix(a2, ${HUMAN_PET.elbow.toFixed(3)}, pet);
           petTurn = pet * (floor(iAct.w / 65536.0) / 255.0 * ${(2 * HUMAN_PET.turnMax).toFixed(3)} - ${HUMAN_PET.turnMax.toFixed(3)});
         }
-        a2 *= step(1.5, rig.w); a3 *= step(2.5, rig.w);
+        // depth 1 takes none of the middle joint's bend, depth 2 and deeper all of it, a seam ring between them its share (HUMAN_JOINT_BLEND)
+        a2 *= clamp(rig.w - 1.0, 0.0, 1.0); a3 *= step(2.5, rig.w);
         vec2 q = p.yz;
         if (rig.w > 0.5) {
           q = vec2(pivot.z, 0.0) + humanTurn(q - vec2(pivot.z, 0.0), a3);

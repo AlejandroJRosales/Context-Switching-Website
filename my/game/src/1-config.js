@@ -606,6 +606,7 @@ export const HUMAN_RIG = (() => {
     widthAt: { shoulder: at(0.814), chest: at(0.725), waist: at(0.6), hip: at(0.545) }
   };
 })();
+export const HUMAN_JOINT_BLEND = 0.5;   // share of the lower limb's bend that a joint seam ring (elbow, knee) takes: 0 stays with the upper limb, 1 rides the lower limb
 export const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
 // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
 // The body drops by what the folded legs lose in height, so the soles stay on the ground; the eye drops the same.
