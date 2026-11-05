@@ -2,6 +2,7 @@
 // dimensions, Overpass/Nominatim/terrain endpoints and limits, OSM layer tables, graphics numbers, the NPC tables
 // (species, sizes, fight moves, pounces, ages), human rig and atlas numbers, food boxes, streets and lamps, coast,
 // cabins, cat, car and camera, Survivor (SURVIVOR_CONFIG with playerPlantFood), sky, rain, CITY_FILES and PICKS.
+// The brain's tunables live with the brain in 7a-ml.js.
 // Owns: the values only; the three loops that fill PLACE_OF, PLACE_RE and NPC_TYPE_IDS derive tables from tables.
 // May import: nothing. Pure data; constants that construct three objects stay with their owners.
 // Config blocks, in order: world size, player, buildings, network, terrain, layers, places, loading steps, graphics,
@@ -576,19 +577,6 @@ export const WATER_CELL = 1;
 export const OCC_CELL = 0.25;     // NPC occupancy grid resolution, metres
 export const OCC_INV = 1 / OCC_CELL;
 export const OCC_CARVE_KEEP = 0.2;      // a doorway lane never clears a cell whose centre is this close to a raw solid
-
-// TWO-LOBE SPIKING NETWORK
-// Input -> A, Input -> B, A <-> B (A reads B's spikes from the previous step), A,B -> Output.
-// Lobes are leaky integrate-and-fire neurons with binary spikes. Outputs are a ring of preferred turns.
-// Learning is three-factor: tagSynapses after each decision, adjustWeights when the next reward arrives.
-export const LIF_LEAK = 0.85;              // share of the membrane kept each step
-export const LIF_THRESHOLD = 0.25;         // membrane at which a neuron spikes
-export const LIF_RESET = -0.1;             // membrane right after a spike
-export const TAG_DECAY = 0.5;              // per decision: eligibility tags and each neuron's activity average
-export const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
-export const BRAIN_LEARNING_RATE = 0.01;
-export const BRAIN_WEIGHT_DECAY = 0.00001; // per weight update (one per decision): half-life ~69,000 decisions, ~19 sim hours
-export const HEADING_JITTER = 0.3;         // radians: the turn taken is the population vector plus up to this much noise
 
 // HUMAN RIG: PS2-era people; one merged low-poly body (part id + joint heights per vertex), posed in the vertex shader.
 export const HUMAN_ATLAS = 512;                   // texels a side of the paint and mask atlases

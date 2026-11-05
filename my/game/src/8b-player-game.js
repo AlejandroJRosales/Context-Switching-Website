@@ -40,9 +40,9 @@ import {
   foodBoxes, shelters
 } from './6-worlds.js';
 import {
-  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, brains, ecosystem,
+  startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, ecosystem,
   simSky
-} from './7-sim.js';
+} from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, populationText,
   HUMAN_INSTANCE_ATTRS, writeHumanLook
@@ -478,7 +478,7 @@ export const pov = {
     this.look = humanLook(sex);
     if (custom) customizeHumanLook(this.look, custom);
     const sz = NPC_SIZE.human, [mean, std] = sz[sex];
-    const heightM = custom ? custom.heightM : mean + std * Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, brains.gauss()));
+    const heightM = custom ? custom.heightM : mean + std * Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, tools.gauss()));
     this.heightScale = heightM / (sz.rig * NPC_UNIT);
     // years at world tick 0, aging on the same clock as people (Animal.ageYears); the ecosystem's ticks restart with it
     this.ageBase = custom ? custom.age : NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);

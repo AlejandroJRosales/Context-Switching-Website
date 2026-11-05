@@ -1,6 +1,6 @@
 // 2-core.js: CORE. Math and spatial helpers every layer shares, plus the frame loop's state.
 // Owns: fmt, hash01, seededRandom, cellKey, gridOf, ring geometry (ringArea, bounds, dedupeRing, orientRing,
-// offsetRing, pointInRing, closestOnRing), fightEase/fightClamp01, TWO_PI/wrapAngle/turnToward, MathTools (and its
+// offsetRing, pointInRing, closestOnRing), fightEase/fightClamp01, TWO_PI/wrapAngle/turnToward, MathTools (random, gauss, and its
 // instance tools), SpatialGrid, ContactGrid, solarVector, moonVector, and `loop` with wake() and invalidate().
 // May import: 1-config.js. No three, no DOM building; wake() runs loop.frame, which 9-main registers.
 import {
@@ -178,6 +178,13 @@ export class MathTools {
 
   random(min = 0, max = 1) {
     return Math.random() * (max - min) + min;
+  }
+
+  // Standard normal sample (Box-Muller), unclamped.
+  gauss() {
+    let u;
+    do { u = Math.random(); } while (u === 0);
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
   }
 }
 

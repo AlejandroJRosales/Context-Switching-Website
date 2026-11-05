@@ -1,12 +1,12 @@
-// 7-sim.js: SIM. The artificial life and the game clock: brains, entities, the ecosystem, the sky clock.
-// Owns: BrainFactory (brains), SpikingNetwork, maskLists, Entity, Animal (with the human look genetics: humanLook,
+// 7b-sim.js: SIM. The artificial life and the game clock: entities, the ecosystem, the sky clock.
+// Owns: Entity, Animal (with the human look genetics: humanLook,
 // packHumanLook, inheritHumanLook, averageHumanLook; fight helpers startFightMove, humanFightAct, sampleFightKeys; humanMassKg, humanFightMassKg,
 // personInfoKey, personInfoFields), Plant and plantView, Ecosystem (ecosystem), simSky (game clock and weather, the
 // site and the drawn sun altitude) with presetHour.
-// May import: 1-config.js to 6-worlds.js and three. It never calls the render, player, game or main layers: they
+// May import: 1-config.js to 6-worlds.js, 7a-ml.js (brains, SpikingNetwork) and three. It never calls the render, player, game or main layers: they
 // read its state, draw after step (then endTick), fill its hooks (afterContacts, avatar, plantView, simSky.onSkyStep
 // and onMinute) and wrap initialize and clear (populate, clearEcosystem).
-// Config blocks it reads: NPC, fight moves and pounces, species, sizes, brain, plants, food boxes, sky presets.
+// Config blocks it reads: NPC, fight moves and pounces, species, sizes, plants, food boxes, sky presets.
 import * as THREE from 'three';
 import {
   RUN_SPEED, STEP_UP, NPC_TICK_S, DIET_WATER_SHARE, PLANT_SIGHT_CELL, NPC_CONTACT_CELL, DEER_CRUISE, DEER_THINK_TICKS,
@@ -21,8 +21,7 @@ import {
   NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
   NPC_SOMATOTYPES, LB_PER_KG, M_PER_IN, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
   NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
-  HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, LIF_LEAK, LIF_THRESHOLD, LIF_RESET,
-  TAG_DECAY, DA_TONIC_RATE, BRAIN_LEARNING_RATE, BRAIN_WEIGHT_DECAY, HEADING_JITTER, HUMAN_FACE_VARIANTS,
+  HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS
 } from './1-config.js';
@@ -41,6 +40,9 @@ import {
 import {
   foodBoxes
 } from './6-worlds.js';
+import {
+  brains, SpikingNetwork
+} from './7a-ml.js';
 
 // Fight state shared by animals and the player's avatar: moveAt (start of the move playing), playing (that move:
 // a fight move or a pounce; drawn by the renderer), moveSide (people's punching arm, +1 left / -1 right),
@@ -119,369 +121,6 @@ export function personInfoFields(key, sex) {
   return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', feetInches(inches), `${lb} lb`];
 }
 
-export class BrainFactory {
-  constructor() {
-    this.LOBE_SIZE_MIN = 4;
-    this.LOBE_SIZE_MAX = 10;
-    this.LOBE_SPARSITY = 0.20;
-    // TOPOLOGY MUTATION at birth, scaled by the child's mutationMulti (0.5 = these rates)
-    this.LOBE_RESIZE_P = 0.1;      // chance per lobe of gaining or losing one neuron
-    this.SYNAPSE_FLIP_P = 0.01;    // chance per possible synapse of being added or removed
-  }
-
-  // Copy of a [pre * nPost + post] mask at a new size; entries for new neurons are drawn at LOBE_SPARSITY.
-  resizeMask(mask, nPre, nPost, newPre, newPost) {
-    if (nPre === newPre && nPost === newPost) return mask.slice();
-    const out = new Uint8Array(newPre * newPost);
-    for (let i = 0; i < newPre; i++) {
-      for (let j = 0; j < newPost; j++) {
-        out[i * newPost + j] = i < nPre && j < nPost
-          ? mask[i * nPost + j]
-          : (Math.random() < this.LOBE_SPARSITY ? 1 : 0);
-      }
-    }
-    return out;
-  }
-
-  // Flip each entry with probability p, keeping at least one synapse; true if anything changed.
-  flipMask(mask, p) {
-    let changed = false, on = 0;
-    for (let k = 0; k < mask.length; k++) {
-      if (Math.random() < p) { mask[k] ^= 1; changed = true; }
-      on += mask[k];
-    }
-    if (on === 0) { mask[Math.floor(Math.random() * mask.length)] = 1; changed = true; }
-    return changed;
-  }
-
-  // A child's wiring: the parent's masks with lobes resized by one neuron and synapses flipped now and then.
-  // Returns the parent's own masks object when nothing changed, so unchanged children share its synapse lists.
-  mutateMasks(m, I, O, strength) {
-    const resizeP = Math.min(1, this.LOBE_RESIZE_P * strength);
-    const flipP = Math.min(0.5, this.SYNAPSE_FLIP_P * strength);
-    const resize = n => {
-      if (Math.random() >= resizeP) return n;
-      const d = Math.random() < 0.5 ? -1 : 1;
-      return Math.max(this.LOBE_SIZE_MIN, Math.min(this.LOBE_SIZE_MAX, n + d));
-    };
-    const NA = m.lobeSizeA, NB = m.lobeSizeB, nA = resize(NA), nB = resize(NB);
-    const c = {
-      lobeSizeA: nA, lobeSizeB: nB,
-      maskIA: this.resizeMask(m.maskIA, I, NA, I, nA),
-      maskIB: this.resizeMask(m.maskIB, I, NB, I, nB),
-      maskAB: this.resizeMask(m.maskAB, NA, NB, nA, nB),
-      maskBA: this.resizeMask(m.maskBA, NB, NA, nB, nA),
-      maskAO: this.resizeMask(m.maskAO, NA, O, nA, O),
-      maskBO: this.resizeMask(m.maskBO, NB, O, nB, O),
-    };
-    let changed = nA !== NA || nB !== NB;
-    for (const k of ['maskIA', 'maskIB', 'maskAB', 'maskBA', 'maskAO', 'maskBO']) {
-      if (this.flipMask(c[k], flipP)) changed = true;
-    }
-    return changed ? c : m;
-  }
-
-  randLobeSize() {
-    return this.LOBE_SIZE_MIN + Math.floor(Math.random() * (this.LOBE_SIZE_MAX - this.LOBE_SIZE_MIN + 1));
-  }
-
-  makeSparseMask(inD, outD, sparsity) {
-    const mask = new Uint8Array(inD * outD);
-    const total = inD * outD;
-    const target = Math.max(1, Math.round(total * sparsity));
-    const indices = new Int32Array(total);
-    for (let i = 0; i < total; i++) indices[i] = i;
-    for (let i = 0; i < target; i++) {
-      const j = i + Math.floor(Math.random() * (total - i));
-      const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
-      mask[indices[i]] = 1;
-    }
-    return mask;
-  }
-
-  makeMaskedWeights(inD, outD, mask) {
-    const limit = Math.sqrt(6.0 / (inD + outD));
-    const w = new Float32Array(inD * outD);
-    for (let k = 0; k < w.length; k++) {
-      if (mask[k]) w[k] = tools.random(-limit, limit);
-    }
-    return w;
-  }
-
-  // Standard normal sample (Box-Muller), unclamped.
-  gauss() {
-    let u;
-    do { u = Math.random(); } while (u === 0);
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
-  }
-
-}
-
-// ACTIVE-SYNAPSE LISTS for a mask laid out [pre * nPost + post]: `idx`, the set entries in ascending order (as the
-// dense loops visit them), and per post neuron its entries by ascending pre (colStart / colPre / colK), the order
-// propagate sums in. Masks never change after creation and children share their parent's, so one list per mask.
-export const _maskLists = new WeakMap();
-export function maskLists(mask, nPre, nPost) {
-  let L = _maskLists.get(mask);
-  if (L) return L;
-  let n = 0;
-  for (let k = 0; k < mask.length; k++) if (mask[k]) n++;
-  const idx = new Int32Array(n), pre = new Int32Array(n), post = new Int32Array(n);
-  n = 0;
-  for (let k = 0; k < mask.length; k++) if (mask[k]) { idx[n] = k; pre[n] = (k / nPost) | 0; post[n] = k - pre[n] * nPost; n++; }
-  const colStart = new Int32Array(nPost + 1), colPre = new Int32Array(n), colK = new Int32Array(n);
-  for (let m = 0; m < n; m++) colStart[post[m] + 1]++;
-  for (let i = 0; i < nPost; i++) colStart[i + 1] += colStart[i];
-  const fill = colStart.slice(0, nPost);
-  for (let m = 0; m < n; m++) { const c = fill[post[m]]++; colPre[c] = pre[m]; colK[c] = idx[m]; }
-  L = { idx, pre, post, colStart, colPre, colK };
-  _maskLists.set(mask, L);
-  return L;
-}
-
-export class SpikingNetwork {
-  constructor(inputDims, learningRate = BRAIN_LEARNING_RATE, weightDecay = BRAIN_WEIGHT_DECAY, masks = null) {
-    this.inputDims = inputDims;
-    this.outputDims = 8;
-    this.learningRate = learningRate;
-    this.weightDecay = weightDecay;
-    this.output = null;
-    this.turnAngle = 0;
-    this.input = new Float32Array(inputDims);   // last inputs read (the brain view shows them)
-
-    const I = inputDims;
-    const O = this.outputDims;
-
-    if (masks) {
-      this.lobeSizeA = masks.lobeSizeA;
-      this.lobeSizeB = masks.lobeSizeB;
-    } else {
-      this.lobeSizeA = brains.randLobeSize();
-      this.lobeSizeB = brains.randLobeSize();
-    }
-    const NA = this.lobeSizeA;
-    const NB = this.lobeSizeB;
-
-    if (masks) {
-      this.maskIA = masks.maskIA;
-      this.maskIB = masks.maskIB;
-      this.maskAB = masks.maskAB;
-      this.maskBA = masks.maskBA;
-      this.maskAO = masks.maskAO;
-      this.maskBO = masks.maskBO;
-    } else {
-      this.maskIA = brains.makeSparseMask(I, NA, brains.LOBE_SPARSITY);
-      this.maskIB = brains.makeSparseMask(I, NB, brains.LOBE_SPARSITY);
-      this.maskAB = brains.makeSparseMask(NA, NB, brains.LOBE_SPARSITY);
-      this.maskBA = brains.makeSparseMask(NB, NA, brains.LOBE_SPARSITY);
-      this.maskAO = brains.makeSparseMask(NA, O, brains.LOBE_SPARSITY);
-      this.maskBO = brains.makeSparseMask(NB, O, brains.LOBE_SPARSITY);
-    }
-
-    this.lIA = maskLists(this.maskIA, I, NA);
-    this.lIB = maskLists(this.maskIB, I, NB);
-    this.lAB = maskLists(this.maskAB, NA, NB);
-    this.lBA = maskLists(this.maskBA, NB, NA);
-    this.lAO = maskLists(this.maskAO, NA, O);
-    this.lBO = maskLists(this.maskBO, NB, O);
-
-    this.wIA = brains.makeMaskedWeights(I, NA, this.maskIA);
-    this.wIB = brains.makeMaskedWeights(I, NB, this.maskIB);
-    this.wAB = brains.makeMaskedWeights(NA, NB, this.maskAB);
-    this.wBA = brains.makeMaskedWeights(NB, NA, this.maskBA);
-    this.wAO = brains.makeMaskedWeights(NA, O, this.maskAO);
-    this.wBO = brains.makeMaskedWeights(NB, O, this.maskBO);
-
-    this.biasA = new Float32Array(NA);
-    this.biasB = new Float32Array(NB);
-    this.biasO = new Float32Array(O);
-
-    // Plasticity state: a tag per synapse and bias, an activity average per neuron, tonic dopamine.
-    this.eIA = new Float32Array(I * NA);
-    this.eIB = new Float32Array(I * NB);
-    this.eAB = new Float32Array(NA * NB);
-    this.eBA = new Float32Array(NB * NA);
-    this.eAO = new Float32Array(NA * O);
-    this.eBO = new Float32Array(NB * O);
-    this.eBiasA = new Float32Array(NA);
-    this.eBiasB = new Float32Array(NB);
-    this.eBiasO = new Float32Array(O);
-    this.caA = new Float32Array(NA);
-    this.caB = new Float32Array(NB);
-    this.caO = new Float32Array(O);
-    this.fA = new Float32Array(NA);      // post factor this step: activity minus its average
-    this.fB = new Float32Array(NB);
-    this.fO = new Float32Array(O);
-    this.prevB = new Float32Array(NB);   // B spikes that A read this step (one-step lag)
-    this.daTonic = 0;
-
-    this.hA = new Float32Array(NA);      // membranes
-    this.hB = new Float32Array(NB);
-    this.actA = new Float32Array(NA);    // spikes, 0 or 1
-    this.actB = new Float32Array(NB);
-    this.actO = new Float32Array(O);     // softmax over the output ring
-
-    this.prefSin = new Float32Array(O);
-    this.prefCos = new Float32Array(O);
-    for (let i = 0; i < O; i++) {
-      const phi = (i / O) * Math.PI * 2;
-      this.prefSin[i] = Math.sin(phi);
-      this.prefCos[i] = Math.cos(phi);
-    }
-  }
-
-  getMasks() {
-    return {
-      lobeSizeA: this.lobeSizeA, lobeSizeB: this.lobeSizeB,
-      maskIA: this.maskIA, maskIB: this.maskIB,
-      maskAB: this.maskAB, maskBA: this.maskBA,
-      maskAO: this.maskAO, maskBO: this.maskBO,
-    };
-  }
-
-  // One LIF step: leak, add the weighted input, spike (1) and reset at threshold, else 0.
-  static lifStep(h, act, i, net) {
-    const v = h[i] * LIF_LEAK + net;
-    if (v >= LIF_THRESHOLD) { act[i] = 1; h[i] = LIF_RESET; }
-    else { act[i] = 0; h[i] = v; }
-  }
-
-  propagate(inp) {
-    const NA = this.lobeSizeA, NB = this.lobeSizeB, O = this.outputDims;
-    const actA = this.actA, actB = this.actB, actO = this.actO;
-    const lIA = this.lIA, lIB = this.lIB, lAB = this.lAB, lBA = this.lBA, lAO = this.lAO, lBO = this.lBO;
-    const wIA = this.wIA, wIB = this.wIB, wAB = this.wAB, wBA = this.wBA, wAO = this.wAO, wBO = this.wBO;
-
-    // A first: inputs plus B's spikes from the previous step
-    for (let i = 0; i < NA; i++) {
-      let net = this.biasA[i];
-      for (let m = lIA.colStart[i], mEnd = lIA.colStart[i + 1]; m < mEnd; m++) net += wIA[lIA.colK[m]] * inp[lIA.colPre[m]];
-      for (let m = lBA.colStart[i], mEnd = lBA.colStart[i + 1]; m < mEnd; m++) net += wBA[lBA.colK[m]] * actB[lBA.colPre[m]];
-      SpikingNetwork.lifStep(this.hA, actA, i, net);
-    }
-
-    // B: inputs plus A's spikes from this step
-    for (let i = 0; i < NB; i++) {
-      let net = this.biasB[i];
-      for (let m = lIB.colStart[i], mEnd = lIB.colStart[i + 1]; m < mEnd; m++) net += wIB[lIB.colK[m]] * inp[lIB.colPre[m]];
-      for (let m = lAB.colStart[i], mEnd = lAB.colStart[i + 1]; m < mEnd; m++) net += wAB[lAB.colK[m]] * actA[lAB.colPre[m]];
-      SpikingNetwork.lifStep(this.hB, actB, i, net);
-    }
-
-    for (let i = 0; i < O; i++) {
-      let net = this.biasO[i];
-      for (let m = lAO.colStart[i], mEnd = lAO.colStart[i + 1]; m < mEnd; m++) net += wAO[lAO.colK[m]] * actA[lAO.colPre[m]];
-      for (let m = lBO.colStart[i], mEnd = lBO.colStart[i + 1]; m < mEnd; m++) net += wBO[lBO.colK[m]] * actB[lBO.colPre[m]];
-      actO[i] = net;
-    }
-
-    let maxV = actO[0];
-    for (let i = 1; i < O; i++) if (actO[i] > maxV) maxV = actO[i];
-    let sum = 0;
-    for (let i = 0; i < O; i++) { actO[i] = Math.exp(actO[i] - maxV); sum += actO[i]; }
-    for (let i = 0; i < O; i++) actO[i] /= sum;
-    return actO;
-  }
-
-  // Returns the turn (radians, relative to facing): the direction of forward plus the output ring's population vector,
-  // plus jitter. A flat ring (no preference) keeps going straight; a confident ring turns up to nearly 90 degrees per decision.
-  think(inputs) {
-    this.input.set(inputs);
-    this.prevB.set(this.actB);
-    const values = this.propagate(inputs);
-
-    const O = this.outputDims;
-    let vx = 0, vz = 0;
-    for (let i = 0; i < O; i++) { vx += values[i] * this.prefSin[i]; vz += values[i] * this.prefCos[i]; }
-    let turn = Math.atan2(vx, 1 + vz);
-    // exploration: the turn taken deviates a little from the one the brain chose, and the tags credit what was taken
-    turn += (Math.random() * 2 - 1) * HEADING_JITTER;
-    const TWO_PI = Math.PI * 2;
-    turn = ((turn % TWO_PI) + TWO_PI) % TWO_PI;
-    this.turnAngle = turn;
-    this.output = Math.round(turn / TWO_PI * O) % O;
-    this.tagSynapses(inputs, turn);
-    return turn;
-  }
-
-  // SYNAPTIC TAGGING, once per think(): each decaying tag = pre activity x (post activity - its recent average).
-  // Outputs count as active by how well their turn matches the one taken, so reward credits the ones that pulled that way.
-  tagSynapses(inp, turn) {
-    const NA = this.lobeSizeA, NB = this.lobeSizeB, O = this.outputDims;
-    const d = TAG_DECAY, g = 1 - d;
-    const fA = this.fA, fB = this.fB, fO = this.fO;
-
-    for (let i = 0; i < NA; i++) {
-      const a = this.actA[i];
-      fA[i] = a - this.caA[i];
-      this.caA[i] = this.caA[i] * d + g * a;
-    }
-    for (let i = 0; i < NB; i++) {
-      const a = this.actB[i];
-      fB[i] = a - this.caB[i];
-      this.caB[i] = this.caB[i] * d + g * a;
-    }
-    const ts = Math.sin(turn), tc = Math.cos(turn);
-    for (let i = 0; i < O; i++) {
-      const tuned = this.prefSin[i] * ts + this.prefCos[i] * tc;   // cos(preferred - turn)
-      const a = tuned > 0 ? tuned : 0;
-      fO[i] = a - this.caO[i];
-      this.caO[i] = this.caO[i] * d + g * a;
-    }
-
-    this._tag(this.eIA, this.lIA, inp, fA, d, g);
-    this._tag(this.eIB, this.lIB, inp, fB, d, g);
-    this._tag(this.eBA, this.lBA, this.prevB, fA, d, g);
-    this._tag(this.eAB, this.lAB, this.actA, fB, d, g);
-    this._tag(this.eAO, this.lAO, this.actA, fO, d, g);
-    this._tag(this.eBO, this.lBO, this.actB, fO, d, g);
-
-    // a bias is a weight from a constant input of 1
-    for (let i = 0; i < NA; i++) this.eBiasA[i] = this.eBiasA[i] * d + g * fA[i];
-    for (let i = 0; i < NB; i++) this.eBiasB[i] = this.eBiasB[i] * d + g * fB[i];
-    for (let i = 0; i < O; i++) this.eBiasO[i] = this.eBiasO[i] * d + g * fO[i];
-  }
-
-  // Weights are laid out [pre * nPost + post], as in propagate; only the mask's synapses, in ascending order.
-  _tag(e, L, pre, post, d, g) {
-    const idx = L.idx, pr = L.pre, po = L.post;
-    for (let m = 0; m < idx.length; m++) {
-      const k = idx[m];
-      e[k] = e[k] * d + (g * pre[pr[m]]) * post[po[m]];
-    }
-  }
-
-  _stepWeights(w, e, L, gain, keep) {
-    const idx = L.idx;
-    for (let m = 0; m < idx.length; m++) {
-      const k = idx[m];
-      w[k] = w[k] * keep + gain * e[k];
-    }
-  }
-
-  _stepBias(b, e, gain, keep) {
-    for (let k = 0; k < b.length; k++) b[k] = b[k] * keep + gain * e[k];
-  }
-
-  // THIRD FACTOR (dopamine): reward minus its expected level turns tags into lasting change (burst) or reverses them (dip).
-  adjustWeights(reward) {
-    const da = reward - this.daTonic;
-    this.daTonic += DA_TONIC_RATE * da;
-    const gain = this.learningRate * da;
-    const keep = 1 - this.weightDecay;
-
-    this._stepWeights(this.wIA, this.eIA, this.lIA, gain, keep);
-    this._stepWeights(this.wIB, this.eIB, this.lIB, gain, keep);
-    this._stepWeights(this.wAB, this.eAB, this.lAB, gain, keep);
-    this._stepWeights(this.wBA, this.eBA, this.lBA, gain, keep);
-    this._stepWeights(this.wAO, this.eAO, this.lAO, gain, keep);
-    this._stepWeights(this.wBO, this.eBO, this.lBO, gain, keep);
-    this._stepBias(this.biasA, this.eBiasA, gain, keep);
-    this._stepBias(this.biasB, this.eBiasB, gain, keep);
-    this._stepBias(this.biasO, this.eBiasO, gain, keep);
-  }
-}
-
 // ENTITIES
 
 export class Entity {
@@ -542,7 +181,7 @@ export class Animal extends Entity {
     this.avoidNeed = 0;
 
     this.sex = Math.random() < 0.5 ? 'male' : 'female';
-    this.setSizeZ(brains.gauss());
+    this.setSizeZ(tools.gauss());
     this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), kept for life
     this.mutationMulti = 0.5;
     this.lastChildTime = ecosystem.time;   // sim seconds
@@ -1439,7 +1078,7 @@ export class Animal extends Entity {
 
     // mid-parent z-score times the heritability plus noise; variance stays 1, so every generation keeps the bell curve
     const midZ = (this.sizeZ + partner.sizeZ) / 2, h = NPC_SIZE_HERITABILITY;
-    child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss());
+    child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * tools.gauss());
     if (child.look) inheritHumanLook(child.look, this.look, partner.look);
 
     if (this.brain && partner.brain) {
@@ -1548,7 +1187,7 @@ function setBodyTrait(L, trait, z) {
 // A founder's somatotype ratings and body fat: a type picked by weight, then varied within it.
 function drawFounderBody(L) {
   L.bodyType = pickBodyType();
-  for (const k of NPC_BODY_TRAITS) setBodyTrait(L, k, brains.gauss());
+  for (const k of NPC_BODY_TRAITS) setBodyTrait(L, k, tools.gauss());
 }
 
 // Derives bmi (lean mass index from the ratings, over the lean fraction) after the ratings and body fat are set, then
@@ -1620,7 +1259,7 @@ export function inheritHumanLook(L, a, b) {
   const zOf = (P, k) => { const [mean, sd] = typeCurve(P.bodyType, k, P.female); return (P[k] - mean) / sd; };
   for (const k of NPC_BODY_TRAITS) {
     const h = NPC_BODY_HERITABILITY[k], midZ = (zOf(a, k) + zOf(b, k)) / 2;
-    setBodyTrait(L, k, h * midZ + Math.sqrt(1 - h * h / 2) * brains.gauss());
+    setBodyTrait(L, k, h * midZ + Math.sqrt(1 - h * h / 2) * tools.gauss());
   }
   setHumanBody(L);
   packHumanLook(L);
@@ -2016,7 +1655,6 @@ export class Ecosystem {
   // The tick's clock advances once main has drawn it (the renderers read this tick's ticks and time).
   endTick() { this.ticks++; }
 }
-export const brains = new BrainFactory();
 export const ecosystem = new Ecosystem();
 
 // GAME SKY: own clock and weather (opens to afternoon rain, then random; 20-minute day); an Observer preset overrides it.

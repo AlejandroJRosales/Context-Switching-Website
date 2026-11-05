@@ -13,13 +13,13 @@
 //   4-provider.js      the active world provider slot, ground and water queries, provider version
 //   5-collision.js     walls, shells, occupancy, cover, spawn checks, isOpen
 //   6-worlds.js        city and wilderness construction, providers (CityWorld, WildernessWorld, IntroWorld)
-//   7-sim.js           brains, Animal, Plant, Ecosystem, simSky
+//   7a-ml.js           the spiking network, brain tunables, BrainFactory (brains), maskLists
+//   7b-sim.js          Animal, Plant, Ecosystem, simSky
 //   8a-render.js       renderers, human rig, sky, rain, graphics; reads the player and game through renderInputs
 //   8b-player-game.js  player, input, car, cat, petting, pov, VR; game (Survivor); fills renderInputs
 //   9-main.js          this file
 // Placement per identifier (INVENTORY.md section 9), plan and decisions: INVENTORY.md.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   MAP_SIZE_SCALES, WORLD_SIZES, CITY_LADDER, EYE_HEIGHT, FEATURES_VERSION, ELEV_MARGIN, CITY_STEPS, WILDERNESS_STEPS,
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
@@ -47,7 +47,7 @@ import {
 } from './6-worlds.js';
 import {
   personInfoFields, personBodyFields, feetInches, plantView, ecosystem, simSky
-} from './7-sim.js';
+} from './7b-sim.js';
 import {
   npcOnScreen, foodBoxView, raysEl, gfxEl, avgFpsEl, graphics, labels, visionRays, animalRenderer, plantRenderer,
   blobShadows, healthBars, skyChoice, skyInstant, conditions, avgFps, clockText, placeSkyBodies, skyFade, updateSky,

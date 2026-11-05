@@ -5,7 +5,7 @@
 // avgFps and populationText.
 // Reads the player and the game only through renderInputs, which 8b-player-game fills at load, so this file never
 // imports 8b. Construction (meshes, canvases) runs at load.
-// May import: 1-config.js to 7-sim.js and three.
+// May import: 1-config.js to 7b-sim.js and three.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
@@ -46,7 +46,7 @@ import {
 import {
   humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, personBodyFields, Animal, averageHumanLook, plantView, ecosystem,
   simSky, presetHour
-} from './7-sim.js';
+} from './7b-sim.js';
 
 
 // RENDER INPUTS: everything this file reads from the player and the game, one entry per fact. 8b-player-game fills
