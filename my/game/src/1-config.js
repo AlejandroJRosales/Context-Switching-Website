@@ -606,7 +606,7 @@ export const HUMAN_RIG = (() => {
     widthAt: { shoulder: at(0.814), chest: at(0.725), waist: at(0.6), hip: at(0.545) }
   };
 })();
-export const HUMAN_JOINT_BLEND = 0.5;   // share of the lower limb's bend that a joint seam ring (elbow, knee) takes: 0 stays with the upper limb, 1 rides the lower limb
+export const HUMAN_JOINT_BLEND = 0.5;   // share of the moving part's bend that a joint seam ring (waist, elbow, knee) takes: 0 stays with the fixed part, 1 rides the moving part (the torso's lean, the lower limb's bend)
 export const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
 // CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
 // The body drops by what the folded legs lose in height, so the soles stay on the ground; the eye drops the same.
@@ -785,13 +785,13 @@ export const TPP_UP = 18 * NPC_UNIT * PLAYER_HS;
 
 export const PLAYER_JOG_ANIM = 0.5;   // share of the real step the gait animates when not sprinting
 
-// GRAPHICS: high has shadow-map shadows, redrawn only on player/sun moves or nearby casters (SHADOW_MOVER_HZ); low has blobs.
+// GRAPHICS: high has shadow-map shadows, redrawn only on player/sun moves, the cat or the player moving, or nearby animals (SHADOW_ANIMAL_HZ); blobs draw on both.
 export const SHADOW_FOLLOW_STEP = 20;       // metres the box centre may drift before it is redrawn where it should be
 export const SHADOW_SUN_STEP_DEG = 0.5;
 export const SHADOW_SUN_STEP_COS = Math.cos(SHADOW_SUN_STEP_DEG * Math.PI / 180);
-export const SHADOW_MOVER_HZ = 15;
-// only casters this close to the player trigger a redraw when they move; farther ones are redrawn with the box
-export const SHADOW_MOVER_DIST = 60;
+export const SHADOW_ANIMAL_HZ = 15;     // most redraws a second that moving animals cause (the cat and the player redraw on every frame they move)
+// only animals this close to the player trigger a redraw when they move; farther ones are redrawn with the box
+export const SHADOW_ANIMAL_DIST = 60;
 export const SUN_DIST = 300;                // metres from the box centre to the light, inside SHADOW_DEPTH
 export const SHADOWS_ENABLED = true;        // master switch
 
@@ -1046,7 +1046,7 @@ export const MIX_PARK_SHARE = 0.25;   // share of the wilderness coyotes and dee
 export const MIX_HABITAT = { forest: 2, wood: 2, scrub: 1.5, wetland: 1.5, meadow: 1.25 };
 export const MIX_SINK = 0.6;    // metres the wild mesh dips under the city's own terrain where they overlap
 
-// BLOB SHADOWS (low): one soft ellipse per nearby on-screen animal, sized and turned with it; faded with the sun.
+// BLOB SHADOWS: one soft ellipse per nearby on-screen animal, sized and turned with it; faded with the sun.
 export const BLOB_DIST = 40;            // metres from the camera
 export const BLOB_MAX = 2048;
 export const BLOB_OPACITY = 0.42;

@@ -20,7 +20,7 @@ import {
   NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS, NPC_GIRTH_STEPS, NPC_TORSO_REGIONS,
   BB_CELL, BB_DIRS, BB_BAKED_DIRS, BB_PHASES, BB_POSES, BB_BLOCK, BB_FRAME, BB_FACE_VARIANT, BB_HUMAN_SWING,
   BB_STAND_SWING, BB_PHASE_K, BB_MIP_BIAS, PLANT_GRID, FOOD_BOX_SIZE, SHADOW_FOLLOW_STEP, SHADOW_SUN_STEP_COS,
-  SHADOW_MOVER_HZ, SHADOW_MOVER_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
+  SHADOW_ANIMAL_HZ, SHADOW_ANIMAL_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
   BLOB_LIFT, BLOB_SPREAD, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
   EMOJI_FONT, FAR_STAT_MAX, FAR_PANEL_SCALE, FAR_PAGE_PX, FAR_CELL_GUTTER, FAR_REDRAW_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_ROW_H, BAR_TEXT_FONT, BAR_ROW_GAP, BAR_SPRITE_CANVAS_H,
   BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
@@ -189,19 +189,21 @@ export function buildHumanGeometry() {
   const head = [headRing(0.985, 0.62, 0, 0), headRing(0.945, 1, 0, 0), headRing(0.905, 0.97, 0.32, 0.05), headRing(0.875, 0.78, 0.25, 0.2)];
   part({ rings: head, vs: head.map(r => hv(r[0][1])), rect: [0, 0, 128, 48], tile: F, id: 0, capStart: [0, R.crown, -0.1, 0], capEnd: [0, chin, 0.3, 1] });
   part({ rings: [oval(6, 0, at(0.885), -0.25, 1.36, 1.3), oval(6, 0, at(0.825), -0.25, 1.36, 1.3)], vs: [0, 1], rect: [0, 48, 128, 16], tile: F, id: 1 });
-  // torso (2) and pelvis (3)
-  part({ rings: [boxy(at(0.842), -0.2, 1.2, 1.1), boxy(W.shoulder, -0.15, 4.4, 2.2), boxy(W.chest, 0.1, 3.75, 2.55), boxy(W.waist, 0, 3.0, 2.05)],
-    vs: [0, 0.26, 0.56, 1], rect: [0, 0, 128, 60], tile: B, id: 2 });
-  part({ rings: [boxy(at(0.615), 0, 3.08, 2.1), boxy(W.hip, 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
-    vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, capEnd: [0, at(0.468), 0, 1] });
+  // a joint seam ring (waist, elbow, knee): one ring both parts of the joint end on, at the joint, taking HUMAN_JOINT_BLEND of
+  // the moving part's bend (the torso's lean at the waist, the lower limb's bend at the elbow and knee) so the joint stays
+  // closed; seamDepth is the shader depth that makes it take that share
+  const seamDepth = 1 + HUMAN_JOINT_BLEND;
+  // torso (2) and pelvis (3), joined at the waist seam
+  const waistRing = boxy(W.waist, 0, 3.0, 2.05);
+  part({ rings: [boxy(at(0.842), -0.2, 1.2, 1.1), boxy(W.shoulder, -0.15, 4.4, 2.2), boxy(W.chest, 0.1, 3.75, 2.55), waistRing],
+    vs: [0, 0.26, 0.56, 1], rect: [0, 0, 128, 60], tile: B, id: 2, ringDepth: { 3: seamDepth } });
+  part({ rings: [waistRing, boxy(W.hip, 0, 3.45, 2.35), boxy(at(0.475), 0, 2.6, 1.85)],
+    vs: [0, 0.45, 1], rect: [0, 60, 128, 28], tile: B, id: 3, ringDepth: { 0: seamDepth }, capEnd: [0, at(0.468), 0, 1] });
   for (const s of [1, -1]) {
     const L = s > 0 ? 0 : 1, ax = y => s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE), lx = y => s * (R.legX - (R.hip - y) * R.legSplay);
     // inward: how far the ring's centre sits toward the body from the arm's axis (a hand's relaxed curl)
     const armRingAt = (y, r, rz, inward = 0) => oval(6, ax(y) - s * inward, y, 0, r, rz);
     const armRing = (f, r, rz = r * 1.05, inward = 0) => armRingAt(at(f), r, rz, inward);
-    // a joint seam ring (elbow, knee): one ring both limb parts end on, at the joint pivot, bent by HUMAN_JOINT_BLEND of the
-    // lower part's bend so the joint stays closed; seamDepth is the shader depth that makes it take that share
-    const seamDepth = 1 + HUMAN_JOINT_BLEND;
     const elbowRing = armRingAt(R.elbow, 0.85, 0.85 * 1.05);
     // upper arm (4, 5), lower arm (6, 7), hand (12, 13): arms hang slightly out from the shoulder
     part({ rings: [armRing(0.8, 1.28), armRing(0.72, 1.1), elbowRing], vs: [0.12, 0.5, 1], rect: [128, 0, 48, 36], tile: B,
@@ -524,8 +526,10 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           a2 = mix(a2, ${HUMAN_PET.elbow.toFixed(3)}, pet);
           petTurn = pet * (floor(iAct.w / 65536.0) / 255.0 * ${(2 * HUMAN_PET.turnMax).toFixed(3)} - ${HUMAN_PET.turnMax.toFixed(3)});
         }
-        // depth 1 takes none of the middle joint's bend, depth 2 and deeper all of it, a seam ring between them its share (HUMAN_JOINT_BLEND)
-        a2 *= clamp(rig.w - 1.0, 0.0, 1.0); a3 *= step(2.5, rig.w);
+        // depth 1 takes none of the middle joint's bend, depth 2 and deeper all of it, a seam ring between them its share
+        // (HUMAN_JOINT_BLEND); seamShare is that share, 0 to 1, for a seam ring (depth 1 to 2) and 0 or 1 elsewhere
+        float seamShare = clamp(rig.w - 1.0, 0.0, 1.0);
+        a2 *= seamShare; a3 *= step(2.5, rig.w);
         vec2 q = p.yz;
         if (rig.w > 0.5) {
           q = vec2(pivot.z, 0.0) + humanTurn(q - vec2(pivot.z, 0.0), a3);
@@ -542,8 +546,11 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
         // upper body (head, neck, torso, arms) leans with the gait; in a crouch or a pet's bend the pelvis (3) tilts with
         // it, so the waist stays joined and the pelvis's open top stays inside the torso
         float bendLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch + petBend * petReach;
-        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? sw * 0.12 + run * 0.16 + bendLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x
-          : (abs(rig.x - 3.0) < 0.5 ? bendLean : 0.0);
+        float upperLean = sw * 0.12 + run * 0.16 + bendLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x;   // the upper body's lean
+        float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? upperLean : (abs(rig.x - 3.0) < 0.5 ? bendLean : 0.0);
+        // the waist seam ring (torso 2 and pelvis 3 share it, depth 1 to 2) takes seamShare of the way from the pelvis's lean
+        // to the upper body's, so the waist stays closed when the torso leans over a pelvis that does not
+        if (rig.w > 0.5 && rig.x > 1.5 && rig.x < 3.5) lean = mix(bendLean, upperLean, seamShare);
         q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
         p.yz = q;
         p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85 + ${HUMAN_CROUCH_DROP.toFixed(3)} * crouch;
@@ -1907,7 +1914,7 @@ export const graphics = {
   force: true,
   // what the last drawn map saw of the moving casters: animals near the player, and the cat and body poses
   nearAnimals: -1,
-  _moverSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // 64-bit: compared to positions exactly
+  _casterSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // 64-bit: compared to positions exactly
   _aim: new THREE.Vector3(),
 
   shadowsOn() { return SHADOWS_ENABLED && this.high && !!providers.active && providers.active.shadows; },
@@ -1929,8 +1936,6 @@ export const graphics = {
       scene.traverse(o => { if (o.material) { for (const m of [].concat(o.material)) m.needsUpdate = true; } });
     }
     sun.castShadow = on;
-    // high: the shadow map replaces the blobs (low redraws them on its next NPC tick)
-    if (this.high) blobShadows.hide();
     this.force = true;
     this.placeSun();
     invalidate();
@@ -1964,10 +1969,11 @@ export const graphics = {
     if (this.sunDir.dot(this.drawnSunDir) < SHADOW_SUN_STEP_COS) this.force = true;
   },
 
-  // Did a caster near the player (animals within SHADOW_MOVER_DIST, cat, body) change since the last draw? `record` stores it.
-  moversChanged(record) {
+  // Did an animal within SHADOW_ANIMAL_DIST of the player move, or did the count there change, since the last draw? `record`
+  // stores the count.
+  animalsChanged(record) {
     const player = renderInputs.player;
-    const px = player.pos.x, pz = player.pos.z, r2 = SHADOW_MOVER_DIST * SHADOW_MOVER_DIST;
+    const px = player.pos.x, pz = player.pos.z, r2 = SHADOW_ANIMAL_DIST * SHADOW_ANIMAL_DIST;
     let near = 0, moving = false;
     if (ecosystem.ready) for (const a of ecosystem.animals) {
       if (!a.alive) continue;
@@ -1976,10 +1982,17 @@ export const graphics = {
       near++;
       if (a.moving) moving = true;
     }
-    let changed = moving || near !== this.nearAnimals;
+    const changed = moving || near !== this.nearAnimals;
+    if (record) this.nearAnimals = near;
+    return changed;
+  },
+
+  // Did the cat or the player's body (renderInputs.casters) move, turn or show or hide since the last draw? `record` stores them.
+  castersChanged(record) {
+    let changed = false;
     const movers = renderInputs.casters();
     for (let i = 0; i < movers.length; i++) {
-      const o = movers[i], snap = this._moverSnaps[i];
+      const o = movers[i], snap = this._casterSnaps[i];
       const vis = o && o.visible ? 1 : 0;
       const p = o ? o.position : null, q = o ? o.quaternion : null;
       if (record) {
@@ -1988,7 +2001,6 @@ export const graphics = {
       } else if (snap[0] !== vis || (vis && (snap[1] !== p.x || snap[2] !== p.y || snap[3] !== p.z ||
         snap[4] !== q.x || snap[5] !== q.y || snap[6] !== q.z || snap[7] !== q.w))) changed = true;
     }
-    if (record) this.nearAnimals = near;
     return changed;
   },
 
@@ -2002,8 +2014,10 @@ export const graphics = {
       player.pos.z - Math.cos(player.yaw) * SHADOW_AHEAD);
     const dx = aim.x - this.anchor.x, dz = aim.z - this.anchor.z;
     const moved = !(dx * dx + dz * dz <= SHADOW_FOLLOW_STEP * SHADOW_FOLLOW_STEP);
-    const due = this.force || moved ||
-      (now - this.lastRefresh >= 1000 / SHADOW_MOVER_HZ && this.moversChanged(false));
+    // the cat and the player's body redraw the map on every frame they moved, so their shadows keep up with them; the
+    // crowd's animals (each moving every tick) redraw it at most SHADOW_ANIMAL_HZ times a second
+    const due = this.force || moved || this.castersChanged(false) ||
+      (now - this.lastRefresh >= 1000 / SHADOW_ANIMAL_HZ && this.animalsChanged(false));
     if (!due) return;
     if (this.force || moved) {
       this.anchor.copy(aim);
@@ -2014,7 +2028,8 @@ export const graphics = {
     // the render sets these matrices again; set here so what the new map sees is recorded in its own space
     sun.updateMatrixWorld();
     sun.shadow.updateMatrices(sun);
-    this.moversChanged(true);
+    this.animalsChanged(true);
+    this.castersChanged(true);
     this.drawnSunDir.copy(this.sunDir);
     this.lastRefresh = now;
     this.force = false;
@@ -2047,6 +2062,13 @@ export class BlobShadows {
     this.mesh.visible = false;
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
+    // the player's own blob: its own mesh on the same plane and material, so it can follow the body every frame while the
+    // crowd's instances update once per NPC tick
+    this.playerMesh = new THREE.Mesh(geo, this.material);
+    this.playerMesh.matrixAutoUpdate = false;
+    this.playerMesh.visible = false;
+    this.playerMesh.frustumCulled = false;
+    scene.add(this.playerMesh);
     // body footprint per type in model units (x across, z along the facing), from the rest-pose bodies
     this.foot = {};
     for (const type of NPC_TYPES) {
@@ -2062,12 +2084,41 @@ export class BlobShadows {
 
   hide() {
     perf.instances(this.mesh, 0);
+    this.hidePlayer();
+  }
+
+  hidePlayer() {
+    this.playerMesh.visible = false;
+  }
+
+  // The share of full blob strength the light gives (0 with no world or no sun), set as the shared material's opacity.
+  applyLight() {
+    const light = providers.active ? Math.min(1, sun.intensity / BLOB_FULL_SUN) : 0;
+    this.material.opacity = BLOB_OPACITY * light;
+    return light;
+  }
+
+  // Into this._m: a blob under feet (x, feetY, z), turned to face `facing`, for a body of this footprint drawn at kp metres
+  // per rig unit. Shared by the crowd and the player, so the spread and the lift are set in one place.
+  compose(x, feetY, z, facing, foot, kp) {
+    const k = kp * BLOB_SPREAD;
+    this._p.set(x, feetY + BLOB_LIFT, z);
+    this._q.setFromAxisAngle(this._y, facing);
+    this._s.set(foot.x * k, 1, foot.z * k);
+    this._m.compose(this._p, this._q, this._s);
+  }
+
+  // The player's blob, called every frame with the body's feet, facing and size (kp as the body is drawn).
+  placePlayer(x, feetY, z, facing, kp) {
+    if (this.applyLight() <= 0) { this.hidePlayer(); return; }
+    this.compose(x, feetY, z, facing, this.foot.human, kp);
+    this.playerMesh.matrix.copy(this._m);
+    this.playerMesh.matrixWorldNeedsUpdate = true;
+    this.playerMesh.visible = true;
   }
 
   update(animals) {
-    const light = Math.min(1, sun.intensity / BLOB_FULL_SUN);
-    if (!perf.lowPower || !providers.active || light <= 0) { this.hide(); return; }
-    this.material.opacity = BLOB_OPACITY * light;
+    if (this.applyLight() <= 0) { this.hide(); return; }
     updateNpcFrustum();
     const r = animalRenderer, mesh = this.mesh;
     const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z, d2 = BLOB_DIST * BLOB_DIST;
@@ -2081,12 +2132,8 @@ export class BlobShadows {
       if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
       // the same size the body is drawn at (AnimalRenderer.update)
       const age = a.isAdult ? 1 : Math.min(1, (ecosystem.ticks - a.birthTick) / r.MATURITY_TICKS);
-      const kp = (GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * age) * NPC_UNIT * hs * BLOB_SPREAD;
-      const f = this.foot[a.type];
-      this._p.set(a.position.x, a.position.y - a.footLift() * NPC_UNIT + BLOB_LIFT, a.position.z);
-      this._q.setFromAxisAngle(this._y, a.facingAngle);
-      this._s.set(f.x * kp, 1, f.z * kp);
-      this._m.compose(this._p, this._q, this._s);
+      const kp = (GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * age) * NPC_UNIT * hs;
+      this.compose(a.position.x, a.position.y - a.footLift() * NPC_UNIT, a.position.z, a.facingAngle, this.foot[a.type], kp);
       mesh.setMatrixAt(n++, this._m);
     }
     perf.instances(mesh, n);

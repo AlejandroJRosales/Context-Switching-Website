@@ -44,7 +44,7 @@ import {
   simSky
 } from './7b-sim.js';
 import {
-  renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, populationText,
+  renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
   HUMAN_INSTANCE_ATTRS, writeHumanLook
 } from './8a-render.js';
 
@@ -520,17 +520,26 @@ export const pov = {
     invalidate();
   },
 
+  // Hide the body and its blob shadow (first person, the car, the start screen).
+  hideBody() {
+    if (this.body) this.body.visible = false;
+    blobShadows.hidePlayer();
+  },
+
   // After step(): move the camera behind the player (boom shortened before walls) and pose the body.
   apply(dt) {
     const show = this.mode === '3rd' && !player.inCar && play.active && !renderer.xr.isPresenting;
     if (!this.body) this.build();
-    this.body.visible = show;
-    if (!show) return;
+    if (!show) { this.hideBody(); return; }
+    this.body.visible = true;
 
     const feet = player.pos.y - EYE_HEIGHT;
     const b = this.body, kp = NPC_UNIT * this.heightScale;
     b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
     b.rotation.y = player.heading + Math.PI;   // the rig faces +z at rotation 0, the camera -z at yaw 0
+    // the blob under the feet, as the crowd's blobs skip a floating or submerged body
+    if (flying || swimming) blobShadows.hidePlayer();
+    else blobShadows.placePlayer(player.pos.x, feet, player.pos.z, b.rotation.y, kp);
 
     const G = this.gait, gait = b.geometry.attributes.iGait;
     // flying: the standing pose (no walk or run cycle); the gait starts from rest on landing
@@ -2075,7 +2084,7 @@ export let swimming = false;
 
 export function playerStep(dt) {
   petting.update(dt);
-  if (player.inCar) { player.running = false; swimming = false; if (pov.body) pov.body.visible = false; driveStep(dt); updateCarButton(); vr.placeRig(); return; }
+  if (player.inCar) { player.running = false; swimming = false; pov.hideBody(); driveStep(dt); updateCarButton(); vr.placeRig(); return; }
   // an empty car still rolling (left at speed) brakes to a stop
   if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
