@@ -13,7 +13,7 @@ import { tools } from './2-core.js';
 export const LIF_LEAK = 0.85;              // share of the membrane kept each step
 export const LIF_THRESHOLD = 0.25;         // membrane at which a neuron spikes
 export const LIF_RESET = -0.1;             // membrane right after a spike
-export const TAG_DECAY = 0.5;              // per decision: eligibility tags and each neuron's activity average
+export const TAG_DECAY = 0.95;              // per decision: eligibility tags and each neuron's activity average
 export const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
 export const BRAIN_LEARNING_RATE = 0.01;
 export const BRAIN_WEIGHT_DECAY = 0.00001; // per weight update (one per decision): half-life ~69,000 decisions, ~19 sim hours

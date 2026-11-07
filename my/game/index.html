@@ -6,6 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Nova Orbis</title>
   <style>
+    /* START SCREEN THEME: one source for the menu's fonts and spacing */
+    :root {
+      --font-ui: ui-monospace, "SF Mono", Menlo, monospace;
+      --font-title: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --menu-gap: 22px;    /* between option rows */
+      --row-gap: 8px;      /* between a row's label and buttons, and between buttons */
+      --label-w: 76px;     /* the option labels' column: every row's buttons start at this edge */
+    }
+
     html,
     body {
       margin: 0;
@@ -30,8 +39,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(12, 15, 21, 0.82);
-      font: 400 15px/1.5 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      background: rgba(12, 15, 21, 0.3);
+      font: 400 14px/1.5 var(--font-ui);
       color: #e8e4dc;
       z-index: 10;
     }
@@ -41,20 +50,41 @@
     }
 
     #card {
-      width: min(440px, calc(100vw - 48px));
+      box-sizing: border-box;
+      width: min(480px, calc(100vw - 32px));
+      padding: 28px 26px;
+      border: 1px solid rgba(232, 228, 220, 0.08);
+      border-radius: 10px;
+      background: rgba(16, 19, 26, 0.62);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
     }
 
+    /* 1. the title, in the one non-UI font */
     #card h1 {
-      font-size: 30px;
-      font-weight: 400;
-      letter-spacing: 0.01em;
-      margin: 0 0 6px;
+      font: 400 clamp(28px, 9vw, 40px)/1.1 var(--font-title);   /* shrinks on narrow phones so the title stays on one line */
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
     }
 
     #card p {
-      margin: 0 0 22px;
+      margin: 0 0 var(--menu-gap);
       color: #9a958b;
-      font-size: 14px;
+      font-size: 13px;
+    }
+
+    /* the tagline under the title; the full description waits behind About */
+    #card p.tagline {
+      margin-bottom: 10px;
+    }
+
+    #about {
+      margin-bottom: 26px;
+    }
+
+    #about p {
+      margin: 0;
     }
 
     #row {
@@ -81,13 +111,22 @@
     }
 
     #go {
-      padding: 11px 20px;
+      position: sticky;
+      bottom: 16px;
+      z-index: 1;
+      display: block;
+      width: 100%;
+      margin-top: 30px;
+      padding: 15px 20px;
       background: #e8e4dc;
       color: #10131a;
       border: 0;
-      border-radius: 3px;
+      border-radius: 4px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
       font: inherit;
       font-size: 15px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
       cursor: pointer;
     }
 
@@ -121,7 +160,7 @@
       background: none;
       border: 0;
       color: rgba(232, 228, 220, 0.75);
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
       cursor: pointer;
       touch-action: manipulation;
     }
@@ -172,27 +211,32 @@
       margin-top: 14px;
     }
 
-    #more summary {
+    #more summary,
+    #about summary {
       width: fit-content;
       cursor: pointer;
       touch-action: manipulation;
       color: rgba(232, 228, 220, 0.75);
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
-    #more summary:focus-visible {
+    #more summary:focus-visible,
+    #about summary:focus-visible {
       outline: 2px solid #6f7f9c;
       outline-offset: 3px;
     }
 
-    #more[open] summary {
+    #more[open] summary,
+    #about[open] summary {
       margin-bottom: 12px;
     }
 
     /* loading page: the intro steps aside for the step list */
     #card.loading>p:not(#status),
+    #card.loading #about,
+    #card.loading #go,
     #card.loading #picks,
     #card.loading #row,
     #card.loading #more {
@@ -203,7 +247,7 @@
       list-style: none;
       margin: 18px 0 0;
       padding: 0;
-      font: 400 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 13px/1.35 var(--font-ui);
     }
 
     #steps[hidden] {
@@ -286,7 +330,7 @@
       position: fixed;
       left: 14px;
       top: 16px;
-      font: 400 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 13px/1.4 var(--font-ui);
       color: rgba(232, 228, 220, 0.55);
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
       pointer-events: none;
@@ -347,7 +391,7 @@
       gap: 8px;
       width: calc(var(--need-icon-w) + var(--need-gap) + var(--need-bar-w));
       height: 18px;
-      font: 400 11px/18px ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 11px/18px var(--font-ui);
       letter-spacing: 0.08em;
       color: rgba(232, 228, 220, 0.8);
       white-space: nowrap;
@@ -413,7 +457,7 @@
       position: absolute;
       left: 4px;
       top: 3px;
-      font: 400 9px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 9px/1 var(--font-ui);
       color: rgba(232, 228, 220, 0.45);
     }
 
@@ -448,12 +492,12 @@
       border-radius: 8px;
       background: rgba(16, 19, 26, 0.92);
       color: rgba(232, 228, 220, 0.9);
-      font: 400 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 13px/1.5 var(--font-ui);
     }
 
     #runover h2 {
       margin: 0 0 6px;
-      font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 11px/1 var(--font-ui);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: rgba(232, 228, 220, 0.45);
@@ -565,7 +609,7 @@
       color: rgba(232, 228, 220, 0.75);
       border: 1px solid rgba(232, 228, 220, 0.3);
       border-radius: 3px;
-      font: 400 13px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 13px/1 var(--font-ui);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       touch-action: manipulation;
@@ -840,7 +884,7 @@
 
     #settings h2 {
       margin: 0 0 9px;
-      font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 11px/1 var(--font-ui);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: rgba(232, 228, 220, 0.45);
@@ -856,18 +900,13 @@
       gap: 6px;
     }
 
-    #picks {
-      margin-top: 12px;
-      margin-bottom: 12px;
-    }
-
     .chips button {
       padding: 7px 10px;
       background: rgba(16, 19, 26, 0.45);
       color: rgba(232, 228, 220, 0.75);
       border: 1px solid rgba(232, 228, 220, 0.3);
       border-radius: 3px;
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
       cursor: pointer;
       touch-action: manipulation;
     }
@@ -894,7 +933,13 @@
 
     #card {
       margin: auto;
-      padding: 24px 0;
+    }
+
+    /* wide screens: the menu on the left, the live city in view on the right */
+    @media (min-width: 900px) and (orientation: landscape) {
+      #card {
+        margin: auto auto auto 6vw;
+      }
     }
 
     #card .for-wilderness,
@@ -915,18 +960,19 @@
       display: block;
     }
 
-    #card[data-mode="city"] #row.for-place,
+    #card[data-mode="city"] #row.for-place:not([hidden]),
     #card[data-mode="city"] #picks.for-place,
     #card[data-mode="wilderness"] #seedrow.for-wilderness {
       display: flex;
     }
 
-    #card[data-mode="city"] #seedrow {
-      display: flex;
+    /* the address row shows only for the Custom city (9-main sets hidden) */
+    #card #row[hidden] {
+      display: none;
     }
 
-    #card[data-mode="city"] #startgo {
-      display: none;
+    #card[data-mode="city"] #seedrow {
+      display: flex;
     }
 
     /* City off: no Buildings switch */
@@ -955,7 +1001,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
       color: rgba(232, 228, 220, 0.75);
     }
 
@@ -977,17 +1023,33 @@
       border-color: transparent;
     }
 
+    /* the label sits in the row's left padding, so a wrapped line starts under the first button, not the label */
     .sizerow {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 8px;
-      margin: 14px 0;
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      gap: var(--row-gap);
+      margin: 0 0 var(--menu-gap);
+      padding-left: var(--label-w);
+      font: 400 12px/1 var(--font-ui);
       color: rgba(232, 228, 220, 0.75);
     }
 
     .sizerow>span {
-      margin-right: 4px;
+      flex: none;
+      width: calc(var(--label-w) - var(--row-gap));
+      margin-left: calc(-1 * var(--label-w));
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(232, 228, 220, 0.55);
+    }
+
+    /* a row's extra controls (the address, Custom's sliders) line up under its buttons */
+    #row,
+    #customrow,
+    #playercustom {
+      margin: calc(var(--row-gap) - var(--menu-gap)) 0 var(--menu-gap) var(--label-w);
     }
 
     .customrow {
@@ -995,7 +1057,7 @@
       align-items: center;
       gap: 10px;
       margin: -4px 0 14px;
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
       color: rgba(232, 228, 220, 0.75);
     }
 
@@ -1040,6 +1102,34 @@
       background: #e8e4dc;
       border-color: transparent;
       color: #10131a;
+      box-shadow: 0 0 0 1px rgba(232, 228, 220, 0.5), 0 0 14px rgba(232, 228, 220, 0.28);
+    }
+
+    /* 5. the menu's buttons answer: a short fade, a press on tap, a lift on hover */
+    .sizebtn,
+    #go,
+    #startgo,
+    #choose button {
+      transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.08s;
+    }
+
+    .sizebtn:active:not(:disabled),
+    #go:active:not(:disabled),
+    #startgo:active:not(:disabled),
+    #choose button:active {
+      transform: scale(0.97);
+    }
+
+    @media (hover: hover) {
+      .sizebtn:not(.on):not(:disabled):hover {
+        border-color: rgba(232, 228, 220, 0.45);
+        color: #e8e4dc;
+      }
+
+      #go:not(:disabled):hover,
+      #startgo:not(:disabled):hover {
+        box-shadow: 0 0 18px rgba(232, 228, 220, 0.35);
+      }
     }
 
     .sizebtn:focus-visible {
@@ -1106,7 +1196,7 @@
       background: none;
       border-radius: 0;
       color: rgba(232, 228, 220, 0.75);
-      font: 400 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 12px/1 var(--font-ui);
     }
 
     #choose .switch+.switch {
@@ -1168,7 +1258,7 @@
       color: rgba(232, 228, 220, 0.85);
       border: 1px solid rgba(232, 228, 220, 0.3);
       border-radius: 3px;
-      font: 400 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 10px/1.35 var(--font-ui);
       -webkit-user-select: text;
       user-select: text;
       -webkit-touch-callout: default;
@@ -1180,7 +1270,7 @@
 
     #avg-fps {
       margin: 12px 0 0;
-      font: 400 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 11px/1 var(--font-ui);
       color: rgba(232, 228, 220, 0.45);
     }
 
@@ -1197,7 +1287,7 @@
       top: 10px;
       left: 10px;
       padding: 8px 12px;
-      font: 400 14px/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 14px/1.3 var(--font-ui);
       color: #e8e4dc;
       background: rgba(12, 15, 21, 0.6);
       border-radius: 3px;
@@ -1209,7 +1299,7 @@
       left: 50%;
       transform: translateX(-50%);
       padding: 6px 12px;
-      font: 400 11px/1.3 ui-monospace, "SF Mono", Menlo, monospace;
+      font: 400 11px/1.3 var(--font-ui);
       color: rgba(232, 228, 220, 0.75);
       background: rgba(12, 15, 21, 0.6);
       border-radius: 3px;
@@ -1223,6 +1313,20 @@
     @media (prefers-reduced-motion: reduce) {
       #steps li.active .mark::before {
         animation: none;
+      }
+
+      .sizebtn,
+      #go,
+      #startgo,
+      #choose button {
+        transition: none;
+      }
+
+      .sizebtn:active,
+      #go:active,
+      #startgo:active,
+      #choose button:active {
+        transform: none;
       }
     }
   </style>
@@ -1255,35 +1359,41 @@
         </div>
         <button id="chooseGo">Go</button>
       </div>
-      <p class="mode-note for-city">Choose any US city by address to replicate at the center of a procedurally generated
-        wilderness. People populate the ecosystem with two-lobed, spiking brains with dopamine-modulated neural
+      <p class="mode-note for-city tagline">Select a suggested US city or input any address to replicate it at the center of a
+        procedurally generated wilderness.</p>
+      <details id="about">
+        <summary>About</summary>
+        <p>People populate the ecosystem with two-lobed, spiking brains with dopamine-modulated neural
         plasticity. They sense the world, hunger, thirst, explore, and learn. Each newborn (coyote, deer, or person)
         inherits its parents' brain structure and physical traits with small mutations, so survivors shape the next
-        generation. You have a car and a cat companion to care for. Watch the ecosystem grow organically, or switch on
-        Survivor to live in it.</p>
-      <div class="chips for-place" id="picks"></div>
+        generation. Watch the ecosystem grow organically, or switch on Survivor to live in it and care for your cat companion.</p>
+      </details>
+      <!-- the presets are built from PICKS (9-main) ahead of Custom; Custom shows the address row -->
+      <div id="picks" class="sizerow for-place" role="radiogroup" aria-label="City">
+        <span>City</span>
+        <button class="sizebtn" data-place="custom" role="radio" aria-checked="false">Custom</button>
+      </div>
       <div id="row" class="for-place">
         <input id="addr" type="text" value="The Loop, Chicago, IL" placeholder="The Loop, Chicago, IL" spellcheck="false"
           autocomplete="off">
-        <button id="go">Load</button>
       </div>
       <div id="sizerow" class="sizerow" role="radiogroup" aria-label="World size">
-        <span>World size</span>
+        <span>World</span>
         <button class="sizebtn" data-size="small" role="radio" aria-checked="false">Small</button>
         <button class="sizebtn on" data-size="medium" role="radio" aria-checked="true">Medium</button>
         <button class="sizebtn" data-size="large" role="radio" aria-checked="false">Large</button>
         <button class="sizebtn" data-size="custom" role="radio" aria-checked="false">Custom</button>
+      </div>
+      <div id="playerrow" class="sizerow" role="radiogroup" aria-label="Player body">
+        <span>Player</span>
+        <button class="sizebtn on" data-player="random" role="radio" aria-checked="true">Random</button>
+        <button class="sizebtn" data-player="custom" role="radio" aria-checked="false">Custom</button>
       </div>
       <div id="customrow" hidden>
         <label class="customrow">Map size <output id="sizeOut">5</output><input id="size" type="range" min="1" max="10"
             step="1" value="5"></label>
         <label class="customrow">People <output id="peopleOut">3,000</output><input id="people" type="range" min="1000"
             max="10000" step="1000" value="3000"></label>
-      </div>
-      <div id="playerrow" class="sizerow" role="radiogroup" aria-label="Player body">
-        <span>Player body</span>
-        <button class="sizebtn on" data-player="random" role="radio" aria-checked="true">Random</button>
-        <button class="sizebtn" data-player="custom" role="radio" aria-checked="false">Custom</button>
       </div>
       <!-- slider ranges and starts come from PLAYER_CUSTOM (9-main) -->
       <div id="playercustom" hidden>
@@ -1301,13 +1411,13 @@
         <label class="customrow">Height <output id="pHeightOut"></output><input id="pHeight" type="range" step="1"></label>
         <label class="customrow">Weight <output id="pWeightOut"></output><input id="pWeight" type="range" step="1"></label>
       </div>
-      <div id="seedrow" class="for-wilderness">
-        <label>World seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-            maxlength="12" value="03132024"></label>
-        <button id="startgo">Start</button>
-      </div>
       <details id="more">
         <summary>More World Options</summary>
+        <div id="seedrow" class="for-wilderness">
+          <label>Seed<input id="seed" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
+              maxlength="12" value="03132024"></label>
+          <button id="startgo">Start</button>
+        </div>
         <button class="switch on" data-opt="city" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>City</button>
         <button class="switch on" data-opt="car" role="switch" aria-checked="true"><span class="track"><span
@@ -1323,9 +1433,11 @@
         <button class="switch on" data-opt="buildings" role="switch" aria-checked="true"><span class="track"><span
               class="thumb"></span></span>Buildings</button>
       </details>
+      <!-- Launch starts the chosen world, city or wilderness (startWorld in 9-main) -->
+      <button id="go">Launch</button>
       <p id="status"></p>
       <ol id="steps" hidden></ol>
-      <p class="credit">Game 1.0.0.6.1 by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
+      <p class="credit">1.0.0.6.1 by <a href="https://www.contextswitching.org/my/aboutme">Alejandro Rosales</a>.</p>
     </div>
   </div>
   <div id="dot"></div>

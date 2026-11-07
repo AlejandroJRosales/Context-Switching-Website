@@ -1275,10 +1275,10 @@ export const RAIN_BY_CODE = {
   80: 0.45, 81: 0.7, 82: 1, 95: 0.85, 96: 0.9, 99: 1
 };
 
-// Suggested places: well-mapped US downtowns.
+// Suggested places: well-mapped US downtowns, as [City button text, address query (a CITY_FILES key)].
 export const PICKS = [
-  ['New York, NY', 'New York, NY'],
-  ['Union Square, CA', 'Union Square, San Francisco, CA'],
-  ['The Loop, IL', 'Millennium Park, Chicago, IL'],
-  ['1 Park Place, Athens, OH', '1 Park Place, Athens, OH']
+  ['New York', 'New York, NY'],
+  ['Union Square', 'Union Square, San Francisco, CA'],
+  ['The Loop', 'Millennium Park, Chicago, IL'],
+  ['Ohio University', '1 Park Place, Athens, OH']
 ];

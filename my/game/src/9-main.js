@@ -83,6 +83,7 @@ function worldSizeChoice() {
 const panel = document.getElementById('panel');
 const addrEl = document.getElementById('addr');
 const goEl = document.getElementById('go');
+const goLabel = goEl.textContent;   // the page's own label, put back after a 'Try again'
 const statEl = document.getElementById('status');
 const hudEl = document.getElementById('hud');
 const gearEl = document.getElementById('gear');
@@ -718,7 +719,7 @@ function teardownWorld() {
 function setBusy(on) {
   busy = on;
   goEl.disabled = startGoEl.disabled = on;
-  for (const b of picksEl.children) b.disabled = on;
+  for (const b of picksEl.querySelectorAll('button')) b.disabled = on;
 }
 
 // AUTO GRAPHICS: the loaded scene's frame rate on high, counted from requestAnimationFrame while the frame loop draws
@@ -1090,7 +1091,7 @@ async function loadPlace(query) {
 
     current = 'scene';
     await finishLoad(provider, true);
-    goEl.textContent = 'Load';
+    goEl.textContent = goLabel;
   } catch (err) {
     console.error(err);
     steps.error(current, err.message || String(err));
@@ -1228,6 +1229,12 @@ function setMode(m) {
   citySwitchEl.setAttribute('aria-checked', String(on));
   say('');
 }
+// Launch, Start and Enter in the seed field load the chosen world: the seed's wilderness, or the city in the address
+// field (a preset's query or the Custom address).
+function startWorld() {
+  if (startMode === 'wilderness') loadWilderness(seedValue());
+  else loadPlace(addrEl.value);
+}
 citySwitchEl.addEventListener('click', () => {
   if (busy) return;
   setMode(startMode === 'city' ? 'wilderness' : 'city');
@@ -1242,8 +1249,7 @@ seedEl.addEventListener('input', () => {
 seedEl.addEventListener('blur', () => { if (!seedEl.value) seedEl.value = DEFAULT_SEED; });
 seedEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
-  if (startMode === 'wilderness') { loadWilderness(seedValue()); }
-  else { loadPlace(addrEl.value); }
+  startWorld();
 });
 // A row of radio buttons (.sizebtn): a click marks that one on and passes its data-<field> value to pick.
 function radioRow(field, pick) {
@@ -1324,20 +1330,34 @@ function playerBodyChoice() {
   };
 }
 peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
-startGoEl.addEventListener('click', () => { loadWilderness(seedValue()); });
+startGoEl.addEventListener('click', startWorld);
 
-goEl.addEventListener('click', () => { loadPlace(addrEl.value); });
+goEl.addEventListener('click', startWorld);
+// CITY: the PICKS presets and Custom in one radio row. A preset fills the address (Launch loads it); Custom shows the
+// address field (Launch or Enter loads it). data-place is the preset's query, or 'custom'.
 const picksEl = document.getElementById('picks');
+const placeCustomEl = picksEl.querySelector('.sizebtn[data-place="custom"]');
+const addrRowEl = document.getElementById('row');
 for (const [label, query] of PICKS) {
   const b = document.createElement('button');
+  b.className = 'sizebtn';
+  b.dataset.place = query;
+  b.setAttribute('role', 'radio');
+  b.setAttribute('aria-checked', 'false');
   b.textContent = label;
-  // fills the address only; Load (or Enter) starts the world
-  b.addEventListener('click', () => {
-    addrEl.value = query;
-    b.blur();
-  });
-  picksEl.appendChild(b);
+  picksEl.insertBefore(b, placeCustomEl);
 }
+radioRow('place', place => {
+  const custom = place === 'custom';
+  if (!custom) addrEl.value = place;
+  addrRowEl.hidden = !custom;
+});
+// the opening choice: the preset the address field names, else Custom. The field holds the page's default (a city
+// file key or alias) or a saved place's label (a city file's own label after a preset loaded), so a preset matches by
+// its city file's label: the one the field resolves to, or the field itself.
+const openingLabel = cityFileFor(addrEl.value)?.label ?? addrEl.value;
+([...picksEl.querySelectorAll('.sizebtn[data-place]')].find(b => cityFileFor(b.dataset.place)?.label === openingLabel)
+  ?? placeCustomEl).click();
 addrEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   loadPlace(addrEl.value);
