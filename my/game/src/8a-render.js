@@ -786,12 +786,19 @@ export function billboardMaterials(atlases, grid) {
 // and turn the particles back into their rig's pose.
 class VerletBody {
   // n particles; links: [a, b, aShare, bShare] (the shares of a length correction each end takes); radii: rig units
-  // per particle; anchors: the particles whose mean is pulled back over the sim's position
+  // per particle; anchors: the particles whose mean is pulled back over the sim's position. The links are kept flat
+  // in typed arrays (la, lb: the ends' offsets into pos; sa, sb: their shares), so a step reads no small arrays.
   constructor(n, links, radii, anchors) {
-    this.n = n; this.links = links; this.radii = radii; this.anchors = anchors;
+    this.n = n; this.radii = radii; this.anchors = anchors;
+    this.nLinks = links.length;
+    this.la = Int32Array.from(links, l => l[0] * 3);
+    this.lb = Int32Array.from(links, l => l[1] * 3);
+    this.sa = Float64Array.from(links, l => l[2]);
+    this.sb = Float64Array.from(links, l => l[3]);
     this.pos = new Float64Array(n * 3);    // particles now
     this.prev = new Float64Array(n * 3);   // particles one step ago (Verlet velocity)
     this.len = new Float64Array(links.length);   // each link's length, metres, as placed at the start
+    this.floor = new Float64Array(n);      // each particle's lowest height: the ground plus its radius (begin)
     this.kp = 0; this.ground = 0;
   }
 
@@ -805,50 +812,50 @@ class VerletBody {
   // After every place(): the links keep the lengths they start with. kp: metres per rig unit; ground: footing height.
   begin(kp, ground) {
     this.kp = kp; this.ground = ground;
-    for (let k = 0; k < this.links.length; k++) this.len[k] = this.dist(this.links[k][0], this.links[k][1]);
+    for (let k = 0; k < this.nLinks; k++) this.len[k] = this.dist(this.la[k] / 3, this.lb[k] / 3);
+    for (let i = 0; i < this.n; i++) this.floor[i] = ground + this.radii[i] * kp;
   }
 
   dist(i, j) {
-    const p = this.pos, a = i * 3, b = j * 3;
-    return Math.hypot(p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]);
+    const p = this.pos, a = i * 3, b = j * 3, dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   // One sim tick: damping and gravity, RAGDOLL_ITERS passes of links then ground (friction on the last), then the pull
   // back toward (anchorX, anchorZ): every particle and its last step move alike, so the pull adds no speed.
   step(anchorX, anchorZ) {
-    const pos = this.pos, prev = this.prev, h = NPC_TICK_S, n3 = this.n * 3;
-    for (let o = 0; o < n3; o += 3) {
-      for (let d = 0; d < 3; d++) {
-        const v = (pos[o + d] - prev[o + d]) * RAGDOLL_DAMP;
-        prev[o + d] = pos[o + d];
-        pos[o + d] += v;
-      }
-      pos[o + 1] -= RAGDOLL_G * h * h;
+    const pos = this.pos, prev = this.prev, h = NPC_TICK_S, n3 = this.n * 3, fall = RAGDOLL_G * h * h;
+    for (let o = 0; o < n3; o++) {
+      const v = (pos[o] - prev[o]) * RAGDOLL_DAMP;
+      prev[o] = pos[o];
+      pos[o] += v;
     }
+    for (let o = 1; o < n3; o += 3) pos[o] -= fall;
+    const la = this.la, lb = this.lb, sa = this.sa, sb = this.sb, len = this.len, floor = this.floor, nLinks = this.nLinks;
     for (let it = 0; it < RAGDOLL_ITERS; it++) {
-      for (let k = 0; k < this.links.length; k++) {
-        const [i, j, si, sj] = this.links[k], a = i * 3, b = j * 3, d = this.dist(i, j);
+      for (let k = 0; k < nLinks; k++) {
+        const a = la[k], b = lb[k];
+        const dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d < 1e-9) continue;
-        const f = (d - this.len[k]) / d;
-        for (let e = 0; e < 3; e++) {
-          const delta = (pos[b + e] - pos[a + e]) * f;
-          pos[a + e] += delta * si; pos[b + e] -= delta * sj;
-        }
+        const f = (d - len[k]) / d, fa = f * sa[k], fb = f * sb[k];
+        pos[a] += dx * fa; pos[a + 1] += dy * fa; pos[a + 2] += dz * fa;
+        pos[b] -= dx * fb; pos[b + 1] -= dy * fb; pos[b + 2] -= dz * fb;
       }
       const last = it === RAGDOLL_ITERS - 1;
-      for (let i = 0; i < this.n; i++) {
-        const o = i * 3, floor = this.ground + this.radii[i] * this.kp;
-        if (pos[o + 1] >= floor) continue;
-        pos[o + 1] = floor;
+      for (let i = 0, o = 0; i < this.n; i++, o += 3) {
+        if (pos[o + 1] >= floor[i]) continue;
+        pos[o + 1] = floor[i];
         if (last) {
           prev[o] += (pos[o] - prev[o]) * RAGDOLL_FRICTION;
           prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
         }
       }
     }
+    const anchors = this.anchors;
     let cx = 0, cz = 0;
-    for (const i of this.anchors) { cx += pos[i * 3]; cz += pos[i * 3 + 2]; }
-    cx /= this.anchors.length; cz /= this.anchors.length;
+    for (let k = 0; k < anchors.length; k++) { cx += pos[anchors[k] * 3]; cz += pos[anchors[k] * 3 + 2]; }
+    cx /= anchors.length; cz /= anchors.length;
     const pull = Math.min(1, RAGDOLL_ANCHOR_PER_S * h), sx = (anchorX - cx) * pull, sz = (anchorZ - cz) * pull;
     for (let o = 0; o < n3; o += 3) { pos[o] += sx; prev[o] += sx; pos[o + 2] += sz; prev[o + 2] += sz; }
   }
@@ -1592,7 +1599,7 @@ export class AnimalRenderer {
   // physics on (ragdollsOn) and graphics high, while a slot is free; it steps once per sim tick until the rise and ends with the
   // hold. Standing pose at this._world / this._quat; kp metres per rig unit.
   ragdollFor(a, p, now, kp, ticked) {
-    let r = this._ragdollOf.get(a);
+    let r = this._ragdollOf.size > 0 ? this._ragdollOf.get(a) : undefined;   // no lookup while no ragdoll is live
     if (r && now >= a.downUntil) { this.freeRagdoll(a, r); return null; }
     if (!r) {
       if (!a.isDown(now) || now - a.downAt > NPC_FALL_S) return null;
