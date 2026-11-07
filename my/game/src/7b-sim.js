@@ -23,7 +23,7 @@ import {
   NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
-  NPC_DRINK_SECONDS
+  NPC_DRINK_SECONDS, DAY_S
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools
@@ -1660,12 +1660,12 @@ export const ecosystem = new Ecosystem();
 // GAME SKY: own clock and weather (opens to afternoon rain, then random; 20-minute day); an Observer preset overrides it.
 export const simSky = {
   running: false,              // a world is in play
-  DAY_S: 1200,                 // real seconds per game day
+  DAY_S,                       // real seconds per game day (1-config.js, shared with the NPC day)
   OPENING_RAIN_S: 30,
   SPAN: [60, 180],             // seconds each weather lasts
   STEP_S: 0.25,                // sky redraw interval; the sun moves 0.075 degree in it
   KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
-  hour: 15, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
+  hour: 15, day: 0, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
 
   site: null,   // where the world is on Earth { lat, lon, offset } (the loads set it)
   sunAltDeg: 90,   // the drawn sun's altitude (degrees), set by updateSky; night reads it
@@ -1675,6 +1675,7 @@ export const simSky = {
   start() {
     this.running = true;
     this.hour = presetHour('Afternoon');
+    this.day = 0;   // midnights passed since the world loaded (the HUD's day)
     this.kind = 'Rain';
     this.timer = this.OPENING_RAIN_S;
     this.opening = true;
@@ -1699,7 +1700,9 @@ export const simSky = {
     if (!this.running || document.hidden) { this.lastNow = 0; return; }
     const dt = this.lastNow ? Math.min(Math.max((now - this.lastNow) / 1000, 0), 5) : 0;
     this.lastNow = now;
-    this.hour = (this.hour + dt * 24 / this.DAY_S) % 24;
+    const hours = this.hour + dt * 24 / this.DAY_S;
+    this.day += Math.floor(hours / 24);
+    this.hour = hours % 24;
     this.timer -= dt;
     let changed = false;
     if (this.timer <= 0) {

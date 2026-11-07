@@ -303,6 +303,8 @@ export const SHELL_EPS = 1e-4;       // cells are grown by this for the edge tes
 
 // One NPC tick is NPC_TICK_S (16 ms) of sim time; per-tick constants and Ecosystem.time use it; at most one tick per frame.
 export const NPC_TICK_S = 0.016;
+// One day, for the sky and the NPCs alike: real seconds from midnight to midnight (20 minutes). Animals live by the sun.
+export const DAY_S = 1200;
 // With a city, the starting people split city : wilderness as NPC_CITY_PEOPLE_WEIGHT : NPC_WILD_PEOPLE_WEIGHT.
 export const NPC_CITY_PEOPLE_WEIGHT = 3000;
 export const NPC_WILD_PEOPLE_WEIGHT = 900;
@@ -406,8 +408,9 @@ export const NPC_AGE_DEPLETION_RATE = 0;  // health lost per sim second of age, 
 export const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
 export const MATE_TIME_MULT = 4;
 export const REPRO_NEED_MAX = 100;       // ceiling for a brained animal's reproduction need, which doubles every tick         // default for every species: this many times longer to fill the mate bar
-export const NPC_DAY_TICKS = 24 * 60;            // ticks per sim day (the HUD's day counter)
-export const NPC_MATURITY_TICKS = 3 * NPC_DAY_TICKS;   // ticks from birth to full size (72 s at 60 Hz); no mating before
+export const NPC_DAY_TICKS = Math.round(DAY_S / NPC_TICK_S);   // ticks per day: one sky day of sim time
+export const NPC_MATURITY_S = 120;   // seconds of sim time from birth to full size; no mating before
+export const NPC_MATURITY_TICKS = Math.round(NPC_MATURITY_S / NPC_TICK_S);   // NPC_MATURITY_S in ticks
 export const GROWTH_MIN_SCALE = 0.25;   // body scale at birth; drawn size and bodyHeightM grow from it to 1 over NPC_MATURITY_TICKS
 export const NPC_ADULT_AGE = 18;                 // years shown at maturity
 export const NPC_TICKS_PER_YEAR = 365 * NPC_DAY_TICKS;

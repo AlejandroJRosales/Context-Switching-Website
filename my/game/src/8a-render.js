@@ -3221,6 +3221,6 @@ export function populationText() {
   const parts = [`${fmt(people)} people`];
   if (coyotes || providers.active) parts.push(`${fmt(coyotes)} coyotes`);
   if (deer) parts.push(`${fmt(deer)} deer`);
-  parts.push(`${fmt(ecosystem.plants.length)} plants`, `day ${Math.floor(ecosystem.ticks / (24 * 60))}`);
+  parts.push(`${fmt(ecosystem.plants.length)} plants`, `day ${simSky.day}`);
   return parts.join(', ');
 }
