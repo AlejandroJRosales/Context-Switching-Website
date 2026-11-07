@@ -20,9 +20,9 @@ import {
   TPP_UP, PLAYER_JOG_ANIM, SURVIVOR_CONFIG, playerPlantFood, STICK_RADIUS, FLICK_RADIUS, TAP_GAP_MS, TAP_SLOP,
   TAP_SWALLOW_MS, TAP_BUTTONS, HOLD_SAFE, CAR_SCALE, CAR_LEN, CAR_WID, CAR_TOP, CAR_WHEELBASE, CAR_TRACK, CAR_WHEEL_R,
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
-  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_DRAG, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
+  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
-  CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG
+  CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, NPC_BUMP_CONTACT_S
 } from './1-config.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate
@@ -34,14 +34,14 @@ import {
   providers, _surf, groundAt, isWaterAt
 } from './4-provider.js';
 import {
-  collision, resolveCollisions, moveAndCollide, supportAt, ceilingAt, solidOverlap, shellAt
+  collision, resolveCollisions, moveAndCollide, supportAt, ceilingAt, solidOverlap, shellAt, occ
 } from './5-collision.js';
 import {
   foodBoxes, shelters
 } from './6-worlds.js';
 import {
   startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, ecosystem,
-  simSky
+  simSky, conditionShare
 } from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
@@ -857,6 +857,8 @@ export const game = {
     bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
     bodyMassKg() { return humanMassKg(pov.sex, pov.look, this.bodyHeightM()); },
     fightMassKg() { return humanFightMassKg(pov.sex, pov.look, this.bodyHeightM()); },   // Ecosystem.fightHit
+    // health share x energy share, what the player's hits push with (Ecosystem.applyHit); the player is never knocked down
+    condition() { return conditionShare(game.health, SURVIVOR_CONFIG.maxHealth, game.foodNeed, game.waterNeed); },
     // the animal `tid` flees the player
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
     // the animal `tid` hunts the player (night hunts: `prey` is night out of shelter)
@@ -1038,7 +1040,7 @@ export const game = {
         ecosystem.fightHit(av, d);
         av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
       }
-      if (d.alive && d.nextAttackAt <= now) {
+      if (d.alive && !d.isDown(now) && d.nextAttackAt <= now) {   // a knocked-down animal does not hit back
         d.strike(av);
         ecosystem.fightHit(d, av);
         d.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
@@ -1787,6 +1789,43 @@ export function moveCar(dx, dz) {
   return any ? _push : null;
 }
 
+// The car's mass in kg: its curb mass, plus the player's body when they are in it (drag and CAR HITS use it).
+export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
+
+// CAR HITS, one sim tick (register with ecosystem.afterContacts): an animal whose collision circle overlaps one of the
+// car's circles (CAR_CIRCLES, CAR_R) at the car's height is moved out to touching, unless that is inside a wall, and
+// while the car closes on it the car's momentum (carMassKg x closing speed over NPC_BUMP_CONTACT_S, as a bump) pushes
+// it against its hold (Ecosystem.applyHit, no damage). The car itself is not slowed. Each animal is pushed by at most
+// one circle per tick, the first it touches.
+const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker: only its position is read
+export function carHits() {
+  if (!car.placed || !ecosystem.ready) return;
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // the car's heading (moveCar)
+  const vx = fx * car.speed, vz = fz * car.speed;            // its velocity, m/s
+  const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
+  const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
+  if (n === 0) return;
+  const massKg = carMassKg(), now = ecosystem.time;
+  _carHitter.position.set(car.x, car.y, car.z);
+  for (let i = 0; i < n; i++) {
+    const a = _carQ[i];
+    if (!a.alive) continue;
+    const feet = a.position.y - a.footLift() * NPC_UNIT;
+    if (feet < car.y - CAR_STEP_UP || feet > car.y + CAR_TOP) continue;   // above or below the car (another floor, a roof)
+    for (const o of CAR_CIRCLES) {
+      const cx = car.x + fx * o, cz = car.z + fz * o;
+      const dx = a.position.x - cx, dz = a.position.z - cz, d2 = dx * dx + dz * dz;
+      if (d2 >= touch * touch) continue;
+      const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the car's side
+      const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
+      if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
+      const closing = vx * nx + vz * nz;   // m/s the car moves into the animal
+      if (closing > 0) ecosystem.applyHit(a, _carHitter, 0, massKg * closing / NPC_BUMP_CONTACT_S);
+      break;
+    }
+  }
+}
+
 // One physics step. throttle, steer in [-1, 1] (steer > 0 = left).
 export function carPhysics(dt, throttle, steer, handbrake) {
   if (dt <= 0) return;
@@ -1805,7 +1844,7 @@ export function carPhysics(dt, throttle, steer, handbrake) {
     if (v > 0.3) a = CAR_BRAKE * throttle;
     else if (v > -CAR_REV_MAX) a = CAR_REV_ACCEL * throttle;
   }
-  let resist = CAR_ROLL + CAR_DRAG * v * v + (throttle === 0 ? CAR_ENGINE_BRK : 0);
+  let resist = CAR_ROLL + carDragPerM(carMassKg()) * v * v + (throttle === 0 ? CAR_ENGINE_BRK : 0);
   if (handbrake) resist += CAR_HANDBRAKE;
   const slope = -CAR_G * Math.sin(car.pitch);
 

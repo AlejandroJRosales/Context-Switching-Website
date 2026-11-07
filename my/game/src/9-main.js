@@ -56,7 +56,7 @@ import {
 import {
   dotEl, knobEl, climbEl, povEl, pov, vr, cat, game, bindInventory, player, keys, play, lastPointerType, bindKeys,
   bindMouseLook, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam, facePlayer, placeCar,
-  parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld
+  parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld, carHits
 } from './8b-player-game.js';
 
 // the core frame loop draws with this file's frame (wake() schedules loop.frame)
@@ -194,8 +194,10 @@ plantView.add = p => plantRenderer.add(p);
 plantView.remove = p => plantRenderer.remove(p);
 plantView.touch = p => plantRenderer.touch(p);
 
-// the game's hooks into the sim: Survivor rules after each tick's contacts; the avatar the animals sense and hunt
+// the game's hooks into the sim: Survivor rules after each tick's contacts; the car pushing and knocking down animals
+// (carHits); the avatar the animals sense and hunt
 ecosystem.afterContacts.push(dt => game.update(dt));
+ecosystem.afterContacts.push(carHits);
 ecosystem.avatar = game.avatar;
 bindInventory();   // its listeners, in their original place among main's
 document.getElementById('runNew').addEventListener('click', e => {
@@ -450,6 +452,7 @@ function setHud(on) {
 }
 hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
+
 function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
 // entering fullscreen also locks landscape where the device can (the lock needs fullscreen); skipped elsewhere
 const so = screen.orientation;
@@ -1132,6 +1135,8 @@ gameEl.addEventListener('click', () => {
   gameEl.setAttribute('aria-pressed', String(game.on));
   gameEl.blur();
   game.showPanel();
+  // ragdoll physics in Survivor mode only; Observer keeps the lying pose
+  animalRenderer.setRagdolls(game.on);
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
@@ -1160,6 +1165,9 @@ gameEl.addEventListener('click', () => {
   }
   wake();
 });
+
+// ragdolls follow the mode from the start (Observer at load), as the Survivor chip sets them after
+animalRenderer.setRagdolls(game.on);
 
 // OBSERVER OR SURVIVOR: asked once the world is ready; buttons only select, Go launches.
 const chooseObsEl = document.getElementById('chooseObs');

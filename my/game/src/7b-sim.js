@@ -23,7 +23,8 @@ import {
   NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
-  NPC_DRINK_SECONDS, DAY_S
+  NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
+  NPC_NEED_FULL, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools
@@ -61,6 +62,20 @@ export function humanFightAct(f, now, out, o) {
   out[o + 1] = f.moveSide;
   out[o + 2] = fightClamp01((f.fightUntil - now) / m.guardEaseS) * fightClamp01((now - f.fightFrom) / m.guardEaseS);
   out[o + 3] = 0;
+}
+// KNOCKDOWNS: a body's condition (0..1), the health share times the energy share; energy is the fuller of the
+// food and water bars' shortfall taken away, so the emptier bar sets it (NPC_NEED_FULL is an empty bar).
+// Shared by animals and the player's avatar, which hit with it (Ecosystem.applyHit).
+export function conditionShare(health, maxHealth, foodNeed, waterNeed) {
+  const healthShare = fightClamp01(health / maxHealth);
+  const energyShare = 1 - fightClamp01(Math.max(foodNeed, waterNeed) / NPC_NEED_FULL);
+  return healthShare * energyShare;
+}
+// How far down a knocked-down body is drawn at `now` (render only), 0 standing to 1 lying: the fall eases in over
+// NPC_FALL_S from downAt, the rise eases out over the last NPC_GETUP_S before downUntil.
+export function downShare(a, now) {
+  if (now >= a.downUntil) return 0;
+  return fightEase(fightClamp01((now - a.downAt) / NPC_FALL_S)) * fightEase(fightClamp01((a.downUntil - now) / NPC_GETUP_S));
 }
 export function sampleFightKeys(keys, u, out) {
   let i = 0;
@@ -205,6 +220,9 @@ export class Animal extends Entity {
     this.noEatUntil = 0;     // sim seconds: eating is blocked until then after being hit
     // fight move and hold (startFightMove); while ecosystem.time < fightUntil the animal takes no steps
     this.moveAt = -Infinity; this.playing = null; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
+    // KNOCKDOWNS (Ecosystem.applyHit): downAt starts the fall, downUntil ends the hold (sim seconds); downYaw is the
+    // push's heading, the way the body falls, and downDV its launch speed in m/s (both render only)
+    this.downAt = -Infinity; this.downUntil = 0; this.downYaw = 0; this.downDV = 0;
     this.quarry = null;      // night hunts: the animal or player avatar being chased (priority 'hunt')
     // PACK STRENGTH: body mass and height summed over this animal and its packmates within visionDistance, as of the
     // last searchDeer; a pack species attacks only what these match or beat (mayAttack)
@@ -618,7 +636,7 @@ export class Animal extends Entity {
     this.aimAtFocus();
     this.moving = true;
     const P = NPC_POUNCES[this.type];
-    if (P === undefined || now < this.nextPounceAt || now < this.fightUntil) return;
+    if (P === undefined || now < this.nextPounceAt || now < this.heldUntil()) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z, reach = this.leapLength(P);
     if (dx * dx + dz * dz > reach * reach) return;
     this.pounceAt = this.moveAt = now;
@@ -852,7 +870,7 @@ export class Animal extends Entity {
 
   move() {
     const lift = this.footLift() * NPC_UNIT;
-    if (this.moving && ecosystem.time >= this.fightUntil) {
+    if (this.moving && ecosystem.time >= this.heldUntil()) {
       if (this.heading !== this.targetHeading) {
         this.heading = turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * NPC_TICK_S);
       }
@@ -906,7 +924,7 @@ export class Animal extends Entity {
       + this.foodNeed * 0.0001;
     this.avoidNeed = 0;
     if (this.health <= 1) { this.alive = false; return; }
-    if (this.fleeFrom !== null && now >= this.fightUntil) this.fleeAttacker();
+    if (this.fleeFrom !== null && now >= this.heldUntil()) this.fleeAttacker();
 
     if (!this.brain) {
       // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick; a pounce in the air finishes first
@@ -939,7 +957,7 @@ export class Animal extends Entity {
 
   // One hit; the per-hit share keeps the damage rate at NPC_ATTACK_DAMAGE_PER_S whatever the cooldown.
   attacked(predator) {
-    this.takeHit(predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
+    ecosystem.applyHit(this, predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
   }
 
   // Damage from a hit: no eating for NPC_HIT_NO_EAT_S, and a kill feeds the attacker.
@@ -1025,6 +1043,13 @@ export class Animal extends Entity {
     return this.type === 'human' ? humanFightMassKg(this.sex, this.look, this.bodyHeightM())
       : this.bodyMassKg() * NPC_ANIMAL_FIGHT_SHARE;
   }
+
+  // KNOCKDOWNS: health share x energy share (conditionShare), what a hit's push and a body's hold scale by
+  condition() { return conditionShare(this.health, this.maxHealth, this.foodNeed, this.waterNeed); }
+  // sim seconds until which this animal takes no steps: the later of its fight hold and a knockdown
+  heldUntil() { return Math.max(this.fightUntil, this.downUntil); }
+  // knocked down at `now`: lying, so it neither attacks nor mates (its brain still thinks)
+  isDown(now) { return now < this.downUntil; }
 
   // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
   bodyMassKg() {
@@ -1299,6 +1324,7 @@ export class Ecosystem {
   static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
   static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
   static CONTACT_DIST = Math.sqrt(200) * NPC_UNIT;
+  static BUMP_DIST_SQ = NPC_BUMP_DIST * NPC_BUMP_DIST;   // BUMPING: touching bodies, squared
 
   constructor() {
     this.animals = [];
@@ -1499,28 +1525,32 @@ export class Ecosystem {
       if (!a.alive) continue;
       const px = a.position.x, pz = a.position.z;
 
-      if (this.canHuntById[a.typeId]) {
-        // with nothing it hunts alive the query can only return animals it would skip
-        const hunts = HUNTS_MASK[a.typeId], abit = 1 << a.typeId;
-        const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
-        hunt: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
-          const other = items[i];
-          if (other.alive && (hunts & (1 << other.typeId)) !== 0 &&
-            tools.distSq(px, pz, other.position.x, other.position.z) < Ecosystem.CONTACT_DIST_SQ) {
-            // PACK STRENGTH: a pack hunter strikes only what its pack can take (mayAttack)
-            if (a.nextAttackAt <= now && a.mayAttack(other)) {
-              // one hit per cooldown, on the first prey in reach it may attack; prey that hunts back strikes on its own turn
-              a.strike(other);
-              if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
-              else other.attacked(a);
-              a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
-            }
-            if (!a.alive) break hunt;
+      const down = a.isDown(now);
+      // one neighbour pass per animal for hunting and bumping (BUMPING); hunts is 0 when it is down or nothing it hunts lives
+      const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
+      // BUMPING: this animal's velocity this tick along its heading, 0 while it takes no steps (move())
+      const speed = a.moving && now >= a.heldUntil() ? a.stepLength() / NPC_TICK_S : 0;
+      const vx = Math.sin(a.heading) * speed, vz = Math.cos(a.heading) * speed;
+      const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
+      near: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
+        const other = items[i];
+        if (other === a || !other.alive) continue;
+        const dx = other.position.x - px, dz = other.position.z - pz, d2 = dx * dx + dz * dz;
+        if ((hunts & (1 << other.typeId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
+          // PACK STRENGTH: a pack hunter strikes only what its pack can take (mayAttack)
+          if (a.nextAttackAt <= now && a.mayAttack(other)) {
+            // one hit per cooldown, on the first prey in reach it may attack; prey that hunts back strikes on its own turn
+            a.strike(other);
+            if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
+            else other.attacked(a);
+            a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
           }
+          if (!a.alive) break near;
         }
-        if (!a.alive) continue;
+        if (other.alive && d2 < Ecosystem.BUMP_DIST_SQ) this.bump(a, other, dx, dz, d2, vx, vz);
       }
-      if (a.lookForMate) this.tryMate(a, px, pz);
+      if (!a.alive) continue;
+      if (!down && a.lookForMate) this.tryMate(a, px, pz);
 
       const canEat = a.noEatUntil <= now;
       const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.CONTACT_QUERY_RADIUS) : 0;
@@ -1548,8 +1578,48 @@ export class Ecosystem {
   // reference fighter; b strikes a on its own turn, and whoever drops to 1 health is eaten by the other.
   fightHit(a, b) {
     const strength = a.bodyHeightM() * a.fightMassKg() * Math.max(0, a.health);
-    b.takeHit(a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
+    this.applyHit(b, a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
   }
+
+  // BUMPING, a's side of one touching pair (b's own pass does b's side): b moves half the overlap straight away from
+  // a, unless that is inside a wall, and a's momentum into b (body mass x closing speed over NPC_BUMP_CONTACT_S)
+  // pushes it against its hold (applyHit, no damage). dx, dz: b less a; vx, vz: a's velocity.
+  bump(a, b, dx, dz, d2, vx, vz) {
+    const d = Math.sqrt(d2);
+    if (d < 1e-6) return;   // the same spot: no direction to push
+    const nx = dx / d, nz = dz / d, half = (NPC_BUMP_DIST - d) / 2;
+    const bx = this.fitX(b.position.x + nx * half), bz = this.fitZ(b.position.z + nz * half);
+    if (!occ.blockedAt(bx, bz)) { b.position.x = bx; b.position.z = bz; }
+    const closing = vx * nx + vz * nz;   // metres per second a moves toward b
+    if (closing > 0) this.applyHit(b, a, 0, a.bodyMassKg() * closing / NPC_BUMP_CONTACT_S);
+  }
+
+  // KNOCKDOWNS: every hit goes through here (fightHit, Animal.attacked, the player's punch and touch fights, bumps), the
+  // same rule for every attacker and every animal. Damage first (takeHit; a bump deals none and skips it); a target
+  // still alive is then pushed with pushN newtons (a hit's: Ecosystem.hitForceN; a bump's: its momentum, see bump)
+  // against what it can hold (Ecosystem.holdForceN). A push past the hold knocks it
+  // down, longer the further past (NPC_DOWN_*), falling the way it was pushed. A hit while down can lengthen the hold
+  // but does not restart the fall. Only animals are knocked down; the player's avatar takes the damage alone.
+  applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
+    if (damage > 0) target.takeHit(attacker, damage);
+    if (!(target instanceof Animal) || !target.alive) return;
+    const holdN = Ecosystem.holdForceN(target);
+    if (!(pushN > holdN)) return;
+    const now = this.time;
+    const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * (pushN / Math.max(holdN, 1e-9) - 1));
+    if (!target.isDown(now)) {
+      target.downAt = now;
+      const dx = target.position.x - attacker.position.x, dz = target.position.z - attacker.position.z;
+      target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + Math.PI;
+      // the push past the hold over the contact time (NPC_BUMP_CONTACT_S, used for every push) as the body's speed
+      target.downDV = (pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
+    }
+    target.downUntil = Math.max(target.downUntil, now + downS);
+  }
+  // newtons a hit pushes with: the attacker's fighting mass x NPC_HIT_ACCEL_MS2 x its condition
+  static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition(); }
+  // newtons a body holds against before it goes down: its fighting mass x NPC_HOLD_ACCEL_MS2 x its condition
+  static holdForceN(target) { return target.fightMassKg() * NPC_HOLD_ACCEL_MS2 * target.condition(); }
 
   // Occupancy-grid wall check: a step into a blocked cell keeps its free axis (slides) or is undone.
   collide(a) {

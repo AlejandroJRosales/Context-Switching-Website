@@ -340,6 +340,26 @@ export const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per po
 // FIGHTS (two animals that hunt each other): each side's hit scales with its height x fighting mass x health
 // (BODY PERFORMANCE, after SPECIES).
 export const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by the reference fighter (NPC_FIGHT_REF_STRENGTH): 0.2 of a human's 120
+// KNOCKDOWNS (Ecosystem.applyHit, F = ma; NPCs only for now, the player is never knocked down): a hit pushes with
+// F = the attacker's fighting mass x NPC_HIT_ACCEL_MS2 x its condition, and the target holds with F = its own fighting
+// mass x NPC_HOLD_ACCEL_MS2 x its condition (dividing both by the target's mass gives the accelerations). Condition is
+// the health share times the energy share (conditionShare). A push past the hold knocks the target down for
+// NPC_DOWN_MIN_S plus NPC_DOWN_S_PER_EXCESS per unit of push over hold past 1, at most NPC_DOWN_MAX_S.
+export const NPC_HIT_ACCEL_MS2 = 10;       // placeholder: acceleration an attacker drives into a hit
+export const NPC_HOLD_ACCEL_MS2 = 15;      // placeholder: acceleration a body can brace against; above the hit's, so a knockdown takes a stronger attacker
+export const NPC_DOWN_MIN_S = 1;           // sim seconds down for a push just past the hold
+export const NPC_DOWN_S_PER_EXCESS = 1;    // sim seconds added per unit of push over hold past 1
+export const NPC_DOWN_MAX_S = 6;           // sim seconds down at most per hit
+export const NPC_NEED_FULL = 100;          // a food or water need at this value is an empty bar (energy share 0)
+// BUMPING (Ecosystem.bump): two animals nearer than NPC_BUMP_DIST are pushed apart, each half the overlap, never into a
+// wall (NPC_BUMP_DIST is with NPC_RADIUS). A body walking into another pushes it with F = its body mass x its closing speed / NPC_BUMP_CONTACT_S (its
+// momentum stopped over the contact), against the same hold as a hit (applyHit), so a fast or heavy body can knock
+// another down. NPC_BUMP_DIST stays under Ecosystem.CONTACT_DIST (~0.64 m), so pushed-apart bodies still reach to hunt and mate.
+export const NPC_BUMP_CONTACT_S = 0.25;    // placeholder: seconds a bump takes to stop the closing speed
+// the drawn fall and rise (render only; the sim's hold is downUntil): the fall eases in over NPC_FALL_S from the hit,
+// the rise over the last NPC_GETUP_S of the hold, so the body is standing again when the hold ends
+export const NPC_FALL_S = 0.35;
+export const NPC_GETUP_S = 0.6;
 // FIGHT MOVES: each species' move when it fights (moveS sim seconds; key t is a share of moveS). Strikers (people,
 // coyotes) play theirs on landing a hit and hold their ground while hits keep coming; a species that `flees` plays
 // its move on being hit (no damage dealt), then runs from the attacker, and moves again only after fleeS.
@@ -426,6 +446,7 @@ export const NPC_RIG_TOP = { human: 38.55, deer: 35, coyote: 23 };
 
 export const NPC_UNIT = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
 export const NPC_RADIUS = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
+export const NPC_BUMP_DIST = 2 * NPC_RADIUS;   // BUMPING: metres between two bodies' centres when their collision circles touch
 export const NPC_COLLIDE_H = 1.35;     // collision column height; under the lowest lintel (player height + 0.25 m) so no door refuses them
 export const NPC_SPAWN_GAP = 8;        // metres between spawn points before crowding forces it lower
 // heightScale of a person the player's height; the player's rig, cabins, cat and camera are sized by it.
@@ -1197,12 +1218,35 @@ export const CAR_REV_MAX = 6.0;     // m/s top reverse speed
 export const CAR_REV_ACCEL = 3.0;
 export const CAR_ROLL = 0.15;    // m/s^2 rolling resistance
 export const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag with the throttle released
-export const CAR_DRAG = 0.0006;  // 1/m: 0.5 * rho * CdA / mass
+// CAR MASS AND DRAG: a microcar at this size (kei class, about 700 kg curb); the driver's body mass is added when the
+// player is in it (carMassKg in 8b-player-game.js). Drag per metre of travel (m/s^2 per (m/s)^2) is 0.5 x air density x
+// CdA / total mass, with the frontal area the car's width x height at CAR_FRONTAL_FILL (a body is not a full rectangle).
+export const CAR_MASS_KG = 700;      // curb mass, kg (kei cars: Suzuki Kei 710 kg, Cappuccino 700 to 725 kg)
+export const AIR_DENSITY = 1.225;    // kg/m^3, sea level at 15 C
+export const CAR_CD = 0.35;          // placeholder drag coefficient, inside small cars' ~0.33 to 0.38
+export const CAR_FRONTAL_FILL = 0.83;   // frontal area over width x height (VW Jetta and Acura NSX figures give ~0.82 to 0.84)
+export const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
+export const carDragPerM = massKg => 0.5 * AIR_DENSITY * CAR_CDA / massKg;   // 1/m: drag deceleration over speed squared
 export const CAR_GRIP = 8.8;     // m/s^2 lateral limit (mu ~0.9)
 export const CAR_STEER_MAX = 0.6;     // rad at standstill
 export const CAR_STEER_FALL = 12;      // m/s at which the steering lock halves
 export const CAR_STEER_RATE = 2.5;     // rad/s the wheels turn toward the input
 export const CAR_G = 9.81;
+// RAGDOLLS (render only; the sim's knockdown decides who is down and for how long): in Survivor mode, a knockdown
+// that starts within view on high graphics gets a ragdoll while a slot is free (HIGH_RAGDOLLS live at once;
+// LOW_RAGDOLLS = 0, so low graphics, Observer mode and anyone past the slots keep the lying pose). Verlet particles at the sim tick (VerletBody in
+// 8a-render.js) for people and box rigs alike: a rigid core, free-swinging limbs, flat ground at the body's footing,
+// pulled back toward the sim's position so the body stands up where it lies. HIGH_RAGDOLLS is also the people's
+// ragdoll texture rows.
+export const HIGH_RAGDOLLS = 16, LOW_RAGDOLLS = 0;
+export const RAGDOLL_G = CAR_G;              // m/s^2, standard gravity (CAR_G is the same 9.81)
+export const RAGDOLL_DAMP = 0.98;            // velocity kept per step
+export const RAGDOLL_ITERS = 4;              // constraint passes per step
+export const RAGDOLL_FRICTION = 0.4;         // share of along-ground speed lost per step in contact
+export const RAGDOLL_ANCHOR_PER_S = 1.5;     // share per second of the body's drift from the sim's position taken back
+export const RAGDOLL_MAX_DV = 4;             // m/s at most of launch speed (Animal.downDV)
+export const RAGDOLL_TOP_SHARE = 1;          // launch speed share at the body's top point; the rear and front take
+export const RAGDOLL_BASE_SHARE = 0.3;       // this share, so the body rolls toward the push
 export const CAR_GLANCE = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
 export const CAR_ALIGN = 0.3;     // share of the angle to the wall turned per contact substep
 export const CAR_REACH = 3.2 * CAR_SCALE;
