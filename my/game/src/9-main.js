@@ -650,7 +650,6 @@ const sizeOutEl = document.getElementById('sizeOut');
 const peopleEl = document.getElementById('people');
 const peopleOutEl = document.getElementById('peopleOut');
 const customRowEl = document.getElementById('customrow');
-const startGoEl = document.getElementById('startgo');
 
 function seedValue() {
   return seedEl.value || DEFAULT_SEED;
@@ -718,7 +717,7 @@ function teardownWorld() {
 
 function setBusy(on) {
   busy = on;
-  goEl.disabled = startGoEl.disabled = on;
+  goEl.disabled = on;
   for (const b of picksEl.querySelectorAll('button')) b.disabled = on;
 }
 
@@ -1106,7 +1105,6 @@ async function loadPlace(query) {
 // NEW ECOSYSTEM: a fresh seed for the next load (same city if any), used up when it loads; an intro load clears it.
 let randomSky = false;
 goEl.addEventListener('click', () => { randomSky = false; }, true);
-startGoEl.addEventListener('click', () => { randomSky = false; }, true);
 
 function newEcosystem() {
   if (!providers.active || busy) return;
@@ -1229,7 +1227,7 @@ function setMode(m) {
   citySwitchEl.setAttribute('aria-checked', String(on));
   say('');
 }
-// Launch, Start and Enter in the seed field load the chosen world: the seed's wilderness, or the city in the address
+// Launch and Enter in the seed field load the chosen world: the seed's wilderness, or the city in the address
 // field (a preset's query or the Custom address).
 function startWorld() {
   if (startMode === 'wilderness') loadWilderness(seedValue());
@@ -1330,7 +1328,6 @@ function playerBodyChoice() {
   };
 }
 peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
-startGoEl.addEventListener('click', startWorld);
 
 goEl.addEventListener('click', startWorld);
 // CITY: the PICKS presets and Custom in one radio row. A preset fills the address (Launch loads it); Custom shows the
