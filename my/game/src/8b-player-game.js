@@ -1041,7 +1041,7 @@ export const game = {
     return feet;
   },
 
-  // BUMPING with the player, as between animals (Ecosystem.bump): an animal whose collision
+  // BUMPING with the player, as between animals (Ecosystem.bump) and with the car (carHits): an animal whose collision
   // circle overlaps the player's (at the player's height) is moved out to touching, unless that is inside a wall, and
   // the player is not moved. The player's momentum into it pushes it against its hold, and its momentum into the
   // player pushes the player against theirs (Ecosystem.bumpForceN and applyHit, no damage; only while the avatar is
@@ -1838,11 +1838,45 @@ export function moveCar(dx, dz) {
   return any ? _push : null;
 }
 
-// The car's mass in kg: its curb mass, plus the player's body when they are in it (its drag uses it).
+// The car's mass in kg: its curb mass, plus the player's body when they are in it (its drag and CAR HITS use it).
 export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
+// CAR HITS, one sim tick (in ecosystem.afterContacts while ragdoll physics is on, 9-main applyRagdolls): an animal
+// whose collision circle overlaps one of the car's circles (CAR_CIRCLES, CAR_R) at the car's height is moved out to
+// touching, unless that is inside a wall, and while the car closes on it the car's momentum (carMassKg x closing speed,
+// Ecosystem.bumpForceN, as a bump) pushes it against its hold (Ecosystem.applyHit, no damage). The car itself is not
+// slowed. Each animal is pushed by at most one circle per tick, the first it touches.
+const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker: only its position is read
+export function carHits() {
+  if (!car.placed || !ecosystem.ready) return;
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // the car's heading (moveCar)
+  const vx = fx * car.speed, vz = fz * car.speed;            // its velocity, m/s
+  const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
+  const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
+  if (n === 0) return;
+  const massKg = carMassKg();
+  _carHitter.position.set(car.x, car.y, car.z);
+  for (let i = 0; i < n; i++) {
+    const a = _carQ[i];
+    if (!a.alive) continue;
+    const feet = a.position.y - a.footLift() * NPC_UNIT;
+    if (feet < car.y - CAR_STEP_UP || feet > car.y + CAR_TOP) continue;   // above or below the car (another floor, a roof)
+    for (const o of CAR_CIRCLES) {
+      const cx = car.x + fx * o, cz = car.z + fz * o;
+      const dx = a.position.x - cx, dz = a.position.z - cz, d2 = dx * dx + dz * dz;
+      if (d2 >= touch * touch) continue;
+      const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the car's side
+      const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
+      if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
+      const closing = vx * nx + vz * nz;   // m/s the car moves into the animal
+      if (closing > 0) ecosystem.applyHit(a, _carHitter, 0, Ecosystem.bumpForceN(massKg, closing));
+      break;
+    }
+  }
+}
+
 // PLAYER BUMPS, one sim tick (in ecosystem.afterContacts while ragdoll physics is on, 9-main applyRagdolls): the
-// player on foot and in play bumps animals in either mode (game.bumpAnimals). In the car (it drives through animals),
+// player on foot and in play bumps animals in either mode (game.bumpAnimals). In the car (carHits bumps for it),
 // flying (the player flies through them) or out of play, nothing, and the next bump starts with no velocity.
 export function playerBumps(dt) {
   if (!play.active || player.inCar || flying || !ecosystem.ready) { game._bumpX = game._bumpZ = NaN; return; }
@@ -2306,3 +2340,4 @@ renderInputs.casters = () => [cat.mesh, pov.body];
 renderInputs.survivor = () => game.on;
 renderInputs.pointerTaken = id => id === stickId || id === lookId;
 renderInputs.locked = () => play.locked;
+renderInputs.car = car;   // ragdolls stay out of its box (AnimalRenderer.carBox)

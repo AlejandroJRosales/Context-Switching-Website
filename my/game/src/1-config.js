@@ -1237,7 +1237,8 @@ export const CAR_G = 9.81;
 // while a slot is free (HIGH_RAGDOLLS live at once; LOW_RAGDOLLS = 0, so low graphics, ragdoll physics off and anyone
 // past the slots keep the lying pose). Verlet particles at the sim tick (VerletBody in
 // 8a-render.js) for people and box rigs alike: a rigid core, free-swinging limbs, flat ground at the body's footing,
-// pulled back toward the sim's position so the body stands up where it lies.
+// pulled back toward the sim's position so the body stands up where it lies, and kept out of the car's box (so a body
+// the car hits goes over it, not through it).
 export const HIGH_RAGDOLLS = 16, LOW_RAGDOLLS = 0;
 export const HUMAN_RAG_ROWS = HIGH_RAGDOLLS + 1;   // the people's ragdoll texture rows: one per crowd slot, the last kept for the player's body
 export const RAGDOLL_G = CAR_G;              // m/s^2, standard gravity (CAR_G is the same 9.81)

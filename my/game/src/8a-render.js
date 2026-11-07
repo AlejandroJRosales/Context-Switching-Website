@@ -27,7 +27,8 @@ import {
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HIGH_RAGDOLLS, LOW_RAGDOLLS, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
-  RAGDOLL_FRICTION, RAGDOLL_ANCHOR_PER_S, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, HUMAN_RAG_ROWS
+  RAGDOLL_FRICTION, RAGDOLL_ANCHOR_PER_S, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, HUMAN_RAG_ROWS,
+  CAR_LEN, CAR_WID, CAR_TOP
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
@@ -57,7 +58,8 @@ export const renderInputs = {
   casters: () => [],         // non-animal meshes whose moves redraw the shadow map (the cat and the player's body)
   survivor: () => false,     // true in Survivor mode: the sky ignores the Observer presets (skyChoice)
   pointerTaken: id => false, // true when the touch stick or touch look owns this pointer (not a label tap)
-  locked: () => false        // true while the pointer is locked to the canvas
+  locked: () => false,       // true while the pointer is locked to the canvas
+  car: null                  // the car (placed, x, y, z, yaw): ragdolls stay out of its box (AnimalRenderer.carBox)
 };
 
 // VIEW CULL: off-screen bodies, stats and brains are skipped (bounding sphere vs frustum).
@@ -821,9 +823,10 @@ class VerletBody {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
-  // One sim tick: damping and gravity, RAGDOLL_ITERS passes of links then ground (friction on the last), then the pull
-  // back toward (anchorX, anchorZ): every particle and its last step move alike, so the pull adds no speed.
-  step(anchorX, anchorZ) {
+  // One sim tick: damping and gravity, RAGDOLL_ITERS passes of links, ground (friction on the last) and the car's box
+  // (`box`, AnimalRenderer.carBox, or null), then the pull back toward (anchorX, anchorZ): every particle and its last
+  // step move alike, so the pull adds no speed.
+  step(anchorX, anchorZ, box) {
     const pos = this.pos, prev = this.prev, h = NPC_TICK_S, n3 = this.n * 3, fall = RAGDOLL_G * h * h;
     for (let o = 0; o < n3; o++) {
       const v = (pos[o] - prev[o]) * RAGDOLL_DAMP;
@@ -851,6 +854,7 @@ class VerletBody {
           prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
         }
       }
+      if (box) for (let i = 0; i < this.n; i++) this.outOfBox(i, box);
     }
     const anchors = this.anchors;
     let cx = 0, cz = 0;
@@ -858,6 +862,20 @@ class VerletBody {
     cx /= anchors.length; cz /= anchors.length;
     const pull = Math.min(1, RAGDOLL_ANCHOR_PER_S * h), sx = (anchorX - cx) * pull, sz = (anchorZ - cz) * pull;
     for (let o = 0; o < n3; o += 3) { pos[o] += sx; prev[o] += sx; pos[o + 2] += sz; prev[o + 2] += sz; }
+  }
+
+  // Particle i (with its radius) out of the car's box by the shallowest way: up onto its top, or out its nearest end or
+  // side. A car driving into a body pushes its lower particles ahead while the upper ones topple onto it, so the body
+  // goes over the car; the push moves the particle and not its last step, so it carries the car's speed.
+  outOfBox(i, box) {
+    const pos = this.pos, o = i * 3, r = this.radii[i] * this.kp;
+    const dx = pos[o] - box.cx, dz = pos[o + 2] - box.cz, h = pos[o + 1] - box.y;
+    const u = dx * box.fx + dz * box.fz, w = dx * box.sx + dz * box.sz;   // along the car, across it
+    const penU = box.halfLen + r - Math.abs(u), penW = box.halfWid + r - Math.abs(w), penTop = box.top + r - h;
+    if (penU <= 0 || penW <= 0 || penTop <= 0 || h < -r) return;
+    if (penTop <= penU && penTop <= penW) pos[o + 1] += penTop;
+    else if (penU <= penW) { const k = Math.sign(u) * penU; pos[o] += box.fx * k; pos[o + 2] += box.fz * k; }
+    else { const k = Math.sign(w) * penW; pos[o] += box.sx * k; pos[o + 2] += box.sz * k; }
   }
 
   // particle i into out
@@ -911,7 +929,7 @@ class BoxRagdoll {
     this.body.begin(kp, ground);
   }
 
-  step(a) { this.body.step(a.position.x, a.position.z); }
+  step(a, box) { this.body.step(a.position.x, a.position.z, box); }
 
   // The body's centre (_c) and axes (_x, _y, _z: right, up, forward) from its three points.
   frame() {
@@ -1006,7 +1024,7 @@ class HumanRagdoll {
     this.body.begin(kp, ground);
   }
 
-  step(a) { this.body.step(a.position.x, a.position.z); }
+  step(a, box) { this.body.step(a.position.x, a.position.z, box); }
 
   // The bones into `data` at this ragdoll's row, in rig units of the instance placed at (ox, oy, oz) facing `facing`
   // (the shader's iPose): each bone's rotation (x, y, z, w) then its translation, so a rest vertex p lands at R p + t.
@@ -1199,6 +1217,7 @@ export class AnimalRenderer {
     this._bodyRagdoll = new HumanRagdoll();   // the player's body's ragdoll (bodyDown), in the texture's last row
     this._bodyRagdoll.row = HUMAN_RAG_ROWS - 1;
     this._bodyTicks = 0;      // the sim tick the player's ragdoll last stepped to
+    this._box = { cx: 0, cz: 0, y: 0, fx: 0, fz: 1, sx: 1, sz: 0, halfLen: CAR_LEN / 2, halfWid: CAR_WID / 2, top: CAR_TOP };   // carBox
     this._pass = 0;
     this.ragdollsOn = false;   // ragdoll physics (setRagdolls): Survivor, or the Observer chip; set by 9-main
 
@@ -1608,7 +1627,7 @@ export class AnimalRenderer {
       if (r instanceof HumanRagdoll) r.row = this._ragdollRows.pop();
       r.start(a, this._world, this._quat, kp, this._world.y - SPECIES[p.type].lift * kp);
       this._ragdollOf.set(a, r);
-    } else if (ticked && now < a.downUntil - NPC_GETUP_S) r.step(a);
+    } else if (ticked && now < a.downUntil - NPC_GETUP_S) r.step(a, this.carBox());
     r.seen = this._pass;
     return r;
   }
@@ -1618,6 +1637,18 @@ export class AnimalRenderer {
     r.owner = null;
     if (r instanceof HumanRagdoll) { this._ragdollRows.push(r.row); r.row = -1; }
     this._ragdollPools[a.type].push(r);
+  }
+
+  // The car as ragdolls' box this pass (VerletBody.outOfBox), or null with no car placed: centre, ground under it,
+  // forward and across axes, half length and width, and its top (CAR_LEN, CAR_WID, CAR_TOP).
+  carBox() {
+    const car = renderInputs.car;
+    if (!car || !car.placed) return null;
+    const b = this._box;
+    b.cx = car.x; b.cz = car.z; b.y = car.y;
+    b.fx = -Math.sin(car.yaw); b.fz = -Math.cos(car.yaw);   // the car's heading (8b-player-game moveCar)
+    b.sx = Math.cos(car.yaw); b.sz = -Math.sin(car.yaw);
+    return b;
   }
 
   // THE PLAYER'S BODY (pov in 8b-player-game): its knockdown into its own iDown (out, offset 0) by the crowd's rules: a
@@ -1635,7 +1666,7 @@ export class AnimalRenderer {
     }
     if (!r.owner) { writeHumanDown(a, now, this.human.lieHalf, out, 0); return; }
     // one step per sim tick since the last frame, until the rise
-    for (; this._bodyTicks < ecosystem.ticks; this._bodyTicks++) if (now < a.downUntil - NPC_GETUP_S) r.step(a);
+    for (; this._bodyTicks < ecosystem.ticks; this._bodyTicks++) if (now < a.downUntil - NPC_GETUP_S) r.step(a, this.carBox());
     out[0] = 0; out[1] = 0; out[2] = ragdollRise(a, now); out[3] = r.row + 1;
     r.pose(this.human.ragdoll.image.data, x, y, z, facing);
     this.human.ragdoll.needsUpdate = true;

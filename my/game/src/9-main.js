@@ -56,7 +56,7 @@ import {
 import {
   dotEl, knobEl, climbEl, povEl, pov, vr, cat, game, bindInventory, player, keys, play, lastPointerType, bindKeys,
   bindMouseLook, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam, facePlayer, placeCar,
-  parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld, playerBumps
+  parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld, playerBumps, carHits
 } from './8b-player-game.js';
 
 // the core frame loop draws with this file's frame (wake() schedules loop.frame)
@@ -196,7 +196,8 @@ plantView.remove = p => plantRenderer.remove(p);
 plantView.touch = p => plantRenderer.touch(p);
 
 // the game's hooks into the sim: Survivor rules after each tick's contacts; the avatar the animals sense and hunt.
-// The player's bumps (playerBumps) join the hooks only while ragdoll physics is on (applyRagdolls).
+// The player's bumps (playerBumps) and the car's hits (carHits) join the hooks only while ragdoll physics is on
+// (applyRagdolls).
 ecosystem.afterContacts.push(dt => game.update(dt));
 ecosystem.avatar = game.avatar;
 bindInventory();   // its listeners, in their original place among main's
@@ -453,16 +454,19 @@ function setHud(on) {
 hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
 // RAGDOLL PHYSICS: always on in Survivor mode; in Observer mode the Ragdoll physics chip decides (on at load). On, the
-// player on foot collides with animals (playerBumps: pushed aside, knocked down by enough momentum) and knockdowns show
-// as ragdolls on high graphics, the lying pose on low. Off, the player passes through animals; knockdowns between
-// animals show the lying pose. The car and a flying player always pass through animals.
+// player on foot and the car collide with animals (playerBumps, carHits: pushed aside, knocked down by enough
+// momentum) and knockdowns show as ragdolls on high graphics (kept out of the car's box), the lying pose on low. Off,
+// the player and the car pass through animals; knockdowns between animals show the lying pose. A flying player always
+// passes through animals.
 let observerRagdolls = true;
 function applyRagdolls() {
   const ragdollPhysics = game.on || observerRagdolls;   // true in Survivor, else the Observer chip's choice
   animalRenderer.setRagdolls(ragdollPhysics);
-  const hooked = ecosystem.afterContacts.indexOf(playerBumps);   // -1 while the player's bumps are not registered
-  if (ragdollPhysics && hooked < 0) ecosystem.afterContacts.push(playerBumps);
-  else if (!ragdollPhysics && hooked >= 0) ecosystem.afterContacts.splice(hooked, 1);
+  for (const hook of [playerBumps, carHits]) {
+    const hooked = ecosystem.afterContacts.indexOf(hook);   // -1 while this hook is not registered
+    if (ragdollPhysics && hooked < 0) ecosystem.afterContacts.push(hook);
+    else if (!ragdollPhysics && hooked >= 0) ecosystem.afterContacts.splice(hooked, 1);
+  }
   ragdollEl.classList.toggle('sel', observerRagdolls);
   ragdollEl.setAttribute('aria-pressed', String(observerRagdolls));
 }
