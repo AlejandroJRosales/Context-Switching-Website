@@ -27,7 +27,7 @@ import {
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HIGH_RAGDOLLS, LOW_RAGDOLLS, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
-  RAGDOLL_FRICTION, RAGDOLL_ANCHOR_PER_S, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE
+  RAGDOLL_FRICTION, RAGDOLL_ANCHOR_PER_S, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, HUMAN_RAG_ROWS
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
@@ -501,7 +501,7 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
                              // space, lift in rig units); w > 0 = a ragdoll in texture row w - 1, z its rise share (0 ragdoll, 1 standing)
       uniform sampler2D humanRagdoll;   // ragdoll bones (HumanRagdoll.pose): per row, each bone's rotation then translation
       vec4 ragTexel(float row, float col) {
-        return texture2D(humanRagdoll, vec2((col + 0.5) / ${HUMAN_RAG_TEXELS}.0, (row + 0.5) / ${HIGH_RAGDOLLS}.0));
+        return texture2D(humanRagdoll, vec2((col + 0.5) / ${HUMAN_RAG_TEXELS}.0, (row + 0.5) / ${HUMAN_RAG_ROWS}.0));
       }
       vec3 quatRotate(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
       // a rig part id (rig.x) to its HUMAN_RAG_BONES index: head and neck 1, torso and pelvis 0, upper and lower limbs
@@ -1188,9 +1188,12 @@ export class AnimalRenderer {
     // BOX-RIG RAGDOLLS: live ragdolls by animal, spare ones, and the update pass count that marks who was drawn
     this._ragdollOf = new Map();
     this._ragdollPools = {};       // spare ragdolls by animal type
-    this._ragdollRows = Array.from({ length: HIGH_RAGDOLLS }, (_, i) => i);   // free rows of the people's ragdoll texture
+    this._ragdollRows = Array.from({ length: HIGH_RAGDOLLS }, (_, i) => i);   // free crowd rows of the people's ragdoll texture
+    this._bodyRagdoll = new HumanRagdoll();   // the player's body's ragdoll (bodyDown), in the texture's last row
+    this._bodyRagdoll.row = HUMAN_RAG_ROWS - 1;
+    this._bodyTicks = 0;      // the sim tick the player's ragdoll last stepped to
     this._pass = 0;
-    this.ragdollsOn = false;   // ragdolls allowed (setRagdolls): Survivor mode only, set by 9-main as the mode changes
+    this.ragdollsOn = false;   // ragdoll physics (setRagdolls): Survivor, or the Observer chip; set by 9-main
 
     // per species id: that type's fixed tables plus the counters one update() pass fills
     this.passById = NPC_TYPES.map(type => ({
@@ -1211,7 +1214,7 @@ export class AnimalRenderer {
 
     // PEOPLE: one instanced mesh for everyone nearer than perf.npcLodDist; per instance HUMAN_INSTANCE_ATTRS (4 floats each).
     // HUMAN RAGDOLLS: one texture row of bones per live ragdoll (HumanRagdoll.pose), read by the people shader
-    const ragdoll = new THREE.DataTexture(new Float32Array(HUMAN_RAG_TEXELS * HIGH_RAGDOLLS * 4), HUMAN_RAG_TEXELS, HIGH_RAGDOLLS,
+    const ragdoll = new THREE.DataTexture(new Float32Array(HUMAN_RAG_TEXELS * HUMAN_RAG_ROWS * 4), HUMAN_RAG_TEXELS, HUMAN_RAG_ROWS,
       THREE.RGBAFormat, THREE.FloatType);
     ragdoll.minFilter = ragdoll.magFilter = THREE.NearestFilter;
     ragdoll.generateMipmaps = false;
@@ -1577,16 +1580,16 @@ export class AnimalRenderer {
     };
   }
 
-  // Ragdolls allowed or not (Survivor mode on or off, 9-main): on, knockdowns get ragdolls on high graphics; off,
-  // every live ragdoll ends and everyone keeps the lying pose.
+  // Ragdoll physics on or off (9-main applyRagdolls: Survivor, or the Observer chip): on, knockdowns get ragdolls on
+  // high graphics and the lying pose on low; off, every live ragdoll ends and everyone keeps the lying pose.
   setRagdolls(on) {
     this.ragdollsOn = on;
     if (!on) for (const [a, r] of this._ragdollOf) this.freeRagdoll(a, r);
   }
 
   // The live ragdoll for animal `a` this pass, or null (it keeps the lying pose). A ragdoll starts only for a
-  // knockdown first seen within its fall (so one walked into view mid-hold keeps the lying pose), in Survivor mode
-  // (ragdollsOn) with graphics high, while a slot is free; it steps once per sim tick until the rise and ends with the
+  // knockdown first seen within its fall (so one walked into view mid-hold keeps the lying pose), with ragdoll
+  // physics on (ragdollsOn) and graphics high, while a slot is free; it steps once per sim tick until the rise and ends with the
   // hold. Standing pose at this._world / this._quat; kp metres per rig unit.
   ragdollFor(a, p, now, kp, ticked) {
     let r = this._ragdollOf.get(a);
@@ -1608,6 +1611,27 @@ export class AnimalRenderer {
     r.owner = null;
     if (r instanceof HumanRagdoll) { this._ragdollRows.push(r.row); r.row = -1; }
     this._ragdollPools[a.type].push(r);
+  }
+
+  // THE PLAYER'S BODY (pov in 8b-player-game): its knockdown into its own iDown (out, offset 0) by the crowd's rules: a
+  // ragdoll in the texture's last row (kept for it) while ragdolls are on and graphics high, started only within the
+  // fall and stepped once per sim tick, else the lying pose. The body's rig origin is (x, y, z) facing `facing`; kp
+  // metres per rig unit; ground its footing.
+  bodyDown(a, now, kp, x, y, z, facing, ground, out) {
+    const r = this._bodyRagdoll, allowed = this.ragdollsOn && graphics.high;
+    if (r.owner && (now >= a.downUntil || !allowed)) r.owner = null;
+    if (!r.owner && allowed && a.isDown(now) && now - a.downAt <= NPC_FALL_S) {
+      this._world.set(x, y, z);
+      this._quat.setFromAxisAngle(this._yAxis, facing);
+      r.start(a, this._world, this._quat, kp, ground);
+      this._bodyTicks = ecosystem.ticks;
+    }
+    if (!r.owner) { writeHumanDown(a, now, this.human.lieHalf, out, 0); return; }
+    // one step per sim tick since the last frame, until the rise
+    for (; this._bodyTicks < ecosystem.ticks; this._bodyTicks++) if (now < a.downUntil - NPC_GETUP_S) r.step(a);
+    out[0] = 0; out[1] = 0; out[2] = ragdollRise(a, now); out[3] = r.row + 1;
+    r.pose(this.human.ragdoll.image.data, x, y, z, facing);
+    this.human.ragdoll.needsUpdate = true;
   }
 
   cacheFor(type, im) {

@@ -1050,6 +1050,10 @@ export class Animal extends Entity {
   heldUntil() { return Math.max(this.fightUntil, this.downUntil); }
   // knocked down at `now`: lying, so it neither attacks nor mates (its brain still thinks)
   isDown(now) { return now < this.downUntil; }
+  // BUMPING: metres per second it moves along its heading this tick, 0 while it takes no steps (move())
+  groundSpeed(now) { return this.moving && now >= this.heldUntil() ? this.stepLength() / NPC_TICK_S : 0; }
+  // KNOCKDOWNS: can a push knock it down now (Ecosystem.applyHit)? Every animal; the player's avatar has its own rule
+  knockable() { return true; }
 
   // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
   bodyMassKg() {
@@ -1528,8 +1532,8 @@ export class Ecosystem {
       const down = a.isDown(now);
       // one neighbour pass per animal for hunting and bumping (BUMPING); hunts is 0 when it is down or nothing it hunts lives
       const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
-      // BUMPING: this animal's velocity this tick along its heading, 0 while it takes no steps (move())
-      const speed = a.moving && now >= a.heldUntil() ? a.stepLength() / NPC_TICK_S : 0;
+      // BUMPING: this animal's velocity this tick along its heading
+      const speed = a.groundSpeed(now);
       const vx = Math.sin(a.heading) * speed, vz = Math.cos(a.heading) * speed;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
       near: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
@@ -1591,18 +1595,21 @@ export class Ecosystem {
     const bx = this.fitX(b.position.x + nx * half), bz = this.fitZ(b.position.z + nz * half);
     if (!occ.blockedAt(bx, bz)) { b.position.x = bx; b.position.z = bz; }
     const closing = vx * nx + vz * nz;   // metres per second a moves toward b
-    if (closing > 0) this.applyHit(b, a, 0, a.bodyMassKg() * closing / NPC_BUMP_CONTACT_S);
+    if (closing > 0) this.applyHit(b, a, 0, Ecosystem.bumpForceN(a.bodyMassKg(), closing));
   }
+  // BUMPING: newtons a body of massKg moving at closingMS into another pushes with: its momentum stopped over
+  // NPC_BUMP_CONTACT_S (animals, the car and the player alike)
+  static bumpForceN(massKg, closingMS) { return massKg * closingMS / NPC_BUMP_CONTACT_S; }
 
   // KNOCKDOWNS: every hit goes through here (fightHit, Animal.attacked, the player's punch and touch fights, bumps), the
   // same rule for every attacker and every animal. Damage first (takeHit; a bump deals none and skips it); a target
   // still alive is then pushed with pushN newtons (a hit's: Ecosystem.hitForceN; a bump's: its momentum, see bump)
   // against what it can hold (Ecosystem.holdForceN). A push past the hold knocks it
   // down, longer the further past (NPC_DOWN_*), falling the way it was pushed. A hit while down can lengthen the hold
-  // but does not restart the fall. Only animals are knocked down; the player's avatar takes the damage alone.
+  // but does not restart the fall. Animals and the player's avatar alike, while the target is knockable().
   applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
     if (damage > 0) target.takeHit(attacker, damage);
-    if (!(target instanceof Animal) || !target.alive) return;
+    if (!target.alive || !target.knockable()) return;
     const holdN = Ecosystem.holdForceN(target);
     if (!(pushN > holdN)) return;
     const now = this.time;

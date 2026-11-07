@@ -22,7 +22,7 @@ import {
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
-  CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, NPC_BUMP_CONTACT_S
+  CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS
 } from './1-config.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate
@@ -41,7 +41,7 @@ import {
 } from './6-worlds.js';
 import {
   startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, ecosystem,
-  simSky, conditionShare
+  simSky, conditionShare, Ecosystem
 } from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
@@ -435,6 +435,9 @@ export class CatCompanion {
   }
 }
 
+// The player's body's facing (yaw of its rig): the rig faces +z at rotation 0, the camera -z at yaw 0.
+export const bodyYaw = () => player.heading + Math.PI;
+
 export const pov = {
   mode: '3rd',
   body: null,
@@ -536,7 +539,7 @@ export const pov = {
     const feet = player.pos.y - EYE_HEIGHT;
     const b = this.body, kp = NPC_UNIT * this.heightScale;
     b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
-    b.rotation.y = player.heading + Math.PI;   // the rig faces +z at rotation 0, the camera -z at yaw 0
+    b.rotation.y = bodyYaw();
     // the blob under the feet, as the crowd's blobs skip a floating or submerged body
     if (flying || swimming) blobShadows.hidePlayer();
     else blobShadows.placePlayer(player.pos.x, feet, player.pos.z, b.rotation.y, kp);
@@ -553,6 +556,10 @@ export const pov = {
     humanFightAct(game.avatar, ecosystem.time, act.array, 0);
     act.array[3] = petting.act();
     act.needsUpdate = true;
+    // knocked down: a ragdoll or the lying pose, by the crowd's rules (AnimalRenderer.bodyDown)
+    const down = b.geometry.attributes.iDown;
+    animalRenderer.bodyDown(game.avatar, ecosystem.time, kp, b.position.x, b.position.y, b.position.z, b.rotation.y, feet, down.array);
+    down.needsUpdate = true;
 
     const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
     const bx = Math.sin(player.yaw), bz = Math.cos(player.yaw);
@@ -843,7 +850,8 @@ export const game = {
   injuries: new Set(),    // SURVIVOR_CONFIG.injuries keys the player has
   run: null,              // this run's record: hours, eaten counts, cause
   _lastHour: null,
-  _q: [], _qp: [], _qb: [],
+  _q: [], _qp: [], _qb: [], _qBump: [],
+  _bumpX: NaN, _bumpZ: NaN,   // the player's position at the last bumpAnimals, for their velocity
   _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
 
   // The ecosystem's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
@@ -852,12 +860,17 @@ export const game = {
     type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
     startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
     moveAt: -Infinity, playing: null, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move (startFightMove), drawn on the 3rd-person body
+    // KNOCKDOWNS (Ecosystem.applyHit), as an animal's: the fall's start, the hold's end, the push's heading and launch speed
+    downAt: -Infinity, downUntil: 0, downYaw: 0, downDV: 0,
+    isDown(now) { return now < this.downUntil; },
+    knockable() { return !game.sheltered && !game.dead; },   // nothing reaches the player in the car or a cabin
+    get facingAngle() { return bodyYaw(); },                  // the body's facing, as an animal's (the lying pose)
     get health() { return game.health; },
     strike() { startFightMove(this, NPC_FIGHT_MOVES.human, ecosystem.time); },
     bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
     bodyMassKg() { return humanMassKg(pov.sex, pov.look, this.bodyHeightM()); },
     fightMassKg() { return humanFightMassKg(pov.sex, pov.look, this.bodyHeightM()); },   // Ecosystem.fightHit
-    // health share x energy share, what the player's hits push with (Ecosystem.applyHit); the player is never knocked down
+    // health share x energy share, what the player's hits push with and their hold scales by (Ecosystem.applyHit)
     condition() { return conditionShare(game.health, SURVIVOR_CONFIG.maxHealth, game.foodNeed, game.waterNeed); },
     // the animal `tid` flees the player
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
@@ -886,6 +899,7 @@ export const game = {
     this.run = { hours: 0, eaten: {}, cause: null };
     this._lastHour = null;
     this.avatar.nextAttackAt = 0;
+    this.avatar.downAt = -Infinity; this.avatar.downUntil = 0;
     this.showPanel();
     this.draw();
   },
@@ -995,8 +1009,7 @@ export const game = {
     const N = SURVIVOR_CONFIG.needs, R = SURVIVOR_CONFIG.reach;
 
     const px = player.pos.x, pz = player.pos.z;
-    const feet = player.pos.y - EYE_HEIGHT;
-    av.position.set(px, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, pz);
+    const feet = this.placeAvatar();
     this.sheltered = player.inCar || cabinAt(px, feet, pz);
     av.prey = ecosystem.night && !this.sheltered;
 
@@ -1021,6 +1034,42 @@ export const game = {
     this.draw();
   },
 
+  // The avatar at the player's body centre (Survivor's contacts and the player's bumps read it); returns the feet's height.
+  placeAvatar() {
+    const feet = player.pos.y - EYE_HEIGHT;
+    this.avatar.position.set(player.pos.x, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, player.pos.z);
+    return feet;
+  },
+
+  // BUMPING with the player, as between animals (Ecosystem.bump): an animal whose collision
+  // circle overlaps the player's (at the player's height) is moved out to touching, unless that is inside a wall, and
+  // the player is not moved. The player's momentum into it pushes it against its hold, and its momentum into the
+  // player pushes the player against theirs (Ecosystem.bumpForceN and applyHit, no damage; only while the avatar is
+  // alive, so in Survivor). The player's velocity is their move since the last call over dt; a jump past
+  // HUMAN_GAIT_JUMP (a teleport, the first call) counts as none.
+  bumpAnimals(px, pz, dt, R) {
+    const av = this.avatar, now = ecosystem.time;
+    const mx = px - this._bumpX, mz = pz - this._bumpZ, moved = Math.hypot(mx, mz);
+    const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity this call: first call, teleport or no time
+    const pvx = still ? 0 : mx / dt, pvz = still ? 0 : mz / dt;
+    this._bumpX = px; this._bumpZ = pz;
+    const touch = PLAYER_RADIUS + NPC_RADIUS;
+    const n = ecosystem.animalGrid.queryInto(this._qBump, px, pz, touch + Math.sqrt(ecosystem.drift2));
+    for (let i = 0; i < n; i++) {
+      const d = this._qBump[i];
+      if (!d.alive || Math.abs(d.position.y - av.position.y) > R.height) continue;
+      const dx = d.position.x - px, dz = d.position.z - pz, d2 = dx * dx + dz * dz;
+      if (d2 >= touch * touch) continue;
+      const dist = Math.sqrt(d2), nx = dist > 1e-6 ? dx / dist : Math.sin(d.heading), nz = dist > 1e-6 ? dz / dist : Math.cos(d.heading);
+      const ox = ecosystem.fitX(px + nx * touch), oz = ecosystem.fitZ(pz + nz * touch);
+      if (!occ.blockedAt(ox, oz)) { d.position.x = ox; d.position.z = oz; }
+      const playerClosing = pvx * nx + pvz * nz;   // m/s the player moves into the animal
+      if (playerClosing > 0) ecosystem.applyHit(d, av, 0, Ecosystem.bumpForceN(av.bodyMassKg(), playerClosing));
+      const v = d.groundSpeed(now), animalClosing = -(Math.sin(d.heading) * v * nx + Math.cos(d.heading) * v * nz);   // m/s it moves into the player
+      if (animalClosing > 0 && d.alive) ecosystem.applyHit(av, d, 0, Ecosystem.bumpForceN(d.bodyMassKg(), animalClosing));
+    }
+  },
+
   // Contact with animals: prey that cannot fight back is eaten on touch; one that hunts people trades fight hits.
   touchAnimals(px, pz, R) {
     const av = this.avatar, now = ecosystem.time;
@@ -1035,7 +1084,7 @@ export const game = {
         av.feedOn(d);
         continue;
       }
-      if (av.nextAttackAt <= now) {
+      if (av.nextAttackAt <= now && !av.isDown(now)) {   // a knocked-down player does not hit back
         av.strike(d);
         ecosystem.fightHit(av, d);
         av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
@@ -1789,41 +1838,16 @@ export function moveCar(dx, dz) {
   return any ? _push : null;
 }
 
-// The car's mass in kg: its curb mass, plus the player's body when they are in it (drag and CAR HITS use it).
+// The car's mass in kg: its curb mass, plus the player's body when they are in it (its drag uses it).
 export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
-// CAR HITS, one sim tick (register with ecosystem.afterContacts): an animal whose collision circle overlaps one of the
-// car's circles (CAR_CIRCLES, CAR_R) at the car's height is moved out to touching, unless that is inside a wall, and
-// while the car closes on it the car's momentum (carMassKg x closing speed over NPC_BUMP_CONTACT_S, as a bump) pushes
-// it against its hold (Ecosystem.applyHit, no damage). The car itself is not slowed. Each animal is pushed by at most
-// one circle per tick, the first it touches.
-const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker: only its position is read
-export function carHits() {
-  if (!car.placed || !ecosystem.ready) return;
-  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // the car's heading (moveCar)
-  const vx = fx * car.speed, vz = fz * car.speed;            // its velocity, m/s
-  const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
-  const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
-  if (n === 0) return;
-  const massKg = carMassKg(), now = ecosystem.time;
-  _carHitter.position.set(car.x, car.y, car.z);
-  for (let i = 0; i < n; i++) {
-    const a = _carQ[i];
-    if (!a.alive) continue;
-    const feet = a.position.y - a.footLift() * NPC_UNIT;
-    if (feet < car.y - CAR_STEP_UP || feet > car.y + CAR_TOP) continue;   // above or below the car (another floor, a roof)
-    for (const o of CAR_CIRCLES) {
-      const cx = car.x + fx * o, cz = car.z + fz * o;
-      const dx = a.position.x - cx, dz = a.position.z - cz, d2 = dx * dx + dz * dz;
-      if (d2 >= touch * touch) continue;
-      const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the car's side
-      const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
-      if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
-      const closing = vx * nx + vz * nz;   // m/s the car moves into the animal
-      if (closing > 0) ecosystem.applyHit(a, _carHitter, 0, massKg * closing / NPC_BUMP_CONTACT_S);
-      break;
-    }
-  }
+// PLAYER BUMPS, one sim tick (in ecosystem.afterContacts while ragdoll physics is on, 9-main applyRagdolls): the
+// player on foot and in play bumps animals in either mode (game.bumpAnimals). In the car (it drives through animals),
+// flying (the player flies through them) or out of play, nothing, and the next bump starts with no velocity.
+export function playerBumps(dt) {
+  if (!play.active || player.inCar || flying || !ecosystem.ready) { game._bumpX = game._bumpZ = NaN; return; }
+  game.placeAvatar();
+  game.bumpAnimals(player.pos.x, player.pos.z, dt, SURVIVOR_CONFIG.reach);
 }
 
 // One physics step. throttle, steer in [-1, 1] (steer > 0 = left).
@@ -2127,6 +2151,8 @@ export function playerStep(dt) {
   // an empty car still rolling (left at speed) brakes to a stop
   if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
+  // knocked down (KNOCKDOWNS): the player lies still, with no moving, turning, jumping or punching until the hold ends
+  const knockedDown = game.avatar.isDown(ecosystem.time);
   let mx = 0, mz = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
   if (keys.has('KeyS') || keys.has('ArrowDown')) mz -= 1;
@@ -2160,7 +2186,7 @@ export function playerStep(dt) {
   // running: on foot at the sprint speed (sprint already excludes flying and swimming)
   player.running = sprint && !stance.low && len > 0 && play.active;
   let dx = 0, dz = 0, dy = 0;
-  if (len > 0 && play.active) {
+  if (len > 0 && play.active && !knockedDown) {
     const scale = Math.min(len, 1) / len;
     mx *= scale; mz *= scale;
     dx = (fwd.x * mz + right.x * mx) * speed * dt;
@@ -2175,7 +2201,8 @@ export function playerStep(dt) {
 
   // 3rd person, GTA-style: the body turns toward the move, and the view drifts back behind it.
   // 1st person and VR: the eyes are the view, so the body faces it.
-  if (pov.mode !== '3rd' || renderer.xr.isPresenting) player.heading = player.yaw;
+  // Knocked down, the body keeps the facing it fell with (in 3rd person the move is already zero).
+  if (pov.mode !== '3rd' || renderer.xr.isPresenting) { if (!knockedDown) player.heading = player.yaw; }
   else {
     if (dx !== 0 || dz !== 0) {
       let dh = Math.atan2(-dx, -dz) - player.heading;
@@ -2187,7 +2214,7 @@ export function playerStep(dt) {
   }
 
   // the attack button: a tap punches once, a hold keeps punching (game.punch paces the hits)
-  if (play.active && !flying && (attackQueued || pedal.attack)) game.punch();
+  if (play.active && !flying && !knockedDown && (attackQueued || pedal.attack)) game.punch();
   attackQueued = false;
 
   if (flying) {
@@ -2205,7 +2232,7 @@ export function playerStep(dt) {
     // walls still stop a swimmer; drag, the float cap and the bed bound the vertical
     moveAndCollide(player.pos, dx, dz, STEP_UP);
     player.vel.y *= Math.max(0, 1 - SWIM_DRAG * dt);
-    if (play.active && (keys.has('Space') || jumpQueued || pedal.jump)) player.vel.y = jumpSpeed * SWIM_JUMP;
+    if (play.active && !knockedDown && (keys.has('Space') || jumpQueued || pedal.jump)) player.vel.y = jumpSpeed * SWIM_JUMP;
     jumpQueued = false;
     player.pos.y += player.vel.y * dt + dy;
     const cap = waterTop + SWIM_FLOAT;
@@ -2219,7 +2246,7 @@ export function playerStep(dt) {
     moveAndCollide(player.pos, dx, dz, wasGrounded ? STEP_UP : 0);
     if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
 
-    if (player.grounded && play.active && (keys.has('Space') || jumpQueued || pedal.jump)) {
+    if (player.grounded && play.active && !knockedDown && (keys.has('Space') || jumpQueued || pedal.jump)) {
       player.vel.y = jumpSpeed;
       player.grounded = false;
     }

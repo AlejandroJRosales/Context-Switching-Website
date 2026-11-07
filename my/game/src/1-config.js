@@ -340,7 +340,7 @@ export const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per po
 // FIGHTS (two animals that hunt each other): each side's hit scales with its height x fighting mass x health
 // (BODY PERFORMANCE, after SPECIES).
 export const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by the reference fighter (NPC_FIGHT_REF_STRENGTH): 0.2 of a human's 120
-// KNOCKDOWNS (Ecosystem.applyHit, F = ma; NPCs only for now, the player is never knocked down): a hit pushes with
+// KNOCKDOWNS (Ecosystem.applyHit, F = ma; animals and the player alike, the player not while sheltered): a hit pushes with
 // F = the attacker's fighting mass x NPC_HIT_ACCEL_MS2 x its condition, and the target holds with F = its own fighting
 // mass x NPC_HOLD_ACCEL_MS2 x its condition (dividing both by the target's mass gives the accelerations). Condition is
 // the health share times the energy share (conditionShare). A push past the hold knocks the target down for
@@ -1232,13 +1232,14 @@ export const CAR_STEER_MAX = 0.6;     // rad at standstill
 export const CAR_STEER_FALL = 12;      // m/s at which the steering lock halves
 export const CAR_STEER_RATE = 2.5;     // rad/s the wheels turn toward the input
 export const CAR_G = 9.81;
-// RAGDOLLS (render only; the sim's knockdown decides who is down and for how long): in Survivor mode, a knockdown
-// that starts within view on high graphics gets a ragdoll while a slot is free (HIGH_RAGDOLLS live at once;
-// LOW_RAGDOLLS = 0, so low graphics, Observer mode and anyone past the slots keep the lying pose). Verlet particles at the sim tick (VerletBody in
+// RAGDOLLS (render only; the sim's knockdown decides who is down and for how long): with ragdoll physics on (always in
+// Survivor, the Ragdoll physics chip in Observer), a knockdown that starts within view on high graphics gets a ragdoll
+// while a slot is free (HIGH_RAGDOLLS live at once; LOW_RAGDOLLS = 0, so low graphics, ragdoll physics off and anyone
+// past the slots keep the lying pose). Verlet particles at the sim tick (VerletBody in
 // 8a-render.js) for people and box rigs alike: a rigid core, free-swinging limbs, flat ground at the body's footing,
-// pulled back toward the sim's position so the body stands up where it lies. HIGH_RAGDOLLS is also the people's
-// ragdoll texture rows.
+// pulled back toward the sim's position so the body stands up where it lies.
 export const HIGH_RAGDOLLS = 16, LOW_RAGDOLLS = 0;
+export const HUMAN_RAG_ROWS = HIGH_RAGDOLLS + 1;   // the people's ragdoll texture rows: one per crowd slot, the last kept for the player's body
 export const RAGDOLL_G = CAR_G;              // m/s^2, standard gravity (CAR_G is the same 9.81)
 export const RAGDOLL_DAMP = 0.98;            // velocity kept per step
 export const RAGDOLL_ITERS = 4;              // constraint passes per step
