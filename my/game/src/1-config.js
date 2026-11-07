@@ -229,8 +229,8 @@ export const LOW_RENDER_FPS = 60;
 export const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays at FOG_NEAR
 export const FOG_NEAR = 120;
 export const HIGH_CAMERA_FAR = 2000, LOW_CAMERA_FAR = 600;  // past the fog's far edge, so nothing pops at the clip
-export const LOW_NPC_LOD_DIST = 35;     // metres (high: HIGH_NPC_LOD_DIST)
-export const LOW_FAR_STAT_DIST = 60;    // metres (high: HIGH_FAR_STAT_DIST)
+export const LOW_NPC_LOD_DIST = 70;     // metres (high: HIGH_NPC_LOD_DIST)
+export const LOW_FAR_STAT_DIST = 120;    // metres (high: HIGH_FAR_STAT_DIST)
 export const HIGH_LABEL_TICKS = 2, LOW_LABEL_TICKS = 4;    // NPC ticks between stat-label target picks
 export const HIGH_HUD_TICKS = 60, LOW_HUD_TICKS = 120;     // NPC ticks between HUD text refreshes
 export const LOW_WATER_FPS = 15;
@@ -571,8 +571,8 @@ export const NIGHT_PREY_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => 
 export const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
 export const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
 export const WATER_SIGHT_CELL = 20;
-export const HIGH_NPC_LOD_DIST = 60;      // metres past which a body is drawn as a billboard on high (live: perf.npcLodDist)
-export const HIGH_FAR_STAT_DIST = 120;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
+export const HIGH_NPC_LOD_DIST = 120;      // metres past which a body is drawn as a billboard on high (live: perf.npcLodDist)
+export const HIGH_FAR_STAT_DIST = 240;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
 export const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
 export const NPC_STATS_R = 0.7;
 export const NPC_STATS_UP = 0.55;
