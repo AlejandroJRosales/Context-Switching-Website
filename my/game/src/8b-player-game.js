@@ -1841,7 +1841,7 @@ export function moveCar(dx, dz) {
 // The car's mass in kg: its curb mass, plus the player's body when they are in it (its drag and CAR HITS use it).
 export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
-// CAR HITS, one sim tick (in ecosystem.afterContacts while ragdoll physics is on, 9-main applyRagdolls): an animal
+// CAR HITS, one sim tick (in ecosystem.afterContacts while the collision mode has hits, 9-main applyCollision): an animal
 // whose collision circle overlaps one of the car's circles (CAR_CIRCLES, CAR_R) at the car's height is moved out to
 // touching, unless that is inside a wall, and while the car closes on it the car's momentum (carMassKg x closing speed,
 // Ecosystem.bumpForceN, as a bump) pushes it against its hold (Ecosystem.applyHit, no damage). The car itself is not
@@ -1875,7 +1875,7 @@ export function carHits() {
   }
 }
 
-// PLAYER BUMPS, one sim tick (in ecosystem.afterContacts while ragdoll physics is on, 9-main applyRagdolls): the
+// PLAYER BUMPS, one sim tick (in ecosystem.afterContacts while the collision mode has hits, 9-main applyCollision): the
 // player on foot and in play bumps animals in either mode (game.bumpAnimals). In the car (carHits bumps for it),
 // flying (the player flies through them) or out of play, nothing, and the next bump starts with no velocity.
 export function playerBumps(dt) {

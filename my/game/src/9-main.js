@@ -165,7 +165,7 @@ addEventListener('resize', () => {
 });
 renderer.domElement.addEventListener('webglcontextrestored', () => invalidate());
 const vitalsEl = document.getElementById('vitals');
-const ragdollEl = document.getElementById('ragdoll');   // Observer's Ragdoll physics chip, on at load (Survivor always has ragdolls)
+const collisionEl = document.getElementById('collision');   // Observer's Collision chip (COLLISION_MODES), Ragdoll at load
 const hudBtnEl = document.getElementById('hudbtn');
 const fsEl = document.getElementById('fs');
 const newEcoEl = document.getElementById('neweco');
@@ -196,8 +196,8 @@ plantView.remove = p => plantRenderer.remove(p);
 plantView.touch = p => plantRenderer.touch(p);
 
 // the game's hooks into the sim: Survivor rules after each tick's contacts; the avatar the animals sense and hunt.
-// The player's bumps (playerBumps) and the car's hits (carHits) join the hooks only while ragdoll physics is on
-// (applyRagdolls).
+// The player's bumps (playerBumps) and the car's hits (carHits) join the hooks only while the collision mode has hits
+// (applyCollision).
 ecosystem.afterContacts.push(dt => game.update(dt));
 ecosystem.avatar = game.avatar;
 bindInventory();   // its listeners, in their original place among main's
@@ -453,27 +453,38 @@ function setHud(on) {
 }
 hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
-// RAGDOLL PHYSICS: always on in Survivor mode; in Observer mode the Ragdoll physics chip decides (on at load). On, the
-// player on foot and the car collide with animals (playerBumps, carHits: pushed aside, knocked down by enough
-// momentum) and knockdowns show as ragdolls on high graphics (kept out of the car's box), the lying pose on low. Off,
-// the player and the car pass through animals; knockdowns between animals show the lying pose. A flying player always
-// passes through animals.
-let observerRagdolls = true;
-function applyRagdolls() {
-  const ragdollPhysics = game.on || observerRagdolls;   // true in Survivor, else the Observer chip's choice
-  animalRenderer.setRagdolls(ragdollPhysics);
+// COLLISION: the Collision chip cycles COLLISION_MODES in order (Ragdoll at load). hits: the player on foot and the car
+// collide with animals (playerBumps, carHits: pushed aside, knocked down by enough momentum); without them they pass
+// through. ragdolls: knockdowns show as ragdolls on either graphics setting (kept out of the car's box), else the
+// lying pose (knockdowns between animals happen in every mode). A flying player always passes through animals.
+// Survivor keeps the chosen mode, except one without hits, which plays as SURVIVOR_NO_HITS_MODE; the choice itself is
+// kept, so it comes back in Observer.
+const COLLISION_MODES = {
+  none: { label: 'None', hits: false, ragdolls: false },
+  fall: { label: 'Fall', hits: true, ragdolls: false },
+  ragdoll: { label: 'Ragdoll', hits: true, ragdolls: true }
+};
+const COLLISION_ORDER = Object.keys(COLLISION_MODES);   // the chip's cycle
+const SURVIVOR_NO_HITS_MODE = 'fall';
+let collisionChoice = 'ragdoll';   // the chip's mode (a COLLISION_MODES key)
+// the mode in play: the choice, or SURVIVOR_NO_HITS_MODE for a mode without hits in Survivor
+function activeCollision() {
+  return game.on && !COLLISION_MODES[collisionChoice].hits ? SURVIVOR_NO_HITS_MODE : collisionChoice;
+}
+function applyCollision() {
+  const mode = COLLISION_MODES[activeCollision()];
+  animalRenderer.setRagdolls(mode.ragdolls);
   for (const hook of [playerBumps, carHits]) {
     const hooked = ecosystem.afterContacts.indexOf(hook);   // -1 while this hook is not registered
-    if (ragdollPhysics && hooked < 0) ecosystem.afterContacts.push(hook);
-    else if (!ragdollPhysics && hooked >= 0) ecosystem.afterContacts.splice(hooked, 1);
+    if (mode.hits && hooked < 0) ecosystem.afterContacts.push(hook);
+    else if (!mode.hits && hooked >= 0) ecosystem.afterContacts.splice(hooked, 1);
   }
-  ragdollEl.classList.toggle('sel', observerRagdolls);
-  ragdollEl.setAttribute('aria-pressed', String(observerRagdolls));
+  collisionEl.textContent = `Collision: ${COLLISION_MODES[collisionChoice].label}`;
 }
-ragdollEl.addEventListener('click', () => {
-  observerRagdolls = !observerRagdolls;
-  applyRagdolls();
-  ragdollEl.blur();
+collisionEl.addEventListener('click', () => {
+  collisionChoice = COLLISION_ORDER[(COLLISION_ORDER.indexOf(collisionChoice) + 1) % COLLISION_ORDER.length];
+  applyCollision();
+  collisionEl.blur();
   invalidate();
 });
 
@@ -1159,14 +1170,14 @@ gameEl.addEventListener('click', () => {
   gameEl.setAttribute('aria-pressed', String(game.on));
   gameEl.blur();
   game.showPanel();
-  // ragdolls: on in Survivor, the Observer chip's choice back in Observer
-  applyRagdolls();
+  // collision: the chip's choice, a mode without hits playing as SURVIVOR_NO_HITS_MODE in Survivor
+  applyCollision();
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
-  // no Vision rays, Vitals, HUD or Ragdoll physics chips in Survivor mode
+  // no Vision rays, Vitals, HUD or Collision chips in Survivor mode
   syncSkyset();
-  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = ragdollEl.hidden = game.on;
+  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = game.on;
   // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
   avgFpsEl.hidden = !game.on;
   if (game.on) avgFps.show();
@@ -1190,8 +1201,8 @@ gameEl.addEventListener('click', () => {
   wake();
 });
 
-// ragdolls follow the mode from the start (Observer at load), as the Survivor chip sets them after
-applyRagdolls();
+// collision follows the mode from the start (Observer at load), as the Survivor chip sets it after
+applyCollision();
 
 // OBSERVER OR SURVIVOR: asked once the world is ready; buttons only select, Go launches.
 const chooseObsEl = document.getElementById('chooseObs');
