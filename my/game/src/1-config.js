@@ -725,6 +725,11 @@ export const STREET_STEP = 2;   // metres between candidate points along a stree
 
 // WILD: the Arena's procedural world in metres (generator in Arena units, scaled by NPC_UNIT); heights cached in a grid.
 
+// Wilderness coyote : deer ratio from northern Yellowstone after wolf restoration: 250 to 300 coyotes
+// (Crabtree, Yellowstone Ecosystem Studies) and a summer mule deer population of 1,850 to 1,900 (NPS).
+export const YELLOWSTONE_COYOTES = 275;
+export const YELLOWSTONE_DEER = 1875;
+
 export class WorldConfig {
   constructor(scale = 20) {
     this.BASE = {
@@ -732,8 +737,8 @@ export class WorldConfig {
       worldHeight: 600,
     };
     // wilderness animals and plants at the start; fixed, so the map size changes only the land
-    this.initialCoyotes = 600;
     this.initialDeer = 600;
+    this.initialCoyotes = Math.round(this.initialDeer * YELLOWSTONE_COYOTES / YELLOWSTONE_DEER);
     this.initialPlants = 9000;
     this.probSpawnPlant = 0.03;
     this.groundY = 5;
