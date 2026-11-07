@@ -15,7 +15,7 @@
 export const MAP_SIZE_SCALES = Array.from({ length: 10 }, (_, i) => 20 + 10 * i);
 export const WORLD_SIZES = {
   small: { mapSize: 4, people: 1000 },
-  medium: { mapSize: 5, people: 3000 },
+  medium: { mapSize: 5, people: 2000 },
   large: { mapSize: 6, people: 4000 }
 };
 export const CITY_LADDER = [500, 350, 200];
@@ -737,7 +737,7 @@ export class WorldConfig {
       worldHeight: 600,
     };
     // wilderness animals and plants at the start; fixed, so the map size changes only the land
-    this.initialDeer = 600;
+    this.initialDeer = 400;
     this.initialCoyotes = Math.round(this.initialDeer * YELLOWSTONE_COYOTES / YELLOWSTONE_DEER);
     this.initialPlants = 9000;
     this.probSpawnPlant = 0.03;
