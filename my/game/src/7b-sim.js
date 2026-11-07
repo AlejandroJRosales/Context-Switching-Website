@@ -1,12 +1,5 @@
-// 7b-sim.js: SIM. The artificial life and the game clock: entities, the ecosystem, the sky clock.
-// Owns: Entity, Animal (with the human look genetics: humanLook,
-// packHumanLook, inheritHumanLook, averageHumanLook; fight helpers startFightMove, humanFightAct, sampleFightKeys; humanMassKg, humanFightMassKg,
-// personInfoKey, personInfoFields), Plant and plantView, Ecosystem (ecosystem), simSky (game clock and weather, the
-// site and the drawn sun altitude) with presetHour.
-// May import: 1-config.js to 6-worlds.js, 7a-ml.js (brains, SpikingNetwork) and three. It never calls the render, player, game or main layers: they
-// read its state, draw after step (then endTick), fill its hooks (afterContacts, avatar, plantView, simSky.onSkyStep
-// and onMinute) and wrap initialize and clear (populate, clearEcosystem).
-// Config blocks it reads: NPC, fight moves and pounces, species, sizes, plants, food boxes, sky presets.
+// 7b-sim.js: SIM, artificial life and the game clock (Animal, Plant, Ecosystem, simSky). May import 1-config.js to
+// 6-worlds.js, 7a-ml.js and three. Never calls render, player or main; they read its state and fill its hooks.
 import * as THREE from 'three';
 import {
   RUN_SPEED, STEP_UP, NPC_TICK_S, DIET_WATER_SHARE, PLANT_SIGHT_CELL, NPC_CONTACT_CELL, DEER_CRUISE, DEER_THINK_TICKS,
@@ -45,9 +38,7 @@ import {
   brains, SpikingNetwork
 } from './7a-ml.js';
 
-// Fight state shared by animals and the player's avatar: moveAt (start of the move playing), playing (that move:
-// a fight move or a pounce; drawn by the renderer), moveSide (people's punching arm, +1 left / -1 right),
-// fightFrom / fightUntil (the hold). A move still playing is not restarted.
+// Fight state for animals and the avatar: the playing move, moveSide, and the hold (fightFrom, fightUntil).
 export function startFightMove(f, move, now) {
   if (now - f.moveAt >= (f.playing ?? move).moveS) { f.moveAt = now; f.playing = move; f.moveSide = -f.moveSide; }
   if (now >= f.fightUntil) f.fightFrom = now;
@@ -55,7 +46,7 @@ export function startFightMove(f, move, now) {
   f.fightUntil = Math.max(f.fightUntil, now + holdS);
 }
 
-// A person's iAct at `now` into out[o..o+3]: punch reach (0..1), punching arm, guard share (0..1), unused.
+// A person's iAct at `now`: punch reach, punching arm, guard share, unused.
 export function humanFightAct(f, now, out, o) {
   const m = NPC_FIGHT_MOVES.human, u = (now - f.moveAt) / m.moveS;
   out[o] = u >= 0 && u < 1 ? (u < m.peak ? fightEase(u / m.peak) : 1 - fightEase((u - m.peak) / (1 - m.peak))) : 0;
@@ -63,16 +54,13 @@ export function humanFightAct(f, now, out, o) {
   out[o + 2] = fightClamp01((f.fightUntil - now) / m.guardEaseS) * fightClamp01((now - f.fightFrom) / m.guardEaseS);
   out[o + 3] = 0;
 }
-// KNOCKDOWNS: a body's condition (0..1), the health share times the energy share; energy is the fuller of the
-// food and water bars' shortfall taken away, so the emptier bar sets it (NPC_NEED_FULL is an empty bar).
-// Shared by animals and the player's avatar, which hit with it (Ecosystem.applyHit).
+// KNOCKDOWNS: condition is health share x energy share.
 export function conditionShare(health, maxHealth, foodNeed, waterNeed) {
   const healthShare = fightClamp01(health / maxHealth);
   const energyShare = 1 - fightClamp01(Math.max(foodNeed, waterNeed) / NPC_NEED_FULL);
   return healthShare * energyShare;
 }
-// How far down a knocked-down body is drawn at `now` (render only), 0 standing to 1 lying: the fall eases in over
-// NPC_FALL_S from downAt, the rise eases out over the last NPC_GETUP_S before downUntil.
+// Drawn knockdown share at `now`, 0 standing to 1 lying.
 export function downShare(a, now) {
   if (now >= a.downUntil) return 0;
   return fightEase(fightClamp01((now - a.downAt) / NPC_FALL_S)) * fightEase(fightClamp01((a.downUntil - now) / NPC_GETUP_S));
@@ -84,36 +72,31 @@ export function sampleFightKeys(keys, u, out) {
   for (const k of FIGHT_KEY_FIELDS) out[k] = a[k] + (b[k] - a[k]) * f;
   return out;
 }
-// A person's BMI: their look's bmi (lean mass plus fat, see humanLook), or the sex's reference BMI with no look.
+// A person's BMI: the look's, or the sex's reference with no look.
 export function humanBmi(sex, look) {
   return look ? look.bmi : NPC_REF_BMI[sex];
 }
-// A person's mass in kg: BMI x height^2 (people's stats readout, prey size and the pack gate use it; fights use
-// humanFightMassKg).
+// A person's mass in kg: BMI x height^2.
 export function humanMassKg(sex, look, heightM) {
   return humanBmi(sex, look) * heightM * heightM;
 }
-// A person's fighting mass in kg: humanMassKg with lean mass in full and fat at NPC_FAT_STRENGTH_SHARE (fightMassShare),
-// at the look's body fat, or the reference body's with no look.
+// Fighting mass in kg: lean mass in full, fat at NPC_FAT_STRENGTH_SHARE.
 export function humanFightMassKg(sex, look, heightM) {
   return humanMassKg(sex, look, heightM) * fightMassShare(look ? look.bodyFat : NPC_REF_BODY_FAT[sex]);
 }
-// A person's stats readout (people's labels and the player's Survivor panel): age, sex, height, weight, in that order.
-// The key packs what can change (age in whole years or -1 for a child, height in inches, weight in lb), so a
-// display redraws only when it changes; heightM is the crown height as drawn.
+// Stats readout: age, sex, height, weight; the key packs what can change, so displays redraw only on change.
 export function personInfoKey(age, sex, look, heightM) {
   const lb = Math.round(humanMassKg(sex, look, heightM) * LB_PER_KG);
   const inches = Math.round(heightM / M_PER_IN);
   return ((age + 2) * 1000 + inches) * 10000 + lb;
 }
-// the weight in lb packed into a personInfoKey
+// lb packed in a personInfoKey
 const personInfoLb = key => key % 10000;
-// Share of lean mass (mass less fat) counted as muscle; the rest is bone, organs and water. The sim has no muscle value
-// of its own, so the readout's muscle mass is lean mass at this share.
+// Share of lean mass counted as muscle; the readout's muscle is lean mass at this share.
 const MUSCLE_SHARE_OF_LEAN = 0.5;
-// body type name per dominant somatotype rating, as the readout shows it
+// type name per dominant somatotype rating
 const BODY_TYPE_NAMES = { meso: 'Meso', endo: 'Endo', ecto: 'Ecto' };
-// A person's body type name: the name of their highest somatotype rating (the population's mean ratings with no look).
+// A person's body type: their highest rating's name.
 export function humanBodyType(look) {
   let best = null;
   for (const k in BODY_TYPE_NAMES) {
@@ -122,15 +105,14 @@ export function humanBodyType(look) {
   }
   return BODY_TYPE_NAMES[best.k];
 }
-// the body readout's fields in order: fat in lb, muscle in lb, body type name. Read from the same key as
-// personInfoFields so the weights add up to the weight shown; each display joins them its own way.
+// body readout fields: fat lb, muscle lb, type name, from the same key so weights add up
 export function personBodyFields(key, sex, look) {
   const lb = personInfoLb(key), fatShare = look ? look.bodyFat : NPC_REF_BODY_FAT[sex];
   return [`Fat ${Math.round(lb * fatShare)} lb`, `Muscle ${Math.round(lb * (1 - fatShare) * MUSCLE_SHARE_OF_LEAN)} lb`, humanBodyType(look)];
 }
-// a height in whole inches as feet and inches, 5'9"
+// inches as 5'9"
 export const feetInches = inches => `${Math.floor(inches / 12)}'${inches % 12}"`;
-// the readout's fields in order; each display joins them its own way (labels with commas, the panel spaced out)
+// readout fields in order; each display joins them its own way
 export function personInfoFields(key, sex) {
   const lb = personInfoLb(key), inches = Math.floor(key / 10000) % 1000, age = Math.floor(key / 1e7) - 2;
   return [`Age ${age < 0 ? '<' + NPC_ADULT_AGE : age}`, sex === 'male' ? 'M' : 'F', feetInches(inches), `${lb} lb`];
@@ -154,8 +136,7 @@ export class Entity {
   }
 }
 
-// PREY CHOICE scratch for searchDeer (one scan at a time): every prey candidate the scan meets, picked after it, once
-// the pack's sums are known (PACK STRENGTH). sight: 1 when the pick must still check inSight, 0 when already settled.
+// PREY CHOICE scratch: candidates picked after the scan, once pack sums are known.
 const _preyObj = [], _preyD2 = [], _preyKey = [], _preySight = [];
 let _nPrey = 0;
 function addPrey(obj, d2, key, sight) {
@@ -197,7 +178,7 @@ export class Animal extends Entity {
 
     this.sex = Math.random() < 0.5 ? 'male' : 'female';
     this.setSizeZ(tools.gauss());
-    this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), kept for life
+    this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), for life
     this.mutationMulti = 0.5;
     this.lastChildTime = ecosystem.time;   // sim seconds
     this.childGracePeriod = (15 + Math.random() * 15) * spec.grace * MATE_TIME_MULT;   // sim seconds
@@ -212,28 +193,26 @@ export class Animal extends Entity {
     this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
     this.memWaterX = 0; this.memWaterY = 0; this.memWaterZ = 0; this.hasWater = false;
     this.memMateX = 0; this.memMateY = 0; this.memMateZ = 0; this.hasMate = false;
-    this.priority = null;          // deer: 'predator', 'hunt', 'food', 'water', 'mate', or null while exploring
+    this.priority = null;          // deer focus: 'predator', 'hunt', 'food', 'water', 'mate', or null exploring
     this.speedScale = 1;
     this.sprinting = false;
-    this.nextAttackAt = 0;   // sim seconds: when this hunter may attack again
-    this.nextBiteAt = 0;     // sim seconds: when this grazer may bite a plant again
-    this.noEatUntil = 0;     // sim seconds: eating is blocked until then after being hit
-    // fight move and hold (startFightMove); while ecosystem.time < fightUntil the animal takes no steps
+    this.nextAttackAt = 0;   // next attack time
+    this.nextBiteAt = 0;     // next bite time
+    this.noEatUntil = 0;     // no eating until then after a hit
+    // fight move and hold; no steps while ecosystem.time < fightUntil
     this.moveAt = -Infinity; this.playing = null; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
-    // KNOCKDOWNS (Ecosystem.applyHit): downAt starts the fall, downUntil ends the hold (sim seconds); downYaw is the
-    // push's heading, the way the body falls, and downDV its launch speed in m/s (both render only)
+    // KNOCKDOWNS: downAt starts the fall, downUntil ends the hold; downYaw, downDV for render
     this.downAt = -Infinity; this.downUntil = 0; this.downYaw = 0; this.downDV = 0;
-    this.quarry = null;      // night hunts: the animal or player avatar being chased (priority 'hunt')
-    // PACK STRENGTH: body mass and height summed over this animal and its packmates within visionDistance, as of the
-    // last searchDeer; a pack species attacks only what these match or beat (mayAttack)
+    this.quarry = null;      // night hunt quarry (animal or avatar)
+    // PACK STRENGTH: mass and height summed over the pack in sight
     this.packMassKg = 0; this.packHeightM = 0;
-    this.pounceAt = -Infinity;   // sim seconds: start of the current or last pounce (NPC_POUNCES)
-    this.nextPounceAt = 0;       // sim seconds: when this hunter may pounce again
-    this.fleeFrom = null;    // who a fleeing species' move answered; it runs from them once the move ends
-    this.fleeUntil = 0;      // sim seconds: a fleeing species plays no new move until then
+    this.pounceAt = -Infinity;   // start of the current or last pounce
+    this.nextPounceAt = 0;       // next pounce time
+    this.fleeFrom = null;    // who a fleeing species' move answered
+    this.fleeUntil = 0;      // no new flee move until then
     this.bumpScale = 1;
 
-    // no target reads as distance 1 (the edge of sight), never 0, which would mean touching it
+    // no target reads as distance 1 (sight's edge), never 0 (touching)
     this.rayFoodSin = 0; this.rayFoodCos = 0; this.rayFoodElev = 0; this.rayFoodDist = 1;
     this.rayWaterSin = 0; this.rayWaterCos = 0; this.rayWaterElev = 0; this.rayWaterDist = 1;
     this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 1;
@@ -242,7 +221,7 @@ export class Animal extends Entity {
     this.brain = spec.brain ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = spec.brain ? 60 : DEER_THINK_TICKS;
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
-    // City: heading in radians, direction (sin, cos) in (x, z); people turn toward targetHeading.
+    // City: heading in radians; people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
     this.targetHeading = this.heading;
     this.moving = true;
@@ -254,29 +233,29 @@ export class Animal extends Entity {
 
     this.isAdult = true;
     this.birthTick = 0;
-    // age in years at ageBaseTick: a random adult age when spawned, NPC_ADULT_AGE when a child matures
+    // age in years at ageBaseTick
     this.ageBaseTick = ecosystem.ticks;
     this.ageBase = NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
 
     this.animTime = Math.random() * Math.PI * 2;
-    // people's gait (render only, AnimalRenderer.stepGait): phase advanced by distance walked, swing and run share from speed
+    // people's gait (render only)
     this.gaitPhase = Math.random() * Animal.TWO_PI;
     this.gaitSwing = 0; this.gaitRun = 0; this.gaitSpeed = 0;
     this.gaitX = NaN; this.gaitZ = NaN;
 
     this.focusX = this.position.x;
     this.focusZ = this.position.z;
-    this.tob = ecosystem.time;   // time of birth, sim seconds
+    this.tob = ecosystem.time;   // birth time, sim seconds
 
     this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
 
-    // City: last wall-clear position, the fallback in Ecosystem.collide
+    // City: last wall-clear position, Ecosystem.collide's fallback
     this.freeX = this.position.x; this.freeZ = this.position.z;
     this._fx = NaN; this._fz = NaN;
 
     this.mesh = null;
     this.home = null;
-    this._gk = -1;   // Ecosystem.animalGrid bucket this animal is filed under, -1 when not filed
+    this._gk = -1;   // animalGrid bucket, -1 when not filed
   }
 
   remove() { }
@@ -288,7 +267,7 @@ export class Animal extends Entity {
     this.tanFovV = Math.tan(this.fovV);
   }
 
-  // City: body-centre height above the feet in Arena units, from the rig; scales with heightScale.
+  // City: body-centre height above the feet in Arena units.
   footLift() {
     const hs = this.heightScale;
     return this.spec.lift * hs;
@@ -325,7 +304,7 @@ export class Animal extends Entity {
     return (dx * dx + dy * dy + dz * dz) > this.visionDistSq;
   }
 
-  // Brained senses (vision cone): hunted types are food, hunters are predators, plants food, opposite-sex kin mates, water.
+  // Brained senses: food, predators, mates and water in the vision cone.
   locate(grid) {
     const px = this.position.x, pz = this.position.z;
     const py = this.eyeY();
@@ -337,7 +316,7 @@ export class Animal extends Entity {
     const huntedBy = HUNTED_BY_MASK[tid], hunts = HUNTS_MASK[tid];
     let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
-    // Buckets read in place; the horizontal-distance reject matches senseTarget's, so what is sensed is unchanged.
+    // Buckets read in place; the distance reject matches senseTarget's.
     const r = this.visionDistance;
     const gCells = grid.cells;
     const gcs = grid.cellSize, gcols = grid.cols, grows = grid.rows;
@@ -392,7 +371,7 @@ export class Animal extends Entity {
       }
     }
 
-    // City: in Survivor mode the player is a predator too, to whatever people hunt (game.avatar decides)
+    // City: in Survivor the player is a predator to what people hunt
     const gp = ecosystem.avatar;
     if (gp.isThreatTo(tid) &&
       this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
@@ -404,7 +383,7 @@ export class Animal extends Entity {
       this.rayPredatorElev = hit.elev; this.rayPredatorDist = hit.dist;
     }
 
-    // City: plants are food for people too (nearer of plant and animal wins), read in place from the sight grid.
+    // City: plants are food for people too, from the sight grid.
     const ps = ecosystem.plantSight, pCells = ps.cells;
     const pcs = ps.cellSize, pcols = ps.cols, prows = ps.rows;
     const pcx0 = Math.floor((px - r) / pcs), pcx1 = Math.floor((px + r) / pcs);
@@ -432,7 +411,7 @@ export class Animal extends Entity {
       }
     }
 
-    // food boxes are food for people: the nearest of animal, plant and crate wins
+    // food boxes are food for people: nearest of animal, plant and crate wins
     if (type === 'human' && foodBoxes.list.length) {
       const nBox = foodBoxes.sight.queryInto(ecosystem._qBox, px, pz, this.visionDistance);
       for (let _i = 0; _i < nBox; _i++) {
@@ -448,7 +427,7 @@ export class Animal extends Entity {
       }
     }
 
-    // water, from the sight grid of the provider's water sources
+    // water, from the sight grid
     const nWater = ecosystem.waterSight.queryInto(ecosystem._qWater, px, pz, this.visionDistance);
     for (let _i = 0; _i < nWater; _i++) {
       const wp = ecosystem._qWater[_i].position;
@@ -487,8 +466,7 @@ export class Animal extends Entity {
     this.refreshRays();
   }
 
-  // Remembered targets: ray (world-frame sin, cos, elevation, distance) from the current eye to the remembered spot,
-  // so a target walked past keeps pointing where it is, not where it was when last seen.
+  // Remembered targets point from the current eye to the remembered spot.
   refreshRays() {
     const px = this.position.x, py = this.eyeY(), pz = this.position.z, vd = this.visionDistance;
     const ray = (mx, my, mz) => {
@@ -520,8 +498,7 @@ export class Animal extends Entity {
     }
   }
 
-  // World-frame (sin, cos) of a target rotated into the body's frame: (0, 1) is straight ahead, sin > 0 to the right
-  // of facing as atan2(x, z) measures it. No target (0, 0) stays (0, 0).
+  // World (sin, cos) in the body's frame: (0, 1) ahead, sin > 0 right.
   static egoSin(s, c, fs, fc) { return s * fc - c * fs; }
   static egoCos(s, c, fs, fc) { return c * fc + s * fs; }
 
@@ -529,7 +506,7 @@ export class Animal extends Entity {
     this.locate(grid);
     const inp = this._inputs;
 
-    // directions relative to facing, so "food ahead and to the left" means the same thing whichever way the body points
+    // relative to facing, so directions mean the same whichever way the body points
     const fs = Math.sin(this.facingAngle), fc = Math.cos(this.facingAngle);
     const es = Animal.egoSin, ec = Animal.egoCos;
     inp[0] = es(this.rayFoodSin, this.rayFoodCos, fs, fc);
@@ -556,14 +533,14 @@ export class Animal extends Entity {
     this.moving = true;
   }
 
-  // DEER AND COYOTE AI (species.py): thinkDeer picks the top known need to flee or seek; steerDeer moves every tick.
+  // DEER AND COYOTE AI (species.py): thinkDeer picks the top need; steerDeer moves every tick.
   thinkDeer(grid) {
     if (Math.random() <= 1 - Math.pow(1 - DEER_EXPLORE_P, DEER_THINK_TICKS)) this.newExploreCoords();
     this.searchDeer(grid);
 
     let best = null, bestV = -Infinity;
     if (this.hasPredator && this.avoidNeed > bestV) { best = 'predator'; bestV = this.avoidNeed; }
-    // a night hunt outranks every need but fleeing
+    // a night hunt outranks all but fleeing
     if (this.quarry !== null && best === null) { best = 'hunt'; bestV = Infinity; }
     if (this.hasFood && this.foodNeed > bestV) { best = 'food'; bestV = this.foodNeed; }
     if (this.hasWater && this.waterNeed > bestV) { best = 'water'; bestV = this.waterNeed; }
@@ -594,36 +571,34 @@ export class Animal extends Entity {
   }
 
   steerDeer() {
-    // sprinting burns DEER_SPRINT_ENERGY times walking energy; update() added the base
+    // sprinting burns DEER_SPRINT_ENERGY x walking energy
     if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
     if (this.priority === 'hunt') { this.steerHunt(); return; }
-    // the decision's heading holds until the next one; only arrival is checked (fleeing never arrives)
+    // the heading holds until the next decision; only arrival is checked
     if (this.priority === 'predator' || !this.moving) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
     const step = this.stepLength();
     if (dx * dx + dz * dz <= step * step) {
-      // at the focus: stand (contact does the rest); a reached explore point is replaced
+      // at the focus: stand; a reached explore point is replaced
       if (this.priority === null) { this.newExploreCoords(); this.aimAtFocus(); }
       else this.moving = false;
     }
   }
 
-  // Is `q` (an animal or the player's avatar) still fair game for this night hunter?
+  // Is `q` still fair game for this night hunter?
   canHunt(q) {
     if (q === null || !q.alive || !ecosystem.night) return false;
     return q === ecosystem.avatar ? q.isPreyFor(this.typeId) : (NIGHT_PREY_MASK[this.typeId] & (1 << q.typeId)) !== 0;
   }
 
-  // PACK STRENGTH: may this animal attack `q` (an animal or the player's avatar)? A non-pack species always may; a pack
-  // species only when its pack's summed mass or summed height (packMassKg, packHeightM) matches or beats q's own.
+  // PACK STRENGTH: a pack attacks only when its summed mass or height beats q's.
   mayAttack(q) {
     if (this.spec.pack !== true) return true;
     return this.packMassKg >= q.bodyMassKg() || this.packHeightM >= q.bodyHeightM();
   }
 
-  // NIGHT HUNT, every tick: run at the quarry wherever it is now; within the leap's length, pounce. A pounce in the
-  // air keeps the heading it launched on. A lost quarry (dead, sheltered, daybreak) ends the hunt at once.
+  // NIGHT HUNT: run at the quarry, pounce in reach; a lost quarry ends the hunt.
   steerHunt() {
     const q = this.quarry, now = ecosystem.time;
     if (!this.canHunt(q)) {
@@ -650,19 +625,18 @@ export class Animal extends Entity {
     return P !== undefined && now - this.pounceAt < P.moveS;
   }
 
-  // metres per second of a pounce's flight, and the metres the flight covers
+  // a pounce's flight speed and length
   leapSpeed(P) { return P.leapOver * this.sprintSpeed(); }
   leapLength(P) { return this.leapSpeed(P) * P.moveS * (1 - P.leapAt); }
 
-  // A pounce's step this tick: 0 while crouched, then the flight, never past POUNCE_LAND_SHORT of the contact
-  // distance short of the quarry along the heading; -1 when not pouncing.
+  // A pounce's step: 0 crouched, then flight short of contact; -1 when not pouncing.
   pounceStep() {
     const now = ecosystem.time;
     if (!this.pouncing(now)) return -1;
     const P = NPC_POUNCES[this.type];
     if ((now - this.pounceAt) / P.moveS < P.leapAt) return 0;
     const q = this.quarry, flight = this.leapSpeed(P) * this.bumpScale * NPC_TICK_S;
-    if (q === null) return flight;   // the hunt ended in the air: the leap carries on
+    if (q === null) return flight;   // hunt ended mid-air: the leap carries on
     const along = (q.position.x - this.position.x) * Math.sin(this.heading) + (q.position.z - this.position.z) * Math.cos(this.heading);
     return Math.max(0, Math.min(flight, along - Ecosystem.CONTACT_DIST * POUNCE_LAND_SHORT));
   }
@@ -674,19 +648,19 @@ export class Animal extends Entity {
     this.avoidNeed = 0;
     this.quarry = null;
     const food = this.spec.food, tid = this.typeId, sex = this.sex;
-    // at night, night prey is quarry even when it would be fled by day
+    // at night, night prey is quarry even if fled by day
     const quarryMask = ecosystem.night ? NIGHT_PREY_MASK[tid] : 0;
     const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = FOOD_TYPE_ID[tid];
     const needP = huntedBy !== 0, needQ = quarryMask !== 0;
-    // prey (PREY CHOICE): food animals and night prey in one pick; a smaller one may lie farther out, so no early stop
+    // food and night prey in one pick; no early stop, as smaller prey may lie farther
     const needT = (food !== null && food !== 'plant') || needQ;
-    const pack = this.spec.pack === true;   // PACK STRENGTH: packmates in sight range are summed, so no early stop
-    const needJ = needQ && pack;   // a pack hunter at night: packmates' hunts to join
+    const pack = this.spec.pack === true;   // packmates in sight are summed, so no early stop
+    const needJ = needQ && pack;   // packmates' hunts to join
     let bP = Infinity, bM = Infinity, bJ = Infinity, kP = -1, kM = -1, kJ = -1;
     let oP = null, oM = null, oJ = null;
-    // the pack's sums start with this animal's own body
+    // pack sums start with this animal's body
     let packKg = this.bodyMassKg(), packM = this.bodyHeightM();
-    _nPrey = 0;   // prey candidates for the pick after the scan (addPrey)
+    _nPrey = 0;   // candidates for the pick (addPrey)
 
     const cells = grid.cells;
     if (cells !== null) {
@@ -740,36 +714,35 @@ export class Animal extends Entity {
     if (oP) { this.seen(0, oP.position.x, oP.position.y, oP.position.z); this.avoidNeed = Infinity; }
     if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
 
-    // City: in Survivor mode the player is a predator to whatever people hunt, and at night quarry to people's night hunters
+    // City: the avatar as predator and night quarry
     const gp = ecosystem.avatar;
     if (gp.isThreatTo(tid) || gp.isPreyFor(tid)) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (gp.isThreatTo(tid)) {
         if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
-      } else if (d2 <= vd) addPrey(gp, d2, -1, 1);   // key -1: the avatar never wins a tie
+      } else if (d2 <= vd) addPrey(gp, d2, -1, 1);   // the avatar never wins a tie
     }
-    // a pack hunter that sees a packmate hunting joins the nearest one's attack unless its own pick ranks ahead;
-    // joiners draw in the packmates that see them, so a group closes on one quarry (it need not see the quarry itself)
+    // a pack hunter joins the nearest packmate's attack unless its own pick ranks ahead
     if (oJ) {
       const q = oJ.quarry;
       addPrey(q, (q.position.x - x) * (q.position.x - x) + (q.position.z - z) * (q.position.z - z), -1, 0);
     }
 
-    // PACK STRENGTH, then PREY CHOICE: of the candidates this pack can take (mayAttack), the smallest, then nearest
+    // of the candidates this pack can take, the smallest, then nearest
     this.packMassKg = packKg; this.packHeightM = packM;
-    // the prey pick: its size step, squared distance, scan key (ties) and the target
+    // the pick: size step, squared distance, tie key, target
     let sT = Infinity, bT = Infinity, kT = -1, oT = null;
     for (let i = 0; i < _nPrey; i++) {
       const obj = _preyObj[i], d2 = _preyD2[i], key = _preyKey[i];
-      _preyObj[i] = null;   // let go of the reference once read
+      _preyObj[i] = null;   // let go of the reference
       if (!this.mayAttack(obj)) continue;
       const s = Animal.preySize(obj);
       if (!(Animal.preyAhead(s, d2, sT, bT) || (s === sT && d2 === bT && key > kT))) continue;
       if (_preySight[i] === 1 && !this.inSight(obj.position.x, obj.position.y, obj.position.z)) continue;
       sT = s; bT = d2; kT = key; oT = obj;
     }
-    // the pick's direction shows as the food ray; night prey is hunted, food chased when hunger leads
+    // the pick shows as the food ray; night prey is hunted, food chased when hunger leads
     if (oT) {
       if (oT === gp || (quarryMask & (1 << oT.typeId)) !== 0) this.quarry = oT;
       this.seen(1, oT.position.x, oT.position.y, oT.position.z);
@@ -784,13 +757,12 @@ export class Animal extends Entity {
     if (w) this.seen(2, w.position.x, w.position.y, w.position.z);
   }
 
-  // Is the line from this animal's eye to (tx, ty, tz) clear of cover (building and cabin walls, parked cars, lamp posts)?
+  // Is the eye's line to (tx, ty, tz) clear of cover?
   inSight(tx, ty, tz) {
     return !cover.blocks(this.position.x, this.eyeY(), this.position.z, tx, ty, tz);
   }
 
-  // Metres moved this tick: a pounce's (pounceStep), a sprint (fleeing or chasing) at the fastest run of its own
-  // predators, else the Arena speed.
+  // Metres moved this tick: pounce, sprint or walk.
   stepLength() {
     const leap = this.pounceStep();
     if (leap >= 0) return leap;
@@ -798,10 +770,10 @@ export class Animal extends Entity {
     return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
   }
 
-  // metres per second of a sprint (fleeing or chasing)
+  // sprint m/s
   sprintSpeed() { return DEER_SPRINT_OVER * Math.max(RUN_SPEED, ecosystem.fastestHunterMSById[this.typeId]); }
 
-  // City: deer collide like the car: substeps pushed out of walls, speed lost into the wall, glancing hits turn along it.
+  // City: deer slide along walls like the car.
   moveDeer(step) {
     const p = this.position, w = Animal._wallPos;
     const feet = this._b ?? baseAt(p.x, p.z);
@@ -832,7 +804,7 @@ export class Animal extends Entity {
     }
   }
 
-  // Record a sighting (0 predator, 1 food, 2 water, 3 mate) and its direction for the arrows.
+  // Record a sighting (0 predator, 1 food, 2 water, 3 mate) for the arrows.
   seen(kind, ox, oy, oz) {
     const dx = ox - this.position.x, dz = oz - this.position.z;
     const h = Math.hypot(dx, dz) || 1;
@@ -863,9 +835,9 @@ export class Animal extends Entity {
 
   static _wallPos = new THREE.Vector3();
 
-  // PREY CHOICE: `q`'s size (an animal or the player's avatar) in whole PREY_SIZE_STEP_KG steps of body mass
+  // PREY CHOICE: `q`'s size in PREY_SIZE_STEP_KG steps
   static preySize(q) { return Math.round(q.bodyMassKg() / PREY_SIZE_STEP_KG); }
-  // PREY CHOICE: does prey of size s at squared distance d2 rank ahead of the pick so far (sB, dB)? smaller, then nearer
+  // PREY CHOICE: does size s at d2 rank ahead of (sB, dB)? smaller, then nearer
   static preyAhead(s, d2, sB, dB) { return s < sB || (s === sB && d2 < dB); }
 
   move() {
@@ -881,11 +853,11 @@ export class Animal extends Entity {
       if (!this.brain) {
         this.moveDeer(step);
       } else if (n <= 1) {
-        // walking step: Ecosystem.collide settles walls; the provider decides clamp or torus wrap
+        // walking step: Ecosystem.collide settles walls
         this.position.x = ecosystem.fitX(this.position.x + sx);
         this.position.z = ecosystem.fitZ(this.position.z + sz);
       } else {
-        // sprinting step: sub-steps, each refused or slid along one axis at a blocked cell
+        // sprinting step: sub-steps refused or slid at blocked cells
         let x = this.position.x, z = this.position.z;
         for (let k = 0; k < n; k++) {
           const nx = ecosystem.fitX(x + sx / n);
@@ -898,7 +870,7 @@ export class Animal extends Entity {
         this.position.x = x; this.position.z = z;
       }
     }
-    // footing from the provider: base (floor, ground or water surface) + dip below it, floating past the float depth
+    // footing: base (floor, ground or water) + dip, floating past the float depth
     const g = surfaceFor(this, this.position.x, this.position.z);
     const floatY = -this._fd;
     this.floating = g < floatY;
@@ -915,7 +887,7 @@ export class Animal extends Entity {
       this.ageBaseTick = ecosystem.ticks;
     }
     this.lookForMate = this.mateReady(now);
-    // people: the Arena's rule; deer: species.py's, one increment per tick
+    // people: the Arena's rule; deer: species.py's
     const rn = this.reproductionNeed;
     this.reproductionNeed = !this.lookForMate ? 0
       : this.brain ? Math.min(rn + rn, REPRO_NEED_MAX) : rn + this.reproductionIncrement;
@@ -927,14 +899,14 @@ export class Animal extends Entity {
     if (this.fleeFrom !== null && now >= this.heldUntil()) this.fleeAttacker();
 
     if (!this.brain) {
-      // City: deer decide once per DEER_THINK_TICKS (staggered) and steer every tick; a pounce in the air finishes first
+      // City: deer decide every DEER_THINK_TICKS (staggered) and steer every tick
       if (--this.actionTimer <= 0 && !this.pouncing(now)) {
         this.thinkDeer(grid);
         this.actionTimer = this.ACTION_HOLD;
       }
       this.steerDeer();
     } else if (--this.actionTimer <= 0) {
-      // credit the decision just held with what it earned, then make the next one (its tags are set by think)
+      // credit the held decision, then make the next
       this.learnFromLastDecision();
       this.think(grid);
       this.actionTimer = this.ACTION_HOLD;
@@ -942,8 +914,7 @@ export class Animal extends Entity {
     this.move();
   }
 
-  // Reward since the previous decision: the mean of health gained, food need met and water need met,
-  // in units of 5% of starting health, clipped to [-1, 1].
+  // Reward: mean health, food and water gained, clipped to [-1, 1].
   learnFromLastDecision() {
     const gained = (this.health - this.prevHealth)
       + (this.prevFoodNeed - this.foodNeed)
@@ -955,12 +926,12 @@ export class Animal extends Entity {
     this.prevFoodNeed = this.foodNeed;
   }
 
-  // One hit; the per-hit share keeps the damage rate at NPC_ATTACK_DAMAGE_PER_S whatever the cooldown.
+  // One hit; the per-hit share keeps NPC_ATTACK_DAMAGE_PER_S whatever the cooldown.
   attacked(predator) {
     ecosystem.applyHit(this, predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
   }
 
-  // Damage from a hit: no eating for NPC_HIT_NO_EAT_S, and a kill feeds the attacker.
+  // A hit's damage: no eating for NPC_HIT_NO_EAT_S; a kill feeds the attacker.
   takeHit(attacker, damage) {
     this.health -= damage;
     this.noEatUntil = ecosystem.time + NPC_HIT_NO_EAT_S;
@@ -970,13 +941,13 @@ export class Animal extends Entity {
     } else this.answerHit(attacker);
   }
 
-  // A striker landing a hit on `target`: its fight move, facing the target, and it holds its ground (move()).
+  // A striker landing a hit: its move, facing the target, holding ground.
   strike(target) {
     this.faceToward(target.position.x, target.position.z, 1);
     startFightMove(this, NPC_FIGHT_MOVES[this.type], ecosystem.time);
   }
 
-  // A species that flees answers a hit with its move, rump to the attacker, then runs (update()); once per fleeS.
+  // A fleeing species answers a hit with its move, then runs; once per fleeS.
   answerHit(attacker) {
     const move = NPC_FIGHT_MOVES[this.type], now = ecosystem.time;
     if (!move.flees || now < this.fleeUntil) return;
@@ -986,7 +957,7 @@ export class Animal extends Entity {
     this.fleeUntil = now + move.moveS + move.fleeS;
   }
 
-  // The move is over: sprint straight away from the attacker; the next decisions keep fleeing while it is in sight.
+  // Move over: sprint away; it keeps fleeing while the attacker is in sight.
   fleeAttacker() {
     const f = this.fleeFrom;
     this.fleeFrom = null;
@@ -999,7 +970,7 @@ export class Animal extends Entity {
     this.actionTimer = this.ACTION_HOLD;
   }
 
-  // Turn the body toward (sign 1) or away from (sign -1) the point (x, z) at once; people's brains keep their own target.
+  // Turn toward (1) or away from (-1) (x, z) at once.
   faceToward(x, z, sign) {
     const dx = (x - this.position.x) * sign, dz = (z - this.position.z) * sign;
     if (dx === 0 && dz === 0) return;
@@ -1007,14 +978,14 @@ export class Animal extends Entity {
     if (!this.brain) this.targetHeading = this.heading;
   }
 
-  // A kill's meal: the victim's starting health as health, food and the water that comes with it.
+  // A kill's meal: the victim's starting health as health, food and water.
   feedOn(victim) {
     this.health += victim.startHealth;
     this.foodNeed = Math.max(0, this.foodNeed - victim.startHealth);
     this.dietWater(victim.startHealth);
   }
 
-  // City: water eaten with `food` units of food (see DIET_WATER_SHARE).
+  // City: water eaten with `food` units of food.
   dietWater(food) {
     const perFood = DIET_WATER_SHARE * this.waterIncrement / this.foodIncrement;
     this.waterNeed = Math.max(0, this.waterNeed - food * perFood);
@@ -1024,40 +995,40 @@ export class Animal extends Entity {
     return this.ageBase + (ecosystem.ticks - this.ageBaseTick) / NPC_TICKS_PER_YEAR;
   }
 
-  // Height in metres as drawn (children grow into it), as the stats readout measures it.
+  // Drawn height in metres.
   bodyHeightM() {
     const growth = this.isAdult ? 1 : Math.min(1, (ecosystem.ticks - this.birthTick) / NPC_MATURITY_TICKS);
     const s = GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * growth;
     return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * s;
   }
 
-  // Body pace from composition (setHumanBody): a person's look's, 1 for animals (no composition yet).
+  // Body pace: the look's, 1 for animals.
   pace() { return this.look ? this.look.pace : 1; }
-  // Arena speed units per second: the inherited speed gene, times the body's pace.
+  // Arena speed per second: speed gene x pace.
   moveSpeed() { return this.speed * this.pace(); }
-  // Takeoff speed of a jump whose full-pace takeoff is baseSpeed (bodyJumpSpeed). Not called yet: no animal jumps.
+  // Jump takeoff speed (bodyJumpSpeed). Not called yet.
   jumpSpeed(baseSpeed) { return bodyJumpSpeed(baseSpeed, this.pace()); }
 
-  // Fighting mass in kg (Ecosystem.fightHit): people by humanFightMassKg, animals at the reference man's share.
+  // Fighting mass in kg: people by humanFightMassKg, animals at the reference man's share.
   fightMassKg() {
     return this.type === 'human' ? humanFightMassKg(this.sex, this.look, this.bodyHeightM())
       : this.bodyMassKg() * NPC_ANIMAL_FIGHT_SHARE;
   }
 
-  // KNOCKDOWNS: health share x energy share (conditionShare), what a hit's push and a body's hold scale by
+  // KNOCKDOWNS: health share x energy share
   condition() { return conditionShare(this.health, this.maxHealth, this.foodNeed, this.waterNeed); }
-  // sim seconds until which this animal takes no steps: the later of its fight hold and a knockdown
+  // no steps until the later of the fight hold and a knockdown
   heldUntil() { return Math.max(this.fightUntil, this.downUntil); }
-  // knocked down at `now`: lying, so it neither attacks nor mates (its brain still thinks)
+  // knocked down: neither attacks nor mates (the brain still thinks)
   isDown(now) { return now < this.downUntil; }
-  // BUMPING: metres per second it moves along its heading this tick, 0 while it takes no steps (move())
+  // BUMPING: m/s along its heading this tick, 0 while held
   groundSpeed(now) { return this.moving && now >= this.heldUntil() ? this.stepLength() / NPC_TICK_S : 0; }
-  // KNOCKDOWNS: can a push knock it down now (Ecosystem.applyHit)? Every animal; the player's avatar has its own rule
-  knockable() { return true; }
-  // KNOCKDOWNS: is it on its feet, bracing with its hold (Ecosystem.applyHit)? Every animal; the player's avatar has its own rule
+  // KNOCKDOWNS: can a push knock it down (applyHit)? Every living animal; the avatar has its own rule
+  knockable() { return this.alive; }
+  // KNOCKDOWNS: braced on its feet (applyHit)? Every animal; the avatar has its own rule
   braced() { return true; }
 
-  // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
+  // Mass in kg: people by humanMassKg, animals by reference mass x height ratio^3.
   bodyMassKg() {
     const h = this.bodyHeightM();
     if (this.type === 'human') return humanMassKg(this.sex, this.look, h);
@@ -1065,14 +1036,14 @@ export class Animal extends Entity {
     return NPC_REF_MASS_KG[this.type][this.sex] * k * k * k;
   }
 
-  // Adult size from a z-score on this species' and sex's normal curve (cut at NPC_SIZE_Z_MAX).
+  // Adult size from a z-score, cut at NPC_SIZE_Z_MAX.
   setSizeZ(z) {
     this.sizeZ = Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, z));
     const sz = NPC_SIZE[this.type], [mean, std] = sz[this.sex];
     this.heightScale = (mean + std * this.sizeZ) / (sz.rig * NPC_UNIT);
   }
 
-  // Mate bar fill (0..1); only an adult with a full bar may mate.
+  // Mate bar fill; only an adult with a full bar mates.
   mateFill(now) {
     return this.isAdult ? (now - this.lastChildTime) / this.childGracePeriod : 0;
   }
@@ -1107,14 +1078,14 @@ export class Animal extends Entity {
     child.mutationMulti = ((this.mutationMulti + partner.mutationMulti) / 2)
       * (0.9 + Math.random() * 0.2);
 
-    // mid-parent z-score times the heritability plus noise; variance stays 1, so every generation keeps the bell curve
+    // mid-parent z x heritability plus noise; variance stays 1
     const midZ = (this.sizeZ + partner.sizeZ) / 2, h = NPC_SIZE_HERITABILITY;
     child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * tools.gauss());
     if (child.look) inheritHumanLook(child.look, this.look, partner.look);
 
     if (this.brain && partner.brain) {
       const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
-      // the parent's wiring with small mutations (lobe sizes, synapses); weights start fresh
+      // the parent's wiring, mutated; weights fresh
       const childMasks = brains.mutateMasks(ParentBrain.getMasks(), ParentBrain.inputDims,
         ParentBrain.outputDims, child.mutationMulti / 0.5);
       child.brain = new SpikingNetwork(
@@ -1149,14 +1120,14 @@ export class Animal extends Entity {
     if (plant.health <= 0) { plant.alive = false; ecosystem.plantsDied = true; }
   }
 
-  // A food box: full health, hunger cleared, and the water that comes with that much food. The crate then moves.
+  // A food box: full health and hunger cleared; the crate moves.
   eatBox() {
     this.health = this.maxHealth;
     this.dietWater(this.foodNeed);
     this.foodNeed = 0;
   }
 
-  // Every species drinks the same way: an empty water bar refills in NPC_DRINK_SECONDS.
+  // Every species drinks alike: an empty bar refills in NPC_DRINK_SECONDS.
   drinkWater() {
     this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 / NPC_DRINK_SECONDS * NPC_TICK_S);
     this.health = Math.min(this.health + this.waterIncrement * 25, this.maxHealth);
@@ -1178,12 +1149,10 @@ export function humanLook(sex) {
 }
 
 const clampTo = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
-// the somatotype table's pure type for each readout body type (BODY_TYPE_NAMES keys, which are also the ratings)
+// pure type per readout body type
 const PURE_TYPE = { ecto: 'ectomorph', meso: 'mesomorph', endo: 'endomorph' };
 
-// The player's Custom body (pov.newBody) on a look from humanLook: bodyType (a BODY_TYPE_NAMES key) sets that pure
-// somatotype at its mean ratings, bodyFat (fraction) replaces the drawn one, and bmi replaces the one the ratings and
-// fat give. Pace, shape and the packed look follow.
+// The player's Custom body: bodyType, bodyFat and bmi set; pace and shape follow.
 export function customizeHumanLook(L, { bodyType, bodyFat, bmi }) {
   L.bodyType = NPC_SOMATOTYPES.findIndex(t => t.name === PURE_TYPE[bodyType]);
   for (const k in BODY_TYPE_NAMES) setBodyTrait(L, k, 0);
@@ -1193,54 +1162,51 @@ export function customizeHumanLook(L, { bodyType, bodyFat, bmi }) {
   setHumanShape(L);
   packHumanLook(L);
 }
-// a trait's population curve: body fat differs by sex, the ratings do not
+// a trait's population curve; fat differs by sex
 const bodyPop = (trait, female) => trait === 'bodyFat' ? NPC_BODY_POP.bodyFat[female ? 'female' : 'male'] : NPC_BODY_POP[trait];
-// a look's drawn widths (setHumanShape): the torso regions, then limb girth
+// a look's drawn widths
 const newShape = () => Object.fromEntries([...NPC_TORSO_REGIONS, 'limb'].map(k => [k, 1]));
 
-// a somatotype (index into NPC_SOMATOTYPES) picked by weight
+// a somatotype by weight
 function pickBodyType() {
   let roll = Math.random() * NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
   const i = NPC_SOMATOTYPES.findIndex(t => (roll -= t.weight) < 0);
   return i < 0 ? NPC_SOMATOTYPES.length - 1 : i;
 }
-// A trait's curve within a somatotype, as [mean, sd]: the ratings share NPC_RATING_SPREAD; body fat is per sex.
+// A trait's [mean, sd] within a somatotype.
 const typeCurve = (typeIndex, trait, female) => {
   const t = NPC_SOMATOTYPES[typeIndex];
   return trait === 'bodyFat' ? t.bodyFat[female ? 'female' : 'male'] : [t.ratings[trait], NPC_RATING_SPREAD];
 };
-// Sets a trait from its z-score on the look's own somatotype curve, within the trait's limits.
+// Sets a trait from its z-score on the look's type curve, within limits.
 function setBodyTrait(L, trait, z) {
   const [mean, sd] = typeCurve(L.bodyType, trait, L.female);
   L[trait] = clampTo(mean + sd * z, trait === 'bodyFat' ? NPC_BODY_FAT_LIMITS : NPC_RATING_LIMITS);
 }
 
-// A founder's somatotype ratings and body fat: a type picked by weight, then varied within it.
+// A founder's ratings and fat: a type by weight, varied within it.
 function drawFounderBody(L) {
   L.bodyType = pickBodyType();
   for (const k of NPC_BODY_TRAITS) setBodyTrait(L, k, tools.gauss());
 }
 
-// Derives bmi (lean mass index from the ratings, over the lean fraction) after the ratings and body fat are set, then
-// the drawn widths from it (setHumanShape). Mass reads bmi; the renderer reads build and shape.
+// Derives bmi from ratings and fat, then the drawn widths.
 function setHumanBody(L) {
   const sex = L.female ? 'female' : 'male';
   const leanIndex = NPC_LEAN_INDEX_BASE[sex] + NPC_LEAN_PER_MESO * (L.meso - NPC_LEAN_REF_RATING) + NPC_LEAN_PER_ECTO * (L.ecto - NPC_LEAN_REF_RATING);
-  L.bmi = leanIndex / (1 - L.bodyFat);                   // lean mass / (1 - fat fraction), per m^2
-  // pace: the lean fraction over the reference body's (NPC_PACE_LEAN_EXP), multiplying the speed gene (moveSpeed)
+  L.bmi = leanIndex / (1 - L.bodyFat);                   // lean mass / (1 - fat), per m^2
+  // pace: lean share over the reference's, to NPC_PACE_LEAN_EXP
   L.pace = clampTo(((1 - L.bodyFat) / (1 - NPC_REF_BODY_FAT[sex])) ** NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS);
   setHumanShape(L);
 }
 
-// DRAWN BODY SHAPE (NPC_BODY_SHAPE): build, the torso's mean width, from bmi (width scales as sqrt(BMI), so the drawn
-// body matches the mass); each torso region's share of it and limb girth from the sex's proportions (NPC_BUILD_BASE)
-// and body composition.
+// DRAWN BODY SHAPE: build from bmi, split among regions by NPC_BUILD_BASE.
 function setHumanShape(L) {
   const sex = L.female ? 'female' : 'male', base = NPC_BUILD_BASE[sex], baseMean = NPC_BUILD_BASE_MEAN[sex];
   L.build = clampTo(baseMean + Math.sqrt(L.bmi / NPC_REF_BMI[sex]) - 1, NPC_WIDTH_LIMITS);
-  // a region's width per unit of build: the sex's proportion of it, over the sex's base build
+  // a region's width per unit of build
   const share = k => base[k] / baseMean;
-  // a region's relative width: 1 plus its change per sd for each trait's z-score on that trait's population curve
+  // a region's relative width from each trait's z-score
   const rel = {};
   for (const k in NPC_BODY_SHAPE) {
     rel[k] = 1;
@@ -1249,16 +1215,14 @@ function setHumanShape(L) {
       rel[k] += NPC_BODY_SHAPE[k][t] * (L[t] - p.mean) / p.sd;
     }
   }
-  // the torso's mean width over the build, so body composition moves width between regions without changing the build
+  // torso mean over build, so composition moves width between regions only
   let torsoMean = 0;
   for (const k of NPC_TORSO_REGIONS) torsoMean += share(k) * rel[k] / NPC_TORSO_REGIONS.length;
   for (const k of NPC_TORSO_REGIONS) L.shape[k] = clampTo(L.build * share(k) * rel[k] / torsoMean, NPC_WIDTH_LIMITS);
   L.shape.limb = clampTo(L.build * share('limb') * rel.limb, NPC_WIDTH_LIMITS);
 }
 
-// A person at the population's mean body (BMI at NPC_REF_BMI, so build is the sex's base and every width is the sex's
-// NPC_BUILD_BASE):
-// the billboard bake's bodies, which far cards widen from (humanCardWidth).
+// A person at the population's mean body: the billboard bake's bodies.
 export function averageHumanLook(female, outfit, variant) {
   const sex = female ? 'female' : 'male';
   const L = {
@@ -1271,7 +1235,7 @@ export function averageHumanLook(female, outfit, variant) {
   return L;
 }
 
-// skinRGB: the tone's sRGB as one integer; code: face tile + outfit * 8 + limb girth step * 64 (all exact in a float).
+// skinRGB as one integer; code: face + outfit * 8 + girth * 64.
 export function packHumanLook(L) {
   const t = L.tone * (HUMAN_SKIN.length - 1), i = Math.min(HUMAN_SKIN.length - 2, Math.floor(t)), f = t - i;
   const mix = sh => Math.round(((HUMAN_SKIN[i] >> sh) & 255) * (1 - f) + ((HUMAN_SKIN[i + 1] >> sh) & 255) * f);
@@ -1283,10 +1247,9 @@ export function packHumanLook(L) {
 export function inheritHumanLook(L, a, b) {
   L.tone = Math.max(0, Math.min(1, (a.tone + b.tone) / 2 + (Math.random() - 0.5) * 0.12));
   L.variant = (Math.random() < 0.5 ? a : b).variant;
-  // somatotype: a parent's by heritability, else fresh by weight (NPC_BODY_TYPE_HERITABILITY), so type shares hold
+  // somatotype: a parent's by heritability, else fresh by weight
   L.bodyType = Math.random() < NPC_BODY_TYPE_HERITABILITY ? (Math.random() < 0.5 ? a : b).bodyType : pickBodyType();
-  // each trait as a z-score on its type's curve (each parent's on its own type): mid-parent times heritability plus
-  // noise, so the child's z stays a standard normal and its type's spread is kept
+  // each trait's z: mid-parent x heritability plus noise
   const zOf = (P, k) => { const [mean, sd] = typeCurve(P.bodyType, k, P.female); return (P[k] - mean) / sd; };
   for (const k of NPC_BODY_TRAITS) {
     const h = NPC_BODY_HERITABILITY[k], midZ = (zOf(a, k) + zOf(b, k)) / 2;
@@ -1296,10 +1259,9 @@ export function inheritHumanLook(L, a, b) {
   packHumanLook(L);
 }
 
-// PLANTS: the Arena's Plant and PlantRenderer; a stem and four leaves that shrink with health (10 bites).
+// PLANTS: the Arena's Plant; stem and four leaves that shrink with health.
 
-// PLANT VIEW: how plants reach their renderer without the sim calling it. The plant renderer fills add, remove and
-// touch, and raises pending when a plant waits for a free slot (step then retries plant.update).
+// PLANT VIEW: the plant renderer's add, remove and touch hooks.
 export const plantView = { add: null, remove: null, touch: null, pending: false };
 
 export class Plant extends Entity {
@@ -1307,7 +1269,7 @@ export class Plant extends Entity {
     super(position, 'plant');
     this.health = PLANT_MAX_HEALTH;
     this.maxHealth = PLANT_MAX_HEALTH;
-    // On the provider's footing (a lake bed under water), sunk 3 Arena units as in the Arena.
+    // On the provider's footing, sunk 3 Arena units.
     const x = this.position.x, z = this.position.z;
     this.position.y = surfaceY(x, z) - 3 * NPC_UNIT;
     this._slot = -1;
@@ -1320,17 +1282,17 @@ export class Plant extends Entity {
   remove() { plantView.remove(this); }
 
   update() {
-    // spawned past MAX_INSTANCES: retry each tick so a freed slot gets adopted
+    // past MAX_INSTANCES: retry each tick for a freed slot
     if (this._slot < 0) plantView.add(this);
   }
 }
 
-// ECOSYSTEM: the Arena's World loop, one engine for every provider; stepped from frame().
+// ECOSYSTEM: the Arena's World loop for every provider; stepped from frame().
 export class Ecosystem {
   static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
   static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
   static CONTACT_DIST = Math.sqrt(200) * NPC_UNIT;
-  static BUMP_DIST_SQ = NPC_BUMP_DIST * NPC_BUMP_DIST;   // BUMPING: touching bodies, squared
+  static BUMP_DIST_SQ = NPC_BUMP_DIST * NPC_BUMP_DIST;   // BUMPING: touching distance, squared
 
   constructor() {
     this.animals = [];
@@ -1343,33 +1305,33 @@ export class Ecosystem {
 
     this.animalGrid = null;
     this.plantGrid = null;
-    // Plants for vision queries, so sight reads nearby cells; plants never move, rebuilt with plantGrid to drop the dead.
+    // Plants for vision queries; rebuilt with plantGrid.
     this.plantSight = null;
-    // The provider's water points, for vision queries; they never move.
+    // Water points for vision queries.
     this.waterSight = null;
-    this.aliveById = new Int32Array(NPC_TYPE_COUNT);             // per species id: live count this tick
-    this.canHuntById = new Uint8Array(NPC_TYPE_COUNT);           // per species id: 1 while something it hunts lives
-    this.fastestHunterMSById = new Float64Array(NPC_TYPE_COUNT); // per species id: its fastest live hunter, metres per second
-    this.night = false;   // the sun below NIGHT_SUN_ALT_DEG, set each step: night hunts (NIGHT_PREY_MASK) are on
-    this.afterContacts = [];   // fn(dt) run after each tick's contacts, before the dead are removed (the game registers)
-    this.avatar = null;        // the player's avatar, an external agent animals sense and hunt (the game registers)
+    this.aliveById = new Int32Array(NPC_TYPE_COUNT);             // per species: live count
+    this.canHuntById = new Uint8Array(NPC_TYPE_COUNT);           // per species: 1 while its prey lives
+    this.fastestHunterMSById = new Float64Array(NPC_TYPE_COUNT); // per species: fastest live hunter, m/s
+    this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
+    this.afterContacts = [];   // fn(dt) after each tick's contacts
+    this.avatar = null;        // the player's avatar (the game registers)
 
     this._qPlant = [];
     this._qWater = [];
     this._qBox = [];
     this._plantAdds = [];
     this._plantDrops = [];
-    this._animalGridDrops = [];    // animals removed from `animals` since the last grid sync, still filed in the grid
-    this.plantsDied = false;       // set where a plant dies (eaten), so step's removal pass runs only on those ticks
+    this._animalGridDrops = [];    // removed animals still in the grid
+    this.plantsDied = false;       // a plant died, so removal runs
     this.drift2 = 0;
     this.contact = null;
     this._contactR = Ecosystem.CONTACT_DIST;
   }
 
-  // SIM CLOCK: sim seconds since init; aging and mate readiness run on it, so they pause with the sim.
+  // SIM CLOCK: sim seconds since init; pauses with the sim.
   get time() { return this.ticks * NPC_TICK_S; }
 
-  // Keep a coordinate in the world: the Arena's torus wrap, or City's clamp.
+  // Keep a coordinate in the world: torus wrap or clamp.
   fitX(x) {
     if (this.wraps) return this.minX + tools.wrap(x - this.minX, this.maxX - this.minX);
     return x < this.minX ? this.minX : x > this.maxX ? this.maxX : x;
@@ -1389,14 +1351,14 @@ export class Ecosystem {
     this.ready = false;
   }
 
-  // true once per population change; main refreshes the HUD on it
+  // true once per population change
   populationChanged() {
     if (this.animals.length === this.shownPop) return false;
     this.shownPop = this.animals.length;
     return true;
   }
 
-  // Spatial indexes over the provider's extent, then its population through its own spawn rules.
+  // Spatial indexes, then the provider's population.
   initialize(provider) {
     this.animals.length = 0;
     this.plants.length = 0;
@@ -1452,7 +1414,7 @@ export class Ecosystem {
     adds.length = 0;
   }
 
-  // Places `count` of `type` at open spawn spots NPC_SPAWN_GAP apart (gap halves when crowded); returns how many.
+  // Places `count` of `type` NPC_SPAWN_GAP apart; returns how many.
   spawn(type, count, src) {
     if (count <= 0) return 0;
     const cell = NPC_SPAWN_GAP;
@@ -1505,7 +1467,7 @@ export class Ecosystem {
         other.sex === 'female' && other.lookForMate &&
         tools.distSq(px, pz, other.position.x, other.position.z) < Ecosystem.CONTACT_DIST_SQ) {
         const child = a.mate(other);
-        // City: a child that would land in or through a wall is born at the mother's spot.
+        // City: a child in or through a wall is born at the mother's spot.
         const cp = child.position, mp = other.position;
         if (occ.blockedAt(cp.x, cp.z) ||
           shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
@@ -1519,10 +1481,10 @@ export class Ecosystem {
     }
   }
 
-  // Contact: hunters kill what they hunt, everyone mates and drinks, grazers (people, deer) eat plants.
+  // Contact: hunters kill, all mate and drink, grazers eat plants.
   handleCollisions() {
     if (this.ticks % 3 === 0) this.syncPlantGrids();
-    // Contact candidates come from a grid up to 2 ticks old, queried at contact distance plus the largest move since.
+    // Candidates from a grid up to 2 ticks old.
     this._contactR = Ecosystem.CONTACT_DIST + Math.sqrt(this.drift2);
     const cg = this.contact, items = cg.items, start = cg.start;
     const now = this.time;
@@ -1532,9 +1494,9 @@ export class Ecosystem {
       const px = a.position.x, pz = a.position.z;
 
       const down = a.isDown(now);
-      // one neighbour pass per animal for hunting and bumping (BUMPING); hunts is 0 when it is down or nothing it hunts lives
+      // one neighbour pass for hunting and bumping; hunts is 0 when down or preyless
       const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
-      // BUMPING: this animal's velocity this tick along its heading
+      // BUMPING: this tick's velocity
       const speed = a.groundSpeed(now);
       const vx = Math.sin(a.heading) * speed, vz = Math.cos(a.heading) * speed;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
@@ -1543,9 +1505,9 @@ export class Ecosystem {
         if (other === a || !other.alive) continue;
         const dx = other.position.x - px, dz = other.position.z - pz, d2 = dx * dx + dz * dz;
         if ((hunts & (1 << other.typeId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
-          // PACK STRENGTH: a pack hunter strikes only what its pack can take (mayAttack)
+          // PACK STRENGTH: strike only what the pack can take
           if (a.nextAttackAt <= now && a.mayAttack(other)) {
-            // one hit per cooldown, on the first prey in reach it may attack; prey that hunts back strikes on its own turn
+            // one hit per cooldown, on the first prey in reach
             a.strike(other);
             if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
             else other.attacked(a);
@@ -1564,7 +1526,7 @@ export class Ecosystem {
         const plant = this._qPlant[i];
         if (plant.alive &&
           tools.distSq(px, pz, plant.position.x, plant.position.z) < Ecosystem.CONTACT_DIST_SQ) {
-          // one bite per cooldown; the plant lives on until its health runs out
+          // one bite per cooldown
           a.eatPlant(plant);
           a.nextBiteAt = now + NPC_BITE_COOLDOWN_S;
           break;
@@ -1580,60 +1542,52 @@ export class Ecosystem {
     }
   }
 
-  // Two mutual hunters in contact: a strikes b once, scaled by a's height x fighting mass x health against the
-  // reference fighter; b strikes a on its own turn, and whoever drops to 1 health is eaten by the other.
+  // Mutual hunters in contact: a strikes b, scaled by height x fighting mass x health.
   fightHit(a, b) {
     const strength = a.bodyHeightM() * a.fightMassKg() * Math.max(0, a.health);
     this.applyHit(b, a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
   }
 
-  // BUMPING, a's side of one touching pair (b's own pass does b's side): b moves half the overlap straight away from
-  // a, unless that is inside a wall, and a's momentum into b (body mass x closing speed over NPC_BUMP_CONTACT_S)
-  // pushes it against its hold (applyHit, no damage). dx, dz: b less a; vx, vz: a's velocity.
+  // BUMPING, a's side of a pair: b moves half the overlap away, and a's momentum pushes it against its hold.
   bump(a, b, dx, dz, d2, vx, vz) {
     const d = Math.sqrt(d2);
-    if (d < 1e-6) return;   // the same spot: no direction to push
+    if (d < 1e-6) return;   // same spot: no direction
     const nx = dx / d, nz = dz / d, half = (NPC_BUMP_DIST - d) / 2;
     const bx = this.fitX(b.position.x + nx * half), bz = this.fitZ(b.position.z + nz * half);
     if (!occ.blockedAt(bx, bz)) { b.position.x = bx; b.position.z = bz; }
-    const closing = vx * nx + vz * nz;   // metres per second a moves toward b
+    const closing = vx * nx + vz * nz;   // m/s a moves toward b
     if (closing > 0) this.applyHit(b, a, 0, Ecosystem.bumpForceN(a.bodyMassKg(), closing));
   }
-  // BUMPING: newtons a body of massKg moving at closingMS into another pushes with: its momentum stopped over
-  // NPC_BUMP_CONTACT_S (animals, the car and the player alike)
+  // BUMPING: push in newtons, momentum stopped over NPC_BUMP_CONTACT_S
   static bumpForceN(massKg, closingMS) { return massKg * closingMS / NPC_BUMP_CONTACT_S; }
 
-  // KNOCKDOWNS: every hit goes through here (fightHit, Animal.attacked, the player's punch and touch fights, bumps), the
-  // same rule for every attacker and every animal. Damage first (takeHit; a bump deals none and skips it); a target
-  // still alive is then pushed with pushN newtons (a hit's: Ecosystem.hitForceN; a bump's: its momentum, see bump)
-  // against what it can hold (Ecosystem.holdForceN; nothing while it is not braced(), e.g. the player mid-jump). A push past the hold knocks it
-  // down, longer the further past (NPC_DOWN_*), falling the way it was pushed. A hit while down can lengthen the hold
-  // but does not restart the fall. Animals and the player's avatar alike, while the target is knockable().
+  // KNOCKDOWNS: every hit and bump comes here. Damage first, then pushN against the hold (0 when not braced()). Past it
+  // the body falls the way it was pushed, longer the further past.
   applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
     if (damage > 0) target.takeHit(attacker, damage);
-    if (!target.alive || !target.knockable()) return;
-    const bracedHoldN = Ecosystem.holdForceN(target);        // what it holds with its feet planted
-    const holdN = target.braced() ? bracedHoldN : 0;          // off its feet (a jump): nothing to brace against
+    if (!target.knockable()) return;   // dead, or the player out of play or sheltered
+    const bracedHoldN = Ecosystem.holdForceN(target);        // hold with feet planted
+    const holdN = target.braced() ? bracedHoldN : 0;          // off its feet: no hold
     if (!(pushN > holdN)) return;
     const now = this.time;
-    // how long it stays down scales with the push past its braced hold, so an unbraced body is not always held the longest
+    // down time scales with the push past the braced hold
     const excess = Math.max(0, pushN / Math.max(bracedHoldN, 1e-9) - 1);
     const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * excess);
     if (!target.isDown(now)) {
       target.downAt = now;
       const dx = target.position.x - attacker.position.x, dz = target.position.z - attacker.position.z;
       target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + Math.PI;
-      // the push past the hold over the contact time (NPC_BUMP_CONTACT_S, used for every push) as the body's speed
+      // push past the hold as launch speed
       target.downDV = (pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
     }
     target.downUntil = Math.max(target.downUntil, now + downS);
   }
-  // newtons a hit pushes with: the attacker's fighting mass x NPC_HIT_ACCEL_MS2 x its condition
+  // hit push: fighting mass x NPC_HIT_ACCEL_MS2 x condition
   static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition(); }
-  // newtons a body holds against before it goes down: its fighting mass x NPC_HOLD_ACCEL_MS2 x its condition
+  // hold: fighting mass x NPC_HOLD_ACCEL_MS2 x condition
   static holdForceN(target) { return target.fightMassKg() * NPC_HOLD_ACCEL_MS2 * target.condition(); }
 
-  // Occupancy-grid wall check: a step into a blocked cell keeps its free axis (slides) or is undone.
+  // Occupancy-grid wall check: a blocked step slides or is undone.
   collide(a) {
     if (!a.moving || !a.brain) return;
     const p = a.position;
@@ -1647,12 +1601,12 @@ export class Ecosystem {
 
   step(dt) {
     if (!this.ready || this.animals.length === 0) return false;
-    // a provider that drives its own NPCs (the intro scene) replaces the sim
+    // a provider that drives its own NPCs replaces the sim
     if (providers.active && providers.active.drive) return providers.active.drive(this, dt);
     const now = this.time;
     this.night = simSky.sunAltDeg < NIGHT_SUN_ALT_DEG;
 
-    // Grid sync every 3 ticks, incremental: only animals whose cell changed move bucket; same sets as a full rebuild.
+    // Incremental grid sync every 3 ticks.
     if (this.ticks % 3 === 0) {
       const g = this.animalGrid, drops = this._animalGridDrops;
       for (let i = 0; i < drops.length; i++) {
@@ -1700,7 +1654,7 @@ export class Ecosystem {
       this.canHuntById[t] = any;
     }
 
-    // Plant.update only retries a render slot for a plant spawned past MAX_INSTANCES; skip the pass when there is none
+    // skip the retry pass when nothing waits
     if (plantView.pending) {
       plantView.pending = false;
       for (const p of this.plants) {
@@ -1734,30 +1688,30 @@ export class Ecosystem {
     return true;
   }
 
-  // The tick's clock advances once main has drawn it (the renderers read this tick's ticks and time).
+  // The clock advances once main has drawn this tick.
   endTick() { this.ticks++; }
 }
 export const ecosystem = new Ecosystem();
 
-// GAME SKY: own clock and weather (opens to afternoon rain, then random; 20-minute day); an Observer preset overrides it.
+// GAME SKY: own clock and weather; an Observer preset overrides it.
 export const simSky = {
   running: false,              // a world is in play
-  DAY_S,                       // real seconds per game day (1-config.js, shared with the NPC day)
+  DAY_S,                       // real seconds per game day
   OPENING_RAIN_S: 30,
   SPAN: [60, 180],             // seconds each weather lasts
-  STEP_S: 0.25,                // sky redraw interval; the sun moves 0.075 degree in it
+  STEP_S: 0.25,                // sky redraw interval
   KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
   hour: 15, day: 0, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
 
-  site: null,   // where the world is on Earth { lat, lon, offset } (the loads set it)
-  sunAltDeg: 90,   // the drawn sun's altitude (degrees), set by updateSky; night reads it
-  onSkyStep: null, onMinute: null,   // the sky redraw and the HUD minute (main fills them)
+  site: null,   // the world's { lat, lon, offset }
+  sunAltDeg: 90,   // drawn sun altitude, degrees
+  onSkyStep: null, onMinute: null,   // sky redraw and HUD minute hooks
   get on() { return this.running; },
 
   start() {
     this.running = true;
     this.hour = presetHour('Afternoon');
-    this.day = 0;   // midnights passed since the world loaded (the HUD's day)
+    this.day = 0;   // midnights since load (HUD day)
     this.kind = 'Rain';
     this.timer = this.OPENING_RAIN_S;
     this.opening = true;
@@ -1767,7 +1721,7 @@ export const simSky = {
   },
   stop() { this.running = false; },
 
-  // New ecosystem: any hour, any weather, no opening rain
+  // New ecosystem: any hour and weather
   randomize() {
     this.hour = Math.random() * 24;
     this.kind = this.KINDS[Math.floor(Math.random() * this.KINDS.length)];
@@ -1777,7 +1731,7 @@ export const simSky = {
 
   conditions() { return SKIES[this.kind]; },
 
-  // real elapsed time, not the frame's clamped physics step, so a slow frame rate cannot stretch the day
+  // real time, so a slow frame rate cannot stretch the day
   update(now) {
     if (!this.running || document.hidden) { this.lastNow = 0; return; }
     const dt = this.lastNow ? Math.min(Math.max((now - this.lastNow) / 1000, 0), 5) : 0;

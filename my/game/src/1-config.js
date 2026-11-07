@@ -1,17 +1,6 @@
-// 1-config.js: CONFIG. Every tunable table and derived constant: world size and city ladder, player and building
-// dimensions, Overpass/Nominatim/terrain endpoints and limits, OSM layer tables, graphics numbers, the NPC tables
-// (species, sizes, fight moves, pounces, ages), human rig and atlas numbers, food boxes, streets and lamps, coast,
-// cabins, cat, car and camera, Survivor (SURVIVOR_CONFIG with playerPlantFood), sky, rain, CITY_FILES and PICKS.
-// The brain's tunables live with the brain in 7a-ml.js.
-// Owns: the values only; the three loops that fill PLACE_OF, PLACE_RE and NPC_TYPE_IDS derive tables from tables.
-// May import: nothing. Pure data; constants that construct three objects stay with their owners.
-// Config blocks, in order: world size, player, buildings, network, terrain, layers, places, loading steps, graphics,
-// shadows, city files, trees, signs, shells, NPC, human rig, billboards, plants, food boxes, streets, spawn, world,
-// coast, cabins, cat, camera, groves, mix, intro, blob shadows, Survivor, health bars, brain view, touch, car,
-// sky presets, debug probe, swim, NPC tick, sky, rain, picks.
+// 1-config.js: CONFIG, every tunable and derived constant (brain tunables: 7a-ml.js). May import nothing.
 
-// World size: `scale` sets wilderness extent and populations; the city's half-extent is CITY_LADDER, tried in order.
-// Map size levels 1..10 -> world scale (1 = 20, +10 per level); small, medium and large are levels 4, 5 and 6.
+// World size: `scale` sets wilderness extent and populations; levels 1..10 give scale 20 + 10 per level.
 export const MAP_SIZE_SCALES = Array.from({ length: 10 }, (_, i) => 20 + 10 * i);
 export const WORLD_SIZES = {
   small: { mapSize: 4, people: 1000 },
@@ -21,7 +10,7 @@ export const WORLD_SIZES = {
 export const CITY_LADDER = [500, 350, 200];
 export const DEFAULT_LEVELS = 3;
 export const METERS_PER_LVL = 3.2;
-export const HEAD_CLEAR = 0.15;   // metres from the eye to the top of the head
+export const HEAD_CLEAR = 0.15;   // eye to head top
 export const PLAYER_HEIGHT = 1.753;   // metres (5'9"), feet to crown
 export const EYE_HEIGHT = PLAYER_HEIGHT - HEAD_CLEAR;
 export const PLAYER_RADIUS = 0.35;
@@ -29,20 +18,20 @@ export const WALK_SPEED = 10.0;
 export const RUN_SPEED = 15.0;
 export const JUMP_SPEED = 7.0;
 export const CROUCH_SPEED = 4.0;
-// On foot (GTA-style): the stick moves relative to the view, the body turns to face the move, the view drifts back behind.
-export const FOOT_TURN_RATE = 10;    // rad/s the body turns toward the direction it is moving
-export const FOOT_CAM_FOLLOW = 1;    // 1/s the view drifts behind the body while moving, CAM_LOOK_HOLD after the last look
-export const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit for mouse, touch and the walking camera
+// On foot (GTA-style): the body turns to the move, the view drifts behind.
+export const FOOT_TURN_RATE = 10;    // rad/s body turn toward the move
+export const FOOT_CAM_FOLLOW = 1;    // 1/s view drift behind the body, CAM_LOOK_HOLD after the last look
+export const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit
 export const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
-export const CROUCH_RATE = 3.0;     // metres per second the eye moves into/out of a crouch (CROUCH_DROP: the body's crouch pose)
+export const CROUCH_RATE = 3.0;     // m/s the eye moves into or out of a crouch
 export const GRAVITY = 22.0;
-export const GRID_CELL = 24;      // collision broadphase cell size, meters
-export const LAND_EPS = 0.01;    // slack so a snapped-to roof still reads as clear
-export const SUBSTEP = 0.25;    // max move per collision pass; under PLAYER_RADIUS so thin walls are not skipped
+export const GRID_CELL = 24;      // broadphase cell, metres
+export const LAND_EPS = 0.01;    // slack so a snapped-to roof reads clear
+export const SUBSTEP = 0.25;    // max move per pass, under PLAYER_RADIUS
 
-// Enterable buildings: thick-walled hollow shells with a doorway and floor/ceiling/roof caps.
-export const WALL_T = 0.3;     // exterior wall thickness, meters, measured inward
-export const WALL_T_MIN = 0.06;    // thinnest a wall is retried at when mitres fold
+// Buildings: hollow shells with a doorway.
+export const WALL_T = 0.3;     // exterior wall thickness, metres inward
+export const WALL_T_MIN = 0.06;    // thinnest retry when mitres fold
 export const MITER_MAX = 4;
 export const DOOR_W = 1.2;
 export const DOOR_MIN_W = 0.9;     // comfortably wider than 2 * PLAYER_RADIUS
@@ -50,20 +39,15 @@ export const DOOR_H = 2.2;
 export const PIER = 0.35;
 export const PIER_MIN = 0.12;
 export const FRAME_W = 0.09;
-// FACADE WINDOWS (facadeMaterial), metres. A storey is METERS_PER_LVL plus up to FACADE_FLOOR_JITTER_M per building, so
-// window rows match the levels heightOf counts. Punched windows (low buildings) run from FACADE_SILL_M above the floor
-// to FACADE_WIN_H_M above that, the player's height plus FACADE_WIN_HEADROOM_M; curtain wall (towers, FACADE_TALL_M)
-// runs from FACADE_CURTAIN_SILL_M to FACADE_CURTAIN_TOP_GAP_M under the next floor.
+// FACADE WINDOWS, metres: punched on low buildings, curtain wall on towers (FACADE_TALL_M).
 export const FACADE_FLOOR_JITTER_M = 0.6;
 export const FACADE_SILL_M = 0.6;
 export const FACADE_WIN_HEADROOM_M = 0.45;
 export const FACADE_WIN_H_M = PLAYER_HEIGHT + FACADE_WIN_HEADROOM_M;
 export const FACADE_CURTAIN_SILL_M = 0.15;
 export const FACADE_CURTAIN_TOP_GAP_M = 0.2;
-export const FACADE_TALL_M = [30, 60];   // wall heights where punched windows blend into curtain wall
-// Windows come on as the sun sinks from FACADE_LIGHTS_DEG[0] to FACADE_LIGHTS_DEG[1] degrees of altitude, and go off
-// along the same band at dawn: twice the sky's own twilight ramp (+6 to -6), so they light up more slowly. A wider band
-// is slower; the low end must stay above the sun's lowest night altitude (about -18 in a northern US June).
+export const FACADE_TALL_M = [30, 60];   // heights where punched windows blend into curtain wall
+// Windows light as the sun sinks through FACADE_LIGHTS_DEG; keep the low end above ~-18.
 export const FACADE_LIGHTS_DEG = [8, -16];
 export const FLOOR_Y = 0.055;
 export const CEIL_GAP = 0.02;
@@ -74,7 +58,7 @@ export const ROAD_CELL = 32;
 export const FEATURES_VERSION = 5;     // bump when featuresFrom changes shape; drops stale caches
 export const OVERPASS_TIMEOUT_MS = 50000;
 export const OVERPASS_QUERY_TIMEOUT = 45;   // seconds, server side
-export const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets company: the next mirror is asked too
+export const OVERPASS_HEDGE_MS = 15000;     // a mirror this slow gets the next mirror asked too
 export const OVERPASS_MAX_PARALLEL = 2;
 export const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
@@ -83,25 +67,25 @@ export const OVERPASS_MIRRORS = [
 ];
 export const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
-// Elevation: AWS Terrain Tiles (Terrarium), h = R*256 + G + B/256 - 32768 m. Credit: Mapzen, AWS Open Data, USGS 3DEP.
+// Elevation: AWS Terrain Tiles (Terrarium). Credit: Mapzen, AWS Open Data, USGS 3DEP.
 export const TERRAIN_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
-export const TERRAIN_MAX_Z = 15;      // deepest level served (~3.7 m/px at 40 N)
+export const TERRAIN_MAX_Z = 15;      // deepest level (~3.7 m/px at 40 N)
 export const TERRAIN_MIN_Z = 12;
 export const TERRAIN_TILE_PX = 256;
 export const TERRAIN_MAX_TILES = 16;
 export const TERRAIN_TIMEOUT_MS = 10000;
-export const ELEV_STEP = 5;       // metres between height samples and terrain mesh vertices
+export const ELEV_STEP = 5;       // metres between height samples and mesh vertices
 export const ELEV_MARGIN = 100;
-export const STEP_UP = 0.45;    // highest ledge walked onto without a jump (player and NPCs)
+export const STEP_UP = 0.45;    // highest ledge walked onto without a jump
 export const GROUND_SNAP = 0.5;
 
-// Flat layers sit centimetres apart, so each gets a depth bias; higher wins, the ground plane is 0.
+// Flat layers get depth biases; higher wins.
 export const LAYER_BIAS = { area: 2, water: 3, road: 4, mark: 4.5, path: 5 };
 
 
 // LAYER TABLES
 
-// Fixed y stacking order for flat layers instead of depth fighting.
+// Fixed y order for flat layers instead of depth fighting.
 export const LAYER_Y = { area: 0.010, water: 0.018, road: 0.032, path: 0.048 };
 
 export const ROAD_WIDTH = {
@@ -114,7 +98,7 @@ export const PATH_KINDS = new Set(['pedestrian', 'track', 'footway', 'path', 'cy
 export const ROAD_COLOR = 0x3f4247;
 export const PATH_COLOR = 0x8c8578;
 
-// leisure / landuse / natural values worth painting on the ground
+// leisure, landuse, natural values painted on the ground
 export const AREA_COLOR = {
   water: 0x3d6b85, wetland: 0x4f6b58, basin: 0x3d6b85, reservoir: 0x3d6b85,
   park: 0x53753f, garden: 0x5c8046, grass: 0x5c8046, village_green: 0x5c8046,
@@ -124,9 +108,9 @@ export const AREA_COLOR = {
   orchard: 0x5f7f45, greenfield: 0x6d8a4c
 };
 
-// Green land cover takes the wild grass palette, fading to it fully at the city square's edge so the grounds meet.
+// Green cover takes the wild grass palette.
 export const MIX_GREEN_PULL = 0.8;
-export const MIX_EDGE_FADE = 0.25;   // outer fraction of the square over which the pull rises to 1
+export const MIX_EDGE_FADE = 0.25;   // outer share of the square where the pull rises to 1
 export const MIX_GREEN_KINDS = new Set([
   'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'pitch', 'golf_course',
   'forest', 'wood', 'meadow', 'scrub', 'orchard', 'greenfield', 'cemetery', 'allotments', 'wetland'
@@ -142,7 +126,7 @@ export const BARRIER = {
   hedge: { h: 1.6, t: 0.80, color: 0x44653a }
 };
 
-// fallbacks when a building carries a material but no colour
+// fallbacks for a material with no colour
 export const WALL_MATERIAL_COLOR = {
   brick: 0xd9a58a, red_brick: 0xd39177, brick_block: 0xd9a58a,
   concrete: 0xdedcd6, cement_block: 0xd8d4cb, stone: 0xd8d1c2, sandstone: 0xe3c9a3,
@@ -172,13 +156,13 @@ export const SIGN_CELL_W = 256;
 export const SIGN_CELL_H = 48;
 export const SIGN_MAX = 192;
 
-// Ask Overpass only for the land cover and barrier values we paint.
+// Overpass asks only for the cover and barrier values we paint.
 export const LANDUSE_RE = 'grass|forest|meadow|farmland|cemetery|allotments|orchard|greenfield'
   + '|village_green|recreation_ground|basin|reservoir';
 export const LEISURE_RE = 'park|garden|pitch|playground|golf_course|recreation_ground';
 export const BARRIER_RE = Object.keys(BARRIER).join('|');
 
-// Places by purpose: the OSM tag values for each kind; first hit (healthcare, amenity, shop) wins.
+// Places by purpose; first hit wins.
 export const PLACE_KINDS = {
   grocery: {
     shop: ['supermarket', 'convenience', 'grocery', 'greengrocer', 'general',
@@ -202,7 +186,7 @@ for (const [kind, byKey] of Object.entries(PLACE_KINDS)) {
   }
 }
 for (const key of PLACE_KEYS) PLACE_RE[key] = PLACE_RE[key].join('|');
-// A city load: the city, then the wilderness grown around it.
+// A city load: the city, then the wilderness around it.
 export const CITY_STEPS = [
   ['address', 'Finding the address', 'Turning the address into coordinates (OpenStreetMap Nominatim).'],
   ['map', 'Downloading map data', 'Buildings, streets, water, trees and places around the point (OpenStreetMap, Overpass API).'],
@@ -223,48 +207,46 @@ export const WILDERNESS_STEPS = [
 ];
 
 
-// LOW-POWER (Graphics: low): lower pixel ratio, fps cap, no MSAA, shorter view, nearer LODs, fewer updates; saved choice.
+// LOW-POWER (Graphics: low).
 export const LOW_PIXEL_RATIO = 1.5;
 export const LOW_RENDER_FPS = 60;
-export const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays at FOG_NEAR
+export const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays FOG_NEAR
 export const FOG_NEAR = 120;
-export const HIGH_CAMERA_FAR = 2000, LOW_CAMERA_FAR = 600;  // past the fog's far edge, so nothing pops at the clip
+export const HIGH_CAMERA_FAR = 2000, LOW_CAMERA_FAR = 600;  // past the fog's far edge, so nothing pops
 export const LOW_NPC_LOD_DIST = 70;     // metres (high: HIGH_NPC_LOD_DIST)
 export const LOW_FAR_STAT_DIST = 120;    // metres (high: HIGH_FAR_STAT_DIST)
-export const HIGH_LABEL_TICKS = 2, LOW_LABEL_TICKS = 4;    // NPC ticks between stat-label target picks
-export const HIGH_HUD_TICKS = 60, LOW_HUD_TICKS = 120;     // NPC ticks between HUD text refreshes
+export const HIGH_LABEL_TICKS = 2, LOW_LABEL_TICKS = 4;    // ticks between stat-label target picks
+export const HIGH_HUD_TICKS = 60, LOW_HUD_TICKS = 120;     // ticks between HUD refreshes
 export const LOW_WATER_FPS = 15;
-// AUTO GRAPHICS: with no saved Graphics choice, a city load measures its loaded scene on high behind the loading card
-// (after the shader warm-up, before the mode choice) and drops to low below AUTO_GRAPHICS_LOW_FPS. The first
-// AUTO_GRAPHICS_WARMUP_FRAMES frames (first uploads, the first shadow map) are not counted.
+// AUTO GRAPHICS: with no saved choice, a city load drops to low below AUTO_GRAPHICS_LOW_FPS.
 export const AUTO_GRAPHICS_LOW_FPS = 30;
 export const AUTO_GRAPHICS_SAMPLE_MS = 1500;
-export const AUTO_GRAPHICS_WARMUP_FRAMES = 10;        // water-flow texture offsets advance at most this often on low (every draw on high)
-export const MSAA_SAMPLES_WANTED = 8;   // high graphics' MSAA, capped at what the GPU supports (MSAA_SAMPLES)
-export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low', the last Graphics choice
+export const AUTO_GRAPHICS_WARMUP_FRAMES = 10;        // water-flow offsets advance at most this often on low
+export const MSAA_SAMPLES_WANTED = 8;   // high's MSAA, capped by the GPU
+export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low'
 
 export const HEMI_DAY = 1.5;
 export const HEMI_NIGHT = 0.8;
 export const MOON_MAX = 0.9;
-// Shadow box: SHADOW_BOX_HALF either side of a centre SHADOW_AHEAD in front of the player, so shadows reach down the view.
-export const SHADOW_BOX_HALF = 120;   // with SHADOW_AHEAD: ~190 m ahead, ~6 cm per texel at 4096
+// Shadow box: SHADOW_BOX_HALF round a centre SHADOW_AHEAD of the player.
+export const SHADOW_BOX_HALF = 120;   // ~190 m ahead, ~6 cm per texel at 4096
 export const SHADOW_AHEAD = 70;
-// shadows fade out over this fraction of the map at each edge, so the box edge never shows as a line
+// shadows fade at the map edges
 export const SHADOW_EDGE_FADE = 0.15;
-export const SHADOW_MAP_MAX = 4096;          // texels a side (less where the GPU's texture limit is lower)
-export const SHADOW_DEPTH = 800;             // metres the light's box reaches along the light
-export const SHADOW_BIAS_M = 0.25;           // depth bias in metres, whatever SHADOW_DEPTH is
-// city buildings are cut into square cells this wide, so the box's cull skips the cells outside it
+export const SHADOW_MAP_MAX = 4096;          // texels a side (less on lower GPU limits)
+export const SHADOW_DEPTH = 800;             // metres the box reaches along the light
+export const SHADOW_BIAS_M = 0.25;           // depth bias, metres
+// building cull cell size
 export const BUILDING_CHUNK_M = 150;
-// the big ground meshes are sorted into square cells this wide, so each frame draws only the cells in view
+// ground cull cell size
 export const GROUND_CELL_M = 150;
-// height meshes hold fewer triangles a cell, so theirs are wider: fewer draws for nearly the same cull
+// height meshes have fewer triangles a cell, so wider cells
 export const TERRAIN_CELL_M = 300;
-export const SHADOW_SOFTNESS = 2.5;   // filter radius in texels: smooths the stair-steps along shadow edges
+export const SHADOW_SOFTNESS = 2.5;   // filter radius in texels, smooths shadow edges
 export const MOON_BLEND_DEG = 5;
 
-// HOSTED CITY FILES: each suggested place's saved Overpass answer (CITY_FILE_RADIUS), served here, no public servers asked.
-export const CITY_FILE_DIR = 'maps/';    // folder of the files, relative to this page ('' = beside it); end it with '/'
+// HOSTED CITY FILES: saved Overpass answers.
+export const CITY_FILE_DIR = 'maps/';    // folder relative to this page, ending in '/'
 export const CITY_FILE_RADIUS = 500;
 export const CITY_FILES = {
   'New York, NY': {
@@ -286,91 +268,80 @@ export const CITY_FILES = {
   }
 };
 
-// TREES: trunk radii in metres; each trunk is a pole solid (like a lamp post), so it blocks movement and NPC sight.
+// TREES: trunks are pole solids.
 export const TREE_TRUNK_TOP_R = 0.14;
 export const TREE_TRUNK_BASE_R = 0.2;
-export const TREE_TRUNK_SOLID_R = TREE_TRUNK_BASE_R * 0.9;   // half side of the trunk's square solid
+export const TREE_TRUNK_SOLID_R = TREE_TRUNK_BASE_R * 0.9;   // half side of the trunk solid
 export const SIGN_FONT = '"Iowan Old Style", Palatino, Georgia, serif';
 
-// SHELL RASTER: shellAt in one typed-array read; only SHELL_AMBIG cells (edges, overlaps) take the exact test.
-export const SHELL_CELL = 0.5;    // metres; finer cells shrink the AMBIG band around walls that falls back to shellAtExact
-export const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the cap that coarsening keeps under
+// SHELL RASTER: shellAt in one read.
+export const SHELL_CELL = 0.5;    // metres; finer cells shrink the AMBIG band
+export const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the coarsening cap
 export const SHELL_OUT = -1;
 export const SHELL_AMBIG = -2;
-export const SHELL_EPS = 1e-4;       // cells are grown by this for the edge test, so it errs to AMBIG
+export const SHELL_EPS = 1e-4;       // cell growth for the edge test, erring to AMBIG
 
-// NPCS: the AIEcosystemArena engine (changes marked "City:"); people use the two-lobe brain, deer and coyotes thinkDeer.
+// NPCS: the AIEcosystemArena engine.
 
-// One NPC tick is NPC_TICK_S (16 ms) of sim time; per-tick constants and Ecosystem.time use it; at most one tick per frame.
+// One NPC tick is NPC_TICK_S of sim time.
 export const NPC_TICK_S = 0.016;
-// One day, for the sky and the NPCs alike: real seconds from midnight to midnight (20 minutes). Animals live by the sun.
+// One day for sky and NPCs (20 minutes).
 export const DAY_S = 1200;
-// With a city, the starting people split city : wilderness as NPC_CITY_PEOPLE_WEIGHT : NPC_WILD_PEOPLE_WEIGHT.
+// With a city, starting people split by NPC_CITY_PEOPLE_WEIGHT : NPC_WILD_PEOPLE_WEIGHT.
 export const NPC_CITY_PEOPLE_WEIGHT = 3000;
 export const NPC_WILD_PEOPLE_WEIGHT = 900;
 export const NPC_DEER_POPULATION = 125;   // city deer
 export const NPC_PLANT_POPULATION = NPC_DEER_POPULATION * 10; // the Arena's 300:5 plant-to-human ratio
-// Share of water that comes with food for an eater keeping up with hunger (~30% for people).
+// Share of water that comes with food (~30% for people).
 export const DIET_WATER_SHARE = 0.3;
 export const PLANT_REGROW_P = 0.03;
 export const PLANT_SPOT_TRIES = 30;
-export const PLANT_SIGHT_CELL = 15;      // metres: plant cell for vision queries (Ecosystem.plantSight)
-export const NPC_CONTACT_CELL = 1.5;     // metres: ContactGrid cell, about two contact radii, so a query reads 1 to 4 cells
-// DEER AI (ported from species.py, Animal.search / think / move)
-export const DEER_CRUISE = 0.3;      // species.py: speed share when not fleeing
-// Deer decide once per DEER_THINK_TICKS (a third of a second) and keep that decision in between.
+export const PLANT_SIGHT_CELL = 15;      // plant cell for vision queries, metres
+export const NPC_CONTACT_CELL = 1.5;     // ContactGrid cell, ~two contact radii, metres
+// DEER AI (ported from species.py)
+export const DEER_CRUISE = 0.3;      // speed share when not fleeing
+// Deer decide once per DEER_THINK_TICKS (a third of a second).
 export const DEER_THINK_TICKS = 20;
-// A deer within DEER_SPRINT_DIST of a predator sprints (speed and energy below); farther off it flees at normal speed.
+// Deer near a predator (DEER_SPRINT_DIST) sprint.
 export const DEER_SPRINT_DIST = 10;     // metres
 export const DEER_SPRINT_OVER = 1;
 export const DEER_SPRINT_ENERGY = 2;
-// NPC steps longer than this are split so a sprinting deer cannot pass a wall.
+// Long NPC steps are split at walls.
 export const NPC_SUBSTEP = 0.1;           // metres
-// GAIT: leg cadence follows body speed, capped at GAIT_MAX_HZ; a sprinting deer gallops.
+// GAIT: cadence follows speed, capped at GAIT_MAX_HZ; a sprinting deer gallops.
 export const GAIT_MAX_HZ = 4;
-export const GAIT_GALLOP_SWING = 0.9;     // radians of leg swing while a deer sprints
-export const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle (cap included); 1 = feet match ground speed
-export const DEER_EXPLORE_P = 0.0001;   // species.py: chance per tick of a new random explore point
-export const NPC_ATTACK_COOLDOWN_S = 0.5;     // sim seconds between one hunter's attacks
-export const NPC_ATTACK_DAMAGE_PER_S = 0.2;   // share of the victim's starting health lost per second of attacks (~5 s to kill)
-export const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between one grazer's plant bites
+export const GAIT_GALLOP_SWING = 0.9;     // leg swing while sprinting, radians
+export const GAIT_CADENCE_SCALE = 0.6;    // slows every leg cycle; 1 = feet match ground speed
+export const DEER_EXPLORE_P = 0.0001;   // chance per tick of a new explore point
+export const NPC_ATTACK_COOLDOWN_S = 0.5;     // sim seconds between a hunter's attacks
+export const NPC_ATTACK_DAMAGE_PER_S = 0.2;   // victim health share lost per second
+export const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between a grazer's bites
 export const NPC_HIT_NO_EAT_S = 2;
 export const PLANT_MAX_HEALTH = 10;           // a plant's bites when whole
-export const PLANT_BITE_NUTRITION = 5;        // a plant bite's nutrition per point of the plant's max health            // sim seconds an animal cannot eat (plants or food boxes) after being hit
-// FIGHTS (two animals that hunt each other): each side's hit scales with its height x fighting mass x health
-// (BODY PERFORMANCE, after SPECIES).
-export const NPC_FIGHT_DAMAGE_PER_S = 24;     // health per second dealt by the reference fighter (NPC_FIGHT_REF_STRENGTH): 0.2 of a human's 120
-// KNOCKDOWNS (Ecosystem.applyHit, F = ma; animals and the player alike, the player not while sheltered): a hit pushes with
-// F = the attacker's fighting mass x NPC_HIT_ACCEL_MS2 x its condition, and the target holds with F = its own fighting
-// mass x NPC_HOLD_ACCEL_MS2 x its condition (dividing both by the target's mass gives the accelerations). Condition is
-// the health share times the energy share (conditionShare). A push past the hold knocks the target down for
-// NPC_DOWN_MIN_S plus NPC_DOWN_S_PER_EXCESS per unit of push over hold past 1, at most NPC_DOWN_MAX_S.
-export const NPC_HIT_ACCEL_MS2 = 10;       // placeholder: acceleration an attacker drives into a hit
-export const NPC_HOLD_ACCEL_MS2 = 15;      // placeholder: acceleration a body can brace against; above the hit's, so a knockdown takes a stronger attacker
-export const NPC_DOWN_MIN_S = 1;           // sim seconds down for a push just past the hold
-export const NPC_DOWN_S_PER_EXCESS = 1;    // sim seconds added per unit of push over hold past 1
-export const NPC_DOWN_MAX_S = 6;           // sim seconds down at most per hit
-export const NPC_NEED_FULL = 100;          // a food or water need at this value is an empty bar (energy share 0)
-// BUMPING (Ecosystem.bump): two animals nearer than NPC_BUMP_DIST are pushed apart, each half the overlap, never into a
-// wall (NPC_BUMP_DIST is with NPC_RADIUS). A body walking into another pushes it with F = its body mass x its closing speed / NPC_BUMP_CONTACT_S (its
-// momentum stopped over the contact), against the same hold as a hit (applyHit), so a fast or heavy body can knock
-// another down. NPC_BUMP_DIST stays under Ecosystem.CONTACT_DIST (~0.64 m), so pushed-apart bodies still reach to hunt and mate.
-export const NPC_BUMP_CONTACT_S = 0.25;    // placeholder: seconds a bump takes to stop the closing speed
-// the drawn fall and rise (render only; the sim's hold is downUntil): the fall eases in over NPC_FALL_S from the hit,
-// the rise over the last NPC_GETUP_S of the hold, so the body is standing again when the hold ends
+export const PLANT_BITE_NUTRITION = 5;        // a bite's nutrition per point of the plant's max health
+// FIGHTS: hits scale with height x fighting mass x health.
+export const NPC_FIGHT_DAMAGE_PER_S = 24;     // reference fighter's health per second
+// KNOCKDOWNS (Ecosystem.applyHit): push = fighting mass x NPC_HIT_ACCEL_MS2 x condition; hold = fighting mass x
+// NPC_HOLD_ACCEL_MS2 x condition. Past the hold, down for NPC_DOWN_* seconds.
+export const NPC_HIT_ACCEL_MS2 = 10;       // placeholder: attacker's acceleration into a hit
+export const NPC_HOLD_ACCEL_MS2 = 15;      // placeholder: what a body braces against
+export const NPC_DOWN_MIN_S = 1;           // seconds down just past the hold
+export const NPC_DOWN_S_PER_EXCESS = 1;    // seconds per unit of push over hold past 1
+export const NPC_DOWN_MAX_S = 6;           // most seconds down per hit
+export const NPC_NEED_FULL = 100;          // need at which the bar is empty (energy share 0)
+// BUMPING (Ecosystem.bump): a body walking into another pushes with mass x closing speed / NPC_BUMP_CONTACT_S against
+// the hit hold.
+export const NPC_BUMP_CONTACT_S = 0.25;    // placeholder: seconds a bump takes to stop
+// drawn fall over NPC_FALL_S and rise over the hold's last NPC_GETUP_S
 export const NPC_FALL_S = 0.35;
 export const NPC_GETUP_S = 0.6;
-// FIGHT MOVES: each species' move when it fights (moveS sim seconds; key t is a share of moveS). Strikers (people,
-// coyotes) play theirs on landing a hit and hold their ground while hits keep coming; a species that `flees` plays
-// its move on being hit (no damage dealt), then runs from the attacker, and moves again only after fleeS.
-// Box-rig keys, rig units and radians: rise and lunge move the body (lunge forward), pitch tips it (+ nose down),
-// head tips the head (+ nose down), front and back swing the legs from straight down (+ feet back).
-// anchor: the leg joint a box rig tips about, so those legs stay planted (null: about the body centre).
-export const NPC_FIGHT_HOLD_PAD_S = 0.1;   // a striker's hold outlasts its next possible hit by this, so a running fight never lets go
+// FIGHT MOVES (moveS seconds; key t is a share of it). Strikers play theirs on landing a hit; a `flees` species on
+// being hit, then runs. anchor: the leg joint a box rig tips about.
+export const NPC_FIGHT_HOLD_PAD_S = 0.1;   // a striker's hold outlasts its next hit by this
 export const NPC_FIGHT_MOVES = {
-  // punch: alternating fists from a raised guard; arm angles in radians as HUMAN_CROUCH's (shoulder - forward, elbow - bent)
+  // punch: alternating fists from a guard; arm angles as HUMAN_CROUCH's
   human: { moveS: 0.4, peak: 0.35, guardEaseS: 0.12, guardShoulder: -0.4, guardElbow: -2.35, punchShoulder: -1.55, punchElbow: -0.05, punchLean: 0.18 },
-  // lunge and pounce: coil, leap forward, bite, back to its spot
+  // lunge and pounce: coil, leap, bite, back
   coyote: {
     moveS: 0.8, anchor: null, keys: [
       { t: 0, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 },
@@ -380,7 +351,7 @@ export const NPC_FIGHT_MOVES = {
       { t: 1, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 }
     ]
   },
-  // buck: head down, rump up and both hind legs kicked back at the attacker, then a sprint away
+  // buck: head down, hind legs kicked back, then a sprint away
   deer: {
     moveS: 0.55, flees: true, fleeS: 3, anchor: 'legFL', keys: [
       { t: 0, rise: 0, lunge: 0, pitch: 0, head: 0, front: 0, back: 0 },
@@ -392,21 +363,13 @@ export const NPC_FIGHT_MOVES = {
   }
 };
 
-// NIGHT HUNTS: with the sun below NIGHT_SUN_ALT_DEG (civil twilight) a species hunts its SPECIES nightPrey (the
-// player included, out of shelter): it chases its PREY CHOICE in sight, re-aiming every tick, and pounces in reach.
-// A `pack` species that sees a packmate hunting joins the nearest one's attack unless its own pick ranks ahead
-// (PREY CHOICE), so one hunter draws in the packmates that can see it (and those that see them).
+// NIGHT HUNTS: below NIGHT_SUN_ALT_DEG a species chases its nightPrey (the player too); a `pack` joins a packmate's
+// hunt.
 export const NIGHT_SUN_ALT_DEG = -6;
-// PREY CHOICE (hunters that use searchDeer: coyotes): of everything in sight the hunter would attack now (its food
-// species, and at night its nightPrey, the player included), it takes the smallest first, by body mass counted in
-// whole PREY_SIZE_STEP_KG steps (Animal.preySize), and of equal sizes the nearest. Night prey it picks is hunted;
-// food it picks is chased when hunger is its top need.
-// PACK STRENGTH: a `pack` species attacks (picks, joins, strikes) only quarry whose body mass or body height is at most
-// the sum over itself and the packmates within its own visionDistance (Animal.mayAttack); either sum passing is enough.
+// PREY CHOICE (coyotes): smallest first by PREY_SIZE_STEP_KG steps, then nearest. A pack attacks only quarry within its
+// summed mass or height.
 export const PREY_SIZE_STEP_KG = 1;
-// POUNCES: a hunter's leap at its quarry, moveS sim seconds: it crouches until share leapAt, then flies along the
-// heading it launched on at leapOver times its sprint speed, landing short of the quarry (pounceStep). It launches
-// when the quarry is within the leap's own length, at most once per moveS + cooldownS. keys: as NPC_FIGHT_MOVES'.
+// POUNCES: crouch until leapAt, then leap at leapOver x sprint speed, landing short of the quarry.
 export const COYOTE_LEAP_AT = 0.25;
 export const NPC_POUNCES = {
   coyote: {
@@ -419,57 +382,51 @@ export const NPC_POUNCES = {
     ]
   }
 };
-// a pounce lands this share of the contact distance (Ecosystem.CONTACT_DIST) short of its quarry, so the landing bites
+// a pounce lands this share of CONTACT_DIST short, so it bites
 export const POUNCE_LAND_SHORT = 0.5;
 
-// A box rig's move pose at share u (0..1) of its keys into `out`, eased between keys.
+// A box rig's move pose at share u into `out`.
 export const FIGHT_KEY_FIELDS = ['rise', 'lunge', 'pitch', 'head', 'front', 'back'];
-export const NPC_AGE_DEPLETION_RATE = 0;  // health lost per sim second of age, per point of starting health (was 0.000001); 0 = off
-export const DEER_REPRO_SHARE = 0.4;      // species.py: reproduction increment as a share of food's (0.0005 / 0.00125)
+export const NPC_AGE_DEPLETION_RATE = 0;  // health per sim second of age; 0 = off
+export const DEER_REPRO_SHARE = 0.4;      // reproduction increment as a share of food's
 export const MATE_TIME_MULT = 4;
-export const REPRO_NEED_MAX = 100;       // ceiling for a brained animal's reproduction need, which doubles every tick         // default for every species: this many times longer to fill the mate bar
-export const NPC_DAY_TICKS = Math.round(DAY_S / NPC_TICK_S);   // ticks per day: one sky day of sim time
-export const NPC_MATURITY_S = 120;   // seconds of sim time from birth to full size; no mating before
+export const REPRO_NEED_MAX = 100;       // ceiling of a brained animal's reproduction need, which doubles every tick
+export const NPC_DAY_TICKS = Math.round(DAY_S / NPC_TICK_S);   // ticks per sky day
+export const NPC_MATURITY_S = 120;   // sim seconds birth to full size; no mating before
 export const NPC_MATURITY_TICKS = Math.round(NPC_MATURITY_S / NPC_TICK_S);   // NPC_MATURITY_S in ticks
-export const GROWTH_MIN_SCALE = 0.25;   // body scale at birth; drawn size and bodyHeightM grow from it to 1 over NPC_MATURITY_TICKS
+export const GROWTH_MIN_SCALE = 0.25;   // body scale at birth, growing to 1 over NPC_MATURITY_TICKS
 export const NPC_ADULT_AGE = 18;                 // years shown at maturity
 export const NPC_TICKS_PER_YEAR = 365 * NPC_DAY_TICKS;
-export const NPC_START_AGE = [18, 40];           // years: random age range of the initial (spawned) people
-export const HUMAN_TURN_RATE = 3;      // radians per second people turn toward their brain's heading
+export const NPC_START_AGE = [18, 40];           // age range of spawned people, years
+export const HUMAN_TURN_RATE = 3;      // rad/s people turn toward their brain's heading
 export const DEER_GREEN_SHARE = 0.8;
 export const DEER_AREAS = new Set([
   'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'golf_course',
   'forest', 'wood', 'meadow', 'farmland', 'cemetery', 'scrub', 'orchard', 'greenfield', 'wetland'
 ]);
-// Feet to rig top in Arena units, for the stats sprite (deer use antler tips for both sexes).
+// Feet to rig top in Arena units, for the stats sprite.
 export const NPC_RIG_TOP = { human: 38.55, deer: 35, coyote: 23 };
 
-export const NPC_UNIT = 0.045;    // metres per Arena unit: 38.5 units -> ~1.73 m, 35 u/s -> ~1.5 m/s
-export const NPC_RADIUS = 0.3;      // collision circle; under PLAYER_RADIUS so every doorway fits
-export const NPC_BUMP_DIST = 2 * NPC_RADIUS;   // BUMPING: metres between two bodies' centres when their collision circles touch
-export const NPC_COLLIDE_H = 1.35;     // collision column height; under the lowest lintel (player height + 0.25 m) so no door refuses them
-export const NPC_SPAWN_GAP = 8;        // metres between spawn points before crowding forces it lower
-// heightScale of a person the player's height; the player's rig, cabins, cat and camera are sized by it.
+export const NPC_UNIT = 0.045;    // metres per Arena unit
+export const NPC_RADIUS = 0.3;      // under PLAYER_RADIUS so every doorway fits
+export const NPC_BUMP_DIST = 2 * NPC_RADIUS;   // centre distance when collision circles touch
+export const NPC_COLLIDE_H = 1.35;     // column height; under the lowest lintel
+export const NPC_SPAWN_GAP = 8;        // spawn spacing before crowding lowers it
+// heightScale of a person the player's height.
 export const PLAYER_HS = PLAYER_HEIGHT / (NPC_RIG_TOP.human * NPC_UNIT);
-// ADULT SIZE: a normal distribution per species and sex, [mean, std] in metres of one measure: standing height
-// for people (US adults), shoulder height for deer (white-tailed) and coyotes. rig: that measure in rig units at heightScale 1.
+// ADULT SIZE: [mean, std] metres per species and sex; rig: that in rig units.
 export const NPC_SIZE = {
   human: { rig: NPC_RIG_TOP.human, male: [1.753, 0.0762], female: [1.613, 0.0711] },
   deer: { rig: 20, male: [0.97, 0.05], female: [0.86, 0.045] },     // body centre 15 + half the 10-unit body
   coyote: { rig: 15, male: [0.61, 0.03], female: [0.58, 0.03] }     // body centre 11.5 + half the 7-unit body
 };
-export const NPC_SIZE_Z_MAX = 4;          // standard deviations; draws are cut here
-export const NPC_SIZE_HERITABILITY = 0.8;   // weight of the mid-parent z-score in a child's; the rest is fresh noise
-// BMI that draws at the sex's base build (NPC_BUILD_BASE_MEAN); also the BMI of a person with no look.
+export const NPC_SIZE_Z_MAX = 4;          // draws are cut at this many sd
+export const NPC_SIZE_HERITABILITY = 0.8;   // mid-parent z weight in a child's; rest is noise
+// BMI at the base build.
 export const NPC_REF_BMI = { male: 24, female: 22 };
 
-// BODY COMPOSITION: a person's BMI comes from lean mass plus fat. Heath-Carter somatotype ratings (1 to 7) set the
-// lean mass index (kg of fat-free mass per m^2); body fat is a fraction of total mass. Both are fixed for life.
-// mass = leanIndex * height^2 / (1 - bodyFat).
-// Founders pick a type by weight, then vary within it: each rating by NPC_RATING_SPREAD, body fat by the type's [mean, sd].
-// Fitted to US adults (CDC NHANES, Aug 2021 to Aug 2023, age 20+): BMI 25 to 30 for 35.5% of men and 28.1% of women,
-// 30 or over for 39.2% and 41.3%, 40 or over for 6.7% and 12.1%. Mean body fat comes out near 27% (men) and 38%
-// (women), close to NHANES DXA. Weights are shares of the population and sum to 1.
+// BODY COMPOSITION: Heath-Carter ratings set the lean mass index (fat-free kg/m^2); mass = leanIndex * height^2 / (1 -
+// bodyFat). Fitted to US adults (CDC NHANES 2021 to 2023).
 export const NPC_SOMATOTYPES = [
   { name: 'ectomorph', weight: 0.13, ratings: { endo: 2.0, meso: 2.5, ecto: 5.5 }, bodyFat: { male: [0.14, 0.030], female: [0.24, 0.035] } },
   { name: 'balanced', weight: 0.29, ratings: { endo: 3.5, meso: 3.5, ecto: 3.5 }, bodyFat: { male: [0.236, 0.040], female: [0.35, 0.040] } },
@@ -477,22 +434,19 @@ export const NPC_SOMATOTYPES = [
   { name: 'endomorph', weight: 0.25, ratings: { endo: 5.5, meso: 4.5, ecto: 1.5 }, bodyFat: { male: [0.34, 0.045], female: [0.454, 0.045] } },
   { name: 'extreme endomorph', weight: 0.20, ratings: { endo: 7.0, meso: 5.0, ecto: 1.0 }, bodyFat: { male: [0.45, 0.050], female: [0.56, 0.050] } }
 ];
-export const NPC_RATING_SPREAD = 0.5;            // sd of each rating within a type
+export const NPC_RATING_SPREAD = 0.5;            // rating sd within a type
 export const NPC_RATING_LIMITS = [1, 7];         // Heath-Carter scale
-export const NPC_BODY_FAT_LIMITS = [0.04, 0.6];  // fraction of total mass
-export const NPC_LEAN_INDEX_BASE = { male: 19.5, female: 16.5 };   // lean kg/m^2 at the reference ratings
-export const NPC_LEAN_REF_RATING = 3.5;          // meso and ecto ratings where the base applies
-export const NPC_LEAN_PER_MESO = 0.55;           // lean kg/m^2 per mesomorphy point above the reference
-export const NPC_LEAN_PER_ECTO = -0.35;          // lean kg/m^2 per ectomorphy point above the reference
-// INHERITANCE: a child takes one parent's somatotype (either parent, even odds) with probability
-// NPC_BODY_TYPE_HERITABILITY, else a fresh type by weight, so the type shares stay the table's every generation. Within
-// its type, each trait is a z-score on that type's curve: the weight of the mid-parent z (each parent's z on its own
-// type) is NPC_BODY_HERITABILITY, the rest is fresh noise, so each type's spread is kept too.
+export const NPC_BODY_FAT_LIMITS = [0.04, 0.6];  // share of total mass
+export const NPC_LEAN_INDEX_BASE = { male: 19.5, female: 16.5 };   // lean kg/m^2 at reference ratings
+export const NPC_LEAN_REF_RATING = 3.5;          // meso and ecto where the base applies
+export const NPC_LEAN_PER_MESO = 0.55;           // lean kg/m^2 per meso point above reference
+export const NPC_LEAN_PER_ECTO = -0.35;          // lean kg/m^2 per ecto point above reference
+// INHERITANCE: a child takes a parent's type (NPC_BODY_TYPE_HERITABILITY) and mid-parent z-scores
+// (NPC_BODY_HERITABILITY).
 export const NPC_BODY_TYPE_HERITABILITY = 0.6;
 export const NPC_BODY_HERITABILITY = { endo: 0.6, meso: 0.6, ecto: 0.6, bodyFat: 0.5 };
 export const NPC_BODY_TRAITS = Object.keys(NPC_BODY_HERITABILITY);
-// Population mean and sd of each trait (body fat per sex), mixed from the table above: the drawn shape's z-scores
-// (NPC_BODY_SHAPE) and the billboard bake's average body.
+// Population mean and sd per trait.
 export const NPC_BODY_POP = (() => {
   const total = NPC_SOMATOTYPES.reduce((s, t) => s + t.weight, 0);
   const mix = pick => {
@@ -505,9 +459,7 @@ export const NPC_BODY_POP = (() => {
   pop.bodyFat = { male: mix(t => t.bodyFat.male), female: mix(t => t.bodyFat.female) };
   return pop;
 })();
-// PLAYER BODY (start screen; pov.newBody): Random draws the player like a spawned person; Custom sets the sex and body
-// type by chip and these sliders as [min, max, start]: age in years (from NPC_ADULT_AGE), body fat in percent
-// (NPC_BODY_FAT_LIMITS), crown height in inches, weight in lb
+// PLAYER BODY (pov.newBody): Custom sliders [min, max, start]: age, body fat %, height in, weight lb
 export const PLAYER_CUSTOM = {
   age: [NPC_ADULT_AGE, 80, 25],
   bodyFat: [NPC_BODY_FAT_LIMITS[0] * 100, NPC_BODY_FAT_LIMITS[1] * 100, 24],
@@ -516,25 +468,19 @@ export const PLAYER_CUSTOM = {
 };
 export const LB_PER_KG = 2.20462;
 export const M_PER_IN = 0.0254;
-// DRAWN BODY SHAPE (render only): widths are multiples of the rig's rest width. A person's build (mean torso width)
-// is the sex's base build (NPC_BUILD_BASE_MEAN) plus sqrt(BMI / NPC_REF_BMI) - 1, so the drawn body matches the mass.
-// The sex's proportions (NPC_BUILD_BASE) then share that width out between the torso regions and set limb girth, and
-// body composition shifts it further: each NPC_BODY_SHAPE entry is the width change per standard deviation of a trait
-// on its population curve (NPC_BODY_POP). Endomorphy has no entry: body fat is the fat measure.
-// torso regions top to bottom, in iShape's x, y, z, w order; the heights where each is drawn in full: HUMAN_RIG.widthAt
+// DRAWN BODY SHAPE (render only): build is NPC_BUILD_BASE_MEAN + sqrt(BMI / NPC_REF_BMI) - 1, shared among torso
+// regions by NPC_BUILD_BASE, plus NPC_BODY_SHAPE per trait sd.
 export const NPC_TORSO_REGIONS = ['shoulder', 'chest', 'waist', 'hip'];
-// Each sex's widths at the mean body (BMI at NPC_REF_BMI, every trait at its population mean). Men are the rig's
-// rest shape; women have narrower shoulders, chest and waist and slightly wider hips (a lower shoulder-to-hip and
-// waist-to-hip ratio), with slimmer limbs.
+// Women: narrower shoulders, chest and waist, wider hips.
 export const NPC_BUILD_BASE = {
   male: { shoulder: 1, chest: 1, waist: 1, hip: 1, limb: 1 },
   female: { shoulder: 0.88, chest: 0.92, waist: 0.89, hip: 1.03, limb: 0.92 }
 };
-// each sex's base build: the mean of its torso widths in NPC_BUILD_BASE
+// base build: mean of NPC_BUILD_BASE's torso widths
 export const NPC_BUILD_BASE_MEAN = Object.fromEntries(Object.entries(NPC_BUILD_BASE).map(([sex, w]) =>
   [sex, NPC_TORSO_REGIONS.reduce((s, k) => s + w[k], 0) / NPC_TORSO_REGIONS.length]));
-export const NPC_WIDTH_LIMITS = [0.7, 1.8];   // room for BMI 50 and over (class 3 obesity)
-export const NPC_GIRTH_STEPS = 200;   // limb girth steps per unit width, packed in iLook.w (packHumanLook)
+export const NPC_WIDTH_LIMITS = [0.7, 1.8];   // room for BMI 50+
+export const NPC_GIRTH_STEPS = 200;   // limb girth steps per unit width, in iLook.w
 export const NPC_BODY_SHAPE = {
   shoulder: { meso: 0.05, ecto: -0.01, bodyFat: 0.01 },
   chest: { meso: 0.04, ecto: -0.015, bodyFat: 0.03 },
@@ -542,13 +488,13 @@ export const NPC_BODY_SHAPE = {
   hip: { meso: 0, ecto: -0.01, bodyFat: 0.05 },
   limb: { meso: 0.035, ecto: -0.015, bodyFat: 0.03 }
 };
-// Adult mass (kg) at the mean NPC_SIZE height; other heights scale it by (height / mean)^3. People use their look's bmi.
+// Adult kg at mean height, scaled by height cubed.
 export const NPC_REF_MASS_KG = {
   deer: { male: 70, female: 50 },      // white-tailed deer
   coyote: { male: 15, female: 13 }
 };
 
-// SPECIES: per-type stats in Arena units (brain, hunts, food, grazes, lift, eye, childDrop); see Ecosystem.fightHit for pairs.
+// SPECIES: per-type stats in Arena units; see Ecosystem.fightHit for pairs.
 export const SPECIES = {
   human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
   coyote: { brain: false, hunts: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
@@ -556,198 +502,182 @@ export const SPECIES = {
 };
 export const NPC_TYPES = Object.keys(SPECIES);
 
-// BODY PERFORMANCE: strength and speed from body composition. The reference body is a person at NPC_REF_BMI whose
-// lean mass index is the base (NPC_LEAN_INDEX_BASE): the rig's rest build, about 19% body fat for men and 25% for women.
+// BODY PERFORMANCE: reference body is NPC_REF_BMI at the base lean index.
 export const NPC_REF_BODY_FAT = Object.fromEntries(Object.keys(NPC_REF_BMI).map(sex =>
   [sex, 1 - NPC_LEAN_INDEX_BASE[sex] / NPC_REF_BMI[sex]]));
-// Strength: lean (fat-free) mass counts in full, fat at NPC_FAT_STRENGTH_SHARE (it adds weight behind a hit, not force).
+// Strength: lean mass counts in full, fat at NPC_FAT_STRENGTH_SHARE.
 export const NPC_FAT_STRENGTH_SHARE = 0.25;
-// a body's fighting mass over its total mass, at body fat fraction f
+// fighting mass over total mass at fat share f
 export const fightMassShare = f => 1 - f + NPC_FAT_STRENGTH_SHARE * f;
-// Animals have no body composition; they fight with the reference man's share, so their hits are as before.
+// Animals fight with the reference man's share.
 export const NPC_ANIMAL_FIGHT_SHARE = fightMassShare(NPC_REF_BODY_FAT.male);
-// the reference fighter: an average-height man (NPC_SIZE) with the reference body, at a human's full health
+// reference fighter: average man, reference body, full health
 export const NPC_FIGHT_REF_STRENGTH = (() => {
   const h = NPC_SIZE.human.male[0];
   return h * NPC_REF_BMI.male * h * h * NPC_ANIMAL_FIGHT_SHARE * SPECIES.human.health;
 })();
-// Speed: a person's pace (multiplying their inherited speed gene) is their lean fraction over the reference body's,
-// raised to NPC_PACE_LEAN_EXP (running power scales with muscle, the load with total mass), within NPC_PACE_LIMITS.
+// Speed: pace from lean share.
 export const NPC_PACE_LEAN_EXP = 1;
 export const NPC_PACE_LIMITS = [0.5, 1.2];
-// Jumps: a body's jump height is the base height times pace^NPC_JUMP_PACE_EXP; height goes as takeoff speed squared,
-// so the takeoff speed takes the square root. Shared by the player and Animal.jumpSpeed.
+// Jumps: height is base x pace^NPC_JUMP_PACE_EXP.
 export const NPC_JUMP_PACE_EXP = 1;
 export const bodyJumpSpeed = (baseSpeed, pace) => baseSpeed * Math.sqrt(pace ** NPC_JUMP_PACE_EXP);
-// Species as small ids (index in NPC_TYPES) for per-tick checks; the masks are bit sets of those ids.
+// Species ids (index in NPC_TYPES); masks are bit sets of ids.
 export const NPC_TYPE_IDS = {};
 NPC_TYPES.forEach((t, i) => { NPC_TYPE_IDS[t] = i; });
 export const NPC_TYPE_COUNT = NPC_TYPES.length;
 export const HUMAN_TYPE_ID = NPC_TYPE_IDS.human;
 export const HUNTS_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
 export const HUNTED_BY_MASK = NPC_TYPES.map(t => NPC_TYPES.reduce((m, h, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
-// what each species chases at night (NIGHT HUNTS); a species it would flee by day is quarry then instead
+// night quarry
 export const NIGHT_PREY_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].nightPrey?.[t] === true ? m | (1 << i) : m, 0));
-// ids of each species' hunts keys, in key order (what `for (t in spec.hunts)` visits)
+// ids of each species' hunts keys, in key order
 export const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
 export const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
 export const WATER_SIGHT_CELL = 20;
-export const HIGH_NPC_LOD_DIST = 120;      // metres past which a body is drawn as a billboard on high (live: perf.npcLodDist)
-export const HIGH_FAR_STAT_DIST = 240;    // metres past which far stats are not drawn (Graphics: high; live: perf.farStatDist)
-export const NPC_BODY_R = 1.2;     // metres: bounding sphere around a body's centre, for the view cull
+export const HIGH_NPC_LOD_DIST = 120;      // metres to billboard on high (perf.npcLodDist)
+export const HIGH_FAR_STAT_DIST = 240;    // metres past which far stats hide (perf.farStatDist)
+export const NPC_BODY_R = 1.2;     // metres: cull sphere round a body's centre
 export const NPC_STATS_R = 0.7;
 export const NPC_STATS_UP = 0.55;
 export const WATER_CELL = 1;
-export const OCC_CELL = 0.25;     // NPC occupancy grid resolution, metres
+export const OCC_CELL = 0.25;     // occupancy grid cell, metres
 export const OCC_INV = 1 / OCC_CELL;
-export const OCC_CARVE_KEEP = 0.2;      // a doorway lane never clears a cell whose centre is this close to a raw solid
+export const OCC_CARVE_KEEP = 0.2;      // a doorway lane keeps clear of solids
 
-// HUMAN RIG: PS2-era people; one merged low-poly body (part id + joint heights per vertex), posed in the vertex shader.
-export const HUMAN_ATLAS = 512;                   // texels a side of the paint and mask atlases
-export const HUMAN_FACE_TILE = [128, 64];         // head + neck wrap; 8 tiles (4 male, 4 female) fill the top-left quarter
-export const HUMAN_BODY_TILE = [256, 128];        // everything below the neck; one tile per outfit
+// HUMAN RIG: one merged low-poly body posed in the vertex shader.
+export const HUMAN_ATLAS = 512;                   // atlas texels a side
+export const HUMAN_FACE_TILE = [128, 64];         // head tiles, 4 male, 4 female
+export const HUMAN_BODY_TILE = [256, 128];        // below the neck; one tile per outfit
 export const HUMAN_FACE_VARIANTS = 4;             // per sex
-export const HUMAN_OUTFITS = 6;                   // 0 tee + jeans, 1 shirt + slacks, 2 jacket, 3 hoodie, 4 tank + shorts, 5 suit
+export const HUMAN_OUTFITS = 6;                   // 0 tee, 1 shirt, 2 jacket, 3 hoodie, 4 tank, 5 suit
 export const HUMAN_OUTFIT_TILES = [[256, 0], [256, 128], [0, 256], [256, 256], [0, 384], [256, 384]];   // atlas texels, as the shader finds them
-// Gait: a full cycle's stride in leg lengths grows with speed in leg lengths per second; cadence is capped.
+// Gait: stride in leg lengths grows with speed; cadence is capped.
 export const HUMAN_STRIDE_BASE = 0.95;
 export const HUMAN_STRIDE_PER_V = 0.48;
 export const HUMAN_STRIDE_MAX = 4.6;
-export const HUMAN_CADENCE_MAX = 2.6;             // gait cycles per second; anything faster slides its feet
-export const HUMAN_SWING_MAX = 0.62;              // radians of hip swing
-export const HUMAN_IDLE_SPEED = 0.45;             // m/s under which the stride shrinks toward the idle pose
-export const HUMAN_GAIT_EASE = 0.15;              // per-tick easing of the gait speed
-export const HUMAN_GAIT_JUMP = 1;                 // metres in one tick past which a move is a teleport, not a step
-// Rig landmarks in rig units: origin at the body centre, feet at -lift, crown at NPC_RIG_TOP - lift; joints sit at z = 0.
+export const HUMAN_CADENCE_MAX = 2.6;             // cycles per second; faster slides
+export const HUMAN_SWING_MAX = 0.62;              // hip swing, radians
+export const HUMAN_IDLE_SPEED = 0.45;             // m/s under which the stride eases to idle
+export const HUMAN_GAIT_EASE = 0.15;              // per-tick gait speed easing
+export const HUMAN_GAIT_JUMP = 1;                 // metres in one tick past which a move is a teleport
+// Rig landmarks: origin at body centre; joints at z = 0.
 export const HUMAN_RIG = (() => {
   const foot = -SPECIES.human.lift, at = f => foot + f * NPC_RIG_TOP.human;
-  // shoulderX: the shoulder joint's distance out from the centre line (the arms hang from it, flaring a little)
+  // shoulderX: shoulder joint's offset from the centre line
   return {
     at, foot, crown: at(1), hip: at(0.53), knee: at(0.285), ankle: at(0.045), shoulder: at(0.795), elbow: at(0.625), shoulderX: 4.25,
-    // legX: the leg axis's distance out from the centre line at the hip joint, closing by legSplay per rig unit down
+    // legX: leg axis offset at the hip
     legX: 1.85, legSplay: 0.02,
-    // widthAt: the torso rings where each NPC_TORSO_REGIONS width is drawn in full (widths blend between them)
+    // widthAt: torso rings where each region's width is full
     widthAt: { shoulder: at(0.814), chest: at(0.725), waist: at(0.6), hip: at(0.545) }
   };
 })();
-export const HUMAN_JOINT_BLEND = 0.5;   // share of the moving part's bend that a joint seam ring (waist, elbow, knee) takes: 0 stays with the fixed part, 1 rides the moving part (the torso's lean, the lower limb's bend)
+export const HUMAN_JOINT_BLEND = 0.5;   // bend share a seam ring takes
 export const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
-// CROUCH POSE (radians at full crouch): thigh forward (hip), shin back (knee), feet kept flat, torso leaning, arms forward.
-// The body drops by what the folded legs lose in height, so the soles stay on the ground; the eye drops the same.
+// CROUCH POSE (radians): the body drops what the legs lose.
 export const HUMAN_CROUCH = { hip: -1.0, knee: 1.9, lean: 0.35, arm: -0.4, elbow: -0.5, swingKept: 0.6 };
-export const HUMAN_FIGHT = NPC_FIGHT_MOVES.human;   // guard and punch arm angles (radians) for the vertex shader
+export const HUMAN_FIGHT = NPC_FIGHT_MOVES.human;   // guard and punch arm angles, radians
 export const HUMAN_CROUCH_DROP = (HUMAN_RIG.hip - HUMAN_RIG.knee) * (1 - Math.cos(HUMAN_CROUCH.hip)) +
   (HUMAN_RIG.knee - HUMAN_RIG.foot) * (1 - Math.cos(HUMAN_CROUCH.knee + HUMAN_CROUCH.hip));   // rig units
-export const CROUCH_DROP = HUMAN_CROUCH_DROP * NPC_UNIT * PLAYER_HS;   // metres the player's eye lowers at full crouch
-export const HUMAN_ARM_FLARE = 0.06;   // rig units an arm's axis moves out from the shoulder per rig unit down the arm
-// PET (the player's Pet action, `petting`): crouched and bent further forward at the waist, the petting arm (arm: +1
-// left, -1 right, as moveSide) reaches down until its hand point (handAt, a share of the rig's height as
-// HUMAN_RIG.at) rests on the cat's head, elbow bent `elbow`, and rubs it from the player's left to right and back
-// `strokes` times (strokeS seconds each), sweepM metres either side, turning about the shoulder's vertical; reachS
-// eases the arm in and out. Each pet takes the shallowest of PET_BEND_LEVELS bends spread evenly over `bend`
-// (radians) whose reach meets the head (a cat downhill needs a deeper one), and solves the shoulder angle within
-// `shoulder` (radians) for it, so the hand meets the head at any body height; turnMax bounds the sweep angle.
-// stayM: metres the player may drift from where the pet began before it ends.
-// The pose reaches the shader in iAct.w (humanPetPack): reach share (6 bits), bend level (2), shoulder angle (8),
-// sweep angle (8).
+export const CROUCH_DROP = HUMAN_CROUCH_DROP * NPC_UNIT * PLAYER_HS;   // eye drop at full crouch, metres
+export const HUMAN_ARM_FLARE = 0.06;   // arm axis outward offset per unit down the arm
+// PET (`petting`): one arm reaches its hand (handAt) to the cat's head and rubs it `strokes` times, using the
+// shallowest PET_BEND_LEVELS bend that reaches. Packed in iAct.w (humanPetPack).
 export const HUMAN_PET = {
   arm: -1, bend: [0.3, 0.9], elbow: -0.3, handAt: 0.4, reachS: 0.35, strokes: 3, strokeS: 0.7, sweepM: 0.07,
   shoulder: [-1.6, 0.4], turnMax: 1.2, stayM: 0.05
 };
-export const PET_BEND_LEVELS = 4;   // the 2 bits humanPetPack gives the bend level
+export const PET_BEND_LEVELS = 4;   // bits for the bend level
 
-// HUMAN LOOK (render only): skin tone, face variant and build pass to children; clothes are each person's own.
+// HUMAN LOOK: skin, face, build inherit.
 export const HUMAN_SKIN = [0xf2d0b8, 0xe0b391, 0xc89068, 0xa56f48, 0x7a4e32, 0x4e3222];   // light to dark, sRGB
 export const HUMAN_SHIRTS = [0xd8d6cf, 0x8e9093, 0x2a2b2e, 0x2d3f66, 0x9c2f2a, 0x5b2430, 0x3f6a3c, 0x6d6b3a,
   0xc59a37, 0x6c98c8, 0x6a4a33, 0xc8b48c, 0xc98299, 0x5e4a86, 0xc86f2e, 0x2f7576];
 export const HUMAN_PANTS = [0x3a5378, 0x24324d, 0x232325, 0x67686b, 0xa8956c, 0x5a4330, 0x4f5235, 0x283150, 0x6a86a8];
 export const HUMAN_SUITS = [0x26272a, 0x2b3346, 0x3e3f43, 0x4b3e31];
-export const HUMAN_HAIR = [[0x17120f, 0x2e1d12, 0x5c3b21, 0x9c7b48], [0x1b1411, 0x4b2c17, 0x86522b, 0xc4a062]];   // [female][face variant], sRGB
+export const HUMAN_HAIR = [[0x17120f, 0x2e1d12, 0x5c3b21, 0x9c7b48], [0x1b1411, 0x4b2c17, 0x86522b, 0xc4a062]];   // [female][face], sRGB
 
-// FAR BILLBOARDS (render only): past perf.npcLodDist a body is a viewer-facing card cut from atlases baked from the real rigs at load.
-export const BB_CELL = 40;                          // atlas texels a side of one frame
-export const BB_DIRS = 8;                           // views round a body, 45 degrees apart
-export const BB_BAKED_DIRS = BB_DIRS / 2 + 1;       // front round the body's left to its back; right-hand views mirror these
+// FAR BILLBOARDS: past perf.npcLodDist, cards baked at load.
+export const BB_CELL = 40;                          // texels a side per frame
+export const BB_DIRS = 8;                           // views 45 degrees apart
+export const BB_BAKED_DIRS = BB_DIRS / 2 + 1;       // front round the left to the back; right views mirror these
 export const BB_PHASES = 8;                         // walk frames per gait cycle
-export const BB_POSES = BB_PHASES + 1;              // pose 0 stands, poses 1.. walk
+export const BB_POSES = BB_PHASES + 1;              // pose 0 stands, 1.. walk
 export const BB_BLOCK = BB_BAKED_DIRS * BB_POSES;   // frames per look
-export const BB_FRAME = { human: [40, -22], deer: [50, -15.75], coyote: [40, -12.25] };   // rig units: a frame's side, its bottom below the body centre
-export const BB_FACE_VARIANT = 3;                   // the face baked for people; its light hair keeps the baked hair weight precise
-// walk frames' hip swing: stepGait's swing for an adult at the species' speed
+export const BB_FRAME = { human: [40, -22], deer: [50, -15.75], coyote: [40, -12.25] };   // rig units: frame side, bottom below the body centre
+export const BB_FACE_VARIANT = 3;                   // face baked for people; light hair keeps the hair weight precise
+// walk frames' hip swing: an adult's at the species' speed
 export const BB_HUMAN_SWING = Math.min(HUMAN_SWING_MAX, Math.asin(Math.min(1, (HUMAN_STRIDE_BASE + HUMAN_STRIDE_PER_V * SPECIES.human.speed / HUMAN_LEG) / 4)));
-export const BB_STAND_SWING = BB_HUMAN_SWING / 2;   // a far person swinging less than this shows the standing frame
+export const BB_STAND_SWING = BB_HUMAN_SWING / 2;   // a far person swinging less shows the standing frame
 export const BB_PHASE_K = BB_PHASES / (2 * Math.PI);
-export const BB_MIP_BIAS = -1.5;                    // atlas reads take a finer mip, so thin limbs stay solid as a card shrinks, as the rig's do
+export const BB_MIP_BIAS = -1.5;                    // finer mip so thin limbs stay solid as a card shrinks
 
-// Plants are drawn per cell of a PLANT_GRID x PLANT_GRID split of the world, so view and shadow culling skip whole cells.
+// Plants drawn per PLANT_GRID cell, so culling skips whole cells.
 export const PLANT_GRID = 3;
 
-// FOOD BOXES: one crate per restaurant and grocery store; an eaten crate reappears at another, so the count is fixed.
+// FOOD BOXES: one crate per restaurant or grocery.
 export const FOOD_BOX_KINDS = { food: true, grocery: true };
-export const FOOD_BOX_SIZE = 0.35;      // metres, cube edge
-export const FOOD_BOX_REACH = 1.1;      // metres from the crate's centre that count as touching
-export const FOOD_BOX_HEIGHT = 2.5;     // metres of height difference past which a crate is out of reach
-export const FOOD_BOX_SLOTS = 4;        // crates one place can hold at once
-export const FOOD_BOX_OUTDOOR_CHANCE = 0.25;   // share of spawns that land outdoors in the city instead of at a place
+export const FOOD_BOX_SIZE = 0.35;      // cube edge, metres
+export const FOOD_BOX_REACH = 1.1;      // touching distance from the centre
+export const FOOD_BOX_HEIGHT = 2.5;     // height difference past which out of reach
+export const FOOD_BOX_SLOTS = 4;        // crates per place at once
+export const FOOD_BOX_OUTDOOR_CHANCE = 0.25;   // share of spawns outdoors instead of at a place
 
-// INDOOR CLIP: ground layers (land cover, roads, paths, markings) are discarded inside each building's inner wall
-// outline, so the floor wins with no depth bias. Texels are filled by centre; at INDOOR_CELL a texel reaches at most
-// ~0.2 m past the inner outline, which stays inside the wall's thickness.
+// INDOOR CLIP: ground layers are discarded inside buildings.
 export const INDOOR_CELL = 0.25;
 
-// STREETS: lane markings, parked cars and street lamps along the city's vehicle roads. Parked cars and lamp posts
-// are solids, so the player, the car, deer and the NPC occupancy grid treat them as obstacles, and they block NPC sight (cover).
-export const CURB_PIECE = 2;                  // metres per piece a road edge is walked in, checking it is clear
+// STREETS: markings, parked cars and lamps; cars and posts are solids.
+export const CURB_PIECE = 2;                  // metres per piece a road edge is walked in
 export const CURB_KINDS = new Set(['primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'road',
-  'primary_link', 'secondary_link', 'tertiary_link']);   // roads whose edges get lamps (and parking, see PARKING_KINDS)
+  'primary_link', 'secondary_link', 'tertiary_link']);   // roads with lamps (and parking, PARKING_KINDS)
 
 export const MARK_KINDS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified',
   'road', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 export const MARK_MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'motorway_link', 'trunk_link',
   'primary_link', 'secondary_link']);
-export const MARK_MIN_WIDTH = 5.5;            // metres; narrower streets go unmarked
+export const MARK_MIN_WIDTH = 5.5;            // narrower streets go unmarked
 export const MARK_W = 0.12;                   // metres, line width
-export const MARK_DASH = 3, MARK_GAP = 6;     // metres of dash and of gap
+export const MARK_DASH = 3, MARK_GAP = 6;     // dash and gap
 export const MARK_Y = LAYER_Y.road + 0.004;
-export const MARK_JUNCTION_CLEAR = 0.3;       // metres outside another road's edge where a line stops
+export const MARK_JUNCTION_CLEAR = 0.3;       // where a line stops outside another road's edge
 export const MARK_WHITE = 0xe6e4dc, MARK_YELLOW = 0xd6ac34;
-export const LANE_W = 3.4;                    // metres per lane when the lanes tag is missing
+export const LANE_W = 3.4;                    // per lane when the tag is missing
 
 export const PARKING_KINDS = new Set(['secondary', 'tertiary', 'residential', 'unclassified', 'road']);
-export const PARK_MIN_HALF = 3.4;             // metres; a street narrower than twice this has no parking
-export const PARK_GAP = 1.6;                  // metres between parked cars
-export const PARK_CURB_GAP = 0.2;             // metres between a parked car and the curb
-export const PARK_P = 0.275;                  // chance a parking slot is taken
-export const PARK_CLEAR = 8;                  // metres a parked car keeps from a crossing road's edge
+export const PARK_MIN_HALF = 3.4;             // a street narrower than twice this has no parking
+export const PARK_GAP = 1.6;                  // between parked cars
+export const PARK_CURB_GAP = 0.2;             // car to curb
+export const PARK_P = 0.275;                  // chance a slot is taken
+export const PARK_CLEAR = 8;                  // kept from a crossing road's edge
 export const PARKED_COLORS = [0x1c1f24, 0xe4e4e2, 0x9ea3a8, 0x5a5f66, 0x7a1f1f, 0x1f3a6b, 0x2f4a3a, 0xb8a98a, 0x3a3f46, 0xc9c9c4];
 
-export const LAMP_SPACING = 30;               // metres between generated lamps along one side
-export const LAMP_H = 5.4;                    // metres, pole height
-export const LAMP_ARM = 1.3;                  // metres the head reaches out over the road
-export const LAMP_CURB_IN = 0.45;             // metres from the road edge to the pole
-export const LAMP_NEAR = 12;                  // metres kept from any other lamp (mapped ones first)
-export const LAMP_DOOR_CLEAR = 2.5;           // metres kept from a doorway
-export const LAMP_POLE_R = 0.15;              // metres, half side of the pole's collider
-export const LAMP_ROAD_REACH = 12;            // metres within which a mapped lamp's arm turns toward the road
-export const LAMP_REACH = 10;                 // metres of ground a lamp lights
-export const LAMP_MAP_CELL = 1;               // metres per cell of the ground light map
-export const LAMP_GAIN = 2.2;                 // how bright lamp light is on the ground, times the surface colour
+export const LAMP_SPACING = 30;               // between generated lamps on one side
+export const LAMP_H = 5.4;                    // pole height
+export const LAMP_ARM = 1.3;                  // head reach over the road
+export const LAMP_CURB_IN = 0.45;             // road edge to pole
+export const LAMP_NEAR = 12;                  // kept from other lamps (mapped first)
+export const LAMP_DOOR_CLEAR = 2.5;           // kept from a doorway
+export const LAMP_POLE_R = 0.15;              // half side of the pole collider
+export const LAMP_ROAD_REACH = 12;            // within which a mapped lamp's arm turns roadward
+export const LAMP_REACH = 10;                 // ground a lamp lights
+export const LAMP_MAP_CELL = 1;               // per light map cell
+export const LAMP_GAIN = 2.2;                 // ground lamp brightness, times surface colour
 
-export const COVER_CELL = 8;                  // metres, cover grid cell
+export const COVER_CELL = 8;                  // cover grid cell
 
-// NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 1 bit per 0.25 m cell, in 32 m tiles made on first write.
-export const OCC_TILE_BITS = 7;                                   // 128 cells a tile side
+// NPC OCCUPANCY GRID: solids grown by NPC_RADIUS, 0.25 m cells.
+export const OCC_TILE_BITS = 7;                                   // cells a tile side
 export const OCC_TILE_MASK = (1 << OCC_TILE_BITS) - 1;
 export const OCC_TILE_WORDS = (1 << (2 * OCC_TILE_BITS)) >>> 5;
 
-export const SPAWN_CLEAR = 1.5;   // metres kept between the spawn and any footprint edge
+export const SPAWN_CLEAR = 1.5;   // kept between spawn and any footprint edge
 
-export const STREET_STEP = 2;   // metres between candidate points along a street
+export const STREET_STEP = 2;   // between candidate points along a street
 
-// WILD: the Arena's procedural world in metres (generator in Arena units, scaled by NPC_UNIT); heights cached in a grid.
+// WILD: procedural world in metres.
 
-// Wilderness coyote : deer ratio from northern Yellowstone after wolf restoration: 250 to 300 coyotes
-// (Crabtree, Yellowstone Ecosystem Studies) and a summer mule deer population of 1,850 to 1,900 (NPS).
+// Wild coyote : deer from northern Yellowstone (Crabtree; NPS).
 export const YELLOWSTONE_COYOTES = 275;
 export const YELLOWSTONE_DEER = 1875;
 
@@ -757,7 +687,7 @@ export class WorldConfig {
       worldWidth: 850,   // per unit of world scale
       worldHeight: 600,
     };
-    // wilderness animals and plants at the start; fixed, so the map size changes only the land
+    // starting wild animals and plants
     this.initialDeer = 400;
     this.initialCoyotes = Math.round(this.initialDeer * YELLOWSTONE_COYOTES / YELLOWSTONE_DEER);
     this.initialPlants = 9000;
@@ -766,7 +696,7 @@ export class WorldConfig {
     this.applySize(scale, 3000);
   }
 
-  // Map size (world scale) and starting people (city and wilderness together); each sets only its own thing.
+  // Map size and starting people; each sets only its own thing.
   applySize(scale, people) {
     const B = this.BASE;
     this.scale = scale;
@@ -780,51 +710,50 @@ export const CONFIG = new WorldConfig();
 export const DEFAULT_SEED = '03132024';
 export const WILD_FLOAT_DEPTH = 5 * NPC_UNIT;
 
-// WATER: one world-spanning surface; ISLAND COAST: land falls to sea floor near each edge and the sea runs to the horizon.
+// WATER: one surface; land falls to sea at the edges.
 export const COAST_SEA = 30;
 export const COAST_LAND = 70;
-export const COAST_WOBBLE = 20;     // metres the coastline wanders (under COAST_SEA, so the edge is always water)
-export const OCEAN_DEPTH = 6;      // metres of sea floor under the water level
-export const OCEAN_REACH = 2000;   // metres the sea runs past the edge (the camera's far plane)
+export const COAST_WOBBLE = 20;     // coastline wander (under COAST_SEA, so the edge is water)
+export const OCEAN_DEPTH = 6;      // sea floor under the water level
+export const OCEAN_REACH = 2000;   // sea past the edge (camera's far plane)
 
-// CABINS: the Arena's log cabins, sized to the player (CABIN_M), their colliders turned into obstacle-index solids.
+// CABINS: the Arena's log cabins, player-sized, as solids.
 export const CABIN_SCALE = 1.75;
-export const CABIN_M = NPC_UNIT * PLAYER_HS;        // cabin rig units -> metres
+export const CABIN_M = NPC_UNIT * PLAYER_HS;        // rig units to metres
 
-// CAT COMPANION: Nibbler from the Arena, rig in Arena units scaled to the player; comes with wilderness (provider.companion).
-// sized to a real house cat: the rig's head top (12.5 units) at CAT_HEAD_TOP metres
+// CAT COMPANION: Nibbler, house-cat sized.
 export const CAT_HEAD_TOP = 0.3;
 export const CAT_SCALE = CAT_HEAD_TOP / 12.5;
-export const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // passenger seat in the car's frame (+x passenger side, -z forward)
-export const CAT_DOOR = 0.95;         // m from the car's centre line to where he stands at the passenger door
-export const CAT_RUN_FROM = 25;       // m from the car: starting farther than this (or the car moving) he runs...
-export const CAT_WALK_WITHIN = 4;     // m: ...until this close, then walks the rest
-export const CAT_RUN_SPEED = 11;      // m/s sprint (his catch-up pace)
-export const CAT_BOARD_SPEED = 2.2;   // m/s trot to the passenger door
-export const CAT_JUMP_TIME = 0.55;    // s: door to seat
-export const CAT_BOARD_TIMEOUT = 8;   // s: still not in, he appears at the passenger door and hops in
-export const CAT_HEAD_FWD = 9 * CAT_SCALE;   // m his head sits ahead of his body centre (the rig's head at z 9)
-export const CAT_PET_STEP_SPEED = 0.6;       // m/s he steps to where he is petted (CatCompanion.hold)
-export const CAT_PET_SETTLED = 0.01;         // m from that spot that counts as there (his legs stop)
-export const CAT_PET_TURN_RATE = 8;          // per second, his turn toward the petting's facing
+export const CAT_SEAT = { x: 0.3, y: 0.45, z: 0 };     // seat in the car's frame (+x passenger, -z forward)
+export const CAT_DOOR = 0.95;         // centre line to where he waits at the door
+export const CAT_RUN_FROM = 25;       // m: farther than this (or the car moving) he runs...
+export const CAT_WALK_WITHIN = 4;     // m: ...until this close, then walks
+export const CAT_RUN_SPEED = 11;      // m/s catch-up sprint
+export const CAT_BOARD_SPEED = 2.2;   // m/s trot to the door
+export const CAT_JUMP_TIME = 0.55;    // s door to seat
+export const CAT_BOARD_TIMEOUT = 8;   // s until he hops in anyway
+export const CAT_HEAD_FWD = 9 * CAT_SCALE;   // head ahead of the body centre
+export const CAT_PET_STEP_SPEED = 0.6;       // m/s step to where he is petted
+export const CAT_PET_SETTLED = 0.01;         // m that counts as there
+export const CAT_PET_TURN_RATE = 8;          // per second turn toward the petting's facing
 
-// CAMERA POV: '1st' or '3rd'; in third person the player's own body shows (a person drawn with the NPC human rig).
-export const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, sized to the player
+// CAMERA POV: '1st' or '3rd'; third person shows the player's body.
+export const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, player-sized
 export const TPP_UP = 18 * NPC_UNIT * PLAYER_HS;
 
-export const PLAYER_JOG_ANIM = 0.5;   // share of the real step the gait animates when not sprinting
+export const PLAYER_JOG_ANIM = 0.5;   // share of the step the gait animates when not sprinting
 
-// GRAPHICS: high has shadow-map shadows, redrawn only on player/sun moves, the cat or the player moving, or nearby animals (SHADOW_ANIMAL_HZ); blobs draw on both.
-export const SHADOW_FOLLOW_STEP = 20;       // metres the box centre may drift before it is redrawn where it should be
+// GRAPHICS: high has shadow maps; blobs on both.
+export const SHADOW_FOLLOW_STEP = 20;       // box centre drift before a redraw
 export const SHADOW_SUN_STEP_DEG = 0.5;
 export const SHADOW_SUN_STEP_COS = Math.cos(SHADOW_SUN_STEP_DEG * Math.PI / 180);
-export const SHADOW_ANIMAL_HZ = 15;     // most redraws a second that moving animals cause (the cat and the player redraw on every frame they move)
-// only animals this close to the player trigger a redraw when they move; farther ones are redrawn with the box
+export const SHADOW_ANIMAL_HZ = 15;     // most animal-caused redraws a second
+// only animals this close trigger a redraw
 export const SHADOW_ANIMAL_DIST = 60;
-export const SUN_DIST = 300;                // metres from the box centre to the light, inside SHADOW_DEPTH
+export const SUN_DIST = 300;                // box centre to light, inside SHADOW_DEPTH
 export const SHADOWS_ENABLED = true;        // master switch
 
-// WILD_GROVES: Millennium Park's mapped trees as groves (12 m clusters, <= 80 m), "|"-separated, dx dz in decimetres.
+// WILD_GROVES: Millennium Park's trees as groves, "|"-separated, dx dz in decimetres.
 export const WILD_GROVES = [
   '303 -242 325 -256 334 -223 304 -289 297 -126 332 -98 315 -27 278 9 233 -53 173 -89 69 -77 22 126 4 87 -15 75',
   '-44 67 176 221 274 267 270 306 239 321 241 372 265 344 188 376 187 346 187 307 -177 291 -198 313 -223 327',
@@ -1067,67 +996,61 @@ export const WILD_GROVES = [
   '0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0|0 0'
 ].join(' ');
 
-// WILDERNESS: procedural land around the city; measured ground rules the city square, blending out over MIX_BLEND metres.
-export const MIX_BLEND = 250;    // metres from the measured edge to pure wilderness
-export const MIX_RING_MIN = 300;    // wilderness width around the city, metres
+// WILDERNESS: procedural land round the city, blending over MIX_BLEND metres.
+export const MIX_BLEND = 250;    // measured edge to pure wilderness
+export const MIX_RING_MIN = 300;    // wilderness width round the city
 export const MIX_RING_MAX = 1500;
-export const MIX_PARK_SHARE = 0.25;   // share of the wilderness coyotes and deer that start in city parks and woods, when the city has any
+export const MIX_PARK_SHARE = 0.25;   // share of wild animals starting in parks
 export const MIX_HABITAT = { forest: 2, wood: 2, scrub: 1.5, wetland: 1.5, meadow: 1.25 };
-export const MIX_SINK = 0.6;    // metres the wild mesh dips under the city's own terrain where they overlap
+export const MIX_SINK = 0.6;    // wild mesh dip under the city's terrain where they overlap
 
-// BLOB SHADOWS: one soft ellipse per nearby on-screen animal, sized and turned with it; faded with the sun.
+// BLOB SHADOWS: one ellipse per nearby animal.
 export const BLOB_DIST = 40;            // metres from the camera
 export const BLOB_MAX = 2048;
 export const BLOB_OPACITY = 0.42;
-export const BLOB_FULL_SUN = 1.35;      // sun intensity at which blobs reach BLOB_OPACITY (the SKY table's day value)
-export const BLOB_LIFT = 0.04;          // metres above the feet, against z-fighting on flat ground
-export const BLOB_SPREAD = 1.25;        // blob size over the body's footprint
+export const BLOB_FULL_SUN = 1.35;      // sun intensity where blobs reach BLOB_OPACITY
+export const BLOB_LIFT = 0.04;          // above the feet, against z-fighting
+export const BLOB_SPREAD = 1.25;        // size over the footprint
 
-// SURVIVOR MODE: every player rule and number lives in SURVIVOR_CONFIG; `game` is the one interface that applies them.
-// Health only changes through game.hurt / game.heal; the NPC world sees the player through game.avatar.
+// SURVIVOR MODE: rules in SURVIVOR_CONFIG, applied by `game`.
 export const SURVIVOR_CONFIG = {
   maxHealth: 100,
   needs: {
-    foodPerS: 100 / (20 * 60),    // need per second: fed to starving in 20 min
-    waterPerS: 100 / (10 * 60),   // need per second: watered to parched in 10 min
-    drinkPerS: 10,                // need per second removed while Drink is held, standing in water or swimming
-    sprintCost: 2,                // hunger and thirst rise this many times faster while sprinting
-    starvingPerS: 0.5,            // health per second lost with the food bar empty (0 = off)
-    parchedPerS: 1                // health per second lost with the water bar empty (0 = off)
+    foodPerS: 100 / (20 * 60),    // per second: fed to starving in 20 min
+    waterPerS: 100 / (10 * 60),   // per second: watered to parched in 10 min
+    drinkPerS: 10,                // per second removed while Drink is held in water
+    sprintCost: 2,                // hunger and thirst multiplier while sprinting
+    starvingPerS: 0.5,            // health per second with food empty (0 = off)
+    parchedPerS: 1                // health per second with water empty (0 = off)
   },
-  reach: { radius: PLAYER_RADIUS + 0.45, height: 1.5 },   // metres: contact with animals, plants and crates
-  squatS: 1,                        // seconds the body squats for a field action marked `squat` (Harvest, Collect), then stands
-  punch: { reachM: 1.1, coneCos: 0.5 },   // the attack button: metres from the player, and how far off the facing (cos of the half angle)
-  fall: { safeM: 3, damagePerM: 10 },                    // unhurt up to safeM, then damagePerM per metre (~13 m lethal)
-  plantShare: 0.01,                 // the player's share of a plant bite's nutrition (PLANT_BITE_NUTRITION)
-  meatDeerShare: 0.1,               // a piece of meat feeds this share of what a kill of an average adult buck feeds
-  flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+ (not the steady starving drain)
-  // INVENTORY: each item kind names its action (SURVIVOR_ACTIONS) and what it gives; `loot` is its weight in a box
-  // (0 or absent: never in one). A box opens in its slot into one item drawn by weight. New kinds (weapons) add an
-  // entry here and, for a new kind of use, an action.
+  reach: { radius: PLAYER_RADIUS + 0.45, height: 1.5 },   // contact with animals, plants and crates, metres
+  squatS: 1,                        // seconds of squat for `squat` field actions
+  punch: { reachM: 1.1, coneCos: 0.5 },   // attack reach in metres and cone (cos of half angle)
+  fall: { safeM: 3, damagePerM: 10 },                    // unhurt to safeM, then damagePerM per metre (~13 m lethal)
+  plantShare: 0.01,                 // player's share of a plant bite's nutrition
+  meatDeerShare: 0.1,               // meat feeds this share of an adult buck kill
+  flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+
+  // INVENTORY: each kind names its action; `loot` is its box weight.
   inventory: {
-    keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot, so this sets the slot count (the HUD buttons are built from it); tapping a slot works too
+    keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot
     items: {
       crate: { icon: '📦', label: 'Box', action: 'open' },
       water: { icon: '💧', label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
-      // a whole plant, as picking one up gives (a picked plant carries its own food, from the bites it has left)
+      // a whole plant
       plant: { icon: '🌿', label: 'Plant', action: 'eat', loot: 45, get food() { return playerPlantFood(PLANT_MAX_HEALTH); } },
-      // a kill feeds its starting health (game.avatar.feedOn), which deer have whatever their size or sex
+      // a kill feeds its starting health
       meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } },
-      // the injuries it mends (INJURIES), no health; in boxes as often as meat, or crafted
+      // mends its INJURIES
       bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 }
     }
   },
-  // INJURIES: each hit the player takes from an animal may cause one (chancePerHit), and so may a fall that hurts
-  // (fallChanceAtSafe at fall.safeM, growing in proportion to the drop height: twice that height, twice the chance).
-  // It shows beside the inventory until an item that `cures` it is used. noRun: the player cannot sprint while it lasts.
+  // INJURIES: a hit or hurting fall may cause one until an item that `cures` it is used; noRun stops sprinting.
   injuries: {
     brokenBone: { icon: '🦴', label: 'Broken bone', chancePerHit: 0.2, fallChanceAtSafe: 0.5, noRun: true }
   },
-  // CRAFTING: the craft slot (after the inventory slots) shows what the carried items make, from the first recipe
-  // whose `uses` (item kinds, any order) the inventory holds; pressing it uses them up and adds `makes`.
+  // CRAFTING: the craft slot makes the first recipe the inventory holds.
   craft: {
-    key: 'Digit4',                  // the craft slot's key, after the inventory slots; tapping it works too
+    key: 'Digit4',                  // craft slot key, after the inventory slots
     recipes: [
       { uses: ['plant', 'plant'], makes: 'bandage' }
     ]
@@ -1140,42 +1063,41 @@ export const SURVIVOR_CONFIG = {
   }
 };
 
-// Food the player gets from a plant with `bites` left: each bite is the player's share of a bite's nutrition.
+// Plant food for the player per bite left.
 export function playerPlantFood(bites) { return bites * PLANT_MAX_HEALTH * PLANT_BITE_NUTRITION * SURVIVOR_CONFIG.plantShare; }
 
-// HEALTH BARS: a stats sprite and brain over each nearby person; slots are reused. Bars show fullness (1 - need).
-export const BAR_STEPS = 40;     // redraw only when a bar moves a whole step
-export const BAR_RELEASE_TICKS = 180;   // ~3 s out of close range before a slot is handed back
-export const ARROW_STEPS = 32;    // arrow headings are snapped to this many directions
+// HEALTH BARS: stats sprite and brain over nearby people; bars show fullness.
+export const BAR_STEPS = 40;     // redraw only on a whole step
+export const BAR_RELEASE_TICKS = 180;   // ~3 s out of range before a slot is freed
+export const ARROW_STEPS = 32;    // arrow heading directions
 export const BAR_ABOVE = 0.18;
 export const BAR_COLORS = ['#e74c3c', '#e67e22', '#3498db', '#9b59b6'];
 export const BAR_ICONS = ['\u2764\uFE0F', '\uD83C\uDF7D\uFE0F', '\uD83D\uDCA7', '\uD83D\uDC9E'];
 export const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-// Past perf.npcLodDist, stats and brains become shared InstancedMeshes: the near panel drawn small into atlas pages
-// (one mesh per page), and one sphere per lobe.
+// Past perf.npcLodDist, stats and brains are shared InstancedMeshes in atlas pages.
 export const FAR_STAT_MAX = 12000;
-export const FAR_PANEL_SCALE = 0.25;   // far atlas px per near canvas px (on high the panel is ~10 screen px wide out there)
-export const FAR_PAGE_PX = 512;        // width and height of one atlas page; pages are made only as the far crowd needs them
-export const FAR_CELL_GUTTER = 2;      // empty px around each cell so mipmaps don't bleed one panel into the next
-export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most; the rest show their last picture until a later frame
-// Past this many metres no stats are drawn: a 0.8 m sprite's bar rows (~5 cm) are well under a pixel there.
-export const BAR_PX = 0.8 / 192;                       // metres per canvas px: the old 0.8 m, 192 px panel's, so BAR_TEXT_FONT is the size it was
-export const BAR_CANVAS_W = 272, BAR_CANVAS_H = 96;   // width fits the stat row at BAR_TEXT_FONT; height of the area above the info row
-export const BAR_ROW_H = 20;                           // canvas px of each panel row: stats, body (fat/muscle/type), info (gen/age/sex/height/weight)
-export const BAR_TEXT_FONT = 15;                       // canvas px of all panel text and icons, shrunk only when a row would not fit
-export const BAR_ROW_GAP = 8;                          // least canvas px between a row's items (spread across the width)
+export const FAR_PANEL_SCALE = 0.25;   // far atlas px per near canvas px
+export const FAR_PAGE_PX = 512;        // atlas page size; pages made as needed
+export const FAR_CELL_GUTTER = 2;      // padding px so mipmaps don't bleed
+export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most
+// No stats past this many metres.
+export const BAR_PX = 0.8 / 192;                       // metres per canvas px (old 0.8 m, 192 px panel)
+export const BAR_CANVAS_W = 272, BAR_CANVAS_H = 96;   // width fits the stat row; height above the info row
+export const BAR_ROW_H = 20;                           // px per panel row: stats, body, info
+export const BAR_TEXT_FONT = 15;                       // px of panel text and icons, shrunk only to fit
+export const BAR_ROW_GAP = 8;                          // least px between a row's items
 export const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_ROW_H;
-export const BAR_W_M = BAR_CANVAS_W * BAR_PX;          // sprite width in metres
-export const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // whole sprite height in metres
+export const BAR_W_M = BAR_CANVAS_W * BAR_PX;          // sprite width, metres
+export const BAR_H_M = BAR_SPRITE_CANVAS_H * BAR_PX;   // sprite height, metres
 export const LOBE_RADIUS = 0.7;
 export const LOBE_COLS = [0x00e5ff, 0xaaff00];
 
-// BRAINS OVER HEADS: NNVisualizer3D layout as two draw calls per brain; only changed nodes touch the GPU.
-export const BRAIN_SCALE = 0.11;   // layout units -> metres (layout is ~6.2 x 4.2 units)
+// BRAINS OVER HEADS: two draw calls per brain; only changed nodes upload.
+export const BRAIN_SCALE = 0.11;   // layout units to metres (~6.2 x 4.2)
 export const BRAIN_HALF_H = 2.1;
 export const BRAIN_ABOVE = 0.06;
-export const BRAIN_SPIN = 0.6;    // rad/s about the brain's own vertical
+export const BRAIN_SPIN = 0.6;    // rad/s spin
 export const BRAIN_TILT = 0.18;
 export const BRAIN_DIM = 0.3;
 export const BRAIN_IN_GROUPS = [4, 4, 4, 4, 3];
@@ -1188,18 +1110,16 @@ export const STICK_RADIUS = 55;          // px of travel for full tilt
 export const FLICK_RADIUS = 10;
 export const TAP_GAP_MS = 300;
 
-// MULTI-TOUCH BUTTONS: mobile browsers send no click for a tap while another finger is down (on the stick, the gas),
-// so in-game buttons act on their own touch's pointerup instead; the native click that may follow is swallowed.
-// Holds on the canvas and on these buttons cancel the browser's long-press, which would vibrate and open a menu.
-export const TAP_SLOP = 12;           // px a finger may drift and still count as a tap
-export const TAP_SWALLOW_MS = 600;    // a native click on the same button this soon after is the same tap
-export const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // buttons that act on a tap (pedals, climb and #use act on press)
-// buttons outside the scrollable settings sheet: their touches never scroll, so the long press is cancelled at touchstart
+// MULTI-TOUCH BUTTONS: a tap during another touch sends no click, so buttons act on their own pointerup.
+export const TAP_SLOP = 12;           // px drift still counted as a tap
+export const TAP_SWALLOW_MS = 600;    // a click this soon after is the same tap
+export const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // tap buttons (pedals, climb and #use act on press)
+// outside-sheet buttons cancel long press at touchstart
 export const HOLD_SAFE = '#fly, #car, #use, .pedal, #climb button, #gear';
 
-// CAR: one per city, parked near the spawn. Kinematic bicycle model, three collision circles, chase camera.
+// CAR: kinematic bicycle model, three collision circles, chase camera.
 
-export const CAR_SCALE = 0.75;      // whole car (model, collisions, reach, camera) relative to the original full-size build
+export const CAR_SCALE = 0.75;      // whole car scale vs the original build
 export const CAR_LEN = 4.3 * CAR_SCALE;
 export const CAR_WID = 1.8 * CAR_SCALE;
 export const CAR_TOP = 1.45 * CAR_SCALE;
@@ -1208,69 +1128,62 @@ export const CAR_TRACK = 1.55 * CAR_SCALE;
 export const CAR_WHEEL_R = 0.33 * CAR_SCALE;
 export const CAR_R = 0.9 * CAR_SCALE;
 export const CAR_CIRCLES = [-1.25 * CAR_SCALE, 0, 1.25 * CAR_SCALE];
-export const CAR_STEP_UP = 0.25;    // solids lower than this are driven over
+export const CAR_STEP_UP = 0.25;    // lower solids are driven over
 export const CAR_SUBSTEP = 0.25;    // under CAR_R, so a fast car cannot skip a fence
-export const CAR_ACCEL_MAX = 4.5;     // m/s^2, traction limit off the line
-export const CAR_POWER = 60;      // W/kg: engine power per unit mass, so a = P / v
-export const CAR_BRAKE = 9.0;     // m/s^2 service brake (~0.9 g)
+export const CAR_ACCEL_MAX = 4.5;     // m/s^2 traction off the line
+export const CAR_POWER = 60;      // W/kg, a = P / v
+export const CAR_BRAKE = 9.0;     // m/s^2 brake (~0.9 g)
 export const CAR_HANDBRAKE = 6.0;
 export const CAR_REV_MAX = 6.0;     // m/s top reverse speed
 export const CAR_REV_ACCEL = 3.0;
 export const CAR_ROLL = 0.15;    // m/s^2 rolling resistance
-export const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag with the throttle released
-// CAR MASS AND DRAG: a microcar at this size (kei class, about 700 kg curb); the driver's body mass is added when the
-// player is in it (carMassKg in 8b-player-game.js). Drag per metre of travel (m/s^2 per (m/s)^2) is 0.5 x air density x
-// CdA / total mass, with the frontal area the car's width x height at CAR_FRONTAL_FILL (a body is not a full rectangle).
-export const CAR_MASS_KG = 700;      // curb mass, kg (kei cars: Suzuki Kei 710 kg, Cappuccino 700 to 725 kg)
-export const AIR_DENSITY = 1.225;    // kg/m^3, sea level at 15 C
-export const CAR_CD = 0.35;          // placeholder drag coefficient, inside small cars' ~0.33 to 0.38
-export const CAR_FRONTAL_FILL = 0.83;   // frontal area over width x height (VW Jetta and Acura NSX figures give ~0.82 to 0.84)
+export const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag off throttle
+// CAR MASS AND DRAG: ~700 kg kei car plus the driver (carMassKg); drag 0.5 x air density x CdA / mass.
+export const CAR_MASS_KG = 700;      // curb kg (Suzuki Kei 710, Cappuccino 700 to 725)
+export const AIR_DENSITY = 1.225;    // kg/m^3, sea level 15 C
+export const CAR_CD = 0.35;          // placeholder Cd, small cars ~0.33 to 0.38
+export const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to 0.84)
 export const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
 export const carDragPerM = massKg => 0.5 * AIR_DENSITY * CAR_CDA / massKg;   // 1/m: drag deceleration over speed squared
-export const CAR_GRIP = 8.8;     // m/s^2 lateral limit (mu ~0.9)
+export const CAR_GRIP = 8.8;     // m/s^2 lateral (mu ~0.9)
 export const CAR_STEER_MAX = 0.6;     // rad at standstill
-export const CAR_STEER_FALL = 12;      // m/s at which the steering lock halves
-export const CAR_STEER_RATE = 2.5;     // rad/s the wheels turn toward the input
+export const CAR_STEER_FALL = 12;      // m/s where steering lock halves
+export const CAR_STEER_RATE = 2.5;     // rad/s wheel turn rate
 export const CAR_G = 9.81;
-// RAGDOLLS (render only; the sim's knockdown decides who is down and for how long): with ragdoll physics on (always in
-// Survivor, the Ragdoll physics chip in Observer), a knockdown that starts within view on high graphics gets a ragdoll
-// while a slot is free (HIGH_RAGDOLLS live at once; LOW_RAGDOLLS = 0, so low graphics, ragdoll physics off and anyone
-// past the slots keep the lying pose). Verlet particles at the sim tick (VerletBody in
-// 8a-render.js) for people and box rigs alike: a rigid core, free-swinging limbs, flat ground at the body's footing,
-// pulled back toward the sim's position so the body stands up where it lies, and kept out of the car's box (so a body
-// the car hits goes over it, not through it).
+// RAGDOLLS (render only): with ragdolls on, a knockdown gets a Verlet ragdoll while one of HIGH_RAGDOLLS slots is free,
+// on either graphics setting; else the lying pose. It rises where the sim's body is.
 export const HIGH_RAGDOLLS = 16, LOW_RAGDOLLS = 0;
-export const HUMAN_RAG_ROWS = HIGH_RAGDOLLS + 1;   // the people's ragdoll texture rows: one per crowd slot, the last kept for the player's body
-export const RAGDOLL_G = CAR_G;              // m/s^2, standard gravity (CAR_G is the same 9.81)
+export const HUMAN_RAG_ROWS = HIGH_RAGDOLLS + 1;   // ragdoll texture rows: one per crowd slot, the last for the player
+export const RAGDOLL_G = CAR_G;              // m/s^2 (CAR_G is the same)
 export const RAGDOLL_DAMP = 0.98;            // velocity kept per step
 export const RAGDOLL_ITERS = 4;              // constraint passes per step
-export const RAGDOLL_FRICTION = 0.4;         // share of along-ground speed lost per step in contact
-export const RAGDOLL_ANCHOR_PER_S = 1.5;     // share per second of the body's drift from the sim's position taken back
-export const RAGDOLL_MAX_DV = 4;             // m/s at most of launch speed (Animal.downDV)
-export const RAGDOLL_TOP_SHARE = 1;          // launch speed share at the body's top point; the rear and front take
+export const RAGDOLL_FRICTION = 0.4;         // ground speed lost per contact step
+export const RAGDOLL_ANCHOR_PER_S = 1.5;     // share per second of drift from the sim's position taken back
+export const RAGDOLL_MAX_DV = 4;             // most launch speed, m/s (downDV)
+export const RAGDOLL_TOP_SHARE = 1;          // launch share at the top point; rear and front take
 export const RAGDOLL_BASE_SHARE = 0.3;       // this share, so the body rolls toward the push
 export const CAR_GLANCE = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
-export const CAR_ALIGN = 0.3;     // share of the angle to the wall turned per contact substep
+export const CAR_ALIGN = 0.3;     // angle share turned per contact substep
 export const CAR_REACH = 3.2 * CAR_SCALE;
 export const CAM_DIST = 6.5 * CAR_SCALE;
 export const CAM_PIVOT = 1.4 * CAR_SCALE;
 export const CAM_PITCH = -0.2;
-export const CAM_FOLLOW = 5;       // 1/s camera yaw catch-up
-export const CAM_LOOK_HOLD = 1500;    // ms after the last look input before it eases back
+export const CAM_FOLLOW = 5;       // 1/s yaw catch-up
+export const CAM_LOOK_HOLD = 1500;    // ms after the last look before easing back
 
-// Parked beside a cabin's doorway (right side first, looking out), nose pointing the door's way; `yaw` is that heading.
-export const CABIN_CAR_GAP = 1.5;       // metres of clear ground between the cabin's floor edge and the car's rear
-export const CABIN_CAR_WALKWAY = 1.2;   // metres of clear ground between the doorway's edge and the car's side
+// Parked beside a cabin's doorway, nose the door's way.
+export const CABIN_CAR_GAP = 1.5;       // clear ground from cabin floor edge to the car's rear
+export const CABIN_CAR_WALKWAY = 1.2;   // clear ground from doorway edge to the car's side
 
 // SETTINGS
 
-// Presets replace the game's own clock and weather ('Game', the first chip).
+// Presets replace the game's clock and weather ('Game', the first chip).
 export const TIMES = ['Game', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
 export const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
 };
 
-// cloud drives sky and sun intensity; kind picks the fog branch
+// cloud drives sky and sun; kind picks the fog branch
 export const SKIES = {
   Game: null,
   Clear: { label: 'Clear', kind: 'clear', cloud: 0 },
@@ -1281,21 +1194,21 @@ export const SKIES = {
   Snow: { label: 'Snow', kind: 'snow', cloud: 85 },
   Storm: { label: 'Thunderstorm', kind: 'storm', cloud: 100 }
 };
-export const DEBUG_PROBE_LAYER = 7;                       // the probe camera sees only the people and the scene lights
+export const DEBUG_PROBE_LAYER = 7;                       // probe camera sees only people and scene lights
 export const DEBUG_PROBE_PX = 64;
 
-// SWIMMING (the Arena's): water deeper than the eye floats the player at the surface; moving while looking down dives.
-export const SWIM_DEPTH = EYE_HEIGHT + 0.2;   // metres of water over the bed past which the player swims
-export const SWIM_FLOAT = 0.22;               // eye above the surface while floating (the Arena's WATER_FLOAT_OFFSET)
+// SWIMMING: water deeper than the eye floats the player; looking down dives.
+export const SWIM_DEPTH = EYE_HEIGHT + 0.2;   // water depth past which the player swims
+export const SWIM_FLOAT = 0.22;               // eye above the surface floating
 export const SWIM_SPEED = 0.45;
 export const SWIM_JUMP = 0.5;
 export const SWIM_DRAG = 4;                  // 1/s, vertical
 
-// NPC ticks: one per NPC_TICK_S of real time at most (Arena constants are per tick); player motion renders at the display rate.
-export const NPC_DRINK_SECONDS = 10;   // seconds in water for an animal's empty water bar to fill
-export const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance, so a 60 Hz display never skips a tick
+// NPC ticks: at most one per NPC_TICK_S of real time.
+export const NPC_DRINK_SECONDS = 10;   // seconds in water to fill an empty water bar
+export const NPC_TICK_SLACK = 0.004;   // rAF jitter allowance so 60 Hz never skips a tick
 
-// Sun altitude (degrees), sky/fog colour, sun colour, sun intensity.
+// Sun altitude (deg), sky and fog colour, sun colour, sun intensity.
 export const SKY = [
   [-12, 0x05070f, 0x2a3a5c, 0.00],
   [-6, 0x101a2e, 0x46587c, 0.00],
@@ -1306,21 +1219,21 @@ export const SKY = [
   [30, 0x9fb4c8, 0xfff2dd, 1.60]
 ];
 
-// SUN AND MOON DISCS: camera-facing quads at SKY_DIST (nearer on Graphics: low) along the true directions, occluded by depth, ~3x real size.
-export const SKY_DIST = 1500;   // metres; inside the camera's far plane (HIGH_CAMERA_FAR), past the loaded area; sizes the quads
-export const SKY_FAR_FRACTION = 0.9;   // a shorter far plane (LOW_CAMERA_FAR) places the discs at this fraction of it
+// SUN AND MOON: camera-facing quads along true directions, ~3x real size.
+export const SKY_DIST = 1500;   // inside HIGH_CAMERA_FAR, past the loaded area
+export const SKY_FAR_FRACTION = 0.9;   // discs at this share of LOW_CAMERA_FAR
 export const SKY_BODY_DEG = 1.6;
 export const SKY_TEX = 128;
 
-// SKY FADE: on a weather change cloud and fog ease over SKY_FADE_S (a world's first sky is set at once).
+// SKY FADE: cloud and fog ease over SKY_FADE_S on a weather change.
 export const SKY_FADE_S = 5;
-export const RAIN_SPAN = 44;           // box width and depth around the camera, meters
+export const RAIN_SPAN = 44;           // rain box width and depth, metres
 export const RAIN_HEIGHT = 26;
 export const RAIN_FPS_IDLE = 30;
-export const RAIN_FADE_S = 5;          // seconds rain takes to fade in or out
-export const RAIN_TIME_WRAP = 600;     // seconds; keeps the shader's float time small
+export const RAIN_FADE_S = 5;          // rain fade seconds
+export const RAIN_TIME_WRAP = 600;     // keeps shader float time small
 export const ROOF_MAP_N = 128;
-export const ROOF_MAP_SIZE = 56;       // meters per side; the rain box plus snap slack
+export const ROOF_MAP_SIZE = 56;       // metres a side; rain box plus snap slack
 export const ROOF_MAP_SNAP = 4;
 
 export const RAIN_BY_CODE = {
@@ -1329,7 +1242,7 @@ export const RAIN_BY_CODE = {
   80: 0.45, 81: 0.7, 82: 1, 95: 0.85, 96: 0.9, 99: 1
 };
 
-// Suggested places: well-mapped US downtowns, as [City button text, address query (a CITY_FILES key)].
+// Suggested places: [button text, CITY_FILES key].
 export const PICKS = [
   ['New York', 'New York, NY'],
   ['Union Square', 'Union Square, San Francisco, CA'],

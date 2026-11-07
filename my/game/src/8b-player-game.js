@@ -1,12 +1,5 @@
-// 8b-player-game.js: PLAYER and GAME. What the player drives, and Survivor.
-// Player owns: player, keys, play { active, locked }, stance, touch (touchKnob), fly and climb, swimming, playerStep,
-// movementHeld, the car and chase camera, the cat and petting, pov and VR.
-// Game owns: SURVIVOR_ACTIONS, SURVIVOR_FIELD_ACTIONS, cabinAt and game (Survivor rules, inventory, the run summary).
-// Binds: bindInventory, bindKeys, bindMouseLook, bindTouch, bindCar register this file's listeners; 9-main calls
-// them in the original listener order. Construction (meshes, canvases) runs at load.
-// Fills 8a-render's renderInputs at the end of its load (the only way render sees the player and the game).
-// May import: 1-config.js to 8a-render.js and three. It registers into the sim (avatar, afterContacts, plantView)
-// only through statements in 9-main.
+// 8b-player-game.js: PLAYER and GAME (Survivor). bind* register listeners, called by 9-main in order. Fills 8a-render's
+// renderInputs. May import 1-config.js to 8a-render.js and three.
 import * as THREE from 'three';
 import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
@@ -56,7 +49,7 @@ export const climbEl = document.getElementById('climb');
 export const upEl = document.getElementById('up');
 export const downEl = document.getElementById('down');
 
-// DOM for the view chip and VR, read by the systems below.
+// DOM for the view chip and VR.
 export const povEl = document.getElementById('pov');
 export const vrEl = document.getElementById('vr');
 export const vrOverlayEl = document.getElementById('vr-overlay');
@@ -76,8 +69,8 @@ export class CatCompanion {
     this.FLOAT = 1.5 * NPC_UNIT;
     this.active = false;
     this.inCar = false;
-    this.boarding = null;          // walk-to-the-door state while the player gets in
-    this.held = null;              // { x, z, yaw } while petted (hold): he steps to that spot, faces yaw and stays
+    this.boarding = null;          // walk-to-the-door state while boarding
+    this.held = null;              // { x, z, yaw } while petted
     this._w = new THREE.Vector3();
     this._seat = new THREE.Vector3();
   }
@@ -174,7 +167,7 @@ export class CatCompanion {
     return group;
   }
 
-  // Gets in with the player: walks round to the passenger door, hops onto the seat, then rides.
+  // Boards with the player: round to the passenger door, onto the seat.
   board() {
     if (!this.active || this.inCar || this.boarding) return;
     const [cx, cf] = this.carLocal(this.position.x, this.position.z);
@@ -182,20 +175,20 @@ export class CatCompanion {
     loop.sceneDirty = true;
   }
 
-  // (x, z) in the car's frame: [right, forward]
+  // car frame (x, z): [right, forward]
   carLocal(x, z) {
     const dx = x - car.x, dz = z - car.z, c = Math.cos(car.yaw), s = Math.sin(car.yaw);
     return [dx * c - dz * s, -dx * s - dz * c];
   }
 
-  // car frame -> world (x, z)
+  // car frame to world
   carWorld(lx, lf, out) {
     const c = Math.cos(car.yaw), s = Math.sin(car.yaw);
     out.x = car.x + c * lx - s * lf; out.z = car.z - s * lx - c * lf;
     return out;
   }
 
-  // Next point on his way to the passenger door, in the car's frame; from the driver's side he goes round the nearer end.
+  // Next point toward the passenger door in the car's frame, round the nearer end.
   boardTarget(lx, lf) {
     const L = CAR_LEN / 2 + 0.5, end = lf >= 0 ? L : -L;
     if (lx >= CAT_DOOR - 0.15) return [CAT_DOOR, 0];
@@ -214,7 +207,7 @@ export class CatCompanion {
     legs[3].rotation.x = swing + tuck;
   }
 
-  // start the hop from where he stands, kept in the car's frame so a moving car carries it along
+  // hop start, kept in the car's frame so a moving car carries it
   startJump() {
     const b = this.boarding;
     b.jump = 0;
@@ -227,7 +220,7 @@ export class CatCompanion {
     b.t += dt;
     this.animTime += dt;
     if (b.jump < 0) {
-      // trying too long: appear at the passenger door and hop in from there
+      // too long: appear at the door and hop in
       if (b.t > CAT_BOARD_TIMEOUT) {
         const p = this.carWorld(CAT_DOOR, 0, this._w);
         this.position.set(p.x, this.groundAt(p.x, p.z), p.z);
@@ -240,7 +233,7 @@ export class CatCompanion {
         const tx = tg.x, tz = tg.z;
         const dx = tx - this.position.x, dz = tz - this.position.z, d = Math.hypot(dx, dz);
         const atDoor = lx === CAT_DOOR && lf === 0;
-        // run while far from the car or while it is moving, walk the last stretch
+        // run while far or the car moves, walk the rest
         if (car.speed !== 0) b.run = true;
         else if (Math.hypot(cx, cf) < CAT_WALK_WITHIN) b.run = false;
         const running = b.run;
@@ -272,7 +265,7 @@ export class CatCompanion {
       this._seat.set(f.x + (CAT_SEAT.x - f.x) * e, f.y + (CAT_SEAT.y - f.y) * e + Math.sin(Math.PI * k) * 0.45,
         f.z + (CAT_SEAT.z - f.z) * e);
       this.position.copy(car.mesh.localToWorld(this._seat));
-      // leap facing into the car, settle facing forward
+      // leap in, settle facing forward
       const target = k < 0.5 ? car.yaw - Math.PI / 2 : car.yaw + Math.PI;
       this.yaw += CatCompanion.wrap(target - this.yaw) * Math.min(1, dt * 12);
       this.legs(0, Math.sin(Math.PI * k) * 0.6);
@@ -283,7 +276,7 @@ export class CatCompanion {
     loop.sceneDirty = true;
   }
 
-  // No shadow while he rides in the car; out of it, the parts that cast one when built cast again.
+  // No shadow while riding.
   setCastShadow(on) {
     this.mesh.traverse(o => {
       if (!o.isMesh) return;
@@ -293,21 +286,21 @@ export class CatCompanion {
     graphics.force = true;
   }
 
-  // A passenger on the car's mesh, still, facing forward (his update pauses).
+  // A still passenger on the car's mesh.
   seat() {
     this.boarding = null;
     this.inCar = true;
     car.mesh.add(this.mesh);
     this.setCastShadow(false);
     this.mesh.position.set(CAT_SEAT.x, CAT_SEAT.y, CAT_SEAT.z);
-    this.mesh.rotation.set(0, Math.PI, 0);   // his forward is +z, the car's is -z
+    this.mesh.rotation.set(0, Math.PI, 0);   // his forward +z, the car's -z
     for (const leg of this.mesh.userData.legs) leg.rotation.x = 0;
     loop.sceneDirty = true;
   }
 
-  // Gets out with the player: by the passenger door if there is room, else beside the player.
+  // Gets out by the passenger door if there is room, else beside the player.
   alight() {
-    if (this.boarding) { this.boarding = null; return; }   // player got out before he got in
+    if (this.boarding) { this.boarding = null; return; }   // player left before he boarded
     if (!this.inCar) return;
     this.inCar = false;
     scene.add(this.mesh);
@@ -322,11 +315,11 @@ export class CatCompanion {
     this.update(0);
   }
 
-  // Petting (petting.start): he steps to (x, z), turns to yaw and stays there until release().
+  // Petting: he steps to (x, z), faces yaw and stays until release().
   hold(x, z, yaw) { this.held = { x, z, yaw }; }
   release() { this.held = null; }
 
-  // In front of the player, a little to the right, facing the player.
+  // In front of the player, a little right, facing them.
   reset() { this.place(false); }   // teardownWorld's entry
   place(show) {
     this.boarding = null;
@@ -346,7 +339,7 @@ export class CatCompanion {
     this.update(0);
   }
 
-  // Ground under him: the footing, floating a little under a water surface.
+  // Footing, floating a little under water.
   groundAt(x, z) {
     providers.active.surface(x, z, _surf);
     return _surf.base + Math.max(_surf.dip, -this.FLOAT);
@@ -370,7 +363,7 @@ export class CatCompanion {
     let speed = 0;
 
     if (this.held) {
-      // petted: a short step to the held spot, then still, facing the held way
+      // petted: step to the held spot, then still
       const h = this.held, hx = h.x - this.position.x, hz = h.z - this.position.z, hd = Math.hypot(hx, hz);
       const step = Math.min(hd, CAT_PET_STEP_SPEED * deltaTime);
       if (hd > 1e-6) {
@@ -380,7 +373,7 @@ export class CatCompanion {
       if (hd > CAT_PET_SETTLED) speed = CAT_PET_STEP_SPEED;
       this.yaw += CatCompanion.wrap(h.yaw - this.yaw) * Math.min(1, deltaTime * CAT_PET_TURN_RATE);
     } else if (distToPlayer > catchUpDist) {
-      // too far behind (car, fly, a sprint): appear just behind the player
+      // too far behind: appear behind the player
       const warpX = px + Math.sin(player.heading) * followDist * 0.3;
       const warpZ = pz + Math.cos(player.heading) * followDist * 0.3;
       this.position.set(warpX, this.groundAt(warpX, warpZ), warpZ);
@@ -405,14 +398,14 @@ export class CatCompanion {
       this.yaw += (faceAngle - this.yaw) * Math.min(1, deltaTime * 2);
     }
 
-    // walls stop him like anyone else
+    // walls stop him
     const feet = this.position.y;
     this._w.set(this.position.x, 0, this.position.z);
     resolveCollisions(this._w, 0.15, feet, feet + 0.35, STEP_UP);
     this.position.x = ecosystem.fitX(this._w.x);
     this.position.z = ecosystem.fitZ(this._w.z);
 
-    // gravity down to the footing (the Arena's 400 u/s^2)
+    // gravity to the footing
     const ground = this.groundAt(this.position.x, this.position.z);
     this.velocity.y -= 400 * NPC_UNIT * deltaTime;
     this.position.y += this.velocity.y * deltaTime;
@@ -435,25 +428,24 @@ export class CatCompanion {
   }
 }
 
-// The player's body's facing (yaw of its rig): the rig faces +z at rotation 0, the camera -z at yaw 0.
+// The body's facing: the rig faces +z at 0, the camera -z.
 export const bodyYaw = () => player.heading + Math.PI;
 
 export const pov = {
   mode: '3rd',
   body: null,
-  // the player's body: a random person (sex, height, build, skin, face, clothes), drawn anew each time a world spawns.
-  // Only the drawn body changes; the player's eye height and collision stay PLAYER_HEIGHT's.
+  // the player's body: a random person drawn each spawn; eye and collision stay PLAYER_HEIGHT's.
   look: null,
   heightScale: PLAYER_HS,
-  ageBase: NPC_ADULT_AGE,   // years at world tick 0 (newBody)
+  ageBase: NPC_ADULT_AGE,   // years at tick 0
   ageYears() { return this.ageBase + ecosystem.ticks / NPC_TICKS_PER_YEAR; },
-  // the player's stats readout key (personInfoKey; Survivor panel and Observer HUD), or -1 before the first body
+  // stats readout key, or -1 before the first body
   infoKey() {
     return this.look ? personInfoKey(Math.floor(this.ageYears()), this.sex, this.look, game.avatar.bodyHeightM()) : -1;
   },
   gait: { x: NaN, z: NaN, speed: 0, phase: 0, swing: 0, run: 0 },
 
-  // one instance of the people renderer's rig and materials; posed by the mesh's own transform, so iPose stays at the origin
+  // one instance of the people rig, posed by its own transform
   build() {
     const H = animalRenderer.human;
     const g = new THREE.InstancedBufferGeometry();
@@ -472,9 +464,7 @@ export const pov = {
     else this.writeLook();
   },
 
-  // A fresh person for the player from the start screen's Player body (main's playerBodyChoice): null for Random, a
-  // person drawn like a spawned one (sex, height like NPC adults of that sex, body, looks, age); or Custom
-  // ({ sex, bodyType, bodyFat, heightM, bmi, age }), with only the looks drawn.
+  // A fresh body from the start screen: null for Random, or Custom with only looks drawn.
   newBody(custom = null) {
     const sex = custom ? custom.sex : (Math.random() < 0.5 ? 'male' : 'female');
     this.sex = sex;
@@ -483,7 +473,7 @@ export const pov = {
     const sz = NPC_SIZE.human, [mean, std] = sz[sex];
     const heightM = custom ? custom.heightM : mean + std * Math.max(-NPC_SIZE_Z_MAX, Math.min(NPC_SIZE_Z_MAX, tools.gauss()));
     this.heightScale = heightM / (sz.rig * NPC_UNIT);
-    // years at world tick 0, aging on the same clock as people (Animal.ageYears); the ecosystem's ticks restart with it
+    // years at tick 0, aging on the people's clock
     this.ageBase = custom ? custom.age : NPC_START_AGE[0] + Math.random() * (NPC_START_AGE[1] - NPC_START_AGE[0]);
     const G = this.gait;
     G.x = G.z = NaN; G.speed = G.phase = G.swing = G.run = 0;
@@ -496,15 +486,14 @@ export const pov = {
     iLook.needsUpdate = iShape.needsUpdate = true;
   },
 
-  // the NPC gait (AnimalRenderer.stepGait) on the frame's step instead of the NPC tick;
-  // off a sprint the legs animate as if covering PLAYER_JOG_ANIM of the ground (a slower cycle)
+  // the NPC gait on the frame's step; off a sprint the legs animate at PLAYER_JOG_ANIM
   stepGait(dt, kp) {
     const G = this.gait;
     const dx = player.pos.x - G.x, dz = player.pos.z - G.z;
     G.x = player.pos.x; G.z = player.pos.z;
     if (!dt) return;
     const moved = Math.sqrt(dx * dx + dz * dz);
-    if (!(moved < HUMAN_GAIT_JUMP)) return;   // first sight or a teleport: hold the pose
+    if (!(moved < HUMAN_GAIT_JUMP)) return;   // first sight or teleport: hold the pose
     const d = player.running ? moved : moved * PLAYER_JOG_ANIM;
     if (d === 0 && G.speed < 1e-3) { G.speed = G.swing = G.run = 0; return; }
     const leg = HUMAN_LEG * kp;
@@ -523,13 +512,13 @@ export const pov = {
     invalidate();
   },
 
-  // Hide the body and its blob shadow (first person, the car, the start screen).
+  // Hide the body and its blob.
   hideBody() {
     if (this.body) this.body.visible = false;
     blobShadows.hidePlayer();
   },
 
-  // After step(): move the camera behind the player (boom shortened before walls) and pose the body.
+  // After step(): place the camera and pose the body.
   apply(dt) {
     const show = this.mode === '3rd' && !player.inCar && play.active && !renderer.xr.isPresenting;
     if (!this.body) this.build();
@@ -540,15 +529,15 @@ export const pov = {
     const b = this.body, kp = NPC_UNIT * this.heightScale;
     b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
     b.rotation.y = bodyYaw();
-    // the blob under the feet, as the crowd's blobs skip a floating or submerged body
+    // no blob for a floating or submerged body
     if (flying || swimming) blobShadows.hidePlayer();
     else blobShadows.placePlayer(player.pos.x, feet, player.pos.z, b.rotation.y, kp);
 
     const G = this.gait, gait = b.geometry.attributes.iGait;
-    // flying: the standing pose (no walk or run cycle); the gait starts from rest on landing
+    // flying: the standing pose
     if (flying) { G.x = player.pos.x; G.z = player.pos.z; G.speed = G.swing = G.run = 0; }
     else this.stepGait(dt, kp);
-    // iGait.w: the crouch share as a negative number while crouching or easing out of it, else the run share
+    // iGait.w: negative crouch share while crouching, else run share
     const crouchShare = crouchY / CROUCH_DROP;
     gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = crouchShare > 0 ? -crouchShare : G.run;
     gait.needsUpdate = true;
@@ -556,7 +545,7 @@ export const pov = {
     humanFightAct(game.avatar, ecosystem.time, act.array, 0);
     act.array[3] = petting.act();
     act.needsUpdate = true;
-    // knocked down: a ragdoll or the lying pose, by the crowd's rules (AnimalRenderer.bodyDown)
+    // knocked down: ragdoll or lying pose (AnimalRenderer.bodyDown)
     const down = b.geometry.attributes.iDown;
     animalRenderer.bodyDown(game.avatar, ecosystem.time, kp, b.position.x, b.position.y, b.position.z, b.rotation.y, feet, down.array);
     down.needsUpdate = true;
@@ -581,7 +570,7 @@ export const pov = {
   }
 };
 
-// VR: the Arena's WebXR session, on the shared player. The rig carries the headset to the player's feet.
+// VR: the Arena's WebXR session; the rig carries the headset to the feet.
 export const vr = {
   moveX: 0, moveY: 0, turnX: 0,
   jumpPressed: false, resetPressed: false,
@@ -622,7 +611,7 @@ export const vr = {
     this.resetPressed = false;
   },
 
-  // The head sits EYE_HEIGHT over the rig in local-floor space, so the rig goes to the feet.
+  // The head sits EYE_HEIGHT over the rig in local-floor space.
   placeRig() {
     if (!renderer.xr.isPresenting) return;
     rig.position.set(player.pos.x, player.pos.y - EYE_HEIGHT, player.pos.z);
@@ -678,29 +667,26 @@ export const vr = {
 
 export const cat = new CatCompanion();
 
-// PETTING (the Pet field action): the player squats for the pet's length (stance.squat), turns so the petting hand
-// (HUMAN_PET) comes over the cat, and the cat steps under it facing the player (cat.hold); the hand reaches in, rubs
-// his head from the player's left to right and back, and withdraws. Stepping off the spot, leaving the ground, the
-// car, flying, dying, or the cat leaving (boarding, gone) ends it early.
+// PETTING: the player squats and turns so the hand comes over the cat, who steps under it; moving off, the car, flying
+// or dying ends it.
 export const petting = {
-  t: -1,                       // seconds into the pet; -1: not petting
-  bendLevel: 0,                // the bend level (petBendAt) and shoulder angle solved for this pet (humanPetHand)
+  t: -1,                       // seconds in; -1: not petting
+  bendLevel: 0,                // bend level and shoulder angle for this pet
   a1: 0,
-  turnAmp: 0,                  // the sweep angle that carries the hand sweepM to either side
-  at: new THREE.Vector3(),     // where the player stands for it
+  turnAmp: 0,                  // sweep angle for sweepM either side
+  at: new THREE.Vector3(),     // where the player stands
   get on() { return this.t >= 0; },
   get duration() { const P = HUMAN_PET; return 2 * P.reachS + P.strokes * P.strokeS; },
 
-  // the cat is free to be petted: out with the player, not boarding, not already being petted
+  // the cat can be petted
   canPet() { return !this.on && cat.active && !cat.inCar && !cat.boarding; },
 
   start() {
     if (!this.canPet() || !pov.look) return;
     const P = HUMAN_PET, kp = NPC_UNIT * pov.heightScale, shoulderW = pov.look.shape.shoulder;
-    // the hand's height that meets his head top, in rig units over the body centre (pov.apply's placement)
+    // hand height meeting his head, rig units
     const want = (cat.position.y + CAT_HEAD_TOP - (player.pos.y - EYE_HEIGHT)) / kp - SPECIES.human.lift;
-    // shallowest bend first, over the shoulder angles the pack can carry, forward first, until the hand (in front of
-    // the body) comes down to the head (deeper bends only reach lower); the pose that came nearest wins
+    // shallowest bend that brings the hand to the head; nearest wins
     let best = null, bestErr = Infinity;
     search: for (let b = 0; b < PET_BEND_LEVELS; b++) {
       for (let k = 0; k <= 255; k++) {
@@ -714,14 +700,13 @@ export const petting = {
     if (!best) return;
     [this.bendLevel, this.a1] = best;
     const bend = petBendAt(this.bendLevel), hand = humanPetHand(bend, this.a1, 0, shoulderW);
-    // the sweep angle whose sideways reach is sweepM (bisection; the reach grows with the angle up to turnMax)
+    // sweep angle reaching sweepM (bisection)
     const side = P.sweepM / kp, reachAt = a => hand.x - humanPetHand(bend, this.a1, a, shoulderW).x;
     let lo = 0, hi = P.turnMax;
     if (reachAt(hi) <= side) lo = hi;
     else for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (reachAt(m) < side) lo = m; else hi = m; }
     this.turnAmp = lo;
-    // his body centre in the player's frame (+x left, +z forward): under the hand, a head's length farther out,
-    // facing back at the player; the player turns so that spot lies the way the cat already is
+    // his centre under the hand; the player turns toward the cat
     const ox = hand.x * kp, oz = hand.z * kp + CAT_HEAD_FWD;
     const toWorld = h => [-Math.cos(h) * ox - Math.sin(h) * oz, Math.sin(h) * ox - Math.cos(h) * oz];
     const [wx, wz] = toWorld(player.heading);
@@ -742,14 +727,14 @@ export const petting = {
       !cat.active || cat.inCar || cat.boarding) this.end(true);
   },
 
-  // early: cut short, so the squat ends with it
+  // cut short, so the squat ends too
   end(early) {
     this.t = -1;
     cat.release();
     if (early) stance.unsquat();
   },
 
-  // the pose for the body's iAct.w (humanPetPack): reach eases in and out, the sweep runs left, right, left per stroke
+  // iAct.w pose: reach eases, sweep runs left, right, left per stroke
   act() {
     if (!this.on) return 0;
     const P = HUMAN_PET, t = this.t;
@@ -759,8 +744,7 @@ export const petting = {
   }
 };
 
-// What using an item does, by its kind's action: verb names the use (slot labels), past the run summary's row.
-// run(game, slot, item) applies it; `consumed` actions empty the slot first and count toward the run summary.
+// Item use by kind: run() applies it; `consumed` empties the slot.
 export const SURVIVOR_ACTIONS = {
   open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
   eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
@@ -768,10 +752,8 @@ export const SURVIVOR_ACTIONS = {
   treat: { verb: 'Use', past: 'Used', consumed: true, run(g, slot, item) { g.cure(item.cures); } }
 };
 
-// What the action button (the car button's slot) can do on foot, first in reach first: label is its text,
-// find(game, x, feet, z) its target in reach (null: none). run(game, target) acts once on the press; a `hold`
-// action runs run(game, target, dt) every tick instead, while held. Harvest and Collect need a free slot.
-// A `squat` action squats the body for SURVIVOR_CONFIG.squatS (stance.squat) when it runs.
+// Action button choices on foot, first in reach first: find() returns a target; run() acts on press, or each tick for
+// `hold`.
 export const SURVIVOR_FIELD_ACTIONS = {
   collect: {
     label: 'Collect',
@@ -791,7 +773,7 @@ export const SURVIVOR_FIELD_ACTIONS = {
     find: (g, x, feet, z) => g.atWater(x, z) ? true : null,
     run: (g, target, dt) => g.drink(SURVIVOR_CONFIG.needs.drinkPerS * dt)
   },
-  // last, so a plant, box or water by the cat keeps its button; the pet squats on its own (petting)
+  // last, so a plant, box or water by the cat keeps the button
   pet: {
     label: 'Pet',
     find: (g, x, feet, z) => petting.canPet() && g.catInReach(x, feet, z) ? cat : null,
@@ -806,8 +788,7 @@ export const needWaterEl = document.getElementById('needWater');
 export const needDayEl = document.getElementById('needDay');
 export const needInfoEl = document.getElementById('needInfo');
 export const needBodyEl = document.getElementById('needBody');
-// INVENTORY SLOTS: one button per SURVIVOR_CONFIG.inventory.keys entry, then the craft slot, built here so the page
-// and the config can never disagree on how many slots there are. Each shows its key ('Digit3' shows 3).
+// INVENTORY SLOTS: one button per key, then the craft slot.
 export const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
 export function slotButton(key, craft) {
   const b = document.createElement('button');
@@ -821,14 +802,14 @@ export function slotButton(key, craft) {
 }
 export const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
 export const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
-document.getElementById('slots').prepend(...slotEls, craftEl);   // ahead of the injuries badge
+document.getElementById('slots').prepend(...slotEls, craftEl);   // before the injuries badge
 export const injuriesEl = document.getElementById('injuries');
 export const hurtFlashEl = document.getElementById('hurtflash');
 export const runOverEl = document.getElementById('runover');
 export const runCauseEl = document.getElementById('runCause');
 export const runStatsEl = document.getElementById('runStats');
 
-// Inside a cabin's walls at feet height (x, y, z): the cabins' shelter rectangles carry their interior.
+// Inside a cabin at (x, y, z).
 export function cabinAt(x, y, z) {
   for (const c of shelters.list) {
     const qx = x - c.cx, qz = z - c.cz;
@@ -844,38 +825,39 @@ export const game = {
   health: SURVIVOR_CONFIG.maxHealth,
   foodNeed: 0,
   waterNeed: 0,
-  sheltered: false,       // in the car or a cabin: nothing can hurt the player
-  fieldHeld: null,        // the hold field action (SURVIVOR_FIELD_ACTIONS) whose button or key is down, or null
-  inventory: new Array(SURVIVOR_CONFIG.inventory.keys.length).fill(null),   // makeItem's { kind, food, water, cures } or null
-  injuries: new Set(),    // SURVIVOR_CONFIG.injuries keys the player has
-  run: null,              // this run's record: hours, eaten counts, cause
+  sheltered: false,       // in the car or a cabin: nothing hurts the player
+  fieldHeld: null,        // held field action, or null
+  inventory: new Array(SURVIVOR_CONFIG.inventory.keys.length).fill(null),   // item or null
+  injuries: new Set(),    // injury keys the player has
+  run: null,              // run record: hours, eaten, cause
   _lastHour: null,
   _q: [], _qp: [], _qb: [], _qBump: [],
-  _bumpX: NaN, _bumpZ: NaN,   // the player's position at the last bumpAnimals, for their velocity
+  _bumpX: NaN, _bumpZ: NaN,   // position at the last bumpAnimals, for velocity
   _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
 
-  // The ecosystem's view of the player: an Animal-shaped combatant, alive only in Survivor mode while in play.
-  // It is a predator to what people hunt, quarry at night to people's night hunters, and trades fight hits like an animal.
+  // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
     type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
     startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
-    moveAt: -Infinity, playing: null, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move (startFightMove), drawn on the 3rd-person body
-    // KNOCKDOWNS (Ecosystem.applyHit), as an animal's: the fall's start, the hold's end, the push's heading and launch speed
+    moveAt: -Infinity, playing: null, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move, drawn on the 3rd-person body
+    // KNOCKDOWNS, as an animal's: fall start, hold end, heading, launch speed
     downAt: -Infinity, downUntil: 0, downYaw: 0, downDV: 0,
     isDown(now) { return now < this.downUntil; },
-    knockable() { return !game.sheltered && !game.dead; },   // nothing reaches the player in the car or a cabin
-    braced() { return player.grounded || swimming; },          // mid-jump or falling, the player has no hold (Ecosystem.applyHit)
-    get facingAngle() { return bodyYaw(); },                  // the body's facing, as an animal's (the lying pose)
+    // knockable in play in either mode, not in the car or a cabin
+    knockable() { return play.active && !game.sheltered && !game.dead; },
+    braced() { return player.grounded || swimming; },          // no hold mid-jump or falling
+    get facingAngle() { return bodyYaw(); },                  // body facing
     get health() { return game.health; },
+    get look() { return pov.look; },                          // the player's look (the ragdoll's shape)
     strike() { startFightMove(this, NPC_FIGHT_MOVES.human, ecosystem.time); },
     bodyHeightM() { return pov.heightScale * NPC_SIZE.human.rig * NPC_UNIT; },
     bodyMassKg() { return humanMassKg(pov.sex, pov.look, this.bodyHeightM()); },
     fightMassKg() { return humanFightMassKg(pov.sex, pov.look, this.bodyHeightM()); },   // Ecosystem.fightHit
-    // health share x energy share, what the player's hits push with and their hold scales by (Ecosystem.applyHit)
+    // condition: health share x energy share
     condition() { return conditionShare(game.health, SURVIVOR_CONFIG.maxHealth, game.foodNeed, game.waterNeed); },
-    // the animal `tid` flees the player
+    // animal `tid` flees the player
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
-    // the animal `tid` hunts the player (night hunts: `prey` is night out of shelter)
+    // animal `tid` hunts the player at night
     isPreyFor(tid) { return this.alive && this.prey && (NIGHT_PREY_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
     takeHit(attacker, damage) {
       if (game.sheltered || game.dead) return;
@@ -905,7 +887,7 @@ export const game = {
     this.draw();
   },
 
-  // Health loss from any source; `cause` names it for the run summary. A hit flashes the screen edge.
+  // Health loss; `cause` names it for the run summary. A hit flashes the edge.
   hurt(amount, cause) {
     if (amount <= 0 || this.dead) return;
     this.health = Math.max(0, this.health - amount);
@@ -919,27 +901,27 @@ export const game = {
     this.health = Math.min(SURVIVOR_CONFIG.maxHealth, this.health + amount);
   },
 
-  // `food` units of food, with the water that comes with that much food (DIET_WATER_SHARE)
+  // food, with its water
   eat(food) {
     const N = SURVIVOR_CONFIG.needs;
     this.foodNeed = Math.max(0, this.foodNeed - food);
     this.waterNeed = Math.max(0, this.waterNeed - food * DIET_WATER_SHARE * N.waterPerS / N.foodPerS);
   },
 
-  // `water` units of water need removed
+  // water need removed
   drink(water) { this.waterNeed = Math.max(0, this.waterNeed - water); },
 
-  // A hit or a fall: each injury the player does not have yet sets in with chanceOf(its INJURIES entry).
+  // A hit or fall: each missing injury sets in with chanceOf(entry).
   rollInjuries(chanceOf) {
     const all = SURVIVOR_CONFIG.injuries;
     for (const id in all) if (!this.injuries.has(id) && Math.random() < chanceOf(all[id])) this.injuries.add(id);
     this.draw();
   },
 
-  // The injuries in `ids` mended.
+  // Mend `ids`.
   cure(ids) { for (const id of ids) this.injuries.delete(id); },
 
-  // Whether the player may sprint: no injury that stops running (Survivor mode only).
+  // May sprint: no running-stopping injury (Survivor only).
   canRun() {
     if (!this.on) return true;
     for (const id of this.injuries) if (SURVIVOR_CONFIG.injuries[id].noRun) return false;
@@ -948,13 +930,13 @@ export const game = {
 
   tally(kind) { this.run.eaten[kind] = (this.run.eaten[kind] || 0) + 1; },
 
-  // An inventory item of `kind`: its kind's food and water, unless `own` gives the item's own (a picked plant's).
+  // An item of `kind`; `own` overrides its food and water.
   makeItem(kind, own = null) {
     const def = SURVIVOR_CONFIG.inventory.items[kind];
     return { kind, food: def.food ?? 0, water: def.water ?? 0, cures: def.cures ?? [], ...own };
   },
 
-  // The craft slot's recipe: the first whose items the inventory holds, with the slots it would use up; or null.
+  // The first recipe the inventory holds, with its slots, or null.
   craftable() {
     for (const r of SURVIVOR_CONFIG.craft.recipes) {
       const slots = [];
@@ -968,7 +950,7 @@ export const game = {
     return null;
   },
 
-  // The craft slot pressed: its items used up, the made item in the first slot they freed.
+  // Craft: use the items, put the made one in the first freed slot.
   craft() {
     if (!this.on || this.dead) return;
     const c = this.craftable();
@@ -978,7 +960,7 @@ export const game = {
     this.draw();
   },
 
-  // A box's contents: one item kind drawn by its loot weight.
+  // A box's contents: one kind by loot weight.
   rollLoot() {
     const items = SURVIVOR_CONFIG.inventory.items;
     let total = 0;
@@ -988,33 +970,32 @@ export const game = {
       const w = items[k].loot ?? 0;
       if (w > 0 && (r -= w) < 0) return this.makeItem(k);
     }
-    return null;   // no loot weights: an empty box
+    return null;   // empty box
   },
 
-  // Landing at impactSpeed (m/s, downward): the drop height that speed implies, v^2 / 2g, so a teleport
-  // (which zeroes velocity) never counts as a fall.
+  // Landing at impactSpeed: drop height v^2 / 2g, so a teleport never counts as a fall.
   land(impactSpeed) {
     if (!this.on || !play.active || this.dead) return;
     const F = SURVIVOR_CONFIG.fall;
     const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
     if (dropHeight <= F.safeM) return;
     this.hurt((dropHeight - F.safeM) * F.damagePerM, 'fall');
-    // a hurting fall may injure: each injury's fallChanceAtSafe at the safe height, growing with the drop
+    // a hurting fall may injure, more with height
     if (!this.dead) this.rollInjuries(d => (d.fallChanceAtSafe ?? 0) * dropHeight / F.safeM);
   },
 
   update(dt) {
     const av = this.avatar;
-    av.alive = this.on && play.active && !this.dead;
-    if (!av.alive) { av.prey = false; return; }
-    const N = SURVIVOR_CONFIG.needs, R = SURVIVOR_CONFIG.reach;
-
+    // sheltered in both modes, since knockdowns reach the player in Observer
     const px = player.pos.x, pz = player.pos.z;
     const feet = this.placeAvatar();
     this.sheltered = player.inCar || cabinAt(px, feet, pz);
+    av.alive = this.on && play.active && !this.dead;
+    if (!av.alive) { av.prey = false; return; }
+    const N = SURVIVOR_CONFIG.needs, R = SURVIVOR_CONFIG.reach;
     av.prey = ecosystem.night && !this.sheltered;
 
-    // days survived run on the sky's own clock
+    // days survived on the sky's clock
     const hour = simSky.hour;
     if (this._lastHour !== null) this.run.hours += (hour - this._lastHour + 24) % 24;
     this._lastHour = hour;
@@ -1026,7 +1007,7 @@ export const game = {
     if (this.waterNeed >= 100) this.hurt(N.parchedPerS * dt, 'parched');
     if (this.dead) return;
 
-    // drinking, harvesting and collecting take the action button (pressField); contact only fights
+    // drink, harvest and collect use the action button; contact only fights
     if (!player.inCar) {
       this.touchAnimals(px, pz, R);
       if (this.dead) return;
@@ -1035,27 +1016,20 @@ export const game = {
     this.draw();
   },
 
-  // The avatar at the player's body centre (Survivor's contacts and the player's bumps read it); returns the feet's height.
+  // The avatar at the body centre; returns the feet's height.
   placeAvatar() {
     const feet = player.pos.y - EYE_HEIGHT;
     this.avatar.position.set(player.pos.x, feet + (EYE_HEIGHT + HEAD_CLEAR) / 2, player.pos.z);
     return feet;
   },
 
-  // BUMPING with the player, as between animals (Ecosystem.bump) and with the car (carHits): an animal whose collision
-  // circle overlaps the player's (at the player's height) is moved out to touching, unless that is inside a wall, and
-  // the player is not moved. Pushes go through Ecosystem.bumpForceN and applyHit (no damage; the player's side only
-  // while the avatar is alive, so in Survivor), and each body falls (a ragdoll) when its push beats its own hold.
-  // A person: one equal push on both bodies (Newton's third law), the pair's reduced mass (m_player x m_person /
-  // (m_player + m_person)) times their closing speed, so a light person falls alone, a similar one can take both
-  // down, and a heavy, strong one floors the player and stays up. Other animals: the player's momentum into it
-  // pushes it, and its momentum into the player pushes the player.
-  // The player's velocity is their move since the last call over dt; a jump past HUMAN_GAIT_JUMP (a teleport,
-  // the first call) counts as none.
+  // BUMPING with the player: an overlapping animal is moved out to touching; the player is not. Pushes go through
+  // applyHit (no damage) while the player is knockable. A person: one equal push on both (reduced mass x closing
+  // speed), so the lighter or weaker body falls first, or both. Other animals: each one's momentum into the other.
   bumpAnimals(px, pz, dt, R) {
     const av = this.avatar, now = ecosystem.time, playerKg = av.bodyMassKg();
     const mx = px - this._bumpX, mz = pz - this._bumpZ, moved = Math.hypot(mx, mz);
-    const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity this call: first call, teleport or no time
+    const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity: first call, teleport or no time
     const pvx = still ? 0 : mx / dt, pvz = still ? 0 : mz / dt;
     this._bumpX = px; this._bumpZ = pz;
     const touch = PLAYER_RADIUS + NPC_RADIUS;
@@ -1068,14 +1042,14 @@ export const game = {
       const dist = Math.sqrt(d2), nx = dist > 1e-6 ? dx / dist : Math.sin(d.heading), nz = dist > 1e-6 ? dz / dist : Math.cos(d.heading);
       const ox = ecosystem.fitX(px + nx * touch), oz = ecosystem.fitZ(pz + nz * touch);
       if (!occ.blockedAt(ox, oz)) { d.position.x = ox; d.position.z = oz; }
-      const playerClosing = pvx * nx + pvz * nz;   // m/s the player moves into the animal
+      const playerClosing = pvx * nx + pvz * nz;   // m/s into the animal
       const v = d.groundSpeed(now), animalClosing = -(Math.sin(d.heading) * v * nx + Math.cos(d.heading) * v * nz);   // m/s it moves into the player
       const animalKg = d.bodyMassKg();
       if (d.typeId === HUMAN_TYPE_ID) {
-        const pairKg = playerKg * animalKg / (playerKg + animalKg);   // the pair's reduced mass
-        const pairClosing = playerClosing + animalClosing;            // m/s the two close on each other
+        const pairKg = playerKg * animalKg / (playerKg + animalKg);   // reduced mass
+        const pairClosing = playerClosing + animalClosing;            // closing speed
         if (pairClosing <= 0) continue;
-        const pushN = Ecosystem.bumpForceN(pairKg, pairClosing);      // the same push on both bodies
+        const pushN = Ecosystem.bumpForceN(pairKg, pairClosing);      // same push on both
         ecosystem.applyHit(d, av, 0, pushN);
         if (d.alive) ecosystem.applyHit(av, d, 0, pushN);
         continue;
@@ -1085,7 +1059,7 @@ export const game = {
     }
   },
 
-  // Contact with animals: prey that cannot fight back is eaten on touch; one that hunts people trades fight hits.
+  // Contact: prey that cannot fight back is eaten on touch; people-hunters trade fight hits.
   touchAnimals(px, pz, R) {
     const av = this.avatar, now = ecosystem.time;
     const n = ecosystem.animalGrid.queryInto(this._q, px, pz, R.radius);
@@ -1099,12 +1073,12 @@ export const game = {
         av.feedOn(d);
         continue;
       }
-      if (av.nextAttackAt <= now && !av.isDown(now)) {   // a knocked-down player does not hit back
+      if (av.nextAttackAt <= now && !av.isDown(now)) {   // a downed player does not hit back
         av.strike(d);
         ecosystem.fightHit(av, d);
         av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
       }
-      if (d.alive && !d.isDown(now) && d.nextAttackAt <= now) {   // a knocked-down animal does not hit back
+      if (d.alive && !d.isDown(now) && d.nextAttackAt <= now) {   // a downed animal does not hit back
         d.strike(av);
         ecosystem.fightHit(d, av);
         d.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
@@ -1113,16 +1087,14 @@ export const game = {
     }
   },
 
-  // The attack button: the body punches in either mode. Only in Survivor (out of shelter) does it land: the nearest
-  // animal people hunt within punch reach ahead takes a hit, at most once per NPC_ATTACK_COOLDOWN_S (shared with
-  // touch fights). A fighter trades it like a touch fight; other prey takes a hunter's hit (a deer bucks and flees).
+  // Attack: punches in either mode; lands only in Survivor, on the nearest hunted animal ahead, once per cooldown.
   punch() {
     const av = this.avatar, now = ecosystem.time;
     av.strike();
     if (!av.alive || this.sheltered || av.nextAttackAt > now) return;
     const P = SURVIVOR_CONFIG.punch, R = SURVIVOR_CONFIG.reach;
     const px = player.pos.x, pz = player.pos.z;
-    const fx = -Math.sin(player.heading), fz = -Math.cos(player.heading);   // the body's facing (pov.apply)
+    const fx = -Math.sin(player.heading), fz = -Math.cos(player.heading);   // body facing
     const n = ecosystem.animalGrid.queryInto(this._q, px, pz, P.reachM);
     let target = null, best = P.reachM * P.reachM;
     for (let i = 0; i < n; i++) {
@@ -1140,8 +1112,7 @@ export const game = {
     else target.attacked(av);
   },
 
-  // FIELD ACTIONS: the action button's (pressField) choice, the first SURVIVOR_FIELD_ACTIONS entry with something in
-  // reach: { id, target } or null. Only on foot in Survivor mode, alive, not flying.
+  // FIELD ACTIONS: the first entry with a target in reach, or null.
   fieldAction() {
     if (!this.on || this.dead || !play.active || player.inCar || flying || !ecosystem.ready) return null;
     const px = player.pos.x, pz = player.pos.z, feet = player.pos.y - EYE_HEIGHT;
@@ -1152,8 +1123,7 @@ export const game = {
     return null;
   },
 
-  // The action button (or E) pressed: a press action acts on what fieldAction finds now; a hold action is held
-  // (fieldHeld) and runs each tick in update() while it stays the action in reach, until releaseField.
+  // Action pressed: press actions act now; hold actions tick while in reach.
   pressField() {
     const a = this.fieldAction();
     if (!a) return;
@@ -1166,13 +1136,13 @@ export const game = {
 
   releaseField() { this.fieldHeld = null; },
 
-  // A held action's tick: it runs while the held action is the one in reach (out of the water and back resumes).
+  // A held action's tick, while it is the one in reach.
   holdField(dt) {
     const a = this.fieldAction();
     if (a && a.id === this.fieldHeld) SURVIVOR_FIELD_ACTIONS[a.id].run(this, a.target, dt);
   },
 
-  // The nearest live plant in reach, or null.
+  // Nearest live plant in reach, or null.
   plantInReach(px, feet, pz) {
     const R = SURVIVOR_CONFIG.reach;
     const np = ecosystem.plantGrid.queryInto(this._qp, px, pz, R.radius);
@@ -1186,16 +1156,16 @@ export const game = {
     return best;
   },
 
-  // The cat within reach, as plants are.
+  // The cat in reach.
   catInReach(px, feet, pz) {
     const R = SURVIVOR_CONFIG.reach, c = cat.position;
     return Math.abs(c.y - feet) <= R.height && tools.distSq(px, pz, c.x, c.z) <= R.radius * R.radius;
   },
 
-  // Standing in water, or swimming: where the player can drink.
+  // In water or swimming: can drink.
   atWater(px, pz) { return (player.grounded || swimming) && isWaterAt(px, pz); },
 
-  // The whole plant goes into the first free slot, its food the bites it has left.
+  // The plant into the first free slot.
   harvest(p) {
     const free = this.inventory.indexOf(null);
     if (free < 0) return;
@@ -1207,7 +1177,7 @@ export const game = {
     this.inventory[free] = this.makeItem('plant', { food });
   },
 
-  // The box goes into the first free slot, closed (its contents are drawn when it is opened); the crate moves on.
+  // The box into the first free slot, closed; the crate moves.
   collect(crate) {
     const free = this.inventory.indexOf(null);
     if (free < 0) return;
@@ -1215,8 +1185,7 @@ export const game = {
     this.inventory[free] = this.makeItem('crate');
   },
 
-  // Use the item in slot i (key or tap) by its kind's action: a box opens into its contents in the same slot,
-  // food is eaten, water drunk.
+  // Use slot i's item: a box opens, food is eaten, water drunk.
   useSlot(i) {
     const item = this.inventory[i];
     if (!item || !this.on || this.dead) return;
@@ -1236,7 +1205,7 @@ export const game = {
     const row = (k, v) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; runStatsEl.append(dt, dd); };
     row('Days survived', (r.hours / 24).toFixed(1));
     for (const [kind, n] of eaten) {
-      const def = SURVIVOR_CONFIG.inventory.items[kind];   // none for kills (deer): eaten
+      const def = SURVIVOR_CONFIG.inventory.items[kind];   // none for kills
       row(`${def ? SURVIVOR_ACTIONS[def.action].past : 'Ate'} (${def?.label.toLowerCase() ?? kind})`, n);
     }
     if (!eaten.length) row('Ate', 'nothing');
@@ -1244,7 +1213,7 @@ export const game = {
     if (play.locked) document.exitPointerLock();
   },
 
-  // A soft red edge whose strength follows the hit, fading out.
+  // A red edge that follows the hit, fading.
   flash(amount) {
     const F = SURVIVOR_CONFIG.flash;
     if (amount < F.minDamage) return;
@@ -1268,12 +1237,11 @@ export const game = {
     }
     const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
     if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
-    // the player's body, read out as people's labels read theirs (no generation: the player has none): the top row
-    // after the day, then the body row (fat, muscle, type); a new body can keep the key, so the look is checked too
+    // the player's readout rows; the look is checked too
     const info = pov.infoKey();
     if (info >= 0 && (info !== this._shownInfo || pov.look !== this._shownLook)) {
       this._shownInfo = info; this._shownLook = pov.look;
-      // one span per field: each row spaces them evenly (#needTop, #needBody)
+      // one span per field
       const spans = fields => fields.map(f => {
         const s = document.createElement('span');
         s.textContent = f;
@@ -1291,9 +1259,9 @@ export const game = {
         el.disabled = !item;
         el.setAttribute('aria-label', item ? `${SURVIVOR_ACTIONS[item.action].verb} ${item.label.toLowerCase()}` : 'Empty slot');
       });
-      // any inventory change (craft, use, pick up) can free or fill the slot Harvest and Collect need
+      // inventory changes can free or fill a needed slot
       updateCarButton();
-      // the craft slot shows what the carried items make
+      // the craft slot shows what the items make
       const c = this.craftable(), made = c && SURVIVOR_CONFIG.inventory.items[c.recipe.makes];
       craftEl.querySelector('span').textContent = made ? made.icon : '';
       craftEl.disabled = !made;
@@ -1309,16 +1277,16 @@ export const game = {
     }
   },
 
-  // the needs panel, and the run summary after a death, show while Survivor mode is in play
+  // needs panel and run summary show in Survivor play
   showPanel(inPlay = play.active) {
     needsEl.classList.toggle('on', inPlay && this.on);
     runOverEl.classList.toggle('on', inPlay && this.on && this.dead);
   }
 };
 
-// BIND INVENTORY: inventory slot keys and taps, the craft slot (game.useSlot, game.craft); main calls it in the original listener order.
+// BIND INVENTORY: slot keys and taps, the craft slot.
 export function bindInventory() {
-  // inventory: a slot's key or a tap uses its item (game.useSlot); the craft slot's crafts (game.craft)
+  // a slot's key or tap uses its item; the craft slot crafts
   addEventListener('keydown', e => {
     if (e.repeat || !play.active) return;
     const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
@@ -1335,22 +1303,22 @@ export function bindInventory() {
 export const player = {
   pos: new THREE.Vector3(0, EYE_HEIGHT, 0),
   vel: new THREE.Vector3(),
-  yaw: 0,            // the view (camera) direction; look input writes it
+  yaw: 0,            // view direction
   pitch: 0,
-  heading: 0,        // the body's facing on foot: it turns toward the direction of movement
+  heading: 0,        // body facing on foot, turning toward the move
   grounded: true,
-  running: false,    // on foot, moving, sprinting this frame (Survivor mode needs read it)
-  inCar: false       // driving; the cat's own is cat.inCar (he may still be boarding, or left behind)
+  running: false,    // sprinting this frame
+  inCar: false       // driving; the cat's is cat.inCar
 };
 export const keys = new Set();
-// In play: the panel closed and input accepted (active), and the pointer locked to the canvas (locked); main sets both.
+// In play: input accepted (active), pointer locked (locked); main sets both.
 export const play = {
   active: false,
   locked: false
 };
-// Last pointer type, so a tap-started load does not grab pointer lock.
+// Last pointer type, so a tap load skips pointer lock.
 export let lastPointerType = 'mouse';
-// BIND KEYS: pointer type, held keys; main calls it in the original listener order.
+// BIND KEYS: pointer type and held keys.
 export function bindKeys() {
   addEventListener('pointerdown', e => { lastPointerType = e.pointerType; }, true);
   addEventListener('keydown', e => {
@@ -1361,7 +1329,7 @@ export function bindKeys() {
   addEventListener('keyup', e => { keys.delete(e.code); wake(); });
 }
 
-// BIND MOUSELOOK: mouse look while the pointer is locked; main calls it in the original listener order.
+// BIND MOUSELOOK: look while the pointer is locked.
 export function bindMouseLook() {
   addEventListener('mousemove', e => {
     if (!play.locked) return;
@@ -1376,17 +1344,15 @@ export const touchMove = { x: 0, z: 0 };
 export let stickId = null, stickCx = 0, stickCy = 0;
 export let lookId = null, lookX = 0, lookY = 0;
 export let jumpQueued = false;
-// double tap on the stick toggles crouch (stance); crouchY eases the eye toward it
+// double tap toggles crouch
 export let lastStickTapAt = 0, crouchY = 0;
 
-// STANCE: crouch and sprint exclude each other and the latest input wins. Sprint is a hold (Shift, the sprint
-// pedal), crouch a toggle. Pressing sprint stands up; crouching stops a held sprint until it is pressed again.
-// A squat (squat(seconds), e.g. picking something up) holds the body low for that long, then it stands again.
-// `low` is the one rule for the crouched pose and speed: crouched or squatting.
+// STANCE: crouch and sprint exclude each other, latest wins. squat(seconds) holds the body low. `low`: crouched or
+// squatting.
 export const stance = {
   crouched: false,
-  squatLeft: 0,           // seconds of squat left
-  sprintBlocked: false,   // crouched while sprint was held: that hold no longer runs
+  squatLeft: 0,           // squat seconds left
+  sprintBlocked: false,   // crouched while sprint was held
   _sprintWas: false,
 
   get squatting() { return this.squatLeft > 0; },
@@ -1397,11 +1363,11 @@ export const stance = {
     if (this.crouched) this.sprintBlocked = true;
   },
   stand() { this.crouched = false; this.squatLeft = 0; },
-  squat(seconds) { this.squatLeft = Math.max(this.squatLeft, seconds); wake(); },   // a longer squat under way stands
+  squat(seconds) { this.squatLeft = Math.max(this.squatLeft, seconds); wake(); },   // a longer squat stands
   unsquat() { this.squatLeft = 0; },
   tick(dt) { this.squatLeft = Math.max(0, this.squatLeft - dt); },
 
-  // this frame's sprint input -> whether the player runs
+  // sprint input to running
   sprinting(held) {
     if (held && !this._sprintWas) { this.crouched = false; this.sprintBlocked = false; }
     if (!held) this.sprintBlocked = false;
@@ -1409,15 +1375,14 @@ export const stance = {
     return held && !this.sprintBlocked;
   }
 };
-// knob offset is written once per frame, not per pointermove
-// The touch stick's knob offset (px) and whether frame still has to draw it.
+// knob offset (px), drawn once per frame
 export const touchKnob = {
   dx: 0,
   dy: 0,
   dirty: false
 };
 
-// BIND TOUCH: touch stick and look, tap buttons, climb and fly; main calls it in the original listener order.
+// BIND TOUCH: stick, look, tap buttons, climb and fly.
 export function bindTouch() {
   {
     const el = renderer.domElement;
@@ -1494,7 +1459,7 @@ export function bindTouch() {
       if (!t) return;
       taps.delete(e.pointerId);
       if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_SLOP || t.btn.disabled) return;
-      // only a tap that ends on the button counts
+      // only a tap ending on the button counts
       const under = document.elementFromPoint(e.clientX, e.clientY);
       if (!under || !t.btn.contains(under)) return;
       swallowBtn = null;
@@ -1511,7 +1476,7 @@ export function bindTouch() {
       }
     }, true);
 
-    // no long-press haptics or menus while playing; touchstart is cancelled only where a touch never needs to scroll
+    // no long-press haptics while playing; cancelled only where touch never scrolls
     addEventListener('contextmenu', e => { if (play.active) e.preventDefault(); });
     addEventListener('touchstart', e => {
       if (!play.active || !(e.target instanceof Element)) return;
@@ -1558,7 +1523,7 @@ export function toggleFly() {
   climb = 0;
   upEl.classList.remove('held');
   downEl.classList.remove('held');
-  // drop focus, or the next space press re-clicks the button
+  // drop focus so space does not re-click
   flyEl.blur();
   player.vel.y = 0;
   player.grounded = false;
@@ -1572,19 +1537,17 @@ export const car = {
   reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; },   // teardownWorld's entry
   placed: false,
   x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
-  speed: 0,        // m/s along the heading, negative in reverse
-  steer: 0,        // front-wheel angle, rad, positive = left
+  speed: 0,        // m/s, negative in reverse
+  steer: 0,        // front wheel angle, rad, + left
   spin: 0,
   mesh: null, front: [], wheels: []
 };
 
-// CHASE CAMERA: the car's and the walking player's view. Look input (player.yaw / pitch, written by mouse and touch)
-// is tracked here; CAM_LOOK_HOLD after the last look, while moving, the view swings back behind the heading.
-// The car uses step (tight follow plus a look offset); on foot, drift (the view stays free, swinging back slowly).
+// CHASE CAMERA: moving swings the view behind the heading CAM_LOOK_HOLD after the last look. Car: step; on foot: drift.
 export const chaseCam = {
   camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false,
 
-  // behind `heading`, no look offset
+  // behind `heading`
   reset(heading) {
     this.camYaw = heading;
     this.lookYaw = this.lookPitch = this.lookAt = 0;
@@ -1592,8 +1555,7 @@ export const chaseCam = {
     this.settling = false;
   },
 
-  // Follow `heading`; the view's pitch is basePitch plus the look offset, kept within [minPitch, maxPitch].
-  // Writes the result to player.yaw / pitch.
+  // Follow `heading`, pitch within [minPitch, maxPitch]; writes player.yaw and pitch.
   step(dt, heading, moving, basePitch, minPitch, maxPitch) {
     const dYaw = player.yaw - this.shownYaw, dPitch = player.pitch - this.shownPitch;
     const now = performance.now();
@@ -1616,8 +1578,7 @@ export const chaseCam = {
     this.settling = Math.abs(dy) > 1e-4 || this.lookYaw !== 0 || this.lookPitch !== 0;
   },
 
-  // On foot: the view is player.yaw itself; while moving, CAM_LOOK_HOLD after the last look, it swings toward
-  // `heading` at `rate` (1/s). Pitch is left to the look input.
+  // On foot: swing player.yaw toward `heading` at `rate` while moving.
   drift(dt, heading, moving, rate) {
     const now = performance.now();
     if (player.yaw !== this.shownYaw || player.pitch !== this.shownPitch) this.lookAt = now;
@@ -1631,19 +1592,19 @@ export const chaseCam = {
   }
 };
 
-// Face the player (body and view) along `yaw`, the camera straight behind: spawns and leaving the car.
+// Face body and view along `yaw`.
 export function facePlayer(yaw, pitch) {
   player.yaw = player.heading = yaw;
   player.pitch = pitch;
   chaseCam.reset(yaw);
 }
 
-// Mesh: body, glasshouse, roof, lamps, four wheels (front two on steer pivots).
+// Mesh: body, glasshouse, roof, lamps, wheels (front on pivots).
 {
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
   const paint = mat(0x9c2f2a), glass = mat(0x28313b), trim = mat(0x1d1f22);
   const tyre = mat(0x151617), head = mat(0xf2ecd8), tail = mat(0xb3261e);
-  // built at full size inside a group scaled by CAR_SCALE
+  // built full size, scaled by CAR_SCALE
   const LEN = CAR_LEN / CAR_SCALE, WID = CAR_WID / CAR_SCALE, WB = CAR_WHEELBASE / CAR_SCALE;
   const TRACK = CAR_TRACK / CAR_SCALE, WR = CAR_WHEEL_R / CAR_SCALE;
   const root = new THREE.Group();
@@ -1656,13 +1617,13 @@ export function facePlayer(yaw, pitch) {
     g.add(b);
     return b;
   };
-  // Lower body: narrow core plus side panels with arches cut over the wheels, dark liners behind each arch.
+  // Lower body: core plus arched side panels and liners.
   {
     const yb = 0.31, yt = 0.93, L = LEN / 2, R = WR + 0.09;
     const arches = [-WB / 2, WB / 2];
-    const core = 0.46;                 // core half-width: clear of the wheels at full lock
+    const core = 0.46;                 // core half-width, clear at full lock
     const side = WID / 2 - core;   // side panel thickness
-    // profile in (z, y): bottom edge left to right with the arches, then up and back across the top
+    // profile in (z, y)
     const prof = new THREE.Shape();
     prof.moveTo(-L, yb);
     for (const c of arches) {
@@ -1676,7 +1637,7 @@ export function facePlayer(yaw, pitch) {
     prof.lineTo(-L, yt);
     prof.closePath();
     const panelGeo = new THREE.ExtrudeGeometry(prof, { depth: side, bevelEnabled: false, curveSegments: 12 });
-    panelGeo.rotateY(Math.PI / 2);     // profile z -> car z (mirrored, symmetric), extrusion -> car +x
+    panelGeo.rotateY(Math.PI / 2);     // profile z to car z; extrusion to +x
     for (const sx of [-1, 1]) {
       const m = new THREE.Mesh(panelGeo, paint);
       m.position.x = sx > 0 ? core : -WID / 2;
@@ -1726,7 +1687,7 @@ export function facePlayer(yaw, pitch) {
   car.mesh = root;
 }
 
-// Ground under the axles and sides sets height, pitch and roll.
+// Ground under axles and sides sets height, pitch, roll.
 export function settleCar() {
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
   const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
@@ -1759,7 +1720,7 @@ export function carFits(x, z, yaw, margin = 0.2) {
   return true;
 }
 
-// Parked on the right side of the nearest street, aligned with it, off the player.
+// Parked on the right of the nearest street, off the player.
 export function placeCar(roads, x, z) {
   const cands = [];
   for (const r of roads || []) {
@@ -1785,7 +1746,7 @@ export function placeCar(roads, x, z) {
   cands.sort((a, b) => a.d - b.d);
   let spot = cands.find(c => carFits(c.px, c.pz, c.yaw));
   if (!spot) {
-    // no street fits: nearest open ground, facing the player's way
+    // no street: nearest open ground
     for (let d = 5; d <= 80 && !spot; d += 1) {
       for (let i = 0; i < 24; i++) {
         const a = i / 24 * 2 * Math.PI, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
@@ -1809,12 +1770,12 @@ export function setCar(spot) {
 export function parkBesideCabin(c, yaw) {
   const s = CABIN_SCALE * CABIN_M;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-  const halfDoor = 9 * s;   // Cabin DOOR_WIDTH / 2, rig units -> metres
-  const floorFront = 34 * s;   // Cabin floor slab's front edge (CD / 2 + 4)
+  const halfDoor = 9 * s;   // Cabin DOOR_WIDTH / 2 in metres
+  const floorFront = 34 * s;   // cabin floor's front edge
   const carBack = -CAR_CIRCLES[0] + CAR_R;   // car centre to its rear
   const ahead = floorFront + CABIN_CAR_GAP + carBack;
   const side = halfDoor + CABIN_CAR_WALKWAY + CAR_WID / 2;
-  // only ever step further out or further aside, never toward the doorway's lane
+  // only step out or aside, never into the doorway's lane
   for (let df = 0; df <= 6; df += 0.5) {
     for (let ds = 0; ds <= 3; ds += 0.5) {
       for (const sign of [1, -1]) {
@@ -1829,7 +1790,7 @@ export function parkBesideCabin(c, yaw) {
 
 export const _carPos = new THREE.Vector3();
 
-// Move by (dx, dz), push each circle out of walls, carry the push to the centre; returns it or null.
+// Move by (dx, dz), push circles out of walls; returns the push or null.
 export const _push = { x: 0, z: 0 };
 export function moveCar(dx, dz) {
   car.x += dx; car.z += dz;
@@ -1853,18 +1814,15 @@ export function moveCar(dx, dz) {
   return any ? _push : null;
 }
 
-// The car's mass in kg: its curb mass, plus the player's body when they are in it (its drag and CAR HITS use it).
+// Car mass in kg: curb mass, plus the player when in it.
 export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
-// CAR HITS, one sim tick (in ecosystem.afterContacts while the collision mode has hits, 9-main applyCollision): an animal
-// whose collision circle overlaps one of the car's circles (CAR_CIRCLES, CAR_R) at the car's height is moved out to
-// touching, unless that is inside a wall, and while the car closes on it the car's momentum (carMassKg x closing speed,
-// Ecosystem.bumpForceN, as a bump) pushes it against its hold (Ecosystem.applyHit, no damage). The car itself is not
-// slowed. Each animal is pushed by at most one circle per tick, the first it touches.
-const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker: only its position is read
+// CAR HITS, one sim tick: an overlapping animal is moved out to touching, and the car's momentum pushes it against its
+// hold. The car is not slowed.
+const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker (position only)
 export function carHits() {
   if (!car.placed || !ecosystem.ready) return;
-  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // the car's heading (moveCar)
+  const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // heading
   const vx = fx * car.speed, vz = fz * car.speed;            // its velocity, m/s
   const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
   const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
@@ -1875,31 +1833,29 @@ export function carHits() {
     const a = _carQ[i];
     if (!a.alive) continue;
     const feet = a.position.y - a.footLift() * NPC_UNIT;
-    if (feet < car.y - CAR_STEP_UP || feet > car.y + CAR_TOP) continue;   // above or below the car (another floor, a roof)
+    if (feet < car.y - CAR_STEP_UP || feet > car.y + CAR_TOP) continue;   // another floor or a roof
     for (const o of CAR_CIRCLES) {
       const cx = car.x + fx * o, cz = car.z + fz * o;
       const dx = a.position.x - cx, dz = a.position.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= touch * touch) continue;
-      const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the car's side
+      const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the side
       const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
       if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
-      const closing = vx * nx + vz * nz;   // m/s the car moves into the animal
+      const closing = vx * nx + vz * nz;   // m/s into the animal
       if (closing > 0) ecosystem.applyHit(a, _carHitter, 0, Ecosystem.bumpForceN(massKg, closing));
       break;
     }
   }
 }
 
-// PLAYER BUMPS, one sim tick (in ecosystem.afterContacts while the collision mode has hits, 9-main applyCollision): the
-// player on foot and in play bumps animals in either mode (game.bumpAnimals). In the car (carHits bumps for it),
-// flying (the player flies through them) or out of play, nothing, and the next bump starts with no velocity.
+// PLAYER BUMPS, one sim tick, on foot and in play in either mode.
 export function playerBumps(dt) {
   if (!play.active || player.inCar || flying || !ecosystem.ready) { game._bumpX = game._bumpZ = NaN; return; }
   game.placeAvatar();
   game.bumpAnimals(player.pos.x, player.pos.z, dt, SURVIVOR_CONFIG.reach);
 }
 
-// One physics step. throttle, steer in [-1, 1] (steer > 0 = left).
+// One physics step; throttle, steer in [-1, 1], + left.
 export function carPhysics(dt, throttle, steer, handbrake) {
   if (dt <= 0) return;
   const v = car.speed;
@@ -1922,14 +1878,14 @@ export function carPhysics(dt, throttle, steer, handbrake) {
   const slope = -CAR_G * Math.sin(car.pitch);
 
   let nv = v + (a + slope) * dt;
-  // resistance opposes motion but never reverses it, so a stopped car stays stopped on gentle slopes
+  // resistance never reverses motion, so a stopped car stays on gentle slopes
   const r = resist * dt;
   if (nv > 0) nv = Math.max(0, nv - r);
   else if (nv < 0) nv = Math.min(0, nv + r);
   if (nv < -CAR_REV_MAX) nv = -CAR_REV_MAX;
   car.speed = nv;
 
-  // yaw from the bicycle model, capped where the tyres would slide
+  // bicycle-model yaw, capped at tyre slide
   let yawRate = car.speed * Math.tan(car.steer) / CAR_WHEELBASE;
   const s = Math.abs(car.speed);
   if (s > 0.5) {
@@ -1949,7 +1905,7 @@ export function carPhysics(dt, throttle, steer, handbrake) {
         const nx = hit.x / len, nz = hit.z / len;
         const dot = fx * nx + fz * nz;
         if (car.speed * dot < 0) car.speed *= 1 - dot * dot;
-        // a glancing hit turns the body along the wall instead of pinning it
+        // a glancing hit turns along the wall
         if (Math.abs(dot) < CAR_GLANCE) {
           let tx = -nz, tz = nx;
           if (tx * fx + tz * fz < 0) { tx = -tx; tz = -tz; }
@@ -1994,7 +1950,7 @@ export function pushPlayerFromCar() {
   return pushed;
 }
 
-// Touch pedals, held like the fly buttons; brake reverses once stopped, like S.
+// Touch pedals; brake reverses once stopped.
 export const gasEl = document.getElementById('gas');
 export const brakeEl = document.getElementById('brake');
 export const sprintEl = document.getElementById('sprint');
@@ -2019,25 +1975,25 @@ export function holdPedal(btn, name) {
   btn.addEventListener('pointercancel', release);
   btn.addEventListener('lostpointercapture', release);
 }
-// BIND CAR: pedals, jump and attack taps, the car and action buttons, E; main calls it in the original listener order.
+// BIND CAR: pedals, jump and attack taps, car and action buttons, E.
 export function bindCar() {
   holdPedal(gasEl, 'gas');
   holdPedal(brakeEl, 'brake');
   holdPedal(sprintEl, 'sprint');
   holdPedal(jumpEl, 'jump');
   holdPedal(attackEl, 'attack');
-  // a tap shorter than a frame still jumps (or punches); holding attack keeps punching (playerStep)
+  // a short tap still jumps or punches; holding attack keeps punching
   jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
   attackEl.addEventListener('pointerdown', () => { attackQueued = true; });
   carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
-  // The action button acts on its own pointer, like the pedals: a press acts at once, a hold (Drink) lasts until release.
+  // The action button on its own pointer: press acts, hold lasts until release.
   useEl.addEventListener('pointerdown', e => {
-    useEl.setPointerCapture(e.pointerId);   // before the action, which may hide the button (a full inventory)
+    useEl.setPointerCapture(e.pointerId);   // before the action, which may hide the button
     game.pressField();
     updateCarButton();
   });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) useEl.addEventListener(ev, () => game.releaseField());
-  // E is the slot's key: the car when the car button shows, else the action button's action (held while E is down)
+  // E: the car when its button shows, else the action
   addEventListener('keydown', e => {
     if (e.code !== 'KeyE' || e.repeat || !play.active) return;
     if (carBtnState !== '') toggleCar();
@@ -2048,7 +2004,7 @@ export function bindCar() {
 }
 export let attackQueued = false;
 
-// Touch sprint, jump and attack, shown on foot (sprint in the gas pedal's slot), hidden while flying.
+// Touch sprint, jump and attack on foot, hidden while flying.
 export let footTouch = false, sprintShown = false;
 export function updateSprintButton() {
   const foot = play.active && !player.inCar && touchUi();
@@ -2066,8 +2022,7 @@ export function updateSprintButton() {
   if (!show) pedal.sprint = pedal.jump = pedal.attack = attackQueued = false;
 }
 
-// Fly button: Observer mode on foot, unless the car is in reach; then the car button takes its slot.
-// (carNear() is false while flying, so a flyer always keeps the button to land with.)
+// Fly button: Observer on foot, unless the car takes its slot.
 export let flyShown = false;
 export function updateFlyButton(carState) {
   const show = play.active && !game.on && carState === '';
@@ -2076,7 +2031,7 @@ export function updateFlyButton(carState) {
   flyEl.classList.toggle('on', show);
 }
 
-// Action button: Survivor mode on foot, the field action in reach (game.fieldAction), unless the car button has the slot.
+// Action button: Survivor on foot, unless the car takes its slot.
 export let useShown = '';
 export function updateUseButton(carState) {
   const a = carState === '' ? game.fieldAction() : null;
@@ -2105,7 +2060,7 @@ export function updateCarButton() {
   if (!pedals) pedal.gas = pedal.brake = false;
 }
 
-// The player in or out of the car: no body shadow while in it (the body is hidden there too).
+// In or out of the car: no body shadow inside.
 export function setPlayerInCar(on) {
   player.inCar = on;
   if (pov.body) pov.body.castShadow = !on;
@@ -2170,7 +2125,7 @@ export function driveStep(dt) {
   chaseCam.step(dt, car.yaw, Math.abs(car.speed) > 1, CAM_PITCH, -1.1, 0.5);
   const yaw = player.yaw, pitch = player.pitch;
 
-  // boom from the pivot back along the view, shortened before any wall or building
+  // boom shortened before walls
   const px = car.x, py = car.y + CAM_PIVOT, pz = car.z;
   const bx = Math.sin(yaw) * Math.cos(pitch), by = -Math.sin(pitch), bz = Math.cos(yaw) * Math.cos(pitch);
   let boom = CAM_DIST;
@@ -2197,10 +2152,10 @@ export let swimming = false;
 export function playerStep(dt) {
   petting.update(dt);
   if (player.inCar) { player.running = false; swimming = false; pov.hideBody(); driveStep(dt); updateCarButton(); vr.placeRig(); return; }
-  // an empty car still rolling (left at speed) brakes to a stop
+  // an empty rolling car brakes to a stop
   if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
-  // knocked down (KNOCKDOWNS): the player lies still, with no moving, turning, jumping or punching until the hold ends
+  // knocked down: no moving, turning, jumping or punching until the hold ends
   const knockedDown = game.avatar.isDown(ecosystem.time);
   let mx = 0, mz = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
@@ -2210,29 +2165,28 @@ export function playerStep(dt) {
   if (stickId !== null) { mx += touchMove.x; mz += touchMove.z; }
   if (renderer.xr.isPresenting) { mx += vr.moveX; mz -= vr.moveY; }
 
-  // moves are relative to the view; the body turns to face them (below)
+  // moves relative to the view
   fwd.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
 
-  // deep water under the eye: swim
+  // deep water: swim
   if (providers.active) providers.active.surface(player.pos.x, player.pos.z, _surf);
   else { _surf.base = 0; _surf.dip = 0; }
   const waterTop = _surf.base, waterDip = _surf.dip;
   swimming = !!providers.active && !flying && -waterDip > SWIM_DEPTH && player.pos.y - EYE_HEIGHT < waterTop;
 
   const shiftHeld = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  // while flying, shift means down rather than run
+  // flying: shift means down
   const sprint = stance.sprinting(play.active && !flying && !swimming && game.canRun() && (shiftHeld || pedal.sprint));
-  // on foot (swim, crouch, run, walk) the body's pace from its composition scales the speed, as people's moveSpeed
-  // does; 1 before the first body. Flying is not the body's, so it keeps FLY_SPEED.
+  // on foot, the body's pace scales the speed; flying keeps FLY_SPEED
   const pace = pov.look ? pov.look.pace : 1;
-  const jumpSpeed = bodyJumpSpeed(JUMP_SPEED, pace);   // takeoff of a jump or a swimming kick, by the same pace
+  const jumpSpeed = bodyJumpSpeed(JUMP_SPEED, pace);   // jump or swim kick takeoff, by pace
   const footSpeed = swimming ? WALK_SPEED * SWIM_SPEED :
     stance.low ? CROUCH_SPEED :
       sprint ? RUN_SPEED : WALK_SPEED;
   const speed = flying ? FLY_SPEED : footSpeed * pace;
   const len = Math.hypot(mx, mz);
-  // running: on foot at the sprint speed (sprint already excludes flying and swimming)
+  // running: on foot at sprint speed
   player.running = sprint && !stance.low && len > 0 && play.active;
   let dx = 0, dz = 0, dy = 0;
   if (len > 0 && play.active && !knockedDown) {
@@ -2248,9 +2202,7 @@ export function playerStep(dt) {
     }
   }
 
-  // 3rd person, GTA-style: the body turns toward the move, and the view drifts back behind it.
-  // 1st person and VR: the eyes are the view, so the body faces it.
-  // Knocked down, the body keeps the facing it fell with (in 3rd person the move is already zero).
+  // 3rd person: the body turns toward the move. 1st person and VR: it faces the view.
   if (pov.mode !== '3rd' || renderer.xr.isPresenting) { if (!knockedDown) player.heading = player.yaw; }
   else {
     if (dx !== 0 || dz !== 0) {
@@ -2262,12 +2214,12 @@ export function playerStep(dt) {
     chaseCam.drift(dt, player.heading, len > 0 && play.active && !swimming, FOOT_CAM_FOLLOW);
   }
 
-  // the attack button: a tap punches once, a hold keeps punching (game.punch paces the hits)
+  // attack: tap punches once, hold keeps punching
   if (play.active && !flying && !knockedDown && (attackQueued || pedal.attack)) game.punch();
   attackQueued = false;
 
   if (flying) {
-    // no collision while flying; it resumes on landing
+    // no collision while flying
     jumpQueued = false;
     player.pos.x += dx;
     player.pos.z += dz;
@@ -2278,7 +2230,7 @@ export function playerStep(dt) {
     player.pos.y += vy * speed * dt;
     player.pos.y = Math.max(player.pos.y, groundAt(player.pos.x, player.pos.z) + EYE_HEIGHT);
   } else if (swimming) {
-    // walls still stop a swimmer; drag, the float cap and the bed bound the vertical
+    // walls stop a swimmer; drag, float cap and bed bound the vertical
     moveAndCollide(player.pos, dx, dz, STEP_UP);
     player.vel.y *= Math.max(0, 1 - SWIM_DRAG * dt);
     if (play.active && !knockedDown && (keys.has('Space') || jumpQueued || pedal.jump)) player.vel.y = jumpSpeed * SWIM_JUMP;
@@ -2290,7 +2242,7 @@ export function playerStep(dt) {
     if (player.pos.y < bed) { player.pos.y = bed; player.vel.y = 0; }
     player.grounded = false;
   } else {
-    // horizontal first, so the roof lookup runs from a wall-clear position
+    // horizontal first, so the roof lookup starts wall-clear
     const wasGrounded = player.grounded;
     moveAndCollide(player.pos, dx, dz, wasGrounded ? STEP_UP : 0);
     if (pushPlayerFromCar()) moveAndCollide(player.pos, 0, 0, wasGrounded ? STEP_UP : 0);
@@ -2305,14 +2257,14 @@ export function playerStep(dt) {
     const fromFeet = player.pos.y - EYE_HEIGHT;
     player.pos.y += player.vel.y * dt;
     if (player.vel.y > 0) {
-      // indoors, a jump stops at the ceiling instead of reaching the roof
+      // indoors, a jump stops at the ceiling
       const c = ceilingAt(player.pos.x, player.pos.z,
         fromFeet + EYE_HEIGHT + HEAD_CLEAR, player.pos.y + HEAD_CLEAR);
       if (c < Infinity) { player.pos.y = c - HEAD_CLEAR; player.vel.y = 0; }
     }
     const toFeet = player.pos.y - EYE_HEIGHT;
 
-    // re-decided each frame, so walking off a roof edge falls with no mid-air jump
+    // re-decided each frame, so walking off an edge falls
     player.grounded = false;
     if (player.vel.y <= 0) {
       const walk = wasGrounded;
@@ -2326,7 +2278,7 @@ export function playerStep(dt) {
       }
     }
   }
-  // every world stops the player at its edge (out in the sea)
+  // the world's edge stops the player
   if (ecosystem.ready) { player.pos.x = ecosystem.fitX(player.pos.x); player.pos.z = ecosystem.fitZ(player.pos.z); }
 
   stance.tick(dt);
@@ -2349,10 +2301,10 @@ export function movementHeld() {
     (flying && (keys.has('ShiftLeft') || keys.has('ShiftRight')));
 }
 
-// RENDER INPUTS: what 8a-render reads from this file, wired last so every name here is initialised.
+// RENDER INPUTS: what 8a-render reads, wired last.
 renderInputs.player = player;
 renderInputs.casters = () => [cat.mesh, pov.body];
 renderInputs.survivor = () => game.on;
 renderInputs.pointerTaken = id => id === stickId || id === lookId;
 renderInputs.locked = () => play.locked;
-renderInputs.car = car;   // ragdolls stay out of its box (AnimalRenderer.carBox)
+renderInputs.car = car;   // ragdolls stay out of its box
