@@ -1562,12 +1562,13 @@ export class Ecosystem {
   static bumpForceN(massKg, closingMS) { return massKg * closingMS / NPC_BUMP_CONTACT_S; }
 
   // KNOCKDOWNS: every hit and bump comes here. Damage first, then pushN against the hold (0 when not braced()). Past it
-  // the body falls the way it was pushed, longer the further past.
+  // the body falls, away from the push if braced, over toward it if airborne, longer the further past.
   applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
     if (damage > 0) target.takeHit(attacker, damage);
     if (!target.knockable()) return;   // dead, or the player out of play or sheltered
     const bracedHoldN = Ecosystem.holdForceN(target);        // hold with feet planted
-    const holdN = target.braced() ? bracedHoldN : 0;          // off its feet: no hold
+    const braced = target.braced();   // true: feet planted, it holds and falls away; false: airborne, no hold, legs swept
+    const holdN = braced ? bracedHoldN : 0;
     if (!(pushN > holdN)) return;
     const now = this.time;
     // down time scales with the push past the braced hold
@@ -1575,8 +1576,11 @@ export class Ecosystem {
     const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * excess);
     if (!target.isDown(now)) {
       target.downAt = now;
-      const dx = target.position.x - attacker.position.x, dz = target.position.z - attacker.position.z;
-      target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + Math.PI;
+      // braced, it topples away from the attacker (backward when facing it); airborne, the push takes its legs, so the
+      // upper body pitches over toward the attacker (head first when facing it)
+      const away = braced ? 1 : -1;
+      const dx = (target.position.x - attacker.position.x) * away, dz = (target.position.z - attacker.position.z) * away;
+      target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + (braced ? Math.PI : 0);
       // push past the hold as launch speed
       target.downDV = (pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
     }

@@ -545,9 +545,11 @@ export const pov = {
     humanFightAct(game.avatar, ecosystem.time, act.array, 0);
     act.array[3] = petting.act();
     act.needsUpdate = true;
-    // knocked down: ragdoll or lying pose (AnimalRenderer.bodyDown)
+    // knocked down: ragdoll or lying pose (AnimalRenderer.bodyDown). Its ground is the feet while braced (standing or
+    // swimming); airborne, the surface under the body (supportAt from the feet down), so a mid-jump fall reaches the floor.
+    const downGround = game.avatar.braced() ? feet : supportAt(player.pos.x, player.pos.z, feet, -Infinity);
     const down = b.geometry.attributes.iDown;
-    animalRenderer.bodyDown(game.avatar, ecosystem.time, kp, b.position.x, b.position.y, b.position.z, b.rotation.y, feet, down.array);
+    animalRenderer.bodyDown(game.avatar, ecosystem.time, kp, b.position.x, b.position.y, b.position.z, b.rotation.y, downGround, down.array);
     down.needsUpdate = true;
 
     const pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 6, player.pitch));
