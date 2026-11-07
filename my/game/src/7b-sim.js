@@ -1054,6 +1054,8 @@ export class Animal extends Entity {
   groundSpeed(now) { return this.moving && now >= this.heldUntil() ? this.stepLength() / NPC_TICK_S : 0; }
   // KNOCKDOWNS: can a push knock it down now (Ecosystem.applyHit)? Every animal; the player's avatar has its own rule
   knockable() { return true; }
+  // KNOCKDOWNS: is it on its feet, bracing with its hold (Ecosystem.applyHit)? Every animal; the player's avatar has its own rule
+  braced() { return true; }
 
   // Mass in kg: people by humanMassKg (the readout's), animals by their reference mass x height ratio^3.
   bodyMassKg() {
@@ -1604,16 +1606,19 @@ export class Ecosystem {
   // KNOCKDOWNS: every hit goes through here (fightHit, Animal.attacked, the player's punch and touch fights, bumps), the
   // same rule for every attacker and every animal. Damage first (takeHit; a bump deals none and skips it); a target
   // still alive is then pushed with pushN newtons (a hit's: Ecosystem.hitForceN; a bump's: its momentum, see bump)
-  // against what it can hold (Ecosystem.holdForceN). A push past the hold knocks it
+  // against what it can hold (Ecosystem.holdForceN; nothing while it is not braced(), e.g. the player mid-jump). A push past the hold knocks it
   // down, longer the further past (NPC_DOWN_*), falling the way it was pushed. A hit while down can lengthen the hold
   // but does not restart the fall. Animals and the player's avatar alike, while the target is knockable().
   applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
     if (damage > 0) target.takeHit(attacker, damage);
     if (!target.alive || !target.knockable()) return;
-    const holdN = Ecosystem.holdForceN(target);
+    const bracedHoldN = Ecosystem.holdForceN(target);        // what it holds with its feet planted
+    const holdN = target.braced() ? bracedHoldN : 0;          // off its feet (a jump): nothing to brace against
     if (!(pushN > holdN)) return;
     const now = this.time;
-    const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * (pushN / Math.max(holdN, 1e-9) - 1));
+    // how long it stays down scales with the push past its braced hold, so an unbraced body is not always held the longest
+    const excess = Math.max(0, pushN / Math.max(bracedHoldN, 1e-9) - 1);
+    const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * excess);
     if (!target.isDown(now)) {
       target.downAt = now;
       const dx = target.position.x - attacker.position.x, dz = target.position.z - attacker.position.z;

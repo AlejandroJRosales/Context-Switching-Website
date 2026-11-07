@@ -864,6 +864,7 @@ export const game = {
     downAt: -Infinity, downUntil: 0, downYaw: 0, downDV: 0,
     isDown(now) { return now < this.downUntil; },
     knockable() { return !game.sheltered && !game.dead; },   // nothing reaches the player in the car or a cabin
+    braced() { return player.grounded || swimming; },          // mid-jump or falling, the player has no hold (Ecosystem.applyHit)
     get facingAngle() { return bodyYaw(); },                  // the body's facing, as an animal's (the lying pose)
     get health() { return game.health; },
     strike() { startFightMove(this, NPC_FIGHT_MOVES.human, ecosystem.time); },
@@ -1043,12 +1044,16 @@ export const game = {
 
   // BUMPING with the player, as between animals (Ecosystem.bump) and with the car (carHits): an animal whose collision
   // circle overlaps the player's (at the player's height) is moved out to touching, unless that is inside a wall, and
-  // the player is not moved. The player's momentum into it pushes it against its hold, and its momentum into the
-  // player pushes the player against theirs (Ecosystem.bumpForceN and applyHit, no damage; only while the avatar is
-  // alive, so in Survivor). The player's velocity is their move since the last call over dt; a jump past
-  // HUMAN_GAIT_JUMP (a teleport, the first call) counts as none.
+  // the player is not moved. Pushes go through Ecosystem.bumpForceN and applyHit (no damage; the player's side only
+  // while the avatar is alive, so in Survivor), and each body falls (a ragdoll) when its push beats its own hold.
+  // A person: one equal push on both bodies (Newton's third law), the pair's reduced mass (m_player x m_person /
+  // (m_player + m_person)) times their closing speed, so a light person falls alone, a similar one can take both
+  // down, and a heavy, strong one floors the player and stays up. Other animals: the player's momentum into it
+  // pushes it, and its momentum into the player pushes the player.
+  // The player's velocity is their move since the last call over dt; a jump past HUMAN_GAIT_JUMP (a teleport,
+  // the first call) counts as none.
   bumpAnimals(px, pz, dt, R) {
-    const av = this.avatar, now = ecosystem.time;
+    const av = this.avatar, now = ecosystem.time, playerKg = av.bodyMassKg();
     const mx = px - this._bumpX, mz = pz - this._bumpZ, moved = Math.hypot(mx, mz);
     const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity this call: first call, teleport or no time
     const pvx = still ? 0 : mx / dt, pvz = still ? 0 : mz / dt;
@@ -1064,9 +1069,19 @@ export const game = {
       const ox = ecosystem.fitX(px + nx * touch), oz = ecosystem.fitZ(pz + nz * touch);
       if (!occ.blockedAt(ox, oz)) { d.position.x = ox; d.position.z = oz; }
       const playerClosing = pvx * nx + pvz * nz;   // m/s the player moves into the animal
-      if (playerClosing > 0) ecosystem.applyHit(d, av, 0, Ecosystem.bumpForceN(av.bodyMassKg(), playerClosing));
       const v = d.groundSpeed(now), animalClosing = -(Math.sin(d.heading) * v * nx + Math.cos(d.heading) * v * nz);   // m/s it moves into the player
-      if (animalClosing > 0 && d.alive) ecosystem.applyHit(av, d, 0, Ecosystem.bumpForceN(d.bodyMassKg(), animalClosing));
+      const animalKg = d.bodyMassKg();
+      if (d.typeId === HUMAN_TYPE_ID) {
+        const pairKg = playerKg * animalKg / (playerKg + animalKg);   // the pair's reduced mass
+        const pairClosing = playerClosing + animalClosing;            // m/s the two close on each other
+        if (pairClosing <= 0) continue;
+        const pushN = Ecosystem.bumpForceN(pairKg, pairClosing);      // the same push on both bodies
+        ecosystem.applyHit(d, av, 0, pushN);
+        if (d.alive) ecosystem.applyHit(av, d, 0, pushN);
+        continue;
+      }
+      if (playerClosing > 0) ecosystem.applyHit(d, av, 0, Ecosystem.bumpForceN(playerKg, playerClosing));
+      if (animalClosing > 0 && d.alive) ecosystem.applyHit(av, d, 0, Ecosystem.bumpForceN(animalKg, animalClosing));
     }
   },
 
