@@ -15,7 +15,7 @@ import {
   TERRAIN_MAX_TILES, TERRAIN_TIMEOUT_MS, ELEV_STEP, ELEV_MARGIN, ROAD_WIDTH,
   AREA_COLOR, WATERWAY_WIDTH, BARRIER, TREE_ROW_SPACING, LANDUSE_RE, LEISURE_RE, BARRIER_RE, PLACE_KEYS, PLACE_OF,
   PLACE_RE, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
-  LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
+  LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, MSAA_HALF_FLOAT, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
   SHADOW_DEPTH, SHADOW_BIAS_M, GROUND_CELL_M, SHADOW_SOFTNESS, CITY_FILE_DIR, CITY_FILES, HIGH_NPC_LOD_DIST,
   HIGH_FAR_STAT_DIST
 } from './1-config.js';
@@ -107,7 +107,8 @@ export const msaa = {
     const w = Math.max(1, this._size.x), h = Math.max(1, this._size.y);
     if (this.target === null) {
       const ext = renderer.extensions;
-      const half = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+      // true: a half-float target (wanted and renderable); false: RGBA8 holding sRGB
+      const half = MSAA_HALF_FLOAT && (ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float'));
       this.target = new THREE.WebGLRenderTarget(w, h, {
         samples: MSAA_SAMPLES, type: half ? THREE.HalfFloatType : THREE.UnsignedByteType
       });

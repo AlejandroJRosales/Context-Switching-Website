@@ -223,6 +223,9 @@ export const AUTO_GRAPHICS_LOW_FPS = 30;
 export const AUTO_GRAPHICS_SAMPLE_MS = 1500;
 export const AUTO_GRAPHICS_WARMUP_FRAMES = 10;        // water-flow offsets advance at most this often on low
 export const MSAA_SAMPLES_WANTED = 8;   // high's MSAA, capped by the GPU
+// high's MSAA colour target: true RGBA16F (where the GPU renders to half float), false RGBA8 sRGB (half the bytes per
+// sample; with no tone mapping both clip at 1, so the image matches but for edge-resolve rounding)
+export const MSAA_HALF_FLOAT = false;
 export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low'
 
 export const HEMI_DAY = 1.5;

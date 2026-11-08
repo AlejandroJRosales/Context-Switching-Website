@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-05T04:19:57.540Z",
+ "generated": "2026-11-08T00:03:07.830Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -15,7 +15,7 @@
  "nodes": {
   "1-config.js": {
    "kind": "file",
-   "role": "CONFIG. Every tunable table and derived constant: world size and city ladder, player and building dimensions, Overpass/Nominatim/terrain endpoints and limits, OSM layer tables, graphics numbers, the NPC tables (species, sizes, fight moves, pounces, ages), human rig and atlas numbers, food boxes, streets and lamps, coast, cabins, cat, car and camera, Survivor (SURVIVOR_CONFIG with playerPlantFood), sky, rain, CITY_FILES and PICKS. The brain's tunables live with the brain in 7a-ml.js.",
+   "role": "CONFIG, every tunable and derived constant (brain tunables: 7a-ml.js). May import nothing. World size: `scale` sets wilderness extent and populations; levels 1..10 give scale 20 + 10 per level.",
    "attributes": [
     "+MAP_SIZE_SCALES: array",
     "+CITY_LADDER: number[]",
@@ -113,6 +113,7 @@
     "+AUTO_GRAPHICS_SAMPLE_MS: number",
     "+AUTO_GRAPHICS_WARMUP_FRAMES: number",
     "+MSAA_SAMPLES_WANTED: number",
+    "+MSAA_HALF_FLOAT: boolean",
     "+GRAPHICS_KEY: string",
     "+HEMI_DAY: number",
     "+HEMI_NIGHT: number",
@@ -140,6 +141,7 @@
     "+SHELL_AMBIG: number",
     "+SHELL_EPS: number",
     "+NPC_TICK_S: number",
+    "+DAY_S: number",
     "+NPC_CITY_PEOPLE_WEIGHT: number",
     "+NPC_WILD_PEOPLE_WEIGHT: number",
     "+NPC_DEER_POPULATION: number",
@@ -166,6 +168,15 @@
     "+PLANT_MAX_HEALTH: number",
     "+PLANT_BITE_NUTRITION: number",
     "+NPC_FIGHT_DAMAGE_PER_S: number",
+    "+NPC_HIT_ACCEL_MS2: number",
+    "+NPC_HOLD_ACCEL_MS2: number",
+    "+NPC_DOWN_MIN_S: number",
+    "+NPC_DOWN_S_PER_EXCESS: number",
+    "+NPC_DOWN_MAX_S: number",
+    "+NPC_NEED_FULL: number",
+    "+NPC_BUMP_CONTACT_S: number",
+    "+NPC_FALL_S: number",
+    "+NPC_GETUP_S: number",
     "+NPC_FIGHT_HOLD_PAD_S: number",
     "+NIGHT_SUN_ALT_DEG: number",
     "+PREY_SIZE_STEP_KG: number",
@@ -177,6 +188,7 @@
     "+MATE_TIME_MULT: number",
     "+REPRO_NEED_MAX: number",
     "+NPC_DAY_TICKS: number",
+    "+NPC_MATURITY_S: number",
     "+NPC_MATURITY_TICKS: number",
     "+GROWTH_MIN_SCALE: number",
     "+NPC_ADULT_AGE: number",
@@ -187,6 +199,7 @@
     "+DEER_AREAS: Set",
     "+NPC_UNIT: number",
     "+NPC_RADIUS: number",
+    "+NPC_BUMP_DIST: number",
     "+NPC_COLLIDE_H: number",
     "+NPC_SPAWN_GAP: number",
     "+PLAYER_HS: number",
@@ -248,6 +261,7 @@
     "+HUMAN_GAIT_EASE: number",
     "+HUMAN_GAIT_JUMP: number",
     "+HUMAN_RIG: unknown",
+    "+HUMAN_JOINT_BLEND: number",
     "+HUMAN_LEG: number",
     "+HUMAN_FIGHT: unknown",
     "+HUMAN_CROUCH_DROP: number",
@@ -314,6 +328,8 @@
     "+OCC_TILE_WORDS: number",
     "+SPAWN_CLEAR: number",
     "+STREET_STEP: number",
+    "+YELLOWSTONE_COYOTES: number",
+    "+YELLOWSTONE_DEER: number",
     "+CONFIG: WorldConfig",
     "+DEFAULT_SEED: string",
     "+WILD_FLOAT_DEPTH: number",
@@ -343,8 +359,8 @@
     "+SHADOW_FOLLOW_STEP: number",
     "+SHADOW_SUN_STEP_DEG: number",
     "+SHADOW_SUN_STEP_COS: number",
-    "+SHADOW_MOVER_HZ: number",
-    "+SHADOW_MOVER_DIST: number",
+    "+SHADOW_ANIMAL_HZ: number",
+    "+SHADOW_ANIMAL_DIST: number",
     "+SUN_DIST: number",
     "+SHADOWS_ENABLED: boolean",
     "+WILD_GROVES: string",
@@ -416,12 +432,27 @@
     "+CAR_REV_ACCEL: number",
     "+CAR_ROLL: number",
     "+CAR_ENGINE_BRK: number",
-    "+CAR_DRAG: number",
+    "+CAR_MASS_KG: number",
+    "+AIR_DENSITY: number",
+    "+CAR_CD: number",
+    "+CAR_FRONTAL_FILL: number",
+    "+CAR_CDA: number",
     "+CAR_GRIP: number",
     "+CAR_STEER_MAX: number",
     "+CAR_STEER_FALL: number",
     "+CAR_STEER_RATE: number",
     "+CAR_G: number",
+    "+HIGH_RAGDOLLS: number",
+    "+LOW_RAGDOLLS: number",
+    "+HUMAN_RAG_ROWS: number",
+    "+RAGDOLL_G: number",
+    "+RAGDOLL_DAMP: number",
+    "+RAGDOLL_ITERS: number",
+    "+RAGDOLL_FRICTION: number",
+    "+RAGDOLL_ANCHOR_PER_S: number",
+    "+RAGDOLL_MAX_DV: number",
+    "+RAGDOLL_TOP_SHARE: number",
+    "+RAGDOLL_BASE_SHARE: number",
     "+CAR_GLANCE: number",
     "+CAR_ALIGN: number",
     "+CAR_REACH: number",
@@ -461,7 +492,8 @@
    "functions": [
     "+fightMassShare(f): number",
     "+bodyJumpSpeed(baseSpeed, pace): number",
-    "+playerPlantFood(bites): number"
+    "+playerPlantFood(bites): number",
+    "+carDragPerM(massKg): number"
    ],
    "contains": [
     "1-config.js#WORLD_SIZES",
@@ -915,8 +947,8 @@
    "visibility": "+",
    "attributes": [
     "BASE: object",
-    "initialCoyotes: number",
     "initialDeer: number",
+    "initialCoyotes: number",
     "initialPlants: number",
     "probSpawnPlant: number",
     "groundY: number",
@@ -2062,7 +2094,7 @@
   },
   "7b-sim.js": {
    "kind": "file",
-   "role": "SIM. The artificial life and the game clock: entities, the ecosystem, the sky clock.",
+   "role": "SIM, artificial life and the game clock (Animal, Plant, Ecosystem, simSky). May import 1-config.js to 6-worlds.js, 7a-ml.js and three. Never calls render, player or main; they read its state and fill its hooks.",
    "attributes": [
     "-MUSCLE_SHARE_OF_LEAN: number",
     "-_preyObj: array",
@@ -2075,6 +2107,8 @@
    "functions": [
     "+startFightMove(f, move, now): void",
     "+humanFightAct(f, now, out, o): void",
+    "+conditionShare(health, maxHealth, foodNeed, waterNeed): number",
+    "+downShare(a, now): number",
     "+sampleFightKeys(keys, u, out): unknown",
     "+humanBmi(sex, look): unknown",
     "+humanMassKg(sex, look, heightM): number",
@@ -2205,6 +2239,10 @@
     "moveSide: number",
     "fightFrom: number",
     "fightUntil: number",
+    "downAt: number",
+    "downUntil: number",
+    "downYaw: number",
+    "downDV: number",
     "quarry: null|unknown",
     "packMassKg: number",
     "packHeightM: number",
@@ -2234,6 +2272,9 @@
     "actionTimer: number",
     "heading: number",
     "targetHeading: number",
+    "_dirFor: number",
+    "_dirSin: number",
+    "_dirCos: number",
     "moving: boolean",
     "facingAngle: number",
     "prevHealth: unknown",
@@ -2280,10 +2321,11 @@
     "setFov(h, v): void",
     "footLift(): number",
     "eyeY(): number",
-    "senseTarget(px, py, pz, ax, az, cosH, tanV, tx, ty, tz): boolean",
+    "senseCloser(px, py, pz, ax, az, cosH, tanV, tx, ty, tz, beat): boolean",
     "outOfRange(mx, my, mz): boolean",
     "locate(grid): void",
     "refreshRays(): void",
+    "headingDir(): void",
     "static egoSin(s, c, fs, fc): number",
     "static egoCos(s, c, fs, fc): number",
     "think(grid): void",
@@ -2323,6 +2365,12 @@
     "moveSpeed(): number",
     "jumpSpeed(baseSpeed): number",
     "fightMassKg(): number",
+    "condition(): number",
+    "heldUntil(): number",
+    "isDown(now): boolean",
+    "groundSpeed(now): number",
+    "knockable(): boolean",
+    "braced(): boolean",
     "bodyMassKg(): number",
     "setSizeZ(z): void",
     "mateFill(now): number",
@@ -2378,6 +2426,7 @@
     "static CONTACT_QUERY_RADIUS: number",
     "static CONTACT_DIST_SQ: number",
     "static CONTACT_DIST: number",
+    "static BUMP_DIST_SQ: number",
     "animals: array",
     "plants: array",
     "ticks: number",
@@ -2401,6 +2450,8 @@
     "_qPlant: array",
     "_qWater: array",
     "_qBox: array",
+    "_qSeen: array",
+    "_qSeenPlants: array",
     "_plantAdds: array",
     "_plantDrops: array",
     "_animalGridDrops: array",
@@ -2423,6 +2474,11 @@
     "tryMate(a, px, pz): void",
     "handleCollisions(): void",
     "fightHit(a, b): void",
+    "bump(a, b, dx, dz, d2, vx, vz): void",
+    "static bumpForceN(massKg, closingMS): number",
+    "applyHit(target, attacker, damage, pushN?: unknown): void",
+    "static hitForceN(attacker): number",
+    "static holdForceN(target): number",
     "collide(a): void",
     "step(dt): boolean",
     "endTick(): void"
@@ -2439,6 +2495,7 @@
     "STEP_S: number",
     "KINDS: string[]",
     "hour: number",
+    "day: number",
     "kind: string",
     "timer: number",
     "acc: number",
@@ -2461,7 +2518,7 @@
   },
   "8a-render.js": {
    "kind": "file",
-   "role": "RENDER. What draws the world.",
+   "role": "RENDER, what draws the world. Reads the player and game only through renderInputs, so it never imports 8b. May import 1-config.js to 7b-sim.js and three.",
    "attributes": [
     "+npcFrustum: THREE.Frustum",
     "+_npcVP: THREE.Matrix4",
@@ -2469,11 +2526,23 @@
     "+geometryViews: WeakMap",
     "+HUMAN_INSTANCE_ATTRS: string[]",
     "-HUMAN_TORSO_WIDTH: unknown",
+    "-HUMAN_RAG_BONES: number[][]",
+    "+HUMAN_RAG_TEXELS: number",
     "+HUMAN_VERTEX_PARS: string",
     "+HUMAN_VERTEX_MAIN: string",
     "+BB_VERTEX_PARS: string",
     "+BB_VERTEX_MAIN: string",
     "+BB_BAKE_OUT: string",
+    "-BOX_RAG_CORE: number",
+    "-BOX_RAG_LINKS: unknown",
+    "-BOX_RAG_SHARES: number[]",
+    "-RAG_DOWN: THREE.Vector3",
+    "-HUMAN_RAG_CORE: number[]",
+    "-HUMAN_RAG_LINKS: unknown",
+    "-HUMAN_RAG_HINGE_MIN_AXIS: number",
+    "-HUMAN_RAG_HINGES: unknown",
+    "-HUMAN_RAG_RADII: number[]",
+    "-HUMAN_RAG_SHARES: number[]",
     "+raysEl: HTMLElement",
     "+gfxEl: HTMLElement",
     "+avgFpsEl: HTMLElement",
@@ -2521,12 +2590,18 @@
     "+petQuant(v, lo, hi, steps): number",
     "+humanPetPack(share, bendLevel, shoulder, turn): number",
     "+humanPetHand(bend, a1, turn, shoulderW): object",
+    "+writeHumanDown(a, now, half, out, o): void",
     "+writeHumanLook(L, look, shape, o): void",
     "+humanCardWidth(L): number",
     "+buildHumanGeometry(): THREE.BufferGeometry",
     "+paintHumanAtlas(): object",
-    "+humanMaterials(paint, mask): object",
+    "+humanMaterials(paint, mask, ragdoll): object",
     "+billboardMaterials(atlases, grid): object",
+    "-ragdollLaunch(a): number[]",
+    "-ragdollRise(a, now): number",
+    "-placeFromRest(body, rest, shares, world, quat, a, v): void",
+    "-hingeRange({flexDeg, flexDir}): number[]",
+    "-humanRagRest(shape): THREE.Vector3[]",
     "+buildBrain(nn): object",
     "+disposeBrain(b): void",
     "+brainActivity(b, a): void",
@@ -2558,6 +2633,10 @@
    ],
    "contains": [
     "8a-render.js#renderInputs",
+    "8a-render.js#VerletBody",
+    "8a-render.js#BoxRagdoll",
+    "8a-render.js#HUMAN_RAG_JOINT_LIMITS",
+    "8a-render.js#HumanRagdoll",
     "8a-render.js#AnimalRenderer",
     "8a-render.js#PlantRenderer",
     "8a-render.js#foodBoxView",
@@ -2576,13 +2655,127 @@
    "kind": "object",
    "visibility": "+",
    "attributes": [
-    "player: null"
+    "player: null",
+    "car: null"
    ],
    "methods": [
     "casters(): array",
     "survivor(): boolean",
     "pointerTaken(id): boolean",
     "locked(): boolean"
+   ]
+  },
+  "8a-render.js#VerletBody": {
+   "kind": "class",
+   "visibility": "-",
+   "attributes": [
+    "n: unknown",
+    "radii: unknown",
+    "anchors: unknown",
+    "nLinks: number",
+    "la: unknown",
+    "lb: unknown",
+    "sa: unknown",
+    "sb: unknown",
+    "nHinges: number",
+    "hParent: unknown",
+    "hJoint: unknown",
+    "hChild: unknown",
+    "hAxisFrom: unknown",
+    "hAxisTo: unknown",
+    "hMin: unknown",
+    "hMax: unknown",
+    "hAxis: Float64Array",
+    "pos: Float64Array",
+    "prev: Float64Array",
+    "len: Float64Array",
+    "floor: Float64Array",
+    "kp: number",
+    "ground: number",
+    "boundX: number",
+    "boundY: number",
+    "boundZ: number",
+    "boundR: number"
+   ],
+   "methods": [
+    "+constructor(n, links, radii, anchors, hinges?: array)",
+    "place(i, v, lx, lz): void",
+    "begin(kp, ground): void",
+    "fitBounds(): void",
+    "dist(i, j): number",
+    "step(anchorX, anchorZ, box): void",
+    "solveHinge(k): void",
+    "outOfBox(i, box): void",
+    "at(i, out): unknown"
+   ]
+  },
+  "8a-render.js#BoxRagdoll": {
+   "kind": "class",
+   "visibility": "-",
+   "attributes": [
+    "rig: unknown",
+    "owner: null|unknown",
+    "seen: number",
+    "body: VerletBody",
+    "_c: THREE.Vector3",
+    "_x: THREE.Vector3",
+    "_y: THREE.Vector3",
+    "_z: THREE.Vector3",
+    "_v: THREE.Vector3",
+    "_w: THREE.Vector3",
+    "_m: THREE.Matrix4",
+    "_q: THREE.Quaternion",
+    "_sp: THREE.Vector3",
+    "_sq: THREE.Quaternion",
+    "_ss: THREE.Vector3",
+    "_scale: THREE.Vector3"
+   ],
+   "methods": [
+    "+constructor(rig)",
+    "start(a, world, quat, kp, ground): void",
+    "step(a, box): void",
+    "frame(): void",
+    "pose(im, idx, antlers, aidx, legNames, toStand): void",
+    "write(mesh, i, p, q, toStand): void"
+   ]
+  },
+  "8a-render.js#HUMAN_RAG_JOINT_LIMITS": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "elbow: object",
+    "knee: object"
+   ],
+   "methods": []
+  },
+  "8a-render.js#HumanRagdoll": {
+   "kind": "class",
+   "visibility": "-",
+   "attributes": [
+    "owner: null|unknown",
+    "seen: number",
+    "row: number",
+    "rest: null|THREE.Vector3[]",
+    "body: VerletBody",
+    "local: array",
+    "_v: THREE.Vector3",
+    "_d: THREE.Vector3",
+    "_r: THREE.Vector3",
+    "_x: THREE.Vector3",
+    "_y: THREE.Vector3",
+    "_z: THREE.Vector3",
+    "_m: THREE.Matrix4",
+    "_torso: THREE.Quaternion",
+    "_inv: THREE.Quaternion",
+    "_q: THREE.Quaternion",
+    "_limb: THREE.Quaternion",
+    "_t: THREE.Vector3"
+   ],
+   "methods": [
+    "+constructor()",
+    "start(a, world, quat, kp, ground): void",
+    "step(a, box): void",
+    "pose(data, ox, oy, oz, facing): void"
    ]
   },
   "8a-render.js#AnimalRenderer": {
@@ -2622,8 +2815,18 @@
     "_quatBody: THREE.Quaternion",
     "_quatTip: THREE.Quaternion",
     "_quatHead: THREE.Quaternion",
+    "_zAxis: THREE.Vector3",
+    "_quatRoll: THREE.Quaternion",
     "_fightPose: object",
     "LIMB_FRONT: array",
+    "_ragdollOf: Map",
+    "_ragdollPools: object",
+    "_ragdollRows: array",
+    "_bodyRagdoll: HumanRagdoll",
+    "_bodyTicks: number",
+    "_box: object",
+    "_pass: number",
+    "ragdollsOn: boolean",
     "passById: array",
     "human: object",
     "billboards: object"
@@ -2636,6 +2839,12 @@
     "static queueUpload(attr, lo, n): void",
     "stepGait(a, deltaTime, kp): void",
     "init(): void",
+    "ragdollRig(type): object",
+    "setRagdolls(on): void",
+    "ragdollFor(a, p, now, kp, ticked): null|unknown|undefined",
+    "freeRagdoll(a, r): void",
+    "carBox(): null|object",
+    "bodyDown(a, now, kp, x, y, z, facing, ground, out): void",
     "cacheFor(type, im): object",
     "update(animals, deltaTime): void"
    ]
@@ -2749,7 +2958,7 @@
     "lastRefresh: number",
     "force: boolean",
     "nearAnimals: number",
-    "_moverSnaps: Float64Array[]",
+    "_casterSnaps: Float64Array[]",
     "_aim: THREE.Vector3"
    ],
    "methods": [
@@ -2759,7 +2968,8 @@
     "toggle(): void",
     "placeSun(): void",
     "sunTurned(): void",
-    "moversChanged(record): boolean",
+    "animalsChanged(record): boolean",
+    "castersChanged(record): boolean",
     "update(now): void"
    ]
   },
@@ -2769,6 +2979,7 @@
    "attributes": [
     "material: THREE.MeshBasicMaterial",
     "mesh: THREE.InstancedMesh",
+    "playerMesh: THREE.Mesh",
     "foot: object",
     "_m: THREE.Matrix4",
     "_p: THREE.Vector3",
@@ -2779,6 +2990,10 @@
    "methods": [
     "+constructor()",
     "hide(): void",
+    "hidePlayer(): void",
+    "applyLight(): number",
+    "compose(x, feetY, z, facing, foot, kp): void",
+    "placePlayer(x, feetY, z, facing, kp): void",
     "update(animals): void"
    ]
   },
@@ -2887,7 +3102,7 @@
   },
   "8b-player-game.js": {
    "kind": "file",
-   "role": "PLAYER and GAME. What the player drives, and Survivor. Player owns: player, keys, play { active, locked }, stance, touch (touchKnob), fly and climb, swimming, playerStep, movementHeld, the car and chase camera, the cat and petting, pov and VR. Game owns: SURVIVOR_ACTIONS, SURVIVOR_FIELD_ACTIONS, cabinAt and game (Survivor rules, inventory, the run summary). Binds: bindInventory, bindKeys, bindMouseLook, bindTouch, bindCar register this file's listeners; 9-main calls them in the original listener order. Construction (meshes, canvases) runs at load. Fills 8a-render's renderInputs at the end of its load (the only way render sees the player and the game).",
+   "role": "PLAYER and GAME (Survivor). bind* register listeners, called by 9-main in order. Fills 8a-render's renderInputs. May import 1-config.js to 8a-render.js and three.",
    "attributes": [
     "+dotEl: HTMLElement",
     "+stickEl: HTMLElement",
@@ -2931,6 +3146,7 @@
     "+carEl: HTMLElement",
     "+useEl: HTMLElement",
     "+_carPos: THREE.Vector3",
+    "-_carQ: array",
     "+gasEl: HTMLElement",
     "+brakeEl: HTMLElement",
     "+sprintEl: HTMLElement",
@@ -2947,6 +3163,7 @@
     "+swimming: boolean"
    ],
    "functions": [
+    "+bodyYaw(): number",
     "+slotKeyLabel(code): string",
     "+slotButton(key, craft): HTMLElement",
     "+cabinAt(x, y, z): boolean",
@@ -2964,6 +3181,9 @@
     "+setCar(spot): void",
     "+parkBesideCabin(c, yaw): boolean",
     "+moveCar(dx, dz): _push|null",
+    "+carMassKg(): number",
+    "+carHits(): void",
+    "+playerBumps(dt): void",
     "+carPhysics(dt, throttle, steer, handbrake): void",
     "+carNear(): boolean",
     "+pushPlayerFromCar(): boolean",
@@ -2998,6 +3218,7 @@
     "8b-player-game.js#car",
     "8b-player-game.js#chaseCam",
     "8b-player-game.js#_push",
+    "8b-player-game.js#_carHitter",
     "8b-player-game.js#pedal"
    ]
   },
@@ -3061,6 +3282,7 @@
     "writeLook(): void",
     "stepGait(dt, kp): void",
     "cycle(): void",
+    "hideBody(): void",
     "apply(dt): void"
    ]
   },
@@ -3148,6 +3370,9 @@
     "_q: array",
     "_qp: array",
     "_qb: array",
+    "_qBump: array",
+    "_bumpX: number",
+    "_bumpZ: number",
     "_shown: number",
     "_shownDay: number",
     "_shownSlots: string",
@@ -3172,6 +3397,8 @@
     "rollLoot(): unknown|null",
     "land(impactSpeed): void",
     "update(dt): void",
+    "placeAvatar(): number",
+    "bumpAnimals(px, pz, dt, R): void",
     "touchAnimals(px, pz, R): void",
     "punch(): void",
     "fieldAction(): null|object",
@@ -3302,6 +3529,14 @@
    ],
    "methods": []
   },
+  "8b-player-game.js#_carHitter": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "position: THREE.Vector3"
+   ],
+   "methods": []
+  },
   "8b-player-game.js#pedal": {
    "kind": "object",
    "visibility": "+",
@@ -3323,6 +3558,7 @@
     "-panel: HTMLElement",
     "-addrEl: HTMLElement",
     "-goEl: HTMLElement",
+    "-goLabel: unknown",
     "-statEl: HTMLElement",
     "-hudEl: HTMLElement",
     "-gearEl: HTMLElement",
@@ -3332,6 +3568,7 @@
     "-cardEl: HTMLElement",
     "-stepsEl: HTMLElement",
     "-vitalsEl: HTMLElement",
+    "-collisionEl: HTMLElement",
     "-hudBtnEl: HTMLElement",
     "-fsEl: HTMLElement",
     "-newEcoEl: HTMLElement",
@@ -3342,6 +3579,9 @@
     "-debugErrors: array",
     "-hudOn: boolean",
     "-raysBeforeHud: string",
+    "-COLLISION_ORDER: string[]",
+    "-SURVIVOR_NO_HITS_MODE: string",
+    "-collisionChoice: string",
     "-so: unknown",
     "-canLock: boolean",
     "-drawnPos: THREE.Vector3",
@@ -3369,7 +3609,6 @@
     "-peopleEl: HTMLElement",
     "-peopleOutEl: HTMLElement",
     "-customRowEl: HTMLElement",
-    "-startGoEl: HTMLElement",
     "-randomSky: boolean",
     "-gameEl: HTMLElement",
     "-skysetEl: HTMLElement",
@@ -3391,7 +3630,10 @@
     "-pWeightEl: HTMLElement",
     "-PLAYER_BODY_KEY: string",
     "-playerRowEl: HTMLElement",
-    "-picksEl: HTMLElement"
+    "-picksEl: HTMLElement",
+    "-placeCustomEl: unknown",
+    "-addrRowEl: HTMLElement",
+    "-openingLabel: unknown"
    ],
    "functions": [
     "-worldSizeChoice(): object",
@@ -3403,6 +3645,8 @@
     "-setSettingsOpen(open): void",
     "-debugError(msg): void",
     "-setHud(on): void",
+    "-activeCollision(): string",
+    "-applyCollision(): void",
     "-fullscreenElement(): unknown|null",
     "-syncFullscreen(): void",
     "-showControls(on): void",
@@ -3423,6 +3667,7 @@
     "-setSwitch(el, on): void",
     "-chooseMode(): Promise",
     "-setMode(m): void",
+    "-startWorld(): void",
     "-radioRow(field, pick): void",
     "-savePlayerBody(): void",
     "-restorePlayerBody(): void",
@@ -3431,6 +3676,7 @@
    "contains": [
     "9-main.js#steps",
     "9-main.js#debugReadout",
+    "9-main.js#COLLISION_MODES",
     "9-main.js#loadOpts",
     "9-main.js#playerSliders"
    ]
@@ -3475,6 +3721,16 @@
     "runProbe(n): string",
     "refresh(): void"
    ]
+  },
+  "9-main.js#COLLISION_MODES": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "none: object",
+    "fall: object",
+    "ragdoll: object"
+   ],
+   "methods": []
   },
   "9-main.js#loadOpts": {
    "kind": "object",
@@ -3569,6 +3825,7 @@
     "LOW_NPC_LOD_DIST",
     "LOW_FAR_STAT_DIST",
     "MSAA_SAMPLES_WANTED",
+    "MSAA_HALF_FLOAT",
     "GRAPHICS_KEY",
     "HEMI_DAY",
     "SHADOW_BOX_HALF",
@@ -4020,7 +4277,18 @@
     "CAR_ALIGN",
     "FALLBACK_HOURS",
     "SKIES",
-    "NPC_DRINK_SECONDS"
+    "NPC_DRINK_SECONDS",
+    "DAY_S",
+    "NPC_HIT_ACCEL_MS2",
+    "NPC_HOLD_ACCEL_MS2",
+    "NPC_DOWN_MIN_S",
+    "NPC_DOWN_S_PER_EXCESS",
+    "NPC_DOWN_MAX_S",
+    "NPC_NEED_FULL",
+    "NPC_FALL_S",
+    "NPC_GETUP_S",
+    "NPC_BUMP_DIST",
+    "NPC_BUMP_CONTACT_S"
    ]
   },
   {
@@ -4190,6 +4458,7 @@
     "HUMAN_GAIT_JUMP",
     "HUMAN_RIG",
     "HUMAN_LEG",
+    "HUMAN_JOINT_BLEND",
     "HUMAN_CROUCH",
     "HUMAN_FIGHT",
     "HUMAN_CROUCH_DROP",
@@ -4217,8 +4486,8 @@
     "FOOD_BOX_SIZE",
     "SHADOW_FOLLOW_STEP",
     "SHADOW_SUN_STEP_COS",
-    "SHADOW_MOVER_HZ",
-    "SHADOW_MOVER_DIST",
+    "SHADOW_ANIMAL_HZ",
+    "SHADOW_ANIMAL_DIST",
     "SUN_DIST",
     "SHADOWS_ENABLED",
     "BLOB_DIST",
@@ -4273,7 +4542,23 @@
     "ROOF_MAP_N",
     "ROOF_MAP_SIZE",
     "ROOF_MAP_SNAP",
-    "RAIN_BY_CODE"
+    "RAIN_BY_CODE",
+    "SPECIES",
+    "NPC_FALL_S",
+    "NPC_GETUP_S",
+    "HIGH_RAGDOLLS",
+    "RAGDOLL_G",
+    "RAGDOLL_DAMP",
+    "RAGDOLL_ITERS",
+    "RAGDOLL_FRICTION",
+    "RAGDOLL_ANCHOR_PER_S",
+    "RAGDOLL_MAX_DV",
+    "RAGDOLL_TOP_SHARE",
+    "RAGDOLL_BASE_SHARE",
+    "HUMAN_RAG_ROWS",
+    "CAR_LEN",
+    "CAR_WID",
+    "CAR_TOP"
    ]
   },
   {
@@ -4284,6 +4569,7 @@
     "fmt",
     "cellKey",
     "fightClamp01",
+    "fightEase",
     "invalidate",
     "solarVector",
     "moonVector"
@@ -4351,7 +4637,8 @@
     "plantView",
     "ecosystem",
     "simSky",
-    "presetHour"
+    "presetHour",
+    "downShare"
    ]
   },
   {
@@ -4466,7 +4753,8 @@
     "CAR_REV_ACCEL",
     "CAR_ROLL",
     "CAR_ENGINE_BRK",
-    "CAR_DRAG",
+    "CAR_MASS_KG",
+    "carDragPerM",
     "CAR_GRIP",
     "CAR_STEER_MAX",
     "CAR_STEER_FALL",
@@ -4486,7 +4774,8 @@
     "SWIM_FLOAT",
     "SWIM_SPEED",
     "SWIM_JUMP",
-    "SWIM_DRAG"
+    "SWIM_DRAG",
+    "NPC_RADIUS"
    ]
   },
   {
@@ -4536,7 +4825,8 @@
     "supportAt",
     "ceilingAt",
     "solidOverlap",
-    "shellAt"
+    "shellAt",
+    "occ"
    ]
   },
   {
@@ -4564,7 +4854,9 @@
     "humanLook",
     "customizeHumanLook",
     "ecosystem",
-    "simSky"
+    "simSky",
+    "conditionShare",
+    "Ecosystem"
    ]
   },
   {
@@ -4579,6 +4871,7 @@
     "graphics",
     "animalRenderer",
     "plantRenderer",
+    "blobShadows",
     "populationText",
     "HUMAN_INSTANCE_ATTRS",
     "writeHumanLook"
@@ -4802,7 +5095,9 @@
     "updateCarButton",
     "setPlayerInCar",
     "playerStep",
-    "movementHeld"
+    "movementHeld",
+    "playerBumps",
+    "carHits"
    ]
   },
   {
@@ -5126,6 +5421,21 @@
    "type": "uses"
   },
   {
+   "from": "8a-render.js#BoxRagdoll",
+   "to": "8a-render.js#VerletBody",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#HumanRagdoll",
+   "to": "8a-render.js#VerletBody",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
+   "to": "8a-render.js#HumanRagdoll",
+   "type": "uses"
+  },
+  {
    "from": "8a-render.js#AnimalRenderer",
    "to": "1-config.js#BB_FRAME",
    "type": "uses"
@@ -5137,12 +5447,27 @@
   },
   {
    "from": "8a-render.js#AnimalRenderer",
+   "to": "1-config.js#SPECIES",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
+   "to": "8a-render.js#BoxRagdoll",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
    "to": "1-config.js#NPC_TYPE_IDS",
    "type": "uses"
   },
   {
    "from": "8a-render.js#AnimalRenderer",
    "to": "7b-sim.js#Animal",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
+   "to": "8a-render.js#renderInputs",
    "type": "uses"
   },
   {
@@ -5372,21 +5697,6 @@
   },
   {
    "from": "8b-player-game.js#game",
-   "to": "1-config.js#NPC_FIGHT_MOVES",
-   "type": "uses"
-  },
-  {
-   "from": "8b-player-game.js#game",
-   "to": "8b-player-game.js#pov",
-   "type": "uses"
-  },
-  {
-   "from": "8b-player-game.js#game",
-   "to": "1-config.js#NPC_SIZE",
-   "type": "uses"
-  },
-  {
-   "from": "8b-player-game.js#game",
    "to": "8b-player-game.js#play",
    "type": "uses"
   },
@@ -5397,7 +5707,32 @@
   },
   {
    "from": "8b-player-game.js#game",
+   "to": "8b-player-game.js#pov",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "1-config.js#NPC_FIGHT_MOVES",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "1-config.js#NPC_SIZE",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
    "to": "7b-sim.js#simSky",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "5-collision.js#occ",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "7b-sim.js#Ecosystem",
    "type": "uses"
   },
   {
@@ -5428,6 +5763,11 @@
   {
    "from": "9-main.js#debugReadout",
    "to": "8a-render.js#graphics",
+   "type": "uses"
+  },
+  {
+   "from": "9-main.js#debugReadout",
+   "to": "3-gfx-io.js#msaa",
    "type": "uses"
   },
   {

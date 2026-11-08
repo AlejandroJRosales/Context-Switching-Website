@@ -224,6 +224,8 @@ export class Animal extends Entity {
     // City: heading in radians; people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
     this.targetHeading = this.heading;
+    // headingDir's memo: sin and cos of heading as of _dirFor (NaN: none yet)
+    this._dirFor = NaN; this._dirSin = 0; this._dirCos = 1;
     this.moving = true;
     this.facingAngle = this.heading;
     this.prevHealth = this.health;
@@ -277,11 +279,15 @@ export class Animal extends Entity {
     return this.position.y + this.eyeOffset * this.heightScale * NPC_UNIT;
   }
 
-  senseTarget(px, py, pz, ax, az, cosH, tanV, tx, ty, tz) {
+  // Is (tx, ty, tz) in the vision cone, in sight and nearer than `beat` (squared 3D distance)? A target at or past
+  // `beat` cannot replace the current best under locate's strict `<`, so it is rejected before the cone and the
+  // line-of-sight test; the targets locate picks are the same as testing everything.
+  senseCloser(px, py, pz, ax, az, cosH, tanV, tx, ty, tz, beat) {
     const dx = tx - px, dy = ty - py, dz = tz - pz;
     const h2 = dx * dx + dz * dz;
     if (h2 === 0) return false;
     const d3sq = h2 + dy * dy;
+    if (!(d3sq < beat)) return false;
     if (d3sq > this.visionDistSq) return false;
     const h = Math.sqrt(h2);
     if ((dx * ax + dz * az) < cosH * h) return false;
@@ -316,19 +322,13 @@ export class Animal extends Entity {
     const huntedBy = HUNTED_BY_MASK[tid], hunts = HUNTS_MASK[tid];
     let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
-    // Buckets read in place; the distance reject matches senseTarget's.
+    // Animals in the grid cells covering the sight circle, in the grid's visit order; the distance reject matches
+    // senseCloser's.
     const r = this.visionDistance;
-    const gCells = grid.cells;
-    const gcs = grid.cellSize, gcols = grid.cols, grows = grid.rows;
-    const gcx0 = Math.floor((px - r) / gcs), gcx1 = Math.floor((px + r) / gcs);
-    const gcy0 = Math.floor((pz - r) / gcs), gcy1 = Math.floor((pz + r) / gcs);
-    if (gCells !== null) for (let gcy = gcy0; gcy <= gcy1; gcy++) {
-      const grow = (((gcy % grows) + grows) % grows) * gcols;
-      for (let gcx = gcx0; gcx <= gcx1; gcx++) {
-        const bucket = gCells[grow + ((gcx % gcols) + gcols) % gcols];
-        if (bucket === null) continue;
-        for (let _i = 0; _i < bucket.length; _i++) {
-      const obj = bucket[_i];
+    const seen = ecosystem._qSeen;
+    const nSeen = grid.queryInto(seen, px, pz, r);
+    for (let _i = 0; _i < nSeen; _i++) {
+      const obj = seen[_i];
       if (obj === this) continue;
       const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
       const hx = ox - px, hz = oz - pz;
@@ -338,7 +338,10 @@ export class Animal extends Entity {
       const isFood = (hunts & obit) !== 0;
       const isMate = oid === tid && this.sex !== obj.sex;
       if (!isPred && !isFood && !isMate) continue;
-      if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, ox, oy, oz)) continue;
+      // the farthest best among the categories obj could fill: nearer than this, it can replace at least one of them;
+      // at or past it, it can replace none (each category below still checks its own best)
+      const beat = Math.max(isPred ? bestPredDist : 0, isFood ? bestFoodDist : 0, isMate ? bestMateDist : 0);
+      if (!this.senseCloser(px, py, pz, ax, az, cosH, tanV, ox, oy, oz, beat)) continue;
 
       if (isPred) {
         if (hit.d3sq < bestPredDist) {
@@ -367,15 +370,12 @@ export class Animal extends Entity {
           this.rayMateElev = hit.elev; this.rayMateDist = hit.dist;
         }
       }
-        }
-      }
     }
 
     // City: in Survivor the player is a predator to what people hunt
     const gp = ecosystem.avatar;
     if (gp.isThreatTo(tid) &&
-      this.senseTarget(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z) &&
-      hit.d3sq < bestPredDist) {
+      this.senseCloser(px, py, pz, ax, az, cosH, tanV, gp.position.x, gp.position.y, gp.position.z, bestPredDist)) {
       bestPredDist = hit.d3sq;
       this.memPredatorX = gp.position.x; this.memPredatorY = gp.position.y; this.memPredatorZ = gp.position.z;
       this.hasPredator = true;
@@ -384,31 +384,20 @@ export class Animal extends Entity {
     }
 
     // City: plants are food for people too, from the sight grid.
-    const ps = ecosystem.plantSight, pCells = ps.cells;
-    const pcs = ps.cellSize, pcols = ps.cols, prows = ps.rows;
-    const pcx0 = Math.floor((px - r) / pcs), pcx1 = Math.floor((px + r) / pcs);
-    const pcy0 = Math.floor((pz - r) / pcs), pcy1 = Math.floor((pz + r) / pcs);
-    if (pCells !== null) for (let pcy = pcy0; pcy <= pcy1; pcy++) {
-      const prow = (((pcy % prows) + prows) % prows) * pcols;
-      for (let pcx = pcx0; pcx <= pcx1; pcx++) {
-        const bucket = pCells[prow + ((pcx % pcols) + pcols) % pcols];
-        if (bucket === null) continue;
-        for (let _i = 0; _i < bucket.length; _i++) {
-          const plant = bucket[_i];
-          if (!plant.alive) continue;
-          const qx = plant.position.x - px, qz = plant.position.z - pz;
-          if (qx * qx + qz * qz > vd) continue;
-          if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV,
-            plant.position.x, plant.position.y, plant.position.z)) continue;
-          if (hit.d3sq < bestFoodDist) {
-            bestFoodDist = hit.d3sq;
-            this.memFoodX = plant.position.x; this.memFoodY = plant.position.y; this.memFoodZ = plant.position.z;
-            this.hasFood = true;
-            this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
-            this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
-          }
-        }
-      }
+    const seenPlants = ecosystem._qSeenPlants;
+    const nPlants = ecosystem.plantSight.queryInto(seenPlants, px, pz, r);
+    for (let _i = 0; _i < nPlants; _i++) {
+      const plant = seenPlants[_i];
+      if (!plant.alive) continue;
+      const qx = plant.position.x - px, qz = plant.position.z - pz;
+      if (qx * qx + qz * qz > vd) continue;
+      if (!this.senseCloser(px, py, pz, ax, az, cosH, tanV,
+        plant.position.x, plant.position.y, plant.position.z, bestFoodDist)) continue;
+      bestFoodDist = hit.d3sq;
+      this.memFoodX = plant.position.x; this.memFoodY = plant.position.y; this.memFoodZ = plant.position.z;
+      this.hasFood = true;
+      this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
+      this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
     }
 
     // food boxes are food for people: nearest of animal, plant and crate wins
@@ -416,14 +405,12 @@ export class Animal extends Entity {
       const nBox = foodBoxes.sight.queryInto(ecosystem._qBox, px, pz, this.visionDistance);
       for (let _i = 0; _i < nBox; _i++) {
         const bp = ecosystem._qBox[_i].position;
-        if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, bp.x, bp.y, bp.z)) continue;
-        if (hit.d3sq < bestFoodDist) {
-          bestFoodDist = hit.d3sq;
-          this.memFoodX = bp.x; this.memFoodY = bp.y; this.memFoodZ = bp.z;
-          this.hasFood = true;
-          this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
-          this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
-        }
+        if (!this.senseCloser(px, py, pz, ax, az, cosH, tanV, bp.x, bp.y, bp.z, bestFoodDist)) continue;
+        bestFoodDist = hit.d3sq;
+        this.memFoodX = bp.x; this.memFoodY = bp.y; this.memFoodZ = bp.z;
+        this.hasFood = true;
+        this.rayFoodSin = hit.sin; this.rayFoodCos = hit.cos;
+        this.rayFoodElev = hit.elev; this.rayFoodDist = hit.dist;
       }
     }
 
@@ -433,14 +420,12 @@ export class Animal extends Entity {
       const wp = ecosystem._qWater[_i].position;
       const qx = wp.x - px, qz = wp.z - pz;
       if (qx * qx + qz * qz > vd) continue;
-      if (!this.senseTarget(px, py, pz, ax, az, cosH, tanV, wp.x, wp.y, wp.z)) continue;
-      if (hit.d3sq < bestWaterDist) {
-        bestWaterDist = hit.d3sq;
-        this.memWaterX = wp.x; this.memWaterY = wp.y; this.memWaterZ = wp.z;
-        this.hasWater = true;
-        this.rayWaterSin = hit.sin; this.rayWaterCos = hit.cos;
-        this.rayWaterElev = hit.elev; this.rayWaterDist = hit.dist;
-      }
+      if (!this.senseCloser(px, py, pz, ax, az, cosH, tanV, wp.x, wp.y, wp.z, bestWaterDist)) continue;
+      bestWaterDist = hit.d3sq;
+      this.memWaterX = wp.x; this.memWaterY = wp.y; this.memWaterZ = wp.z;
+      this.hasWater = true;
+      this.rayWaterSin = hit.sin; this.rayWaterCos = hit.cos;
+      this.rayWaterElev = hit.elev; this.rayWaterDist = hit.dist;
     }
 
     if (this.hasPredator && this.outOfRange(this.memPredatorX, this.memPredatorY, this.memPredatorZ)) {
@@ -495,6 +480,15 @@ export class Animal extends Entity {
     if (this.hasMate) {
       r = ray(this.memMateX, this.memMateY, this.memMateZ);
       this.rayMateSin = r.sin; this.rayMateCos = r.cos; this.rayMateElev = r.elev; this.rayMateDist = r.dist;
+    }
+  }
+
+  // Refreshes _dirSin and _dirCos to the current heading (Math.sin and Math.cos, recomputed only when heading changed).
+  headingDir() {
+    const h = this.heading;
+    // a new heading, or 0 after -0 (or back): Math.sin keeps the zero's sign, so the memo does too
+    if (h !== this._dirFor || (h === 0 && 1 / h !== 1 / this._dirFor)) {
+      this._dirFor = h; this._dirSin = Math.sin(h); this._dirCos = Math.cos(h);
     }
   }
 
@@ -637,7 +631,8 @@ export class Animal extends Entity {
     if ((now - this.pounceAt) / P.moveS < P.leapAt) return 0;
     const q = this.quarry, flight = this.leapSpeed(P) * this.bumpScale * NPC_TICK_S;
     if (q === null) return flight;   // hunt ended mid-air: the leap carries on
-    const along = (q.position.x - this.position.x) * Math.sin(this.heading) + (q.position.z - this.position.z) * Math.cos(this.heading);
+    this.headingDir();
+    const along = (q.position.x - this.position.x) * this._dirSin + (q.position.z - this.position.z) * this._dirCos;
     return Math.max(0, Math.min(flight, along - Ecosystem.CONTACT_DIST * POUNCE_LAND_SHORT));
   }
 
@@ -782,7 +777,8 @@ export class Animal extends Entity {
     const d0 = step / n;
     for (let k = 0; k < n; k++) {
       const d = d0 * (this.bumpScale / b0);
-      let fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      this.headingDir();
+      const fx = this._dirSin, fz = this._dirCos;
       p.x = ecosystem.fitX(p.x + fx * d);
       p.z = ecosystem.fitZ(p.z + fz * d);
       w.set(p.x, 0, p.z);
@@ -848,7 +844,8 @@ export class Animal extends Entity {
       }
       this.facingAngle = this.heading;
       const step = this.stepLength();
-      const sx = Math.sin(this.heading) * step, sz = Math.cos(this.heading) * step;
+      this.headingDir();
+      const sx = this._dirSin * step, sz = this._dirCos * step;
       const n = Math.ceil(step / NPC_SUBSTEP);
       if (!this.brain) {
         this.moveDeer(step);
@@ -1319,6 +1316,8 @@ export class Ecosystem {
     this._qPlant = [];
     this._qWater = [];
     this._qBox = [];
+    this._qSeen = [];         // locate: animals in the sight box
+    this._qSeenPlants = [];   // locate: plants in the sight box
     this._plantAdds = [];
     this._plantDrops = [];
     this._animalGridDrops = [];    // removed animals still in the grid
@@ -1498,7 +1497,8 @@ export class Ecosystem {
       const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
       // BUMPING: this tick's velocity
       const speed = a.groundSpeed(now);
-      const vx = Math.sin(a.heading) * speed, vz = Math.cos(a.heading) * speed;
+      a.headingDir();
+      const vx = a._dirSin * speed, vz = a._dirCos * speed;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
       near: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
         const other = items[i];

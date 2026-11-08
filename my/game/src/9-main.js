@@ -367,7 +367,7 @@ const debugReadout = {
     cam.layers.set(DEBUG_PROBE_LAYER);
     cam.updateMatrixWorld();
     // the same output encoding as the real frame, so the probe uses the same shader variant
-    target.texture.colorSpace = graphics.high ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+    target.texture.colorSpace = graphics.high ? msaa.ensure().texture.colorSpace : THREE.SRGBColorSpace;
     const bg = scene.background, prevTarget = renderer.getRenderTarget();
     scene.background = DEBUG_PROBE_BG;
     this.glErrors();

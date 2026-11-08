@@ -302,11 +302,21 @@ export class SpatialGrid {
     const cy0 = Math.floor((z - r) / cs), cy1 = Math.floor((z + r) / cs);
     for (let cy = cy0; cy <= cy1; cy++) {
       const row = (((cy % rows) + rows) % rows) * cols;
-      for (let cx = cx0; cx <= cx1; cx++) {
-        const k = row + ((cx % cols) + cols) % cols;
-        if ((filled[k >>> 5] & (1 << (k & 31))) === 0) continue;
-        const bucket = cells[k];
-        for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
+      // columns cx0..cx1 in order (wrapped), a run at a time: a run is the cells sharing one bitset word before the
+      // row wraps, so a word of empty cells is skipped with one read
+      let c = ((cx0 % cols) + cols) % cols;
+      for (let left = cx1 - cx0 + 1; left > 0;) {
+        const k0 = row + c;
+        const run = Math.min(32 - (k0 & 31), cols - c, left);
+        const word = filled[k0 >>> 5];
+        if (word !== 0) for (let k = k0, kEnd = k0 + run; k < kEnd; k++) {
+          if ((word & (1 << (k & 31))) === 0) continue;
+          const bucket = cells[k];
+          for (let i = 0; i < bucket.length; i++) out[n++] = bucket[i];
+        }
+        left -= run;
+        c += run;
+        if (c === cols) c = 0;
       }
     }
     return n;
