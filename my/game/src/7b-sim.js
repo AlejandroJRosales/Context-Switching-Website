@@ -18,7 +18,8 @@ import {
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
   NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
-  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX
+  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
+  RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools
@@ -79,6 +80,325 @@ export function downShare(a, now) {
   if (now >= a.downUntil) return 0;
   return fightEase(fightClamp01((now - a.downAt) / NPC_FALL_S)) * fightEase(fightClamp01((a.downUntil - now) / NPC_GETUP_S));
 }
+// FALLS (with ragdolls on, Ecosystem.stepFalls): the physical body of a knocked-down or dead animal, stepped by the sim at
+// every distance; the animal is where its body is, so the drawn body, the stats panel and the sim agree. VerletBody:
+// particles, distance links, one-way hinges, ground, friction and the car's box (Ecosystem.fallBox). BoxFall and
+// HumanFall lay out their rigs. The renderer poses meshes from these particles; the player's ragdoll is a HumanFall the
+// renderer steps (AnimalRenderer.bodyDown).
+export class VerletBody {
+  // n particles; links [a, b, aShare, bShare]; radii in rig units; anchors, the particles whose centre is the animal's
+  // place; hinges as solveHinge. Flat typed arrays.
+  constructor(n, links, radii, anchors, hinges = []) {
+    this.n = n; this.radii = radii; this.anchors = anchors;
+    this.nLinks = links.length;
+    this.la = Int32Array.from(links, l => l[0] * 3);
+    this.lb = Int32Array.from(links, l => l[1] * 3);
+    this.sa = Float64Array.from(links, l => l[2]);
+    this.sb = Float64Array.from(links, l => l[3]);
+    this.nHinges = hinges.length;
+    this.hParent = Int32Array.from(hinges, h => h[0] * 3);
+    this.hJoint = Int32Array.from(hinges, h => h[1] * 3);
+    this.hChild = Int32Array.from(hinges, h => h[2] * 3);
+    this.hAxisFrom = Int32Array.from(hinges, h => h[3] * 3);
+    this.hAxisTo = Int32Array.from(hinges, h => h[4] * 3);
+    this.hMin = Float64Array.from(hinges, h => h[5]);
+    this.hMax = Float64Array.from(hinges, h => h[6]);
+    this.hAxis = new Float64Array(hinges.length * 3);   // last good hinge axes
+    this.pos = new Float64Array(n * 3);    // particles now
+    this.prev = new Float64Array(n * 3);   // last step's particles (velocity)
+    this.len = new Float64Array(links.length);   // link lengths as placed
+    this.floor = new Float64Array(n);      // lowest height per particle
+    this.kp = 0; this.ground = 0;
+    this.boundX = 0; this.boundY = 0; this.boundZ = 0; this.boundR = 0;   // bounding sphere
+    this.cx = 0; this.cz = 0;              // anchors' centre (anchorCentre)
+  }
+
+  // Place particle i at v, launched by (lx, lz) per step.
+  place(i, v, lx, lz) {
+    const o = i * 3, pos = this.pos, prev = this.prev;
+    pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z;
+    prev[o] = v.x - lx; prev[o + 1] = v.y; prev[o + 2] = v.z - lz;
+  }
+
+  // After place(): links keep their starting lengths. kp: metres per rig unit.
+  begin(kp, ground) {
+    this.kp = kp; this.ground = ground;
+    for (let k = 0; k < this.nLinks; k++) this.len[k] = this.dist(this.la[k] / 3, this.lb[k] / 3);
+    for (let i = 0; i < this.n; i++) this.floor[i] = ground + this.radii[i] * kp;
+    // seed hinge fallback axes from the placed pose
+    for (let k = 0, o = 0; k < this.nHinges; k++, o += 3) {
+      const p = this.pos, a = this.hAxisFrom[k], b = this.hAxisTo[k];
+      const ax = p[a] - p[b], ay = p[a + 1] - p[b + 1], az = p[a + 2] - p[b + 2], al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+      this.hAxis[o] = ax / al; this.hAxis[o + 1] = ay / al; this.hAxis[o + 2] = az / al;
+    }
+    this.fitBounds();
+  }
+
+  // The body's bounding sphere now, for the view cull and the box wake check.
+  fitBounds() {
+    const pos = this.pos, n = this.n, kp = this.kp;
+    let cx = 0, cy = 0, cz = 0;
+    for (let o = 0; o < n * 3; o += 3) { cx += pos[o]; cy += pos[o + 1]; cz += pos[o + 2]; }
+    cx /= n; cy /= n; cz /= n;
+    let rMax = 0;
+    for (let i = 0, o = 0; i < n; i++, o += 3) {
+      const dx = pos[o] - cx, dy = pos[o + 1] - cy, dz = pos[o + 2] - cz, r = Math.sqrt(dx * dx + dy * dy + dz * dz) + this.radii[i] * kp;
+      if (r > rMax) rMax = r;
+    }
+    this.boundX = cx; this.boundY = cy; this.boundZ = cz; this.boundR = rMax;
+  }
+
+  dist(i, j) {
+    const p = this.pos, a = i * 3, b = j * 3, dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  // One sim tick: damping, gravity, links, hinges, ground, car box.
+  step(box) {
+    const pos = this.pos, prev = this.prev, h = NPC_TICK_S, n3 = this.n * 3, fall = RAGDOLL_G * h * h;
+    for (let o = 0; o < n3; o++) {
+      const v = (pos[o] - prev[o]) * RAGDOLL_DAMP;
+      prev[o] = pos[o];
+      pos[o] += v;
+    }
+    for (let o = 1; o < n3; o += 3) pos[o] -= fall;
+    const la = this.la, lb = this.lb, sa = this.sa, sb = this.sb, len = this.len, floor = this.floor, nLinks = this.nLinks;
+    for (let it = 0; it < RAGDOLL_ITERS; it++) {
+      for (let k = 0; k < nLinks; k++) {
+        const a = la[k], b = lb[k];
+        const dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < 1e-9) continue;
+        const f = (d - len[k]) / d, fa = f * sa[k], fb = f * sb[k];
+        pos[a] += dx * fa; pos[a + 1] += dy * fa; pos[a + 2] += dz * fa;
+        pos[b] -= dx * fb; pos[b + 1] -= dy * fb; pos[b + 2] -= dz * fb;
+      }
+      for (let k = 0; k < this.nHinges; k++) this.solveHinge(k);
+      const last = it === RAGDOLL_ITERS - 1;
+      for (let i = 0, o = 0; i < this.n; i++, o += 3) {
+        if (pos[o + 1] >= floor[i]) continue;
+        pos[o + 1] = floor[i];
+        if (last) {
+          prev[o] += (pos[o] - prev[o]) * RAGDOLL_FRICTION;
+          prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
+        }
+      }
+      if (box) for (let i = 0; i < this.n; i++) this.outOfBox(i, box);
+    }
+    this.fitBounds();
+  }
+
+  // The player's ragdoll only: the anchors' centre pulled toward (ax, az) at perS share per second, speed kept.
+  pullToward(ax, az, perS) {
+    this.anchorCentre();
+    const pull = Math.min(1, perS * NPC_TICK_S);
+    this.translate((ax - this.cx) * pull, (az - this.cz) * pull);
+    this.fitBounds();
+  }
+
+  // Hinge k: the child segment turns from the parent's line only about the hinge axis, within [minRad, maxRad].
+  // Near-parallel, the last good axis is kept.
+  solveHinge(k) {
+    const pos = this.pos, p = this.hParent[k], j = this.hJoint[k], c = this.hChild[k], h3 = k * 3, last = this.hAxis;
+    // u: parent direction
+    let ux = pos[j] - pos[p], uy = pos[j + 1] - pos[p + 1], uz = pos[j + 2] - pos[p + 2];
+    const ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    if (ul < 1e-9) return;
+    ux /= ul; uy /= ul; uz /= ul;
+    // A: hinge axis, or the last good one
+    const f = this.hAxisFrom[k], t = this.hAxisTo[k];
+    let ax = pos[f] - pos[t], ay = pos[f + 1] - pos[t + 1], az = pos[f + 2] - pos[t + 2];
+    const rawLen = Math.sqrt(ax * ax + ay * ay + az * az);
+    let along = ax * ux + ay * uy + az * uz;
+    ax -= along * ux; ay -= along * uy; az -= along * uz;
+    let al = Math.sqrt(ax * ax + ay * ay + az * az);
+    const axisFromPair = al >= HUMAN_RAG_HINGE_MIN_AXIS * rawLen;   // true: the pair gives the axis
+    if (!axisFromPair) {
+      ax = last[h3]; ay = last[h3 + 1]; az = last[h3 + 2];
+      along = ax * ux + ay * uy + az * uz;
+      ax -= along * ux; ay -= along * uy; az -= along * uz;
+      al = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (al < 1e-6) return;
+    }
+    ax /= al; ay /= al; az /= al;
+    if (axisFromPair) { last[h3] = ax; last[h3 + 1] = ay; last[h3 + 2] = az; }
+    // w = A x u
+    const wx = ay * uz - az * uy, wy = az * ux - ax * uz, wz = ax * uy - ay * ux;
+    // v: child segment; its angle clamped
+    const vx = pos[c] - pos[j], vy = pos[c + 1] - pos[j + 1], vz = pos[c + 2] - pos[j + 2];
+    const vl = Math.sqrt(vx * vx + vy * vy + vz * vz);
+    if (vl < 1e-9) return;
+    const angle = Math.atan2(vx * wx + vy * wy + vz * wz, vx * ux + vy * uy + vz * uz);
+    const clamped = Math.min(this.hMax[k], Math.max(this.hMin[k], angle));
+    const cu = Math.cos(clamped) * vl, cw = Math.sin(clamped) * vl;
+    pos[c] = pos[j] + ux * cu + wx * cw;
+    pos[c + 1] = pos[j + 1] + uy * cu + wy * cw;
+    pos[c + 2] = pos[j + 2] + uz * cu + wz * cw;
+  }
+
+  // Particle i out of the car's box the shallowest way, so bodies go over the car.
+  outOfBox(i, box) {
+    const pos = this.pos, o = i * 3, r = this.radii[i] * this.kp;
+    const dx = pos[o] - box.cx, dz = pos[o + 2] - box.cz, h = pos[o + 1] - box.y;
+    const u = dx * box.fx + dz * box.fz, w = dx * box.sx + dz * box.sz;   // along, across
+    const penU = box.halfLen + r - Math.abs(u), penW = box.halfWid + r - Math.abs(w), penTop = box.top + r - h;
+    if (penU <= 0 || penW <= 0 || penTop <= 0 || h < -r) return;
+    if (penTop <= penU && penTop <= penW) pos[o + 1] += penTop;
+    else if (penU <= penW) { const k = Math.sign(u) * penU; pos[o] += box.fx * k; pos[o + 2] += box.fz * k; }
+    else { const k = Math.sign(w) * penW; pos[o] += box.sx * k; pos[o + 2] += box.sz * k; }
+  }
+
+  // Does the bounding sphere reach the box (Ecosystem.fallBox)? Wakes a sleeping body.
+  nearBox(box) {
+    const dx = this.boundX - box.cx, dz = this.boundZ - box.cz, r = this.boundR;
+    return Math.abs(dx * box.fx + dz * box.fz) < box.halfLen + r && Math.abs(dx * box.sx + dz * box.sz) < box.halfWid + r &&
+      this.boundY - r < box.y + box.top;
+  }
+
+  // The anchors' centre into cx, cz.
+  anchorCentre() {
+    const pos = this.pos, an = this.anchors;
+    let cx = 0, cz = 0;
+    for (let k = 0; k < an.length; k++) { cx += pos[an[k] * 3]; cz += pos[an[k] * 3 + 2]; }
+    this.cx = cx / an.length; this.cz = cz / an.length;
+  }
+
+  // The body's lowest point: its lowest particle's bottom (the ground, or the roof it lies on).
+  lowestY() {
+    let y = Infinity;
+    for (let i = 0, o = 1; i < this.n; i++, o += 3) y = Math.min(y, this.pos[o] - this.radii[i] * this.kp);
+    return y;
+  }
+
+  // The largest particle move this step, squared (metres per step).
+  maxStepSq() {
+    const pos = this.pos, prev = this.prev;
+    let m = 0;
+    for (let o = 0; o < this.n * 3; o += 3) {
+      const dx = pos[o] - prev[o], dy = pos[o + 1] - prev[o + 1], dz = pos[o + 2] - prev[o + 2], d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > m) m = d2;
+    }
+    return m;
+  }
+
+  // Every particle moved by (dx, dz), its speed kept.
+  translate(dx, dz) {
+    const pos = this.pos, prev = this.prev;
+    for (let o = 0; o < this.n * 3; o += 3) { pos[o] += dx; prev[o] += dx; pos[o + 2] += dz; prev[o + 2] += dz; }
+  }
+
+  // Speed along x and/or z stopped (a wall).
+  stopAxis(x, z) {
+    const pos = this.pos, prev = this.prev;
+    for (let o = 0; o < this.n * 3; o += 3) { if (x) prev[o] = pos[o]; if (z) prev[o + 2] = pos[o + 2]; }
+  }
+
+  // particle i into out
+  at(i, out) { const o = i * 3; return out.set(this.pos[o], this.pos[o + 1], this.pos[o + 2]); }
+}
+
+// Every fall's launch: the hit's push heading and speed (capped at RAGDOLL_MAX_DV) per step, x then z.
+function fallLaunch(a) {
+  const dv = Math.min(a.downDV, RAGDOLL_MAX_DV) * NPC_TICK_S;
+  return [Math.sin(a.downYaw) * dv, Math.cos(a.downYaw) * dv];
+}
+
+// Each particle's world point from its rest point, placed at world / quat.
+function placeFromRest(body, rest, shares, world, quat, a, v) {
+  const [lx, lz] = fallLaunch(a);
+  for (let i = 0; i < rest.length; i++) {
+    v.copy(rest[i]).multiplyScalar(body.kp).applyQuaternion(quat).add(world);
+    body.place(i, v, lx * shares[i], lz * shares[i]);
+  }
+}
+
+// BOX-RIG FALLS (deer, coyotes): rear, front, top, 4 hips, 4 feet. Body and hips are rigid; feet swing. The top takes
+// the full launch, so it rolls toward the push. Layouts by type in fallRigs, rig units: points, bodyR, footR (the
+// renderer registers them from its meshes, AnimalRenderer.ragdollRig).
+export const fallRigs = {};
+const BOX_RAG_CORE = 7;   // particles 0 to 6
+const BOX_RAG_LINKS = (() => {
+  const links = [];
+  for (let i = 0; i < BOX_RAG_CORE; i++) for (let j = i + 1; j < BOX_RAG_CORE; j++) links.push([i, j, 0.5, 0.5]);
+  for (let l = 0; l < 4; l++) links.push([3 + l, 7 + l, 0, 1]);
+  return links;
+})();
+const BOX_RAG_SHARES = [RAGDOLL_BASE_SHARE, RAGDOLL_BASE_SHARE, RAGDOLL_TOP_SHARE, ...Array(4).fill(RAGDOLL_BASE_SHARE), ...Array(4).fill(0)];
+export class BoxFall {
+  constructor(rig) {
+    this.rig = rig; this.owner = null; this.type = null; this.stillS = 0; this.asleep = false;
+    this.body = new VerletBody(11, BOX_RAG_LINKS, [rig.bodyR, rig.bodyR, rig.bodyR, ...Array(8).fill(rig.footR)], [0, 1]);
+    this._v = new THREE.Vector3();
+  }
+
+  // From the standing pose at world / quat on `ground`.
+  start(a, world, quat, kp, ground) {
+    this.body.kp = kp;
+    placeFromRest(this.body, this.rig.points, BOX_RAG_SHARES, world, quat, a, this._v);
+    this.body.begin(kp, ground);
+  }
+}
+
+// HUMAN FALLS: pelvis, chest, head, then left/right shoulders, elbows, hands, hips, knees, feet. Torso and head are
+// rigid; limbs bend on one-way hinges.
+const HUMAN_RAG_CORE = [0, 1, 2, 3, 4, 9, 10];
+const HUMAN_RAG_LINKS = (() => {
+  const links = [];
+  for (let i = 0; i < HUMAN_RAG_CORE.length; i++) for (let j = i + 1; j < HUMAN_RAG_CORE.length; j++) links.push([HUMAN_RAG_CORE[i], HUMAN_RAG_CORE[j], 0.5, 0.5]);
+  // limbs: [joint, child, shares]; the end nearer the torso is heavier
+  for (const s of [0, 1]) links.push([3 + s, 5 + s, 0.2, 0.8], [5 + s, 7 + s, 0.5, 0.5], [9 + s, 11 + s, 0.3, 0.7], [11 + s, 13 + s, 0.5, 0.5]);
+  return links;
+})();
+// ELBOW AND KNEE HINGES: one way about +x, straight to flexDeg; elbow -1, knee +1.
+const HUMAN_RAG_JOINT_LIMITS = {
+  elbow: { flexDeg: 145, flexDir: -1 },
+  knee: { flexDeg: 150, flexDir: 1 }
+};
+// under this axis share left, a hinge keeps its last good axis
+const HUMAN_RAG_HINGE_MIN_AXIS = 0.1;
+// limits [minRad, maxRad] about +x
+const hingeRange = ({ flexDeg, flexDir }) => {
+  const flex = flexDir * flexDeg * Math.PI / 180;
+  return [Math.min(0, flex), Math.max(0, flex)];
+};
+// hinge rows: elbows on the shoulders' axis, knees on the hips'
+const HUMAN_RAG_HINGES = (() => {
+  const elbow = hingeRange(HUMAN_RAG_JOINT_LIMITS.elbow), knee = hingeRange(HUMAN_RAG_JOINT_LIMITS.knee), hinges = [];
+  for (const s of [0, 1]) hinges.push([3 + s, 5 + s, 7 + s, 3, 4, ...elbow], [9 + s, 11 + s, 13 + s, 9, 10, ...knee]);
+  return hinges;
+})();
+// ground radii, rig units
+const HUMAN_RAG_RADII = [2.3, 2.3, 1.9, 1.5, 1.5, 0.9, 0.9, 0.6, 0.6, 1.8, 1.8, 1.2, 1.2, 0.9, 0.9];
+// launch share per particle: the upper body leads, so it topples toward the push
+const HUMAN_RAG_SHARES = [RAGDOLL_BASE_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE,
+  0, 0, 0, 0, RAGDOLL_BASE_SHARE, RAGDOLL_BASE_SHARE, 0, 0, 0, 0];
+// Rest points in rig units at body shape `shape`, matching the shader's arm and leg offsets.
+function humanRagRest(shape) {
+  const R = HUMAN_RIG, at = R.at;
+  const arm = (s, y) => new THREE.Vector3(s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE) * shape.shoulder, y, 0);
+  const leg = (s, y) => new THREE.Vector3(s * (R.legX - (R.hip - y) * R.legSplay) * shape.hip, y, 0);
+  return [new THREE.Vector3(0, R.hip, 0), new THREE.Vector3(0, at(0.84), 0), new THREE.Vector3(0, at(0.94), 0),
+    arm(1, R.shoulder), arm(-1, R.shoulder), arm(1, R.elbow), arm(-1, R.elbow), arm(1, at(0.44)), arm(-1, at(0.44)),
+    leg(1, R.hip), leg(-1, R.hip), leg(1, R.knee), leg(-1, R.knee), leg(1, R.ankle), leg(-1, R.ankle)];
+}
+export class HumanFall {
+  constructor() {
+    this.owner = null; this.type = null; this.stillS = 0; this.asleep = false; this.rest = null;
+    this.lieReach = 0;   // the player's ragdoll: anchors' reach from the feet once lying, metres (bodyDown's pull)
+    this.body = new VerletBody(15, HUMAN_RAG_LINKS, HUMAN_RAG_RADII, [0, 1], HUMAN_RAG_HINGES);
+    this._v = new THREE.Vector3();
+  }
+
+  start(a, world, quat, kp, ground) {
+    this.rest = humanRagRest(a.look.shape);
+    this.body.kp = kp;
+    const an = this.body.anchors;
+    this.lieReach = an.reduce((sum, i) => sum + this.rest[i].y - HUMAN_RIG.foot, 0) / an.length * kp;
+    placeFromRest(this.body, this.rest, HUMAN_RAG_SHARES, world, quat, a, this._v);
+    this.body.begin(kp, ground);
+  }
+}
+
 export function sampleFightKeys(keys, u, out) {
   let i = 0;
   while (i < keys.length - 2 && u > keys[i + 1].t) i++;
@@ -219,6 +539,7 @@ export class Animal extends Entity {
     // KNOCKDOWNS: downAt starts the fall, downUntil ends the hold; downYaw, downDV for render
     this.downAt = -Infinity; this.downUntil = 0; this.downYaw = 0; this.downDV = 0;
     this.contactTick = -Infinity;   // BUMP IMPACTS: last tick the player or the car touched it (Ecosystem.freshContact)
+    this.fall = null;               // FALLS: its body while knocked down or dead with ragdolls on (Ecosystem.beginFall)
     this.corpseUntil = 0;           // CORPSES: sim time its body goes (Ecosystem.addCorpse)
     this.diedAt = 0;                // CORPSES: sim time it died; its readouts stop here
     this.quarry = null;      // night hunt quarry (animal or avatar)
@@ -1010,11 +1331,19 @@ export class Animal extends Entity {
     return this.ageBase + (ecosystem.ticks - this.ageBaseTick) / NPC_TICKS_PER_YEAR;
   }
 
+  // GROWTH: drawn size share, GROWTH_MIN_SCALE at birth to 1 at maturity.
+  growthScale() {
+    const growth = this.isAdult ? 1 : Math.min(1, (ecosystem.ticks - this.birthTick) / NPC_MATURITY_TICKS);
+    return GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * growth;
+  }
+  // Metres per rig unit as drawn.
+  rigScale() { return this.growthScale() * NPC_UNIT * this.heightScale; }
+  // The drawn rig's origin height: a young body's centre sits lower by the lift it has not grown into.
+  originY() { return this.position.y - (1 - this.growthScale()) * this.footLift() * NPC_UNIT; }
+
   // Drawn height in metres.
   bodyHeightM() {
-    const growth = this.isAdult ? 1 : Math.min(1, (ecosystem.ticks - this.birthTick) / NPC_MATURITY_TICKS);
-    const s = GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * growth;
-    return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * s;
+    return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * this.growthScale();
   }
 
   // Body pace: the look's, 1 for animals.
@@ -1312,6 +1641,12 @@ export class Ecosystem {
   constructor() {
     this.animals = [];
     this.corpses = [];   // CORPSES: dead animals drawn lying, oldest first (addCorpse)
+    this.falls = [];     // FALLS: bodies being simulated, living and dead (beginFall)
+    this.ragdolls = false;      // FALLS: the collision mode has ragdolls (setRagdolls, from main's applyCollision)
+    this.fallBox = () => null;  // FALLS: the car's box this tick, or null (8b fills it)
+    this._fallPools = {};       // FALLS: spare bodies by type
+    this._fallWorld = new THREE.Vector3();
+    this._fallQuat = new THREE.Quaternion();
     this.plants = [];
     this.ticks = 0;
     this.ready = false;
@@ -1363,6 +1698,7 @@ export class Ecosystem {
   clear() {
     this.animals.length = 0;
     this.corpses.length = 0;
+    this.dropFalls();
     this.plants.length = 0;
     this._plantAdds.length = 0;
     this._plantDrops.length = 0;
@@ -1381,6 +1717,7 @@ export class Ecosystem {
   initialize(provider) {
     this.animals.length = 0;
     this.corpses.length = 0;
+    this.dropFalls();
     this.plants.length = 0;
     this._plantAdds.length = 0;
     this._plantDrops.length = 0;
@@ -1576,7 +1913,7 @@ export class Ecosystem {
     if (d < 1e-6) return;   // same spot: no direction
     const nx = dx / d, nz = dz / d, half = (NPC_BUMP_DIST - d) / 2;
     const bx = this.fitX(b.position.x + nx * half), bz = this.fitZ(b.position.z + nz * half);
-    if (!occ.blockedAt(bx, bz)) { b.position.x = bx; b.position.z = bz; }
+    if (!occ.blockedAt(bx, bz)) this.shove(b, bx, bz);
     const closing = vx * nx + vz * nz;   // m/s a moves toward b
     if (closing > 0) this.applyHit(b, a, 0, Ecosystem.bumpForceN(a.bodyMassKg(), closing));
   }
@@ -1633,13 +1970,14 @@ export class Ecosystem {
     const dx = (target.position.x - attacker.position.x) * away, dz = (target.position.z - attacker.position.z) * away;
     target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + (braced ? Math.PI : 0);
     target.downDV = Math.max(0, pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
+    this.beginFall(target);
   }
 
   // CORPSES: a dead animal lies where it fell, drawn only, for CORPSE_S. One already falling (a fatal hit) keeps its
   // fall; any other death collapses forward where it stands. The oldest past CORPSE_MAX goes.
   addCorpse(a) {
     const now = this.time;
-    if (!a.isDown(now)) { a.downAt = now; a.downYaw = a.facingAngle; a.downDV = 0; }
+    if (!a.isDown(now)) { a.downAt = now; a.downYaw = a.facingAngle; a.downDV = 0; this.beginFall(a); }
     a.downUntil = Infinity;   // never rises
     a.moving = false; a.playing = null;
     a.diedAt = now;
@@ -1658,6 +1996,99 @@ export class Ecosystem {
   static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition(); }
   // hold: fighting mass x NPC_HOLD_ACCEL_MS2 x condition
   static holdForceN(target) { return target.fightMassKg() * NPC_HOLD_ACCEL_MS2 * target.condition(); }
+
+  // Move b to (x, z); a body in a fall moves whole with it.
+  shove(b, x, z) {
+    if (b.fall) b.fall.body.translate(x - b.position.x, z - b.position.z);
+    b.position.x = x; b.position.z = z;
+  }
+
+  // FALLS: ragdolls on or off (main's applyCollision); off ends every fall where it is.
+  setRagdolls(on) {
+    this.ragdolls = on;
+    if (!on) this.dropFalls();
+  }
+
+  // FALLS: an animal starting to fall gets its body, from its standing pose, launched by the hit (downYaw, downDV).
+  // Ragdolls off, the player's avatar (the renderer's) and species without a fall rig keep the lying pose.
+  beginFall(a) {
+    if (!this.ragdolls || !(a instanceof Animal) || a.fall) return;
+    const human = a.type === 'human';   // true: a HumanFall, false: a BoxFall from the type's registered rig
+    const rig = human ? null : fallRigs[a.type];
+    if (!human && !rig) return;
+    const f = (this._fallPools[a.type] ??= []).pop() ?? (human ? new HumanFall() : new BoxFall(rig));
+    const kp = a.rigScale();
+    const world = this._fallWorld.set(a.position.x, a.originY(), a.position.z);
+    const quat = this._fallQuat.setFromAxisAngle(Ecosystem.Y_AXIS, a.facingAngle);
+    f.start(a, world, quat, kp, world.y - SPECIES[a.type].lift * kp);
+    f.owner = a; f.type = a.type; f.stillS = 0; f.asleep = false;
+    a.fall = f;
+    this.falls.push(f);
+  }
+  static Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+  // FALLS, one tick: every body steps (gravity, links, ground, the car's box), kept out of walls and in the world, and
+  // its animal is placed where it lies. A body still for FALL_SETTLE_S sleeps until the car's box reaches it. A rising
+  // animal's body holds while it gets up (the renderer blends it to standing); a risen animal or a gone corpse ends it.
+  stepFalls() {
+    const fs = this.falls;
+    if (fs.length === 0) return;
+    const now = this.time, box = this.fallBox();
+    const stillSq = (FALL_SETTLE_MS * NPC_TICK_S) * (FALL_SETTLE_MS * NPC_TICK_S);   // a still step's largest move, squared
+    for (let i = fs.length - 1; i >= 0; i--) {
+      const f = fs[i], a = f.owner, b = f.body;
+      const ended = a.alive ? now >= a.downUntil : a.corpseUntil <= now;   // true: risen, or no longer a shown corpse
+      if (ended) { this.endFall(i); continue; }
+      if (now >= a.downUntil - NPC_GETUP_S) continue;   // rising where it lies (a corpse's downUntil is Infinity)
+      if (f.asleep && box && b.nearBox(box)) { f.asleep = false; f.stillS = 0; }
+      if (!f.asleep) {
+        b.anchorCentre();
+        const fromX = b.cx, fromZ = b.cz;
+        b.step(box);
+        this.keepFallIn(b, fromX, fromZ);
+        f.stillS = b.maxStepSq() < stillSq ? f.stillS + NPC_TICK_S : 0;
+        f.asleep = f.stillS >= FALL_SETTLE_S;
+      }
+      this.placeOnFall(a, b);
+    }
+  }
+
+  // FALLS: the body kept in the world (wrap or clamp moves it whole) and out of walls, sliding along them like collide:
+  // the blocked axis of this step's anchor move is undone and its speed stopped. (fromX, fromZ): the anchors before.
+  keepFallIn(b, fromX, fromZ) {
+    b.anchorCentre();
+    let cx = b.cx, cz = b.cz;
+    const fx = this.fitX(cx), fz = this.fitZ(cz);
+    if (fx !== cx || fz !== cz) { b.translate(fx - cx, fz - cz); fromX += fx - cx; fromZ += fz - cz; cx = fx; cz = fz; }
+    if (!occ.blockedAt(cx, cz)) return;
+    if (!occ.blockedAt(cx, fromZ)) { b.translate(0, fromZ - cz); b.stopAxis(false, true); }
+    else if (!occ.blockedAt(fromX, cz)) { b.translate(fromX - cx, 0); b.stopAxis(true, false); }
+    else { b.translate(fromX - cx, fromZ - cz); b.stopAxis(true, true); }
+    b.fitBounds();
+  }
+
+  // FALLS: the animal where its body lies: x, z the anchors' centre (hips for people, body for box rigs), its centre
+  // height its lift over the body's lowest point (the ground, or the car's roof).
+  placeOnFall(a, b) {
+    b.anchorCentre();
+    a.position.x = b.cx; a.position.z = b.cz;
+    a.position.y = b.lowestY() + a.footLift() * NPC_UNIT;
+    a.freeX = b.cx; a.freeZ = b.cz;
+  }
+
+  // FALLS: fall i ended; its body back to the pool.
+  endFall(i) {
+    const f = this.falls[i];
+    f.owner.fall = null;
+    f.owner = null;
+    this._fallPools[f.type].push(f);
+    this.falls.splice(i, 1);
+  }
+
+  // FALLS: every fall ended where it is (a new or cleared world, ragdolls off).
+  dropFalls() {
+    for (let i = this.falls.length - 1; i >= 0; i--) this.endFall(i);
+  }
 
   // Occupancy-grid wall check: a blocked step slides or is undone.
   collide(a) {
@@ -1748,6 +2179,8 @@ export class Ecosystem {
         if (a.health <= Animal.DEATH_HEALTH) this.addCorpse(a);
       }
     }
+    // FALLS: after addCorpse, so an animal that died falling keeps its body as a corpse
+    this.stepFalls();
     if (this.plantsDied) {
       this.plantsDied = false;
       for (let i = this.plants.length - 1; i >= 0; i--) {

@@ -5,8 +5,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   EYE_HEIGHT, GRID_CELL, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR,
   LOW_NPC_LOD_DIST, LOW_FAR_STAT_DIST, GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, FACADE_LIGHTS_DEG, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
-  NPC_TICK_S, GAIT_MAX_HZ, GAIT_GALLOP_SWING, GAIT_CADENCE_SCALE, NPC_FIGHT_MOVES, NPC_MATURITY_TICKS,
-  GROWTH_MIN_SCALE, NPC_RIG_TOP, NPC_UNIT, PLAYER_HS, NPC_TYPES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUMAN_TYPE_ID,
+  NPC_TICK_S, GAIT_MAX_HZ, GAIT_GALLOP_SWING, GAIT_CADENCE_SCALE, NPC_FIGHT_MOVES,
+  NPC_RIG_TOP, NPC_UNIT, PLAYER_HS, NPC_TYPES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUMAN_TYPE_ID,
   HIGH_NPC_LOD_DIST, HIGH_FAR_STAT_DIST, NPC_BODY_R, NPC_STATS_R, NPC_STATS_UP, HUMAN_ATLAS, HUMAN_FACE_TILE,
   HUMAN_BODY_TILE, HUMAN_FACE_VARIANTS, HUMAN_OUTFITS, HUMAN_OUTFIT_TILES, HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V,
   HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED, HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_RIG,
@@ -20,9 +20,7 @@ import {
   BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
-  RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HIGH_RAGDOLLS, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
-  RAGDOLL_FRICTION, RAGDOLL_ANCHOR_PER_S, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, HUMAN_RAG_ROWS,
-  CAR_LEN, CAR_WID, CAR_TOP
+  RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
@@ -41,7 +39,7 @@ import {
 } from './6-worlds.js';
 import {
   humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, personBodyFields, Animal, averageHumanLook, plantView, ecosystem,
-  simSky, presetHour, downShare
+  simSky, presetHour, downShare, HumanFall, fallRigs
 } from './7b-sim.js';
 
 
@@ -51,8 +49,7 @@ export const renderInputs = {
   casters: () => [],         // non-animal meshes whose moves redraw shadows
   survivor: () => false,     // Survivor: the sky ignores Observer presets
   pointerTaken: id => false, // the touch stick or look owns this pointer
-  locked: () => false,       // pointer locked
-  car: null                  // the car: ragdolls stay out of its box
+  locked: () => false        // pointer locked
 };
 
 // VIEW CULL: off-screen bodies, stats and brains are skipped.
@@ -477,7 +474,7 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
       attribute vec4 iShape; // torso widths in NPC_TORSO_REGIONS order (writeHumanLook); limb girth rides in iLook.w
       attribute vec4 iDown;  // knockdown: w 0 = the lying pose (writeHumanDown: down share 0 standing to 1 lying, push angle in rig
                              // space, lift in rig units); w > 0 = a ragdoll in texture row w - 1, z its rise share (0 ragdoll, 1 standing)
-      uniform sampler2D humanRagdoll;   // ragdoll bones (HumanRagdoll.pose): per row, each bone's rotation then translation
+      uniform sampler2D humanRagdoll;   // ragdoll bones (HumanRagdollPose.pose): per row, each bone's rotation then translation
       vec4 ragTexel(float row, float col) {
         return texture2D(humanRagdoll, vec2((col + 0.5) / ${HUMAN_RAG_TEXELS}.0, (row + 0.5) / ${HUMAN_RAG_ROWS}.0));
       }
@@ -755,250 +752,49 @@ export function billboardMaterials(atlases, grid) {
   return { lit, depth };
 }
 
-// RAGDOLLS (render only): the sim decides who is down; a ragdoll plays the fall out. VerletBody: particles, distance
-// links, ground, friction, and a pull toward where the sim's body lies (a person: the lying pose's hips and chest, tipped
-// about the feet), so the body lies and rises where the sim has it. BoxRagdoll and
-// HumanRagdoll lay out their rigs.
-class VerletBody {
-  // n particles; links [a, b, aShare, bShare]; radii in rig units; anchors pulled to the sim position; hinges as
-  // solveHinge. Flat typed arrays.
-  constructor(n, links, radii, anchors, hinges = []) {
-    this.n = n; this.radii = radii; this.anchors = anchors;
-    this.nLinks = links.length;
-    this.la = Int32Array.from(links, l => l[0] * 3);
-    this.lb = Int32Array.from(links, l => l[1] * 3);
-    this.sa = Float64Array.from(links, l => l[2]);
-    this.sb = Float64Array.from(links, l => l[3]);
-    this.nHinges = hinges.length;
-    this.hParent = Int32Array.from(hinges, h => h[0] * 3);
-    this.hJoint = Int32Array.from(hinges, h => h[1] * 3);
-    this.hChild = Int32Array.from(hinges, h => h[2] * 3);
-    this.hAxisFrom = Int32Array.from(hinges, h => h[3] * 3);
-    this.hAxisTo = Int32Array.from(hinges, h => h[4] * 3);
-    this.hMin = Float64Array.from(hinges, h => h[5]);
-    this.hMax = Float64Array.from(hinges, h => h[6]);
-    this.hAxis = new Float64Array(hinges.length * 3);   // last good hinge axes
-    this.pos = new Float64Array(n * 3);    // particles now
-    this.prev = new Float64Array(n * 3);   // last step's particles (velocity)
-    this.len = new Float64Array(links.length);   // link lengths as placed
-    this.floor = new Float64Array(n);      // lowest height per particle
-    this.kp = 0; this.ground = 0;
-    this.boundX = 0; this.boundY = 0; this.boundZ = 0; this.boundR = 0;   // bounding sphere
-  }
-
-  // Place particle i at v, launched by (lx, lz) per step.
-  place(i, v, lx, lz) {
-    const o = i * 3, pos = this.pos, prev = this.prev;
-    pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z;
-    prev[o] = v.x - lx; prev[o + 1] = v.y; prev[o + 2] = v.z - lz;
-  }
-
-  // After place(): links keep their starting lengths. kp: metres per rig unit.
-  begin(kp, ground) {
-    this.kp = kp; this.ground = ground;
-    for (let k = 0; k < this.nLinks; k++) this.len[k] = this.dist(this.la[k] / 3, this.lb[k] / 3);
-    for (let i = 0; i < this.n; i++) this.floor[i] = ground + this.radii[i] * kp;
-    // seed hinge fallback axes from the placed pose
-    for (let k = 0, o = 0; k < this.nHinges; k++, o += 3) {
-      const p = this.pos, a = this.hAxisFrom[k], b = this.hAxisTo[k];
-      const ax = p[a] - p[b], ay = p[a + 1] - p[b + 1], az = p[a + 2] - p[b + 2], al = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
-      this.hAxis[o] = ax / al; this.hAxis[o + 1] = ay / al; this.hAxis[o + 2] = az / al;
-    }
-    this.fitBounds();
-  }
-
-  // The body's bounding sphere now, for the view cull, since a flying body can be far from the sim's position.
-  fitBounds() {
-    const pos = this.pos, n = this.n, kp = this.kp;
-    let cx = 0, cy = 0, cz = 0;
-    for (let o = 0; o < n * 3; o += 3) { cx += pos[o]; cy += pos[o + 1]; cz += pos[o + 2]; }
-    cx /= n; cy /= n; cz /= n;
-    let rMax = 0;
-    for (let i = 0, o = 0; i < n; i++, o += 3) {
-      const dx = pos[o] - cx, dy = pos[o + 1] - cy, dz = pos[o + 2] - cz, r = Math.sqrt(dx * dx + dy * dy + dz * dz) + this.radii[i] * kp;
-      if (r > rMax) rMax = r;
-    }
-    this.boundX = cx; this.boundY = cy; this.boundZ = cz; this.boundR = rMax;
-  }
-
-  dist(i, j) {
-    const p = this.pos, a = i * 3, b = j * 3, dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2];
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-  }
-
-  // One sim tick: damping, gravity, links, ground, car box, then the speed-free pull toward the anchor.
-  step(anchorX, anchorZ, box) {
-    const pos = this.pos, prev = this.prev, h = NPC_TICK_S, n3 = this.n * 3, fall = RAGDOLL_G * h * h;
-    for (let o = 0; o < n3; o++) {
-      const v = (pos[o] - prev[o]) * RAGDOLL_DAMP;
-      prev[o] = pos[o];
-      pos[o] += v;
-    }
-    for (let o = 1; o < n3; o += 3) pos[o] -= fall;
-    const la = this.la, lb = this.lb, sa = this.sa, sb = this.sb, len = this.len, floor = this.floor, nLinks = this.nLinks;
-    for (let it = 0; it < RAGDOLL_ITERS; it++) {
-      for (let k = 0; k < nLinks; k++) {
-        const a = la[k], b = lb[k];
-        const dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2];
-        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d < 1e-9) continue;
-        const f = (d - len[k]) / d, fa = f * sa[k], fb = f * sb[k];
-        pos[a] += dx * fa; pos[a + 1] += dy * fa; pos[a + 2] += dz * fa;
-        pos[b] -= dx * fb; pos[b + 1] -= dy * fb; pos[b + 2] -= dz * fb;
-      }
-      for (let k = 0; k < this.nHinges; k++) this.solveHinge(k);
-      const last = it === RAGDOLL_ITERS - 1;
-      for (let i = 0, o = 0; i < this.n; i++, o += 3) {
-        if (pos[o + 1] >= floor[i]) continue;
-        pos[o + 1] = floor[i];
-        if (last) {
-          prev[o] += (pos[o] - prev[o]) * RAGDOLL_FRICTION;
-          prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
-        }
-      }
-      if (box) for (let i = 0; i < this.n; i++) this.outOfBox(i, box);
-    }
-    const anchors = this.anchors;
-    let cx = 0, cz = 0;
-    for (let k = 0; k < anchors.length; k++) { cx += pos[anchors[k] * 3]; cz += pos[anchors[k] * 3 + 2]; }
-    cx /= anchors.length; cz /= anchors.length;
-    const pull = Math.min(1, RAGDOLL_ANCHOR_PER_S * h), sx = (anchorX - cx) * pull, sz = (anchorZ - cz) * pull;
-    for (let o = 0; o < n3; o += 3) { pos[o] += sx; prev[o] += sx; pos[o + 2] += sz; prev[o + 2] += sz; }
-    this.fitBounds();
-  }
-
-  // Hinge k: the child segment turns from the parent's line only about the hinge axis, within [minRad, maxRad].
-  // Near-parallel, the last good axis is kept.
-  solveHinge(k) {
-    const pos = this.pos, p = this.hParent[k], j = this.hJoint[k], c = this.hChild[k], h3 = k * 3, last = this.hAxis;
-    // u: parent direction
-    let ux = pos[j] - pos[p], uy = pos[j + 1] - pos[p + 1], uz = pos[j + 2] - pos[p + 2];
-    const ul = Math.sqrt(ux * ux + uy * uy + uz * uz);
-    if (ul < 1e-9) return;
-    ux /= ul; uy /= ul; uz /= ul;
-    // A: hinge axis, or the last good one
-    const f = this.hAxisFrom[k], t = this.hAxisTo[k];
-    let ax = pos[f] - pos[t], ay = pos[f + 1] - pos[t + 1], az = pos[f + 2] - pos[t + 2];
-    const rawLen = Math.sqrt(ax * ax + ay * ay + az * az);
-    let along = ax * ux + ay * uy + az * uz;
-    ax -= along * ux; ay -= along * uy; az -= along * uz;
-    let al = Math.sqrt(ax * ax + ay * ay + az * az);
-    const axisFromPair = al >= HUMAN_RAG_HINGE_MIN_AXIS * rawLen;   // true: the pair gives the axis
-    if (!axisFromPair) {
-      ax = last[h3]; ay = last[h3 + 1]; az = last[h3 + 2];
-      along = ax * ux + ay * uy + az * uz;
-      ax -= along * ux; ay -= along * uy; az -= along * uz;
-      al = Math.sqrt(ax * ax + ay * ay + az * az);
-      if (al < 1e-6) return;
-    }
-    ax /= al; ay /= al; az /= al;
-    if (axisFromPair) { last[h3] = ax; last[h3 + 1] = ay; last[h3 + 2] = az; }
-    // w = A x u
-    const wx = ay * uz - az * uy, wy = az * ux - ax * uz, wz = ax * uy - ay * ux;
-    // v: child segment; its angle clamped
-    const vx = pos[c] - pos[j], vy = pos[c + 1] - pos[j + 1], vz = pos[c + 2] - pos[j + 2];
-    const vl = Math.sqrt(vx * vx + vy * vy + vz * vz);
-    if (vl < 1e-9) return;
-    const angle = Math.atan2(vx * wx + vy * wy + vz * wz, vx * ux + vy * uy + vz * uz);
-    const clamped = Math.min(this.hMax[k], Math.max(this.hMin[k], angle));
-    const cu = Math.cos(clamped) * vl, cw = Math.sin(clamped) * vl;
-    pos[c] = pos[j] + ux * cu + wx * cw;
-    pos[c + 1] = pos[j + 1] + uy * cu + wy * cw;
-    pos[c + 2] = pos[j + 2] + uz * cu + wz * cw;
-  }
-
-  // Particle i out of the car's box the shallowest way, so bodies go over the car.
-  outOfBox(i, box) {
-    const pos = this.pos, o = i * 3, r = this.radii[i] * this.kp;
-    const dx = pos[o] - box.cx, dz = pos[o + 2] - box.cz, h = pos[o + 1] - box.y;
-    const u = dx * box.fx + dz * box.fz, w = dx * box.sx + dz * box.sz;   // along, across
-    const penU = box.halfLen + r - Math.abs(u), penW = box.halfWid + r - Math.abs(w), penTop = box.top + r - h;
-    if (penU <= 0 || penW <= 0 || penTop <= 0 || h < -r) return;
-    if (penTop <= penU && penTop <= penW) pos[o + 1] += penTop;
-    else if (penU <= penW) { const k = Math.sign(u) * penU; pos[o] += box.fx * k; pos[o + 2] += box.fz * k; }
-    else { const k = Math.sign(w) * penW; pos[o] += box.sx * k; pos[o + 2] += box.sz * k; }
-  }
-
-  // particle i into out
-  at(i, out) { const o = i * 3; return out.set(this.pos[o], this.pos[o + 1], this.pos[o + 2]); }
-}
-
-// Every ragdoll's launch: the sim's push heading and speed (capped at RAGDOLL_MAX_DV) per step, x then z.
-function ragdollLaunch(a) {
-  const dv = Math.min(a.downDV, RAGDOLL_MAX_DV) * NPC_TICK_S;
-  return [Math.sin(a.downYaw) * dv, Math.cos(a.downYaw) * dv];
-}
-// Rise share at `now` over the hold's last NPC_GETUP_S.
+// RAGDOLLS (drawn): the sim's fall bodies (7b-sim.js FALLS) posed onto the meshes. A rising body blends back to its
+// standing pose over the hold's last NPC_GETUP_S.
 const ragdollRise = (a, now) => fightEase(fightClamp01(1 - (a.downUntil - now) / NPC_GETUP_S));
 
-// Each particle's world point from its rest point, placed at world / quat.
-function placeFromRest(body, rest, shares, world, quat, a, v) {
-  const [lx, lz] = ragdollLaunch(a);
-  for (let i = 0; i < rest.length; i++) {
-    v.copy(rest[i]).multiplyScalar(body.kp).applyQuaternion(quat).add(world);
-    body.place(i, v, lx * shares[i], lz * shares[i]);
-  }
-}
-
-// BOX-RIG RAGDOLL (deer, coyotes): rear, front, top, 4 hips, 4 feet. Body and hips are rigid; feet swing. The top takes
-// the full launch, so it rolls toward the push.
-const BOX_RAG_CORE = 7;   // particles 0 to 6
-const BOX_RAG_LINKS = (() => {
-  const links = [];
-  for (let i = 0; i < BOX_RAG_CORE; i++) for (let j = i + 1; j < BOX_RAG_CORE; j++) links.push([i, j, 0.5, 0.5]);
-  for (let l = 0; l < 4; l++) links.push([3 + l, 7 + l, 0, 1]);
-  return links;
-})();
-const BOX_RAG_SHARES = [RAGDOLL_BASE_SHARE, RAGDOLL_BASE_SHARE, RAGDOLL_TOP_SHARE, ...Array(4).fill(RAGDOLL_BASE_SHARE), ...Array(4).fill(0)];
-class BoxRagdoll {
-  constructor(rig) {
-    this.rig = rig; this.owner = null; this.seen = -1;
-    this.body = new VerletBody(11, BOX_RAG_LINKS, [rig.bodyR, rig.bodyR, rig.bodyR, ...Array(8).fill(rig.footR)], [0, 1]);
+// BOX-RIG POSE (deer, coyotes): body, head and legs from a BoxFall's points (rear, front, top, 4 hips, 4 feet); the
+// render rig (AnimalRenderer.ragdollRig) gives the head offset and leg half length.
+class BoxRagdollPose {
+  constructor() {
     this._c = new THREE.Vector3(); this._x = new THREE.Vector3(); this._y = new THREE.Vector3(); this._z = new THREE.Vector3();
     this._v = new THREE.Vector3(); this._w = new THREE.Vector3(); this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion();
     this._sp = new THREE.Vector3(); this._sq = new THREE.Quaternion(); this._ss = new THREE.Vector3(); this._scale = new THREE.Vector3();
   }
 
-  // From the standing pose at world / quat on `ground`.
-  start(a, world, quat, kp, ground) {
-    this.owner = a;
-    this.body.kp = kp;
-    placeFromRest(this.body, this.rig.points, BOX_RAG_SHARES, world, quat, a, this._v);
-    this.body.begin(kp, ground);
-  }
-
-  step(a, box) { this.body.step(a.position.x, a.position.z, box); }
-
   // Body centre and axes from its three points.
-  frame() {
-    const b = this.body, c = this._c, y = this._y, z = this._z;
-    b.at(0, this._v); b.at(1, this._w);
+  frame(body) {
+    const c = this._c, y = this._y, z = this._z;
+    body.at(0, this._v); body.at(1, this._w);
     c.addVectors(this._v, this._w).multiplyScalar(0.5);
     z.subVectors(this._w, this._v).normalize();
-    b.at(2, y).sub(c);
+    body.at(2, y).sub(c);
     y.addScaledVector(z, -y.dot(z)).normalize();
     this._x.crossVectors(y, z);
   }
 
-  // Write body, head and legs at idx / aidx, blended toward standing by `toStand`.
-  pose(im, idx, antlers, aidx, legNames, toStand) {
-    const rig = this.rig, kp = this.body.kp;
-    this.frame();
+  // Write fall's body, head and legs at idx / aidx, blended toward standing by `toStand`.
+  pose(fall, rig, im, idx, antlers, aidx, legNames, toStand) {
+    const body = fall.body, kp = body.kp;
+    this.frame(body);
     this._m.makeBasis(this._x, this._y, this._z);
     const bodyQ = this._q.setFromRotationMatrix(this._m), h = rig.head;
     const headPos = this._v.copy(this._c).addScaledVector(this._x, h.x * kp).addScaledVector(this._y, h.y * kp).addScaledVector(this._z, h.z * kp);
-    this.write(im.body, idx, this._c, bodyQ, toStand);
-    this.write(im.head, idx, headPos, bodyQ, toStand);
-    if (antlers) this.write(antlers, aidx, headPos, bodyQ, toStand);
+    this.write(im.body, idx, this._c, bodyQ, toStand, kp);
+    this.write(im.head, idx, headPos, bodyQ, toStand, kp);
+    if (antlers) this.write(antlers, aidx, headPos, bodyQ, toStand, kp);
     for (let l = 0; l < 4; l++) {
-      const hip = this.body.at(3 + l, this._w), dir = this.body.at(7 + l, this._v).sub(hip).normalize();
+      const hip = body.at(3 + l, this._w), dir = body.at(7 + l, this._v).sub(hip).normalize();
       const legQ = this._q.setFromUnitVectors(RAG_DOWN, dir);
-      this.write(im[legNames[l]], idx, hip.addScaledVector(dir, rig.limbHalf * kp), legQ, toStand);
+      this.write(im[legNames[l]], idx, hip.addScaledVector(dir, rig.limbHalf * kp), legQ, toStand, kp);
     }
   }
 
-  // One instance at (p, q), blended by `toStand`.
-  write(mesh, i, p, q, toStand) {
+  // One instance at (p, q) and scale kp, blended by `toStand`.
+  write(mesh, i, p, q, toStand, kp) {
     const m = this._m;
     if (toStand > 0) {
       mesh.getMatrixAt(i, m);
@@ -1007,58 +803,15 @@ class BoxRagdoll {
       p = this._sp.lerp(p, 1 - toStand);
       q = this._sq.slerp(q, 1 - toStand);
     }
-    m.compose(p, q, this._scale.setScalar(this.body.kp));
+    m.compose(p, q, this._scale.setScalar(kp));
     mesh.setMatrixAt(i, m);
   }
 }
 const RAG_DOWN = new THREE.Vector3(0, -1, 0);   // leg axis, hip to foot
 
-// HUMAN RAGDOLL: pelvis, chest, head, then left/right shoulders, elbows, hands, hips, knees, feet. Torso and head are
-// rigid; limbs bend on one-way hinges. Bones write one texture row per ragdoll.
-const HUMAN_RAG_CORE = [0, 1, 2, 3, 4, 9, 10];
-const HUMAN_RAG_LINKS = (() => {
-  const links = [];
-  for (let i = 0; i < HUMAN_RAG_CORE.length; i++) for (let j = i + 1; j < HUMAN_RAG_CORE.length; j++) links.push([HUMAN_RAG_CORE[i], HUMAN_RAG_CORE[j], 0.5, 0.5]);
-  // limbs: [joint, child, shares]; the end nearer the torso is heavier
-  for (const s of [0, 1]) links.push([3 + s, 5 + s, 0.2, 0.8], [5 + s, 7 + s, 0.5, 0.5], [9 + s, 11 + s, 0.3, 0.7], [11 + s, 13 + s, 0.5, 0.5]);
-  return links;
-})();
-// ELBOW AND KNEE HINGES: one way about +x, straight to flexDeg; elbow -1, knee +1.
-const HUMAN_RAG_JOINT_LIMITS = {
-  elbow: { flexDeg: 145, flexDir: -1 },
-  knee: { flexDeg: 150, flexDir: 1 }
-};
-// under this axis share left, a hinge keeps its last good axis
-const HUMAN_RAG_HINGE_MIN_AXIS = 0.1;
-// limits [minRad, maxRad] about +x
-const hingeRange = ({ flexDeg, flexDir }) => {
-  const flex = flexDir * flexDeg * Math.PI / 180;
-  return [Math.min(0, flex), Math.max(0, flex)];
-};
-// hinge rows: elbows on the shoulders' axis, knees on the hips'
-const HUMAN_RAG_HINGES = (() => {
-  const elbow = hingeRange(HUMAN_RAG_JOINT_LIMITS.elbow), knee = hingeRange(HUMAN_RAG_JOINT_LIMITS.knee), hinges = [];
-  for (const s of [0, 1]) hinges.push([3 + s, 5 + s, 7 + s, 3, 4, ...elbow], [9 + s, 11 + s, 13 + s, 9, 10, ...knee]);
-  return hinges;
-})();
-// ground radii, rig units
-const HUMAN_RAG_RADII = [2.3, 2.3, 1.9, 1.5, 1.5, 0.9, 0.9, 0.6, 0.6, 1.8, 1.8, 1.2, 1.2, 0.9, 0.9];
-// launch share per particle: the upper body leads, so it topples toward the push
-const HUMAN_RAG_SHARES = [RAGDOLL_BASE_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE, RAGDOLL_TOP_SHARE,
-  0, 0, 0, 0, RAGDOLL_BASE_SHARE, RAGDOLL_BASE_SHARE, 0, 0, 0, 0];
-// Ragdoll rest points in rig units at body shape `shape`, matching the shader's arm and leg offsets.
-function humanRagRest(shape) {
-  const R = HUMAN_RIG, at = R.at;
-  const arm = (s, y) => new THREE.Vector3(s * (R.shoulderX + (R.shoulder - y) * HUMAN_ARM_FLARE) * shape.shoulder, y, 0);
-  const leg = (s, y) => new THREE.Vector3(s * (R.legX - (R.hip - y) * R.legSplay) * shape.hip, y, 0);
-  return [new THREE.Vector3(0, R.hip, 0), new THREE.Vector3(0, at(0.84), 0), new THREE.Vector3(0, at(0.94), 0),
-    arm(1, R.shoulder), arm(-1, R.shoulder), arm(1, R.elbow), arm(-1, R.elbow), arm(1, at(0.44)), arm(-1, at(0.44)),
-    leg(1, R.hip), leg(-1, R.hip), leg(1, R.knee), leg(-1, R.knee), leg(1, R.ankle), leg(-1, R.ankle)];
-}
-class HumanRagdoll {
+// HUMAN POSE: a HumanFall's particles as bones, one texture row per drawn ragdoll.
+class HumanRagdollPose {
   constructor() {
-    this.owner = null; this.seen = -1; this.row = -1; this.rest = null;
-    this.body = new VerletBody(15, HUMAN_RAG_LINKS, HUMAN_RAG_RADII, [0, 1], HUMAN_RAG_HINGES);
     this.local = Array.from({ length: 15 }, () => new THREE.Vector3());   // particles in rig units
     this._v = new THREE.Vector3(); this._d = new THREE.Vector3(); this._r = new THREE.Vector3();
     this._x = new THREE.Vector3(); this._y = new THREE.Vector3(); this._z = new THREE.Vector3();
@@ -1066,27 +819,10 @@ class HumanRagdoll {
     this._q = new THREE.Quaternion(); this._limb = new THREE.Quaternion(); this._t = new THREE.Vector3();
   }
 
-  start(a, world, quat, kp, ground) {
-    this.owner = a;
-    this.rest = humanRagRest(a.look.shape);
-    this.body.kp = kp;
-    // the anchors' height over the feet in metres: how far from the feet they lie once tipped flat
-    const an = this.body.anchors;
-    this.lieReach = an.reduce((sum, i) => sum + this.rest[i].y - HUMAN_RIG.foot, 0) / an.length * kp;
-    placeFromRest(this.body, this.rest, HUMAN_RAG_SHARES, world, quat, a, this._v);
-    this.body.begin(kp, ground);
-  }
-
-  // The anchors pull toward the lying pose's: from the sim's feet, along the push, as far as the tip has gone.
-  step(a, box) {
-    const reach = this.lieReach * Math.sin(downShare(a, ecosystem.time) * Math.PI / 2);
-    this.body.step(a.position.x + Math.sin(a.downYaw) * reach, a.position.z + Math.cos(a.downYaw) * reach, box);
-  }
-
-  // Bones into `data` at this row, in rig units of the instance at (ox, oy, oz) facing `facing`: rotation then
+  // fall's bones into `data` at `row`, in rig units of the instance at (ox, oy, oz) facing `facing`: rotation then
   // translation, so p lands at R p + t.
-  pose(data, ox, oy, oz, facing) {
-    const b = this.body, kp = b.kp, cy = Math.cos(facing), sy = Math.sin(facing), L = this.local;
+  pose(fall, row, data, ox, oy, oz, facing) {
+    const b = fall.body, rest = fall.rest, kp = b.kp, cy = Math.cos(facing), sy = Math.sin(facing), L = this.local;
     // world to rig units: undo the facing turn and scale
     for (let i = 0; i < 15; i++) {
       const w = b.at(i, this._v), dx = (w.x - ox) / kp, dy = (w.y - oy) / kp, dz = (w.z - oz) / kp;
@@ -1099,16 +835,16 @@ class HumanRagdoll {
     const z = this._z.crossVectors(x, y);
     this._m.makeBasis(x, y, z);
     const torso = this._torso.setFromRotationMatrix(this._m), inv = this._inv.copy(torso).invert();
-    let o = this.row * HUMAN_RAG_TEXELS * 4;
+    let o = row * HUMAN_RAG_TEXELS * 4;
     for (let k = 0; k < HUMAN_RAG_BONES.length; k++, o += 8) {
       const [j, c] = HUMAN_RAG_BONES[k], q = this._q.copy(torso);
       if (k >= 2) {
         // a limb: the torso's turn, then rest direction to current direction
-        const restDir = this._r.subVectors(this.rest[c], this.rest[j]).normalize();
+        const restDir = this._r.subVectors(rest[c], rest[j]).normalize();
         const nowDir = this._d.subVectors(L[c], L[j]).applyQuaternion(inv).normalize();
         q.multiply(this._limb.setFromUnitVectors(restDir, nowDir));
       }
-      const t = this._t.copy(this.rest[j]).applyQuaternion(q).negate().add(L[j]);
+      const t = this._t.copy(rest[j]).applyQuaternion(q).negate().add(L[j]);
       data[o] = q.x; data[o + 1] = q.y; data[o + 2] = q.z; data[o + 3] = q.w;
       data[o + 4] = t.x; data[o + 5] = t.y; data[o + 6] = t.z; data[o + 7] = 0;
     }
@@ -1118,7 +854,6 @@ class HumanRagdoll {
 export class AnimalRenderer {
   constructor() {
     this.MAX_INSTANCES = 12000;
-    this.MATURITY_TICKS = NPC_MATURITY_TICKS;
 
     this.BOX_RIG_TYPES = ['deer', 'coyote'];   // box parts; people use this.human
     this.PART_NAMES = ['body', 'head', 'legFL', 'legFR', 'legBL', 'legBR'];
@@ -1267,17 +1002,15 @@ export class AnimalRenderer {
     this._quatRoll = new THREE.Quaternion();
     this._fightPose = {};
     this.LIMB_FRONT = this.LIMB_NAMES.map(n => n[3] === 'F');   // front legs
-    // BOX-RIG RAGDOLLS: live, spare, and the pass count marking who was drawn
-    this._ragdollOf = new Map();
-    this._ragdollPools = {};       // spares by type
-    this._ragdollRows = Array.from({ length: HIGH_RAGDOLLS }, (_, i) => i);   // free crowd ragdoll rows
-    this._bodyRagdoll = new HumanRagdoll();   // the player's ragdoll, last row
-    this._bodyRagdoll.row = HUMAN_RAG_ROWS - 1;
+    // RAGDOLLS DRAWN from the sim's falls: posers, and each drawn person's texture row with the pass that last drew it
+    this._boxPose = new BoxRagdollPose();
+    this._humanPose = new HumanRagdollPose();
+    this._rowOf = new Map();       // person to { row, pass }
+    this._ragdollRows = Array.from({ length: HUMAN_RAG_DRAWN }, (_, i) => i);   // free crowd ragdoll rows
+    this._bodyFall = new HumanFall();   // the player's ragdoll (sim body, stepped here), last row
     this._bodyTicks = 0;      // tick the player's ragdoll last stepped to
-    this._box = { cx: 0, cz: 0, y: 0, fx: 0, fz: 1, sx: 1, sz: 0, halfLen: CAR_LEN / 2, halfWid: CAR_WID / 2, top: CAR_TOP };   // carBox
     this._pass = 0;
     this._lists = [null, null];   // update's two passes: the animals, then the corpses
-    this.ragdollsOn = false;   // ragdolls on (the collision mode, set by 9-main)
 
     // per species: fixed tables plus per-pass counters
     this.passById = NPC_TYPES.map(type => ({
@@ -1289,8 +1022,8 @@ export class AnimalRenderer {
       fightAnchor: NPC_FIGHT_MOVES[type].anchor ? this.PIVOT_OFFSETS[type][NPC_FIGHT_MOVES[type].anchor] : null,
       // box rig knockdown drop; people lie down in their shader
       lieDrop: this.REST_BOUNDS[type] ? SPECIES[type].lift - Math.max(this.REST_BOUNDS[type].max.x, -this.REST_BOUNDS[type].min.x) : 0,
-      // a new ragdoll of this type
-      newRagdoll: type === 'human' ? () => new HumanRagdoll() : (rig => () => new BoxRagdoll(rig))(this.ragdollRig(type)),
+      // box rigs: ragdoll layout, its points also the sim's fall rig (fallRigs)
+      ragRig: type === 'human' ? null : (fallRigs[type] = this.ragdollRig(type)),
       im: null, cache: null, antlers: null,
       idx: 0, billboarded: 0, aidx: 0, colorsDirty: false, full: false
     }));
@@ -1660,62 +1393,42 @@ export class AnimalRenderer {
     };
   }
 
-  // Ragdoll physics on or off (9-main applyCollision), on either graphics setting; off ends every ragdoll.
-  setRagdolls(on) {
-    this.ragdollsOn = on;
-    if (!on) for (const [a, r] of this._ragdollOf) this.freeRagdoll(a, r);
+  // A person's ragdoll texture row while its sim fall is drawn, or -1: a free row is taken on the first drawn pass and
+  // freed once the person is not drawn or its fall ends (end of update).
+  rowFor(a) {
+    let e = this._rowOf.get(a);
+    if (!e) {
+      if (this._ragdollRows.length === 0) return -1;   // all rows drawn: the lying pose
+      e = { row: this._ragdollRows.pop(), pass: 0 };
+      this._rowOf.set(a, e);
+    }
+    e.pass = this._pass;
+    return e.row;
   }
 
-  // The live ragdoll for `a`, or null. It starts only within a fall, with ragdolls on and a slot free, and ends with
-  // the hold.
-  ragdollFor(a, p, now, kp, ticked) {
-    let r = this._ragdollOf.size > 0 ? this._ragdollOf.get(a) : undefined;   // no lookup while none is live
-    if (r && now >= a.downUntil) { this.freeRagdoll(a, r); return null; }
-    if (!r) {
-      if (!a.isDown(now) || now - a.downAt > NPC_FALL_S) return null;
-      if (!this.ragdollsOn || this._ragdollOf.size >= HIGH_RAGDOLLS) return null;
-      r = (this._ragdollPools[p.type] ??= []).pop() ?? p.newRagdoll();
-      if (r instanceof HumanRagdoll) r.row = this._ragdollRows.pop();
-      r.start(a, this._world, this._quat, kp, this._world.y - SPECIES[p.type].lift * kp);
-      this._ragdollOf.set(a, r);
-    } else if (ticked && now < a.downUntil - NPC_GETUP_S) r.step(a, this.carBox());
-    r.seen = this._pass;
-    return r;
-  }
-
-  freeRagdoll(a, r) {
-    this._ragdollOf.delete(a);
-    r.owner = null;
-    if (r instanceof HumanRagdoll) { this._ragdollRows.push(r.row); r.row = -1; }
-    this._ragdollPools[a.type].push(r);
-  }
-
-  // The car as the ragdolls' box this pass, or null: centre, ground, axes, half sizes, top.
-  carBox() {
-    const car = renderInputs.car;
-    if (!car || !car.placed) return null;
-    const b = this._box;
-    b.cx = car.x; b.cz = car.z; b.y = car.y;
-    b.fx = -Math.sin(car.yaw); b.fz = -Math.cos(car.yaw);   // car heading (moveCar)
-    b.sx = Math.cos(car.yaw); b.sz = -Math.sin(car.yaw);
-    return b;
-  }
-
-  // THE PLAYER'S BODY: its knockdown by the crowd's rules, in the ragdoll texture's last row.
+  // THE PLAYER'S BODY: its knockdown by the crowd's rules, in the ragdoll texture's last row. The player's position is
+  // the player's own (8b), so this body is stepped here and pulled toward the player's lying pose instead of placing it.
   bodyDown(a, now, kp, x, y, z, facing, ground, out) {
-    const r = this._bodyRagdoll, allowed = this.ragdollsOn;
-    if (r.owner && (now >= a.downUntil || !allowed)) r.owner = null;
-    if (!r.owner && allowed && a.isDown(now) && now - a.downAt <= NPC_FALL_S) {
+    const f = this._bodyFall, allowed = ecosystem.ragdolls, row = HUMAN_RAG_ROWS - 1;
+    if (f.owner && (now >= a.downUntil || !allowed)) f.owner = null;
+    if (!f.owner && allowed && a.isDown(now) && now - a.downAt <= NPC_FALL_S) {
       this._world.set(x, y, z);
       this._quat.setFromAxisAngle(this._yAxis, facing);
-      r.start(a, this._world, this._quat, kp, ground);
+      f.start(a, this._world, this._quat, kp, ground);
+      f.owner = a;
       this._bodyTicks = ecosystem.ticks;
     }
-    if (!r.owner) { writeHumanDown(a, now, this.human.lieHalf, out, 0); return; }
-    // one step per tick since the last frame, until the rise
-    for (; this._bodyTicks < ecosystem.ticks; this._bodyTicks++) if (now < a.downUntil - NPC_GETUP_S) r.step(a, this.carBox());
-    out[0] = 0; out[1] = 0; out[2] = ragdollRise(a, now); out[3] = r.row + 1;
-    r.pose(this.human.ragdoll.image.data, x, y, z, facing);
+    if (!f.owner) { writeHumanDown(a, now, this.human.lieHalf, out, 0); return; }
+    // one step per tick since the last frame, until the rise; the anchors pull toward the lying pose's, from the feet
+    // along the push as far as the tip has gone
+    const box = ecosystem.fallBox();
+    for (; this._bodyTicks < ecosystem.ticks; this._bodyTicks++) if (now < a.downUntil - NPC_GETUP_S) {
+      f.body.step(box);
+      const reach = f.lieReach * Math.sin(downShare(a, now) * Math.PI / 2);
+      f.body.pullToward(a.position.x + Math.sin(a.downYaw) * reach, a.position.z + Math.cos(a.downYaw) * reach, PLAYER_RAGDOLL_ANCHOR_PER_S);
+    }
+    out[0] = 0; out[1] = 0; out[2] = ragdollRise(a, now); out[3] = row + 1;
+    this._humanPose.pose(f, row, this.human.ragdoll.image.data, x, y, z, facing);
     this.human.ragdoll.needsUpdate = true;
   }
 
@@ -1773,12 +1486,9 @@ export class AnimalRenderer {
       }
       const im = p.im;
 
-      const ageRatio = a.isAdult ? 1 : Math.min(1, (ecosystem.ticks - a.birthTick) / this.MATURITY_TICKS);
-      const s = GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * ageRatio;
-      const k = s * NPC_UNIT;
       const hs = a.heightScale;
-      // City: rigs scale by heightScale
-      const kp = k * hs;
+      // City: rigs scale by heightScale and growth (Animal.rigScale, the sim's falls use the same)
+      const kp = a.rigScale();
 
       const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
       if (human) this.stepGait(a, deltaTime, kp);
@@ -1790,16 +1500,15 @@ export class AnimalRenderer {
       }
 
       if (!inVr) {
-        // cull sphere: a live ragdoll's own bounds, else the sim position's
-        const live = this._ragdollOf.size > 0 ? this._ragdollOf.get(a) : undefined;   // no lookup while none is live
-        const lb = live ? live.body : null;
+        // cull sphere: a falling body's own bounds, else the sim position's
+        const lb = a.fall ? a.fall.body : null;
         const sx = lb ? lb.boundX : a.position.x, sy = lb ? lb.boundY : a.position.y, sz = lb ? lb.boundZ : a.position.z;
         const nr = -(lb ? lb.boundR : NPC_BODY_R * hs);
         if (ax0 * sx + ay0 * sy + az0 * sz + d0 < nr || ax1 * sx + ay1 * sy + az1 * sz + d1 < nr ||
           ax2 * sx + ay2 * sy + az2 * sz + d2 < nr || ax3 * sx + ay3 * sy + az3 * sz + d3 < nr ||
           ax4 * sx + ay4 * sy + az4 * sz + d4 < nr || ax5 * sx + ay5 * sy + az5 * sz + d5 < nr) continue;
       }
-      const originY = a.position.y - (1 - s) * a.footLift() * NPC_UNIT;
+      const originY = a.originY();
       const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
       if (ex * ex + ey * ey + ez * ez > lod2) {
         if (corpse) continue;   // billboards have no lying frame
@@ -1836,13 +1545,11 @@ export class AnimalRenderer {
         hPose[o] = a.position.x; hPose[o + 1] = originY; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
         hGait[o] = kp; hGait[o + 1] = a.gaitPhase; hGait[o + 2] = a.gaitSwing; hGait[o + 3] = a.gaitRun;
         humanFightAct(a, now, hAct, o);
-        // knockdown: ragdoll row and rise, else the lying pose
-        this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
-        this._world.set(a.position.x, originY, a.position.z);
-        const rag = this.ragdollFor(a, p, now, kp, deltaTime > 0);
-        if (rag) {
-          hDown[o] = 0; hDown[o + 1] = 0; hDown[o + 2] = ragdollRise(a, now); hDown[o + 3] = rag.row + 1;
-          rag.pose(H.ragdoll.image.data, a.position.x, originY, a.position.z, a.facingAngle);
+        // knockdown: its sim fall in a ragdoll row and rise, else the lying pose
+        const row = a.fall ? this.rowFor(a) : -1;   // -1: no fall, or every row taken
+        if (row >= 0) {
+          hDown[o] = 0; hDown[o + 1] = 0; hDown[o + 2] = ragdollRise(a, now); hDown[o + 3] = row + 1;
+          this._humanPose.pose(a.fall, row, H.ragdoll.image.data, a.position.x, originY, a.position.z, a.facingAngle);
           ragBones = true;
         } else writeHumanDown(a, now, H.lieHalf, hDown, o);
         if (owners[hn] !== a) {
@@ -1866,8 +1573,8 @@ export class AnimalRenderer {
       this._quat.setFromAxisAngle(this._yAxis, a.facingAngle);
       this._world.set(a.position.x, originY, a.position.z);
       const antlers = p.antlers && a.sex === 'male' ? p.antlers : null;
-      // knockdown: a ragdoll, else rolled onto the pushed side and dropped by lieDrop
-      const rag = this.ragdollFor(a, p, now, kp, deltaTime > 0);
+      // knockdown: its sim fall, else rolled onto the pushed side and dropped by lieDrop
+      const rag = a.fall;
       const down = rag ? 0 : downShare(a, now);
       if (down > 0) {
         const side = Math.sin(a.downYaw - a.facingAngle) < 0 ? 1 : -1;   // roll up toward the push
@@ -1880,7 +1587,7 @@ export class AnimalRenderer {
       const move = !knocked && u >= 0 && u < 1 ? sampleFightKeys(played.keys, u, this._fightPose) : null;
       this.poseBoxRig(p, im, idx, antlers, p.aidx, kp, !move && !knocked && a.moving ? Math.sin(a.animTime) * swing * 0.5 : 0, move);
       // a ragdoll overwrites the standing pose, blending back over the rise
-      if (rag) rag.pose(im, idx, antlers, p.aidx, this.LIMB_NAMES, ragdollRise(a, now));
+      if (rag) this._boxPose.pose(rag, p.ragRig, im, idx, antlers, p.aidx, this.LIMB_NAMES, ragdollRise(a, now));
       if (antlers) p.aidx++;
       p.idx = idx + 1;
     }
@@ -1909,7 +1616,8 @@ export class AnimalRenderer {
       }
     }
     // ragdolls whose animal was not drawn this pass end
-    for (const [a, r] of this._ragdollOf) if (r.seen !== this._pass) this.freeRagdoll(a, r);
+    // ragdoll rows of people not drawn this pass, or whose fall ended, free up
+    for (const [a, e] of this._rowOf) if (e.pass !== this._pass || !a.fall) { this._rowOf.delete(a); this._ragdollRows.push(e.row); }
     for (const type of this.BOX_RIG_TYPES) {
       const p = passes[NPC_TYPE_IDS[type]];
       if (p.im === null) continue;
@@ -2665,7 +2373,7 @@ export class BlobShadows {
   update(animals) {
     if (this.applyLight() <= 0) { this.hide(); return; }
     updateNpcFrustum();
-    const r = animalRenderer, mesh = this.mesh;
+    const mesh = this.mesh;
     const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z, d2 = BLOB_DIST * BLOB_DIST;
     let n = 0;
     for (const a of animals) {
@@ -2676,8 +2384,7 @@ export class BlobShadows {
       const hs = a.heightScale;
       if (!npcOnScreen(a.position.x, a.position.y, a.position.z, NPC_BODY_R * hs)) continue;
       // the body's drawn size
-      const age = a.isAdult ? 1 : Math.min(1, (ecosystem.ticks - a.birthTick) / r.MATURITY_TICKS);
-      const kp = (GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * age) * NPC_UNIT * hs;
+      const kp = a.rigScale();
       this.compose(a.position.x, a.position.y - a.footLift() * NPC_UNIT, a.position.z, a.facingAngle, this.foot[a.type], kp);
       mesh.setMatrixAt(n++, this._m);
     }
@@ -3024,9 +2731,7 @@ export class HealthBars {
   // People only: age code, height in, weight lb.
   infoKey(a) {
     if (a.type !== 'human') return 0;
-    const growth = a.isAdult ? 1 : Math.min(1, (ecosystem.ticks - a.birthTick) / NPC_MATURITY_TICKS);
-    const s = GROWTH_MIN_SCALE + (1 - GROWTH_MIN_SCALE) * growth;
-    const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * s;   // drawn crown height
+    const metres = a.heightScale * NPC_RIG_TOP.human * NPC_UNIT * a.growthScale();   // drawn crown height
     const age = a.isAdult ? Math.floor(a.ageYears()) : -1;
     return personInfoKey(age, a.sex, a.look, metres);
   }
@@ -3175,12 +2880,14 @@ export class HealthBars {
       let bar = this.bars.get(a);
       if (bar) seen.add(a);
 
+      // the panel stands over the animal, where its body is (a falling body places it, Ecosystem.stepFalls)
+      const px = a.position.x, pz = a.position.z;
       // distance, then frustum; nothing past perf.farStatDist
-      const ex = a.position.x - cam.x, ey = a.position.y - cam.y, ez = a.position.z - cam.z;
+      const ex = px - cam.x, ey = a.position.y - cam.y, ez = pz - cam.z;
       const d2 = ex * ex + ey * ey + ez * ez;
       if (d2 > farMax2) continue;
       const barY = this.headTop(a) + BAR_ABOVE;
-      if (!npcOnScreen(a.position.x, barY + NPC_STATS_UP, a.position.z, NPC_STATS_R)) continue;
+      if (!npcOnScreen(px, barY + NPC_STATS_UP, pz, NPC_STATS_R)) continue;
       if (d2 > lod2) {
         if (nf >= FAR_STAT_MAX) continue;
 
@@ -3195,7 +2902,7 @@ export class HealthBars {
           arr[o] = r0; arr[o + 1] = r1; arr[o + 2] = r2; arr[o + 3] = 0;
           arr[o + 4] = r4; arr[o + 5] = r5; arr[o + 6] = r6; arr[o + 7] = 0;
           arr[o + 8] = r8; arr[o + 9] = r9; arr[o + 10] = r10; arr[o + 11] = 0;
-          arr[o + 12] = a.position.x; arr[o + 13] = barY; arr[o + 14] = a.position.z; arr[o + 15] = 1;
+          arr[o + 12] = px; arr[o + 13] = barY; arr[o + 14] = pz; arr[o + 15] = 1;
           page.cellUv.array[k * 2] = cell.u;
           page.cellUv.array[k * 2 + 1] = cell.v;
         }
@@ -3206,9 +2913,9 @@ export class HealthBars {
           const fireA = a.alive ? this.firing(nn.actA) : 0, fireB = a.alive ? this.firing(nn.actB) : 0;   // a corpse: still
           for (let l = 0; l < 2; l++) {
             const o = (nl * 2 + l) * 16;
-            lobeArr[o + 12] = a.position.x;
+            lobeArr[o + 12] = px;
             lobeArr[o + 13] = by + (l === 0 ? lobeOff : -lobeOff);
-            lobeArr[o + 14] = a.position.z;
+            lobeArr[o + 14] = pz;
             const k = BRAIN_DIM + (1 - BRAIN_DIM) * (l === 0 ? fireA : fireB);
             this.farLobes.setColorAt(nl * 2 + l, this._c.copy(this.lobeBase[l]).multiplyScalar(k));
           }
@@ -3229,7 +2936,7 @@ export class HealthBars {
 
       this.readStats(a, now, vals, arrows);
       this.draw(bar, vals, arrows, a);
-      bar.sprite.position.set(a.position.x, barY, a.position.z);
+      bar.sprite.position.set(px, barY, pz);
       bar.sprite.visible = true;
 
       const nn = a.brain;
@@ -3241,7 +2948,7 @@ export class HealthBars {
       }
       const b = bar.brain;
       brainActivity(b, a);
-      b.group.position.set(a.position.x, this.brainY(barY, bar.infoKey), a.position.z);
+      b.group.position.set(px, this.brainY(barY, bar.infoKey), pz);
       b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
       b.group.visible = true;
     }

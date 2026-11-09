@@ -1065,7 +1065,7 @@ export const game = {
       if (d2 >= touch * touch) continue;
       const dist = Math.sqrt(d2), nx = dist > 1e-6 ? dx / dist : Math.sin(d.heading), nz = dist > 1e-6 ? dz / dist : Math.cos(d.heading);
       const ox = ecosystem.fitX(px + nx * touch), oz = ecosystem.fitZ(pz + nz * touch);
-      if (!occ.blockedAt(ox, oz)) { d.position.x = ox; d.position.z = oz; }
+      if (!occ.blockedAt(ox, oz)) ecosystem.shove(d, ox, oz);
       if (!ecosystem.freshContact(d)) continue;   // still touching: moving together, no new impact
       const playerClosing = pvx * nx + pvz * nz;          // m/s into the animal
       const animalClosing = -d.speedAlong(nx, nz, now);   // m/s it moves into the player
@@ -1873,7 +1873,8 @@ export function carHits() {
       if (d2 >= touch * touch) continue;
       const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the side
       const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
-      if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
+      // a falling body is pushed by the car's box in its own physics (Ecosystem.fallBox), not moved out here
+      if (!a.fall && !occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
       if (!ecosystem.freshContact(a)) break;   // still touching: moving together, no new impact
       const closing = vx * nx + vz * nz - a.speedAlong(nx, nz, now);   // m/s the pair closes: the car's in, the animal's toward it
       if (closing <= 0) break;
@@ -2347,4 +2348,13 @@ renderInputs.casters = () => [cat.mesh, pov.body];
 renderInputs.survivor = () => game.on;
 renderInputs.pointerTaken = id => id === stickId || id === lookId;
 renderInputs.locked = () => play.locked;
-renderInputs.car = car;   // ragdolls stay out of its box
+// FALLS: the car as the falling bodies' box (Ecosystem.fallBox): centre, ground, front and right axes, half sizes, top
+const _carFallBox = { cx: 0, cz: 0, y: 0, fx: 0, fz: 1, sx: 1, sz: 0, halfLen: CAR_LEN / 2, halfWid: CAR_WID / 2, top: CAR_TOP };
+ecosystem.fallBox = () => {
+  if (!car.placed) return null;
+  const b = _carFallBox;
+  b.cx = car.x; b.cz = car.z; b.y = car.y;
+  b.fx = -Math.sin(car.yaw); b.fz = -Math.cos(car.yaw);   // heading (moveCar)
+  b.sx = Math.cos(car.yaw); b.sz = -Math.sin(car.yaw);
+  return b;
+};

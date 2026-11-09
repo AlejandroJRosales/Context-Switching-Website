@@ -350,7 +350,7 @@ export const BUMP_RESTITUTION = 0;         // placeholder: closing speed share b
 export const BUMP_SAFE_J = 400;            // placeholder: impact energy that hurts nothing
 export const BUMP_HEALTH_PER_J = 0.02;     // placeholder: a body's (player's or animal's) health per joule past BUMP_SAFE_J
 // CORPSES (Ecosystem.addCorpse): an animal dead of health loss lies where it fell, drawn only, until CORPSE_S passes or
-// CORPSE_MAX newer ones push it out. Ragdolls on: a ragdoll if one is free as it falls, else the lying pose.
+// CORPSE_MAX newer ones push it out. Ragdolls on: it lies where its fall body settles (Ecosystem.stepFalls).
 export const CORPSE_S = 60;      // placeholder: sim seconds a body lies
 export const CORPSE_MAX = 256;   // placeholder: most bodies lying at once
 // drawn fall over NPC_FALL_S and rise over the hold's last NPC_GETUP_S
@@ -1174,18 +1174,22 @@ export const CAR_STEER_MAX = 0.6;     // rad at standstill
 export const CAR_STEER_FALL = 12;      // m/s where steering lock halves
 export const CAR_STEER_RATE = 2.5;     // rad/s wheel turn rate
 export const CAR_G = 9.81;
-// RAGDOLLS (render only): with ragdolls on, a knockdown gets a Verlet ragdoll while one of HIGH_RAGDOLLS slots is free,
-// on either graphics setting; else the lying pose. It rises where the sim's body is.
-export const HIGH_RAGDOLLS = 16, LOW_RAGDOLLS = 0;
-export const HUMAN_RAG_ROWS = HIGH_RAGDOLLS + 1;   // ragdoll texture rows: one per crowd slot, the last for the player
+// RAGDOLLS (sim, Ecosystem.stepFalls): with ragdolls on, every knocked-down or dying animal gets a Verlet body, at every
+// distance. Its body is where the animal is; it rises where the body lies. Drawn: people near the camera take one of
+// HUMAN_RAG_DRAWN texture rows while one is free, else the lying pose; box rigs always draw from their body.
+export const HUMAN_RAG_DRAWN = 16;
+export const LOW_RAGDOLLS = 0;
+export const HUMAN_RAG_ROWS = HUMAN_RAG_DRAWN + 1;   // ragdoll texture rows: one per drawn crowd person, the last for the player
 export const RAGDOLL_G = CAR_G;              // m/s^2 (CAR_G is the same)
 export const RAGDOLL_DAMP = 0.98;            // velocity kept per step
 export const RAGDOLL_ITERS = 4;              // constraint passes per step
 export const RAGDOLL_FRICTION = 0.4;         // ground speed lost per contact step
-export const RAGDOLL_ANCHOR_PER_S = 1.5;     // share per second of drift from the sim's position taken back
+export const PLAYER_RAGDOLL_ANCHOR_PER_S = 1.5;   // the player's ragdoll only: share per second of drift from the player's position taken back
 export const RAGDOLL_MAX_DV = 4;             // most launch speed, m/s (downDV)
 export const RAGDOLL_TOP_SHARE = 1;          // launch share at the top point; rear and front take
 export const RAGDOLL_BASE_SHARE = 0.3;       // this share, so the body rolls toward the push
+export const FALL_SETTLE_MS = 0.05;          // a body whose every particle moves slower than this, m/s,
+export const FALL_SETTLE_S = 0.5;            // for this long, sleeps (no steps) until the car's box reaches it
 export const CAR_GLANCE = 0.7;     // |heading . wall normal| under this (~45 deg) deflects
 export const CAR_ALIGN = 0.3;     // angle share turned per contact substep
 export const CAR_REACH = 3.2 * CAR_SCALE;

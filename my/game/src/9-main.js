@@ -467,7 +467,7 @@ hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
 // COLLISION: the Collision chip cycles COLLISION_MODES in order (Ragdoll at load). hits: the player on foot and the car
 // collide with animals (playerBumps, carHits: pushed aside, knocked down by enough momentum); without them they pass
-// through. ragdolls: knockdowns show as ragdolls on either graphics setting (kept out of the car's box), else the
+// through. ragdolls: knocked-down and dying bodies fall as sim ragdolls (Ecosystem.beginFall), else the
 // lying pose (knockdowns between animals happen in every mode). A flying player always passes through animals.
 // Survivor keeps the chosen mode, except one without hits, which plays as SURVIVOR_NO_HITS_MODE; the choice itself is
 // kept, so it comes back in Observer.
@@ -485,7 +485,7 @@ function activeCollision() {
 }
 function applyCollision() {
   const mode = COLLISION_MODES[activeCollision()];
-  animalRenderer.setRagdolls(mode.ragdolls);
+  ecosystem.setRagdolls(mode.ragdolls);
   // no hits (None): Animal damage goes off and cannot be turned on
   if (!mode.hits) setAnimalDamage(false);
   animalDmgEl.disabled = !mode.hits;
