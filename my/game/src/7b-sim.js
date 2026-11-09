@@ -220,6 +220,7 @@ export class Animal extends Entity {
     this.downAt = -Infinity; this.downUntil = 0; this.downYaw = 0; this.downDV = 0;
     this.contactTick = -Infinity;   // BUMP IMPACTS: last tick the player or the car touched it (Ecosystem.freshContact)
     this.corpseUntil = 0;           // CORPSES: sim time its body goes (Ecosystem.addCorpse)
+    this.diedAt = 0;                // CORPSES: sim time it died; its readouts stop here
     this.quarry = null;      // night hunt quarry (animal or avatar)
     // PACK STRENGTH: mass and height summed over the pack in sight
     this.packMassKg = 0; this.packHeightM = 0;
@@ -1562,9 +1563,10 @@ export class Ecosystem {
     }
   }
 
-  // Mutual hunters in contact: a strikes b, scaled by height x fighting mass x health.
+  // A strikes b: damage scales with a's strength, fighting mass x health (as NPC_FIGHT_REF_STRENGTH), relative to the
+  // reference fighter's. Nothing about b changes it.
   fightHit(a, b) {
-    const strength = a.bodyHeightM() * a.fightMassKg() * Math.max(0, a.health);
+    const strength = a.fightMassKg() * Math.max(0, a.health);
     this.applyHit(b, a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
   }
 
@@ -1640,6 +1642,7 @@ export class Ecosystem {
     if (!a.isDown(now)) { a.downAt = now; a.downYaw = a.facingAngle; a.downDV = 0; }
     a.downUntil = Infinity;   // never rises
     a.moving = false; a.playing = null;
+    a.diedAt = now;
     a.corpseUntil = now + CORPSE_S;
     this.corpses.push(a);
     if (this.corpses.length > CORPSE_MAX) this.corpses.shift();

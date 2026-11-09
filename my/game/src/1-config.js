@@ -322,7 +322,7 @@ export const NPC_BITE_COOLDOWN_S = 0.5;       // sim seconds between a grazer's 
 export const NPC_HIT_NO_EAT_S = 2;
 export const PLANT_MAX_HEALTH = 10;           // a plant's bites when whole
 export const PLANT_BITE_NUTRITION = 5;        // a bite's nutrition per point of the plant's max health
-// FIGHTS: hits scale with height x fighting mass x health.
+// FIGHTS: hits scale with fighting mass x health (Ecosystem.fightHit).
 export const NPC_FIGHT_DAMAGE_PER_S = 24;     // reference fighter's health per second
 // KNOCKDOWNS (Ecosystem.applyHit): push = fighting mass x NPC_HIT_ACCEL_MS2 x condition; hold = fighting mass x
 // NPC_HOLD_ACCEL_MS2 x condition. Past the hold, down for NPC_DOWN_* seconds.
@@ -532,10 +532,10 @@ export const NPC_FAT_STRENGTH_SHARE = 0.25;
 export const fightMassShare = f => 1 - f + NPC_FAT_STRENGTH_SHARE * f;
 // Animals fight with the reference man's share.
 export const NPC_ANIMAL_FIGHT_SHARE = fightMassShare(NPC_REF_BODY_FAT.male);
-// reference fighter: average man, reference body, full health
+// reference fighter: average man, reference body, full health; strength = fighting mass x health, as Ecosystem.fightHit
 export const NPC_FIGHT_REF_STRENGTH = (() => {
-  const h = NPC_SIZE.human.male[0];
-  return h * NPC_REF_BMI.male * h * h * NPC_ANIMAL_FIGHT_SHARE * SPECIES.human.health;
+  const h = NPC_SIZE.human.male[0];   // height sets his mass through BMI
+  return NPC_REF_BMI.male * h * h * NPC_ANIMAL_FIGHT_SHARE * SPECIES.human.health;
 })();
 // Speed: pace from lean share.
 export const NPC_PACE_LEAN_EXP = 1;

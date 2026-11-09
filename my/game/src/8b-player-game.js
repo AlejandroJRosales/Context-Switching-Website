@@ -871,13 +871,18 @@ export const game = {
       else game.rollInjuries(damage);
     },
     feedOn(victim) {
+      if (!game.on) return;   // the player eats only in Survivor (an Observer punch can kill)
       game.eat(victim.startHealth);
       game.tally(victim.type);
     }
   },
 
-  // BUMP IMPACTS cost health (animals', the player's, the car's) only in Survivor; in Observer they only push
-  bumpsHurt() { return this.on; },
+  // ANIMAL DAMAGE: the player's bumps, car hits and punches cost animals health in Survivor, and in Observer with the
+  // Animal damage chip on (9-main); otherwise bumps only push and punches miss. The player (avatar.takeHit) and the car
+  // lose health only in Survivor.
+  animalDamage: false,   // Observer's Animal damage chip
+  playerHurtsAnimals() { return this.on || this.animalDamage; },
+  carTakesDamage() { return this.on; },
 
   reset() {
     this.dead = false;
@@ -1042,10 +1047,11 @@ export const game = {
 
   // BUMPING with the player: an overlapping animal is moved out to touching; the player is not. A contact's first tick
   // is one impact (Ecosystem.impact) on both through applyHit: the same push (Newton's third law), so the lighter or
-  // weaker body falls first, or both, and in Survivor the same damage from the impact energy (bumpsHurt).
+  // weaker body falls first, or both, and the same damage from the impact energy where it hurts (playerHurtsAnimals; the
+  // player's own share only in Survivor, by avatar.takeHit).
   bumpAnimals(px, pz, dt, R) {
     const av = this.avatar, now = ecosystem.time, playerKg = av.bodyMassKg();
-    const hurts = this.bumpsHurt();   // true: impacts cost health (Survivor); false: push only (Observer)
+    const hurts = this.playerHurtsAnimals();   // true: impacts cost health; false: push only
     const mx = px - this._bumpX, mz = pz - this._bumpZ, moved = Math.hypot(mx, mz);
     const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity: first call, teleport or no time
     const pvx = still ? 0 : mx / dt, pvz = still ? 0 : mz / dt;
@@ -1100,11 +1106,12 @@ export const game = {
     }
   },
 
-  // Attack: punches in either mode; lands only in Survivor, on the nearest hunted animal ahead, once per cooldown.
+  // Attack: punches in either mode; lands where the player hurts animals (playerHurtsAnimals), on the nearest animal
+  // ahead (people included), once per cooldown.
   punch() {
     const av = this.avatar, now = ecosystem.time;
     av.strike();
-    if (!av.alive || this.sheltered || av.nextAttackAt > now) return;
+    if (!play.active || this.dead || !this.playerHurtsAnimals() || this.sheltered || av.nextAttackAt > now) return;
     const P = SURVIVOR_CONFIG.punch, R = SURVIVOR_CONFIG.reach;
     const px = player.pos.x, pz = player.pos.z;
     const fx = -Math.sin(player.heading), fz = -Math.cos(player.heading);   // body facing
@@ -1112,8 +1119,7 @@ export const game = {
     let target = null, best = P.reachM * P.reachM;
     for (let i = 0; i < n; i++) {
       const d = this._q[i];
-      if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
-      if (Math.abs(d.position.y - av.position.y) > R.height) continue;
+      if (!d.alive || Math.abs(d.position.y - av.position.y) > R.height) continue;
       const dx = d.position.x - px, dz = d.position.z - pz, d2 = dx * dx + dz * dz;
       if (d2 > best || dx * fx + dz * fz < P.coneCos * Math.sqrt(d2)) continue;
       best = d2;
@@ -1121,8 +1127,7 @@ export const game = {
     }
     if (!target) return;
     av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
-    if ((HUNTS_MASK[target.typeId] & (1 << HUMAN_TYPE_ID)) !== 0) ecosystem.fightHit(av, target);
-    else target.attacked(av);
+    ecosystem.fightHit(av, target);   // every animal alike: damage from the player's strength
   },
 
   // FIELD ACTIONS: the first entry with a target in reach, or null.
@@ -1843,8 +1848,8 @@ export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.b
 
 // CAR HITS, one sim tick: an overlapping animal is moved out to touching. A contact's first tick is one impact
 // (Ecosystem.impact): the same impulse on both (Newton's third law) pushes the animal against its hold and slows the car
-// along its heading by impulse / car mass, and in Survivor (game.bumpsHurt) the impact energy costs the animal and the
-// car health at their own rates.
+// along its heading by impulse / car mass, and the impact energy costs the animal (game.playerHurtsAnimals) and the car
+// (game.carTakesDamage) health at their own rates.
 // The sideways share of the car's impulse is lost, since the bicycle model has no sideways speed.
 const _carQ = [], _carHitter = { type: 'car', position: new THREE.Vector3() };   // the car as applyHit's attacker
 export function carHits() {
@@ -1855,7 +1860,7 @@ export function carHits() {
   const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
   if (n === 0) return;
   const carKg = carMassKg(), now = ecosystem.time;
-  const hurts = game.bumpsHurt();   // true: impacts cost health (Survivor); false: push only (Observer)
+  const hurtsAnimal = game.playerHurtsAnimals(), hurtsCar = game.carTakesDamage();   // true: impacts cost that one health
   _carHitter.position.set(car.x, car.y, car.z);
   for (let i = 0; i < n; i++) {
     const a = _carQ[i];
@@ -1873,9 +1878,9 @@ export function carHits() {
       const closing = vx * nx + vz * nz - a.speedAlong(nx, nz, now);   // m/s the pair closes: the car's in, the animal's toward it
       if (closing <= 0) break;
       const hit = Ecosystem.impact(carKg, a.bodyMassKg(), closing);
-      ecosystem.applyHit(a, _carHitter, hurts ? hit.damage : 0, hit.pushN, false);
+      ecosystem.applyHit(a, _carHitter, hurtsAnimal ? hit.damage : 0, hit.pushN, false);
       car.speed -= hit.impulseNs * (fx * nx + fz * nz) / carKg;   // -impulse along n, its heading share
-      if (hurts) car.hurt(Ecosystem.impactDamage(hit.energyJ, CAR_HEALTH_PER_J));
+      if (hurtsCar) car.hurt(Ecosystem.impactDamage(hit.energyJ, CAR_HEALTH_PER_J));
       break;
     }
   }

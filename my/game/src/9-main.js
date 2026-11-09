@@ -166,6 +166,7 @@ addEventListener('resize', () => {
 renderer.domElement.addEventListener('webglcontextrestored', () => invalidate());
 const vitalsEl = document.getElementById('vitals');
 const collisionEl = document.getElementById('collision');   // Observer's Collision chip (COLLISION_MODES), Ragdoll at load
+const animalDmgEl = document.getElementById('animaldmg');   // Observer's Animal damage chip (game.animalDamage), off at load
 const hudBtnEl = document.getElementById('hudbtn');
 const fsEl = document.getElementById('fs');
 const newEcoEl = document.getElementById('neweco');
@@ -287,6 +288,17 @@ vitalsEl.addEventListener('click', () => {
   vitalsEl.setAttribute('aria-pressed', String(healthBars.enabled));
   vitalsEl.blur();
   invalidate();
+});
+// ANIMAL DAMAGE (Observer): the player's bumps, car hits and punches cost animals health; the player and the car still
+// take none. Off and disabled while the collision mode has no hits (applyCollision).
+function setAnimalDamage(on) {
+  game.animalDamage = on;
+  animalDmgEl.classList.toggle('sel', on);
+  animalDmgEl.setAttribute('aria-pressed', String(on));
+}
+animalDmgEl.addEventListener('click', () => {
+  setAnimalDamage(!game.animalDamage);
+  animalDmgEl.blur();
 });
 
 // DEBUG (settings): a copyable readout of the GPU, the people renderer and recent errors, refreshed each second while shown.
@@ -474,6 +486,9 @@ function activeCollision() {
 function applyCollision() {
   const mode = COLLISION_MODES[activeCollision()];
   animalRenderer.setRagdolls(mode.ragdolls);
+  // no hits (None): Animal damage goes off and cannot be turned on
+  if (!mode.hits) setAnimalDamage(false);
+  animalDmgEl.disabled = !mode.hits;
   for (const hook of [playerBumps, carHits]) {
     const hooked = ecosystem.afterContacts.indexOf(hook);   // -1 while this hook is not registered
     if (mode.hits && hooked < 0) ecosystem.afterContacts.push(hook);
@@ -1175,9 +1190,9 @@ gameEl.addEventListener('click', () => {
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
-  // no Vision rays, Vitals, HUD or Collision chips in Survivor mode
+  // no Vision rays, Vitals, HUD, Collision or Animal damage chips in Survivor mode
   syncSkyset();
-  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = game.on;
+  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = game.on;
   // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
   avgFpsEl.hidden = !game.on;
   if (game.on) avgFps.show();

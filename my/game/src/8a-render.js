@@ -756,7 +756,8 @@ export function billboardMaterials(atlases, grid) {
 }
 
 // RAGDOLLS (render only): the sim decides who is down; a ragdoll plays the fall out. VerletBody: particles, distance
-// links, ground, friction, and a pull back over the sim's position so the body rises where it is. BoxRagdoll and
+// links, ground, friction, and a pull toward where the sim's body lies (a person: the lying pose's hips and chest, tipped
+// about the feet), so the body lies and rises where the sim has it. BoxRagdoll and
 // HumanRagdoll lay out their rigs.
 class VerletBody {
   // n particles; links [a, b, aShare, bShare]; radii in rig units; anchors pulled to the sim position; hinges as
@@ -1069,11 +1070,18 @@ class HumanRagdoll {
     this.owner = a;
     this.rest = humanRagRest(a.look.shape);
     this.body.kp = kp;
+    // the anchors' height over the feet in metres: how far from the feet they lie once tipped flat
+    const an = this.body.anchors;
+    this.lieReach = an.reduce((sum, i) => sum + this.rest[i].y - HUMAN_RIG.foot, 0) / an.length * kp;
     placeFromRest(this.body, this.rest, HUMAN_RAG_SHARES, world, quat, a, this._v);
     this.body.begin(kp, ground);
   }
 
-  step(a, box) { this.body.step(a.position.x, a.position.z, box); }
+  // The anchors pull toward the lying pose's: from the sim's feet, along the push, as far as the tip has gone.
+  step(a, box) {
+    const reach = this.lieReach * Math.sin(downShare(a, ecosystem.time) * Math.PI / 2);
+    this.body.step(a.position.x + Math.sin(a.downYaw) * reach, a.position.z + Math.cos(a.downYaw) * reach, box);
+  }
 
   // Bones into `data` at this row, in rig units of the instance at (ox, oy, oz) facing `facing`: rotation then
   // translation, so p lands at R p + t.
@@ -2782,13 +2790,15 @@ export function disposeBrain(b) {
   b.mesh.dispose();
 }
 
+// A dead body's brain: nothing fires, so every node and weight shows at rest.
 export function brainActivity(b, a) {
-  const nn = a.brain, out = nn.output ?? 0;
+  const nn = a.brain, out = nn.output ?? 0, alive = a.alive;   // alive false: a corpse, nothing fires
   const arr = b.colorAttr.array;
   let dirty = false;
   for (let k = 0; k < b.total; k++) {
     let f;
-    if (k < b.oA) f = Math.abs(nn.input[k]) > 0.5;
+    if (!alive) f = false;
+    else if (k < b.oA) f = Math.abs(nn.input[k]) > 0.5;
     else if (k < b.oB) f = nn.actA[k - b.oA] >= 1.0;
     else if (k < b.oOut) f = nn.actB[k - b.oB] >= 1.0;
     else f = (k - b.oOut) === out;
@@ -2853,6 +2863,7 @@ export class HealthBars {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._c = new THREE.Color();
+    this._lists = [null, null];   // update's two passes: the animals, then the corpses
     this.tick = 0;
     this.enabled = true;
 
@@ -2997,16 +3008,17 @@ export class HealthBars {
     return barY + (BAR_SPRITE_CANVAS_H - this.panelTop(info)) * BAR_PX + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
   }
 
-  // Panel inputs: stat fullness in BAR_STEPS and arrow headings.
+  // Panel inputs: stat fullness in BAR_STEPS and arrow headings. A corpse: no health and no headings (it senses nothing).
   readStats(a, now, vals, arrows) {
     const q = v => Math.floor(Math.max(0, Math.min(1, v)) * BAR_STEPS);
-    vals[0] = q(a.health / a.maxHealth);
+    const alive = a.alive;   // false: a corpse
+    vals[0] = alive ? q(a.health / a.maxHealth) : 0;
     vals[1] = q(1 - Math.min(a.foodNeed, 100) / 100);
     vals[2] = q(1 - Math.min(a.waterNeed, 100) / 100);
-    vals[3] = q(a.mateFill(now));
-    arrows[1] = this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos);
-    arrows[2] = this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos);
-    arrows[3] = this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos);
+    vals[3] = q(a.mateFill(alive ? now : a.diedAt));   // a corpse's stops at death
+    arrows[1] = alive ? this.heading(a, a.hasFood, a.rayFoodSin, a.rayFoodCos) : -1;
+    arrows[2] = alive ? this.heading(a, a.hasWater, a.rayWaterSin, a.rayWaterCos) : -1;
+    arrows[3] = alive ? this.heading(a, a.hasMate, a.rayMateSin, a.rayMateCos) : -1;
   }
 
   // People only: age code, height in, weight lb.
@@ -3125,8 +3137,9 @@ export class HealthBars {
     return true;
   }
 
-  // Near slots follow the close crowd, freed after BAR_RELEASE_TICKS; far people hold a cell while drawn far.
-  update(animals) {
+  // Near slots follow the close crowd, freed after BAR_RELEASE_TICKS; far people hold a cell while drawn far. The
+  // animals, then the corpses (their panels show empty health and a still brain).
+  update(animals, corpses = ecosystem.corpses) {
     if (!this.enabled) return;
     const tick = ++this.tick;
     const spin = performance.now() / 1000 * BRAIN_SPIN;
@@ -3155,8 +3168,10 @@ export class HealthBars {
     const r8 = xz + wy, r9 = yz - wx, r10 = 1 - (xx + yy);
     const lobeArr = this.farLobes.instanceMatrix.array;
 
-    for (const a of animals) {
-      if (!a.alive) continue;
+    const lists = this._lists;
+    lists[0] = animals; lists[1] = corpses;
+    for (let li = 0; li < lists.length; li++) for (const a of lists[li]) {
+      if (li === 0 && !a.alive) continue;   // the dead show from the corpse list only
       let bar = this.bars.get(a);
       if (bar) seen.add(a);
 
@@ -3188,7 +3203,7 @@ export class HealthBars {
         const nn = a.brain;
         if (nn) {
           const by = this.brainY(barY, cell.infoKey);
-          const fireA = this.firing(nn.actA), fireB = this.firing(nn.actB);
+          const fireA = a.alive ? this.firing(nn.actA) : 0, fireB = a.alive ? this.firing(nn.actB) : 0;   // a corpse: still
           for (let l = 0; l < 2; l++) {
             const o = (nl * 2 + l) * 16;
             lobeArr[o + 12] = a.position.x;
@@ -3231,11 +3246,11 @@ export class HealthBars {
       b.group.visible = true;
     }
     for (const [a, bar] of this.bars) {
-      const alive = seen.has(a);
-      if (alive && bar.nearTick === tick) continue;
+      const listed = seen.has(a);   // true: still among the animals or corpses this pass
+      if (listed && bar.nearTick === tick) continue;
       bar.sprite.visible = false;
       if (bar.brain) bar.brain.group.visible = false;
-      if (alive && tick - bar.nearTick <= BAR_RELEASE_TICKS) continue;
+      if (listed && tick - bar.nearTick <= BAR_RELEASE_TICKS) continue;
       this.bars.delete(a);
       this.spare.push(bar);
     }
@@ -3753,4 +3768,4 @@ export function populationText() {
   if (deer) parts.push(`${fmt(deer)} deer`);
   parts.push(`${fmt(ecosystem.plants.length)} plants`, `day ${simSky.day}`);
   return parts.join(', ');
-}
+}x
