@@ -1268,6 +1268,7 @@ export class AnimalRenderer {
     this._bodyTicks = 0;      // tick the player's ragdoll last stepped to
     this._box = { cx: 0, cz: 0, y: 0, fx: 0, fz: 1, sx: 1, sz: 0, halfLen: CAR_LEN / 2, halfWid: CAR_WID / 2, top: CAR_TOP };   // carBox
     this._pass = 0;
+    this._lists = [null, null];   // update's two passes: the animals, then the corpses
     this.ragdollsOn = false;   // ragdolls on (the collision mode, set by 9-main)
 
     // per species: fixed tables plus per-pass counters
@@ -1719,8 +1720,8 @@ export class AnimalRenderer {
     return c;
   }
 
-  // One pass over the animals; each species keeps its own counters.
-  update(animals, deltaTime) {
+  // One pass over the animals, then the corpses (drawn near only, lying); each species keeps its own counters.
+  update(animals, deltaTime, corpses = ecosystem.corpses) {
     updateNpcFrustum();
     this._pass++;
     const cx = viewPos.x, cy = viewPos.y, cz = viewPos.z;
@@ -1749,8 +1750,11 @@ export class AnimalRenderer {
     const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, bWidth = B.width.array, cardOwners = B.cardOwner;
     let bn = 0, cardFrom = B.max;
 
-    for (const a of animals) {
-      if (!a.alive) continue;
+    const lists = this._lists;
+    lists[0] = animals; lists[1] = corpses;
+    for (let li = 0; li < lists.length; li++) for (const a of lists[li]) {
+      const corpse = li === 1;   // true: a dead body from ecosystem.corpses; false: a live animal
+      if (!corpse && !a.alive) continue;
       const human = a.typeId === HUMAN_TYPE_ID;
       const p = passes[a.typeId];
       if (human) {
@@ -1790,6 +1794,7 @@ export class AnimalRenderer {
       const originY = a.position.y - (1 - s) * a.footLift() * NPC_UNIT;
       const ex = a.position.x - cx, ey = a.position.y - cy, ez = a.position.z - cz;
       if (ex * ex + ey * ey + ez * ez > lod2) {
+        if (corpse) continue;   // billboards have no lying frame
         // FAR: one billboard; frame picked here and in the shader
         const o = bn * 4, fr = p.cardFrame;
         bPose[o] = a.position.x; bPose[o + 1] = originY; bPose[o + 2] = a.position.z; bPose[o + 3] = a.facingAngle;

@@ -17,7 +17,8 @@ import {
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
-  NPC_NEED_FULL, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S
+  NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
+  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools
@@ -59,6 +60,19 @@ export function conditionShare(health, maxHealth, foodNeed, waterNeed) {
   const healthShare = fightClamp01(health / maxHealth);
   const energyShare = 1 - fightClamp01(Math.max(foodNeed, waterNeed) / NPC_NEED_FULL);
   return healthShare * energyShare;
+}
+// REGEN, one step for any body with health, foodNeed and waterNeed (an animal, the player's game): with food and water
+// both at least REGEN_MIN_SHARE full, the health bar refills at fillSharePerS (the body's drink rate, bar share per
+// second) and each need bar drops REGEN_COST_SHARE of the share healed. Needs run 0 (full) to needFull (empty).
+export function regenStep(body, maxHealth, needFull, fillSharePerS, dt) {
+  const maxNeed = needFull * (1 - REGEN_MIN_SHARE);   // the most need that still heals
+  if (body.foodNeed > maxNeed || body.waterNeed > maxNeed) return;
+  const healed = Math.min(fillSharePerS * dt * maxHealth, maxHealth - body.health);   // health points
+  if (!(healed > 0)) return;
+  const cost = healed / maxHealth * REGEN_COST_SHARE * needFull;   // need added to each bar
+  body.health += healed;
+  body.foodNeed = Math.min(needFull, body.foodNeed + cost);
+  body.waterNeed = Math.min(needFull, body.waterNeed + cost);
 }
 // Drawn knockdown share at `now`, 0 standing to 1 lying.
 export function downShare(a, now) {
@@ -145,6 +159,7 @@ function addPrey(obj, d2, key, sight) {
 
 export class Animal extends Entity {
   static TWO_PI = TWO_PI;
+  static DEATH_HEALTH = 1;   // health at or under which an animal dies (and leaves a corpse, Ecosystem.step)
   static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
   static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
   static INPUT_DIMS = 19;
@@ -203,6 +218,8 @@ export class Animal extends Entity {
     this.moveAt = -Infinity; this.playing = null; this.moveSide = 1; this.fightFrom = 0; this.fightUntil = 0;
     // KNOCKDOWNS: downAt starts the fall, downUntil ends the hold; downYaw, downDV for render
     this.downAt = -Infinity; this.downUntil = 0; this.downYaw = 0; this.downDV = 0;
+    this.contactTick = -Infinity;   // BUMP IMPACTS: last tick the player or the car touched it (Ecosystem.freshContact)
+    this.corpseUntil = 0;           // CORPSES: sim time its body goes (Ecosystem.addCorpse)
     this.quarry = null;      // night hunt quarry (animal or avatar)
     // PACK STRENGTH: mass and height summed over the pack in sight
     this.packMassKg = 0; this.packHeightM = 0;
@@ -892,7 +909,8 @@ export class Animal extends Entity {
       + this.waterNeed * 0.0001
       + this.foodNeed * 0.0001;
     this.avoidNeed = 0;
-    if (this.health <= 1) { this.alive = false; return; }
+    if (this.health <= Animal.DEATH_HEALTH) { this.alive = false; return; }
+    regenStep(this, this.maxHealth, NPC_NEED_FULL, Animal.DRINK_SHARE_PER_S, NPC_TICK_S);
     if (this.fleeFrom !== null && now >= this.heldUntil()) this.fleeAttacker();
 
     if (!this.brain) {
@@ -928,13 +946,13 @@ export class Animal extends Entity {
     ecosystem.applyHit(this, predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
   }
 
-  // A hit's damage: no eating for NPC_HIT_NO_EAT_S; a kill feeds the attacker.
-  takeHit(attacker, damage) {
+  // A hit's damage: no eating for NPC_HIT_NO_EAT_S; a kill feeds the attacker when `feeds` (false for bump impacts).
+  takeHit(attacker, damage, feeds = true) {
     this.health -= damage;
     this.noEatUntil = ecosystem.time + NPC_HIT_NO_EAT_S;
-    if (this.health <= 1) {
+    if (this.health <= Animal.DEATH_HEALTH) {
       this.alive = false;
-      attacker.feedOn(this);
+      if (feeds) attacker.feedOn(this);
     } else this.answerHit(attacker);
   }
 
@@ -975,9 +993,8 @@ export class Animal extends Entity {
     if (!this.brain) this.targetHeading = this.heading;
   }
 
-  // A kill's meal: the victim's starting health as health, food and water.
+  // A kill's meal: the victim's starting health as food and water (health comes back by REGEN only).
   feedOn(victim) {
-    this.health += victim.startHealth;
     this.foodNeed = Math.max(0, this.foodNeed - victim.startHealth);
     this.dietWater(victim.startHealth);
   }
@@ -1020,6 +1037,8 @@ export class Animal extends Entity {
   isDown(now) { return now < this.downUntil; }
   // BUMPING: m/s along its heading this tick, 0 while held
   groundSpeed(now) { return this.moving && now >= this.heldUntil() ? this.stepLength() / NPC_TICK_S : 0; }
+  // BUMP IMPACTS: m/s of this tick's velocity along the unit direction (nx, nz)
+  speedAlong(nx, nz, now) { return (Math.sin(this.heading) * nx + Math.cos(this.heading) * nz) * this.groundSpeed(now); }
   // KNOCKDOWNS: can a push knock it down (applyHit)? Every living animal; the avatar has its own rule
   knockable() { return this.alive; }
   // KNOCKDOWNS: braced on its feet (applyHit)? Every animal; the avatar has its own rule
@@ -1109,7 +1128,6 @@ export class Animal extends Entity {
 
   eatPlant(plant) {
     const nutrition = plant.maxHealth * PLANT_BITE_NUTRITION;
-    this.health = Math.min(this.health + nutrition, this.maxHealth);
     this.foodNeed = Math.max(0, this.foodNeed - nutrition * 0.01);
     this.dietWater(nutrition * 0.01);
     plant.health -= 1;
@@ -1117,17 +1135,16 @@ export class Animal extends Entity {
     if (plant.health <= 0) { plant.alive = false; ecosystem.plantsDied = true; }
   }
 
-  // A food box: full health and hunger cleared; the crate moves.
+  // A food box: hunger cleared; the crate moves.
   eatBox() {
-    this.health = this.maxHealth;
     this.dietWater(this.foodNeed);
     this.foodNeed = 0;
   }
 
   // Every species drinks alike: an empty bar refills in NPC_DRINK_SECONDS.
+  static DRINK_SHARE_PER_S = 1 / NPC_DRINK_SECONDS;   // water bar share drinking fills per second (also REGEN's rate)
   drinkWater() {
-    this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 / NPC_DRINK_SECONDS * NPC_TICK_S);
-    this.health = Math.min(this.health + this.waterIncrement * 25, this.maxHealth);
+    this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 * Animal.DRINK_SHARE_PER_S * NPC_TICK_S);
   }
 }
 
@@ -1293,6 +1310,7 @@ export class Ecosystem {
 
   constructor() {
     this.animals = [];
+    this.corpses = [];   // CORPSES: dead animals drawn lying, oldest first (addCorpse)
     this.plants = [];
     this.ticks = 0;
     this.ready = false;
@@ -1343,6 +1361,7 @@ export class Ecosystem {
 
   clear() {
     this.animals.length = 0;
+    this.corpses.length = 0;
     this.plants.length = 0;
     this._plantAdds.length = 0;
     this._plantDrops.length = 0;
@@ -1360,6 +1379,7 @@ export class Ecosystem {
   // Spatial indexes, then the provider's population.
   initialize(provider) {
     this.animals.length = 0;
+    this.corpses.length = 0;
     this.plants.length = 0;
     this._plantAdds.length = 0;
     this._plantDrops.length = 0;
@@ -1561,10 +1581,35 @@ export class Ecosystem {
   // BUMPING: push in newtons, momentum stopped over NPC_BUMP_CONTACT_S
   static bumpForceN(massKg, closingMS) { return massKg * closingMS / NPC_BUMP_CONTACT_S; }
 
-  // KNOCKDOWNS: every hit and bump comes here. Damage first, then pushN against the hold (0 when not braced()). Past it
-  // the body falls, away from the push if braced, over toward it if airborne, longer the further past.
-  applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker)) {
-    if (damage > 0) target.takeHit(attacker, damage);
+  // BUMP IMPACTS: true on a contact's first touching tick with `body` (not touched the tick before). Later touching
+  // ticks are the pair moving together, with no new impact.
+  freshContact(body) {
+    const fresh = body.contactTick < this.ticks - 1;
+    body.contactTick = this.ticks;
+    return fresh;
+  }
+  // BUMP IMPACTS: a pair of massAKg and massBKg closing at closingMS. Fills `out`: impulseNs, the same on both bodies
+  // (Newton's third law); pushN, that impulse over NPC_BUMP_CONTACT_S; energyJ, the closing motion's energy; damage, body
+  // health lost by each of the pair at BUMP_HEALTH_PER_J.
+  static impact(massAKg, massBKg, closingMS, out = Ecosystem._impact) {
+    const reducedKg = massAKg * massBKg / (massAKg + massBKg);
+    out.impulseNs = reducedKg * closingMS * (1 + BUMP_RESTITUTION);
+    out.pushN = out.impulseNs / NPC_BUMP_CONTACT_S;
+    out.energyJ = reducedKg * closingMS * closingMS / 2;
+    out.damage = Ecosystem.impactDamage(out.energyJ, BUMP_HEALTH_PER_J);
+    return out;
+  }
+  static _impact = { impulseNs: 0, pushN: 0, energyJ: 0, damage: 0 };
+  // BUMP IMPACTS: health lost at healthPerJ past BUMP_SAFE_J
+  static impactDamage(energyJ, healthPerJ) { return Math.max(0, energyJ - BUMP_SAFE_J) * healthPerJ; }
+
+  // KNOCKDOWNS: every hit and bump comes here. Damage first (a kill feeds the attacker when `feeds`), then pushN
+  // against the hold (0 when not braced()). Past it the body falls, away from the push if braced, over toward it if
+  // airborne, longer the further past.
+  applyHit(target, attacker, damage, pushN = Ecosystem.hitForceN(attacker), feeds = true) {
+    if (damage > 0) target.takeHit(attacker, damage, feeds);
+    // CORPSES: a killed animal has no hold; it falls from the hit, and addCorpse keeps it down
+    if (target instanceof Animal && !target.alive) { if (!target.isDown(this.time)) this.startFall(target, attacker, true, pushN, 0); return; }
     if (!target.knockable()) return;   // dead, or the player out of play or sheltered
     const bracedHoldN = Ecosystem.holdForceN(target);        // hold with feet planted
     const braced = target.braced();   // true: feet planted, it holds and falls away; false: airborne, no hold, legs swept
@@ -1574,17 +1619,37 @@ export class Ecosystem {
     // down time scales with the push past the braced hold
     const excess = Math.max(0, pushN / Math.max(bracedHoldN, 1e-9) - 1);
     const downS = Math.min(NPC_DOWN_MAX_S, NPC_DOWN_MIN_S + NPC_DOWN_S_PER_EXCESS * excess);
-    if (!target.isDown(now)) {
-      target.downAt = now;
-      // braced, it topples away from the attacker (backward when facing it); airborne, the push takes its legs, so the
-      // upper body pitches over toward the attacker (head first when facing it)
-      const away = braced ? 1 : -1;
-      const dx = (target.position.x - attacker.position.x) * away, dz = (target.position.z - attacker.position.z) * away;
-      target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + (braced ? Math.PI : 0);
-      // push past the hold as launch speed
-      target.downDV = (pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
-    }
+    if (!target.isDown(now)) this.startFall(target, attacker, braced, pushN, holdN);
     target.downUntil = Math.max(target.downUntil, now + downS);
+  }
+  // KNOCKDOWNS: a fall starting now. Braced, it topples away from the attacker (backward when facing it); airborne, the
+  // push takes its legs, so the upper body pitches over toward the attacker (head first when facing it). The push past
+  // the hold is its launch speed.
+  startFall(target, attacker, braced, pushN, holdN) {
+    target.downAt = this.time;
+    const away = braced ? 1 : -1;
+    const dx = (target.position.x - attacker.position.x) * away, dz = (target.position.z - attacker.position.z) * away;
+    target.downYaw = dx !== 0 || dz !== 0 ? wrapAngle(Math.atan2(dx, dz)) : target.facingAngle + (braced ? Math.PI : 0);
+    target.downDV = Math.max(0, pushN - holdN) * NPC_BUMP_CONTACT_S / target.bodyMassKg();
+  }
+
+  // CORPSES: a dead animal lies where it fell, drawn only, for CORPSE_S. One already falling (a fatal hit) keeps its
+  // fall; any other death collapses forward where it stands. The oldest past CORPSE_MAX goes.
+  addCorpse(a) {
+    const now = this.time;
+    if (!a.isDown(now)) { a.downAt = now; a.downYaw = a.facingAngle; a.downDV = 0; }
+    a.downUntil = Infinity;   // never rises
+    a.moving = false; a.playing = null;
+    a.corpseUntil = now + CORPSE_S;
+    this.corpses.push(a);
+    if (this.corpses.length > CORPSE_MAX) this.corpses.shift();
+  }
+  // CORPSES: drop the ones past their time (oldest first)
+  expireCorpses() {
+    const c = this.corpses, now = this.time;
+    let n = 0;
+    while (n < c.length && c[n].corpseUntil <= now) n++;
+    if (n > 0) c.splice(0, n);
   }
   // hit push: fighting mass x NPC_HIT_ACCEL_MS2 x condition
   static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition(); }
@@ -1669,11 +1734,15 @@ export class Ecosystem {
     this.handleCollisions();
     for (const f of this.afterContacts) f(dt);
 
+    this.expireCorpses();
     for (let i = this.animals.length - 1; i >= 0; i--) {
-      if (!this.animals[i].alive) {
-        this.animals[i].remove();
-        this._animalGridDrops.push(this.animals[i]);
+      const a = this.animals[i];
+      if (!a.alive) {
+        a.remove();
+        this._animalGridDrops.push(a);
         this.animals.splice(i, 1);
+        // CORPSES: died of health loss (not eaten whole or taken out of the world)
+        if (a.health <= Animal.DEATH_HEALTH) this.addCorpse(a);
       }
     }
     if (this.plantsDied) {

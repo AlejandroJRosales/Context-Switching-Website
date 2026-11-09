@@ -332,9 +332,27 @@ export const NPC_DOWN_MIN_S = 1;           // seconds down just past the hold
 export const NPC_DOWN_S_PER_EXCESS = 1;    // seconds per unit of push over hold past 1
 export const NPC_DOWN_MAX_S = 6;           // most seconds down per hit
 export const NPC_NEED_FULL = 100;          // need at which the bar is empty (energy share 0)
+// REGEN (regenStep), the player and every animal alike: with food and water both at least REGEN_MIN_SHARE full, the
+// health bar refills at the body's drink rate (the share of the water bar drinking fills per second), and the food and
+// water bars each drop REGEN_COST_SHARE of what the health bar gains.
+export const REGEN_MIN_SHARE = 0.75;   // fullness share both bars need for healing
+export const REGEN_COST_SHARE = 0.5;   // food and water bar share lost per health bar share healed
 // BUMPING (Ecosystem.bump): a body walking into another pushes with mass x closing speed / NPC_BUMP_CONTACT_S against
 // the hit hold.
 export const NPC_BUMP_CONTACT_S = 0.25;    // placeholder: seconds a bump takes to stop
+// BUMP IMPACTS (Ecosystem.impact): the player's and the car's bumps. A contact's first touching tick is one impact; later
+// touching ticks move the pair together. Both bodies get the same impulse, reduced mass x closing speed x
+// (1 + BUMP_RESTITUTION) (Newton's third law), pushing with it over NPC_BUMP_CONTACT_S. The impact energy, reduced mass x
+// closing speed^2 / 2, past BUMP_SAFE_J costs each body health at its own rate per joule.
+// Reference energies: two people walking into each other ~40 J, a run into a still person ~500 J, the car at
+// 10 m/s into a person ~3.6 kJ, at 20 m/s ~14.5 kJ.
+export const BUMP_RESTITUTION = 0;         // placeholder: closing speed share bounced back; 0 = the pair moves together
+export const BUMP_SAFE_J = 400;            // placeholder: impact energy that hurts nothing
+export const BUMP_HEALTH_PER_J = 0.02;     // placeholder: a body's (player's or animal's) health per joule past BUMP_SAFE_J
+// CORPSES (Ecosystem.addCorpse): an animal dead of health loss lies where it fell, drawn only, until CORPSE_S passes or
+// CORPSE_MAX newer ones push it out. Ragdolls on: a ragdoll if one is free as it falls, else the lying pose.
+export const CORPSE_S = 60;      // placeholder: sim seconds a body lies
+export const CORPSE_MAX = 256;   // placeholder: most bodies lying at once
 // drawn fall over NPC_FALL_S and rise over the hold's last NPC_GETUP_S
 export const NPC_FALL_S = 0.35;
 export const NPC_GETUP_S = 0.6;
@@ -1048,8 +1066,9 @@ export const SURVIVOR_CONFIG = {
     }
   },
   // INJURIES: a hit or hurting fall may cause one until an item that `cures` it is used; noRun stops sprinting.
+  // One hit or fall of at least sureDamageShare of maxHealth always causes it; a smaller one with chanceBelowSure.
   injuries: {
-    brokenBone: { icon: '🦴', label: 'Broken bone', chancePerHit: 0.2, fallChanceAtSafe: 0.5, noRun: true }
+    brokenBone: { icon: '🦴', label: 'Broken bone', sureDamageShare: 0.5, chanceBelowSure: 0.05, noRun: true }
   },
   // CRAFTING: the craft slot makes the first recipe the inventory holds.
   craft: {
@@ -1143,6 +1162,8 @@ export const CAR_ROLL = 0.15;    // m/s^2 rolling resistance
 export const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag off throttle
 // CAR MASS AND DRAG: ~700 kg kei car plus the driver (carMassKg); drag 0.5 x air density x CdA / mass.
 export const CAR_MASS_KG = 700;      // curb kg (Suzuki Kei 710, Cappuccino 700 to 725)
+export const CAR_MAX_HEALTH = 100;      // a new car's health
+export const CAR_HEALTH_PER_J = 0.0015;   // placeholder: car health per joule of impact energy past BUMP_SAFE_J
 export const AIR_DENSITY = 1.225;    // kg/m^3, sea level 15 C
 export const CAR_CD = 0.35;          // placeholder Cd, small cars ~0.33 to 0.38
 export const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to 0.84)

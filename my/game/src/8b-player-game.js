@@ -13,7 +13,7 @@ import {
   TPP_UP, PLAYER_JOG_ANIM, SURVIVOR_CONFIG, playerPlantFood, STICK_RADIUS, FLICK_RADIUS, TAP_GAP_MS, TAP_SLOP,
   TAP_SWALLOW_MS, TAP_BUTTONS, HOLD_SAFE, CAR_SCALE, CAR_LEN, CAR_WID, CAR_TOP, CAR_WHEELBASE, CAR_TRACK, CAR_WHEEL_R,
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
-  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
+  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
   CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS
 } from './1-config.js';
@@ -34,7 +34,7 @@ import {
 } from './6-worlds.js';
 import {
   startFightMove, humanFightAct, humanMassKg, humanFightMassKg, personInfoKey, personInfoFields, personBodyFields, Animal, humanLook, customizeHumanLook, ecosystem,
-  simSky, conditionShare, Ecosystem
+  simSky, conditionShare, Ecosystem, regenStep
 } from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
@@ -785,6 +785,8 @@ export const SURVIVOR_FIELD_ACTIONS = {
 
 export const needsEl = document.getElementById('needs');
 export const needHealthEl = document.getElementById('needHealth');
+export const needCarRowEl = document.getElementById('needCarRow');   // the car's health row, shown while driving
+export const needCarEl = document.getElementById('needCar');
 export const needFoodEl = document.getElementById('needFood');
 export const needWaterEl = document.getElementById('needWater');
 export const needDayEl = document.getElementById('needDay');
@@ -835,7 +837,7 @@ export const game = {
   _lastHour: null,
   _q: [], _qp: [], _qb: [], _qBump: [],
   _bumpX: NaN, _bumpZ: NaN,   // position at the last bumpAnimals, for velocity
-  _shown: -1, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
+  _shown: -1, _shownCar: -2, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
 
   // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
@@ -861,17 +863,21 @@ export const game = {
     isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
     // animal `tid` hunts the player at night
     isPreyFor(tid) { return this.alive && this.prey && (NIGHT_PREY_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
-    takeHit(attacker, damage) {
-      if (game.sheltered || game.dead) return;
+    // health only in Survivor; a kill feeds the attacker when `feeds` (false for bump impacts)
+    takeHit(attacker, damage, feeds = true) {
+      if (!game.on || game.sheltered || game.dead) return;
       game.hurt(damage, attacker.type);
-      if (game.dead) attacker.feedOn(this);
-      else game.rollInjuries(d => d.chancePerHit ?? 0);
+      if (game.dead && feeds) attacker.feedOn(this);
+      else game.rollInjuries(damage);
     },
     feedOn(victim) {
       game.eat(victim.startHealth);
       game.tally(victim.type);
     }
   },
+
+  // BUMP IMPACTS cost health (animals', the player's, the car's) only in Survivor; in Observer they only push
+  bumpsHurt() { return this.on; },
 
   reset() {
     this.dead = false;
@@ -903,6 +909,9 @@ export const game = {
     this.health = Math.min(SURVIVOR_CONFIG.maxHealth, this.health + amount);
   },
 
+  // REGEN by the animals' rule (regenStep) at the player's drink rate; needs run 0 (full) to 100 (empty)
+  regen(dt) { regenStep(this, SURVIVOR_CONFIG.maxHealth, 100, SURVIVOR_CONFIG.needs.drinkPerS / 100, dt); },
+
   // food, with its water
   eat(food) {
     const N = SURVIVOR_CONFIG.needs;
@@ -913,10 +922,14 @@ export const game = {
   // water need removed
   drink(water) { this.waterNeed = Math.max(0, this.waterNeed - water); },
 
-  // A hit or fall: each missing injury sets in with chanceOf(entry).
-  rollInjuries(chanceOf) {
+  // A hit or fall of `damage` health: each missing injury sets in for sure at sureDamageShare of maxHealth or more,
+  // else with chanceBelowSure.
+  rollInjuries(damage) {
     const all = SURVIVOR_CONFIG.injuries;
-    for (const id in all) if (!this.injuries.has(id) && Math.random() < chanceOf(all[id])) this.injuries.add(id);
+    for (const id in all) {
+      const d = all[id], sure = damage >= d.sureDamageShare * SURVIVOR_CONFIG.maxHealth;   // true: always; false: chanceBelowSure
+      if (!this.injuries.has(id) && (sure || Math.random() < d.chanceBelowSure)) this.injuries.add(id);
+    }
     this.draw();
   },
 
@@ -981,9 +994,10 @@ export const game = {
     const F = SURVIVOR_CONFIG.fall;
     const dropHeight = impactSpeed * impactSpeed / (2 * GRAVITY);
     if (dropHeight <= F.safeM) return;
-    this.hurt((dropHeight - F.safeM) * F.damagePerM, 'fall');
-    // a hurting fall may injure, more with height
-    if (!this.dead) this.rollInjuries(d => (d.fallChanceAtSafe ?? 0) * dropHeight / F.safeM);
+    const damage = (dropHeight - F.safeM) * F.damagePerM;
+    this.hurt(damage, 'fall');
+    // a hurting fall may injure (rollInjuries: sure past sureDamageShare)
+    if (!this.dead) this.rollInjuries(damage);
   },
 
   update(dt) {
@@ -1008,6 +1022,7 @@ export const game = {
     if (this.foodNeed >= 100) this.hurt(N.starvingPerS * dt, 'starving');
     if (this.waterNeed >= 100) this.hurt(N.parchedPerS * dt, 'parched');
     if (this.dead) return;
+    this.regen(dt);
 
     // drink, harvest and collect use the action button; contact only fights
     if (!player.inCar) {
@@ -1025,11 +1040,12 @@ export const game = {
     return feet;
   },
 
-  // BUMPING with the player: an overlapping animal is moved out to touching; the player is not. Pushes go through
-  // applyHit (no damage) while the player is knockable. A person: one equal push on both (reduced mass x closing
-  // speed), so the lighter or weaker body falls first, or both. Other animals: each one's momentum into the other.
+  // BUMPING with the player: an overlapping animal is moved out to touching; the player is not. A contact's first tick
+  // is one impact (Ecosystem.impact) on both through applyHit: the same push (Newton's third law), so the lighter or
+  // weaker body falls first, or both, and in Survivor the same damage from the impact energy (bumpsHurt).
   bumpAnimals(px, pz, dt, R) {
     const av = this.avatar, now = ecosystem.time, playerKg = av.bodyMassKg();
+    const hurts = this.bumpsHurt();   // true: impacts cost health (Survivor); false: push only (Observer)
     const mx = px - this._bumpX, mz = pz - this._bumpZ, moved = Math.hypot(mx, mz);
     const still = !(moved < HUMAN_GAIT_JUMP) || !(dt > 0);   // no velocity: first call, teleport or no time
     const pvx = still ? 0 : mx / dt, pvz = still ? 0 : mz / dt;
@@ -1044,20 +1060,15 @@ export const game = {
       const dist = Math.sqrt(d2), nx = dist > 1e-6 ? dx / dist : Math.sin(d.heading), nz = dist > 1e-6 ? dz / dist : Math.cos(d.heading);
       const ox = ecosystem.fitX(px + nx * touch), oz = ecosystem.fitZ(pz + nz * touch);
       if (!occ.blockedAt(ox, oz)) { d.position.x = ox; d.position.z = oz; }
-      const playerClosing = pvx * nx + pvz * nz;   // m/s into the animal
-      const v = d.groundSpeed(now), animalClosing = -(Math.sin(d.heading) * v * nx + Math.cos(d.heading) * v * nz);   // m/s it moves into the player
-      const animalKg = d.bodyMassKg();
-      if (d.typeId === HUMAN_TYPE_ID) {
-        const pairKg = playerKg * animalKg / (playerKg + animalKg);   // reduced mass
-        const pairClosing = playerClosing + animalClosing;            // closing speed
-        if (pairClosing <= 0) continue;
-        const pushN = Ecosystem.bumpForceN(pairKg, pairClosing);      // same push on both
-        ecosystem.applyHit(d, av, 0, pushN);
-        if (d.alive) ecosystem.applyHit(av, d, 0, pushN);
-        continue;
-      }
-      if (playerClosing > 0) ecosystem.applyHit(d, av, 0, Ecosystem.bumpForceN(playerKg, playerClosing));
-      if (animalClosing > 0 && d.alive) ecosystem.applyHit(av, d, 0, Ecosystem.bumpForceN(animalKg, animalClosing));
+      if (!ecosystem.freshContact(d)) continue;   // still touching: moving together, no new impact
+      const playerClosing = pvx * nx + pvz * nz;          // m/s into the animal
+      const animalClosing = -d.speedAlong(nx, nz, now);   // m/s it moves into the player
+      const closing = playerClosing + animalClosing;      // the pair's closing speed
+      if (closing <= 0) continue;
+      const hit = Ecosystem.impact(playerKg, d.bodyMassKg(), closing);   // same push and damage on both
+      const damage = hurts ? hit.damage : 0;
+      ecosystem.applyHit(d, av, damage, hit.pushN, false);
+      ecosystem.applyHit(av, d, damage, hit.pushN, false);
     }
   },
 
@@ -1236,6 +1247,13 @@ export const game = {
       needHealthEl.style.width = h + '%';
       needFoodEl.style.width = f + '%';
       needWaterEl.style.width = w + '%';
+    }
+    // CAR HEALTH: its row shows while the player drives
+    const carShown = player.inCar ? Math.round(100 * car.health / CAR_MAX_HEALTH) : -1;   // bar percent, -1 = row hidden
+    if (carShown !== this._shownCar) {
+      this._shownCar = carShown;
+      needCarRowEl.hidden = carShown < 0;
+      if (carShown >= 0) needCarEl.style.width = carShown + '%';
     }
     const day = this.run ? Math.floor(this.run.hours / 24) + 1 : 1;
     if (day !== this._shownDay) { this._shownDay = day; needDayEl.textContent = `Day ${day}`; }
@@ -1538,6 +1556,9 @@ export const useEl = document.getElementById('use');
 export const car = {
   reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; },   // teardownWorld's entry
   placed: false,
+  health: CAR_MAX_HEALTH,   // a placed car starts full (setCar)
+  hurt(amount) { this.health = Math.max(0, this.health - amount); },
+  wrecked() { return this.health <= 0; },   // no throttle or steering (carPhysics); it coasts to a stop
   x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
   speed: 0,        // m/s, negative in reverse
   steer: 0,        // front wheel angle, rad, + left
@@ -1763,6 +1784,7 @@ export function setCar(spot) {
   car.placed = !!spot;
   car.mesh.visible = car.placed;
   car.speed = car.steer = car.spin = 0;
+  car.health = CAR_MAX_HEALTH;
   if (!spot) return;
   car.x = spot.px; car.z = spot.pz; car.yaw = spot.yaw;
   settleCar();
@@ -1819,9 +1841,12 @@ export function moveCar(dx, dz) {
 // Car mass in kg: curb mass, plus the player when in it.
 export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
-// CAR HITS, one sim tick: an overlapping animal is moved out to touching, and the car's momentum pushes it against its
-// hold. The car is not slowed.
-const _carQ = [], _carHitter = { position: new THREE.Vector3() };   // the car as applyHit's attacker (position only)
+// CAR HITS, one sim tick: an overlapping animal is moved out to touching. A contact's first tick is one impact
+// (Ecosystem.impact): the same impulse on both (Newton's third law) pushes the animal against its hold and slows the car
+// along its heading by impulse / car mass, and in Survivor (game.bumpsHurt) the impact energy costs the animal and the
+// car health at their own rates.
+// The sideways share of the car's impulse is lost, since the bicycle model has no sideways speed.
+const _carQ = [], _carHitter = { type: 'car', position: new THREE.Vector3() };   // the car as applyHit's attacker
 export function carHits() {
   if (!car.placed || !ecosystem.ready) return;
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // heading
@@ -1829,7 +1854,8 @@ export function carHits() {
   const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
   const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
   if (n === 0) return;
-  const massKg = carMassKg();
+  const carKg = carMassKg(), now = ecosystem.time;
+  const hurts = game.bumpsHurt();   // true: impacts cost health (Survivor); false: push only (Observer)
   _carHitter.position.set(car.x, car.y, car.z);
   for (let i = 0; i < n; i++) {
     const a = _carQ[i];
@@ -1843,8 +1869,13 @@ export function carHits() {
       const d = Math.sqrt(d2), nx = d > 1e-6 ? dx / d : -fz, nz = d > 1e-6 ? dz / d : fx;   // dead centre: out the side
       const ox = ecosystem.fitX(cx + nx * touch), oz = ecosystem.fitZ(cz + nz * touch);
       if (!occ.blockedAt(ox, oz)) { a.position.x = ox; a.position.z = oz; }
-      const closing = vx * nx + vz * nz;   // m/s into the animal
-      if (closing > 0) ecosystem.applyHit(a, _carHitter, 0, Ecosystem.bumpForceN(massKg, closing));
+      if (!ecosystem.freshContact(a)) break;   // still touching: moving together, no new impact
+      const closing = vx * nx + vz * nz - a.speedAlong(nx, nz, now);   // m/s the pair closes: the car's in, the animal's toward it
+      if (closing <= 0) break;
+      const hit = Ecosystem.impact(carKg, a.bodyMassKg(), closing);
+      ecosystem.applyHit(a, _carHitter, hurts ? hit.damage : 0, hit.pushN, false);
+      car.speed -= hit.impulseNs * (fx * nx + fz * nz) / carKg;   // -impulse along n, its heading share
+      if (hurts) car.hurt(Ecosystem.impactDamage(hit.energyJ, CAR_HEALTH_PER_J));
       break;
     }
   }
@@ -1857,10 +1888,12 @@ export function playerBumps(dt) {
   game.bumpAnimals(player.pos.x, player.pos.z, dt, SURVIVOR_CONFIG.reach);
 }
 
-// One physics step; throttle, steer in [-1, 1], + left.
+// One physics step; throttle, steer in [-1, 1], + left; ignored once the car is wrecked.
 export function carPhysics(dt, throttle, steer, handbrake) {
   if (dt <= 0) return;
   const v = car.speed;
+  // a wrecked car takes no throttle or steering; it coasts to a stop on its resistance
+  if (car.wrecked()) throttle = steer = 0;
 
   const lock = CAR_STEER_MAX / (1 + Math.abs(v) / CAR_STEER_FALL);
   const target = steer * lock;
