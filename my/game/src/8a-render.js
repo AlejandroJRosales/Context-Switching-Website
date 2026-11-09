@@ -3768,4 +3768,4 @@ export function populationText() {
   if (deer) parts.push(`${fmt(deer)} deer`);
   parts.push(`${fmt(ecosystem.plants.length)} plants`, `day ${simSky.day}`);
   return parts.join(', ');
-}x
+}
