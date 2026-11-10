@@ -2,7 +2,7 @@
 // GFX half owns: the saved Graphics choice, renderer, scene, camera, rig, view pose, lights (hemi, sun, moon) and the
 // shadow setup with three's shadow-chunk edge fade (patched before any material compiles), the flat ground plane, the
 // high-graphics MSAA pass, the colour and buffer helpers (rgb, cssColor, pushTri, pushQuad, bufGeom, tint, ribbon,
-// areaGeom, box, cyl), splitTwoPass and materialsOf, the ground-cell splitters and cellCull, and perf (Graphics-low flag, LOD distances, instance
+// areaGeom, box, cyl), the ground-cell splitters and cellCull, and perf (Graphics-low flag, LOD distances, instance
 // uploads, setText).
 // IO half owns: Nominatim geocoding, hedged Overpass requests, the hosted city files, Terrarium elevation tiles, and
 // the OSM parsers (featuresFrom and its helpers).
@@ -152,38 +152,6 @@ void main() {
     this.target = null;
   }
 };
-
-// TWO-PASS MESH: three r160 draws a transparent DoubleSide material in two passes (renderObject), back faces then
-// front, setting material.side and needsUpdate around each, so every frame it re-derives that material's program twice
-// (getParameters, getProgramCacheKey, uniform lists). This gives the mesh two fixed-side materials instead, drawn as two
-// groups over the whole geometry, back then front: the same draws with the same programs and uniforms in the same order
-// (the two groups share the object's id and depth, so the transparent sort keeps them together and in group order),
-// with nothing to re-check. Meshes three would draw in one pass, or that already have groups, are left as they are.
-// Afterwards mesh.material is [back, front]: the original set to BackSide and a copy set to FrontSide, sharing its
-// textures and settings.
-export function splitTwoPass(mesh) {
-  const m = mesh.material, g = mesh.geometry;
-  const twoPass = !Array.isArray(m) && m.transparent === true && m.side === THREE.DoubleSide && m.forceSinglePass === false;
-  if (!twoPass || g.groups.length) return mesh;
-  const front = outsideMathRandom(() => m.clone());
-  m.side = THREE.BackSide;
-  front.side = THREE.FrontSide;
-  g.addGroup(0, Infinity, 0);
-  g.addGroup(0, Infinity, 1);
-  mesh.material = [m, front];
-  return mesh;
-}
-
-// Runs make() with Math.random drawing from crypto instead. three draws every new object's uuid from Math.random, so a
-// copy made here leaves the Math.random stream the sim sees exactly as it was (a seeded run stays the same run).
-function outsideMathRandom(make) {
-  const mathRandom = Math.random, word = new Uint32Array(1);
-  Math.random = () => crypto.getRandomValues(word)[0] / 4294967296;
-  try { return make(); } finally { Math.random = mathRandom; }
-}
-
-// A mesh's materials as a list (one material, or a material array).
-export function materialsOf(mesh) { return Array.isArray(mesh.material) ? mesh.material : [mesh.material]; }
 
 export const _col = new THREE.Color();
 

@@ -25,13 +25,15 @@ import {
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
   NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
-  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN
+  AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN, MSAA_HALF_FLOAT,
+  DEBUG_COPY_FEEDBACK_MS
 } from './1-config.js';
 import {
   fmt, loop, wake, invalidate, perfProbe
 } from './2-core.js';
 import {
   renderer, scene, camera, viewPos, viewQuat, hemi, sun, moon, resetGroundPlane, msaa, perf, geocode, fetchBuildings,
+  MSAA_SAMPLES, shadowMapSize,
   cityFileFor, fetchCityFile, makeProjector, featuresFrom, fetchTerrain, savedGraphics
 } from './3-gfx-io.js';
 import {
@@ -317,6 +319,7 @@ const debugReadout = {
   mainCalls: -1,        // the last frame's main-scene draw calls and triangles (-1: none drawn yet)
   mainTris: 0,
   linked: new Map(),    // program id -> { ok, log }
+  battery: null,        // BatteryManager once read, 'reading', 'unavailable', or null (not asked yet)
   probe: null,
 
   show(on) {
@@ -324,6 +327,11 @@ const debugReadout = {
     debugCopyEl.hidden = !on;
     // the perf probe runs while Debug is on (and always with ?perf), so the readout has timings to show
     perfProbe.setOn(on || perfProbe.urlOn);
+    // the battery is read once (Chromium only); its level and charging update live on the object
+    if (on && this.battery === null && navigator.getBattery) {
+      this.battery = 'reading';
+      navigator.getBattery().then(b => { this.battery = b; }, () => { this.battery = 'unavailable'; });
+    }
     debugEl.classList.toggle('sel', on);
     debugEl.setAttribute('aria-pressed', String(on));
     clearInterval(this.timer);
@@ -336,6 +344,43 @@ const debugReadout = {
     };
     this.refresh();
     this.timer = setInterval(() => this.refresh(), 1000);
+  },
+
+  // QUICK PROBE: one line each for CPU, GPU, memory and battery, from the browser's own reports and the perf probe.
+  // Estimates are marked est. Chromium-only reports (JS heap, device memory, battery) say so where missing.
+  quickProbe(size) {
+    const P = perfProbe.last;   // the last full perf window, or null
+    const mb = b => (b / 1048576).toFixed(0);
+    // CPU: cores, and the share of frame time spent in this page's frame JS
+    const busy = P && P.mean.interval > 0 ? `${Math.round(100 * P.mean.frame / P.mean.interval)}% of each frame in its JS (mean)` :
+      'frame share needs a perf window';
+    // GPU: frame interval minus frame JS (medians): the GPU, display sync, the browser, or idle. Large while the
+    // interval sits above one display refresh points at the GPU; small, or with the interval at one refresh, it is idle.
+    const wait = P ? `interval - JS = ${Math.max(0, P.median.interval - P.median.frame).toFixed(1)} ms (median; GPU, display sync or idle)` :
+      'interval - JS needs a perf window';
+    // pixels drawn: high draws the scene into the MSAA target, low straight to the canvas
+    const samples = graphics.high ? MSAA_SAMPLES : 1, px = size.x * size.y;
+    const shadowPx = renderer.shadowMap.enabled ? shadowMapSize * shadowMapSize : 0;
+    // framebuffer memory, est.: canvas (2 buffers x 4 B), the MSAA target's colour and depth per sample plus its
+    // resolved copy, and the shadow map's depth (4 B per texel)
+    const colorB = MSAA_HALF_FLOAT ? 8 : 4;
+    const fbBytes = px * 8 + (graphics.high ? px * samples * (colorB + 4) + px * colorB : 0) + shadowPx * 4;
+    const heap = performance.memory ? `JS heap ${mb(performance.memory.usedJSHeapSize)} of ${mb(performance.memory.jsHeapSizeLimit)} MB` :
+      'JS heap: not reported by this browser';
+    const B = this.battery;
+    const battery = B === null || B === 'reading' ? (navigator.getBattery ? 'reading' : 'not reported by this browser') :
+      B === 'unavailable' ? 'not reported' :
+      `${Math.round(B.level * 100)}%, ${B.charging ? 'charging' : 'on battery'}` +
+      (!B.charging && isFinite(B.dischargingTime) ? `, ~${Math.round(B.dischargingTime / 60)} min left` : '');
+    const m = renderer.info.memory;
+    return [
+      `CPU: ${navigator.hardwareConcurrency || '?'} logical cores | ${busy}`,
+      `GPU: ${wait} | ${(px / 1e6).toFixed(2)} M px x ${samples} sample${samples > 1 ? 's' : ''} = ` +
+      `${(px * samples / 1e6).toFixed(1)} M samples per frame | shadow map ${shadowPx ? `${shadowMapSize}^2` : 'off'}`,
+      `Memory: ${heap} | device ${navigator.deviceMemory ? `~${navigator.deviceMemory} GB` : 'not reported'} | ` +
+      `framebuffers ~${mb(fbBytes)} MB (est.) | three: ${m.geometries} geometries, ${m.textures} textures`,
+      `Battery: ${battery}`
+    ];
   },
 
   glErrors() {
@@ -413,6 +458,7 @@ const debugReadout = {
         `Graphics: ${graphics.high ? 'high' : 'low'} | shadow map ${renderer.shadowMap.enabled ? 'on' : 'off'} | world ${providers.active ? providers.active.kind : 'none'}`,
         `Main render: ${this.mainCalls < 0 ? 'no frame drawn since Debug was turned on' : `${this.mainCalls} draw calls, ${this.mainTris} triangles in the last frame`}`,
         ...perfProbe.summary(),
+        ...this.quickProbe(size),
         `GL errors since last refresh: ${this.glErrors()}`);
       if (ecosystem.ready) {
         const H = animalRenderer.human, g = H.geometry, n = g.instanceCount;
@@ -453,10 +499,24 @@ debugEl.addEventListener('click', () => {
 });
 // Copy: the readout's text to the clipboard; where the clipboard API is missing or refused (an http page that is not
 // localhost), the select-and-copy command instead
+// The button then says Copied or Copy failed for DEBUG_COPY_FEEDBACK_MS: writeText resolving, or the copy command
+// returning true, is the check.
+const debugCopyLabel = debugCopyEl.textContent;
+let debugCopyTimer = 0;
+function debugCopyDone(ok) {
+  debugCopyEl.textContent = ok ? 'Copied' : 'Copy failed';
+  clearTimeout(debugCopyTimer);
+  debugCopyTimer = setTimeout(() => { debugCopyEl.textContent = debugCopyLabel; }, DEBUG_COPY_FEEDBACK_MS);
+}
 debugCopyEl.addEventListener('click', () => {
   const text = debugInfoEl.value;
-  const fallback = () => { debugInfoEl.select(); document.execCommand('copy'); };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
+  const fallback = () => {
+    debugInfoEl.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    debugCopyDone(ok);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => debugCopyDone(true), fallback);
   else fallback();
   debugCopyEl.blur();
 });
@@ -868,11 +928,10 @@ async function finishLoad(provider, autoGraphics = false) {
   if (wantGame !== game.on) gameEl.click();
   simSky.start();
   syncSkyset();
-  if (randomSky) {
-    // New ecosystem: random weather for the game's sky and a random weather preset for Observer; the hour stays
-    // GAME_START_HOUR (simSky.start), so Observer's time preset is left as it is
-    randomSky = false;
-    simSky.randomizeWeather();
+  if (randomObserverWeather) {
+    // New ecosystem: a random weather preset for Observer (simSky.start already drew the game's weather); the hour
+    // stays GAME_START_HOUR, so Observer's time preset is left as it is
+    randomObserverWeather = false;
     skiesEl.children[1 + Math.floor(Math.random() * (skiesEl.children.length - 1))].click();   // 0 is Game
   }
   updateSky();
@@ -1189,8 +1248,9 @@ async function loadPlace(query) {
 }
 
 // NEW ECOSYSTEM: a fresh seed for the next load (same city if any), used up when it loads; an intro load clears it.
-let randomSky = false;
-goEl.addEventListener('click', () => { randomSky = false; }, true);
+// randomObserverWeather: that load also picks a random Observer weather preset.
+let randomObserverWeather = false;
+goEl.addEventListener('click', () => { randomObserverWeather = false; }, true);
 
 function newEcosystem() {
   if (!providers.active || busy) return;
@@ -1198,7 +1258,7 @@ function newEcosystem() {
   const seed = String(Math.floor(Math.random() * 1e12));
   seedEl.value = seed;
   returnToIntro();
-  randomSky = true;
+  randomObserverWeather = true;
   setMode(noCity ? 'wilderness' : 'city');
   if (noCity) loadWilderness(seed);
   else loadPlace(lastQuery);

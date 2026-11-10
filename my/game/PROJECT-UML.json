@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-10T01:34:11.733Z",
+ "generated": "2026-11-10T04:09:44.332Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -117,6 +117,7 @@
     "+GRAPHICS_KEY: string",
     "+PERF_PROBE_PARAM: string",
     "+PERF_PROBE_WINDOW: number",
+    "+DEBUG_COPY_FEEDBACK_MS: number",
     "+HEMI_DAY: number",
     "+HEMI_NIGHT: number",
     "+MOON_MAX: number",
@@ -142,7 +143,6 @@
     "+SHELL_OUT: number",
     "+SHELL_AMBIG: number",
     "+SHELL_EPS: number",
-    "+SHELL_SUB: number",
     "+NPC_TICK_S: number",
     "+DAY_S: number",
     "+NPC_CITY_PEOPLE_WEIGHT: number",
@@ -479,6 +479,7 @@
     "+CABIN_CAR_GAP: number",
     "+CABIN_CAR_WALKWAY: number",
     "+TIMES: string[]",
+    "+GAME_START_HOUR: number",
     "+DEBUG_PROBE_LAYER: number",
     "+DEBUG_PROBE_PX: number",
     "+SWIM_DEPTH: number",
@@ -1075,7 +1076,8 @@
    "role": "CORE. Math and spatial helpers every layer shares, plus the frame loop's state.",
    "attributes": [
     "+TWO_PI: number",
-    "+tools: MathTools"
+    "+tools: MathTools",
+    "-PERF_URL_ON: boolean"
    ],
    "functions": [
     "+fmt(n): unknown",
@@ -1163,10 +1165,8 @@
     "cellSize: unknown",
     "inv: number",
     "mask: number",
-    "begin: Int32Array",
-    "end: Int32Array",
-    "used: Int32Array",
-    "nUsed: number",
+    "start: Int32Array",
+    "cursor: Int32Array",
     "cellOf: Int32Array",
     "items: array",
     "hs: Int32Array"
@@ -1193,22 +1193,26 @@
    "kind": "object",
    "visibility": "+",
    "attributes": [
+    "urlOn: boolean",
     "on: boolean",
     "cur: object",
     "rows: array",
-    "last: null|object"
+    "last: null|object",
+    "SUMMARY_ORDER: string[]"
    ],
    "methods": [
+    "setOn(on): void",
     "t(): number",
     "add(name, t0): void",
     "count(name): void",
     "frameEnd(): void",
-    "stat(median): object"
+    "summary(): string[]",
+    "stat(kind): object"
    ]
   },
   "3-gfx-io.js": {
    "kind": "file",
-   "role": "GFX and IO, two halves that do not import each other. GFX half owns: the saved Graphics choice, renderer, scene, camera, rig, view pose, lights (hemi, sun, moon) and the shadow setup with three's shadow-chunk edge fade (patched before any material compiles), the flat ground plane, the high-graphics MSAA pass, the colour and buffer helpers (rgb, cssColor, pushTri, pushQuad, bufGeom, tint, ribbon, areaGeom, box, cyl), splitTwoPass and materialsOf, the ground-cell splitters and cellCull, and perf (Graphics-low flag, LOD distances, instance uploads, setText). IO half owns: Nominatim geocoding, hedged Overpass requests, the hosted city files, Terrarium elevation tiles, and the OSM parsers (featuresFrom and its helpers).",
+   "role": "GFX and IO, two halves that do not import each other. GFX half owns: the saved Graphics choice, renderer, scene, camera, rig, view pose, lights (hemi, sun, moon) and the shadow setup with three's shadow-chunk edge fade (patched before any material compiles), the flat ground plane, the high-graphics MSAA pass, the colour and buffer helpers (rgb, cssColor, pushTri, pushQuad, bufGeom, tint, ribbon, areaGeom, box, cyl), the ground-cell splitters and cellCull, and perf (Graphics-low flag, LOD distances, instance uploads, setText). IO half owns: Nominatim geocoding, hedged Overpass requests, the hosted city files, Terrarium elevation tiles, and the OSM parsers (featuresFrom and its helpers).",
    "attributes": [
     "+startGraphics: string|null",
     "+startLowPower: boolean",
@@ -1236,9 +1240,6 @@
    "functions": [
     "+savedGraphics(): string|null",
     "+resetGroundPlane(): void",
-    "+splitTwoPass(mesh): unknown",
-    "-outsideMathRandom(make): unknown",
-    "+materialsOf(mesh): unknown[]",
     "+cssColor(raw): null|unknown",
     "+rgb(hex): unknown[]",
     "+newBuf(): object",
@@ -1367,7 +1368,6 @@
    "attributes": [],
    "functions": [
     "+pointInShell(s, x, z): boolean",
-    "-subBlock(R, k, r): number",
     "+buildGrid(solids): void",
     "+resetObstacles(): void",
     "+addSolids(list): void",
@@ -1378,7 +1378,6 @@
     "+solidOverlap(x, z, r, feetY, headY): boolean",
     "+shellAt(x, z): number|undefined",
     "+buildShellRaster(list): void",
-    "-ringCrossings(pts, z, xs): number",
     "+shellAtExact(x, z): number|undefined",
     "+nearShell(x, z, m): boolean",
     "+spawnOk(px, pz): boolean",
@@ -1418,10 +1417,7 @@
     "cols: number",
     "rows: number",
     "cell: number",
-    "inv: number",
-    "subKeys: null",
-    "subRow: null",
-    "subCells: null"
+    "inv: number"
    ],
    "methods": []
   },
@@ -1840,7 +1836,7 @@
     "ensureNormals(): void",
     "surfaceMaterial(normalA, normalB, offsetFactor, offsetUnits): THREE.MeshPhysicalMaterial",
     "cityMaterial(bias): unknown",
-    "createPlane(b, level, hole?: number): unknown",
+    "createPlane(b, level, hole?: number): THREE.Mesh",
     "reset(): void",
     "dispose(): void",
     "update(timeSeconds): void"
@@ -2471,12 +2467,6 @@
     "_hz: number",
     "_hv: number",
     "_h: number",
-    "_hx2: number",
-    "_hz2: number",
-    "_hv2: number",
-    "_h2: number",
-    "_b2: number",
-    "_fd2: number",
     "freeX: unknown",
     "freeZ: unknown",
     "_fx: number",
@@ -2700,7 +2690,6 @@
    "attributes": [
     "running: boolean",
     "DAY_S: number",
-    "OPENING_RAIN_S: number",
     "SPAN: number[]",
     "STEP_S: number",
     "KINDS: string[]",
@@ -2715,13 +2704,12 @@
     "sunAltDeg: number",
     "onSkyStep: null",
     "onMinute: null",
-    "opening: boolean",
     "get on: boolean"
    ],
    "methods": [
     "start(): void",
     "stop(): void",
-    "randomize(): void",
+    "randomizeWeather(): void",
     "conditions(): unknown",
     "update(now): void"
    ]
@@ -3732,8 +3720,11 @@
     "-tintEl: HTMLElement",
     "-debugEl: HTMLElement",
     "-debugInfoEl: HTMLElement",
+    "-debugCopyEl: HTMLElement",
     "-DEBUG_PROBE_BG: THREE.Color",
     "-debugErrors: array",
+    "-debugCopyLabel: unknown",
+    "-debugCopyTimer: number",
     "-hudOn: boolean",
     "-raysBeforeHud: string",
     "-COLLISION_ORDER: string[]",
@@ -3766,7 +3757,7 @@
     "-peopleEl: HTMLElement",
     "-peopleOutEl: HTMLElement",
     "-customRowEl: HTMLElement",
-    "-randomSky: boolean",
+    "-randomObserverWeather: boolean",
     "-gameEl: HTMLElement",
     "-skysetEl: HTMLElement",
     "-hudBeforeGame: boolean",
@@ -3802,6 +3793,7 @@
     "-setSettingsOpen(open): void",
     "-setAnimalDamage(on): void",
     "-debugError(msg): void",
+    "-debugCopyDone(ok): void",
     "-setHud(on): void",
     "-activeCollision(): string",
     "-applyCollision(): void",
@@ -3869,10 +3861,12 @@
     "mainCalls: number",
     "mainTris: number",
     "linked: Map",
+    "battery: null|string",
     "probe: null|object"
    ],
    "methods": [
     "show(on): void",
+    "quickProbe(size): string[]",
     "glErrors(): string",
     "link(p): object",
     "programInfo(mat): string",
@@ -4028,7 +4022,6 @@
     "SHELL_OUT",
     "SHELL_AMBIG",
     "SHELL_EPS",
-    "SHELL_SUB",
     "NPC_RADIUS",
     "NPC_COLLIDE_H",
     "OCC_CELL",
@@ -4278,9 +4271,7 @@
     "parseLength",
     "heightOf",
     "minHeightOf",
-    "signLabel",
-    "splitTwoPass",
-    "materialsOf"
+    "signLabel"
    ]
   },
   {
@@ -4459,6 +4450,7 @@
     "BUMP_HEALTH_PER_J",
     "CORPSE_S",
     "CORPSE_MAX",
+    "GAME_START_HOUR",
     "HUMAN_RIG",
     "HUMAN_ARM_FLARE",
     "RAGDOLL_G",
@@ -5101,7 +5093,9 @@
     "AUTO_GRAPHICS_WARMUP_FRAMES",
     "PLAYER_CUSTOM",
     "LB_PER_KG",
-    "M_PER_IN"
+    "M_PER_IN",
+    "MSAA_HALF_FLOAT",
+    "DEBUG_COPY_FEEDBACK_MS"
    ]
   },
   {
@@ -5134,6 +5128,8 @@
     "perf",
     "geocode",
     "fetchBuildings",
+    "MSAA_SAMPLES",
+    "shadowMapSize",
     "cityFileFor",
     "fetchCityFile",
     "makeProjector",
@@ -5970,6 +5966,11 @@
   {
    "from": "8b-player-game.js#chaseCam",
    "to": "8b-player-game.js#player",
+   "type": "uses"
+  },
+  {
+   "from": "9-main.js#debugReadout",
+   "to": "2-core.js#perfProbe",
    "type": "uses"
   },
   {

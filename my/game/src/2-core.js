@@ -324,18 +324,13 @@ export class SpatialGrid {
 }
 
 // CONTACT GRID: animals counting-sorted into small hashed cells for hunt/mate queries; collisions only add candidates.
-// items holds the animals bucket by bucket in hash order, each bucket in list order; bucket h is items[begin[h]] to
-// items[end[h] - 1] (begin = end = 0 when empty). A rebuild touches only the buckets it fills and the last rebuild
-// filled, not all 2^bits.
 export class ContactGrid {
   constructor(cellSize, bits = 16) {
     this.cellSize = cellSize;
     this.inv = 1 / cellSize;
     this.mask = (1 << bits) - 1;
-    this.begin = new Int32Array(this.mask + 1);
-    this.end = new Int32Array(this.mask + 1);
-    this.used = new Int32Array(1024);   // the buckets the last rebuild filled, ascending
-    this.nUsed = 0;
+    this.start = new Int32Array(this.mask + 2);
+    this.cursor = new Int32Array(this.mask + 1);
     this.cellOf = new Int32Array(1024);
     this.items = [];
     this.hs = new Int32Array(64);
@@ -344,34 +339,24 @@ export class ContactGrid {
   hash(cx, cz) { return (Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663)) & this.mask; }
 
   rebuild(list) {
-    const n = list.length, begin = this.begin, end = this.end, inv = this.inv;
+    const n = list.length, start = this.start, cursor = this.cursor, inv = this.inv;
     if (this.cellOf.length < n) this.cellOf = new Int32Array(n * 2);
-    if (this.used.length < n) this.used = new Int32Array(n * 2);
-    const cellOf = this.cellOf, used = this.used;
-    for (let q = 0; q < this.nUsed; q++) begin[used[q]] = end[used[q]] = 0;
-    // end[h] counts bucket h's animals here
-    let m = 0, nUsed = 0;
+    const cellOf = this.cellOf;
+    start.fill(0);
+    let m = 0;
     for (let i = 0; i < n; i++) {
       const a = list[i];
       if (!a.alive) { cellOf[i] = -1; continue; }
       const h = this.hash(Math.floor(a.position.x * inv), Math.floor(a.position.z * inv));
-      cellOf[i] = h;
-      if (end[h] === 0) used[nUsed++] = h;
-      end[h]++; m++;
+      cellOf[i] = h; start[h + 1]++; m++;
     }
-    this.nUsed = nUsed;
-    // buckets laid out in hash order, as a counting sort over every hash would
-    used.subarray(0, nUsed).sort();
-    for (let q = 0, at = 0; q < nUsed; q++) {
-      const h = used[q], count = end[h];
-      begin[h] = end[h] = at;   // end is the fill cursor until the pass below
-      at += count;
-    }
+    const M = this.mask + 1;
+    for (let h = 0; h < M; h++) { start[h + 1] += start[h]; cursor[h] = start[h]; }
     const items = this.items;
     items.length = m;
     for (let i = 0; i < n; i++) {
       const h = cellOf[i];
-      if (h >= 0) items[end[h]++] = list[i];
+      if (h >= 0) items[cursor[h]++] = list[i];
     }
   }
 
@@ -403,7 +388,7 @@ export const tools = new MathTools();
 export const loop = { last: -1, rafId: 0, sceneDirty: true, frame: null };
 
 // PERF PROBE (debug): ms per frame in named buckets. Callers take t0 = perfProbe.t() and later perfProbe.add(name, t0);
-// both do nothing while off. frameEnd() closes one frame; every PERF_PROBE_WINDOW frames the medians and means are kept
+// both do nothing while off. frameEnd() closes one frame; every PERF_PROBE_WINDOW frames the medians, p95s and means are kept
 // in perfProbe.last, which the Debug readout shows (summary()). count(name) adds 1 (e.g. sim ticks run in the frame)
 // instead of a time.
 // ?perf in the page URL: the probe runs the whole session; otherwise main turns it on with the Debug readout (setOn)
@@ -427,7 +412,7 @@ export const perfProbe = {
     this.rows.push(this.cur);
     this.cur = {};
     if (this.rows.length >= PERF_PROBE_WINDOW) {
-      this.last = { median: this.stat(true), mean: this.stat(false) };
+      this.last = { median: this.stat('median'), p95: this.stat('p95'), mean: this.stat('mean') };
       this.rows.length = 0;
     }
   },
@@ -439,18 +424,24 @@ export const perfProbe = {
     const names = this.SUMMARY_ORDER.concat(Object.keys(this.last.median).filter(k => k !== 'frames' && !this.SUMMARY_ORDER.includes(k)));
     const row = st => names.filter(k => k in st).map(k => `${k} ${st[k]}`).join(', ');
     return [`Perf, last ${this.last.median.frames} frames (ms per frame; ticks = sim ticks per frame):`,
-      `  median: ${row(this.last.median)}`, `  mean: ${row(this.last.mean)}`];
+      `  median: ${row(this.last.median)}`, `  p95: ${row(this.last.p95)}`, `  mean: ${row(this.last.mean)}`];
   },
-  // per-bucket median (true) or mean (false) over the frames since the last report; a bucket missing in a frame counts
-  // as 0 there. Means show work that runs every few ticks (the grid sync every 3rd), which a median can hide.
-  stat(median) {
+  // per-bucket 'median', 'p95' (the slowest 5% of frames start here) or 'mean' over the frames since the last report;
+  // a bucket missing in a frame counts as 0 there. Means and p95 show work that runs every few ticks (the grid sync
+  // every 3rd) and hitches, which a median can hide.
+  stat(kind) {
     const names = new Set();
     for (const r of this.rows) for (const k in r) names.add(k);
     const out = { frames: this.rows.length };
     for (const k of names) {
       const v = this.rows.map(r => r[k] || 0);
-      if (median) v.sort((a, b) => a - b);
-      out[k] = +(median ? v[v.length >> 1] : v.reduce((a, b) => a + b, 0) / v.length).toFixed(2);
+      let x;
+      if (kind === 'mean') x = v.reduce((a, b) => a + b, 0) / v.length;
+      else {
+        v.sort((a, b) => a - b);
+        x = v[Math.min(v.length - 1, Math.floor(v.length * (kind === 'p95' ? 0.95 : 0.5)))];
+      }
+      out[k] = +x.toFixed(2);
     }
     return out;
   }

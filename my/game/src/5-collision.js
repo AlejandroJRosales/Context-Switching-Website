@@ -8,7 +8,7 @@
 // radius and height, occupancy, cover, spawn.
 import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, GRID_CELL, LAND_EPS, SUBSTEP, STEP_UP, PATH_KINDS, SHELL_CELL,
-  SHELL_MAX_CELLS, SHELL_OUT, SHELL_AMBIG, SHELL_EPS, SHELL_SUB, NPC_RADIUS, NPC_COLLIDE_H, OCC_CELL, OCC_INV, OCC_CARVE_KEEP,
+  SHELL_MAX_CELLS, SHELL_OUT, SHELL_AMBIG, SHELL_EPS, NPC_RADIUS, NPC_COLLIDE_H, OCC_CELL, OCC_INV, OCC_CARVE_KEEP,
   COVER_CELL, OCC_TILE_BITS, OCC_TILE_MASK, OCC_TILE_WORDS, SPAWN_CLEAR, STREET_STEP
 } from './1-config.js';
 import {
@@ -34,47 +34,16 @@ export const collision = {
   shells: [],   // building footprints; shellGrid buckets index into it
   solidStamp: new Uint32Array(0),
   stampNo: 0,   // solidStamp[i] === stampNo: solid i already visited this query
-  // SOLID BOXES: solid i's top, base, minX, maxX, minZ, maxZ at [6i .. 6i + 5], copied from gridWalls whenever the
-  // list changes (solids are not edited after they are filed), so resolveCollisions' height and box rejects read one
-  // flat array instead of each solid object
-  solidBox: new Float64Array(0),
   obstacleThroats: [],   // doorways occ carves open (cabin throats, from placeCabins)
   openBounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }   // the ecosystem's bounds, for isOpen (set by initialize)
 };
-// cells: one value per cell (shell index, SHELL_OUT or SHELL_AMBIG). SHELL SUB-RASTER: every AMBIG cell also has a
-// SHELL_SUB x SHELL_SUB block in subCells, block b for the cell index subKeys[b]. subKeys ascends, and row r's AMBIG
-// cells are blocks subRow[r] to subRow[r + 1] - 1, so subBlock searches one row's few.
-export const shellRas = {
-  cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL,
-  subKeys: null, subRow: null, subCells: null
-};
-
-// SHELL SUB-RASTER: the block of AMBIG cell k (in row r), by binary search inside the row.
-function subBlock(R, k, r) {
-  const keys = R.subKeys;
-  let lo = R.subRow[r], hi = R.subRow[r + 1] - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (keys[mid] < k) lo = mid + 1; else hi = mid;
-  }
-  return lo;
-}
+export const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL };
 
 export function buildGrid(solids) {
   collision.gridWalls = solids;
   collision.wallGrid = gridOf(solids, GRID_CELL);
   collision.solidStamp = new Uint32Array(solids.length);
   collision.stampNo = 0;
-  fillSolidBoxes();
-}
-
-// SOLID BOXES from gridWalls.
-function fillSolidBoxes() {
-  const list = collision.gridWalls, box = collision.solidBox = new Float64Array(list.length * 6);
-  for (let i = 0; i < list.length; i++) {
-    const w = list[i], o = i * 6;
-    box[o] = w.top; box[o + 1] = w.base; box[o + 2] = w.minX; box[o + 3] = w.maxX; box[o + 4] = w.minZ; box[o + 5] = w.maxZ;
-  }
 }
 
 // OBSTACLE INDEX: one grid of every provider's solids and doorway lanes, for collisions and the NPC occupancy grid.
@@ -84,9 +53,7 @@ export function resetObstacles() {
   collision.wallGrid = new Map(); collision.gridWalls = [];
   collision.shellGrid = new Map(); collision.shells = [];
   shellRas.cells = null; shellRas.cols = 0; shellRas.rows = 0;
-  shellRas.subKeys = null; shellRas.subRow = null; shellRas.subCells = null;
   collision.solidStamp = new Uint32Array(0); collision.stampNo = 0;
-  collision.solidBox = new Float64Array(0);
 }
 
 export function addSolids(list) {
@@ -108,14 +75,12 @@ export function addSolids(list) {
   }
   collision.solidStamp = new Uint32Array(collision.gridWalls.length);
   collision.stampNo = 0;
-  fillSolidBoxes();
 }
 
 // Push a circle out of overlapping solids (callers substep so thin walls are not skipped); returns whether it pushed.
 export function resolveCollisions(pos, r = PLAYER_RADIUS,
   feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR, stepUp = 0) {
   let pushed = false;
-  const box = collision.solidBox;
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
@@ -132,11 +97,10 @@ export function resolveCollisions(pos, r = PLAYER_RADIUS,
         for (const idx of bucket) {
           if (collision.solidStamp[idx] === collision.stampNo) continue;
           collision.solidStamp[idx] = collision.stampNo;
-          const o = idx * 6;
-          // skip pieces the column is fully above or below, or can step onto
-          if (feetY + stepUp >= box[o] - LAND_EPS || headY <= box[o + 1]) continue;
-          if (pos.x < box[o + 2] - r || pos.x > box[o + 3] + r || pos.z < box[o + 4] - r || pos.z > box[o + 5] + r) continue;
           const w = collision.gridWalls[idx];
+          // skip pieces the column is fully above or below, or can step onto
+          if (feetY + stepUp >= w.top - LAND_EPS || headY <= w.base) continue;
+          if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
 
           // the crossing test only runs inside the piece's box; most hits are decided by distance
           const inside = pos.x >= w.minX && pos.x <= w.maxX && pos.z >= w.minZ && pos.z <= w.maxZ &&
@@ -362,8 +326,6 @@ export const occ = {
 
   // flat index of the tiles over their bounding box, made at the end of build() (tiles are only created there)
   flat: null, fc0: 0, fr0: 0, fw: 0, fh: 0,
-  // bumped by clear() (build() starts with it): cells change only there, so a cell found open stays open until then
-  version: 0,
 
   // A cell with no tile is open; Animal.move keeps to the provider's bounds.
   blockedAt(x, z) {
@@ -382,19 +344,8 @@ export const occ = {
     return ((t[i >>> 5] >>> (i & 31)) & 1) === 1;
   },
 
-  // blockedAt with a per-entity memo of the last cell it found open (ent._occC, _occR, _occV): a point in that cell,
-  // with the cells unchanged since (version), is open without the tile lookup. Same answer as blockedAt.
-  blockedAtFor(ent, x, z) {
-    const c = Math.floor(x * OCC_INV), r = Math.floor(z * OCC_INV);
-    if (c === ent._occC && r === ent._occR && ent._occV === this.version) return false;
-    if (this.blockedAt(x, z)) return true;
-    ent._occC = c; ent._occR = r; ent._occV = this.version;
-    return false;
-  },
-
   reset() { this.clear(); },   // teardownWorld's entry
   clear() {
-    this.version++;
     this.tiles = new Map();
     this._lk = NaN; this._lt = null;
     this.flat = null;
@@ -546,23 +497,14 @@ export function solidOverlap(x, z, r, feetY, headY) {
   return false;
 }
 
-// Building index containing (x, z), or -1 outdoors; raster first, then the edge cell's sub-raster block, then the exact
-// test where the sub-cell is AMBIG too. Every raster answer equals shellAtExact's (see buildShellRaster).
+// Building index containing (x, z), or -1 outdoors; raster first, exact test on edge cells.
 export function shellAt(x, z) {
   const R = shellRas;
   if (R.cells === null) return shellAtExact(x, z);
-  const fc = (x - R.x0) * R.inv, fr = (z - R.z0) * R.inv;   // position in cells
-  const c = Math.floor(fc), r = Math.floor(fr);
+  const c = Math.floor((x - R.x0) * R.inv), r = Math.floor((z - R.z0) * R.inv);
   if (c >= 0 && r >= 0 && c < R.cols && r < R.rows) {
-    const k = r * R.cols + c, v = R.cells[k];
-    if (v !== SHELL_AMBIG) return v;
-    const b = subBlock(R, k, r);
-    // the sub-cell under the point; clamped, since rounding can put a point on a cell's edge one sub-cell over
-    const S = SHELL_SUB;
-    const si = Math.min(S - 1, Math.max(0, Math.floor((fc - c) * S)));
-    const sj = Math.min(S - 1, Math.max(0, Math.floor((fr - r) * S)));
-    const sv = R.subCells[(b * S + sj) * S + si];
-    return sv === SHELL_AMBIG ? shellAtExact(x, z) : sv;
+    const v = R.cells[r * R.cols + c];
+    return v === SHELL_AMBIG ? shellAtExact(x, z) : v;
   }
   return -1;
 }
@@ -634,119 +576,8 @@ export function buildShellRaster(list) {
     }
   }
 
-  // SHELL SUB-RASTER: the same two passes at 1/S the cell size, inside the AMBIG cells only. A sub-cell no edge
-  // touches is wholly inside one shell (its index), wholly outside all (SHELL_OUT), or inside two (AMBIG), exactly as
-  // a cell above, so shellAt can answer from it; AMBIG sub-cells still go to shellAtExact.
-  const S = SHELL_SUB, sub = cell / S;
-  // one pass over the cells: AMBIG cell indices in order (grown as needed) and each row's first block
-  const subRow = new Int32Array(rows + 1);
-  let subKeys = new Int32Array(1024), nAmb = 0;
-  for (let r = 0, k = 0; r < rows; r++) {
-    subRow[r] = nAmb;
-    for (const kEnd = k + cols; k < kEnd; k++) {
-      if (cells[k] !== SHELL_AMBIG) continue;
-      if (nAmb === subKeys.length) { const g = new Int32Array(nAmb * 2); g.set(subKeys); subKeys = g; }
-      subKeys[nAmb++] = k;
-    }
-  }
-  subRow[rows] = nAmb;
-  subKeys = subKeys.slice(0, nAmb);
-  const subCells = new cells.constructor(nAmb * S * S).fill(SHELL_OUT);
-  const subR = { subKeys, subRow };   // what subBlock reads, before R gets them
-  // sub pass 1: the sub-cells an edge touches, in each AMBIG cell it touches (markEdge's side test, inline)
-  const markSubEdge = (ax, az, bx, bz) => {
-    const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - E - x0) * inv));
-    const c1 = Math.min(cols - 1, Math.floor((Math.max(ax, bx) + E - x0) * inv));
-    const r0 = Math.max(0, Math.floor((Math.min(az, bz) - E - z0) * inv));
-    const r1 = Math.min(rows - 1, Math.floor((Math.max(az, bz) + E - z0) * inv));
-    const dx = bx - ax, dz = bz - az;
-    for (let r = r0; r <= r1; r++) {
-      const zlo = z0 + r * cell - E - az, zhi = zlo + cell + 2 * E;
-      for (let c = c0; c <= c1; c++) {
-        const k = r * cols + c;
-        if (cells[k] !== SHELL_AMBIG) continue;
-        const xlo = x0 + c * cell - E - ax, xhi = xlo + cell + 2 * E;
-        let s1 = dx * zlo - dz * xlo, s2 = dx * zlo - dz * xhi;
-        let s3 = dx * zhi - dz * xlo, s4 = dx * zhi - dz * xhi;
-        if ((s1 > 0 && s2 > 0 && s3 > 0 && s4 > 0) || (s1 < 0 && s2 < 0 && s3 < 0 && s4 < 0)) continue;
-        const base = subBlock(subR, k, r) * S * S;
-        for (let j = 0; j < S; j++) {
-          const szlo = z0 + r * cell + j * sub - E - az, szhi = szlo + sub + 2 * E;
-          for (let i = 0; i < S; i++) {
-            const sxlo = x0 + c * cell + i * sub - E - ax, sxhi = sxlo + sub + 2 * E;
-            s1 = dx * szlo - dz * sxlo; s2 = dx * szlo - dz * sxhi;
-            s3 = dx * szhi - dz * sxlo; s4 = dx * szhi - dz * sxhi;
-            if ((s1 > 0 && s2 > 0 && s3 > 0 && s4 > 0) || (s1 < 0 && s2 < 0 && s3 < 0 && s4 < 0)) continue;
-            subCells[base + j * S + i] = SHELL_AMBIG;
-          }
-        }
-      }
-    }
-  };
-  const markSubRing = pts => {
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      markSubEdge(pts[j][0], pts[j][1], pts[i][0], pts[i][1]);
-    }
-  };
-  for (const s of list) {
-    markSubRing(s.pts);
-    for (const h of s.holes) markSubRing(h);
-  }
-  // sub pass 2: inside one shell takes its index; inside a second, AMBIG. Each sub-row line across a shell's box is
-  // scanned once: the x where the outline crosses it are pointInRing's own crossing values, so counting those past a
-  // sub-cell centre gives pointInShell's answer there (holes, rare, are tested directly). Only the line's AMBIG cells
-  // are visited.
-  let xs = new Float64Array(64);
-  for (let idx = 0; idx < list.length; idx++) {
-    const s = list[idx], ring = s.pts, holes = s.holes;
-    if (xs.length < ring.length) xs = new Float64Array(ring.length * 2);
-    const c0 = Math.floor((s.minX - x0) * inv), c1 = Math.floor((s.maxX - x0) * inv);
-    const r0 = Math.floor((s.minZ - z0) * inv), r1 = Math.floor((s.maxZ - z0) * inv);
-    for (let r = r0; r <= r1; r++) {
-      const kRow = r * cols, kLast = kRow + c1, bEnd = subRow[r + 1];
-      // the row's first AMBIG cell at or after c0
-      let b0 = subRow[r], hi = bEnd;
-      while (b0 < hi) {
-        const mid = (b0 + hi) >> 1;
-        if (subKeys[mid] < kRow + c0) b0 = mid + 1; else hi = mid;
-      }
-      if (b0 >= bEnd || subKeys[b0] > kLast) continue;
-      for (let j = 0; j < S; j++) {
-        const zc = z0 + r * cell + (j + 0.5) * sub;
-        const n = ringCrossings(ring, zc, xs);
-        const line = xs.subarray(0, n).sort();
-        let p = 0;   // crossings at or left of the current centre
-        for (let b = b0; b < bEnd && subKeys[b] <= kLast; b++) {
-          const c = subKeys[b] - kRow, base = b * S * S + j * S;
-          for (let i = 0; i < S; i++) {
-            const q = base + i, v = subCells[q];
-            if (v === SHELL_AMBIG) continue;
-            const xc = x0 + c * cell + (i + 0.5) * sub;
-            while (p < n && line[p] <= xc) p++;
-            let inside = ((n - p) & 1) === 1;
-            if (inside) for (const h of holes) if (pointInRing(h, xc, zc)) { inside = false; break; }
-            if (inside) subCells[q] = v === SHELL_OUT ? idx : SHELL_AMBIG;
-          }
-        }
-      }
-    }
-  }
-
   R.cells = cells; R.x0 = x0; R.z0 = z0; R.cols = cols; R.rows = rows;
   R.cell = cell; R.inv = inv;
-  R.subKeys = subKeys; R.subRow = subRow; R.subCells = subCells;
-}
-
-// SHELL SUB-RASTER: every x where ring `pts` crosses the line at z, into xs; returns how many. Same test and expression
-// as pointInRing, so pointInRing(pts, x, z) is true exactly when an odd number of them are > x.
-function ringCrossings(pts, z, xs) {
-  let n = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const pi = pts[i], pj = pts[j];
-    const xi = pi[0], zi = pi[1], xj = pj[0], zj = pj[1];
-    if ((zi > z) !== (zj > z)) xs[n++] = (xj - xi) * (z - zi) / (zj - zi) + xi;
-  }
-  return n;
 }
 
 export function shellAtExact(x, z) {
