@@ -417,13 +417,13 @@ export const perfProbe = {
     }
   },
   // The Debug readout's lines: the last window's median and mean per bucket, in SUMMARY_ORDER, then any other bucket.
-  SUMMARY_ORDER: ['interval', 'frame', 'step', 'animals', 'collisions', 'drawEcosystem', 'render', 'ticks'],
+  SUMMARY_ORDER: ['interval', 'frame', 'step', 'animals', 'collisions', 'drawEcosystem', 'render', 'ticks', 'shadowDraws'],
   summary() {
     if (!this.on) return [`Perf: off (turn Debug on, or add ?${PERF_PROBE_PARAM} to the URL)`];
     if (!this.last) return [`Perf: collecting, ${this.rows.length} of ${PERF_PROBE_WINDOW} frames`];
     const names = this.SUMMARY_ORDER.concat(Object.keys(this.last.median).filter(k => k !== 'frames' && !this.SUMMARY_ORDER.includes(k)));
     const row = st => names.filter(k => k in st).map(k => `${k} ${st[k]}`).join(', ');
-    return [`Perf, last ${this.last.median.frames} frames (ms per frame; ticks = sim ticks per frame):`,
+    return [`Perf, last ${this.last.median.frames} frames (ms per frame; ticks = sim ticks per frame, shadowDraws = shadow map redraws per frame):`,
       `  median: ${row(this.last.median)}`, `  p95: ${row(this.last.p95)}`, `  mean: ${row(this.last.mean)}`];
   },
   // per-bucket 'median', 'p95' (the slowest 5% of frames start here) or 'mean' over the frames since the last report;
@@ -518,4 +518,4 @@ export function moonVector(lat, lon, date) {
   east = east / h * ch; north = north / h * ch; up = Math.sin(alt);
 
   return { east, north, up, altDeg: alt / R };
-}
+}

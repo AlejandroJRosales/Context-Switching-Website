@@ -3,11 +3,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  EYE_HEIGHT, GRID_CELL, LOW_PIXEL_RATIO, BAR_TEXT_WIDTHS_MAX, HIGH_FOG_FAR, LOW_FOG_FAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR,
-  LOW_NPC_LOD_DIST, LOW_FAR_STAT_DIST, GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, FACADE_LIGHTS_DEG, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
+  EYE_HEIGHT, GRID_CELL, BAR_TEXT_WIDTHS_MAX,
+  GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, FACADE_LIGHTS_DEG, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
   NPC_TICK_S, GAIT_MAX_HZ, GAIT_GALLOP_SWING, GAIT_CADENCE_SCALE, NPC_FIGHT_MOVES,
   NPC_RIG_TOP, NPC_UNIT, PLAYER_HS, NPC_TYPES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUMAN_TYPE_ID,
-  HIGH_NPC_LOD_DIST, HIGH_FAR_STAT_DIST, NPC_BODY_R, NPC_STATS_R, NPC_STATS_UP, HUMAN_ATLAS, HUMAN_FACE_TILE,
+  NPC_BODY_R, NPC_STATS_R, NPC_STATS_UP, HUMAN_ATLAS, HUMAN_FACE_TILE,
   HUMAN_BODY_TILE, HUMAN_FACE_VARIANTS, HUMAN_OUTFITS, HUMAN_OUTFIT_TILES, HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V,
   HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED, HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_RIG,
   HUMAN_LEG, HUMAN_JOINT_BLEND, HUMAN_CROUCH, HUMAN_FIGHT, HUMAN_CROUCH_DROP, HUMAN_ARM_FLARE, HUMAN_PET, PET_BEND_LEVELS, HUMAN_HAIR,
@@ -23,10 +23,11 @@ import {
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS
 } from './1-config.js';
 import {
-  fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
+  fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, perfProbe
 } from './2-core.js';
 import {
-  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf
+  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf, gfxValues,
+  MSAA_SAMPLES
 } from './3-gfx-io.js';
 import {
   providers
@@ -2164,6 +2165,7 @@ export class VisionRaySystem {
 
 export const graphics = {
   high: !startLowPower,
+  cur: gfxValues(!startLowPower),   // this setting's GFX_PARAMS values (high's include URL overrides); set by apply
   anchor: new THREE.Vector3(Infinity, 0, Infinity),
   sunDir: new THREE.Vector3(-0.5, 1, 0.4).normalize(),
   drawnSunDir: new THREE.Vector3(),   // sunDir at the last map draw
@@ -2174,19 +2176,22 @@ export const graphics = {
   _casterSnaps: [new Float64Array(8).fill(NaN), new Float64Array(8).fill(NaN)],   // compared exactly
   _aim: new THREE.Vector3(),
 
-  shadowsOn() { return SHADOWS_ENABLED && this.high && !!providers.active && providers.active.shadows; },
+  shadowsOn() { return SHADOWS_ENABLED && this.cur.shadows && !!providers.active && providers.active.shadows; },
+  // true: the scene draws into the MSAA target, then the tone-mapping pass; false: straight to the canvas
+  msaaOn() { return this.cur.msaa > 0 && MSAA_SAMPLES > 0; },
 
   apply() {
+    const v = this.cur = gfxValues(this.high);
     const on = this.shadowsOn();
     gfxEl.textContent = `Graphics: ${this.high ? 'high' : 'low'}`;
-    const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
+    const pr = Math.min(devicePixelRatio, v.pixel_ratio);
     if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
-    if (!this.high) msaa.dispose();
-    perf.lowPower = !this.high;
-    perf.npcLodDist = this.high ? HIGH_NPC_LOD_DIST : LOW_NPC_LOD_DIST;
-    perf.farStatDist = this.high ? HIGH_FAR_STAT_DIST : LOW_FAR_STAT_DIST;
-    scene.fog.far = this.high ? HIGH_FOG_FAR : LOW_FOG_FAR;
-    const far = this.high ? HIGH_CAMERA_FAR : LOW_CAMERA_FAR;
+    if (!this.msaaOn()) msaa.dispose();
+    perf.fullUpload = v.full_upload;
+    perf.npcLodDist = v.npc_lod;
+    perf.farStatDist = v.far_stats;
+    scene.fog.far = v.fog_far;
+    const far = v.camera_far;
     if (camera.far !== far) { camera.far = far; camera.updateProjectionMatrix(); }
     if (renderer.shadowMap.enabled !== on) {
       renderer.shadowMap.enabled = on;
@@ -2280,6 +2285,7 @@ export const graphics = {
       sun.shadow.camera.updateProjectionMatrix();
     }
     sun.shadow.needsUpdate = true;
+    perfProbe.count('shadowDraws');
     // set here so the record is in the new map's space
     sun.updateMatrixWorld();
     sun.shadow.updateMatrices(sun);
@@ -3491,4 +3497,4 @@ export function populationText() {
   if (deer) parts.push(`${fmt(deer)} deer`);
   parts.push(`${fmt(ecosystem.plants.length)} plants`, `day ${simSky.day}`);
   return parts.join(', ');
-}
+}

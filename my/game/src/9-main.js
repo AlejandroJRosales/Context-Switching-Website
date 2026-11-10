@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import {
   MAP_SIZE_SCALES, WORLD_SIZES, CITY_LADDER, EYE_HEIGHT, FEATURES_VERSION, ELEV_MARGIN, CITY_STEPS, WILDERNESS_STEPS,
-  LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
+  CITY_FILE_RADIUS, GFX_PARAMS,
   NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
   AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN, MSAA_HALF_FLOAT,
@@ -33,7 +33,7 @@ import {
 } from './2-core.js';
 import {
   renderer, scene, camera, viewPos, viewQuat, hemi, sun, moon, resetGroundPlane, msaa, perf, geocode, fetchBuildings,
-  MSAA_SAMPLES, shadowMapSize,
+  MSAA_SAMPLES, shadowMapSize, gfxParams,
   cityFileFor, fetchCityFile, makeProjector, featuresFrom, fetchTerrain, savedGraphics
 } from './3-gfx-io.js';
 import {
@@ -358,13 +358,14 @@ const debugReadout = {
     // interval sits above one display refresh points at the GPU; small, or with the interval at one refresh, it is idle.
     const wait = P ? `interval - JS = ${Math.max(0, P.median.interval - P.median.frame).toFixed(1)} ms (median; GPU, display sync or idle)` :
       'interval - JS needs a perf window';
-    // pixels drawn: high draws the scene into the MSAA target, low straight to the canvas
-    const samples = graphics.high ? MSAA_SAMPLES : 1, px = size.x * size.y;
+    // pixels drawn: with MSAA on the scene draws into the MSAA target, else straight to the canvas
+    const msaaOn = graphics.msaaOn();
+    const samples = msaaOn ? MSAA_SAMPLES : 1, px = size.x * size.y;
     const shadowPx = renderer.shadowMap.enabled ? shadowMapSize * shadowMapSize : 0;
     // framebuffer memory, est.: canvas (2 buffers x 4 B), the MSAA target's colour and depth per sample plus its
     // resolved copy, and the shadow map's depth (4 B per texel)
     const colorB = MSAA_HALF_FLOAT ? 8 : 4;
-    const fbBytes = px * 8 + (graphics.high ? px * samples * (colorB + 4) + px * colorB : 0) + shadowPx * 4;
+    const fbBytes = px * 8 + (msaaOn ? px * samples * (colorB + 4) + px * colorB : 0) + shadowPx * 4;
     const heap = performance.memory ? `JS heap ${mb(performance.memory.usedJSHeapSize)} of ${mb(performance.memory.jsHeapSizeLimit)} MB` :
       'JS heap: not reported by this browser';
     const B = this.battery;
@@ -380,6 +381,36 @@ const debugReadout = {
       `Memory: ${heap} | device ${navigator.deviceMemory ? `~${navigator.deviceMemory} GB` : 'not reported'} | ` +
       `framebuffers ~${mb(fbBytes)} MB (est.) | three: ${m.geometries} geometries, ${m.textures} textures`,
       `Battery: ${battery}`
+    ];
+  },
+
+  // GRAPHICS PARAMS: the values the current setting uses (GFX_PARAMS), with what the device caps them to, and high's
+  // URL overrides marked * next to the table's value
+  gfxLines() {
+    const v = graphics.cur, high = graphics.high;
+    const show = (name, x) => {
+      const row = GFX_PARAMS[name];
+      if (row.kind === 'bool') return x ? 'on' : 'off';
+      if (row.unit === ' fps' && x === 0) return 'uncapped';
+      return `${x}${row.unit}`;
+    };
+    // what the device turns a value into, where it caps it
+    const used = {
+      pixel_ratio: `${renderer.getPixelRatio()} used, dpr ${devicePixelRatio}`,
+      msaa: `${graphics.msaaOn() ? MSAA_SAMPLES : 0} used, GPU max ${renderer.capabilities.maxSamples}`,
+      shadow_map: `${shadowMapSize}^2 used`
+    };
+    const parts = Object.keys(GFX_PARAMS).map(name => {
+      const url = high && gfxParams.fromUrl.includes(name);
+      const cap = used[name] ? ` (${used[name]})` : '';
+      return `${name} ${show(name, v[name])}${url ? `* (table ${show(name, GFX_PARAMS[name].high)})` : ''}${cap}`;
+    });
+    const url = gfxParams.fromUrl.length ? gfxParams.fromUrl.map(n => `${n}=${show(n, gfxParams.high[n])}`).join(', ') : 'none';
+    return [
+      `Graphics values (${high ? 'high' : 'low'}): ${parts.join(', ')}`,
+      `Graphics URL params (high only${high ? '' : ', not in use on low'}): ${url}` +
+      (gfxParams.badUrl.length ? ` | ignored, did not parse: ${gfxParams.badUrl.join(', ')}` : '') +
+      ` | names: ${Object.keys(GFX_PARAMS).join(', ')}`
     ];
   },
 
@@ -428,7 +459,7 @@ const debugReadout = {
     cam.layers.set(DEBUG_PROBE_LAYER);
     cam.updateMatrixWorld();
     // the same output encoding as the real frame, so the probe uses the same shader variant
-    target.texture.colorSpace = graphics.high ? msaa.ensure().texture.colorSpace : THREE.SRGBColorSpace;
+    target.texture.colorSpace = graphics.msaaOn() ? msaa.ensure().texture.colorSpace : THREE.SRGBColorSpace;
     const bg = scene.background, prevTarget = renderer.getRenderTarget();
     scene.background = DEBUG_PROBE_BG;
     this.glErrors();
@@ -456,6 +487,7 @@ const debugReadout = {
         `Screen: ${innerWidth}x${innerHeight} css, dpr ${devicePixelRatio}, render scale ${renderer.getPixelRatio()}, buffer ${size.x}x${size.y}`,
         `Limits: attributes ${gl.getParameter(gl.MAX_VERTEX_ATTRIBS)}, texture units ${gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)}, MSAA ${renderer.capabilities.maxSamples}`,
         `Graphics: ${graphics.high ? 'high' : 'low'} | shadow map ${renderer.shadowMap.enabled ? 'on' : 'off'} | world ${providers.active ? providers.active.kind : 'none'}`,
+        ...this.gfxLines(),
         `Main render: ${this.mainCalls < 0 ? 'no frame drawn since Debug was turned on' : `${this.mainCalls} draw calls, ${this.mainTris} triangles in the last frame`}`,
         ...perfProbe.summary(),
         ...this.quickProbe(size),
@@ -609,7 +641,7 @@ const drawnPos = new THREE.Vector3(NaN, NaN, NaN);
 let drawnYaw = NaN, drawnPitch = NaN, drawnCrouch = NaN;
 // low-power frame cap: a draw wanted inside the cap waits for the next allowed frame (sim ticks are unaffected)
 let drawPending = false, drawnAt = -1e9;
-// Graphics low: when the water-flow offsets last advanced (see LOW_WATER_FPS)
+// when the water-flow offsets last advanced (water_fps in GFX_PARAMS)
 let waterAt = -1e9;
 let npcAcc = 0;
 let npcElapsed = 0;
@@ -626,10 +658,10 @@ function drawEcosystem(dt) {
   foodBoxView.render();
   plantRenderer.update(ecosystem.plants);
   healthBars.update(ecosystem.animals);
-  if (ecosystem.ticks % (perf.lowPower ? LOW_LABEL_TICKS : HIGH_LABEL_TICKS) === 0) labels.updateTarget();
+  if (ecosystem.ticks % graphics.cur.label_ticks === 0) labels.updateTarget();
   visionRays.update(ecosystem.animals);
   if (ecosystem.populationChanged()) refreshHud();
-  if (ecosystem.ticks % (perf.lowPower ? LOW_HUD_TICKS : HIGH_HUD_TICKS) === 0) refreshHud();
+  if (ecosystem.ticks % graphics.cur.hud_ticks === 0) refreshHud();
 }
 
 function frame(now) {
@@ -644,7 +676,7 @@ function frame(now) {
     if (loop.sceneDirty) {
       placeSkyBodies();
       graphics.update(now);
-      if (graphics.high) msaa.render();
+      if (graphics.msaaOn()) msaa.render();
       else renderer.render(scene, camera);
       loop.sceneDirty = false;
     }
@@ -696,7 +728,8 @@ function frame(now) {
   const posed = !player.pos.equals(drawnPos) || player.yaw !== drawnYaw || player.pitch !== drawnPitch ||
     crouchY !== drawnCrouch;
   const wantDraw = xr || posed || loop.sceneDirty || rainDue || npcDue || drawPending;
-  const capped = !xr && !graphics.high && now - drawnAt < 1000 / LOW_RENDER_FPS - NPC_TICK_SLACK * 1000;
+  const capFps = graphics.cur.render_fps;   // 0: uncapped
+  const capped = !xr && capFps > 0 && now - drawnAt < 1000 / capFps - NPC_TICK_SLACK * 1000;
   drawPending = wantDraw && capped;
   // the touch knob moves with the drawn frames on low (a capped frame leaves it dirty for the next draw)
   if (touchKnob.dirty && !capped) {
@@ -706,7 +739,8 @@ function frame(now) {
   if (wantDraw && !capped) {
     drawnAt = now;
     placeSkyBodies();
-    if (graphics.high || now - waterAt >= 1000 / LOW_WATER_FPS) {
+    const waterFps = graphics.cur.water_fps;   // 0: every drawn frame
+    if (waterFps <= 0 || now - waterAt >= 1000 / waterFps) {
       waterAt = now;
       wildWater.update(now * 0.001);
     }
@@ -717,7 +751,7 @@ function frame(now) {
       tintEl.classList.toggle('on', _surf.dip < 0 && viewPos.y < _surf.base);
     }
     const tRender = perfProbe.t();
-    if (graphics.high && !xr) msaa.render();
+    if (graphics.msaaOn() && !xr) msaa.render();
     else renderer.render(scene, camera);
     perfProbe.add('render', tRender);
     drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
@@ -907,7 +941,7 @@ async function finishLoad(provider, autoGraphics = false) {
   camera.getWorldQuaternion(viewQuat);
   try {
     // compile for where the scene will be drawn (high graphics draws into the MSAA target, a different variant)
-    if (graphics.high && !renderer.xr.isPresenting) renderer.setRenderTarget(msaa.ensure());
+    if (graphics.msaaOn() && !renderer.xr.isPresenting) renderer.setRenderTarget(msaa.ensure());
     try { await renderer.compileAsync(scene, camera); } finally { renderer.setRenderTarget(null); }
     for (const m of layers) if (m.material && m.material.map) renderer.initTexture(m.material.map);
   } catch (e) {
