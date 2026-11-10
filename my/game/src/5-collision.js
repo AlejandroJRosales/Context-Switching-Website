@@ -34,6 +34,10 @@ export const collision = {
   shells: [],   // building footprints; shellGrid buckets index into it
   solidStamp: new Uint32Array(0),
   stampNo: 0,   // solidStamp[i] === stampNo: solid i already visited this query
+  // SOLID BOXES: solid i's top, base, minX, maxX, minZ, maxZ at [6i .. 6i + 5], copied from gridWalls whenever the
+  // list changes (solids are not edited after they are filed), so resolveCollisions' height and box rejects read one
+  // flat array instead of each solid object
+  solidBox: new Float64Array(0),
   obstacleThroats: [],   // doorways occ carves open (cabin throats, from placeCabins)
   openBounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }   // the ecosystem's bounds, for isOpen (set by initialize)
 };
@@ -61,6 +65,16 @@ export function buildGrid(solids) {
   collision.wallGrid = gridOf(solids, GRID_CELL);
   collision.solidStamp = new Uint32Array(solids.length);
   collision.stampNo = 0;
+  fillSolidBoxes();
+}
+
+// SOLID BOXES from gridWalls.
+function fillSolidBoxes() {
+  const list = collision.gridWalls, box = collision.solidBox = new Float64Array(list.length * 6);
+  for (let i = 0; i < list.length; i++) {
+    const w = list[i], o = i * 6;
+    box[o] = w.top; box[o + 1] = w.base; box[o + 2] = w.minX; box[o + 3] = w.maxX; box[o + 4] = w.minZ; box[o + 5] = w.maxZ;
+  }
 }
 
 // OBSTACLE INDEX: one grid of every provider's solids and doorway lanes, for collisions and the NPC occupancy grid.
@@ -72,6 +86,7 @@ export function resetObstacles() {
   shellRas.cells = null; shellRas.cols = 0; shellRas.rows = 0;
   shellRas.subKeys = null; shellRas.subRow = null; shellRas.subCells = null;
   collision.solidStamp = new Uint32Array(0); collision.stampNo = 0;
+  collision.solidBox = new Float64Array(0);
 }
 
 export function addSolids(list) {
@@ -93,12 +108,14 @@ export function addSolids(list) {
   }
   collision.solidStamp = new Uint32Array(collision.gridWalls.length);
   collision.stampNo = 0;
+  fillSolidBoxes();
 }
 
 // Push a circle out of overlapping solids (callers substep so thin walls are not skipped); returns whether it pushed.
 export function resolveCollisions(pos, r = PLAYER_RADIUS,
   feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR, stepUp = 0) {
   let pushed = false;
+  const box = collision.solidBox;
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
@@ -115,10 +132,11 @@ export function resolveCollisions(pos, r = PLAYER_RADIUS,
         for (const idx of bucket) {
           if (collision.solidStamp[idx] === collision.stampNo) continue;
           collision.solidStamp[idx] = collision.stampNo;
-          const w = collision.gridWalls[idx];
+          const o = idx * 6;
           // skip pieces the column is fully above or below, or can step onto
-          if (feetY + stepUp >= w.top - LAND_EPS || headY <= w.base) continue;
-          if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
+          if (feetY + stepUp >= box[o] - LAND_EPS || headY <= box[o + 1]) continue;
+          if (pos.x < box[o + 2] - r || pos.x > box[o + 3] + r || pos.z < box[o + 4] - r || pos.z > box[o + 5] + r) continue;
+          const w = collision.gridWalls[idx];
 
           // the crossing test only runs inside the piece's box; most hits are decided by distance
           const inside = pos.x >= w.minX && pos.x <= w.maxX && pos.z >= w.minZ && pos.z <= w.maxZ &&
@@ -344,6 +362,8 @@ export const occ = {
 
   // flat index of the tiles over their bounding box, made at the end of build() (tiles are only created there)
   flat: null, fc0: 0, fr0: 0, fw: 0, fh: 0,
+  // bumped by clear() (build() starts with it): cells change only there, so a cell found open stays open until then
+  version: 0,
 
   // A cell with no tile is open; Animal.move keeps to the provider's bounds.
   blockedAt(x, z) {
@@ -362,8 +382,19 @@ export const occ = {
     return ((t[i >>> 5] >>> (i & 31)) & 1) === 1;
   },
 
+  // blockedAt with a per-entity memo of the last cell it found open (ent._occC, _occR, _occV): a point in that cell,
+  // with the cells unchanged since (version), is open without the tile lookup. Same answer as blockedAt.
+  blockedAtFor(ent, x, z) {
+    const c = Math.floor(x * OCC_INV), r = Math.floor(z * OCC_INV);
+    if (c === ent._occC && r === ent._occR && ent._occV === this.version) return false;
+    if (this.blockedAt(x, z)) return true;
+    ent._occC = c; ent._occR = r; ent._occV = this.version;
+    return false;
+  },
+
   reset() { this.clear(); },   // teardownWorld's entry
   clear() {
+    this.version++;
     this.tiles = new Map();
     this._lk = NaN; this._lt = null;
     this.flat = null;

@@ -227,10 +227,11 @@ export const MSAA_SAMPLES_WANTED = 8;   // high's MSAA, capped by the GPU
 // sample; with no tone mapping both clip at 1, so the image matches but for edge-resolve rounding)
 export const MSAA_HALF_FLOAT = false;
 export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low'
-// PERF PROBE (debug only): per-frame ms in named buckets, logged as medians. On when the page URL has ?perf
-// (PERF_PROBE_PARAM), or set perfProbe.on from the console. Off costs one boolean read per bucket per frame.
+// PERF PROBE (debug only): per-frame ms in named buckets, shown as medians and means in the Debug readout. On when
+// the page URL has ?perf (PERF_PROBE_PARAM), or set perfProbe.on from the console. Off costs one boolean read per
+// bucket per frame.
 export const PERF_PROBE_PARAM = 'perf';
-export const PERF_PROBE_WINDOW = 300;   // frames per logged report
+export const PERF_PROBE_WINDOW = 300;   // frames per report window
 
 export const HEMI_DAY = 1.5;
 export const HEMI_NIGHT = 0.8;
@@ -295,6 +296,14 @@ export const SHELL_SUB = 4;
 
 // One NPC tick is NPC_TICK_S of sim time.
 export const NPC_TICK_S = 0.016;
+// STAGGERED CONTACTS: each animal's handleCollisions pass runs on its own turns, spread evenly over each period by a
+// per-animal phase (Animal.contactPhase), the same rate for every creature. Social contacts (strikes, mating, eating
+// plants and crates) every CONTACT_SOCIAL_S; body contacts (bumps, drinking) every CONTACT_BODY_S. A pair is checked
+// when either one's turn comes up. Periods are whole ticks, at least 1 (1 is every tick, as before staggering).
+export const CONTACT_SOCIAL_S = 0.25;
+export const CONTACT_BODY_S = 0.1;
+export const CONTACT_SOCIAL_TICKS = Math.max(1, Math.round(CONTACT_SOCIAL_S / NPC_TICK_S));
+export const CONTACT_BODY_TICKS = Math.max(1, Math.round(CONTACT_BODY_S / NPC_TICK_S));
 // One day for sky and NPCs (20 minutes).
 export const DAY_S = 1200;
 // With a city, starting people split by NPC_CITY_PEOPLE_WEIGHT : NPC_WILD_PEOPLE_WEIGHT.
@@ -1216,6 +1225,8 @@ export const CABIN_CAR_WALKWAY = 1.2;   // clear ground from doorway edge to the
 
 // Presets replace the game's clock and weather ('Game', the first chip).
 export const TIMES = ['Game', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
+// The game clock's hour at every world start, New ecosystem included (16.5 = 4:30 pm).
+export const GAME_START_HOUR = 16.5;
 export const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
 };

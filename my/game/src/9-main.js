@@ -304,6 +304,7 @@ animalDmgEl.addEventListener('click', () => {
 // DEBUG (settings): a copyable readout of the GPU, the people renderer and recent errors, refreshed each second while shown.
 const debugEl = document.getElementById('debug');
 const debugInfoEl = document.getElementById('debuginfo');
+const debugCopyEl = document.getElementById('debugcopy');
 const DEBUG_PROBE_BG = new THREE.Color(1, 0, 1);   // magenta clear, so any drawn texel counts
 const debugErrors = [];                            // the last few script errors since load
 const debugError = msg => { debugErrors.push(msg); if (debugErrors.length > 5) debugErrors.shift(); };
@@ -320,6 +321,9 @@ const debugReadout = {
 
   show(on) {
     debugInfoEl.hidden = !on;
+    debugCopyEl.hidden = !on;
+    // the perf probe runs while Debug is on (and always with ?perf), so the readout has timings to show
+    perfProbe.setOn(on || perfProbe.urlOn);
     debugEl.classList.toggle('sel', on);
     debugEl.setAttribute('aria-pressed', String(on));
     clearInterval(this.timer);
@@ -408,6 +412,7 @@ const debugReadout = {
         `Limits: attributes ${gl.getParameter(gl.MAX_VERTEX_ATTRIBS)}, texture units ${gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)}, MSAA ${renderer.capabilities.maxSamples}`,
         `Graphics: ${graphics.high ? 'high' : 'low'} | shadow map ${renderer.shadowMap.enabled ? 'on' : 'off'} | world ${providers.active ? providers.active.kind : 'none'}`,
         `Main render: ${this.mainCalls < 0 ? 'no frame drawn since Debug was turned on' : `${this.mainCalls} draw calls, ${this.mainTris} triangles in the last frame`}`,
+        ...perfProbe.summary(),
         `GL errors since last refresh: ${this.glErrors()}`);
       if (ecosystem.ready) {
         const H = animalRenderer.human, g = H.geometry, n = g.instanceCount;
@@ -445,6 +450,15 @@ const debugReadout = {
 debugEl.addEventListener('click', () => {
   debugReadout.show(debugInfoEl.hidden);
   debugEl.blur();
+});
+// Copy: the readout's text to the clipboard; where the clipboard API is missing or refused (an http page that is not
+// localhost), the select-and-copy command instead
+debugCopyEl.addEventListener('click', () => {
+  const text = debugInfoEl.value;
+  const fallback = () => { debugInfoEl.select(); document.execCommand('copy'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
+  else fallback();
+  debugCopyEl.blur();
 });
 debugInfoEl.addEventListener('focus', () => debugInfoEl.select());                // one tap selects it all for copying
 debugInfoEl.addEventListener('contextmenu', e => e.stopPropagation());           // keeps the long-press copy menu while playing
@@ -855,12 +869,11 @@ async function finishLoad(provider, autoGraphics = false) {
   simSky.start();
   syncSkyset();
   if (randomSky) {
-    // New ecosystem: a random hour and weather for the game's sky, and a random preset of each for Observer
+    // New ecosystem: random weather for the game's sky and a random weather preset for Observer; the hour stays
+    // GAME_START_HOUR (simSky.start), so Observer's time preset is left as it is
     randomSky = false;
-    simSky.randomize();
-    for (const host of [timesEl, skiesEl]) {
-      host.children[1 + Math.floor(Math.random() * (host.children.length - 1))].click();   // 0 is Game
-    }
+    simSky.randomizeWeather();
+    skiesEl.children[1 + Math.floor(Math.random() * (skiesEl.children.length - 1))].click();   // 0 is Game
   }
   updateSky();
   panel.classList.add('hidden');

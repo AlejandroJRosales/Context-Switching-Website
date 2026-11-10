@@ -18,7 +18,7 @@ import {
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
   NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
-  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
+  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, CONTACT_SOCIAL_TICKS, CONTACT_BODY_TICKS, GAME_START_HOUR, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S
 } from './1-config.js';
 import {
@@ -479,6 +479,7 @@ function addPrey(obj, d2, key, sight) {
 
 export class Animal extends Entity {
   static TWO_PI = TWO_PI;
+  static nextContactPhase = 0;   // STAGGERED CONTACTS: the next animal's contactPhase
   static DEATH_HEALTH = 1;   // health at or under which an animal dies (and leaves a corpse, Ecosystem.step)
   static FOV_H_MIN = 0.30; static FOV_H_MAX = Math.PI;
   static FOV_V_MIN = 0.08; static FOV_V_MAX = 0.60;
@@ -597,6 +598,10 @@ export class Animal extends Entity {
 
     // City: last wall-clear position, Ecosystem.collide's fallback
     this.freeX = this.position.x; this.freeZ = this.position.z;
+    this._occC = NaN; this._occR = NaN; this._occV = -1;   // occ.blockedAtFor's memo: the last cell found open (none yet)
+    // STAGGERED CONTACTS: the tick offset of this animal's contact turns; consecutive animals take consecutive
+    // offsets, so each period's turns spread evenly over its ticks
+    this.contactPhase = Animal.nextContactPhase++;
     this._fx = NaN; this._fz = NaN;
 
     this.mesh = null;
@@ -1486,8 +1491,9 @@ export class Animal extends Entity {
 
   // Every species drinks alike: an empty bar refills in NPC_DRINK_SECONDS.
   static DRINK_SHARE_PER_S = 1 / NPC_DRINK_SECONDS;   // water bar share drinking fills per second (also REGEN's rate)
-  drinkWater() {
-    this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 * Animal.DRINK_SHARE_PER_S * NPC_TICK_S);
+  // `ticks` of drinking at once (STAGGERED CONTACTS: the body period, so the rate per second is unchanged)
+  drinkWater(ticks) {
+    this.waterNeed = Math.max(0, Math.min(this.waterNeed, 100) - 100 * Animal.DRINK_SHARE_PER_S * NPC_TICK_S * ticks);
   }
 }
 
@@ -1695,7 +1701,8 @@ export class Ecosystem {
     this.drift2 = 0;
     this.contact = null;
     this._contactR = Ecosystem.CONTACT_DIST;
-    this._bumpVel = { x: 0, z: 0 };   // handleCollisions' scratch for takeBumpVelocity
+    this._bumpVel = { x: 0, z: 0 };   // handleCollisions' scratch for takeBumpVelocity: the animal on its turn
+    this._bumpVelOther = { x: 0, z: 0 };   // and a contact whose side of a bump it covers
   }
 
   // SIM CLOCK: sim seconds since init; pauses with the sim.
@@ -1831,31 +1838,49 @@ export class Ecosystem {
     return placed;
   }
 
+  // STAGGERED CONTACTS: is x's social (true) or body (false) turn this tick?
+  socialTurn(x) { return (this.ticks + x.contactPhase) % CONTACT_SOCIAL_TICKS === 0; }
+  bodyTurn(x) { return (this.ticks + x.contactPhase) % CONTACT_BODY_TICKS === 0; }
+
+  // A male and a female in reach, both looking, the male not down: they mate (a child in or through a wall is born at
+  // the mother's spot). `a`, looking, finds its partner among its contacts, the first in contact order.
   tryMate(a, px, pz) {
-    if (a.sex !== 'male') return;
-    const cg = this.contact, items = cg.items, begin = cg.begin, end = cg.end;
+    const cg = this.contact, items = cg.items, begin = cg.begin, end = cg.end, now = this.time;
+    const male = a.sex === 'male';   // true: a seeks a female; false: a seeks a male
+    if (male && a.isDown(now)) return;
     const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
     for (let q = 0; q < nh; q++) for (let i = begin[hs[q]], iEnd = end[hs[q]]; i < iEnd; i++) {
       const other = items[i];
-      if (other !== a && other.alive && other.type === a.type &&
-        other.sex === 'female' && other.lookForMate &&
-        tools.distSq(px, pz, other.position.x, other.position.z) < Ecosystem.CONTACT_DIST_SQ) {
-        const child = a.mate(other);
-        // City: a child in or through a wall is born at the mother's spot.
-        const cp = child.position, mp = other.position;
-        if (occ.blockedAt(cp.x, cp.z) ||
-          shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
-          cp.x = mp.x; cp.z = mp.z;
-        }
-        cp.x = this.fitX(cp.x); cp.z = this.fitZ(cp.z);
-        child.freeX = cp.x; child.freeZ = cp.z;
-        this.animals.push(child);
-        return;
+      if (other === a || !other.alive || other.type !== a.type || other.sex === a.sex || !other.lookForMate) continue;
+      if (!male && other.isDown(now)) continue;
+      if (tools.distSq(px, pz, other.position.x, other.position.z) >= Ecosystem.CONTACT_DIST_SQ) continue;
+      const father = male ? a : other, mother = male ? other : a;
+      const child = father.mate(mother);   // mate() reads the father as `this`, as when only males looked
+      const cp = child.position, mp = mother.position;
+      if (occ.blockedAt(cp.x, cp.z) ||
+        shellAt(cp.x, cp.z) !== shellAt(mp.x, mp.z)) {
+        cp.x = mp.x; cp.z = mp.z;
       }
+      cp.x = this.fitX(cp.x); cp.z = this.fitZ(cp.z);
+      child.freeX = cp.x; child.freeZ = cp.z;
+      this.animals.push(child);
+      return;
     }
   }
 
-  // Contact: hunters kill, all mate and drink, grazers eat plants.
+  // x hunting y at d2 (squared distance): x strikes when y is its prey in reach, x is up, its cooldown is over and its
+  // pack can take y; one hit per cooldown.
+  strikeSide(x, y, d2, now) {
+    if (d2 >= Ecosystem.CONTACT_DIST_SQ || x.isDown(now) || !this.canHuntById[x.typeId]) return;
+    if ((HUNTS_MASK[x.typeId] & (1 << y.typeId)) === 0) return;
+    if (!(x.nextAttackAt <= now && x.mayAttack(y))) return;
+    x.strike(y);
+    if ((HUNTS_MASK[y.typeId] & (1 << x.typeId)) !== 0) this.fightHit(x, y);
+    else y.attacked(x);
+    x.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+  }
+
+  // Contact: hunters kill, all mate and drink, grazers eat plants (STAGGERED CONTACTS: each animal on its own turns).
   handleCollisions() {
     if (this.ticks % 3 === 0) this.syncPlantGrids();
     // Candidates from a grid up to 2 ticks old.
@@ -1865,61 +1890,63 @@ export class Ecosystem {
 
     for (const a of this.animals) {
       if (!a.alive) continue;
+      const social = this.socialTurn(a);   // a's strikes, mating and eating, and its social pairs, this tick
+      const body = this.bodyTurn(a);       // a's bumps and drinking, and its body pairs, this tick
+      if (!social && !body) continue;
       const px = a.position.x, pz = a.position.z;
 
-      const down = a.isDown(now);
-      // one neighbour pass for hunting and bumping; hunts is 0 when down or preyless
-      const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
-      // BUMPING: this tick's velocity (vel), as a was when its pass began. Taken on first use, before a's first strike
-      // or bump: until then the pass only reads, so it is the same as taking it here, and a pass with neither (most
-      // animals) skips groundSpeed. velocityTaken: vel holds a's.
-      const vel = this._bumpVel;
+      // BUMPING: this tick's velocity (vel for a, otherVel for a contact a covers), taken at a's first bump (a strike
+      // before it may have turned and held a). velocityTaken: vel holds a's.
+      const vel = this._bumpVel, otherVel = this._bumpVelOther;
       let velocityTaken = false;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
       near: for (let q = 0; q < nh; q++) for (let i = begin[hs[q]], iEnd = end[hs[q]]; i < iEnd; i++) {
         const other = items[i];
         if (other === a || !other.alive) continue;
         const dx = other.position.x - px, dz = other.position.z - pz, d2 = dx * dx + dz * dz;
-        if ((hunts & (1 << other.typeId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
-          // PACK STRENGTH: strike only what the pack can take
-          if (a.nextAttackAt <= now && a.mayAttack(other)) {
-            // before the strike, which turns a and holds it
-            if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
-            // one hit per cooldown, on the first prey in reach
-            a.strike(other);
-            if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
-            else other.attacked(a);
-            a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+        if (social) {
+          // a's side, then other's when other's own turn will not check the pair
+          this.strikeSide(a, other, d2, now);
+          if (!a.alive) break near;
+          if (other.alive && !this.socialTurn(other)) this.strikeSide(other, a, d2, now);
+          if (!a.alive) break near;
+        }
+        if (body && other.alive && d2 < Ecosystem.BUMP_DIST_SQ) {
+          if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
+          this.bump(a, other, dx, dz, d2, vel.x, vel.z);
+          if (!this.bodyTurn(other)) {
+            this.takeBumpVelocity(other, now, otherVel);
+            this.bump(other, a, -dx, -dz, d2, otherVel.x, otherVel.z);
           }
           if (!a.alive) break near;
         }
-        if (other.alive && d2 < Ecosystem.BUMP_DIST_SQ) {
-          if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
-          this.bump(a, other, dx, dz, d2, vel.x, vel.z);
-        }
       }
       if (!a.alive) continue;
-      if (!down && a.lookForMate) this.tryMate(a, px, pz);
 
-      const canEat = a.noEatUntil <= now;
-      const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.PLANT_REACH_QUERY_R) : 0;
-      for (let i = 0; i < nPlant; i++) {
-        const plant = this._qPlant[i];
-        if (plant.alive &&
-          tools.distSq(px, pz, plant.position.x, plant.position.z) < Ecosystem.CONTACT_DIST_SQ) {
-          // one bite per cooldown
-          a.eatPlant(plant);
-          a.nextBiteAt = now + NPC_BITE_COOLDOWN_S;
-          break;
+      if (social) {
+        // a pair mates on either one's turn (a pair whose two turns fall together is found by the first; mating ends
+        // both looking)
+        if (a.lookForMate) this.tryMate(a, px, pz);
+
+        const canEat = a.noEatUntil <= now;
+        const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.PLANT_REACH_QUERY_R) : 0;
+        for (let i = 0; i < nPlant; i++) {
+          const plant = this._qPlant[i];
+          if (plant.alive &&
+            tools.distSq(px, pz, plant.position.x, plant.position.z) < Ecosystem.CONTACT_DIST_SQ) {
+            // one bite per cooldown
+            a.eatPlant(plant);
+            a.nextBiteAt = now + NPC_BITE_COOLDOWN_S;
+            break;
+          }
         }
+
+        const crate = canEat && a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
+        if (crate) { a.eatBox(); foodBoxes.eat(crate); }
       }
 
-      const crate = canEat && a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
-      if (crate) { a.eatBox(); foodBoxes.eat(crate); }
-
-      if (surfaceFor(a, px, pz) < 0) {
-        a.drinkWater();
-      }
+      // where a stands now: a contact it covered may have shoved it this pass
+      if (body && surfaceFor(a, a.position.x, a.position.z) < 0) a.drinkWater(CONTACT_BODY_TICKS);
     }
   }
 
@@ -2124,7 +2151,7 @@ export class Ecosystem {
   collide(a) {
     if (!a.moving || !a.brain) return;
     const p = a.position;
-    if (occ.blockedAt(p.x, p.z)) {
+    if (occ.blockedAtFor(a, p.x, p.z)) {
       if (!occ.blockedAt(p.x, a.freeZ)) p.z = a.freeZ;
       else if (!occ.blockedAt(a.freeX, p.z)) p.x = a.freeX;
       else { p.x = a.freeX; p.z = a.freeZ; }
@@ -2254,7 +2281,7 @@ export const simSky = {
 
   start() {
     this.running = true;
-    this.hour = presetHour('Afternoon');
+    this.hour = GAME_START_HOUR;
     this.day = 0;   // midnights since load (HUD day)
     this.kind = 'Rain';
     this.timer = this.OPENING_RAIN_S;
@@ -2265,9 +2292,8 @@ export const simSky = {
   },
   stop() { this.running = false; },
 
-  // New ecosystem: any hour and weather
-  randomize() {
-    this.hour = Math.random() * 24;
+  // New ecosystem: any weather (the hour stays GAME_START_HOUR from start)
+  randomizeWeather() {
     this.kind = this.KINDS[Math.floor(Math.random() * this.KINDS.length)];
     this.timer = this.SPAN[0] + Math.random() * (this.SPAN[1] - this.SPAN[0]);
     this.opening = false;

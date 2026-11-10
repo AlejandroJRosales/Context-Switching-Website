@@ -403,13 +403,22 @@ export const tools = new MathTools();
 export const loop = { last: -1, rafId: 0, sceneDirty: true, frame: null };
 
 // PERF PROBE (debug): ms per frame in named buckets. Callers take t0 = perfProbe.t() and later perfProbe.add(name, t0);
-// both do nothing while off. frameEnd() closes one frame; every PERF_PROBE_WINDOW frames the medians and means are logged
-// and kept in perfProbe.last. count(name) adds 1 (e.g. sim ticks run in the frame) instead of a time.
+// both do nothing while off. frameEnd() closes one frame; every PERF_PROBE_WINDOW frames the medians and means are kept
+// in perfProbe.last, which the Debug readout shows (summary()). count(name) adds 1 (e.g. sim ticks run in the frame)
+// instead of a time.
+// ?perf in the page URL: the probe runs the whole session; otherwise main turns it on with the Debug readout (setOn)
+const PERF_URL_ON = typeof location !== 'undefined' && new URLSearchParams(location.search).has(PERF_PROBE_PARAM);
 export const perfProbe = {
-  on: typeof location !== 'undefined' && new URLSearchParams(location.search).has(PERF_PROBE_PARAM),
+  urlOn: PERF_URL_ON,
+  on: PERF_URL_ON,
   cur: {},       // this frame's sums by bucket
   rows: [],      // finished frames' sums
   last: null,    // medians of the last full window
+  // switching on starts a fresh window (the last full one stays in `last` until the next completes)
+  setOn(on) {
+    if (on && !this.on) { this.rows.length = 0; this.cur = {}; }
+    this.on = on;
+  },
   t() { return this.on ? performance.now() : 0; },
   add(name, t0) { if (this.on) this.cur[name] = (this.cur[name] || 0) + performance.now() - t0; },
   count(name) { if (this.on) this.cur[name] = (this.cur[name] || 0) + 1; },
@@ -419,9 +428,18 @@ export const perfProbe = {
     this.cur = {};
     if (this.rows.length >= PERF_PROBE_WINDOW) {
       this.last = { median: this.stat(true), mean: this.stat(false) };
-      console.log('perf probe (ms/frame; ticks = sim ticks/frame):', JSON.stringify(this.last));
       this.rows.length = 0;
     }
+  },
+  // The Debug readout's lines: the last window's median and mean per bucket, in SUMMARY_ORDER, then any other bucket.
+  SUMMARY_ORDER: ['interval', 'frame', 'step', 'animals', 'collisions', 'drawEcosystem', 'render', 'ticks'],
+  summary() {
+    if (!this.on) return [`Perf: off (turn Debug on, or add ?${PERF_PROBE_PARAM} to the URL)`];
+    if (!this.last) return [`Perf: collecting, ${this.rows.length} of ${PERF_PROBE_WINDOW} frames`];
+    const names = this.SUMMARY_ORDER.concat(Object.keys(this.last.median).filter(k => k !== 'frames' && !this.SUMMARY_ORDER.includes(k)));
+    const row = st => names.filter(k => k in st).map(k => `${k} ${st[k]}`).join(', ');
+    return [`Perf, last ${this.last.median.frames} frames (ms per frame; ticks = sim ticks per frame):`,
+      `  median: ${row(this.last.median)}`, `  mean: ${row(this.last.mean)}`];
   },
   // per-bucket median (true) or mean (false) over the frames since the last report; a bucket missing in a frame counts
   // as 0 there. Means show work that runs every few ticks (the grid sync every 3rd), which a median can hide.
