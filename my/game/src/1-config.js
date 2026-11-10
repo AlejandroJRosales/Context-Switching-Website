@@ -208,7 +208,7 @@ export const WILDERNESS_STEPS = [
 
 
 // LOW-POWER (Graphics: low).
-export const HIGH_PIXEL_RATIO = 2, LOW_PIXEL_RATIO = 1.5;   // most render pixels per CSS pixel (capped by the screen's dpr)
+export const LOW_PIXEL_RATIO = 1.5;
 export const LOW_RENDER_FPS = 60;
 export const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays FOG_NEAR
 export const FOG_NEAR = 120;
@@ -779,27 +779,6 @@ export const SHADOW_ANIMAL_HZ = 15;     // most animal-caused redraws a second
 export const SHADOW_ANIMAL_DIST = 60;
 export const SUN_DIST = 300;                // box centre to light, inside SHADOW_DEPTH
 export const SHADOWS_ENABLED = true;        // master switch
-
-// GRAPHICS PARAMS: every value Graphics high and low differ in, one row each. `high` and `low` are what each setting
-// uses. A URL param of the row's name overrides the high value for that page load, to measure what one high feature
-// costs (e.g. ?shadows=0&msaa=0); low ignores the URL. `kind`: 'bool' takes 1/0, true/false, on/off; 'num' a number
-// above 0; 'int' a whole number above 0. `zeroOk` rows also take 0 (msaa: no MSAA pass; fps rows: uncapped). The Debug
-// readout lists the values in use and any URL overrides.
-export const GFX_PARAMS = {
-  pixel_ratio: { kind: 'num', high: HIGH_PIXEL_RATIO, low: LOW_PIXEL_RATIO, unit: 'x', what: 'render scale cap' },
-  msaa: { kind: 'int', zeroOk: true, high: MSAA_SAMPLES_WANTED, low: 0, unit: '', what: 'MSAA samples wanted (0: no MSAA pass)' },
-  shadows: { kind: 'bool', high: true, low: false, unit: '', what: 'sun shadow map' },
-  shadow_map: { kind: 'int', high: SHADOW_MAP_MAX, low: SHADOW_MAP_MAX, unit: '^2', what: 'shadow map texels a side' },
-  npc_lod: { kind: 'num', high: HIGH_NPC_LOD_DIST, low: LOW_NPC_LOD_DIST, unit: ' m', what: 'detailed people within' },
-  far_stats: { kind: 'num', high: HIGH_FAR_STAT_DIST, low: LOW_FAR_STAT_DIST, unit: ' m', what: 'stats shown within' },
-  fog_far: { kind: 'num', high: HIGH_FOG_FAR, low: LOW_FOG_FAR, unit: ' m', what: 'fog far edge' },
-  camera_far: { kind: 'num', high: HIGH_CAMERA_FAR, low: LOW_CAMERA_FAR, unit: ' m', what: 'camera far plane' },
-  label_ticks: { kind: 'int', high: HIGH_LABEL_TICKS, low: LOW_LABEL_TICKS, unit: '', what: 'ticks between stat-label picks' },
-  hud_ticks: { kind: 'int', high: HIGH_HUD_TICKS, low: LOW_HUD_TICKS, unit: '', what: 'ticks between HUD refreshes' },
-  full_upload: { kind: 'bool', high: true, low: false, unit: '', what: 'upload whole instance buffers (false: changed span)' },
-  water_fps: { kind: 'num', zeroOk: true, high: 0, low: LOW_WATER_FPS, unit: ' fps', what: 'water-flow updates' },
-  render_fps: { kind: 'num', zeroOk: true, high: 0, low: LOW_RENDER_FPS, unit: ' fps', what: 'draw cap' }
-};
 
 // WILD_GROVES: Millennium Park's trees as groves, "|"-separated, dx dz in decimetres.
 export const WILD_GROVES = [

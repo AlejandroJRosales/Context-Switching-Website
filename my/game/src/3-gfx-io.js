@@ -14,8 +14,10 @@ import {
   OVERPASS_MAX_PARALLEL, OVERPASS_MIRRORS, NOMINATIM_URL, TERRAIN_URL, TERRAIN_MAX_Z, TERRAIN_MIN_Z, TERRAIN_TILE_PX,
   TERRAIN_MAX_TILES, TERRAIN_TIMEOUT_MS, ELEV_STEP, ELEV_MARGIN, ROAD_WIDTH,
   AREA_COLOR, WATERWAY_WIDTH, BARRIER, TREE_ROW_SPACING, LANDUSE_RE, LEISURE_RE, BARRIER_RE, PLACE_KEYS, PLACE_OF,
-  PLACE_RE, FOG_NEAR, MSAA_HALF_FLOAT, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE,
-  SHADOW_DEPTH, SHADOW_BIAS_M, GROUND_CELL_M, SHADOW_SOFTNESS, CITY_FILE_DIR, CITY_FILES, GFX_PARAMS
+  PLACE_RE, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
+  LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, MSAA_HALF_FLOAT, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
+  SHADOW_DEPTH, SHADOW_BIAS_M, GROUND_CELL_M, SHADOW_SOFTNESS, CITY_FILE_DIR, CITY_FILES, HIGH_NPC_LOD_DIST,
+  HIGH_FAR_STAT_DIST
 } from './1-config.js';
 import {
   ringArea, pointInRing
@@ -29,34 +31,8 @@ export function savedGraphics() {
 export const startGraphics = savedGraphics();
 // high graphics unless the player last chose low
 export const startLowPower = startGraphics === 'low';
-
-// GRAPHICS PARAMS (GFX_PARAMS): the values each setting uses. High's come from the table unless the page URL names
-// the row (?shadows=0); `fromUrl` lists those, `badUrl` the ones whose value did not parse (left at the table's).
-function parseGfxParam(row, raw) {
-  const t = raw.trim().toLowerCase();
-  if (row.kind === 'bool') return t === '1' || t === 'true' || t === 'on' ? true : t === '0' || t === 'false' || t === 'off' ? false : null;
-  const n = t === '' ? NaN : Number(t);
-  if (!Number.isFinite(n) || (row.kind === 'int' && !Number.isInteger(n))) return null;
-  return n > 0 || (n === 0 && row.zeroOk) ? n : null;
-}
-export const gfxParams = { high: {}, low: {}, fromUrl: [], badUrl: [] };
-{
-  const query = new URLSearchParams(location.search);
-  for (const [name, row] of Object.entries(GFX_PARAMS)) {
-    gfxParams.low[name] = row.low;
-    gfxParams.high[name] = row.high;
-    if (!query.has(name)) continue;
-    const v = parseGfxParam(row, query.get(name));
-    if (v === null) gfxParams.badUrl.push(`${name}=${query.get(name)}`);
-    else { gfxParams.high[name] = v; gfxParams.fromUrl.push(name); }
-  }
-}
-// the values in use for Graphics high (true) or low (false)
-export const gfxValues = high => (high ? gfxParams.high : gfxParams.low);
-const startGfx = gfxValues(!startLowPower);
-
 export const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, startGfx.pixel_ratio));
+renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
 renderer.setSize(innerWidth, innerHeight);
 // Skip three's shader log checks (~0.5 s of load); a shader that fails to compile no longer logs why.
 renderer.debug.checkShaderErrors = false;
@@ -64,16 +40,15 @@ renderer.xr.enabled = true;
 renderer.shadowMap.enabled = false;          // Graphics: high turns sun shadows on over wild terrain
 // PCF (not PCF soft): three's soft variant ignores shadow.radius; this one widens its taps by it (SHADOW_SOFTNESS)
 renderer.shadowMap.type = THREE.PCFShadowMap;
-// high's MSAA samples, capped by the GPU; 0 (from ?msaa=0) draws high straight to the canvas like low
-export const MSAA_SAMPLES = Math.min(gfxParams.high.msaa, renderer.capabilities.maxSamples || 4);
+export const MSAA_SAMPLES = Math.min(MSAA_SAMPLES_WANTED, renderer.capabilities.maxSamples || 4);
 
 export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fb4c8);
-scene.fog = new THREE.Fog(0x9fb4c8, FOG_NEAR, startGfx.fog_far);
+scene.fog = new THREE.Fog(0x9fb4c8, FOG_NEAR, startLowPower ? LOW_FOG_FAR : HIGH_FOG_FAR);
 
 // near stays inside PLAYER_RADIUS; 0.1 would starve depth precision for the ground layers
 export const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.25,
-  startGfx.camera_far);
+  startLowPower ? LOW_CAMERA_FAR : HIGH_CAMERA_FAR);
 // VR moves this rig; out of VR it stays at the origin, so camera.position is the world position.
 export const rig = new THREE.Group();
 rig.add(camera);
@@ -87,8 +62,7 @@ export const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
 sun.position.set(-0.5, 1, 0.4).multiplyScalar(100);
 scene.add(sun);
 scene.add(sun.target);
-// only high draws shadows, so its value (shadow_map) sizes the map, capped by the GPU
-export const shadowMapSize = Math.min(gfxParams.high.shadow_map, renderer.capabilities.maxTextureSize);
+export const shadowMapSize = Math.min(SHADOW_MAP_MAX, renderer.capabilities.maxTextureSize);
 sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
 sun.shadow.camera.left = sun.shadow.camera.bottom = -SHADOW_BOX_HALF;
 sun.shadow.camera.right = sun.shadow.camera.top = SHADOW_BOX_HALF;
@@ -513,17 +487,17 @@ export function cyl(rt, rb, h, x, y, z, c) {
 // SHARED ADAPTERS: the Arena's perf helper; below it, City-only data (places, painted water) its provider reads.
 
 export const perf = {
-  // set by graphics.apply from the setting's GFX_PARAMS: whole-buffer uploads (full_upload) and the LOD distances
-  fullUpload: startGfx.full_upload,
-  npcLodDist: startGfx.npc_lod,
-  farStatDist: startGfx.far_stats,
-  // Upload the first n instances; with fullUpload false only the changed span, merged with ranges still waiting for a draw.
+  // set by graphics.apply: Graphics low, and the LOD distances that go with the setting
+  lowPower: startLowPower,
+  npcLodDist: startLowPower ? LOW_NPC_LOD_DIST : HIGH_NPC_LOD_DIST,
+  farStatDist: startLowPower ? LOW_FAR_STAT_DIST : HIGH_FAR_STAT_DIST,
+  // Upload the first n instances; on low only the changed span, merged with ranges still waiting for a draw.
   instances(mesh, n) {
     mesh.count = n;
     mesh.visible = n > 0;
     if (n === 0) return;
     const attr = mesh.instanceMatrix;
-    if (this.fullUpload) {
+    if (!this.lowPower) {
       attr._sent = null;
       attr.clearUpdateRanges();
       attr.addUpdateRange(0, n * 16);
@@ -1153,4 +1127,4 @@ export function loadImage(url, timeoutMs) {
     if (timeoutMs) setTimeout(() => finish(null), timeoutMs);
     img.src = url;
   });
-}
+}
