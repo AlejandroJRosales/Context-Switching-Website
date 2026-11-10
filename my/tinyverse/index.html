@@ -36,14 +36,17 @@ body {
   pointer-events:auto;
   z-index:1
 }
-.pad {
+.pad,
+.nub {
   position:absolute;
+  border-radius:50%;
+  border:1px solid rgba(255,255,255,.25)
+}
+.pad {
   bottom:24px;
   width:120px;
   height:120px;
-  border-radius:50%;
   background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.25);
   pointer-events:auto;
   z-index:3
 }
@@ -67,14 +70,11 @@ body {
   display:none
 }
 .nub {
-  position:absolute;
   left:35px;
   top:35px;
   width:50px;
   height:50px;
-  border-radius:50%;
-  background:rgba(255,255,255,.25);
-  border:1px solid rgba(255,255,255,.25)
+  background:rgba(255,255,255,.25)
 }
 #info {
   position:absolute;
@@ -210,7 +210,8 @@ const NO_DEPTH_TEST = 1,
 
 // TUNABLES
 
-const PI = Math.PI;
+const PI = Math.PI,
+  TAU = PI * 2;
 
 // world
 const PLANT_SPAWN_CHANCE = 0.01,
@@ -286,7 +287,7 @@ const RAIN_DROPS = 3000,
   RAIN_MODES = '/10';
 
 // sky
-const DAY_SECONDS = (2 * PI) / 0.005,
+const DAY_SECONDS = TAU / 0.005,
   HOUR_SECONDS = DAY_SECONDS / 24,
   NIGHT_TOP = [0.02, 0.03, 0.07],
   NIGHT_BOTTOM = [0.05, 0.06, 0.11],
@@ -474,6 +475,7 @@ const fbm = (x, z, freq, amp, octaves, offX, offZ, ridged) => {
 
 let worldScale = 20,
   worldSize = 0,
+  worldHalf = 0,
   waterLevel = 0,
   seed = 0,
   RNG = null;
@@ -490,7 +492,10 @@ const scaled = (n) => Math.round((n * Math.max(worldScale, 1)) / 10);
 
 const setWorldSize = () => {
   worldSize = Math.max(500, scaled(5000));
+  worldHalf = worldSize / 2;
 };
+
+const edgeLimit = () => worldHalf - WORLD_EDGE_MARGIN;
 
 const reseed = (power) => {
   seed = (Math.random() * 1e9) | 0;
@@ -505,7 +510,7 @@ const gridCell = (g, v, bias) => clamp((gridCoord(g, v) + bias) | 0, 0, g[1] - 1
 const gridInside = (g, cx, cz, margin) => cx >= 0 && cz >= 0 && cx < g[1] - margin && cz < g[1] - margin;
 
 const gridBuild = (step, pad, ...fills) => {
-  const g = [step, Math.ceil((worldSize + pad * 2) / step) + 1, -worldSize / 2 - pad];
+  const g = [step, Math.ceil((worldSize + pad * 2) / step) + 1, -worldHalf - pad];
   for (const fill of fills) {
     const data = new Float32Array(g[1] * g[1]);
     for (let i = 0; i < data.length; i++) data[i] = fill(g[2] + (i % g[1]) * step, g[2] + ((i / g[1]) | 0) * step);
@@ -617,8 +622,7 @@ let creatureCount = 0,
 let scanSelf = -1,
   foundIdx = -1,
   foundX = 0,
-  foundZ = 0,
-  foundDist2 = 0;
+  foundZ = 0;
 
 const gridInit = () => {
   CELLS = gridBuild(70, 0);
@@ -626,14 +630,16 @@ const gridInit = () => {
   plantHead = new Int32Array(CELLS[1] * CELLS[1]);
 };
 
+const gridCellOf = (F, i) => gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
+
 const gridLink = (head, next, F, i) => {
-  const cell = gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
+  const cell = gridCellOf(F, i);
   next[i] = head[cell];
   head[cell] = i;
 };
 
 const gridUnlink = (head, next, F, i) => {
-  const cell = gridCell(CELLS, F[Z][i], 0) * CELLS[1] + gridCell(CELLS, F[X][i], 0);
+  const cell = gridCellOf(F, i);
   let j = head[cell];
   if (j === i) head[cell] = next[i];
   else {
@@ -687,15 +693,14 @@ const scanMates = (px, pz, reach, self) => {
   return scanNearest(C, creatureHead, creatureNext, px, pz, reach, otherMate);
 };
 
-const scanWater = (px, pz) => {
+const scanWater = (px, pz, reach) => {
   const g = FIELD;
   if (!g) return false;
   const cell = gridCell(g, pz, 0.5) * g[1] + gridCell(g, px, 0.5);
   if (g[3][cell] === NO_WATER) return false;
   foundX = g[3][cell];
   foundZ = g[4][cell];
-  foundDist2 = dist2(foundX, foundZ, px, pz);
-  return true;
+  return dist2(foundX, foundZ, px, pz) <= reach * reach;
 };
 
 const uploadInstances = (buf, data, F, stride, count) => {
@@ -769,7 +774,7 @@ const senseTick = (i) => {
   const kind =
     C[ENERGY][i] < FORAGE_HUNGER && scanPlants(x, z, VISION_RADIUS)
       ? TARGET_PLANT
-      : C[HYDRATION][i] < DRINK_THIRST && scanWater(x, z) && foundDist2 <= VISION_RADIUS * VISION_RADIUS
+      : C[HYDRATION][i] < DRINK_THIRST && scanWater(x, z, VISION_RADIUS)
         ? TARGET_WATER
         : mateReady(i) && scanMates(x, z, MATE_SENSE_RADIUS, i)
           ? TARGET_MATE
@@ -794,17 +799,14 @@ const creaturePlace = (i, x, z, heading) => {
   C[X][i] = x;
   C[Z][i] = z;
   C[Y][i] = groundY(x, z);
-  C[HEADING][i] = heading;
-  C[FACING][i] = C[HEADING][i];
+  C[HEADING][i] = C[FACING][i] = heading;
   C[SPEED][i] = 0;
   C[AGE][i] = 0;
   C[ALIVE][i] = 1;
 };
 
 const creatureSpawn = (i) => {
-  const x = jitter(worldSize) * 0.9,
-    z = jitter(worldSize) * 0.9;
-  creaturePlace(i, x, z, RNG() * PI * 2);
+  creaturePlace(i, jitter(worldSize) * 0.9, jitter(worldSize) * 0.9, RNG() * TAU);
   C[SIZE][i] = 4 + RNG() * 4;
   C[ENERGY][i] = 0.5 + RNG() * 0.5;
   C[HYDRATION][i] = 0.5 + RNG() * 0.5;
@@ -817,14 +819,14 @@ const creatureSpawn = (i) => {
 const creatureBirth = (a, b) => {
   if (creatureCount >= MAX_CREATURES) return;
   const child = creatureCount++,
-    angle = RNG() * 6.28,
+    angle = RNG() * TAU,
     distance = 8 + RNG() * 10,
-    limit = worldSize / 2 - WORLD_EDGE_MARGIN;
+    limit = edgeLimit();
   creaturePlace(
     child,
     clamp((C[X][a] + C[X][b]) * 0.5 + Math.cos(angle) * distance, -limit, limit),
     clamp((C[Z][a] + C[Z][b]) * 0.5 + Math.sin(angle) * distance, -limit, limit),
-    RNG() * 6.28
+    RNG() * TAU
   );
   C[GENERATION][child] = (Math.max(C[GENERATION][a], C[GENERATION][b]) + 1) & 0xffff;
   C[SIZE][child] = (C[SIZE][a] + C[SIZE][b]) * 0.5 * (0.9 + RNG() * 0.2);
@@ -858,8 +860,8 @@ const compactCreatures = () => {
 };
 
 const spawnCreatures = () => {
-  creatureCount = clamp(scaled(baseCreatures), 5, MAX_CREATURES);
-  for (let i = 0; i < creatureCount; i++) creatureSpawn(i);
+  creatureCount = 0;
+  adjustPopulation(clamp(scaled(baseCreatures), 5, MAX_CREATURES));
 };
 
 const adjustPopulation = (delta) => {
@@ -881,7 +883,7 @@ const adjustPopulation = (delta) => {
 const updateCreatures = (dt) => {
   gridRebuild(creatureHead, creatureNext, C, creatureCount);
   plantsGrow(dt);
-  const limit = worldSize / 2 - WORLD_EDGE_MARGIN;
+  const limit = edgeLimit();
   for (let i = 0; i < creatureCount; i++) {
     if (!C[ALIVE][i]) continue;
     C[WANDER_TIMER][i] -= dt;
@@ -925,7 +927,7 @@ const updateCreatures = (dt) => {
     C[HYDRATION][i] = Math.max(0, C[HYDRATION][i] - DRINK_DRAIN * dt * idle);
     const thirstCost = C[HYDRATION][i] > 0 ? 0 : DEHYDRATION_COST;
     C[ENERGY][i] -= (moveCost + BASE_COST + ageCost + thirstCost) * dt * idle;
-    if (C[TARGET_KIND][i] === TARGET_WATER && scanWater(x, z) && foundDist2 <= DRINK_REACH * DRINK_REACH) {
+    if (C[TARGET_KIND][i] === TARGET_WATER && scanWater(x, z, DRINK_REACH)) {
       C[HYDRATION][i] = 1;
       retarget(i);
     }
@@ -934,7 +936,6 @@ const updateCreatures = (dt) => {
       plantRemove(foundIdx);
       retarget(i);
     }
-    if (C[ENERGY][i] > 1) C[ENERGY][i] = 1;
     if (C[TARGET_KIND][i] === TARGET_MATE && creatureCount < MAX_CREATURES && mateReady(i) && scanMates(x, z, MATE_REACH + C[SIZE][i], i)) {
       creatureBirth(i, foundIdx);
     }
@@ -947,14 +948,15 @@ const updateCreatures = (dt) => {
 
 const plantPlace = (x, z) => {
   const y = terrainHeight(x, z);
-  if (y < waterLevel + 3) return;
+  if (y < waterLevel + 3) return 0;
   P[X][plantCount] = x;
   P[Y][plantCount] = y;
   P[Z][plantCount] = z;
-  P[SEED][plantCount] = RNG() * 6.28;
+  P[SEED][plantCount] = RNG() * TAU;
   gridLink(plantHead, plantNext, P, plantCount);
   plantCount++;
   plantsDirty = 1;
+  return 1;
 };
 
 const plantRemove = (i) => {
@@ -968,37 +970,32 @@ const plantRemove = (i) => {
   plantsDirty = 1;
 };
 
+const plantRandom = () => plantPlace(jitter(worldSize) * 0.96, jitter(worldSize) * 0.96);
+
+const scatterPlants = (add, triesEach) => {
+  for (let placed = 0, tries = 0; placed < add && tries < add * triesEach; tries++) placed += plantRandom();
+};
+
 const spawnPlants = () => {
   plantCount = 0;
   plantHead.fill(-1);
-  const seed = clamp(scaled(800), 10, MAX_PLANTS);
-  for (let tries = 0; plantCount < seed && tries < seed * 4; ) {
-    tries++;
-    plantPlace(jitter(worldSize) * 0.96, jitter(worldSize) * 0.96);
-  }
+  scatterPlants(clamp(scaled(800), 10, MAX_PLANTS), 4);
 };
 
 const plantsGrow = (dt) => {
-  const half = worldSize / 2;
   if (plantCount >= MAX_PLANTS) return;
   if (RNG() >= PLANT_SPAWN_CHANCE * dt * 60) return;
   const seeded = plantCount > 0 && RNG() < 0.7,
     parent = seeded ? (RNG() * plantCount) | 0 : 0;
   plantPlace(
-    clamp(seeded ? P[X][parent] + jitter(120) : jitter(worldSize) * 0.96, -half, half),
-    clamp(seeded ? P[Z][parent] + jitter(120) : jitter(worldSize) * 0.96, -half, half)
+    clamp(seeded ? P[X][parent] + jitter(120) : jitter(worldSize) * 0.96, -worldHalf, worldHalf),
+    clamp(seeded ? P[Z][parent] + jitter(120) : jitter(worldSize) * 0.96, -worldHalf, worldHalf)
   );
 };
 
 const adjustPlants = (delta) => {
-  if (delta > 0) {
-    const add = Math.min(delta, MAX_PLANTS - plantCount);
-    for (let placed = 0, tries = 0; placed < add && tries < add * 8; tries++) {
-      const before = plantCount;
-      plantPlace(jitter(worldSize) * 0.96, jitter(worldSize) * 0.96);
-      if (plantCount > before) placed++;
-    }
-  } else {
+  if (delta > 0) scatterPlants(Math.min(delta, MAX_PLANTS - plantCount), 8);
+  else {
     for (let k = 0; k < -delta && plantCount > 0; k++) plantRemove(plantCount - 1);
   }
 };
@@ -1073,7 +1070,7 @@ const simClock = (seconds) => {
 
 // returns [sunDir, sunUp, sunColor, moonDir, moonUp, moonColor, skyTop, skyBottom, ambient]
 const sunState = (seconds) => {
-  const angle = seconds * ((2 * PI) / DAY_SECONDS) - PI / 2,
+  const angle = seconds * (TAU / DAY_SECONDS) - PI / 2,
     sunDir = norm3([Math.cos(angle), Math.sin(angle), 0]),
     moonDir = scale3(sunDir, -1),
     sunUp = Math.max(0, sunDir[1]),
@@ -1257,7 +1254,7 @@ const renderTarget = (fb, cols, rows, rgb) => {
   gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
 };
 
-const pass = (prog, geo, inst, instances, flags, extra) => {
+const pass = (prog, geo, flags, inst, instances, extra = []) => {
   if (inst && !(EXT_INSTANCE && instances)) return;
   gl.useProgram(prog[0]);
   bindLayout(prog, geo[0], geo[1], 0);
@@ -1344,6 +1341,15 @@ float shadowFactor(vec3 worldPos, float ndotl){
 }
 `;
 
+const SHADED_GLSL = `
+${LIGHT_GLSL}
+${SHADOW_GLSL}
+vec3 shade(vec3 n, vec3 wp, vec3 sunColor){
+  float diff=lambert(n, uSunDir);
+  return uAmbient+sunColor*diff*shadowFactor(wp, diff)+uMoonColor*lambert(n, uMoonDir);
+}
+`;
+
 const DEPTH_FS = `
 precision highp float;
 uniform float uShadowMode;
@@ -1378,8 +1384,7 @@ uniform float uWaterLevel;
 varying vec3 vN;
 varying float vH;
 varying highp vec3 vW;
-${LIGHT_GLSL}
-${SHADOW_GLSL}
+${SHADED_GLSL}
 ${FOG_GLSL}
 void main(){
   float slope=1.0-clamp(vN.y, .0, 1.0);
@@ -1392,10 +1397,7 @@ void main(){
   col=mix(col, rock, smoothstep(.30,.55,hN));
   col=mix(col, snow, smoothstep(.85,.95,hN));
   col=mix(col, rock, smoothstep(.45,.85,slope));
-  float diff=lambert(vN, uSunDir);
-  float sh=shadowFactor(vW, diff);
-  float mdiff=lambert(vN, uMoonDir);
-  gl_FragColor=vec4(applyFog(col*(uAmbient+uSunColor*diff*sh+uMoonColor*mdiff), vW), 1.0);
+  gl_FragColor=vec4(applyFog(col*shade(vN, vW, uSunColor), vW), 1.0);
 }
 `;
 
@@ -1421,13 +1423,9 @@ precision mediump float;
 varying vec3 vN;
 varying vec3 vColor;
 varying vec3 vW;
-${LIGHT_GLSL}
-${SHADOW_GLSL}
+${SHADED_GLSL}
 void main(){
-  float diff=lambert(vN, uSunDir);
-  float sh=shadowFactor(vW, diff);
-  float mdiff=lambert(vN, uMoonDir);
-  gl_FragColor=vec4(vColor*(uAmbient+vec3(diff)*sh+uMoonColor*mdiff), 1.0);
+  gl_FragColor=vec4(vColor*shade(vN, vW, vec3(1.0)), 1.0);
 }
 `;
 
@@ -1479,6 +1477,9 @@ uniform vec3 uSkyTop;
 varying highp vec3 vW;
 ${LIGHT_GLSL}
 ${FOG_GLSL}
+vec3 glint(vec3 l, vec3 n, vec3 v, vec3 color, float power){
+  return color*min(pow(max(dot(reflect(-l, n), v), .0), power), 1.0)*.4;
+}
 void main(){
   vec2 clipG=(vW.xz+uClipMap.xy)/(uClipMap.xy*2.0)*(uClipMap.zw-1.0);
   if (texture2D(uClipTex, (clipG+.5)/uClipMap.zw).r > .5) discard;
@@ -1492,10 +1493,7 @@ void main(){
   float fres=pow(1.0-max(dot(V,N),.0), 3.0);
   vec3 deep=vec3(.05,.18,.30), shallow=vec3(.10,.35,.45);
   vec3 col=mix(mix(deep, shallow, .3)*uAmbient, uSkyTop, fres);
-  float spec=pow(max(dot(reflect(-uSunDir, N),V),.0), 20.0);
-  float mspec=pow(max(dot(reflect(-uMoonDir, N),V),.0), 40.0);
-  col+=uSunColor*min(spec,1.0)*.4;
-  col+=uMoonColor*min(mspec,1.0)*.4;
+  col+=glint(uSunDir, N, V, uSunColor, 20.0)+glint(uMoonDir, N, V, uMoonColor, 40.0);
   gl_FragColor=vec4(applyFog(col, vW), .92);
 }
 `;
@@ -1542,7 +1540,7 @@ varying float vT;
 void main(){
   vT=aPos.y*.5+.5;
   float len=uLen*(.6+.4*aInstSeed);
-  vec3 world=aInstPos+uRight*(aPos.x*uWidth)+vec3(.0,1.0,.0)*(aPos.y*len);
+  vec3 world=aInstPos+uRight*(aPos.x*uWidth)+vec3(.0, aPos.y*len, .0);
   gl_Position=uVP*vec4(world, 1.0);
 }
 `;
@@ -1590,7 +1588,7 @@ const sphere = (cx, cy, cz, radius) =>
   unindex(
     lattice(8, 10, (v, u) => {
       const phi = v * PI,
-        theta = u * PI * 2,
+        theta = u * TAU,
         nx = Math.sin(phi) * Math.cos(theta),
         ny = Math.cos(phi),
         nz = Math.sin(phi) * Math.sin(theta);
@@ -1601,7 +1599,7 @@ const sphere = (cx, cy, cz, radius) =>
 const tube = (radius, halfLen) =>
   unindex(
     lattice(1, 10, (v, u) => {
-      const theta = u * PI * 2;
+      const theta = u * TAU;
       return [Math.cos(theta) * radius, Math.sin(theta) * radius, v ? halfLen : -halfLen, Math.cos(theta), Math.sin(theta), 0, 0];
     })
   );
@@ -1619,8 +1617,8 @@ const horn = (baseY, baseZ, length, radius, pitch, segs) => {
     ],
     out = [];
   for (let j = 0; j < segs; j++) {
-    const a0 = (j / segs) * PI * 2,
-      a1 = ((j + 1) / segs) * PI * 2;
+    const a0 = (j / segs) * TAU,
+      a1 = ((j + 1) / segs) * TAU;
     out.push(vertex(a0, radius, 0), vertex((a0 + a1) * 0.5, 0, length), vertex(a1, radius, 0));
   }
   return out;
@@ -1653,11 +1651,10 @@ const buildFlatGeo = () => {
 const clipData = new Uint8Array((TERRAIN_COLS + 1) * (TERRAIN_ROWS + 1));
 
 const buildTerrain = () => {
-  const half = worldSize / 2,
-    step = worldSize / TERRAIN_COLS;
+  const step = worldSize / TERRAIN_COLS;
   const [verts, idx] = lattice(TERRAIN_ROWS, TERRAIN_COLS, (v, u, row, col) => {
-    const x = -half + u * worldSize,
-      z = -half + v * worldSize,
+    const x = -worldHalf + u * worldSize,
+      z = -worldHalf + v * worldSize,
       y = terrainHeightExact(x, z),
       clip = 0.5 + (y - waterLevel) / WATER_CLIP_RANGE;
     clipData[row * (TERRAIN_COLS + 1) + col] = clip <= 0 ? 0 : clip >= 1 ? 255 : (clip * 255) | 0;
@@ -1705,12 +1702,11 @@ const initShadow = () => {
 };
 
 const updateLightVP = (sunDir) => {
-  const half = worldSize / 2,
-    texel = (2 * half) / SHADOW_SIZE,
+  const texel = worldSize / SHADOW_SIZE,
     dir = norm3([sunDir[0], Math.max(sunDir[1], 0.15), sunDir[2]]),
     focus = [Math.round(cam[0] / texel) * texel, Math.max(terrainHeight(cam[0], cam[2]), waterLevel), Math.round(cam[2] / texel) * texel];
   lookAt(lightView, focus.map((v, k) => v + dir[k] * worldSize), focus, UP);
-  ortho(lightProj, -half, half, -half, half, 1, worldSize * 2);
+  ortho(lightProj, -worldHalf, worldHalf, -worldHalf, worldHalf, 1, worldSize * 2);
   mat4Mul(lightVP, lightProj, lightView);
 };
 
@@ -1772,16 +1768,15 @@ const updatePlayer = (dt, forward, right) => {
       velocityY = 0;
       jumpsLeft = 2;
     }
-    if (audioCtx) {
-      if (onGround && stepDistance > STEP_STRIDE) {
-        stepDistance = 0;
+    if (stepDistance > STEP_STRIDE) {
+      stepDistance = 0;
+      if (onGround) {
         const tune = 0.85 + Math.random() * 0.3,
-          [f0, f1, resonance, volume, duration, lowpass] = STEP_SOUNDS[floorY - EYE_HEIGHT < waterLevel ? 1 : 0];
-        playNoise(f0 * tune, f1 * tune, resonance, volume, duration, lowpass);
+          [f0, f1, ...rest] = STEP_SOUNDS[floorY - EYE_HEIGHT < waterLevel ? 1 : 0];
+        playNoise(f0 * tune, f1 * tune, ...rest);
       }
-      rainVolume(rainIntensity > 0.03 ? rainIntensity : 0, 0.01);
     }
-    if (stepDistance > STEP_STRIDE) stepDistance = 0;
+    rainVolume(rainIntensity > 0.03 ? rainIntensity : 0, 0.01);
   }
   prevJump = jump;
 };
@@ -1811,8 +1806,6 @@ let SCENE = [],
   fpsElapsed = 0,
   fpsFrames = 0,
   fps = 0;
-
-const NONE = [];
 
 const byId = (id) => document.getElementById(id);
 
@@ -1867,8 +1860,7 @@ const updateInfoPanel = () => {
 const frame = (now) => {
   let dt = (now - lastFrameMs) / 1000;
   lastFrameMs = now;
-  if (!(dt > 0)) dt = 0;
-  if (dt > 0.05) dt = 0.05;
+  dt = dt > 0 ? Math.min(dt, 0.05) : 0;
   simTime += dt;
   updateFps(dt);
   const forward = [Math.sin(yaw), 0, Math.cos(yaw)],
@@ -1883,7 +1875,7 @@ const frame = (now) => {
     'uShadowTexel', 1 / SHADOW_SIZE,
     'uShadowMode', DEPTH_EXT ? 0 : 1,
     'uClipTex', [2],
-    'uClipMap', [worldSize / 2, worldSize / 2, TERRAIN_COLS + 1, TERRAIN_ROWS + 1],
+    'uClipMap', [worldHalf, worldHalf, TERRAIN_COLS + 1, TERRAIN_ROWS + 1],
     'uSunDir', sunDir,
     'uSunColor', sunColor,
     'uSunUp', sunUp,
@@ -1905,8 +1897,8 @@ const frame = (now) => {
     updateLightVP(sunDir);
     if (shadowReady) {
       renderTarget(shadowFB, SHADOW_SIZE, SHADOW_SIZE, [1, 1, 1]);
-      pass(DEPTH_TERRAIN_PROG, TERRAIN_GEO, 0, 0, CULLED, NONE);
-      pass(DEPTH_CREATURE_PROG, CREATURE_GEO, CREATURE_INST, creatureCount, CULLED, NONE);
+      pass(DEPTH_TERRAIN_PROG, TERRAIN_GEO, CULLED);
+      pass(DEPTH_CREATURE_PROG, CREATURE_GEO, CULLED, CREATURE_INST, creatureCount);
     }
   }
   updateCreatures(dt);
@@ -1919,12 +1911,12 @@ const frame = (now) => {
   rainVolume(rainIntensity, 0.02);
   rainUpdate(dt);
   renderTarget(null, viewW, viewH, skyBottom);
-  pass(SKY_PROG, FLAT_GEO, 0, 0, NO_DEPTH_TEST | NO_DEPTH_WRITE, NONE);
-  pass(TERRAIN_PROG, TERRAIN_GEO, 0, 0, 0, NONE);
-  pass(CREATURE_PROG, CREATURE_GEO, CREATURE_INST, creatureCount, 0, NONE);
-  pass(PLANT_PROG, PLANT_GEO, PLANT_INST, plantCount, 0, NONE);
-  pass(WATER_PROG, FLAT_GEO, 0, 0, NO_DEPTH_WRITE | BLENDED, NONE);
-  pass(RAIN_PROG, FLAT_GEO, RAIN_INST, rainOn ? RAIN_DROPS : 0, NO_DEPTH_WRITE | BLENDED, [
+  pass(SKY_PROG, FLAT_GEO, NO_DEPTH_TEST | NO_DEPTH_WRITE);
+  pass(TERRAIN_PROG, TERRAIN_GEO, 0);
+  pass(CREATURE_PROG, CREATURE_GEO, 0, CREATURE_INST, creatureCount);
+  pass(PLANT_PROG, PLANT_GEO, 0, PLANT_INST, plantCount);
+  pass(WATER_PROG, FLAT_GEO, NO_DEPTH_WRITE | BLENDED);
+  pass(RAIN_PROG, FLAT_GEO, NO_DEPTH_WRITE | BLENDED, RAIN_INST, rainOn ? RAIN_DROPS : 0, [
     'uRight', right,
     'uWidth', 0.5,
     'uLen', 14,
