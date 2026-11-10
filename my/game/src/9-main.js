@@ -53,11 +53,11 @@ import {
 import {
   npcOnScreen, foodBoxView, raysEl, gfxEl, avgFpsEl, graphics, labels, visionRays, animalRenderer, plantRenderer,
   blobShadows, healthBars, skyChoice, skyInstant, conditions, avgFps, clockText, placeSkyBodies, skyFade, updateSky,
-  rainClock, disposeRain, rainTick, rainAnimating, populationText
+  rainClock, disposeRain, rainTick, rainAnimating, populationText, tracers
 } from './8a-render.js';
 import {
   dotEl, knobEl, climbEl, povEl, pov, vr, cat, game, bindInventory, player, keys, play, lastPointerType, bindKeys,
-  bindMouseLook, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam, facePlayer, placeCar,
+  bindMouseLook, bindMouseButtons, crouchY, stance, touchKnob, bindTouch, flying, toggleFly, car, chaseCam, facePlayer, placeCar,
   parkBesideCabin, bindCar, updateCarButton, setPlayerInCar, playerStep, movementHeld, playerBumps, carHits
 } from './8b-player-game.js';
 
@@ -225,6 +225,7 @@ document.addEventListener('pointerlockchange', () => {
   wake();
 });
 bindMouseLook();   // its listeners, in their original place among main's
+bindMouseButtons();
 
 function returnToIntro() {
   if (!play.active) return;
@@ -301,6 +302,22 @@ function setAnimalDamage(on) {
 animalDmgEl.addEventListener('click', () => {
   setAnimalDamage(!game.animalDamage);
   animalDmgEl.blur();
+});
+// WEAPON (Observer): the chip's choice (game.chooseWeapon) puts a gun in hand here and carries it into Survivor.
+const weaponEl = document.createElement('button');
+weaponEl.id = 'weapon';
+weaponEl.className = animalDmgEl.className.replace(/\bsel\b/, '').trim();   // styled like the Animal damage chip
+weaponEl.textContent = 'Weapon';
+weaponEl.setAttribute('aria-pressed', 'false');
+animalDmgEl.after(weaponEl);
+function setWeaponChoice(on) {
+  game.chooseWeapon(on);
+  weaponEl.classList.toggle('sel', on);
+  weaponEl.setAttribute('aria-pressed', String(on));
+}
+weaponEl.addEventListener('click', () => {
+  setWeaponChoice(!game.weaponChoice);
+  weaponEl.blur();
 });
 
 // DEBUG (settings): a copyable readout of the GPU, the people renderer and recent errors, refreshed each second while shown.
@@ -628,6 +645,7 @@ function drawEcosystem(dt) {
   healthBars.update(ecosystem.animals);
   if (ecosystem.ticks % (perf.lowPower ? LOW_LABEL_TICKS : HIGH_LABEL_TICKS) === 0) labels.updateTarget();
   visionRays.update(ecosystem.animals);
+  tracers.update(ecosystem.projectiles.list);
   if (ecosystem.populationChanged()) refreshHud();
   if (ecosystem.ticks % (perf.lowPower ? LOW_HUD_TICKS : HIGH_HUD_TICKS) === 0) refreshHud();
 }
@@ -827,6 +845,7 @@ function clearEcosystem() {
   plantRenderer.rebuild(ecosystem.plants);
   plantRenderer.update(ecosystem.plants);
   healthBars.update(ecosystem.animals);
+  tracers.update(ecosystem.projectiles.list);
   if (ecosystem.populationChanged()) refreshHud();
 }
 
@@ -1274,6 +1293,7 @@ function syncSkyset() {
 let hudBeforeGame = true;
 gameEl.addEventListener('click', () => {
   game.on = !game.on;
+  game.applyWeaponChoice();   // the chip's choice in the new mode
   gameEl.classList.toggle('sel', game.on);
   gameEl.setAttribute('aria-pressed', String(game.on));
   gameEl.blur();
@@ -1283,9 +1303,9 @@ gameEl.addEventListener('click', () => {
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
-  // no Vision rays, Vitals, HUD, Collision or Animal damage chips in Survivor mode
+  // no Vision rays, Vitals, HUD, Collision, Animal damage or Weapon chips in Survivor mode
   syncSkyset();
-  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = game.on;
+  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = weaponEl.hidden = game.on;
   // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
   avgFpsEl.hidden = !game.on;
   if (game.on) avgFps.show();

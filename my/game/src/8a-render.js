@@ -20,7 +20,8 @@ import {
   BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
-  RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS
+  RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
+  BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
@@ -92,11 +93,11 @@ export function humanPetPack(share, bendLevel, shoulder, turn) {
   return petQuant(share, 0, 1, 63) + 64 * bendLevel + 256 * petQuant(shoulder, P.shoulder[0], P.shoulder[1], 255) +
     65536 * petQuant(turn, -P.turnMax, P.turnMax, 255);
 }
+// The shader's humanTurn on (y, z) about (cy, 0).
+export const rigTurnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
 // The petting hand's point in rig space at full crouch and reach.
 export function humanPetHand(bend, a1, turn, shoulderW) {
-  const R = HUMAN_RIG, P = HUMAN_PET, y0 = R.at(P.handAt);
-  // humanTurn on (y, z) about (cy, 0)
-  const turnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
+  const R = HUMAN_RIG, P = HUMAN_PET, y0 = R.at(P.handAt), turnYZ = rigTurnYZ;
   let [y, z] = turnYZ(y0, 0, R.elbow, P.elbow);
   [y, z] = turnYZ(y, z, R.shoulder, a1);
   const x0 = P.arm * R.shoulderX * shoulderW, dx = P.arm * (R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * shoulderW - x0;
@@ -105,6 +106,95 @@ export function humanPetHand(bend, a1, turn, shoulderW) {
   z = dx * s + z * c;
   [y, z] = turnYZ(y, z, R.hip, HUMAN_CROUCH.lean + bend);
   return { x, y: y - HUMAN_CROUCH_DROP, z };
+}
+
+// GUN POSE in iAct.w, negative so it never reads as a pet: aim share (5 bits), view pitch (7 bits), the draw's reach
+// share (5 bits) and hold share (5 bits), 22 bits in all (exact in a float).
+export const GUN_PACK = { aim: [1, 31], pitch: [32, 127], reach: [4096, 31], hold: [131072, 31] };   // [place, steps]
+export function humanGunPack(aim, pitch, reach, hold) {
+  const P = GUN_PACK;
+  return -(1 + P.aim[0] * petQuant(aim, 0, 1, P.aim[1]) + P.pitch[0] * petQuant(pitch, -Math.PI / 2, Math.PI / 2, P.pitch[1]) +
+    P.reach[0] * petQuant(reach, 0, 1, P.reach[1]) + P.hold[0] * petQuant(hold, 0, 1, P.hold[1]));
+}
+// The draw at progress p (0 tucked, 1 in hand at low ready): hold, the gun arm's share of its gun pose (rising to the
+// reach), and reach, its share of the reach behind the back (falling from the grab to low ready); smoothed.
+export function gunDrawShares(p, out) {
+  const g = GUN_DRAW.grabAt, ease = x => x * x * (3 - 2 * x);
+  out.hold = ease(Math.min(1, p / g));
+  out.reach = p < g ? 1 : 1 - ease((p - g) / (1 - g));
+  out.inHand = p >= g;   // the gun is in the hand past the grab, in the waistband before it
+  return out;
+}
+// The shader's gait terms for a standing body (upright 1) from its iGait and iAct values: swing, run and crouch shares,
+// the pelvis's lean (bendLean, no pet), the upper body's lean and the drop below the rest pose, rig units.
+export function humanGaitTerms(gait, act, out) {
+  const crouch = Math.max(-gait[3], 0), run = Math.max(gait[3], 0);
+  const sw = gait[2] * (1 - (1 - HUMAN_CROUCH.swingKept) * crouch);
+  out.bendLean = HUMAN_CROUCH.lean * crouch;
+  out.upperLean = sw * HUMAN_LEAN.swing + run * HUMAN_LEAN.run + out.bendLean + HUMAN_FIGHT.punchLean * act[0];
+  out.drop = HUMAN_LEG * (1 - Math.cos(sw * Math.sin(gait[1]))) * HUMAN_BOB + HUMAN_CROUCH_DROP * crouch;
+  return out;
+}
+// The arms' shoulder angle at full aim: straight along the view pitch, less the upper body's lean.
+const gunAimShoulder = (pitch, lean) => -Math.PI / 2 - pitch - lean;
+// The gun arm's shoulder and elbow angles (as the shader's gun block) at aim share `aim`, view pitch and upper lean.
+const gunArm = (aim, pitch, lean) => [GUN_POSE.holdShoulder + (gunAimShoulder(pitch, lean) - GUN_POSE.holdShoulder) * aim, GUN_POSE.holdElbow * (1 - aim)];
+// TWO HANDS (as the shader's gunHandTurn): the turn about the shoulder's vertical that brings a straight arm at aimA1
+// (side +1 left, -1 right) to put its grip-height axis `target` rig units from the centre line on its own side. Faded out
+// where the arm's forward reach is too short to get there (aimed near straight up or down).
+export function gunHandTurn(side, aimA1, shoulderW, target) {
+  const R = HUMAN_RIG, y0 = R.at(GUN_POSE.gripAt), L = R.shoulder - y0;
+  const dx = side * L * HUMAN_ARM_FLARE * shoulderW, dz = -L * Math.sin(aimA1);   // grip axis from the shoulder pivot
+  const w = side * (target - R.shoulderX * shoulderW), rho = Math.hypot(dx, dz);
+  const valid = Math.min(1, Math.max(0, (rho - Math.abs(w)) / 2));
+  return valid * (Math.acos(Math.min(1, Math.max(-1, w / rho))) - Math.atan2(dz, dx));
+}
+// The gun hand's grip in rig space and its barrel angle in the body's (y, z) (0 down, -pi/2 straight ahead), from
+// humanGaitTerms, with the arm fully in its gun pose (hold 1). Aiming, the arm turns in for two hands and the wrist keeps
+// the barrel along the view; `reach` pulls it toward the reach behind the back (as the shader's gun block).
+export function humanGunHand(aim, pitch, reach, terms, shoulderW, out) {
+  const R = HUMAN_RIG, s = GUN_POSE.arm, y0 = R.at(GUN_POSE.gripAt), [r1, r2] = gunArm(aim, pitch, terms.upperLean), D = GUN_DRAW.reach;
+  const a1 = r1 + (D.shoulder - r1) * reach, a2 = r2 + (D.elbow - r2) * reach;
+  let [y, z] = rigTurnYZ(y0, 0, R.elbow, a2);
+  [y, z] = rigTurnYZ(y, z, R.shoulder, a1);
+  const aimTurn = aim * gunHandTurn(s, gunAimShoulder(pitch, terms.upperLean), shoulderW, GUN_POSE.twoHand.gun);
+  const px = s * R.shoulderX * shoulderW, turn = aimTurn + (s * D.turn - aimTurn) * reach, out_ = s * D.abduct * reach;
+  let x0 = s * ((R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * shoulderW - GUN_POSE.gripInward) - px;
+  // the shader's abduction on (x, y) about the shoulder, then its turn on (x, z)
+  const ca = Math.cos(out_), sa = Math.sin(out_), v = y - R.shoulder;
+  [x0, y] = [x0 * ca - v * sa, R.shoulder + x0 * sa + v * ca];
+  const c = Math.cos(turn), sn = Math.sin(turn);
+  out.x = px + x0 * c - z * sn; z = x0 * sn + z * c;
+  [y, z] = rigTurnYZ(y, z, R.hip, terms.upperLean);
+  out.y = y - terms.drop; out.z = z;
+  out.angle = a1 + a2 + terms.upperLean;
+  return out;
+}
+// The tucked gun's grip in rig space at the small of the back and its turn (out.q): flat to the back, barrel down, grip
+// to the off-hand side, tilting with the pelvis's lean.
+// the model's axes in rig space: width out of the back (-z, as x = y cross z), slide toward the gun hand, barrel down
+const _waistTurn = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+  new THREE.Vector3(0, 0, -GUN_POSE.arm), new THREE.Vector3(GUN_POSE.arm, 0, 0), new THREE.Vector3(0, -1, 0)));
+const _waistLean = new THREE.Quaternion(), _xAxis = new THREE.Vector3(1, 0, 0);
+export function humanGunWaist(terms, waistW, out) {
+  const R = HUMAN_RIG, W = GUN_WAIST;
+  const [y, z] = rigTurnYZ(R.widthAt.waist + W.up, -W.back * waistW, R.hip, terms.bendLean);
+  out.x = GUN_POSE.arm * W.side * waistW; out.y = y - terms.drop; out.z = z;
+  (out.q ??= new THREE.Quaternion()).copy(_waistTurn).premultiply(_waistLean.setFromAxisAngle(_xAxis, terms.bendLean));
+  return out;
+}
+// A Glock from GUN_MODEL's boxes, one mesh, origin at the grip's centre, barrel along +z.
+export function buildGunMesh() {
+  const parts = GUN_MODEL.parts.map(([w, h, d, x, y, z, rake]) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.rotateX(rake);
+    g.translate(x, y, z);
+    return g;
+  });
+  const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ color: GUN_MODEL.color }));
+  mesh.castShadow = true;
+  mesh.visible = false;
+  return mesh;
 }
 
 // The people rig's per-instance attributes (4 floats each); every rig geometry carries all of them.
@@ -507,6 +597,15 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           op = mix(up, lp, k); on = normalize(mix(un, ln, k));
         }
       }
+      // TWO HANDS (as gunHandTurn): a straight arm's turn about its shoulder's vertical that puts its grip axis target
+      // from the centre line on its own side
+      float gunHandTurn(float side, float aimA1, float shoulderW, float target) {
+        float L = ${(HUMAN_RIG.shoulder - HUMAN_RIG.at(GUN_POSE.gripAt)).toFixed(4)};
+        float dx = side * L * ${HUMAN_ARM_FLARE.toFixed(3)} * shoulderW, dz = -L * sin(aimA1);
+        float w = side * (target - ${HUMAN_RIG.shoulderX.toFixed(3)} * shoulderW), rho = length(vec2(dx, dz));
+        float valid = clamp((rho - abs(w)) / 2.0, 0.0, 1.0);
+        return valid * (acos(clamp(w / rho, -1.0, 1.0)) - atan(dz, dx));
+      }
       float humanTorsoWidth(float y) { return ${HUMAN_TORSO_WIDTH}; }
       vec2 humanTurn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
       // rig space to world for this instance: body shape, walk cycle (joints turn about x), fight arms, lean, bob, size, facing
@@ -534,9 +633,14 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
         float run = max(iGait.w, 0.0) * upright, crouch = max(-iGait.w, 0.0);
         float t = iGait.y, sw = iGait.z * upright * (1.0 - ${(1 - HUMAN_CROUCH.swingKept).toFixed(3)} * crouch), s = sin(t) * rig.z, c = cos(t) * rig.z;
         // pet (iAct.w, humanPetPack): its reach share; the body bends further at the waist by it, to the pet's bend level
-        float petReach = mod(iAct.w, 64.0) / 63.0;
-        float petBend = ${HUMAN_PET.bend[0].toFixed(3)} + ${((HUMAN_PET.bend[1] - HUMAN_PET.bend[0]) / (PET_BEND_LEVELS - 1)).toFixed(4)} * mod(floor(iAct.w / 64.0), ${PET_BEND_LEVELS.toFixed(1)});
-        float a1 = 0.0, a2 = 0.0, a3 = 0.0, petTurn = 0.0;
+        float petW = max(iAct.w, 0.0);   // a negative iAct.w is the gun pose (humanGunPack), no pet
+        float petReach = mod(petW, 64.0) / 63.0;
+        float petBend = ${HUMAN_PET.bend[0].toFixed(3)} + ${((HUMAN_PET.bend[1] - HUMAN_PET.bend[0]) / (PET_BEND_LEVELS - 1)).toFixed(4)} * mod(floor(petW / 64.0), ${PET_BEND_LEVELS.toFixed(1)});
+        // upper body (head, neck, torso, arms) leans with the gait; in a crouch or a pet's bend the pelvis (3) tilts with
+        // it, so the waist stays joined and the pelvis's open top stays inside the torso
+        float bendLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch + petBend * petReach;
+        float upperLean = sw * ${HUMAN_LEAN.swing.toFixed(3)} + run * ${HUMAN_LEAN.run.toFixed(3)} + bendLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x * upright;   // the upper body's lean
+        float a1 = 0.0, a2 = 0.0, a3 = 0.0, armTurn = 0.0, armOut = 0.0;   // an arm's turn about its shoulder's vertical (pet sweep, two-hand aim, draw) and raise out from the side (draw)
         if (rig.y > 1.5) {
           a1 = -sw * s;
           a2 = sw * (0.3 + (2.1 + 1.4 * run) * max(c, 0.0));
@@ -554,9 +658,32 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           // pet: the petting arm takes the solved shoulder angle and the pet's elbow by the reach share, and turns about
           // its shoulder's vertical by the sweep angle
           float pet = petReach * step(0.5, ${HUMAN_PET.arm.toFixed(1)} * rig.z);
-          a1 = mix(a1, ${HUMAN_PET.shoulder[0].toFixed(3)} + ${(HUMAN_PET.shoulder[1] - HUMAN_PET.shoulder[0]).toFixed(3)} * mod(floor(iAct.w / 256.0), 256.0) / 255.0, pet);
+          a1 = mix(a1, ${HUMAN_PET.shoulder[0].toFixed(3)} + ${(HUMAN_PET.shoulder[1] - HUMAN_PET.shoulder[0]).toFixed(3)} * mod(floor(petW / 256.0), 256.0) / 255.0, pet);
           a2 = mix(a2, ${HUMAN_PET.elbow.toFixed(3)}, pet);
-          petTurn = pet * (floor(iAct.w / 65536.0) / 255.0 * ${(2 * HUMAN_PET.turnMax).toFixed(3)} - ${HUMAN_PET.turnMax.toFixed(3)});
+          armTurn = pet * (floor(petW / 65536.0) / 255.0 * ${(2 * HUMAN_PET.turnMax).toFixed(3)} - ${HUMAN_PET.turnMax.toFixed(3)});
+          // gun (humanGunPack): the gun arm holds low ready, raised straight along the view pitch by the aim share; the other
+          // arm joins it by the aim share, and both turn in so the hands meet (as humanGunHand)
+          float gunHeld = step(iAct.w, -0.5) * upright;
+          if (gunHeld > 0.0) {
+            // humanGunPack's fields: aim, pitch, the draw's reach and hold shares
+            float gv = -iAct.w - 1.0;
+            float gunAim = mod(gv, ${GUN_PACK.pitch[0].toFixed(1)}) / ${GUN_PACK.aim[1].toFixed(1)};
+            float gunPitch = mod(floor(gv / ${GUN_PACK.pitch[0].toFixed(1)}), ${(GUN_PACK.pitch[1] + 1).toFixed(1)}) / ${GUN_PACK.pitch[1].toFixed(1)} * ${Math.PI.toFixed(4)} - ${(Math.PI / 2).toFixed(4)};
+            float gunReach = mod(floor(gv / ${GUN_PACK.reach[0].toFixed(1)}), ${(GUN_PACK.reach[1] + 1).toFixed(1)}) / ${GUN_PACK.reach[1].toFixed(1)};
+            float gunHold = floor(gv / ${GUN_PACK.hold[0].toFixed(1)}) / ${GUN_PACK.hold[1].toFixed(1)};
+            float aimA1 = ${(-Math.PI / 2).toFixed(4)} - gunPitch - upperLean;   // straight along the view (gunAimShoulder)
+            float gunSide = step(0.5, ${GUN_POSE.arm.toFixed(1)} * rig.z);   // 1 on the gun arm, 0 on the support arm
+            // the gun arm: low ready raised by the aim, pulled to the reach behind the back by the reach (humanGunHand)
+            float readyA1 = mix(${GUN_POSE.holdShoulder.toFixed(3)}, aimA1, gunAim), readyA2 = ${GUN_POSE.holdElbow.toFixed(3)} * (1.0 - gunAim);
+            float gunA1 = mix(aimA1, mix(readyA1, ${GUN_DRAW.reach.shoulder.toFixed(3)}, gunReach), gunSide);
+            float gunA2 = mix(0.0, mix(readyA2, ${GUN_DRAW.reach.elbow.toFixed(3)}, gunReach), gunSide);
+            float w = gunHeld * gunHold * mix(gunAim, 1.0, gunSide);   // the gun arm by the hold, the support arm by the aim too
+            a1 = mix(a1, gunA1, w);
+            a2 = mix(a2, gunA2, w);
+            float aimTurn = gunAim * gunHandTurn(rig.z, aimA1, iShape.x, mix(${GUN_POSE.twoHand.support.toFixed(3)}, ${GUN_POSE.twoHand.gun.toFixed(3)}, gunSide));
+            armTurn = gunHeld * gunHold * mix(aimTurn, rig.z * ${GUN_DRAW.reach.turn.toFixed(3)}, gunReach * gunSide);
+            armOut = gunHeld * gunHold * gunReach * gunSide * rig.z * ${GUN_DRAW.reach.abduct.toFixed(3)};
+          }
         }
         // depth 1 takes none of the middle joint's bend, depth 2 and deeper all of it, a seam ring between them its share
         // (HUMAN_JOINT_BLEND); seamShare is that share, 0 to 1, for a seam ring (depth 1 to 2) and 0 or 1 elsewhere
@@ -568,26 +695,30 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           q = vec2(pivot.y, 0.0) + humanTurn(q - vec2(pivot.y, 0.0), a2);
           q = vec2(pivot.x, 0.0) + humanTurn(q - vec2(pivot.x, 0.0), a1);
         }
-        // the petting arm's sweep, before the lean (as humanPetHand)
-        if (petTurn != 0.0) {
-          vec2 sh = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * iShape.x, 0.0);
+        // an arm's raise out from the side (the draw) about its shoulder in the body's frontal plane, then its turn (the
+        // pet's sweep, the two-hand aim, the draw), before the lean (as humanPetHand, humanGunHand)
+        if (armOut != 0.0) {
+          vec2 so = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * iShape.x, ${HUMAN_RIG.shoulder.toFixed(3)});
           p.yz = q;
-          p.xz = sh + humanTurn(p.xz - sh, petTurn);
+          p.xy = so + humanTurn(p.xy - so, armOut);
           q = p.yz;
         }
-        // upper body (head, neck, torso, arms) leans with the gait; in a crouch or a pet's bend the pelvis (3) tilts with
-        // it, so the waist stays joined and the pelvis's open top stays inside the torso
-        float bendLean = ${HUMAN_CROUCH.lean.toFixed(3)} * crouch + petBend * petReach;
-        float upperLean = sw * 0.12 + run * 0.16 + bendLean + ${HUMAN_FIGHT.punchLean.toFixed(3)} * iAct.x * upright;   // the upper body's lean
+        if (armTurn != 0.0) {
+          vec2 sh = vec2(rig.z * ${HUMAN_RIG.shoulderX.toFixed(3)} * iShape.x, 0.0);
+          p.yz = q;
+          p.xz = sh + humanTurn(p.xz - sh, armTurn);
+          q = p.yz;
+        }
         float lean = (rig.x < 2.5 || abs(rig.y - 1.0) < 0.5) ? upperLean : (abs(rig.x - 3.0) < 0.5 ? bendLean : 0.0);
         // the waist seam ring (torso 2 and pelvis 3 share it, depth 1 to 2) takes seamShare of the way from the pelvis's lean
         // to the upper body's, so the waist stays closed when the torso leans over a pelvis that does not
         if (rig.w > 0.5 && rig.x > 1.5 && rig.x < 3.5) lean = mix(bendLean, upperLean, seamShare);
         q = vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0) + humanTurn(q - vec2(${HUMAN_RIG.hip.toFixed(3)}, 0.0), lean);
         p.yz = q;
-        p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * 0.85 + ${HUMAN_CROUCH_DROP.toFixed(3)} * crouch;
+        p.y -= ${HUMAN_LEG.toFixed(3)} * (1.0 - cos(sw * sin(t))) * ${HUMAN_BOB.toFixed(3)} + ${HUMAN_CROUCH_DROP.toFixed(3)} * crouch;   // as humanGaitTerms' drop
         n.yz = humanTurn(n.yz, a1 + a2 + a3);
-        n.xz = humanTurn(n.xz, petTurn);
+        n.xy = humanTurn(n.xy, armOut);
+        n.xz = humanTurn(n.xz, armTurn);
         n.yz = humanTurn(n.yz, lean);
         // knockdown: the body tips about its feet by down share x 90 degrees the way it was pushed (iDown.y, turned to
         // +z for the tip and back), raised by iDown.z so it lies on the ground instead of through it
@@ -2293,6 +2424,35 @@ export const graphics = {
 
 export const labels = new StatLabelSystem();
 export const visionRays = new VisionRaySystem();
+
+// TRACERS: each bullet in flight (ecosystem.projectiles) drawn as a TRACER_M streak behind it along its velocity.
+export class TracerRenderer {
+  constructor() {
+    this.positions = new Float32Array(BULLET_MAX * 2 * 3);
+    this.geo = new THREE.BufferGeometry();
+    this.geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    this.geo.setDrawRange(0, 0);
+    this.lines = new THREE.LineSegments(this.geo, new THREE.LineBasicMaterial({ color: TRACER_COLOR, transparent: true, opacity: 0.8 }));
+    this.lines.frustumCulled = false;
+    this.lines.visible = false;
+    scene.add(this.lines);
+  }
+
+  update(bullets) {
+    const n = Math.min(bullets.length, BULLET_MAX), P = this.positions;
+    for (let i = 0; i < n; i++) {
+      const b = bullets[i], back = TRACER_M / (Math.hypot(b.vx, b.vy, b.vz) || 1);   // seconds of flight the streak spans
+      const o = i * 6;
+      P[o] = b.x - b.vx * back; P[o + 1] = b.y - b.vy * back; P[o + 2] = b.z - b.vz * back;
+      P[o + 3] = b.x; P[o + 4] = b.y; P[o + 5] = b.z;
+    }
+    const attr = this.geo.attributes.position;
+    if (n > 0) { attr.clearUpdateRanges(); attr.addUpdateRange(0, n * 6); attr.needsUpdate = true; }
+    this.geo.setDrawRange(0, n * 2);
+    this.lines.visible = n > 0;
+  }
+}
+export const tracers = new TracerRenderer();
 export const animalRenderer = new AnimalRenderer();
 export const plantRenderer = new PlantRenderer();
 export class BlobShadows {

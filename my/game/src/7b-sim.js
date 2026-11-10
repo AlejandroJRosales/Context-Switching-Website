@@ -19,7 +19,8 @@ import {
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
   NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
   BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, GAME_START_HOUR, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
-  RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S
+  RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S,
+  BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe
@@ -28,10 +29,10 @@ import {
   scene
 } from './3-gfx-io.js';
 import {
-  providers, baseAt, surfaceY, surfaceFor
+  providers, _surf, baseAt, surfaceY, surfaceFor
 } from './4-provider.js';
 import {
-  collision, resolveCollisions, cover, occ, shellAt, isOpen
+  collision, resolveCollisions, cover, occ, shellAt, isOpen, segmentHit, clipSpanY
 } from './5-collision.js';
 import {
   foodBoxes
@@ -1642,6 +1643,140 @@ export class Plant extends Entity {
   }
 }
 
+// Entry t in [0, 1] of segment a + d t into a vertical cylinder (centre cx, cz, radius r, height lo..hi), or Infinity.
+function cylinderHit(ax, ay, az, dx, dy, dz, cx, cz, r, lo, hi) {
+  const fx = ax - cx, fz = az - cz, a2 = dx * dx + dz * dz, c = fx * fx + fz * fz - r * r;
+  let t0 = 0, t1 = 1;
+  if (a2 < 1e-12) { if (c > 0) return Infinity; }   // straight up or down: inside the circle or not
+  else {
+    const b = fx * dx + fz * dz, disc = b * b - a2 * c;
+    if (disc < 0) return Infinity;
+    const s = Math.sqrt(disc);
+    t0 = Math.max(0, (-b - s) / a2); t1 = Math.min(1, (-b + s) / a2);
+  }
+  return clipSpanY(t0, t1, ay, dy, lo, hi);
+}
+
+// Entry t in [0, 1] of segment a + d t into the car's box (Ecosystem.fallBox's shape), or Infinity.
+function boxHit(ax, ay, az, dx, dy, dz, b) {
+  const rx = ax - b.cx, rz = az - b.cz;
+  const slabs = [   // [start, change per t, half size] along the box's front and right axes
+    [rx * b.fx + rz * b.fz, dx * b.fx + dz * b.fz, b.halfLen],
+    [rx * b.sx + rz * b.sz, dx * b.sx + dz * b.sz, b.halfWid]
+  ];
+  let t0 = 0, t1 = 1;
+  for (const [p, d, h] of slabs) {
+    if (d === 0) { if (p < -h || p > h) return Infinity; continue; }
+    const u = (-h - p) / d, v = (h - p) / d;
+    t0 = Math.max(t0, Math.min(u, v)); t1 = Math.min(t1, Math.max(u, v));
+    if (t0 > t1) return Infinity;
+  }
+  return clipSpanY(t0, t1, ay, dy, b.y, b.y + b.top);
+}
+
+// PROJECTILES: bullets stepped once per sim tick after contacts; the first thing on a tick's segment stops one.
+export class Projectiles {
+  constructor(eco) {
+    this.eco = eco;
+    this.list = [];   // bullets in flight, oldest first
+    this._q = [];
+    this._hit = { t: Infinity, body: null, zone: null };   // cast's result: t along the segment (Infinity: clear), the body hit or null, its HIT_DAMAGE zone
+  }
+
+  clear() { this.list.length = 0; }
+
+  // A bullet of `gun` from (x, y, z) along unit (dx, dy, dz); `hurts`: it costs a body health.
+  fire(shooter, x, y, z, dx, dy, dz, gun, hurts) {
+    if (this.list.length >= BULLET_MAX) this.list.shift();
+    const v = gun.muzzleMS;
+    this.list.push({ x, y, z, vx: dx * v, vy: dy * v, vz: dz * v, gun, drag: bulletDragPerM(gun), shooter, hurts, firedAt: this.eco.time });
+  }
+
+  // Ground or water top at (x, z); -Infinity with no world.
+  surfaceAt(x, z) {
+    if (!providers.active) return -Infinity;
+    providers.active.surface(x, z, _surf);
+    return _surf.base;
+  }
+
+  // What segment a to b meets first: solids and building slabs, the ground and water, the car, live bodies.
+  cast(ax, ay, az, bx, by, bz, out = this._hit) {
+    const eco = this.eco, dx = bx - ax, dy = by - ay, dz = bz - az;
+    let best = segmentHit(ax, ay, az, bx, by, bz), body = null, zone = null;
+    // ground and water tops, sampled; the crossing is placed between the samples
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / BULLET_GROUND_STEP_M));
+    let h0 = ay - this.surfaceAt(ax, az), t0 = 0;   // height over the surface at t0
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      if (t0 >= best) break;
+      const h1 = ay + dy * t - this.surfaceAt(ax + dx * t, az + dz * t);
+      if (h1 < 0) { const th = h0 > 0 ? t0 + (t - t0) * h0 / (h0 - h1) : t0; if (th < best) best = th; break; }
+      h0 = h1; t0 = t;
+    }
+    const box = eco.fallBox();
+    if (box) best = Math.min(best, boxHit(ax, ay, az, dx, dy, dz, box));
+    if (eco.animalGrid) {
+      const now = eco.time, r = NPC_RADIUS;
+      const reach = Math.hypot(dx, dz) / 2 + r + Math.sqrt(eco.drift2);   // grid positions can be a few ticks old
+      const nq = eco.animalGrid.queryInto(this._q, ax + dx / 2, az + dz / 2, reach);
+      for (let i = 0; i < nq; i++) {
+        const a = this._q[i];
+        if (!a.alive) continue;
+        const feet = a.position.y - a.footLift() * NPC_UNIT;
+        const top = feet + (a.isDown(now) ? BULLET_DOWN_HIT_M : a.bodyHeightM());
+        const t = cylinderHit(ax, ay, az, dx, dy, dz, a.position.x, a.position.z, r, feet, top);
+        if (!(t < best)) continue;
+        const z = this.zoneOf(a, ax, ay, az, dx, dy, dz, t, feet, now);
+        if (z !== null) { best = t; body = a; zone = z; }
+      }
+    }
+    out.t = best; out.body = body; out.zone = zone;
+    return out;
+  }
+
+  // HIT ZONES: the HIT_DAMAGE zone a segment entering a's column at t strikes (HIT_ZONES), or null for a miss past the head.
+  zoneOf(a, ax, ay, az, dx, dy, dz, t, feet, now) {
+    if (a.isDown(now)) return 'body';
+    const Z = HIT_ZONES[a.type], share = (ay + dy * t - feet) / a.bodyHeightM();   // height share up the body
+    if (share < Z.limbBelow) return 'limb';
+    const cx = a.position.x, cz = a.position.z, h2 = dx * dx + dz * dz;
+    if (a.type === 'human') {
+      // the line's least distance from the body's axis, metres (a straight-down shot: its point's)
+      const off = h2 > 1e-12 ? Math.abs(dx * (cz - az) - dz * (cx - ax)) / Math.sqrt(h2) : Math.hypot(cx - ax, cz - az);
+      const k = a.rigScale();   // metres per rig unit
+      if (share >= Z.headAbove) return off <= Z.headR * k ? 'head' : null;
+      return off <= Z.torsoR * k * (a.look ? a.look.shape.chest : 1) ? 'body' : 'limb';
+    }
+    // animals: the front of the column is the head
+    const fwd = (ax + dx * t - cx) * Math.sin(a.facingAngle) + (az + dz * t - cz) * Math.cos(a.facingAngle);
+    return fwd >= Z.headFwd * NPC_RADIUS ? 'head' : 'body';
+  }
+
+  // One tick: drag (implicit, dv/dt = -k v |v|) and gravity, then the move; a hit or an old or out-of-world bullet ends.
+  step() {
+    const L = this.list;
+    if (L.length === 0) return;
+    const eco = this.eco, dt = NPC_TICK_S, now = eco.time, hit = this._hit;
+    for (let i = L.length - 1; i >= 0; i--) {
+      const b = L[i];
+      const keep = 1 / (1 + b.drag * Math.hypot(b.vx, b.vy, b.vz) * dt);
+      b.vx *= keep; b.vy = b.vy * keep - BULLET_G * dt; b.vz *= keep;
+      const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt, nz = b.z + b.vz * dt;
+      this.cast(b.x, b.y, b.z, nx, ny, nz, hit);
+      if (hit.t <= 1) { if (hit.body) this.strike(b, hit.body, hit.zone); L.splice(i, 1); continue; }
+      b.x = nx; b.y = ny; b.z = nz;
+      if (now - b.firedAt > b.gun.flightS || nx < eco.minX || nx > eco.maxX || nz < eco.minZ || nz > eco.maxZ) L.splice(i, 1);
+    }
+  }
+
+  // A body hit: the bullet's impact pushes it against its hold (Ecosystem.impact); a hurting bullet costs its zone's share
+  // of the body's full health (HIT_DAMAGE).
+  strike(b, body, zone) {
+    const hit = Ecosystem.impact(b.gun.bulletKg, body.bodyMassKg(), Math.hypot(b.vx, b.vy, b.vz));
+    this.eco.applyHit(body, b.shooter, b.hurts ? HIT_DAMAGE[zone] * body.maxHealth : 0, hit.pushN, false);
+  }
+}
+
 // ECOSYSTEM: the Arena's World loop for every provider; stepped from frame().
 export class Ecosystem {
   static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
@@ -1694,6 +1829,7 @@ export class Ecosystem {
     this.contact = null;
     this._contactR = Ecosystem.CONTACT_DIST;
     this._bumpVel = { x: 0, z: 0 };   // handleCollisions' scratch for takeBumpVelocity
+    this.projectiles = new Projectiles(this);   // bullets in flight, stepped after contacts
   }
 
   // SIM CLOCK: sim seconds since init; pauses with the sim.
@@ -1714,6 +1850,7 @@ export class Ecosystem {
     this.animals.length = 0;
     this.corpses.length = 0;
     this.dropFalls();
+    this.projectiles.clear();
     this.plants.length = 0;
     this._plantAdds.length = 0;
     this._plantDrops.length = 0;
@@ -1738,6 +1875,7 @@ export class Ecosystem {
     this._plantDrops.length = 0;
     this.plantsDied = false;
     this.ticks = 0;
+    this.projectiles.clear();
     this._animalGridDrops.length = 0;
     const b = provider.bounds;
     this.minX = b.minX; this.maxX = b.maxX;
@@ -2013,6 +2151,30 @@ export class Ecosystem {
     this.corpses.push(a);
     if (this.corpses.length > CORPSE_MAX) this.corpses.shift();
   }
+  // CARRION, one tick: each body is eaten whole (feedOn) by the first hungry, standing animal touching it whose species
+  // eats that kind (CARRION_MASK); an eaten body is gone.
+  eatCorpses() {
+    const c = this.corpses, cg = this.contact, items = cg.items, start = cg.start, now = this.time;
+    for (let i = c.length - 1; i >= 0; i--) {
+      const body = c[i], bit = 1 << body.typeId, px = body.position.x, pz = body.position.z;
+      const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
+      eat: for (let q = 0; q < nh; q++) for (let k = start[hs[q]], kEnd = start[hs[q] + 1]; k < kEnd; k++) {
+        const a = items[k];
+        if (!a.alive || (CARRION_MASK[a.typeId] & bit) === 0 || a.foodNeed <= 0 || a.isDown(now) || a.noEatUntil > now) continue;
+        if (tools.distSq(px, pz, a.position.x, a.position.z) >= Ecosystem.CONTACT_DIST_SQ) continue;
+        a.feedOn(body);
+        this.removeCorpse(body);
+        break eat;
+      }
+    }
+  }
+  // CORPSES: a body taken away now (eaten, harvested); its fall ends on the next stepFalls.
+  removeCorpse(body) {
+    const i = this.corpses.indexOf(body);
+    if (i < 0) return;
+    body.corpseUntil = this.time;
+    this.corpses.splice(i, 1);
+  }
   // CORPSES: drop the ones past their time (oldest first)
   expireCorpses() {
     const c = this.corpses, now = this.time;
@@ -2200,6 +2362,8 @@ export class Ecosystem {
     this.handleCollisions();
     perfProbe.add('collisions', tCollisions);
     for (const f of this.afterContacts) f(dt);
+    this.projectiles.step();   // before deaths are counted, so a shot kill leaves its corpse this tick
+    this.eatCorpses();
 
     this.expireCorpses();
     for (let i = this.animals.length - 1; i >= 0; i--) {

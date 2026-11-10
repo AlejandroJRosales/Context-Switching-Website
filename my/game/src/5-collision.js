@@ -214,6 +214,95 @@ export function ceilingAt(x, z, fromHead, toHead) {
   return best;
 }
 
+// SEGMENT HITS (bullets): the first t in [0, 1] where segment a to b enters a solid or a building's roof or floor slab.
+
+// Entry t of a span [t0, t1] clipped to where y = ay + dy t is within lo..hi, or Infinity.
+export function clipSpanY(t0, t1, ay, dy, lo, hi) {
+  if (dy === 0) return ay >= lo && ay <= hi && t0 <= t1 ? t0 : Infinity;
+  const u = (lo - ay) / dy, v = (hi - ay) / dy;
+  const s0 = Math.max(t0, Math.min(u, v)), s1 = Math.min(t1, Math.max(u, v));
+  return s0 <= s1 ? s0 : Infinity;
+}
+
+// Pushes the t of each crossing of segment (ax, az) + (dx, dz) t with the edges of ring `pts` into `out`.
+function ringCrossings(pts, ax, az, dx, dz, out) {
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const ex = pts[i][0] - pts[j][0], ez = pts[i][1] - pts[j][1];
+    const den = dx * ez - dz * ex;
+    if (den === 0) continue;   // parallel to the edge
+    const qx = pts[j][0] - ax, qz = pts[j][1] - az;
+    const t = (qx * ez - qz * ex) / den, s = (qx * dz - qz * dx) / den;
+    if (t >= 0 && t <= 1 && s >= 0 && s < 1) out.push(t);
+  }
+}
+
+// First entry t into the inside spans (crossings `ts`, inside at t = 0 when `in0`) within height lo..hi, or Infinity.
+function firstInside(ts, in0, ay, dy, lo, hi) {
+  let inside = in0, from = 0;
+  for (let k = 0; k <= ts.length; k++) {
+    const to = k < ts.length ? ts[k] : 1;
+    if (inside) { const t = clipSpanY(from, to, ay, dy, lo, hi); if (t < Infinity) return t; }
+    inside = !inside; from = to;
+  }
+  return Infinity;
+}
+
+const _ts = [];   // segmentHit's crossings scratch
+let _shellStamp = new Uint32Array(0), _shellStampNo = 0;   // shells visited this query
+export function segmentHit(ax, ay, az, bx, by, bz) {
+  const C = GRID_CELL, dx = bx - ax, dy = by - ay, dz = bz - az;
+  if (_shellStamp.length !== collision.shells.length) { _shellStamp = new Uint32Array(collision.shells.length); _shellStampNo = 0; }
+  if (++collision.stampNo >= 0xffffffff) { collision.solidStamp.fill(0); collision.stampNo = 1; }
+  if (++_shellStampNo >= 0xffffffff) { _shellStamp.fill(0); _shellStampNo = 1; }
+  let cx = Math.floor(ax / C), cz = Math.floor(az / C);
+  const ex = Math.floor(bx / C), ez = Math.floor(bz / C);
+  const sx = dx > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+  const tdx = dx !== 0 ? C / Math.abs(dx) : Infinity, tdz = dz !== 0 ? C / Math.abs(dz) : Infinity;
+  let tmx = dx !== 0 ? (dx > 0 ? (cx + 1) * C - ax : ax - cx * C) / Math.abs(dx) : Infinity;
+  let tmz = dz !== 0 ? (dz > 0 ? (cz + 1) * C - az : az - cz * C) / Math.abs(dz) : Infinity;
+  let best = Infinity;
+  for (let guard = 0; guard < 1024; guard++) {
+    const key = cellKey(cx, cz);
+    const bucket = collision.wallGrid.get(key);
+    if (bucket) {
+      for (const idx of bucket) {
+        if (collision.solidStamp[idx] === collision.stampNo) continue;
+        collision.solidStamp[idx] = collision.stampNo;
+        const w = collision.gridWalls[idx];
+        if (Math.max(ax, bx) < w.minX || Math.min(ax, bx) > w.maxX || Math.max(az, bz) < w.minZ || Math.min(az, bz) > w.maxZ) continue;
+        _ts.length = 0;
+        ringCrossings(w.pts, ax, az, dx, dz, _ts);
+        _ts.sort((p, q) => p - q);
+        const t = firstInside(_ts, pointInRing(w.pts, ax, az), ay, dy, w.base, w.top);
+        if (t < best) best = t;
+      }
+    }
+    const sb = collision.shellGrid.get(key);
+    if (sb) {
+      for (const idx of sb) {
+        if (_shellStamp[idx] === _shellStampNo) continue;
+        _shellStamp[idx] = _shellStampNo;
+        const s = collision.shells[idx];
+        if (Math.max(ax, bx) < s.minX || Math.min(ax, bx) > s.maxX || Math.max(az, bz) < s.minZ || Math.min(az, bz) > s.maxZ) continue;
+        _ts.length = 0;
+        ringCrossings(s.pts, ax, az, dx, dz, _ts);
+        for (const h of s.holes) ringCrossings(h, ax, az, dx, dz, _ts);
+        _ts.sort((p, q) => p - q);
+        const in0 = pointInShell(s, ax, az);
+        // the roof slab (ceil..top) and everything under the floor (from its base when raised)
+        const t = Math.min(firstInside(_ts, in0, ay, dy, s.ceil, s.top),
+          firstInside(_ts, in0, ay, dy, s.raised ? s.base : -Infinity, s.floor));
+        if (t < best) best = t;
+      }
+    }
+    if (cx === ex && cz === ez) break;
+    const exitT = Math.min(tmx, tmz);   // where the segment leaves this cell
+    if (best <= exitT || exitT > 1) break;
+    if (tmx < tmz) { tmx += tdx; cx += sx; } else { tmz += tdz; cz += sz; }
+  }
+  return best;
+}
+
 // COVER: solids that block NPC sight (building and cabin walls, parked cars, lamp posts), each a convex quad
 // with a height range. Doorways are gaps between wall pieces, so NPCs see through open doors.
 export const cover = {

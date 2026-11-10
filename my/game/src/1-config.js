@@ -523,8 +523,9 @@ export const NPC_REF_MASS_KG = {
 
 // SPECIES: per-type stats in Arena units; see Ecosystem.fightHit for pairs.
 export const SPECIES = {
-  human: { brain: true, hunts: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
-  coyote: { brain: false, hunts: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
+  // carrion: the dead bodies (Ecosystem.corpses) a species eats on contact; the player harvests the human list's as meat
+  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
+  coyote: { brain: false, hunts: { deer: true, human: true }, carrion: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
@@ -556,6 +557,8 @@ export const NPC_TYPE_COUNT = NPC_TYPES.length;
 export const HUMAN_TYPE_ID = NPC_TYPE_IDS.human;
 export const HUNTS_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
 export const HUNTED_BY_MASK = NPC_TYPES.map(t => NPC_TYPES.reduce((m, h, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
+// dead bodies each species eats (SPECIES carrion), as bit sets of ids
+export const CARRION_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].carrion?.[t] === true ? m | (1 << i) : m, 0));
 // night quarry
 export const NIGHT_PREY_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].nightPrey?.[t] === true ? m | (1 << i) : m, 0));
 // ids of each species' hunts keys, in key order
@@ -604,6 +607,8 @@ export const HUMAN_JOINT_BLEND = 0.5;   // bend share a seam ring takes
 export const HUMAN_LEG = HUMAN_RIG.hip - HUMAN_RIG.foot;   // hip to sole, rig units
 // CROUCH POSE (radians): the body drops what the legs lose.
 export const HUMAN_CROUCH = { hip: -1.0, knee: 1.9, lean: 0.35, arm: -0.4, elbow: -0.5, swingKept: 0.6 };
+export const HUMAN_LEAN = { swing: 0.12, run: 0.16 };   // upper body's forward lean per hip swing and per run share, radians
+export const HUMAN_BOB = 0.85;   // the body's drop per unit of a leg's swing rise
 export const HUMAN_FIGHT = NPC_FIGHT_MOVES.human;   // guard and punch arm angles, radians
 export const HUMAN_CROUCH_DROP = (HUMAN_RIG.hip - HUMAN_RIG.knee) * (1 - Math.cos(HUMAN_CROUCH.hip)) +
   (HUMAN_RIG.knee - HUMAN_RIG.foot) * (1 - Math.cos(HUMAN_CROUCH.knee + HUMAN_CROUCH.hip));   // rig units
@@ -1068,7 +1073,9 @@ export const SURVIVOR_CONFIG = {
       // a kill feeds its starting health
       meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } },
       // mends its INJURIES
-      bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 }
+      bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 },
+      // a rare find; `weapon` names its WEAPONS entry
+      glock: { icon: '🔫', label: 'Glock 19', action: 'equip', weapon: 'glock19', loot: 2 }
     }
   },
   // INJURIES: a hit or hurting fall may cause one until an item that `cures` it is used; noRun stops sprinting.
@@ -1145,7 +1152,7 @@ export const TAP_SLOP = 12;           // px drift still counted as a tap
 export const TAP_SWALLOW_MS = 600;    // a click this soon after is the same tap
 export const TAP_BUTTONS = '#fly, #car, #gear, #settings button';   // tap buttons (pedals, climb and #use act on press)
 // outside-sheet buttons cancel long press at touchstart
-export const HOLD_SAFE = '#fly, #car, #use, .pedal, #climb button, #gear';
+export const HOLD_SAFE = '#fly, #car, #use, .pedal, #aim, #draw, #climb button, #gear';
 
 // CAR: kinematic bicycle model, three collision circles, chase camera.
 
@@ -1208,8 +1215,96 @@ export const CAM_FOLLOW = 5;       // 1/s yaw catch-up
 export const CAM_LOOK_HOLD = 1500;    // ms after the last look before easing back
 
 // Parked beside a cabin's doorway, nose the door's way.
+// CAR ENTRY AND EXIT: places beside the car, [right, forward] in metres before CAR_SCALE, tried in order on getting out;
+// the first is the driver's door, walked to on getting in. The player walks to it at walking speed (at most walkMaxS),
+// then ducks and slides into the seat over slideS (getting out: from the seat to the place found), the head headroomM
+// under the roof.
+export const CAR_DOOR_SPOTS = [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]];
+export const CAR_TRANSIT = { walkMaxS: 1.5, slideS: 0.5, seat: [-0.3, 0.05], headroomM: 0.1 };
 export const CABIN_CAR_GAP = 1.5;       // clear ground from cabin floor edge to the car's rear
 export const CABIN_CAR_WALKWAY = 1.2;   // clear ground from doorway edge to the car's side
+
+// WEAPONS: guns by kind (game.fire); their bullets are sim projectiles (Projectiles in 7b-sim).
+export const WEAPONS = {
+  glock19: {
+    magazine: 15,         // rounds per standard magazine
+    reserve: 30,          // spare rounds a found gun comes with
+    shotS: 0.1,           // least seconds between shots (semi-auto)
+    reloadS: 2,           // seconds to change magazines
+    bulletKg: 0.00804,    // 124 gr 9x19 mm bullet
+    diameterM: 0.00901,   // bullet diameter
+    muzzleMS: 350,        // approx. 124 gr from a 4 in barrel (~1150 ft/s)
+    cd: 0.3,              // placeholder drag coefficient, round nose, subsonic
+    flightS: 3            // a bullet still flying after this many seconds is dropped
+  }
+};
+export const BULLET_G = CAR_G;   // m/s^2 bullet drop
+// 1/m: drag deceleration over speed squared, 0.5 x air density x Cd x area / mass
+export const bulletDragPerM = w => 0.5 * AIR_DENSITY * w.cd * Math.PI * (w.diameterM / 2) ** 2 / w.bulletKg;
+export const BULLET_MAX = 64;               // bullets in flight at most; the oldest goes past it
+export const BULLET_GROUND_STEP_M = 0.5;    // ground and water sampled this often along a bullet's path
+export const BULLET_DOWN_HIT_M = 0.35;      // height a knocked-down or lying body can be hit within
+// HIT ZONES (Projectiles.zoneOf): a hit costs this share of the body's full health by where it lands
+export const HIT_DAMAGE = { head: 1, body: 1 / 3, limb: 1 / 5 };
+// where a standing body's zones lie: limbs under limbBelow (share of body height); people: head over headAbove within
+// headR, torso within torsoR (rig units across, by the chest width); animals: head the front headFwd share of the radius.
+// A shot at head height past the head misses; a lying body is all body.
+export const HIT_ZONES = {
+  human: { limbBelow: 0.53, headAbove: 0.864, headR: 1.8, torsoR: 3.75 },   // hip joint, chin ring, head and chest rings (buildHumanGeometry)
+  deer: { limbBelow: 0.5, headFwd: 0.5 },     // legs under the 10-unit body (NPC_SIZE.deer)
+  coyote: { limbBelow: 0.45, headFwd: 0.5 }   // legs under the 7-unit body (NPC_SIZE.coyote)
+};
+export const BULLET_AIM_M = 300;            // reach of the crosshair ray that sets where a shot goes
+export const TRACER_M = 1.5;                // drawn streak behind a bullet
+export const TRACER_COLOR = 0xffe9a0;
+// Observer's Weapon chip: this item in hand with this reserve; carried into Survivor, it has the found gun's reserve
+export const OBSERVER_WEAPON = { item: 'glock', reserve: Infinity };
+// GUN POSE (iAct.w < 0, humanGunPack): the gun arm (-1 right, as HUMAN_PET's) holds low ready, and the Aim button raises
+// it straight along the view by the aim share; angles as HUMAN_CROUCH's, radians. gripAt: the grip's height up the rig.
+export const GUN_POSE = {
+  arm: -1, holdShoulder: -0.4, holdElbow: -0.9, gripAt: 0.44, gripInward: 0.15,
+  aimS: 0.2,      // seconds to raise or lower the gun fully
+  zoom: 1.6,      // view magnification at full aim
+  // two hands at full aim: each arm turns in about its shoulder so its hand's axis lands this far from the centre line,
+  // rig units on its own side (the support arm's hand wraps the gun hand)
+  twoHand: { gun: 0.3, support: 0.6 }
+};
+// tucked gun at the small of the back, flat against it: barrel down the waistband, grip pointing to the off-hand side
+// (as a gun-hand reach behind the back meets it). Grip centre in rig units from the waist ring's centre: `side` toward
+// the gun hand, `up`, and `back` behind; side and back scale with waist width.
+export const GUN_WAIST = { side: 0.3, up: 0.5, back: 2.35 };
+// DRAW AND HOLSTER over drawS: the gun arm swings from its pose to `reach` (behind the back, at the gun) and takes the gun
+// at grabAt of the way, then brings it to low ready (holstering runs it backward). reach: shoulder and elbow angles (the
+// elbow bends the arm's other way, which with the turn is the shoulder rolling in), the arm raised out from the side
+// (abduct) and its turn about the shoulder's vertical, both times the arm's side: the elbow goes out and back, and the
+// forearm crosses behind the back. Solved so the hand meets the grip and no part of the arm passes through the torso on
+// the way from hanging or from low ready. Getting in the car holsters first.
+export const GUN_DRAW = { drawS: 0.7, grabAt: 0.45, reach: { shoulder: -0.5, elbow: 1.8, abduct: 0.35, turn: -1.65 } };
+// 1st person: the gun's grip in camera space (metres; -z ahead), low ready to aimed (the sights' tops on the eye line,
+// so they sit on the crosshair), and its muzzle-up tilt at low ready, radians (negative: muzzle down)
+export const GUN_VIEW = { hold: [0.17, -0.17, -0.38], aim: [0, -0.084, -0.32], holdPitch: -0.12, drawFrom: [0.25, -0.5, -0.3] };   // drawFrom: where a drawn gun rises from
+// RECOIL per shot: the view climbs `kick` radians and settles back over recoverS (exponential); the 1st-person gun also
+// moves back backM at the kick
+export const GUN_RECOIL = { kick: 0.06, recoverS: 0.12, backM: 0.03 };
+// GLOCK MODEL, metres, origin at the grip's centre, barrel along +z: [width, height, length, x, y, z, rake]
+export const GUN_MODEL = {
+  color: 0x1c1d1f,
+  parts: [
+    [0.028, 0.095, 0.045, 0, 0, 0, 0.35],          // grip, raked back
+    [0.026, 0.032, 0.187, 0, 0.062, 0.053, 0],     // slide (Glock 19: 187 mm long)
+    [0.024, 0.018, 0.12, 0, 0.037, 0.07, 0],       // frame under the slide
+    [0.008, 0.022, 0.04, 0, 0.012, 0.045, 0],      // trigger guard
+    // IRON SIGHTS on the slide's top (y 0.078): a front post and a rear notch of two blocks
+    [0.0035, 0.006, 0.004, 0, 0.081, 0.138, 0],    // front sight post
+    [0.005, 0.006, 0.005, 0.0042, 0.081, -0.032, 0],   // rear sight, left of the notch
+    [0.005, 0.006, 0.005, -0.0042, 0.081, -0.032, 0]   // rear sight, right of the notch
+  ]
+};
+export const AIM_BUTTON_GAP_PX = 12;   // the Aim button's gap left of the attack button
+// the attack button's face while a gun is in hand
+export const BULLET_ICON_SVG = '<svg viewBox="0 0 24 24" width="1.5em" height="1.5em" aria-hidden="true">' +
+  '<path d="M9 10 Q12 1 15 10 Z" fill="#c87a4a"/><rect x="9" y="10" width="6" height="10" fill="#d4a93a"/>' +
+  '<rect x="8.5" y="19.5" width="7" height="2" fill="#b38b2c"/></svg>';
 
 // SETTINGS
 

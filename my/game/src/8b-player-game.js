@@ -15,7 +15,8 @@ import {
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
-  CABIN_CAR_WALKWAY, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS
+  CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON,
+  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, AIM_BUTTON_GAP_PX, BULLET_ICON_SVG
 } from './1-config.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate
@@ -38,7 +39,7 @@ import {
 } from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
-  HUMAN_INSTANCE_ATTRS, writeHumanLook
+  HUMAN_INSTANCE_ATTRS, writeHumanLook, humanGunPack, humanGaitTerms, humanGunHand, humanGunWaist, buildGunMesh, gunDrawShares
 } from './8a-render.js';
 
 export const dotEl = document.getElementById('dot');
@@ -543,7 +544,7 @@ export const pov = {
     gait.needsUpdate = true;
     const act = b.geometry.attributes.iAct;
     humanFightAct(game.avatar, ecosystem.time, act.array, 0);
-    act.array[3] = petting.act();
+    act.array[3] = gunView.inHand ? humanGunPack(gunView.aim, player.pitch, gunView.shares.reach, gunView.shares.hold) : petting.act();
     act.needsUpdate = true;
     // knocked down: ragdoll or lying pose (AnimalRenderer.bodyDown). Its ground is the feet while braced (standing or
     // swimming); airborne, the surface under the body (supportAt from the feet down), so a mid-jump fall reaches the floor.
@@ -746,12 +747,164 @@ export const petting = {
   }
 };
 
+// GUN VIEW: the gun in the hand (game.weapon, unless petting), else tucked flat at the small of the back while one is
+// carried; in 1st person a view model before the camera. draw and holster animate between them (GUN_DRAW); Aim
+// (toggleAim: the Aim button, right mouse) raises it along the view and zooms in.
+export const gunView = {
+  hand: null, waist: null, view: null,   // meshes: the hand's and the waistband's on the 3rd-person body, the 1st-person one
+  drawP: 0,              // draw progress, 0 tucked to 1 in hand (gunDrawShares)
+  drawDir: 0,            // +1 drawing, -1 holstering, 0 still
+  afterHolster: null,    // run once a holster ends (getting in the car)
+  carGun: null,          // the gun holstered to get in the car, drawn again on getting out
+  shares: { hold: 0, reach: 1, inHand: false },   // gunDrawShares(drawP)
+  aim: 0,                // aim share, 0 low ready to 1 aimed
+  inHand: false,         // the gun arm is in its gun pose this frame (a gun drawn or being drawn, not petting)
+  aimOn: false,          // Aim toggled on; off whenever the gun leaves the hand
+  aiming: false,         // Aim is on with the gun drawn and the body free to aim
+  recoil: 0,             // radians of the view's recoil climb not yet settled back
+  baseFov: NaN,          // the camera's own fov, before the aim zoom
+  _terms: {}, _at: {}, _w: {}, _v: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Quaternion(), _hq: new THREE.Quaternion(),
+  _flip: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI),
+
+  // the meshes, once the body exists
+  build() {
+    this.hand = buildGunMesh(); this.waist = buildGunMesh(); this.view = buildGunMesh();
+    pov.body.add(this.hand, this.waist);
+    this.view.castShadow = false;
+    scene.add(this.view);
+    this.baseFov = camera.fov;
+  },
+
+  // drawn all the way and still: it may aim and fire
+  get ready() { return game.weapon !== null && this.drawP === 1 && this.drawDir === 0; },
+
+  // the gun's place with no animation (game.equip): in hand for a gun, tucked for none
+  settle(drawn) { this.drawP = drawn ? 1 : 0; this.drawDir = 0; this.afterHolster = null; },
+
+  // Draw `item` from the back (or turn a holster of it around).
+  draw(item) {
+    if (game.weapon !== item) { game.equip(item, false); this.drawP = 0; }
+    this.drawDir = 1; this.afterHolster = null;
+    wake();
+  },
+
+  // Put the gun in hand back behind the back; `then` runs once it is there (now, with none in hand).
+  holster(then = null) {
+    if (game.weapon === null) { if (then) then(); return; }
+    this.drawDir = -1; this.afterHolster = then; this.aimOn = false;
+    wake();
+  },
+
+  // Aim on or off, with a gun drawn.
+  toggleAim() { this.aimOn = !this.aimOn && this.ready; wake(); },
+
+  // RECOIL: a shot climbs the view (player.pitch, so the next shot goes higher until it settles); step settles it back.
+  kick() {
+    const to = Math.min(LOOK_PITCH_MAX, player.pitch + GUN_RECOIL.kick);
+    this.recoil += to - player.pitch;
+    player.pitch = to;
+    wake();
+  },
+
+  // In the car: no aim and no view model (the body and its guns hide with pov.hideBody).
+  stow() {
+    this.aimOn = this.aiming = false; this.aim = 0; this.recoil = 0;
+    if (this.view) this.view.visible = false;
+    if (!Number.isNaN(this.baseFov) && camera.fov !== this.baseFov) { camera.fov = this.baseFov; camera.updateProjectionMatrix(); }
+  },
+
+  // Before pov.apply: the draw's progress, what is drawn where, and the aim share and zoom.
+  step(dt) {
+    if (this.drawDir !== 0) {
+      this.drawP = Math.min(1, Math.max(0, this.drawP + this.drawDir * dt / GUN_DRAW.drawS));
+      if (this.drawP === 1) this.drawDir = 0;
+      else if (this.drawP === 0) {   // holstered
+        const then = this.afterHolster;
+        game.equip(null);
+        if (then) then();
+      }
+    }
+    gunDrawShares(this.drawP, this.shares);
+    const down = game.avatar.isDown(ecosystem.time);
+    this.inHand = game.weapon !== null && !petting.on;
+    if (!this.ready) this.aimOn = false;
+    this.aiming = this.inHand && this.aimOn && play.active && !player.inCar && !flying && !down;
+    if (this.recoil > 0) {
+      const settle = this.recoil * (1 - Math.exp(-dt / GUN_RECOIL.recoverS));   // this frame's share back
+      player.pitch -= settle; this.recoil -= settle;
+      if (this.recoil < 1e-4) { player.pitch -= this.recoil; this.recoil = 0; }
+    }
+    const to = this.aiming ? 1 : 0, rate = dt / GUN_POSE.aimS;
+    this.aim = this.aim < to ? Math.min(to, this.aim + rate) : Math.max(to, this.aim - rate);
+    if (this.aiming && !renderer.xr.isPresenting) player.heading = player.yaw;   // the body faces the view to aim
+    if (!Number.isNaN(this.baseFov)) {
+      const fov = this.baseFov / (1 + (GUN_POSE.zoom - 1) * this.aim);
+      if (fov !== camera.fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    }
+  },
+
+  // a gun carried but not in hand: Survivor's inventory gun, Observer's chosen one
+  carriedTucked() {
+    const gun = game.carriedGun();
+    return gun !== null && gun !== game.weapon;
+  },
+
+  // After pov.apply: the body's guns from the drawn gait, and the view model from the camera.
+  place() {
+    if (!pov.body) return;
+    if (!this.hand) this.build();
+    const b = pov.body, kp = NPC_UNIT * pov.heightScale, down = game.avatar.isDown(ecosystem.time), S = this.shares;
+    const terms = humanGaitTerms(b.geometry.attributes.iGait.array, b.geometry.attributes.iAct.array, this._terms);
+    const handShown = this.inHand && S.inHand && !down;   // past the draw's grab
+    this.hand.visible = handShown;
+    this.waist.visible = !handShown && !down && (game.weapon !== null || this.carriedTucked());
+    const waist = pov.look ? humanGunWaist(terms, pov.look.shape.waist, this._w) : null;
+    if (handShown && pov.look) {
+      const h = humanGunHand(this.aim, player.pitch, S.reach, terms, pov.look.shape.shoulder, this._at);
+      this._hq.setFromAxisAngle(this._v.set(1, 0, 0), Math.atan2(Math.cos(h.angle), -Math.sin(h.angle)));   // barrel along the forearm
+      // on the way from the back the gun turns from its tucked place to the hand's by the reach share
+      this.hand.position.set(h.x, h.y, h.z).lerp(this._p.set(waist.x, waist.y, waist.z), S.reach).multiplyScalar(kp);
+      this.hand.quaternion.copy(this._hq).slerp(waist.q, S.reach);
+    }
+    if (this.waist.visible && waist) {
+      this.waist.position.set(waist.x * kp, waist.y * kp, waist.z * kp);
+      this.waist.quaternion.copy(waist.q);
+    }
+    // 1st person: grip low right, moved to under the crosshair by the aim share; a draw brings it up from drawFrom
+    const firstPerson = pov.mode === '1st' && handShown && play.active && !player.inCar && !renderer.xr.isPresenting;
+    this.view.visible = firstPerson;
+    if (firstPerson) {
+      const k = this.aim, r = S.reach, H = GUN_VIEW.hold, A = GUN_VIEW.aim, F = GUN_VIEW.drawFrom, kicked = this.recoil / GUN_RECOIL.kick;   // kicked: 1 at a shot, to 0 settled
+      const at = i => H[i] + (A[i] - H[i]) * k, from = i => at(i) + (F[i] - at(i)) * r;
+      this.view.position.set(from(0), from(1), from(2) + GUN_RECOIL.backM * kicked).applyQuaternion(camera.quaternion).add(camera.position);
+      this._q.setFromAxisAngle(this._v.set(1, 0, 0), -(GUN_VIEW.holdPitch * (1 - k) + this.recoil));   // muzzle up by the tilt, flipping up with the kick (+x turns a +z barrel down)
+      this.view.quaternion.copy(camera.quaternion).multiply(this._flip).multiply(this._q);   // barrel ahead of the camera
+    }
+    loop.sceneDirty = true;
+  }
+};
+
+// THE DOT in 3rd person shows where shots go, even with the HUD off (Survivor); 1st person keeps its own rule.
+export let dotForced = false;
+export function syncDot() {
+  const force = pov.mode === '3rd' && play.active && !player.inCar && dotEl.classList.contains('on');
+  if (force === dotForced) return;
+  dotForced = force;
+  // important, so a stylesheet rule that hides it (the HUD off) cannot win; cleared to give the stylesheet back
+  for (const [k, v] of [['display', 'block'], ['visibility', 'visible'], ['opacity', '1']]) {
+    if (force) dotEl.style.setProperty(k, v, 'important');
+    else dotEl.style.removeProperty(k);
+  }
+}
+
 // Item use by kind: run() applies it; `consumed` empties the slot.
 export const SURVIVOR_ACTIONS = {
   open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
   eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
   drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } },
-  treat: { verb: 'Use', past: 'Used', consumed: true, run(g, slot, item) { g.cure(item.cures); } }
+  treat: { verb: 'Use', past: 'Used', consumed: true, run(g, slot, item) { g.cure(item.cures); } },
+  // in hand, or back in the slot when it already is
+  equip: { verb: 'Equip', consumed: false, run(g, slot, item) { if (g.weapon === item && gunView.drawDir >= 0) gunView.holster(); else gunView.draw(item); } }
 };
 
 // Action button choices on foot, first in reach first: find() returns a target; run() acts on press, or each tick for
@@ -768,6 +921,13 @@ export const SURVIVOR_FIELD_ACTIONS = {
     squat: true,
     find: (g, x, feet, z) => g.inventory.includes(null) ? g.plantInReach(x, feet, z) : null,
     run: (g, plant) => g.harvest(plant)
+  },
+  // a dead animal the player's species eats (SPECIES.human.carrion), cut up into one meat
+  carcass: {
+    label: 'Harvest',
+    squat: true,
+    find: (g, x, feet, z) => g.inventory.includes(null) ? g.carcassInReach(x, feet, z) : null,
+    run: (g, body) => g.butcher(body)
   },
   drink: {
     label: 'Drink',
@@ -838,6 +998,13 @@ export const game = {
   _q: [], _qp: [], _qb: [], _qBump: [],
   _bumpX: NaN, _bumpZ: NaN,   // position at the last bumpAnimals, for velocity
   _shown: -1, _shownCar: -2, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
+  // WEAPON in hand: an item with `mag` and `reserve` rounds (a Survivor slot's, or Observer's Weapon chip's), or null
+  weapon: null,
+  weaponChoice: false,    // Observer's Weapon chip: its gun in hand in Observer, carried into Survivor in a slot and in hand
+  observerGun: null,      // Observer's chosen gun, kept (with its rounds) while the chip is on
+  nextShotAt: 0,          // sim time the next shot may go
+  reloadUntil: -1,        // sim time a magazine change ends; -1: not changing
+  _aimFrom: new THREE.Vector3(), _aimDir: new THREE.Vector3(),
 
   // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
@@ -889,7 +1056,9 @@ export const game = {
     this.health = SURVIVOR_CONFIG.maxHealth;
     this.foodNeed = 0;
     this.waterNeed = 0;
+    if (this.on) this.equip(null);   // Survivor's gun was a slot's; Observer's chip keeps its own
     this.inventory.fill(null);
+    if (this.on) this.applyWeaponChoice();   // a new run starts with the chosen gun
     this.injuries.clear();
     this.fieldHeld = null;
     this.run = { hours: 0, eaten: {}, cause: null };
@@ -952,8 +1121,95 @@ export const game = {
 
   // An item of `kind`; `own` overrides its food and water.
   makeItem(kind, own = null) {
-    const def = SURVIVOR_CONFIG.inventory.items[kind];
-    return { kind, food: def.food ?? 0, water: def.water ?? 0, cures: def.cures ?? [], ...own };
+    const def = SURVIVOR_CONFIG.inventory.items[kind], gun = def.weapon ? WEAPONS[def.weapon] : null;   // gun: null unless a weapon
+    return {
+      kind, food: def.food ?? 0, water: def.water ?? 0, cures: def.cures ?? [],
+      mag: gun ? gun.magazine : 0, reserve: gun ? gun.reserve : 0, ...own
+    };
+  },
+
+  // WEAPONS: `item` in hand at once (null: bare hands), drawn all the way unless `drawn` is false (gunView.draw animates);
+  // a magazine change in progress stops.
+  equip(item, drawn = true) {
+    this.weapon = item;
+    this.reloadUntil = -1;
+    gunView.settle(drawn && item !== null);
+    this.draw();
+  },
+
+  // WEAPON CHOICE (the chip): Observer gets its gun in hand or none; Survivor gets a gun in a slot (an inventory gun, else
+  // a new found-reserve one in the first free slot) in hand, and loses nothing when the choice is off. `animate`: the
+  // chip's own change draws or holsters (in the car, it waits for getting out); mode changes and new runs are instant.
+  chooseWeapon(on) { this.weaponChoice = on; this.applyWeaponChoice(true); },
+  applyWeaponChoice(animate = false) {
+    const W = OBSERVER_WEAPON;
+    if (!this.on) {
+      if (!this.weaponChoice) this.observerGun = null;
+      const gun = this.carriedGun();
+      if (player.inCar) { gunView.carGun = gun; return; }
+      if (!animate) this.equip(gun);
+      else if (gun) gunView.draw(gun);
+      else gunView.holster();
+      return;
+    }
+    if (this.weapon !== null && !this.inventory.includes(this.weapon)) this.equip(null);   // Observer's gun stays behind
+    if (!this.weaponChoice) return;
+    let gun = this.carriedGun();
+    if (!gun) {
+      const free = this.inventory.indexOf(null);
+      if (free < 0) return;   // no room: the inventory as it is
+      gun = this.inventory[free] = this.makeItem(W.item);
+    }
+    this.equip(gun);
+  },
+
+  // The gun the player carries (in hand or not), or null: Survivor's first inventory gun, Observer's chosen one.
+  carriedGun() {
+    if (this.on) return this.inventory.find(it => it !== null && SURVIVOR_CONFIG.inventory.items[it.kind].weapon) ?? null;
+    if (!this.weaponChoice) return null;
+    return this.observerGun ??= this.makeItem(OBSERVER_WEAPON.item, { reserve: OBSERVER_WEAPON.reserve });
+  },
+
+  gunOf(item) { return WEAPONS[SURVIVOR_CONFIG.inventory.items[item.kind].weapon]; },
+
+  // A magazine change starts when there are spare rounds and room for them.
+  startReload(w, gun, now) { if (w.reserve > 0 && w.mag < gun.magazine) this.reloadUntil = now + gun.reloadS; },
+  finishReload(w, gun) {
+    const n = Math.min(gun.magazine - w.mag, w.reserve);
+    w.mag += n; w.reserve -= n;
+    this.reloadUntil = -1;
+  },
+
+  // FIRE in either mode, once per shotS; an empty magazine changes over reloadS. The bullet leaves the eye toward what
+  // the crosshair covers and costs animals health where the player hurts them (playerHurtsAnimals).
+  fire() {
+    const w = this.weapon;
+    if (!w || !gunView.ready || !play.active || this.dead || !ecosystem.ready) return;
+    const gun = this.gunOf(w), now = ecosystem.time;
+    if (this.reloadUntil >= 0) {
+      if (now < this.reloadUntil) return;
+      this.finishReload(w, gun);
+    }
+    if (now < this.nextShotAt) return;
+    if (w.mag <= 0) { this.startReload(w, gun, now); return; }
+    w.mag--;
+    this.nextShotAt = now + gun.shotS;
+    // aim: the first thing on the camera's ray, BULLET_AIM_M at most
+    const from = camera.getWorldPosition(this._aimFrom), dir = camera.getWorldDirection(this._aimDir);
+    const hit = ecosystem.projectiles.cast(from.x, from.y, from.z,
+      from.x + dir.x * BULLET_AIM_M, from.y + dir.y * BULLET_AIM_M, from.z + dir.z * BULLET_AIM_M);
+    const reach = Math.min(1, hit.t) * BULLET_AIM_M;
+    const ex = player.pos.x, ey = player.pos.y - crouchY, ez = player.pos.z;   // the eye
+    let dx = from.x + dir.x * reach - ex, dy = from.y + dir.y * reach - ey, dz = from.z + dir.z * reach - ez;
+    const len = Math.hypot(dx, dy, dz);
+    // an aim point at or behind the eye (something between camera and body): straight along the view
+    if (len < 1e-3 || dx * dir.x + dy * dir.y + dz * dir.z <= 0) { dx = dir.x; dy = dir.y; dz = dir.z; }
+    else { dx /= len; dy /= len; dz /= len; }
+    if (dx !== 0 || dz !== 0) player.heading = Math.atan2(-dx, -dz);   // the body faces the shot
+    this.placeAvatar();
+    ecosystem.projectiles.fire(this.avatar, ex, ey, ez, dx, dy, dz, gun, this.playerHurtsAnimals());
+    gunView.kick();
+    if (w.mag === 0) this.startReload(w, gun, now);
   },
 
   // The first recipe the inventory holds, with its slots, or null.
@@ -1174,6 +1430,26 @@ export const game = {
     return best;
   },
 
+  // Nearest dead body in reach that people eat (CARRION_MASK), or null; a lying body reaches NPC_RADIUS further.
+  carcassInReach(px, feet, pz) {
+    const R = SURVIVOR_CONFIG.reach, reach = R.radius + NPC_RADIUS, mask = CARRION_MASK[HUMAN_TYPE_ID];
+    let best = null, bestD2 = reach * reach;
+    for (const c of ecosystem.corpses) {
+      if ((mask & (1 << c.typeId)) === 0 || Math.abs(c.position.y - feet) > R.height) continue;
+      const d2 = tools.distSq(px, pz, c.position.x, c.position.z);
+      if (d2 <= bestD2) { bestD2 = d2; best = c; }
+    }
+    return best;
+  },
+
+  // A dead body into meat in the first free slot; the body is gone.
+  butcher(body) {
+    const free = this.inventory.indexOf(null);
+    if (free < 0) return;
+    ecosystem.removeCorpse(body);
+    this.inventory[free] = this.makeItem('meat');
+  },
+
   // The cat in reach.
   catInReach(px, feet, pz) {
     const R = SURVIVOR_CONFIG.reach, c = cat.position;
@@ -1275,14 +1551,15 @@ export const game = {
       needInfoEl.replaceChildren(...spans(personInfoFields(info, pov.sex)));
       needBodyEl.replaceChildren(...spans(personBodyFields(info, pov.sex, pov.look)));
     }
-    const slots = this.inventory.map(it => it ? it.kind : '').join(',');
+    const slots = this.inventory.map(it => it ? it.kind : '').join(',') + '|' + this.inventory.indexOf(this.weapon);   // the equipped slot too
     if (slots !== this._shownSlots) {
       this._shownSlots = slots;
       this.inventory.forEach((it, i) => {
         const el = slotEls[i], item = it && SURVIVOR_CONFIG.inventory.items[it.kind];
         el.querySelector('span').textContent = item ? item.icon : '';
         el.disabled = !item;
-        el.setAttribute('aria-label', item ? `${SURVIVOR_ACTIONS[item.action].verb} ${item.label.toLowerCase()}` : 'Empty slot');
+        const verb = it && it === this.weapon ? 'Holster' : item && SURVIVOR_ACTIONS[item.action].verb;   // an equipped gun's slot holsters it
+        el.setAttribute('aria-label', item ? `${verb} ${item.label.toLowerCase()}` : 'Empty slot');
       });
       // inventory changes can free or fill a needed slot
       updateCarButton();
@@ -1352,6 +1629,18 @@ export function bindKeys() {
     if (e.code === 'Space' && play.active) e.preventDefault();
   });
   addEventListener('keyup', e => { keys.delete(e.code); wake(); });
+}
+
+// BIND MOUSE BUTTONS (pointer locked): with a gun in hand, the left button shoots (semi-auto, while aiming) and the right
+// button toggles Aim.
+export const MOUSE_SHOOT = 0, MOUSE_AIM = 2;   // MouseEvent.button values
+export function bindMouseButtons() {
+  addEventListener('mousedown', e => {
+    if (!play.locked || game.weapon === null) return;
+    if (e.button === MOUSE_SHOOT) attackQueued = true;
+    else if (e.button === MOUSE_AIM) gunView.toggleAim();
+    wake();
+  });
 }
 
 // BIND MOUSELOOK: look while the pointer is locked.
@@ -1998,6 +2287,22 @@ export const sprintEl = document.getElementById('sprint');
 export const jumpEl = document.getElementById('jump');
 export const attackEl = document.getElementById('attack');
 export const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
+// GUN BUTTONS, made here beside the attack button with its classes and placed each time one shows (placeGunButtons):
+// Draw/Holster left of the attack button while a gun is carried, Aim above it while one is in hand.
+function gunButton(id, label) {
+  const b = document.createElement('button');
+  b.id = id;
+  b.className = attackEl.className.replace(/\b(on|held)\b/g, '').trim();
+  b.textContent = label;
+  b.style.display = 'none';
+  attackEl.before(b);
+  return b;
+}
+export const aimEl = gunButton('aim', 'Aim');
+export const drawEl = gunButton('draw', 'Draw');
+// the Draw/Holster button's labels: holster (true) while a gun is in hand and not on its way back, else draw
+const DRAW_LABELS = { true: 'Holster', false: 'Draw' };
+const fistHtml = attackEl.innerHTML, fistLabel = attackEl.getAttribute('aria-label');   // the attack button's own face
 export const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
 
 export function holdPedal(btn, name) {
@@ -2023,6 +2328,13 @@ export function bindCar() {
   holdPedal(sprintEl, 'sprint');
   holdPedal(jumpEl, 'jump');
   holdPedal(attackEl, 'attack');
+  aimEl.addEventListener('pointerdown', () => { gunView.toggleAim(); aimEl.blur(); });
+  drawEl.addEventListener('pointerdown', () => {
+    if (gunHolsters()) gunView.holster();
+    else { const gun = game.weapon ?? game.carriedGun(); if (gun) gunView.draw(gun); }   // a holster under way turns around
+    drawEl.blur();
+  });
+  addEventListener('resize', () => { if (drawShown || aimShown) placeGunButtons(); });
   // a short tap still jumps or punches; holding attack keeps punching
   jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
   attackEl.addEventListener('pointerdown', () => { attackQueued = true; });
@@ -2063,6 +2375,47 @@ export function updateSprintButton() {
   if (!show) pedal.sprint = pedal.jump = pedal.attack = attackQueued = false;
 }
 
+// The gun buttons and the attack button's face: with a gun carried, Draw/Holster shows left of the attack button; with
+// one in hand, Aim shows above it and a bullet replaces the fist.
+export let aimShown = false, drawShown = false, bulletShown = false, aimLit = false, holsterShown = false;
+// the Draw/Holster button holsters now: a gun in hand, not already going back
+const gunHolsters = () => game.weapon !== null && gunView.drawDir >= 0;
+// Draw/Holster left of the attack button, Aim above Draw/Holster; each the attack button's size, AIM_BUTTON_GAP_PX apart.
+export function placeGunButtons() {
+  const r = attackEl.getBoundingClientRect(), left = r.left - r.width - AIM_BUTTON_GAP_PX;
+  [[drawEl, r.top], [aimEl, r.top - r.height - AIM_BUTTON_GAP_PX]].forEach(([el, top]) => {
+    const st = el.style;
+    st.position = 'fixed';
+    st.left = left + 'px'; st.top = top + 'px';
+    st.width = r.width + 'px'; st.height = r.height + 'px';
+  });
+}
+// Show or hide a gun button; returns the new shown state.
+function showGunButton(el, show) {
+  el.style.display = show ? '' : 'none';
+  el.classList.toggle('on', show);
+  if (show) placeGunButtons();
+  return show;
+}
+export function updateGunButtons() {
+  const inHand = game.weapon !== null;   // a gun in hand (or being drawn or holstered)
+  if (inHand !== bulletShown) {
+    bulletShown = inHand;
+    attackEl.innerHTML = inHand ? BULLET_ICON_SVG : fistHtml;
+    if (inHand) attackEl.setAttribute('aria-label', 'Shoot');
+    else if (fistLabel === null) attackEl.removeAttribute('aria-label');
+    else attackEl.setAttribute('aria-label', fistLabel);
+  }
+  const holsters = gunHolsters();
+  if (holsters !== holsterShown) { holsterShown = holsters; drawEl.textContent = DRAW_LABELS[holsters]; }
+  if (gunView.aimOn !== aimLit) { aimLit = gunView.aimOn; aimEl.classList.toggle('held', aimLit); }   // lit while Aim is on
+  // on foot with touch controls, not flying (sprintShown), and not getting in or out of the car
+  const touchFoot = sprintShown && carTransit === null;
+  const draw = touchFoot && (inHand || game.carriedGun() !== null), aim = touchFoot && inHand;
+  if (draw !== drawShown) drawShown = showGunButton(drawEl, draw);
+  if (aim !== aimShown) aimShown = showGunButton(aimEl, aim);
+}
+
 // Fly button: Observer on foot, unless the car takes its slot.
 export let flyShown = false;
 export function updateFlyButton(carState) {
@@ -2086,6 +2439,7 @@ export function updateUseButton(carState) {
 export let carBtnState = '';
 export function updateCarButton() {
   updateSprintButton();
+  updateGunButtons();
   const state = !play.active ? '' : player.inCar ? 'exit' : carNear() ? 'enter' : '';
   updateFlyButton(state);
   updateUseButton(state);
@@ -2108,8 +2462,63 @@ export function setPlayerInCar(on) {
   graphics.force = true;
 }
 
+// CAR ENTRY AND EXIT (CAR_TRANSIT): getting in walks to the driver's door and slides into the seat, then boards
+// (boardCar); getting out slides from the seat to the place found, then lands (landFromCar). No input meanwhile.
+export let carTransit = null;   // { entering, t, walkS, x0, z0 (where the walk starts), x1, z1 (the place found to get out at) }
+const _carAt = { x: 0, z: 0 };
+// a car-frame point ([right, forward] metres) in the world, as it stands now
+function carPoint(l, f, out) {
+  out.x = car.x + Math.cos(car.yaw) * l - Math.sin(car.yaw) * f;
+  out.z = car.z - Math.sin(car.yaw) * l - Math.cos(car.yaw) * f;
+  return out;
+}
+const carDoor = out => carPoint(CAR_DOOR_SPOTS[0][0] * CAR_SCALE, CAR_DOOR_SPOTS[0][1] * CAR_SCALE, out);
+const carSeat = out => carPoint(CAR_TRANSIT.seat[0], CAR_TRANSIT.seat[1], out);
+// feet height in the seat: a crouched body's head headroomM under the roof
+const seatFeetY = () => car.y + CAR_TOP - CAR_TRANSIT.headroomM - (PLAYER_HEIGHT - CROUCH_DROP);
+
+// One frame of a transit: the player's place on its path, heading and crouch; it ends by boarding or landing.
+function stepCarTransit(dt) {
+  const T = carTransit;
+  T.t += dt;
+  const ease = x => x * x * (3 - 2 * x);
+  let x, z, feet, heading = player.heading;
+  if (T.entering && T.t < T.walkS) {   // walking to the door
+    const u = T.t / T.walkS, d = carDoor(_carAt);
+    x = T.x0 + (d.x - T.x0) * u; z = T.z0 + (d.z - T.z0) * u; feet = groundAt(x, z);
+    if (d.x !== T.x0 || d.z !== T.z0) heading = Math.atan2(T.x0 - d.x, T.z0 - d.z);   // facing the walk
+  } else {   // sliding between the door (or the place found) and the seat, ducked
+    const u = ease(Math.min(1, (T.t - (T.entering ? T.walkS : 0)) / CAR_TRANSIT.slideS)), k = T.entering ? u : 1 - u;   // k: 0 outside, 1 seated
+    const out = T.entering ? carDoor(_carAt) : { x: T.x1, z: T.z1 }, ox = out.x, oz = out.z, s = carSeat(_carAt);
+    x = ox + (s.x - ox) * k; z = oz + (s.z - oz) * k;
+    feet = groundAt(ox, oz) + (seatFeetY() - groundAt(ox, oz)) * k;
+    heading = car.yaw;
+    stance.squat(dt * 2);   // ducked for the slide
+    if (u >= 1) { carTransit = null; if (T.entering) boardCar(); else landFromCar(); }
+  }
+  if (carTransit === null && T.entering) return true;   // boarded: the car step takes over
+  player.pos.set(x, feet + EYE_HEIGHT, z);
+  player.vel.set(0, 0, 0);
+  player.heading = heading;
+  return false;
+}
+
 export function enterCar() {
-  if (player.inCar || !carNear()) return;
+  if (player.inCar || carTransit || !carNear()) return;
+  // a gun in hand goes behind the back first (once), then the player gets in; it comes out again on getting out
+  if (game.weapon !== null) {
+    if (gunView.drawDir !== -1) { gunView.carGun = game.weapon; gunView.holster(enterCar); }
+    return;
+  }
+  const d = carDoor(_carAt);
+  carTransit = { entering: true, t: 0, x0: player.pos.x, z0: player.pos.z, x1: 0, z1: 0,
+    walkS: Math.min(CAR_TRANSIT.walkMaxS, Math.hypot(d.x - player.pos.x, d.z - player.pos.z) / WALK_SPEED) };
+  stance.stand();
+  wake();
+}
+
+// In the seat: the car takes the player.
+function boardCar() {
   setPlayerInCar(true);
   stance.stand(); crouchY = 0;
   chaseCam.reset(car.yaw);
@@ -2122,24 +2531,38 @@ export function enterCar() {
 }
 
 export function exitCar() {
-  if (!player.inCar) return;
+  if (!player.inCar || carTransit) return;
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
   const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
-  for (const [l0, f0] of [[-1.6, 0], [1.6, 0], [0, 2.9], [0, -2.9]]) {
+  for (const [l0, f0] of CAR_DOOR_SPOTS) {
     const l = l0 * CAR_SCALE, f = f0 * CAR_SCALE;
     const px = car.x + rx * l + fx * f, pz = car.z + rz * l + fz * f, g = groundAt(px, pz);
     if (shellAt(px, pz) >= 0) continue;
     if (solidOverlap(px, pz, PLAYER_RADIUS + 0.05, g, g + EYE_HEIGHT + HEAD_CLEAR)) continue;
     setPlayerInCar(false);
-    player.pos.set(px, g + EYE_HEIGHT, pz);
+    const s = carSeat(_carAt);
+    player.pos.set(s.x, seatFeetY() + EYE_HEIGHT, s.z);
     player.vel.set(0, 0, 0);
-    player.grounded = false;
     facePlayer(car.yaw, 0);
+    stance.squat(CAR_TRANSIT.slideS);
+    carTransit = { entering: false, t: 0, walkS: 0, x0: s.x, z0: s.z, x1: px, z1: pz };
     cat.alight();
     updateCarButton();
     wake();
     return;
   }
+}
+
+// Out at the place found: standing, and the gun holstered for the car drawn again if still carried (Survivor: still in
+// the inventory; Observer: still chosen).
+function landFromCar() {
+  stance.stand();
+  player.grounded = false;
+  const gun = gunView.carGun;
+  gunView.carGun = null;
+  if (gun && (game.on ? game.inventory.includes(gun) : game.weaponChoice)) gunView.draw(gun);
+  updateCarButton();
+  wake();
 }
 
 export function toggleCar() {
@@ -2192,7 +2615,16 @@ export let swimming = false;
 
 export function playerStep(dt) {
   petting.update(dt);
-  if (player.inCar) { player.running = false; swimming = false; pov.hideBody(); driveStep(dt); updateCarButton(); vr.placeRig(); return; }
+  if (player.inCar) { player.running = false; swimming = false; pov.hideBody(); gunView.stow(); syncDot(); driveStep(dt); updateCarButton(); vr.placeRig(); return; }
+  if (carTransit) {
+    player.running = false; swimming = false;
+    if (car.speed !== 0) carPhysics(dt, 0, 0, true);
+    if (stepCarTransit(dt)) { playerStep(0); return; }   // boarded this frame: one car step places the camera
+    gunView.step(dt);
+    attackQueued = jumpQueued = false;
+    poseFrame(dt);
+    return;
+  }
   // an empty rolling car brakes to a stop
   if (car.speed !== 0) carPhysics(dt, 0, 0, true);
 
@@ -2255,8 +2687,12 @@ export function playerStep(dt) {
     chaseCam.drift(dt, player.heading, len > 0 && play.active && !swimming, FOOT_CAM_FOLLOW);
   }
 
-  // attack: tap punches once, hold keeps punching
-  if (play.active && !flying && !knockedDown && (attackQueued || pedal.attack)) game.punch();
+  // attack: with a gun in hand a tap fires once (semi-auto) while aiming; bare hands, a tap punches once and a hold keeps punching
+  gunView.step(dt);
+  if (play.active && !flying && !knockedDown) {
+    if (game.weapon) { if (attackQueued && gunView.aiming) game.fire(); }
+    else if (attackQueued || pedal.attack) game.punch();
+  }
   attackQueued = false;
 
   if (flying) {
@@ -2322,6 +2758,11 @@ export function playerStep(dt) {
   // the world's edge stops the player
   if (ecosystem.ready) { player.pos.x = ecosystem.fitX(player.pos.x); player.pos.z = ecosystem.fitZ(player.pos.z); }
 
+  poseFrame(dt);
+}
+
+// A frame's end on foot: the crouch eases, the camera and body are placed, and the HUD follows.
+function poseFrame(dt) {
   stance.tick(dt);
   const crouchTo = stance.low && !flying ? CROUCH_DROP : 0;
   crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
@@ -2330,12 +2771,15 @@ export function playerStep(dt) {
   camera.position.y -= crouchY;
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   pov.apply(dt);
+  gunView.place();
+  syncDot();
   vr.placeRig();
   updateCarButton();
 }
 
 export function movementHeld() {
   return stickId !== null || climb !== 0 || jumpQueued || attackQueued || pedal.gas || pedal.brake || pedal.jump || pedal.attack ||
+    gunView.aim !== (gunView.aiming ? 1 : 0) || gunView.recoil > 0 || gunView.drawDir !== 0 || carTransit !== null ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space') ||
