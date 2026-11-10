@@ -2528,7 +2528,6 @@ export function brainActivity(b, a) {
   }
 }
 
-const TEST_SKIP_BRAINS = true;   // TEMP perf test: true hides near brains (stats sprites stay); delete after the readout
 const STAT_LABEL_MAX = 100;   // top of each stat's scale
 const BAR_PAD = 4;            // panel padding px
 const PERSON_ROWS = 3;        // people's rows: stats, body, info
@@ -2956,8 +2955,7 @@ export class HealthBars {
       bar.sprite.position.set(px, barY, pz);
       bar.sprite.visible = true;
 
-      // const nn = a.brain;
-      const nn = TEST_SKIP_BRAINS ? null : a.brain;   // TEMP: was `const nn = a.brain;`
+      const nn = a.brain;
       if (!nn) { if (bar.brain) bar.brain.group.visible = false; continue; }
       if (bar.brainFor !== nn) {
         if (bar.brain) disposeBrain(bar.brain);
