@@ -22,7 +22,7 @@ import {
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S
 } from './1-config.js';
 import {
-  cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools
+  cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe
 } from './2-core.js';
 import {
   scene
@@ -491,7 +491,7 @@ export class Animal extends Entity {
     const spec = SPECIES[type];
     this.spec = spec;
     this.typeId = NPC_TYPE_IDS[type];
-    this.speed = spec.speed;
+    this.speed = spec.speed;   // the speed gene; setBodyRates must follow any write (BODY RATES)
     this.WATER_SPEED_FACTOR = 0.45;
     this.submerged = false;
     this.startHealth = spec.health;
@@ -514,6 +514,9 @@ export class Animal extends Entity {
     this.sex = Math.random() < 0.5 ? 'male' : 'female';
     this.setSizeZ(tools.gauss());
     this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), for life
+    this.setBodyRates();
+    // the species' pounce (NPC_POUNCES), undefined for species that do not pounce; the type never changes
+    this.pounceSpec = NPC_POUNCES[type];
     this.mutationMulti = 0.5;
     this.lastChildTime = ecosystem.time;   // sim seconds
     this.childGracePeriod = (15 + Math.random() * 15) * spec.grace * MATE_TIME_MULT;   // sim seconds
@@ -589,6 +592,8 @@ export class Animal extends Entity {
     this.tob = ecosystem.time;   // birth time, sim seconds
 
     this._hx = NaN; this._hz = NaN; this._hv = -1; this._h = 0;
+    // surfaceFor's second memo slot (_b and _fd stay unset until the first surfaceFor: moveDeer reads _b ?? baseAt)
+    this._hx2 = NaN; this._hz2 = NaN; this._hv2 = -1; this._h2 = 0; this._b2 = 0; this._fd2 = 0;
 
     // City: last wall-clear position, Ecosystem.collide's fallback
     this.freeX = this.position.x; this.freeZ = this.position.z;
@@ -943,7 +948,7 @@ export class Animal extends Entity {
     this.focusX = q.position.x; this.focusZ = q.position.z;
     this.aimAtFocus();
     this.moving = true;
-    const P = NPC_POUNCES[this.type];
+    const P = this.pounceSpec;
     if (P === undefined || now < this.nextPounceAt || now < this.heldUntil()) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z, reach = this.leapLength(P);
     if (dx * dx + dz * dz > reach * reach) return;
@@ -954,7 +959,7 @@ export class Animal extends Entity {
   }
 
   pouncing(now) {
-    const P = NPC_POUNCES[this.type];
+    const P = this.pounceSpec;
     return P !== undefined && now - this.pounceAt < P.moveS;
   }
 
@@ -966,7 +971,7 @@ export class Animal extends Entity {
   pounceStep() {
     const now = ecosystem.time;
     if (!this.pouncing(now)) return -1;
-    const P = NPC_POUNCES[this.type];
+    const P = this.pounceSpec;
     if ((now - this.pounceAt) / P.moveS < P.leapAt) return 0;
     const q = this.quarry, flight = this.leapSpeed(P) * this.bumpScale * NPC_TICK_S;
     if (q === null) return flight;   // hunt ended mid-air: the leap carries on
@@ -1346,10 +1351,17 @@ export class Animal extends Entity {
     return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * this.growthScale();
   }
 
+  // BODY RATES: pace (the look's, 1 for animals) and the Arena move speed per second (speed gene x pace) depend only
+  // on the speed gene and the look, both fixed for life once an animal is made. The constructor and mate (after the
+  // child's genes) are the only writers of either, and both call this; pace() and moveSpeed() read the stored values.
+  setBodyRates() {
+    this.paceShare = this.look ? this.look.pace : 1;
+    this.moveSpeedPerS = this.speed * this.paceShare;
+  }
   // Body pace: the look's, 1 for animals.
-  pace() { return this.look ? this.look.pace : 1; }
+  pace() { return this.paceShare; }
   // Arena speed per second: speed gene x pace.
-  moveSpeed() { return this.speed * this.pace(); }
+  moveSpeed() { return this.moveSpeedPerS; }
   // Jump takeoff speed (bodyJumpSpeed). Not called yet.
   jumpSpeed(baseSpeed) { return bodyJumpSpeed(baseSpeed, this.pace()); }
 
@@ -1413,7 +1425,7 @@ export class Animal extends Entity {
     child.birthTick = ecosystem.ticks;
     child.home = mother.home;
 
-    child.speed = ((this.speed + partner.speed) / 2) * rand();
+    child.speed = ((this.speed + partner.speed) / 2) * rand();   // setBodyRates below
     child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
     child.visionDistSq = child.visionDistance * child.visionDistance;
     child.setFov(
@@ -1428,6 +1440,7 @@ export class Animal extends Entity {
     const midZ = (this.sizeZ + partner.sizeZ) / 2, h = NPC_SIZE_HERITABILITY;
     child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * tools.gauss());
     if (child.look) inheritHumanLook(child.look, this.look, partner.look);
+    child.setBodyRates();   // speed and look are final from here
 
     if (this.brain && partner.brain) {
       const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -1633,9 +1646,12 @@ export class Plant extends Entity {
 
 // ECOSYSTEM: the Arena's World loop for every provider; stepped from frame().
 export class Ecosystem {
-  static CONTACT_QUERY_RADIUS = 20 * NPC_UNIT;
   static CONTACT_DIST_SQ = 200 * NPC_UNIT * NPC_UNIT;
   static CONTACT_DIST = Math.sqrt(200) * NPC_UNIT;
+  // The plant grid query for a bite: the bite reach (CONTACT_DIST) grown by a part in 1e9, so every plant the
+  // CONTACT_DIST_SQ test can accept is in a visited cell despite rounding. Cells past it only held plants that test
+  // rejects, and the visit order of the rest is unchanged, so the first plant bitten is the same.
+  static PLANT_REACH_QUERY_R = this.CONTACT_DIST * (1 + 1e-9);
   static BUMP_DIST_SQ = NPC_BUMP_DIST * NPC_BUMP_DIST;   // BUMPING: touching distance, squared
 
   constructor() {
@@ -1679,6 +1695,7 @@ export class Ecosystem {
     this.drift2 = 0;
     this.contact = null;
     this._contactR = Ecosystem.CONTACT_DIST;
+    this._bumpVel = { x: 0, z: 0 };   // handleCollisions' scratch for takeBumpVelocity
   }
 
   // SIM CLOCK: sim seconds since init; pauses with the sim.
@@ -1816,9 +1833,9 @@ export class Ecosystem {
 
   tryMate(a, px, pz) {
     if (a.sex !== 'male') return;
-    const cg = this.contact, items = cg.items, start = cg.start;
+    const cg = this.contact, items = cg.items, begin = cg.begin, end = cg.end;
     const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
-    for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
+    for (let q = 0; q < nh; q++) for (let i = begin[hs[q]], iEnd = end[hs[q]]; i < iEnd; i++) {
       const other = items[i];
       if (other !== a && other.alive && other.type === a.type &&
         other.sex === 'female' && other.lookForMate &&
@@ -1843,7 +1860,7 @@ export class Ecosystem {
     if (this.ticks % 3 === 0) this.syncPlantGrids();
     // Candidates from a grid up to 2 ticks old.
     this._contactR = Ecosystem.CONTACT_DIST + Math.sqrt(this.drift2);
-    const cg = this.contact, items = cg.items, start = cg.start;
+    const cg = this.contact, items = cg.items, begin = cg.begin, end = cg.end;
     const now = this.time;
 
     for (const a of this.animals) {
@@ -1853,18 +1870,21 @@ export class Ecosystem {
       const down = a.isDown(now);
       // one neighbour pass for hunting and bumping; hunts is 0 when down or preyless
       const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
-      // BUMPING: this tick's velocity
-      const speed = a.groundSpeed(now);
-      a.headingDir();
-      const vx = a._dirSin * speed, vz = a._dirCos * speed;
+      // BUMPING: this tick's velocity (vel), as a was when its pass began. Taken on first use, before a's first strike
+      // or bump: until then the pass only reads, so it is the same as taking it here, and a pass with neither (most
+      // animals) skips groundSpeed. velocityTaken: vel holds a's.
+      const vel = this._bumpVel;
+      let velocityTaken = false;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
-      near: for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
+      near: for (let q = 0; q < nh; q++) for (let i = begin[hs[q]], iEnd = end[hs[q]]; i < iEnd; i++) {
         const other = items[i];
         if (other === a || !other.alive) continue;
         const dx = other.position.x - px, dz = other.position.z - pz, d2 = dx * dx + dz * dz;
         if ((hunts & (1 << other.typeId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
           // PACK STRENGTH: strike only what the pack can take
           if (a.nextAttackAt <= now && a.mayAttack(other)) {
+            // before the strike, which turns a and holds it
+            if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
             // one hit per cooldown, on the first prey in reach
             a.strike(other);
             if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
@@ -1873,13 +1893,16 @@ export class Ecosystem {
           }
           if (!a.alive) break near;
         }
-        if (other.alive && d2 < Ecosystem.BUMP_DIST_SQ) this.bump(a, other, dx, dz, d2, vx, vz);
+        if (other.alive && d2 < Ecosystem.BUMP_DIST_SQ) {
+          if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
+          this.bump(a, other, dx, dz, d2, vel.x, vel.z);
+        }
       }
       if (!a.alive) continue;
       if (!down && a.lookForMate) this.tryMate(a, px, pz);
 
       const canEat = a.noEatUntil <= now;
-      const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.CONTACT_QUERY_RADIUS) : 0;
+      const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.PLANT_REACH_QUERY_R) : 0;
       for (let i = 0; i < nPlant; i++) {
         const plant = this._qPlant[i];
         if (plant.alive &&
@@ -1898,6 +1921,13 @@ export class Ecosystem {
         a.drinkWater();
       }
     }
+  }
+
+  // BUMPING: a's velocity this tick into out { x, z }, m/s: groundSpeed along its heading
+  takeBumpVelocity(a, now, out) {
+    const speed = a.groundSpeed(now);
+    a.headingDir();
+    out.x = a._dirSin * speed; out.z = a._dirCos * speed;
   }
 
   // A strikes b: damage scales with a's strength, fighting mass x health (as NPC_FIGHT_REF_STRENGTH), relative to the
@@ -2136,6 +2166,8 @@ export class Ecosystem {
 
     const alive = this.aliveById, fastest = this.fastestHunterMSById;
     alive.fill(0); fastest.fill(0);
+    // PERF PROBE 'animals': the whole per-animal loop (Animal.update, collide and the bookkeeping beside them)
+    const tAnimals = perfProbe.t();
     for (let ai = 0; ai < this.animals.length; ai++) {
       const a = this.animals[ai];
       if (a.alive) {
@@ -2156,6 +2188,7 @@ export class Ecosystem {
       for (let k = 0; k < prey.length; k++) if (alive[prey[k]]) { any = 1; break; }
       this.canHuntById[t] = any;
     }
+    perfProbe.add('animals', tAnimals);
 
     // skip the retry pass when nothing waits
     if (plantView.pending) {
@@ -2165,7 +2198,9 @@ export class Ecosystem {
       }
     }
 
+    const tCollisions = perfProbe.t();
     this.handleCollisions();
+    perfProbe.add('collisions', tCollisions);
     for (const f of this.afterContacts) f(dt);
 
     this.expireCorpses();

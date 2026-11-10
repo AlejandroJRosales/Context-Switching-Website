@@ -28,7 +28,7 @@ import {
   AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN
 } from './1-config.js';
 import {
-  fmt, loop, wake, invalidate
+  fmt, loop, wake, invalidate, perfProbe
 } from './2-core.js';
 import {
   renderer, scene, camera, viewPos, viewQuat, hemi, sun, moon, resetGroundPlane, msaa, perf, geocode, fetchBuildings,
@@ -559,6 +559,8 @@ function drawEcosystem(dt) {
 }
 
 function frame(now) {
+  // PERF PROBE 'frame': JS in this callback, measured from here to the end of the draw
+  const tFrame = perfProbe.t();
   loop.rafId = 0;
   const xr = renderer.xr.isPresenting;
   // settings open: the world is paused (no sim time passes, the loop sleeps); only a change made in the sheet redraws
@@ -576,10 +578,12 @@ function frame(now) {
   }
   // first frame after a sleep: no elapsed time to integrate
   const resumed = loop.last < 0;
-  const dt = resumed ? 0 : Math.min(Math.max((now - loop.last) / 1000, 0), 0.05);
+  // real ms since the last frame (dt below is clamped); avgFps and PERF PROBE 'interval' read it
+  const sinceLastMs = resumed ? 0 : now - loop.last;
+  const dt = resumed ? 0 : Math.min(Math.max(sinceLastMs / 1000, 0), 0.05);
   // a fresh fps window after a sleep or pause, so the time asleep is not counted as slow frames
   if (resumed) { fpsFrames = 0; fpsAt = now; }
-  else avgFps.ms += now - loop.last;
+  else avgFps.ms += sinceLastMs;
   loop.last = now;
   if (xr) vr.poll(dt);
   playerStep(dt);
@@ -597,11 +601,19 @@ function frame(now) {
     npcAcc += dt;
     npcElapsed += dt;
     if (npcAcc >= NPC_TICK_S - NPC_TICK_SLACK) {
+      const tStep = perfProbe.t();
       npcDue = ecosystem.step(npcElapsed);
+      perfProbe.add('step', tStep);
+      if (npcDue) perfProbe.count('ticks');
       // draw the tick, then advance its clock; a provider that drives its own walkers (the intro) has already ticked and
       // only moves them, so only they are drawn
       if (npcDue && providers.active && providers.active.drive) { animalRenderer.update(ecosystem.animals, npcElapsed); blobShadows.update(ecosystem.animals); }
-      else if (npcDue) { drawEcosystem(npcElapsed); ecosystem.endTick(); }
+      else if (npcDue) {
+        const tDraw = perfProbe.t();
+        drawEcosystem(npcElapsed);
+        perfProbe.add('drawEcosystem', tDraw);
+        ecosystem.endTick();
+      }
       // carry the remainder, but bank at most one tick (no catch-up burst)
       npcAcc = Math.max(-NPC_TICK_SLACK, Math.min(npcAcc - NPC_TICK_S, NPC_TICK_S));
       npcElapsed = 0;
@@ -630,13 +642,21 @@ function frame(now) {
       providers.active.surface(viewPos.x, viewPos.z, _surf);
       tintEl.classList.toggle('on', _surf.dip < 0 && viewPos.y < _surf.base);
     }
+    const tRender = perfProbe.t();
     if (graphics.high && !xr) msaa.render();
     else renderer.render(scene, camera);
+    perfProbe.add('render', tRender);
     drawnPos.copy(player.pos); drawnYaw = player.yaw; drawnPitch = player.pitch; drawnCrouch = crouchY;
     loop.sceneDirty = false;
     rainClock.drawn = now;
     fpsFrames++;
     avgFps.frames++;
+  }
+  // PERF PROBE 'interval': time since the previous frame callback (0 on the first after a sleep)
+  if (perfProbe.on) {
+    perfProbe.add('frame', tFrame);
+    perfProbe.cur.interval = sinceLastMs;
+    perfProbe.frameEnd();
   }
   if (now - fpsAt >= 1000) {
     const fps = Math.round(fpsFrames * 1000 / (now - fpsAt));

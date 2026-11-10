@@ -33,7 +33,7 @@ import {
 } from './2-core.js';
 import {
   renderer, scene, camera, ground, cssColor, rgb, newBuf, pushTri, pushQuad, bufGeom, tint, nonIndexed, UP, ribbon,
-  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel
+  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel, splitTwoPass, materialsOf
 } from './3-gfx-io.js';
 import {
   providers
@@ -171,11 +171,12 @@ export function clearLayers() {
     // instance buffers live on the mesh; three frees them only on mesh dispose
     if (m.isInstancedMesh) m.dispose();
     if (m.geometry) m.geometry.dispose();
-    if (m.material) {
-      if (m.material.map) m.material.map.dispose();
-      if (m.material.normalMap) m.material.normalMap.dispose();
-      if (m.material.clearcoatNormalMap) m.material.clearcoatNormalMap.dispose();
-      m.material.dispose();   // building chunks share one material: disposing it again is a no-op
+    // a two-pass mesh's copies share their textures: disposing one again is a no-op, as for a material
+    if (m.material) for (const mat of materialsOf(m)) {
+      if (mat.map) mat.map.dispose();
+      if (mat.normalMap) mat.normalMap.dispose();
+      if (mat.clearcoatNormalMap) mat.clearcoatNormalMap.dispose();
+      mat.dispose();   // building chunks share one material: disposing it again is a no-op
     }
   }
   layers.length = 0;
@@ -933,6 +934,7 @@ export function buildGround(features) {
   wildWater.cityMaps = null;
   const waterMesh = addLayer(lay(waterGeoms), wildWater.cityMaterial(LAYER_BIAS.water));
   if (waterMesh) {
+    splitTwoPass(waterMesh);
     const p = waterMesh.geometry.attributes.position, uv = new Float32Array(p.count * 2);
     for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i); uv[i * 2 + 1] = -p.getZ(i); }
     waterMesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
@@ -2984,7 +2986,7 @@ export class WildWater {
     this.normalB.repeat.set(W / this.TILE_B, D / this.TILE_B);
 
     const material = this.surfaceMaterial(this.normalA, this.normalB, this.DEPTH_OFFSET_FACTOR, this.DEPTH_OFFSET_UNITS);
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = splitTwoPass(new THREE.Mesh(geometry, material));
     mesh.position.y = level;
     mesh.renderOrder = 1;
     mesh.frustumCulled = false;
@@ -3013,7 +3015,7 @@ export class WildWater {
     if (!this.plane) return;
     scene.remove(this.plane);
     this.plane.geometry.dispose();
-    this.plane.material.dispose();
+    for (const mat of materialsOf(this.plane)) mat.dispose();
     this.plane = null;
   }
 
@@ -3023,7 +3025,7 @@ export class WildWater {
       this.cityMaps[1].offset.set((this.FLOW_B.x * timeSeconds) % 1, (this.FLOW_B.y * timeSeconds) % 1);
     }
     if (!this.plane) return;
-    const m = this.plane.material;
+    const m = materialsOf(this.plane)[0];   // the two-pass copies share these maps
     m.normalMap.offset.set(
       (this.FLOW_A.x * timeSeconds) % 1,
       (this.FLOW_A.y * timeSeconds) % 1

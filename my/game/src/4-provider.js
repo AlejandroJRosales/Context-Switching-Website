@@ -23,11 +23,22 @@ export function baseAt(x, z) { providers.active.surface(x, z, _surf); return _su
 // Where feet rest: the base, or the bed below it in water.
 export function surfaceY(x, z) { providers.active.surface(x, z, _surf); return _surf.base + _surf.dip; }
 
-// Per-entity footing memo, recomputed on move; returns the dip below the base, leaves _b (base) and _fd (float) on it.
+// Per-entity footing memo of the last two positions asked; returns the dip below the base and leaves _b (base) and _fd
+// (float) on it for the position just asked (slot 1: _hx, _hz, _hv, _h, _b, _fd). Slot 2 (the same names with 2) keeps
+// the position before, so an animal its wall check puts back where it stood (Ecosystem.collide) needs no new
+// surface(). surface() is a function of (x, z) while providers.version holds, so a slot hit is the same answer.
 export function surfaceFor(ent, x, z) {
-  if (ent._hx === x && ent._hz === z && ent._hv === providers.version) return ent._h;
-  providers.active.surface(x, z, _surf);
-  ent._hx = x; ent._hz = z; ent._hv = providers.version;
-  ent._h = _surf.dip; ent._b = _surf.base; ent._fd = _surf.float;
+  const v = providers.version;
+  if (ent._hx === x && ent._hz === z && ent._hv === v) return ent._h;
+  // the slot 1 values move to slot 2 either way
+  const hx = ent._hx, hz = ent._hz, hv = ent._hv, h = ent._h, b = ent._b, fd = ent._fd;
+  if (ent._hx2 === x && ent._hz2 === z && ent._hv2 === v) {
+    ent._hx = x; ent._hz = z; ent._hv = v; ent._h = ent._h2; ent._b = ent._b2; ent._fd = ent._fd2;
+  } else {
+    providers.active.surface(x, z, _surf);
+    ent._hx = x; ent._hz = z; ent._hv = v;
+    ent._h = _surf.dip; ent._b = _surf.base; ent._fd = _surf.float;
+  }
+  ent._hx2 = hx; ent._hz2 = hz; ent._hv2 = hv; ent._h2 = h; ent._b2 = b; ent._fd2 = fd;
   return ent._h;
 }

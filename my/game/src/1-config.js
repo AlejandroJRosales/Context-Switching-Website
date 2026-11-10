@@ -227,6 +227,10 @@ export const MSAA_SAMPLES_WANTED = 8;   // high's MSAA, capped by the GPU
 // sample; with no tone mapping both clip at 1, so the image matches but for edge-resolve rounding)
 export const MSAA_HALF_FLOAT = false;
 export const GRAPHICS_KEY = 'graphics';  // localStorage: 'high' | 'low'
+// PERF PROBE (debug only): per-frame ms in named buckets, logged as medians. On when the page URL has ?perf
+// (PERF_PROBE_PARAM), or set perfProbe.on from the console. Off costs one boolean read per bucket per frame.
+export const PERF_PROBE_PARAM = 'perf';
+export const PERF_PROBE_WINDOW = 300;   // frames per logged report
 
 export const HEMI_DAY = 1.5;
 export const HEMI_NIGHT = 0.8;
@@ -283,6 +287,9 @@ export const SHELL_MAX_CELLS = 4_000_000;  // ~8 MB at Int16, the coarsening cap
 export const SHELL_OUT = -1;
 export const SHELL_AMBIG = -2;
 export const SHELL_EPS = 1e-4;       // cell growth for the edge test, erring to AMBIG
+// SHELL SUB-RASTER: each AMBIG cell split SHELL_SUB x SHELL_SUB, so a query in an edge cell usually skips the ring test.
+// Memory: SHELL_SUB^2 values per AMBIG cell (New York medium: ~127k cells, 4 MB at 4).
+export const SHELL_SUB = 4;
 
 // NPCS: the AIEcosystemArena engine.
 
@@ -1102,6 +1109,8 @@ export const FAR_STAT_MAX = 12000;
 export const FAR_PANEL_SCALE = 0.25;   // far atlas px per near canvas px
 export const FAR_PAGE_PX = 512;        // atlas page size; pages made as needed
 export const FAR_CELL_GUTTER = 2;      // padding px so mipmaps don't bleed
+// HealthBars' measured text widths kept at most (font and string pairs; the panels use a few hundred)
+export const BAR_TEXT_WIDTHS_MAX = 4096;
 export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most
 // No stats past this many metres.
 export const BAR_PX = 0.8 / 192;                       // metres per canvas px (old 0.8 m, 192 px panel)

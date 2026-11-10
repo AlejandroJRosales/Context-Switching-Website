@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  EYE_HEIGHT, GRID_CELL, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR,
+  EYE_HEIGHT, GRID_CELL, LOW_PIXEL_RATIO, BAR_TEXT_WIDTHS_MAX, HIGH_FOG_FAR, LOW_FOG_FAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR,
   LOW_NPC_LOD_DIST, LOW_FAR_STAT_DIST, GRAPHICS_KEY, HEMI_DAY, HEMI_NIGHT, FACADE_LIGHTS_DEG, MOON_MAX, SHADOW_AHEAD, MOON_BLEND_DEG,
   NPC_TICK_S, GAIT_MAX_HZ, GAIT_GALLOP_SWING, GAIT_CADENCE_SCALE, NPC_FIGHT_MOVES,
   NPC_RIG_TOP, NPC_UNIT, PLAYER_HS, NPC_TYPES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUMAN_TYPE_ID,
@@ -2573,6 +2573,7 @@ export class HealthBars {
     this._lists = [null, null];   // update's two passes: the animals, then the corpses
     this.tick = 0;
     this.enabled = true;
+    this.textWidths = new Map();   // TEXT WIDTHS: font + '\n' + text to px
 
     // Hidden stand-ins so compileAsync builds the sprite and brain shaders.
     this.warmBar = this.makeBar();
@@ -2753,17 +2754,31 @@ export class HealthBars {
     return this.panelBottom(info) - (info ? PERSON_ROWS : 1) * BAR_ROW_H - 2 * BAR_PAD;
   }
 
-  // A row's item widths at font px.
+  // TEXT WIDTHS: measureText's width of `text` in `font`, which the caller has just set as ctx.font. A width depends
+  // only on the font and the text (measureText ignores the transform; these fonts are system fonts), so it is kept,
+  // keyed by both, up to BAR_TEXT_WIDTHS_MAX entries (then the cache starts over).
+  textWidth(ctx, font, text) {
+    const key = font + '\n' + text, cache = this.textWidths;
+    let w = cache.get(key);
+    if (w === undefined) {
+      if (cache.size >= BAR_TEXT_WIDTHS_MAX) cache.clear();
+      w = ctx.measureText(text).width;
+      cache.set(key, w);
+    }
+    return w;
+  }
+
+  // A row's item widths at font px (leaves ctx.font set).
   fieldWidths(ctx, fields, px) {
-    ctx.font = FIELD_FONT(px);
-    return fields.map(f => ctx.measureText(f).width);
+    const font = ctx.font = FIELD_FONT(px);
+    return fields.map(f => this.textWidth(ctx, font, f));
   }
 
   statWidths(ctx, px) {
-    ctx.font = STAT_FONT(px);
-    const numberW = ctx.measureText(String(STAT_LABEL_MAX)).width, gap = px * STAT_PART_GAP;
-    ctx.font = ICON_FONT(px);
-    return BAR_ICONS.map((icon, i) => ctx.measureText(icon).width + gap + numberW + (STAT_ARROWED[i] ? gap + px : 0));
+    const statFont = ctx.font = STAT_FONT(px);
+    const numberW = this.textWidth(ctx, statFont, String(STAT_LABEL_MAX)), gap = px * STAT_PART_GAP;
+    const iconFont = ctx.font = ICON_FONT(px);
+    return BAR_ICONS.map((icon, i) => this.textWidth(ctx, iconFont, icon) + gap + numberW + (STAT_ARROWED[i] ? gap + px : 0));
   }
 
   // Largest font px, up to BAR_TEXT_FONT, at which the row fits.
@@ -2796,15 +2811,16 @@ export class HealthBars {
   // The stat row: icon, centered number, arrow.
   statRow(ctx, vals, arrows, rowCy, px) {
     const xs = this.spreadX(this.statWidths(ctx, px)), gap = px * STAT_PART_GAP;
-    ctx.font = STAT_FONT(px);
-    const numberW = ctx.measureText(String(STAT_LABEL_MAX)).width;
+    const statFont = STAT_FONT(px), iconFont = ICON_FONT(px);
+    ctx.font = statFont;
+    const numberW = this.textWidth(ctx, statFont, String(STAT_LABEL_MAX));
     ctx.textBaseline = 'middle';
     for (let i = 0; i < BAR_ICONS.length; i++) {
-      ctx.font = ICON_FONT(px);
+      ctx.font = iconFont;
       ctx.textAlign = 'left';
       ctx.fillText(BAR_ICONS[i], xs[i], rowCy);
-      const numberX = xs[i] + ctx.measureText(BAR_ICONS[i]).width + gap;
-      ctx.font = STAT_FONT(px);
+      const numberX = xs[i] + this.textWidth(ctx, iconFont, BAR_ICONS[i]) + gap;
+      ctx.font = statFont;
       ctx.textAlign = 'center';
       ctx.fillStyle = BAR_COLORS[i];
       ctx.fillText(String(Math.round(vals[i] / BAR_STEPS * STAT_LABEL_MAX)), numberX + numberW / 2, rowCy);   // stat as a whole number

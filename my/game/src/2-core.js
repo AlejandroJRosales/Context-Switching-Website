@@ -4,7 +4,7 @@
 // instance tools), SpatialGrid, ContactGrid, solarVector, moonVector, and `loop` with wake() and invalidate().
 // May import: 1-config.js. No three, no DOM building; wake() runs loop.frame, which 9-main registers.
 import {
-  MITER_MAX
+  MITER_MAX, PERF_PROBE_PARAM, PERF_PROBE_WINDOW
 } from './1-config.js';
 
 export const fmt = n => n.toLocaleString('en-US');
@@ -324,13 +324,18 @@ export class SpatialGrid {
 }
 
 // CONTACT GRID: animals counting-sorted into small hashed cells for hunt/mate queries; collisions only add candidates.
+// items holds the animals bucket by bucket in hash order, each bucket in list order; bucket h is items[begin[h]] to
+// items[end[h] - 1] (begin = end = 0 when empty). A rebuild touches only the buckets it fills and the last rebuild
+// filled, not all 2^bits.
 export class ContactGrid {
   constructor(cellSize, bits = 16) {
     this.cellSize = cellSize;
     this.inv = 1 / cellSize;
     this.mask = (1 << bits) - 1;
-    this.start = new Int32Array(this.mask + 2);
-    this.cursor = new Int32Array(this.mask + 1);
+    this.begin = new Int32Array(this.mask + 1);
+    this.end = new Int32Array(this.mask + 1);
+    this.used = new Int32Array(1024);   // the buckets the last rebuild filled, ascending
+    this.nUsed = 0;
     this.cellOf = new Int32Array(1024);
     this.items = [];
     this.hs = new Int32Array(64);
@@ -339,24 +344,34 @@ export class ContactGrid {
   hash(cx, cz) { return (Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663)) & this.mask; }
 
   rebuild(list) {
-    const n = list.length, start = this.start, cursor = this.cursor, inv = this.inv;
+    const n = list.length, begin = this.begin, end = this.end, inv = this.inv;
     if (this.cellOf.length < n) this.cellOf = new Int32Array(n * 2);
-    const cellOf = this.cellOf;
-    start.fill(0);
-    let m = 0;
+    if (this.used.length < n) this.used = new Int32Array(n * 2);
+    const cellOf = this.cellOf, used = this.used;
+    for (let q = 0; q < this.nUsed; q++) begin[used[q]] = end[used[q]] = 0;
+    // end[h] counts bucket h's animals here
+    let m = 0, nUsed = 0;
     for (let i = 0; i < n; i++) {
       const a = list[i];
       if (!a.alive) { cellOf[i] = -1; continue; }
       const h = this.hash(Math.floor(a.position.x * inv), Math.floor(a.position.z * inv));
-      cellOf[i] = h; start[h + 1]++; m++;
+      cellOf[i] = h;
+      if (end[h] === 0) used[nUsed++] = h;
+      end[h]++; m++;
     }
-    const M = this.mask + 1;
-    for (let h = 0; h < M; h++) { start[h + 1] += start[h]; cursor[h] = start[h]; }
+    this.nUsed = nUsed;
+    // buckets laid out in hash order, as a counting sort over every hash would
+    used.subarray(0, nUsed).sort();
+    for (let q = 0, at = 0; q < nUsed; q++) {
+      const h = used[q], count = end[h];
+      begin[h] = end[h] = at;   // end is the fill cursor until the pass below
+      at += count;
+    }
     const items = this.items;
     items.length = m;
     for (let i = 0; i < n; i++) {
       const h = cellOf[i];
-      if (h >= 0) items[cursor[h]++] = list[i];
+      if (h >= 0) items[end[h]++] = list[i];
     }
   }
 
@@ -386,6 +401,42 @@ export const tools = new MathTools();
 // The frame loop's state: last frame time (-1 asleep), the pending rAF id (0 none), whether the scene changed since
 // the last draw, and the frame function main registers (wake schedules it).
 export const loop = { last: -1, rafId: 0, sceneDirty: true, frame: null };
+
+// PERF PROBE (debug): ms per frame in named buckets. Callers take t0 = perfProbe.t() and later perfProbe.add(name, t0);
+// both do nothing while off. frameEnd() closes one frame; every PERF_PROBE_WINDOW frames the medians and means are logged
+// and kept in perfProbe.last. count(name) adds 1 (e.g. sim ticks run in the frame) instead of a time.
+export const perfProbe = {
+  on: typeof location !== 'undefined' && new URLSearchParams(location.search).has(PERF_PROBE_PARAM),
+  cur: {},       // this frame's sums by bucket
+  rows: [],      // finished frames' sums
+  last: null,    // medians of the last full window
+  t() { return this.on ? performance.now() : 0; },
+  add(name, t0) { if (this.on) this.cur[name] = (this.cur[name] || 0) + performance.now() - t0; },
+  count(name) { if (this.on) this.cur[name] = (this.cur[name] || 0) + 1; },
+  frameEnd() {
+    if (!this.on) return;
+    this.rows.push(this.cur);
+    this.cur = {};
+    if (this.rows.length >= PERF_PROBE_WINDOW) {
+      this.last = { median: this.stat(true), mean: this.stat(false) };
+      console.log('perf probe (ms/frame; ticks = sim ticks/frame):', JSON.stringify(this.last));
+      this.rows.length = 0;
+    }
+  },
+  // per-bucket median (true) or mean (false) over the frames since the last report; a bucket missing in a frame counts
+  // as 0 there. Means show work that runs every few ticks (the grid sync every 3rd), which a median can hide.
+  stat(median) {
+    const names = new Set();
+    for (const r of this.rows) for (const k in r) names.add(k);
+    const out = { frames: this.rows.length };
+    for (const k of names) {
+      const v = this.rows.map(r => r[k] || 0);
+      if (median) v.sort((a, b) => a - b);
+      out[k] = +(median ? v[v.length >> 1] : v.reduce((a, b) => a + b, 0) / v.length).toFixed(2);
+    }
+    return out;
+  }
+};
 
 export function wake() {
   if (document.hidden) return;
