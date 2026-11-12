@@ -1468,3 +1468,36 @@ export const PICKS = [
   ['The Loop', 'Millennium Park, Chicago, IL'],
   ['Ohio University', '1 Park Place, Athens, OH']
 ];
+
+// SOUND (8c-audio.js): playback only. Game code reports events through core's `sound` port; nothing here may change what
+// any creature does, its update rate or its precision. Fitted model data lives in 1b-sound-models.js (tools/sound).
+export const SOUND = {
+  onAtLoad: true,                  // the Sound switch (start card) and chip (settings) start on
+  volume: 0.8,                     // master gain, before the compressor
+  compressor: { thresholdDb: -12, kneeDb: 6, ratio: 4, attackS: 0.003, releaseS: 0.25 },
+  noiseS: 2,                       // length of the one shared looping white-noise buffer every model reads
+  curveMinStepMs: 1,               // fitted envelopes are resampled once, for setValueCurveAtTime, at each model's smallest
+                                   // breakpoint gap but no finer than this
+  voices: { high: 16, low: 8 },    // most sounds playing at once, per Graphics quality; the quietest is stolen
+  panning: { high: 'HRTF', low: 'equalpower' },   // PannerNode panningModel per Graphics quality
+  distance: { model: 'inverse', refM: 1, rolloff: 1, maxM: 1000 },   // PannerNode distance law (the voice manager uses the same)
+  cullGain: 0.03,                  // an emission quieter than this at the listener is not played
+  stealFadeS: 0.01,                // a stolen voice fades out over this
+  randomSeed: 1,                   // audio's own generator (noise, read points), so it never draws from the sim's Math.random
+  // FOOTSTEPS: every walking body (people, animals, the player) on the one fitted step for now; heavier is louder
+  footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.5, releaseS: 0.03 },
+  // GUNSHOT: the fitted Glock 19c shot, at the muzzle
+  gun: { model: 'gunshot', outputGain: 1.0, releaseS: 0.05 },
+  // CAR: start on boarding, then the engine loop (idle, revving with speed), shutdown on getting out
+  car: {
+    startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',
+    outputGain: 1.0,
+    speedRangeMps: [0, 35],        // |speed| over this range takes the firing rate from idle to the model's revMaxRatio
+    speedSmoothS: 0.2,             // time constant of the firing rate and loudness following speed
+    startToIdleFadeS: 0.3,         // the start fades out while the engine loop fades in over this
+    idleToShutdownFadeS: 0.12,     // the engine loop fades out over this as the shutdown starts
+    lateIdleFadeS: 0.3,            // engine loop fade-in when sound comes on mid-drive (no start sound to follow)
+    releaseS: 0.05,                // start and shutdown models ramp to silence over this after their last breakpoint
+    lostAfterS: 0.5                // no engine report for this long (a world reload, a reset): the loop stops
+  }
+};

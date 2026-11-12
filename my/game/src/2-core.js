@@ -1,7 +1,8 @@
 // 2-core.js: CORE. Math and spatial helpers every layer shares, plus the frame loop's state.
 // Owns: fmt, hash01, seededRandom, cellKey, gridOf, ring geometry (ringArea, bounds, dedupeRing, orientRing,
 // offsetRing, pointInRing, closestOnRing), fightEase/fightClamp01, TWO_PI/wrapAngle/turnToward, MathTools (random, gauss, and its
-// instance tools), SpatialGrid, ContactGrid, solarVector, moonVector, and `loop` with wake() and invalidate().
+// instance tools), SpatialGrid, ContactGrid, solarVector, moonVector, `loop` with wake() and invalidate(), and the sound
+// port (`sound`, footfallBetween).
 // May import: 1-config.js. No three, no DOM building; wake() runs loop.frame, which 9-main registers.
 import {
   MITER_MAX, PERF_PROBE_PARAM, PERF_PROBE_WINDOW
@@ -385,6 +386,23 @@ export const tools = new MathTools();
 // The loop runs only while the image can change (input, airborne, pose or scene change), else sleeps.
 // The frame loop's state: last frame time (-1 asleep), the pending rAF id (0 none), whether the scene changed since
 // the last draw, and the frame function main registers (wake schedules it).
+// SOUND PORT: game code reports sound events here and nowhere else; main points emit at the audio backend (8c-audio.js)
+// after the start tap, so until then, and with any backend, an event costs one empty call. Playback only: nothing that
+// reads or answers an event may change what any creature does, its update rate or its precision.
+//   emit(type, x, y, z, body): a sound at world (x, y, z); body is the emitting body, read only if the sound is heard.
+//   'footstep': a foot (or a diagonal pair) landed; body has bodyMassKg().
+//   'gunshot': a shot at the muzzle. 'carStart' / 'carStop': the player got in / out (body: the car).
+//   'carEngine': every frame the player drives, at the car; body is the car (its speed, m/s). Reports stopping ends the engine.
+export const sound = { emit(type, x, y, z, body) {} };
+
+// FOOTFALLS: every rig swings its legs by sin(walk phase) (humanGaitTerms and the human shader; poseBoxRig's diagonal
+// pairs), so a foot lands where the swing peaks, at phase pi/2 + k*pi. True when a phase step from p0 to p1 crossed one;
+// p1 below p0 is a wrapped phase (people's gait wraps at 2 pi, an animal's animTime does not).
+export function footfallBetween(p0, p1) {
+  if (p1 < p0) p1 += TWO_PI;
+  return Math.floor((p1 - Math.PI / 2) / Math.PI) !== Math.floor((p0 - Math.PI / 2) / Math.PI);
+}
+
 export const loop = { last: -1, rafId: 0, sceneDirty: true, frame: null };
 
 // PERF PROBE (debug): ms per frame in named buckets. Callers take t0 = perfProbe.t() and later perfProbe.add(name, t0);

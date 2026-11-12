@@ -19,7 +19,7 @@ import {
   GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE
 } from './1-config.js';
 import {
-  fightEase, fightClamp01, tools, loop, wake, invalidate
+  fightEase, fightClamp01, tools, loop, wake, invalidate, sound, footfallBetween
 } from './2-core.js';
 import {
   renderer, scene, camera, rig, perf
@@ -503,6 +503,10 @@ export const pov = {
     const vl = G.speed / leg;
     const stride = Math.min(HUMAN_STRIDE_MAX, HUMAN_STRIDE_BASE + HUMAN_STRIDE_PER_V * vl);
     const ph = G.phase + Animal.TWO_PI * Math.min(d / (stride * leg), HUMAN_CADENCE_MAX * dt);
+    // FOOTSTEP SOUND: a footfall on the ground (not swimming or mid-jump); playback only
+    if (player.grounded && !swimming && footfallBetween(G.phase, ph)) {
+      sound.emit('footstep', player.pos.x, player.pos.y - EYE_HEIGHT, player.pos.z, game.avatar);
+    }
     G.phase = ph >= Animal.TWO_PI ? ph - Animal.TWO_PI : ph;
     G.swing = Math.min(HUMAN_SWING_MAX, Math.asin(Math.min(1, stride / 4))) * Math.min(1, G.speed / HUMAN_IDLE_SPEED);
     G.run = Math.max(0, Math.min(1, (vl - 2.6) / 2.6));
@@ -520,25 +524,31 @@ export const pov = {
     blobShadows.hidePlayer();
   },
 
-  // After step(): place the camera and pose the body.
+  // After step(): step the gait whenever the player is on foot (its footfalls make footstep sounds in either view), then
+  // pose the body in 3rd person.
   apply(dt) {
-    const show = this.mode === '3rd' && !player.inCar && play.active && !renderer.xr.isPresenting;
     if (!this.body) this.build();
+    const onFoot = !player.inCar && play.active;   // the body walks: its gait (and footsteps) run in either view
+    const show = onFoot && this.mode === '3rd' && !renderer.xr.isPresenting;
+    const kp = NPC_UNIT * this.heightScale;
+    const G = this.gait;
+    if (onFoot) {
+      // flying: the standing pose
+      if (flying) { G.x = player.pos.x; G.z = player.pos.z; G.speed = G.swing = G.run = 0; }
+      else this.stepGait(dt, kp);
+    }
     if (!show) { this.hideBody(); return; }
     this.body.visible = true;
 
     const feet = player.pos.y - EYE_HEIGHT;
-    const b = this.body, kp = NPC_UNIT * this.heightScale;
+    const b = this.body;
     b.position.set(player.pos.x, feet + SPECIES.human.lift * kp, player.pos.z);
     b.rotation.y = bodyYaw();
     // no blob for a floating or submerged body
     if (flying || swimming) blobShadows.hidePlayer();
     else blobShadows.placePlayer(player.pos.x, feet, player.pos.z, b.rotation.y, kp);
 
-    const G = this.gait, gait = b.geometry.attributes.iGait;
-    // flying: the standing pose
-    if (flying) { G.x = player.pos.x; G.z = player.pos.z; G.speed = G.swing = G.run = 0; }
-    else this.stepGait(dt, kp);
+    const gait = b.geometry.attributes.iGait;
     // iGait.w: negative crouch share while crouching, else run share
     const crouchShare = crouchY / CROUCH_DROP;
     gait.array[0] = kp; gait.array[1] = G.phase; gait.array[2] = G.swing; gait.array[3] = crouchShare > 0 ? -crouchShare : G.run;
@@ -1261,6 +1271,7 @@ export const game = {
     if (dx !== 0 || dz !== 0) player.heading = Math.atan2(-dx, -dz);   // the body faces the shot
     this.placeAvatar();
     ecosystem.projectiles.fire(this.avatar, ex, ey, ez, dx, dy, dz, gun, this.playerHurtsAnimals());
+    sound.emit('gunshot', ex, ey, ez, this.avatar);
     gunView.kick();
     if (w.mag === 0) this.startReload(w, gun, now);
   },
@@ -2602,6 +2613,7 @@ export function enterCar() {
 // In the seat: the car takes the player.
 function boardCar() {
   setPlayerInCar(true);
+  sound.emit('carStart', car.x, car.y, car.z, car);
   stance.stand(); crouchY = 0;
   chaseCam.reset(car.yaw);
   player.vel.set(0, 0, 0);
@@ -2622,6 +2634,7 @@ export function exitCar() {
     if (shellAt(px, pz) >= 0) continue;
     if (solidOverlap(px, pz, PLAYER_RADIUS + 0.05, g, g + EYE_HEIGHT + HEAD_CLEAR)) continue;
     setPlayerInCar(false);
+    sound.emit('carStop', car.x, car.y, car.z, car);
     const s = carSeat(_carAt);
     player.pos.set(s.x, seatFeetY() + EYE_HEIGHT, s.z);
     player.vel.set(0, 0, 0);
@@ -2653,6 +2666,7 @@ export function toggleCar() {
 
 export function driveStep(dt) {
   jumpQueued = false;
+  sound.emit('carEngine', car.x, car.y, car.z, car);   // every driving frame: the engine follows the car and its speed
 
   let throttle = 0, steer = 0;
   if (play.active) {

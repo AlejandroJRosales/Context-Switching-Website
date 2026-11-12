@@ -62,6 +62,18 @@ diff before.txt after.txt
 
 It lists every event listener on `window`, `document` and the canvas after the intro loads, in registration order, with each handler's first source line. Use it when a change touches how or where listeners register.
 
+## sound/: fitted sound models
+
+Python 3 with numpy and scipy (matplotlib for `split_parts.py`'s spectrograms). Each sound the game plays is a model fitted to a recording; no audio ships.
+
+```
+python3 -I tools/sound/split_parts.py                                    # cut the recordings into labelled parts (edit PARTS)
+python3 -I tools/sound/fit_models.py parts glock.wav sounds.json         # fit every model into sounds.json's models block
+python3 -I tools/sound/export_models.py sounds.json src/1b-sound-models.js footstepWalk   # the models the game plays
+```
+
+`fit_models.py` runs from the folder holding `car.wav`, `steps.wav` and `parts/`; its tables (`BAND_MODEL_SPECS`, `ENGINE_SPEC`) say which part each model comes from. `export_models.py` writes only the named models, so add a name there when the game starts playing it. Never edit `src/1b-sound-models.js` by hand; tunables (levels, voices, distances) are `SOUND` in `src/1-config.js`.
+
 ## Not covered
 
 Runtime behaviour beyond the readout, the in-game checklist, and TDZ order inside the modules. Modules don't load from `file://`, so open `index.html` through a static server (`npx serve` or `python3 -m http.server` from the project folder).

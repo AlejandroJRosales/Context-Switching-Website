@@ -24,7 +24,7 @@ import {
   BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW, GUN_RELOAD, GUN_MAG
 } from './1-config.js';
 import {
-  fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
+  fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, sound, footfallBetween
 } from './2-core.js';
 import {
   startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf
@@ -1702,12 +1702,18 @@ export class AnimalRenderer {
       const kp = a.rigScale();
 
       const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
+      const walkPhase = human ? 'gaitPhase' : 'animTime';   // the field this rig's leg swing follows (footfalls below)
+      const phaseBefore = a[walkPhase];
       if (human) this.stepGait(a, deltaTime, kp);
       else if (deltaTime && a.moving) {
         const v = a.stepLength() / NPC_TICK_S;
         const perCycle = 4 * p.legLen * kp * Math.sin(swing);
         const hz = Math.min(GAIT_MAX_HZ, v / perCycle) * GAIT_CADENCE_SCALE;
         a.animTime += deltaTime * hz * 2 * Math.PI;
+      }
+      // FOOTSTEP SOUND: a live, upright body whose legs passed a footfall this tick (render-side, playback only)
+      if (!corpse && footfallBetween(phaseBefore, a[walkPhase]) && !a.isDown(now)) {
+        sound.emit('footstep', a.position.x, a.position.y, a.position.z, a);
       }
 
       if (!inVr) {
