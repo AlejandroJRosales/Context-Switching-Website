@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
-  FOOT_CAM_FOLLOW, LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
+  LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
   HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V, HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED,
@@ -16,7 +16,7 @@ import {
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
   CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON,
-  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, AIM_BUTTON_GAP_PX, BULLET_ICON_SVG
+  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE
 } from './1-config.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate
@@ -815,6 +815,7 @@ export const gunView = {
 
   // Before pov.apply: the draw's progress, what is drawn where, and the aim share and zoom.
   step(dt) {
+    game.settleReload(ecosystem.time);
     if (this.drawDir !== 0) {
       this.drawP = Math.min(1, Math.max(0, this.drawP + this.drawDir * dt / GUN_DRAW.drawS));
       if (this.drawP === 1) this.drawDir = 0;
@@ -952,11 +953,23 @@ export const needWaterEl = document.getElementById('needWater');
 export const needDayEl = document.getElementById('needDay');
 export const needInfoEl = document.getElementById('needInfo');
 export const needBodyEl = document.getElementById('needBody');
+// An icon svg `px` square, centred in its box (ICON_STYLE sizes).
+export const sizeIcon = (svg, px) => Object.assign(svg.style, {
+  display: 'block', width: px + 'px', height: px + 'px', margin: '0 auto', pointerEvents: 'none'
+});
+// An icon into `el` at `px`: ICONS markup as markup, anything else (emoji, a word) as text. Icons come only from
+// 1-config.js.
+export function showIcon(el, icon, px) {
+  if (!icon.startsWith('<svg')) { el.textContent = icon; return; }
+  el.innerHTML = icon;
+  sizeIcon(el.firstElementChild, px);
+}
 // INVENTORY SLOTS: one button per key, then the craft slot.
 export const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
 export function slotButton(key, craft) {
   const b = document.createElement('button');
   b.disabled = true;
+  b.style.color = ICON_STYLE.slotColor;   // the icons' currentColor
   if (craft) b.className = 'craft';
   b.setAttribute('aria-label', craft ? 'Nothing to craft' : 'Empty slot');
   const kbd = document.createElement('kbd');
@@ -1179,6 +1192,19 @@ export const game = {
     w.mag += n; w.reserve -= n;
     this.reloadUntil = -1;
   },
+  // A magazine change ends once its time is up: each frame (gunView.step) and before a shot, so the rounds land as the
+  // reload ring fills, not at the next tap. Returns true while one is still under way.
+  settleReload(now) {
+    if (this.reloadUntil < 0) return false;
+    if (now < this.reloadUntil) return true;
+    this.finishReload(this.weapon, this.gunOf(this.weapon));
+    return false;
+  },
+  // Share of the magazine change done, 0 to 1, or -1 with none under way (the attack button's reload ring).
+  reloadShare(now) {
+    if (this.reloadUntil < 0 || this.weapon === null) return -1;
+    return Math.max(0, Math.min(1, 1 - (this.reloadUntil - now) / this.gunOf(this.weapon).reloadS));
+  },
 
   // FIRE in either mode, once per shotS; an empty magazine changes over reloadS. The bullet leaves the eye toward what
   // the crosshair covers and costs animals health where the player hurts them (playerHurtsAnimals).
@@ -1186,10 +1212,7 @@ export const game = {
     const w = this.weapon;
     if (!w || !gunView.ready || !play.active || this.dead || !ecosystem.ready) return;
     const gun = this.gunOf(w), now = ecosystem.time;
-    if (this.reloadUntil >= 0) {
-      if (now < this.reloadUntil) return;
-      this.finishReload(w, gun);
-    }
+    if (this.settleReload(now)) return;   // still changing magazines
     if (now < this.nextShotAt) return;
     if (w.mag <= 0) { this.startReload(w, gun, now); return; }
     w.mag--;
@@ -1556,7 +1579,7 @@ export const game = {
       this._shownSlots = slots;
       this.inventory.forEach((it, i) => {
         const el = slotEls[i], item = it && SURVIVOR_CONFIG.inventory.items[it.kind];
-        el.querySelector('span').textContent = item ? item.icon : '';
+        showIcon(el.querySelector('span'), item ? item.icon : '', ICON_STYLE.slotPx);
         el.disabled = !item;
         const verb = it && it === this.weapon ? 'Holster' : item && SURVIVOR_ACTIONS[item.action].verb;   // an equipped gun's slot holsters it
         el.setAttribute('aria-label', item ? `${verb} ${item.label.toLowerCase()}` : 'Empty slot');
@@ -1565,7 +1588,7 @@ export const game = {
       updateCarButton();
       // the craft slot shows what the items make
       const c = this.craftable(), made = c && SURVIVOR_CONFIG.inventory.items[c.recipe.makes];
-      craftEl.querySelector('span').textContent = made ? made.icon : '';
+      showIcon(craftEl.querySelector('span'), made ? made.icon : '', ICON_STYLE.slotPx);
       craftEl.disabled = !made;
       craftEl.setAttribute('aria-label', made ? `Craft ${made.label.toLowerCase()}` : 'Nothing to craft');
     }
@@ -1860,7 +1883,7 @@ export const car = {
   mesh: null, front: [], wheels: []
 };
 
-// CHASE CAMERA: moving swings the view behind the heading CAM_LOOK_HOLD after the last look. Car: step; on foot: drift.
+// CHASE CAMERA (the car only): driving swings the view behind the heading CAM_LOOK_HOLD after the last look.
 export const chaseCam = {
   camYaw: 0, lookYaw: 0, lookPitch: 0, lookAt: 0, shownYaw: 0, shownPitch: 0, settling: false,
 
@@ -1893,19 +1916,6 @@ export const chaseCam = {
     player.yaw = this.shownYaw = this.camYaw + this.lookYaw;
     player.pitch = this.shownPitch = basePitch + this.lookPitch;
     this.settling = Math.abs(dy) > 1e-4 || this.lookYaw !== 0 || this.lookPitch !== 0;
-  },
-
-  // On foot: swing player.yaw toward `heading` at `rate` while moving.
-  drift(dt, heading, moving, rate) {
-    const now = performance.now();
-    if (player.yaw !== this.shownYaw || player.pitch !== this.shownPitch) this.lookAt = now;
-    let dy = 0;
-    if (moving && now - this.lookAt > CAM_LOOK_HOLD) {
-      dy = Math.atan2(Math.sin(heading - player.yaw), Math.cos(heading - player.yaw));
-      player.yaw += dy * (1 - Math.exp(-rate * dt));
-    }
-    this.shownYaw = player.yaw; this.shownPitch = player.pitch;
-    this.settling = Math.abs(dy) > 1e-3;
   }
 };
 
@@ -2289,20 +2299,44 @@ export const attackEl = document.getElementById('attack');
 export const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
 // GUN BUTTONS, made here beside the attack button with its classes and placed each time one shows (placeGunButtons):
 // Draw/Holster left of the attack button while a gun is carried, Aim above it while one is in hand.
-function gunButton(id, label) {
+// A face is a `label` (its accessible name) and what it shows (`face`: ICONS markup, or text).
+function setButtonFace(b, { label, face }) { b.setAttribute('aria-label', label); showIcon(b, face, ICON_STYLE.buttonPx); }
+function gunButton(id, face) {
   const b = document.createElement('button');
   b.id = id;
   b.className = attackEl.className.replace(/\b(on|held)\b/g, '').trim();
-  b.textContent = label;
+  setButtonFace(b, face);
   b.style.display = 'none';
   attackEl.before(b);
   return b;
 }
-export const aimEl = gunButton('aim', 'Aim');
-export const drawEl = gunButton('draw', 'Draw');
-// the Draw/Holster button's labels: holster (true) while a gun is in hand and not on its way back, else draw
-const DRAW_LABELS = { true: 'Holster', false: 'Draw' };
+// the Draw/Holster button's faces: holster (true) while a gun is in hand and not on its way back, else draw
+const DRAW_FACES = { true: { label: 'Holster', face: ICONS.holster }, false: { label: 'Draw', face: ICONS.draw } };
+export const aimEl = gunButton('aim', { label: 'Aim', face: ICONS.aim });
+export const drawEl = gunButton('draw', DRAW_FACES[false]);
 const fistHtml = attackEl.innerHTML, fistLabel = attackEl.getAttribute('aria-label');   // the attack button's own face
+// THE GUN FACE (GUN_BUTTON_FACE): the fire icon, a reload ring centred over it, and the magazine's rounds above it,
+// built once and swapped in for the fist while a gun is in hand. Inline styles, so the stylesheet's `#attack svg` size
+// (the fist's) does not reach them.
+const gunFace = (() => {
+  const F = GUN_BUTTON_FACE, c = F.ringPx / 2, r = (F.ringPx - F.ringStrokePx) / 2;
+  const host = document.createElement('span');
+  host.innerHTML = ICONS.fire + `<svg viewBox="0 0 ${F.ringPx} ${F.ringPx}" aria-hidden="true">` +
+    `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${F.ringColor}" stroke-width="${F.ringStrokePx}" ` +
+    'stroke-linecap="round" pathLength="1" stroke-dasharray="1"/></svg>';
+  const [fire, ring] = host.querySelectorAll('svg');
+  sizeIcon(fire, ICON_STYLE.firePx);
+  Object.assign(ring.style, {
+    position: 'absolute', left: '50%', top: '50%', width: F.ringPx + 'px', height: F.ringPx + 'px',
+    margin: `${-c}px 0 0 ${-c}px`, transform: 'rotate(-90deg)', display: 'none'   // rotated so it fills from the top
+  });
+  const ammo = document.createElement('span');
+  Object.assign(ammo.style, {
+    position: 'absolute', left: '0', right: '0', top: F.ammoTopPx + 'px', textAlign: 'center',
+    font: `400 ${F.ammoFontPx}px/1 var(--font-ui)`, letterSpacing: '0', pointerEvents: 'none'
+  });
+  return { fire, ring, arc: ring.querySelector('circle'), ammo };
+})();
 export const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
 
 export function holdPedal(btn, name) {
@@ -2376,8 +2410,10 @@ export function updateSprintButton() {
 }
 
 // The gun buttons and the attack button's face: with a gun carried, Draw/Holster shows left of the attack button; with
-// one in hand, Aim shows above it and a bullet replaces the fist.
-export let aimShown = false, drawShown = false, bulletShown = false, aimLit = false, holsterShown = false;
+// one in hand, Aim shows above it and the fire icon replaces the fist.
+export let aimShown = false, drawShown = false, gunFaceShown = false, aimLit = false, holsterShown = false;
+// the gun face as last drawn: reload ring step (-1: no reload) and rounds in the magazine; NaN redraws both
+let shownReloadStep = NaN, shownMag = NaN;
 // the Draw/Holster button holsters now: a gun in hand, not already going back
 const gunHolsters = () => game.weapon !== null && gunView.drawDir >= 0;
 // Draw/Holster left of the attack button, Aim above Draw/Holster; each the attack button's size, AIM_BUTTON_GAP_PX apart.
@@ -2399,15 +2435,29 @@ function showGunButton(el, show) {
 }
 export function updateGunButtons() {
   const inHand = game.weapon !== null;   // a gun in hand (or being drawn or holstered)
-  if (inHand !== bulletShown) {
-    bulletShown = inHand;
-    attackEl.innerHTML = inHand ? BULLET_ICON_SVG : fistHtml;
+  if (inHand !== gunFaceShown) {
+    gunFaceShown = inHand;
+    if (inHand) { attackEl.replaceChildren(gunFace.fire, gunFace.ring, gunFace.ammo); shownReloadStep = shownMag = NaN; }
+    else attackEl.innerHTML = fistHtml;
     if (inHand) attackEl.setAttribute('aria-label', 'Shoot');
     else if (fistLabel === null) attackEl.removeAttribute('aria-label');
     else attackEl.setAttribute('aria-label', fistLabel);
   }
+  if (inHand) {
+    const F = GUN_BUTTON_FACE, share = game.reloadShare(ecosystem.time);   // share: -1 with no reload under way
+    const step = share < 0 ? -1 : Math.round(share * F.ringSteps);
+    if (step !== shownReloadStep) {
+      shownReloadStep = step;
+      const loading = step >= 0, done = loading ? step / F.ringSteps : 1;
+      gunFace.ring.style.display = loading ? '' : 'none';
+      gunFace.arc.setAttribute('stroke-dashoffset', String(1 - done));
+      gunFace.fire.style.opacity = String(F.loadingAlpha + (1 - F.loadingAlpha) * done);
+    }
+    const mag = game.weapon.mag;
+    if (mag !== shownMag) { shownMag = mag; gunFace.ammo.textContent = String(mag); }
+  }
   const holsters = gunHolsters();
-  if (holsters !== holsterShown) { holsterShown = holsters; drawEl.textContent = DRAW_LABELS[holsters]; }
+  if (holsters !== holsterShown) { holsterShown = holsters; setButtonFace(drawEl, DRAW_FACES[holsters]); }
   if (gunView.aimOn !== aimLit) { aimLit = gunView.aimOn; aimEl.classList.toggle('held', aimLit); }   // lit while Aim is on
   // on foot with touch controls, not flying (sprintShown), and not getting in or out of the car
   const touchFoot = sprintShown && carTransit === null;
@@ -2437,6 +2487,8 @@ export function updateUseButton(carState) {
 }
 
 export let carBtnState = '';
+// the car button's faces by carBtnState: a car door, to get in or out
+const CAR_FACES = { enter: { label: 'Drive', face: ICONS.door }, exit: { label: 'Exit', face: ICONS.door } };
 export function updateCarButton() {
   updateSprintButton();
   updateGunButtons();
@@ -2446,7 +2498,7 @@ export function updateCarButton() {
   if (state === carBtnState) return;
   carBtnState = state;
   carEl.classList.toggle('on', state !== '');
-  carEl.textContent = state === 'exit' ? 'Exit' : 'Drive';
+  if (state !== '') setButtonFace(carEl, CAR_FACES[state]);
   const pedals = state === 'exit' && touchUi();
   for (const el of [gasEl, brakeEl]) {
     el.classList.toggle('on', pedals);
@@ -2675,16 +2727,15 @@ export function playerStep(dt) {
     }
   }
 
-  // 3rd person: the body turns toward the move. 1st person and VR: it faces the view.
+  // 3rd person: the body turns toward the move. 1st person and VR: it faces the view. On foot the view turns only by
+  // look input (mouse, the look side of the screen), never by moving, so the chase camera never settles here.
+  chaseCam.settling = false;
   if (pov.mode !== '3rd' || renderer.xr.isPresenting) { if (!knockedDown) player.heading = player.yaw; }
-  else {
-    if (dx !== 0 || dz !== 0) {
-      let dh = Math.atan2(-dx, -dz) - player.heading;
-      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-      const maxTurn = FOOT_TURN_RATE * dt;
-      player.heading += Math.max(-maxTurn, Math.min(maxTurn, dh));
-    }
-    chaseCam.drift(dt, player.heading, len > 0 && play.active && !swimming, FOOT_CAM_FOLLOW);
+  else if (dx !== 0 || dz !== 0) {
+    let dh = Math.atan2(-dx, -dz) - player.heading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    const maxTurn = FOOT_TURN_RATE * dt;
+    player.heading += Math.max(-maxTurn, Math.min(maxTurn, dh));
   }
 
   // attack: with a gun in hand a tap fires once (semi-auto) while aiming; bare hands, a tap punches once and a hold keeps punching
@@ -2779,7 +2830,7 @@ function poseFrame(dt) {
 
 export function movementHeld() {
   return stickId !== null || climb !== 0 || jumpQueued || attackQueued || pedal.gas || pedal.brake || pedal.jump || pedal.attack ||
-    gunView.aim !== (gunView.aiming ? 1 : 0) || gunView.recoil > 0 || gunView.drawDir !== 0 || carTransit !== null ||
+    gunView.aim !== (gunView.aiming ? 1 : 0) || gunView.recoil > 0 || gunView.drawDir !== 0 || game.reloadUntil >= 0 || carTransit !== null ||
     keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD') ||
     keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight') ||
     keys.has('Space') ||

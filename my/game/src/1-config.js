@@ -18,9 +18,8 @@ export const WALK_SPEED = 10.0;
 export const RUN_SPEED = 15.0;
 export const JUMP_SPEED = 7.0;
 export const CROUCH_SPEED = 4.0;
-// On foot (GTA-style): the body turns to the move, the view drifts behind.
+// On foot: the body turns to the move; the view turns only by look input (mouse, the look side of the screen).
 export const FOOT_TURN_RATE = 10;    // rad/s body turn toward the move
-export const FOOT_CAM_FOLLOW = 1;    // 1/s view drift behind the body, CAM_LOOK_HOLD after the last look
 export const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit
 export const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
 export const CROUCH_RATE = 3.0;     // m/s the eye moves into or out of a crouch
@@ -1044,6 +1043,54 @@ export const BLOB_FULL_SUN = 1.35;      // sun intensity where blobs reach BLOB_
 export const BLOB_LIFT = 0.04;          // above the feet, against z-fighting
 export const BLOB_SPREAD = 1.25;        // size over the footprint
 
+// ICONS: single-colour SVG on a 24-unit grid, all in currentColor (shading by opacity), so every icon takes its button's
+// text colour and a lit button inverts it. Sized where shown by ICON_STYLE (showIcon in 8b). Items name theirs in
+// SURVIVOR_CONFIG.inventory; an item or injury icon may also be plain emoji text.
+export const ICON_STYLE = {
+  buttonPx: 24,    // Aim, Draw/Holster, the car door
+  firePx: 26,      // the attack button's fire icon (inside GUN_BUTTON_FACE's ring)
+  slotPx: 18,      // inventory and craft slots
+  slotColor: 'rgba(232, 228, 220, 0.85)'   // the slots' icon colour (the slot buttons set none of their own)
+};
+// one icon's svg around its shapes
+const iconSvg = body => '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">' + body + '</svg>';
+// a pistol side view, muzzle right: slide with sights, frame and raked grip, trigger guard
+const ICON_GUN = '<rect x="2" y="7.2" width="20" height="4.6" rx="0.9"/>' +
+  '<rect x="2.7" y="6.1" width="1.5" height="1.3"/><rect x="19.6" y="6.1" width="1.4" height="1.3"/>' +
+  '<path opacity="0.75" d="M4.8 11.8 H16.4 L15.8 13.4 H12.6 Q12.6 16.4 10.2 16.4 L10.9 15.1 Q11.4 14.9 11.4 13.4 H9.3 L10.6 20.2 Q10.8 21.3 9.7 21.3 H6.9 Q6 21.3 5.8 20.4 L4.6 13.4 Z"/>';
+// an arrow at x, down (holster) or up (draw)
+const ICON_ARROW = (x, down) => down
+  ? `<path d="M${x} 3 V12 M${x - 2.2} 9.8 L${x} 12 L${x + 2.2} 9.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
+  : `<path d="M${x} 12 V3 M${x - 2.2} 5.2 L${x} 3 L${x + 2.2} 5.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+// the gun turned barrel down (rotate 90: muzzle down, grip to the left), its top `top` units down
+const ICON_GUN_DOWN = top => `<g opacity="0.6" transform="translate(21 ${top}) rotate(90) scale(0.82)">${ICON_GUN}</g>`;
+// a belt holster: the belt clip, then the pouch from its mouth at y
+const ICON_POUCH = y => `<rect x="9" y="${y - 2.2}" width="9.6" height="2" rx="0.7"/>` +
+  `<path d="M9.6 ${y} H17.8 L16.7 21 Q16.4 22.6 14.9 22.6 H12.5 Q11 22.6 10.7 21 Z"/>`;
+export const ICONS = {
+  aim: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+    '<circle cx="12" cy="12" r="7"/><path d="M12 1.5v6M12 16.5v6M1.5 12h6M16.5 12h6"/>' +
+    '<circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>',
+  holster: iconSvg(ICON_GUN_DOWN(1.2) + ICON_POUCH(13.5) + ICON_ARROW(20.8, true)),
+  draw: iconSvg(ICON_GUN_DOWN(-1.6) + ICON_POUCH(16.2) + ICON_ARROW(20.8, false)),
+  door: iconSvg('<path fill-rule="evenodd" d="M3.5 21.5 V11.2 L9.2 3.5 H19.3 Q20.5 3.5 20.5 4.7 V21.5 Z M6.4 11 L10.3 5.9 H18.1 V11 Z M14 13.4 H18 V15 H14 Z"/>'),
+  fire: iconSvg('<path opacity="0.55" d="M12 1 L13.9 7.4 L19.8 4.2 L16.6 10.1 L23 12 L16.6 13.9 L19.8 19.8 L13.9 16.6 L12 23 L10.1 16.6 L4.2 19.8 L7.4 13.9 L1 12 L7.4 10.1 L4.2 4.2 L10.1 7.4 Z"/>' +
+    '<path d="M12 5.5 L13.3 9.6 L17 7.6 L15 11 L18.5 12 L15 13 L17 16.4 L13.3 14.4 L12 18.5 L10.7 14.4 L7 16.4 L9 13 L5.5 12 L9 11 L7 7.6 L10.7 9.6 Z"/>'),
+  gun: iconSvg(ICON_GUN),
+  plant: iconSvg('<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 22 V9"/>' +
+    '<path opacity="0.8" d="M12 14 Q5 15 3.5 8.5 Q10.5 7.8 12 14 Z"/><path opacity="0.8" d="M12 11.5 Q19 12.5 20.5 6 Q13.5 5.3 12 11.5 Z"/>' +
+    '<path d="M12 9.5 Q9 5 12 1.5 Q15 5 12 9.5 Z"/>'),
+  water: iconSvg('<rect x="9.6" y="1.5" width="4.8" height="2.4" rx="0.6"/>' +
+    '<path opacity="0.4" d="M10.2 4.4 H13.8 V6 Q17 7.4 17 10.6 V11 H7 V10.6 Q7 7.4 10.2 6 Z"/>' +
+    '<path d="M7 14.6 H17 V20.6 Q17 22.5 15.1 22.5 H8.9 Q7 22.5 7 20.6 Z"/><rect x="7" y="11.4" width="10" height="2.8" opacity="0.6"/>'),
+  box: iconSvg('<path opacity="0.55" d="M2.5 7.5 L12 3 L21.5 7.5 L12 12 Z"/><path opacity="0.85" d="M2.5 7.5 L12 12 V22 L2.5 17.5 Z"/>' +
+    '<path opacity="0.4" d="M21.5 7.5 L12 12 V22 L21.5 17.5 Z"/><path d="M6.6 5.55 L16.1 10.05 L17.6 9.35 L8.1 4.85 Z M16.1 10.05 V15.8 L17.6 15.1 V9.35 Z"/>'),
+  meat: iconSvg('<path opacity="0.55" d="M14.8 15.4 L19.2 19.8 A2 2 0 1 1 21.4 22.4 A2 2 0 1 1 18.4 20.6 L14 16.2 Z"/>' +
+    '<path d="M15.8 13.4 C17.5 9.5 15.6 3.2 9.8 2.6 C4.6 2.1 1.6 6.8 2.8 11.2 C4 15.6 10 17.6 15.8 13.4 Z"/>'),
+  bandage: iconSvg('<g transform="rotate(-45 12 12)"><rect opacity="0.5" x="1" y="7.5" width="22" height="9" rx="4.5"/>' +
+    '<path fill-rule="evenodd" d="M8 7.5 H16 V16.5 H8 Z M9.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M11.3 12 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M9.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0"/></g>')
+};
+
 // SURVIVOR MODE: rules in SURVIVOR_CONFIG, applied by `game`.
 export const SURVIVOR_CONFIG = {
   maxHealth: 100,
@@ -1062,20 +1109,20 @@ export const SURVIVOR_CONFIG = {
   plantShare: 0.01,                 // player's share of a plant bite's nutrition
   meatDeerShare: 0.1,               // meat feeds this share of an adult buck kill
   flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+
-  // INVENTORY: each kind names its action; `loot` is its box weight.
+  // INVENTORY: each kind names its action; `loot` is its box weight; `icon` is ICONS markup or emoji text.
   inventory: {
     keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot
     items: {
-      crate: { icon: '📦', label: 'Box', action: 'open' },
-      water: { icon: '💧', label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
+      crate: { icon: ICONS.box, label: 'Box', action: 'open' },
+      water: { icon: ICONS.water, label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
       // a whole plant
-      plant: { icon: '🌿', label: 'Plant', action: 'eat', loot: 45, get food() { return playerPlantFood(PLANT_MAX_HEALTH); } },
+      plant: { icon: ICONS.plant, label: 'Plant', action: 'eat', loot: 45, get food() { return playerPlantFood(PLANT_MAX_HEALTH); } },
       // a kill feeds its starting health
-      meat: { icon: '🍖', label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } },
+      meat: { icon: ICONS.meat, label: 'Meat', action: 'eat', loot: 10, get food() { return SPECIES.deer.health * SURVIVOR_CONFIG.meatDeerShare; } },
       // mends its INJURIES
-      bandage: { icon: '🩹', label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 },
+      bandage: { icon: ICONS.bandage, label: 'Bandage', action: 'treat', cures: ['brokenBone'], loot: 10 },
       // a rare find; `weapon` names its WEAPONS entry
-      glock: { icon: '🔫', label: 'Glock 19', action: 'equip', weapon: 'glock19', loot: 2 }
+      glock: { icon: ICONS.gun, label: 'Glock 19', action: 'equip', weapon: 'glock19', loot: 2 }
     }
   },
   // INJURIES: a hit or hurting fall may cause one until an item that `cures` it is used; noRun stops sprinting.
@@ -1301,10 +1348,14 @@ export const GUN_MODEL = {
   ]
 };
 export const AIM_BUTTON_GAP_PX = 12;   // the Aim button's gap left of the attack button
-// the attack button's face while a gun is in hand
-export const BULLET_ICON_SVG = '<svg viewBox="0 0 24 24" width="1.5em" height="1.5em" aria-hidden="true">' +
-  '<path d="M9 10 Q12 1 15 10 Z" fill="#c87a4a"/><rect x="9" y="10" width="6" height="10" fill="#d4a93a"/>' +
-  '<rect x="8.5" y="19.5" width="7" height="2" fill="#b38b2c"/></svg>';
+// THE ATTACK BUTTON'S GUN FACE (gunFace in 8b): ICONS.fire, and over a magazine change a ring fills round it from the
+// top, clockwise, while it fades in from loadingAlpha to whole; the magazine's rounds show above it.
+export const GUN_BUTTON_FACE = {
+  ringPx: 32, ringStrokePx: 2.5, ringColor: '#e8e4dc',   // ring diameter and line width, px (under the label)
+  ringSteps: 60,        // ring redraws per reload at most
+  loadingAlpha: 0.3,    // fire icon opacity as a reload starts
+  ammoFontPx: 9, ammoTopPx: 1    // the rounds label's size and its gap from the button's top, px
+};
 
 // SETTINGS
 
