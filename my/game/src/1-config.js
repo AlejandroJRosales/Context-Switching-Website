@@ -1277,7 +1277,7 @@ export const WEAPONS = {
     magazine: 15,         // rounds per standard magazine
     reserve: 30,          // spare rounds a found gun comes with
     shotS: 0.1,           // least seconds between shots (semi-auto)
-    reloadS: 2,           // seconds to change magazines
+    reloadS: 1,           // seconds to change magazines, and so the reload animation's length (GUN_RELOAD)
     bulletKg: 0.00804,    // 124 gr 9x19 mm bullet
     diameterM: 0.00901,   // bullet diameter
     muzzleMS: 350,        // approx. 124 gr from a 4 in barrel (~1150 ft/s)
@@ -1327,6 +1327,38 @@ export const GUN_WAIST = { side: 0.3, up: 0.5, back: 2.35 };
 // forearm crosses behind the back. Solved so the hand meets the grip and no part of the arm passes through the torso on
 // the way from hanging or from low ready. Getting in the car holsters first.
 export const GUN_DRAW = { drawS: 0.7, grabAt: 0.45, reach: { shoulder: -0.5, elbow: 1.8, abduct: 0.35, turn: -1.65 } };
+// RELOAD over WEAPONS' reloadS, keyed by t, its share (eased between keys, smoothstep; the shader draws the same keys,
+// gunReloadPose in 8a). Angles as HUMAN_CROUCH's, radians; `inward` turns an arm about its shoulder's vertical toward the
+// centre line. The gun arm brings the gun up and in, muzzle raised, then back to low ready (its ends are GUN_POSE's
+// hold). The support arm, by its weight (0: its own swing, 1: the key), drops to the belt for a fresh magazine, brings
+// it under the grip, seats it and lets go; its keys are solved so the hand meets the belt, then the magazine well
+// (GUN_MAG) with the magazine's top at the well, then the well. Aiming waits for the reload.
+export const GUN_RELOAD = {
+  gun: [   // [t, shoulder, elbow, inward]
+    [0, GUN_POSE.holdShoulder, GUN_POSE.holdElbow, 0],
+    [0.15, -0.175, -1.8, 0.48],   // gun at mid chest, close in, muzzle ~23 degrees up
+    [0.85, -0.175, -1.8, 0.48],
+    [1, GUN_POSE.holdShoulder, GUN_POSE.holdElbow, 0]
+  ],
+  support: [   // [t, shoulder, elbow, inward, weight]; weight 0 at both ends
+    [0, 0.5, -1.6, 0.75, 0],
+    [0.25, 0.5, -1.6, 0.75, 1],    // at the belt, front of the off-hand hip
+    [0.35, 0.5, -1.6, 0.75, 1],    // the grab
+    [0.55, -0.3, -1.2, 0.75, 1],   // the magazine under the grip, its top at the well
+    [0.7, -0.3, -1.5, 0.75, 1],    // seated
+    [0.8, -0.3, -1.5, 0.75, 1],
+    [1, -0.3, -1.5, 0.75, 0]
+  ],
+  magAt: [0.35, 0.7],   // the fresh magazine shows in the support hand from the grab to the seat
+  // 1st person: the view model's offset in camera space, metres, and its muzzle-up pitch and cant (roll), radians
+  view: [   // [t, x, y, z, pitch, roll]
+    [0, 0, 0, 0, 0, 0],
+    [0.15, -0.07, 0.05, 0.05, 0.45, 0.55],
+    [0.85, -0.07, 0.05, 0.05, 0.45, 0.55],
+    [1, 0, 0, 0, 0, 0]
+  ],
+  viewMagFromM: 0.3   // 1st person: how far below the well (along the grip) the fresh magazine rises from
+};
 // 1st person: the gun's grip in camera space (metres; -z ahead), low ready to aimed (the sights' tops on the eye line,
 // so they sit on the crosshair), and its muzzle-up tilt at low ready, radians (negative: muzzle down)
 export const GUN_VIEW = { hold: [0.17, -0.17, -0.38], aim: [0, -0.084, -0.32], holdPitch: -0.12, drawFrom: [0.25, -0.5, -0.3] };   // drawFrom: where a drawn gun rises from
@@ -1347,6 +1379,9 @@ export const GUN_MODEL = {
     [0.005, 0.006, 0.005, -0.0042, 0.081, -0.032, 0]   // rear sight, right of the notch
   ]
 };
+// THE FRESH MAGAZINE of a reload (GUN_RELOAD): a box [width, length, depth], metres, in GUN_MODEL's colour; it seats
+// up the grip (GUN_MODEL.parts[0], along its rake) from the grip's base, the magazine well.
+export const GUN_MAG = { size: [0.022, 0.1, 0.03] };
 export const AIM_BUTTON_GAP_PX = 12;   // the Aim button's gap left of the attack button
 // THE ATTACK BUTTON'S GUN FACE (gunFace in 8b): ICONS.fire, and over a magazine change a ring fills round it from the
 // top, clockwise, while it fades in from loadingAlpha to whole; the magazine's rounds show above it.

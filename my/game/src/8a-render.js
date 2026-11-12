@@ -21,7 +21,7 @@ import {
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
-  BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW
+  BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW, GUN_RELOAD, GUN_MAG
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector
@@ -108,14 +108,38 @@ export function humanPetHand(bend, a1, turn, shoulderW) {
   return { x, y: y - HUMAN_CROUCH_DROP, z };
 }
 
-// GUN POSE in iAct.w, negative so it never reads as a pet: aim share (5 bits), view pitch (7 bits), the draw's reach
-// share (5 bits) and hold share (5 bits), 22 bits in all (exact in a float).
-export const GUN_PACK = { aim: [1, 31], pitch: [32, 127], reach: [4096, 31], hold: [131072, 31] };   // [place, steps]
-export function humanGunPack(aim, pitch, reach, hold) {
-  const P = GUN_PACK;
+// GUN POSE in iAct.w, negative so it never reads as a pet: aim share (5 bits), view pitch (7 bits), a move share (6
+// bits: the draw's reach, or the reload's share while `reloading` is set), hold share (5 bits) and reloading (1 bit),
+// 24 bits in all; the largest value, 2^24, is still exact in a float.
+export const GUN_PACK = { aim: [1, 31], pitch: [32, 127], move: [4096, 63], hold: [262144, 31], reloading: [8388608, 1] };   // [place, steps]
+// `reload`: the reload's share, or -1 with none drawn; the caller (gunView.step) passes one only with the gun all the
+// way in hand (reach 0), since the two share the move field.
+export function humanGunPack(aim, pitch, reach, hold, reload) {
+  const P = GUN_PACK, reloading = reload >= 0;   // true: the move field carries the reload's share, false: the reach
   return -(1 + P.aim[0] * petQuant(aim, 0, 1, P.aim[1]) + P.pitch[0] * petQuant(pitch, -Math.PI / 2, Math.PI / 2, P.pitch[1]) +
-    P.reach[0] * petQuant(reach, 0, 1, P.reach[1]) + P.hold[0] * petQuant(hold, 0, 1, P.hold[1]));
+    P.move[0] * petQuant(reloading ? reload : reach, 0, 1, P.move[1]) + P.hold[0] * petQuant(hold, 0, 1, P.hold[1]) +
+    (reloading ? P.reloading[0] : 0));
 }
+// KEYED POSES (GUN_RELOAD): column c of `keys` at share u, eased between keys as GLSL's smoothstep. keyGlsl writes the
+// same sum for the shader, so the drawn arms and the meshes placed here agree.
+const smoothShare = (a, b, u) => { const x = Math.min(1, Math.max(0, (u - a) / (b - a))); return x * x * (3 - 2 * x); };
+export function keyAt(keys, c, u) {
+  let v = keys[0][c];
+  for (let i = 0; i + 1 < keys.length; i++) v += (keys[i + 1][c] - keys[i][c]) * smoothShare(keys[i][0], keys[i + 1][0], u);
+  return v;
+}
+const keyGlsl = (keys, c, u) => '(' + keys.slice(1).reduce((s, k, i) => k[c] === keys[i][c] ? s :
+  `${s} + ${(k[c] - keys[i][c]).toFixed(4)} * smoothstep(${keys[i][0].toFixed(4)}, ${k[0].toFixed(4)}, ${u})`, keys[0][c].toFixed(4)) + ')';
+// The reload's arms at share u (0 off a reload: low ready, no support key): gun [shoulder, elbow, inward], support
+// [shoulder, elbow, inward, weight].
+export function gunReloadPose(u, out) {
+  const G = GUN_RELOAD.gun, S = GUN_RELOAD.support;
+  out.gun = [keyAt(G, 1, u), keyAt(G, 2, u), keyAt(G, 3, u)];
+  out.support = [keyAt(S, 1, u), keyAt(S, 2, u), keyAt(S, 3, u), keyAt(S, 4, u)];
+  return out;
+}
+// The fresh magazine shows in the support hand (GUN_RELOAD.magAt).
+export const gunMagShown = reload => reload >= GUN_RELOAD.magAt[0] && reload < GUN_RELOAD.magAt[1];
 // The draw at progress p (0 tucked, 1 in hand at low ready): hold, the gun arm's share of its gun pose (rising to the
 // reach), and reach, its share of the reach behind the back (falling from the grab to low ready); smoothed.
 export function gunDrawShares(p, out) {
@@ -137,8 +161,9 @@ export function humanGaitTerms(gait, act, out) {
 }
 // The arms' shoulder angle at full aim: straight along the view pitch, less the upper body's lean.
 const gunAimShoulder = (pitch, lean) => -Math.PI / 2 - pitch - lean;
-// The gun arm's shoulder and elbow angles (as the shader's gun block) at aim share `aim`, view pitch and upper lean.
-const gunArm = (aim, pitch, lean) => [GUN_POSE.holdShoulder + (gunAimShoulder(pitch, lean) - GUN_POSE.holdShoulder) * aim, GUN_POSE.holdElbow * (1 - aim)];
+// The gun arm's shoulder and elbow angles (as the shader's gun block) at aim share `aim`, view pitch and upper lean,
+// from its unaimed pose `ready` ([shoulder, elbow]: low ready, or the reload's key).
+const gunArm = (aim, pitch, lean, ready) => [ready[0] + (gunAimShoulder(pitch, lean) - ready[0]) * aim, ready[1] * (1 - aim)];
 // TWO HANDS (as the shader's gunHandTurn): the turn about the shoulder's vertical that brings a straight arm at aimA1
 // (side +1 left, -1 right) to put its grip-height axis `target` rig units from the centre line on its own side. Faded out
 // where the arm's forward reach is too short to get there (aimed near straight up or down).
@@ -149,26 +174,45 @@ export function gunHandTurn(side, aimA1, shoulderW, target) {
   const valid = Math.min(1, Math.max(0, (rho - Math.abs(w)) / 2));
   return valid * (Math.acos(Math.min(1, Math.max(-1, w / rho))) - Math.atan2(dz, dx));
 }
-// The gun hand's grip in rig space and its barrel angle in the body's (y, z) (0 down, -pi/2 straight ahead), from
-// humanGaitTerms, with the arm fully in its gun pose (hold 1). Aiming, the arm turns in for two hands and the wrist keeps
-// the barrel along the view; `reach` pulls it toward the reach behind the back (as the shader's gun block).
-export function humanGunHand(aim, pitch, reach, terms, shoulderW, out) {
-  const R = HUMAN_RIG, s = GUN_POSE.arm, y0 = R.at(GUN_POSE.gripAt), [r1, r2] = gunArm(aim, pitch, terms.upperLean), D = GUN_DRAW.reach;
-  const a1 = r1 + (D.shoulder - r1) * reach, a2 = r2 + (D.elbow - r2) * reach;
+// A point on the arm of side s (+1 left, -1 right) in rig space: rest height y0 on its axis, `inward` rig units toward
+// the centre line, posed as the shader poses an arm (humanPose): elbow a2, shoulder a1, raised out `abduct` on (x, y)
+// about the shoulder, turned `turn` on (x, z) about its vertical, then the upper body's lean and drop (humanGaitTerms).
+function armPoint(s, y0, inward, a1, a2, abduct, turn, terms, shoulderW, out) {
+  const R = HUMAN_RIG;
   let [y, z] = rigTurnYZ(y0, 0, R.elbow, a2);
   [y, z] = rigTurnYZ(y, z, R.shoulder, a1);
-  const aimTurn = aim * gunHandTurn(s, gunAimShoulder(pitch, terms.upperLean), shoulderW, GUN_POSE.twoHand.gun);
-  const px = s * R.shoulderX * shoulderW, turn = aimTurn + (s * D.turn - aimTurn) * reach, out_ = s * D.abduct * reach;
-  let x0 = s * ((R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * shoulderW - GUN_POSE.gripInward) - px;
-  // the shader's abduction on (x, y) about the shoulder, then its turn on (x, z)
-  const ca = Math.cos(out_), sa = Math.sin(out_), v = y - R.shoulder;
+  const px = s * R.shoulderX * shoulderW;
+  let x0 = s * ((R.shoulderX + (R.shoulder - y0) * HUMAN_ARM_FLARE) * shoulderW - inward) - px;
+  const ca = Math.cos(abduct), sa = Math.sin(abduct), v = y - R.shoulder;
   [x0, y] = [x0 * ca - v * sa, R.shoulder + x0 * sa + v * ca];
   const c = Math.cos(turn), sn = Math.sin(turn);
   out.x = px + x0 * c - z * sn; z = x0 * sn + z * c;
   [y, z] = rigTurnYZ(y, z, R.hip, terms.upperLean);
   out.y = y - terms.drop; out.z = z;
+  return out;
+}
+const _reloadPose = {};
+// The gun hand's grip in rig space and its barrel angle in the body's (y, z) (0 down, -pi/2 straight ahead), from
+// humanGaitTerms, with the arm fully in its gun pose (hold 1). Aiming, the arm turns in for two hands and the wrist keeps
+// the barrel along the view; `reach` pulls it toward the reach behind the back; `reload` (its share, or -1) takes the
+// reload's key for low ready (as the shader's gun block).
+export function humanGunHand(aim, pitch, reach, reload, terms, shoulderW, out) {
+  const s = GUN_POSE.arm, D = GUN_DRAW.reach;
+  const [k1, k2, inward] = gunReloadPose(Math.max(reload, 0), _reloadPose).gun;   // low ready off a reload (its keys' ends)
+  const [r1, r2] = gunArm(aim, pitch, terms.upperLean, [k1, k2]);
+  const a1 = r1 + (D.shoulder - r1) * reach, a2 = r2 + (D.elbow - r2) * reach;
+  const aimTurn = aim * gunHandTurn(s, gunAimShoulder(pitch, terms.upperLean), shoulderW, GUN_POSE.twoHand.gun);
+  const readyTurn = aimTurn + s * inward * (1 - aim);
+  const turn = readyTurn + (s * D.turn - readyTurn) * reach;
+  armPoint(s, HUMAN_RIG.at(GUN_POSE.gripAt), GUN_POSE.gripInward, a1, a2, s * D.abduct * reach, turn, terms, shoulderW, out);
   out.angle = a1 + a2 + terms.upperLean;
   return out;
+}
+// The support hand in rig space at reload share `reload` with its key in full (the fresh magazine's base; the arm is
+// all key while gunMagShown).
+export function humanSupportHand(reload, terms, shoulderW, out) {
+  const s = -GUN_POSE.arm, [a1, a2, inward] = gunReloadPose(reload, _reloadPose).support;
+  return armPoint(s, HUMAN_RIG.at(GUN_POSE.gripAt), 0, a1, a2, 0, s * inward, terms, shoulderW, out);
 }
 // The tucked gun's grip in rig space at the small of the back and its turn (out.q): flat to the back, barrel down, grip
 // to the off-hand side, tilting with the pelvis's lean.
@@ -192,6 +236,28 @@ export function buildGunMesh() {
     return g;
   });
   const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshLambertMaterial({ color: GUN_MODEL.color }));
+  mesh.castShadow = true;
+  mesh.visible = false;
+  return mesh;
+}
+// THE MAGAZINE WELL in the gun's frame (buildGunMesh): the grip's base centre (`at`) and the unit direction down the
+// grip out of it (`down`), from GUN_MODEL's grip (parts[0]) and its rake.
+export const gunMagWell = (() => {
+  const [, h, , x, y, z, rake] = GUN_MODEL.parts[0];
+  const turn = new THREE.Euler(rake, 0, 0);
+  return {
+    at: new THREE.Vector3(0, -h / 2, 0).applyEuler(turn).add(new THREE.Vector3(x, y, z)),
+    down: new THREE.Vector3(0, -1, 0).applyEuler(turn)
+  };
+})();
+// The fresh magazine (GUN_MAG), origin at its base, running up along the grip's rake: set in the gun's frame at
+// gunMagWell.at + down x d, its top is at the well when d is its length and it is seated at d 0.
+export function buildMagMesh() {
+  const [w, h, d] = GUN_MAG.size;
+  const g = new THREE.BoxGeometry(w, h, d);
+  g.translate(0, h / 2, 0);
+  g.rotateX(GUN_MODEL.parts[0][6]);
+  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: GUN_MODEL.color }));
   mesh.castShadow = true;
   mesh.visible = false;
   return mesh;
@@ -665,24 +731,38 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
           // arm joins it by the aim share, and both turn in so the hands meet (as humanGunHand)
           float gunHeld = step(iAct.w, -0.5) * upright;
           if (gunHeld > 0.0) {
-            // humanGunPack's fields: aim, pitch, the draw's reach and hold shares
+            // humanGunPack's fields: aim, pitch, the move share, hold, and reloading (the move share is the reload's)
             float gv = -iAct.w - 1.0;
             float gunAim = mod(gv, ${GUN_PACK.pitch[0].toFixed(1)}) / ${GUN_PACK.aim[1].toFixed(1)};
             float gunPitch = mod(floor(gv / ${GUN_PACK.pitch[0].toFixed(1)}), ${(GUN_PACK.pitch[1] + 1).toFixed(1)}) / ${GUN_PACK.pitch[1].toFixed(1)} * ${Math.PI.toFixed(4)} - ${(Math.PI / 2).toFixed(4)};
-            float gunReach = mod(floor(gv / ${GUN_PACK.reach[0].toFixed(1)}), ${(GUN_PACK.reach[1] + 1).toFixed(1)}) / ${GUN_PACK.reach[1].toFixed(1)};
-            float gunHold = floor(gv / ${GUN_PACK.hold[0].toFixed(1)}) / ${GUN_PACK.hold[1].toFixed(1)};
+            float gunMove = mod(floor(gv / ${GUN_PACK.move[0].toFixed(1)}), ${(GUN_PACK.move[1] + 1).toFixed(1)}) / ${GUN_PACK.move[1].toFixed(1)};
+            float gunHold = mod(floor(gv / ${GUN_PACK.hold[0].toFixed(1)}), ${(GUN_PACK.hold[1] + 1).toFixed(1)}) / ${GUN_PACK.hold[1].toFixed(1)};
+            float gunReloading = floor(gv / ${GUN_PACK.reloading[0].toFixed(1)});   // 1: the move share is the reload's, 0: the draw's reach
+            float gunReach = gunMove * (1.0 - gunReloading);
+            float reloadU = gunMove * gunReloading;   // 0 off a reload: its keys' ends, low ready and no support key
             float aimA1 = ${(-Math.PI / 2).toFixed(4)} - gunPitch - upperLean;   // straight along the view (gunAimShoulder)
             float gunSide = step(0.5, ${GUN_POSE.arm.toFixed(1)} * rig.z);   // 1 on the gun arm, 0 on the support arm
-            // the gun arm: low ready raised by the aim, pulled to the reach behind the back by the reach (humanGunHand)
-            float readyA1 = mix(${GUN_POSE.holdShoulder.toFixed(3)}, aimA1, gunAim), readyA2 = ${GUN_POSE.holdElbow.toFixed(3)} * (1.0 - gunAim);
+            // the gun arm: the reload's key (low ready off a reload) raised by the aim, pulled to the reach behind the back
+            // by the reach (humanGunHand)
+            float keyA1 = ${keyGlsl(GUN_RELOAD.gun, 1, 'reloadU')}, keyA2 = ${keyGlsl(GUN_RELOAD.gun, 2, 'reloadU')};
+            float keyInward = ${keyGlsl(GUN_RELOAD.gun, 3, 'reloadU')};
+            float readyA1 = mix(keyA1, aimA1, gunAim), readyA2 = keyA2 * (1.0 - gunAim);
             float gunA1 = mix(aimA1, mix(readyA1, ${GUN_DRAW.reach.shoulder.toFixed(3)}, gunReach), gunSide);
             float gunA2 = mix(0.0, mix(readyA2, ${GUN_DRAW.reach.elbow.toFixed(3)}, gunReach), gunSide);
             float w = gunHeld * gunHold * mix(gunAim, 1.0, gunSide);   // the gun arm by the hold, the support arm by the aim too
             a1 = mix(a1, gunA1, w);
             a2 = mix(a2, gunA2, w);
             float aimTurn = gunAim * gunHandTurn(rig.z, aimA1, iShape.x, mix(${GUN_POSE.twoHand.support.toFixed(3)}, ${GUN_POSE.twoHand.gun.toFixed(3)}, gunSide));
-            armTurn = gunHeld * gunHold * mix(aimTurn, rig.z * ${GUN_DRAW.reach.turn.toFixed(3)}, gunReach * gunSide);
+            float readyTurn = aimTurn + gunSide * rig.z * keyInward * (1.0 - gunAim);
+            armTurn = gunHeld * gunHold * mix(readyTurn, rig.z * ${GUN_DRAW.reach.turn.toFixed(3)}, gunReach * gunSide);
             armOut = gunHeld * gunHold * gunReach * gunSide * rig.z * ${GUN_DRAW.reach.abduct.toFixed(3)};
+            // RELOAD: the support arm takes its key by the key's weight (gunReloadPose, humanSupportHand)
+            float supportW = gunHeld * gunHold * (1.0 - gunSide) * ${keyGlsl(GUN_RELOAD.support, 4, 'reloadU')};
+            if (supportW > 0.0) {
+              a1 = mix(a1, ${keyGlsl(GUN_RELOAD.support, 1, 'reloadU')}, supportW);
+              a2 = mix(a2, ${keyGlsl(GUN_RELOAD.support, 2, 'reloadU')}, supportW);
+              armTurn = mix(armTurn, rig.z * ${keyGlsl(GUN_RELOAD.support, 3, 'reloadU')}, supportW);
+            }
           }
         }
         // depth 1 takes none of the middle joint's bend, depth 2 and deeper all of it, a seam ring between them its share

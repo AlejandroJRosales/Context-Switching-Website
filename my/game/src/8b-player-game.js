@@ -16,7 +16,7 @@ import {
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
   CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON,
-  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE
+  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE
 } from './1-config.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate
@@ -39,7 +39,8 @@ import {
 } from './7b-sim.js';
 import {
   renderInputs, petBendAt, humanPetPack, humanPetHand, graphics, animalRenderer, plantRenderer, blobShadows, populationText,
-  HUMAN_INSTANCE_ATTRS, writeHumanLook, humanGunPack, humanGaitTerms, humanGunHand, humanGunWaist, buildGunMesh, gunDrawShares
+  HUMAN_INSTANCE_ATTRS, writeHumanLook, humanGunPack, humanGaitTerms, humanGunHand, humanGunWaist, buildGunMesh, gunDrawShares,
+  GUN_PACK, keyAt, humanSupportHand, buildMagMesh, gunMagWell, gunMagShown
 } from './8a-render.js';
 
 export const dotEl = document.getElementById('dot');
@@ -544,7 +545,7 @@ export const pov = {
     gait.needsUpdate = true;
     const act = b.geometry.attributes.iAct;
     humanFightAct(game.avatar, ecosystem.time, act.array, 0);
-    act.array[3] = gunView.inHand ? humanGunPack(gunView.aim, player.pitch, gunView.shares.reach, gunView.shares.hold) : petting.act();
+    act.array[3] = gunView.inHand ? humanGunPack(gunView.aim, player.pitch, gunView.shares.reach, gunView.shares.hold, gunView.reload) : petting.act();
     act.needsUpdate = true;
     // knocked down: ragdoll or lying pose (AnimalRenderer.bodyDown). Its ground is the feet while braced (standing or
     // swimming); airborne, the surface under the body (supportAt from the feet down), so a mid-jump fall reaches the floor.
@@ -749,9 +750,12 @@ export const petting = {
 
 // GUN VIEW: the gun in the hand (game.weapon, unless petting), else tucked flat at the small of the back while one is
 // carried; in 1st person a view model before the camera. draw and holster animate between them (GUN_DRAW); Aim
-// (toggleAim: the Aim button, right mouse) raises it along the view and zooms in.
+// (toggleAim: the Aim button, right mouse) raises it along the view and zooms in. A reload (GUN_RELOAD) brings the gun
+// in and the support hand to the belt and back with a fresh magazine, which seats in the grip.
 export const gunView = {
   hand: null, waist: null, view: null,   // meshes: the hand's and the waistband's on the 3rd-person body, the 1st-person one
+  magHand: null, magView: null,   // the fresh magazine: in the 3rd-person support hand, under the 1st-person gun
+  reload: -1,            // the reload's share drawn this frame (GUN_PACK's move steps), -1 with none or the gun not all the way in hand
   drawP: 0,              // draw progress, 0 tucked to 1 in hand (gunDrawShares)
   drawDir: 0,            // +1 drawing, -1 holstering, 0 still
   afterHolster: null,    // run once a holster ends (getting in the car)
@@ -763,14 +767,17 @@ export const gunView = {
   aiming: false,         // Aim is on with the gun drawn and the body free to aim
   recoil: 0,             // radians of the view's recoil climb not yet settled back
   baseFov: NaN,          // the camera's own fov, before the aim zoom
-  _terms: {}, _at: {}, _w: {}, _v: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Quaternion(), _hq: new THREE.Quaternion(),
+  _terms: {}, _at: {}, _w: {}, _sup: {}, _v: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Quaternion(), _hq: new THREE.Quaternion(),
+  _roll: new THREE.Quaternion(), _rv: [0, 0, 0, 0, 0],
   _flip: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI),
 
   // the meshes, once the body exists
   build() {
     this.hand = buildGunMesh(); this.waist = buildGunMesh(); this.view = buildGunMesh();
-    pov.body.add(this.hand, this.waist);
-    this.view.castShadow = false;
+    this.magHand = buildMagMesh(); this.magView = buildMagMesh();
+    pov.body.add(this.hand, this.waist, this.magHand);
+    this.view.castShadow = this.magView.castShadow = false;
+    this.view.add(this.magView);   // in the gun's frame, below its well
     scene.add(this.view);
     this.baseFov = camera.fov;
   },
@@ -826,10 +833,15 @@ export const gunView = {
       }
     }
     gunDrawShares(this.drawP, this.shares);
+    // the reload drawn: only with the gun all the way in hand (it shares the pack's move field with the draw's reach),
+    // stepped as the pack steps it so the meshes placed here match the drawn arms
+    const reloadShare = game.reloadShare(ecosystem.time), P = GUN_PACK.move[1];
+    this.reload = reloadShare >= 0 && this.shares.reach === 0 ? Math.round(reloadShare * P) / P : -1;
     const down = game.avatar.isDown(ecosystem.time);
     this.inHand = game.weapon !== null && !petting.on;
     if (!this.ready) this.aimOn = false;
-    this.aiming = this.inHand && this.aimOn && play.active && !player.inCar && !flying && !down;
+    // Aim stays on through a reload, the arms lowered until it ends
+    this.aiming = this.inHand && this.aimOn && play.active && !player.inCar && !flying && !down && this.reload < 0;
     if (this.recoil > 0) {
       const settle = this.recoil * (1 - Math.exp(-dt / GUN_RECOIL.recoverS));   // this frame's share back
       player.pitch -= settle; this.recoil -= settle;
@@ -861,25 +873,41 @@ export const gunView = {
     this.waist.visible = !handShown && !down && (game.weapon !== null || this.carriedTucked());
     const waist = pov.look ? humanGunWaist(terms, pov.look.shape.waist, this._w) : null;
     if (handShown && pov.look) {
-      const h = humanGunHand(this.aim, player.pitch, S.reach, terms, pov.look.shape.shoulder, this._at);
+      const h = humanGunHand(this.aim, player.pitch, S.reach, this.reload, terms, pov.look.shape.shoulder, this._at);
       this._hq.setFromAxisAngle(this._v.set(1, 0, 0), Math.atan2(Math.cos(h.angle), -Math.sin(h.angle)));   // barrel along the forearm
       // on the way from the back the gun turns from its tucked place to the hand's by the reach share
       this.hand.position.set(h.x, h.y, h.z).lerp(this._p.set(waist.x, waist.y, waist.z), S.reach).multiplyScalar(kp);
       this.hand.quaternion.copy(this._hq).slerp(waist.q, S.reach);
     }
+    // the fresh magazine: its base in the support hand, parallel to the grip it seats in
+    this.magHand.visible = handShown && pov.look !== null && gunMagShown(this.reload);
+    if (this.magHand.visible) {
+      const m = humanSupportHand(this.reload, terms, pov.look.shape.shoulder, this._sup);
+      this.magHand.position.set(m.x * kp, m.y * kp, m.z * kp);
+      this.magHand.quaternion.copy(this.hand.quaternion);
+    }
     if (this.waist.visible && waist) {
       this.waist.position.set(waist.x * kp, waist.y * kp, waist.z * kp);
       this.waist.quaternion.copy(waist.q);
     }
-    // 1st person: grip low right, moved to under the crosshair by the aim share; a draw brings it up from drawFrom
+    // 1st person: grip low right, moved to under the crosshair by the aim share; a draw brings it up from drawFrom; a
+    // reload moves and turns it by GUN_RELOAD.view while the fresh magazine rises into its well
     const firstPerson = pov.mode === '1st' && handShown && play.active && !player.inCar && !renderer.xr.isPresenting;
     this.view.visible = firstPerson;
     if (firstPerson) {
       const k = this.aim, r = S.reach, H = GUN_VIEW.hold, A = GUN_VIEW.aim, F = GUN_VIEW.drawFrom, kicked = this.recoil / GUN_RECOIL.kick;   // kicked: 1 at a shot, to 0 settled
-      const at = i => H[i] + (A[i] - H[i]) * k, from = i => at(i) + (F[i] - at(i)) * r;
+      const RV = GUN_RELOAD.view, u = Math.max(this.reload, 0), rv = this._rv;   // u 0 off a reload: the view keys' ends, no offset
+      for (let c = 0; c < rv.length; c++) rv[c] = keyAt(RV, c + 1, u);   // x, y, z, pitch, roll
+      const at = i => H[i] + (A[i] - H[i]) * k, from = i => at(i) + (F[i] - at(i)) * r + rv[i];
       this.view.position.set(from(0), from(1), from(2) + GUN_RECOIL.backM * kicked).applyQuaternion(camera.quaternion).add(camera.position);
-      this._q.setFromAxisAngle(this._v.set(1, 0, 0), -(GUN_VIEW.holdPitch * (1 - k) + this.recoil));   // muzzle up by the tilt, flipping up with the kick (+x turns a +z barrel down)
-      this.view.quaternion.copy(camera.quaternion).multiply(this._flip).multiply(this._q);   // barrel ahead of the camera
+      this._q.setFromAxisAngle(this._v.set(1, 0, 0), -(GUN_VIEW.holdPitch * (1 - k) + this.recoil + rv[3]));   // muzzle up by the tilt, flipping up with the kick and the reload (+x turns a +z barrel down)
+      this._roll.setFromAxisAngle(this._v.set(0, 0, 1), rv[4]);   // the reload's cant about the barrel
+      this.view.quaternion.copy(camera.quaternion).multiply(this._flip).multiply(this._q).multiply(this._roll);   // barrel ahead of the camera
+      this.magView.visible = gunMagShown(this.reload);
+      if (this.magView.visible) {
+        const M = GUN_RELOAD.magAt, d = keyAt([[M[0], GUN_RELOAD.viewMagFromM], [M[1], 0]], 1, this.reload);   // metres below the well
+        this.magView.position.copy(gunMagWell.at).addScaledVector(gunMagWell.down, d);
+      }
     }
     loop.sceneDirty = true;
   }
@@ -1200,10 +1228,12 @@ export const game = {
     this.finishReload(this.weapon, this.gunOf(this.weapon));
     return false;
   },
-  // Share of the magazine change done, 0 to 1, or -1 with none under way (the attack button's reload ring).
+  // Share of the magazine change done, 0 to 1, or -1 with none under way: the attack button's reload ring and the
+  // reload animation (gunView.reload, GUN_RELOAD's keys) both run on it.
   reloadShare(now) {
     if (this.reloadUntil < 0 || this.weapon === null) return -1;
-    return Math.max(0, Math.min(1, 1 - (this.reloadUntil - now) / this.gunOf(this.weapon).reloadS));
+    const reloadAnimS = this.gunOf(this.weapon).reloadS;   // the animation's length: the gun's reload time, so they end together
+    return Math.max(0, Math.min(1, 1 - (this.reloadUntil - now) / reloadAnimS));
   },
 
   // FIRE in either mode, once per shotS; an empty magazine changes over reloadS. The bullet leaves the eye toward what
