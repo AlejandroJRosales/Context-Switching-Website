@@ -68,8 +68,10 @@ import {
 
 // the core frame loop draws with this file's frame (wake() schedules loop.frame)
 loop.frame = frame;
-// the sound port plays through the Web Audio backend (silent until startWorld unlocks it)
-sound.emit = audio.emit.bind(audio);
+// the sound port plays through the Web Audio backend (silent until startWorld unlocks it) while a world is in play;
+// the intro scene behind the start card stays silent (loadIntroScene mutes it, finishLoad unmutes for play)
+const playSound = audio.emit.bind(audio), noSound = () => {};
+function soundInPlay(on) { sound.emit = on ? playSound : noSound; }
 // the sim's sky clock redraws the sky and the HUD minute through these
 simSky.onSkyStep = updateSky;
 simSky.onMinute = refreshHud;
@@ -184,6 +186,7 @@ const tintEl = document.getElementById('water-tint');
 
 // The intro scene behind the intro card, until a world loads (teardownWorld clears it like any world).
 function loadIntroScene() {
+  soundInPlay(false);
   teardownWorld();
   const iw = new IntroWorld();
   iw.build();
@@ -985,6 +988,7 @@ async function finishLoad(provider, autoGraphics = false) {
   showControls(true);
   say('');
   play.active = true;
+  soundInPlay(true);
   dotEl.classList.add('on');
   if (lastPointerType === 'mouse') renderer.domElement.requestPointerLock();
   invalidate();

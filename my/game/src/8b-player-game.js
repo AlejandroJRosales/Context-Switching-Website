@@ -949,7 +949,7 @@ const SURVIVOR_ACTIONS = {
 };
 
 // Action button choices on foot, first in reach first: find() returns a target; run() acts on press, or each tick for
-// `hold`.
+// `hold`. The button shows `icon` (ICONS markup) when there is one, else `label`.
 const SURVIVOR_FIELD_ACTIONS = {
   collect: {
     label: 'Collect',
@@ -959,6 +959,7 @@ const SURVIVOR_FIELD_ACTIONS = {
   },
   harvest: {
     label: 'Harvest',
+    icon: ICONS.harvest,
     squat: true,
     find: (g, x, feet, z) => g.inventory.includes(null) ? g.plantInReach(x, feet, z) : null,
     run: (g, plant) => g.harvest(plant)
@@ -966,9 +967,18 @@ const SURVIVOR_FIELD_ACTIONS = {
   // a dead animal the player's species eats (SPECIES.human.carrion), cut up into one meat
   carcass: {
     label: 'Harvest',
+    icon: ICONS.harvest,
     squat: true,
     find: (g, x, feet, z) => g.inventory.includes(null) ? g.carcassInReach(x, feet, z) : null,
     run: (g, body) => g.butcher(body)
+  },
+  // a dead person, searched once for one item drawn like a box's contents (rollLoot)
+  loot: {
+    label: 'Loot',
+    icon: ICONS.harvest,
+    squat: true,
+    find: (g, x, feet, z) => g.inventory.includes(null) ? g.lootableInReach(x, feet, z) : null,
+    run: (g, body) => g.loot(body)
   },
   drink: {
     label: 'Drink',
@@ -1039,6 +1049,8 @@ function cabinAt(x, y, z) {
 // SIM-TIME STAMPS: each world's sim clock starts at 0, so game.reset puts these back (a stale stamp blocks the gun or fists).
 const GAME_CLOCKS = { nextShotAt: 0, reloadUntil: -1 };   // next shot; magazine change end (-1: none)
 const AVATAR_CLOCKS = { nextAttackAt: 0, moveAt: -Infinity, fightFrom: 0, fightUntil: 0, downAt: -Infinity, downUntil: 0 };
+
+const lootedBodies = new WeakSet();   // dead people already looted (game.loot); a body is never reused, so none are cleared
 
 export const game = {
   on: false,
@@ -1500,16 +1512,35 @@ export const game = {
     return best;
   },
 
-  // Nearest dead body in reach that people eat (CARRION_MASK), or null; a lying body reaches NPC_RADIUS further.
-  carcassInReach(px, feet, pz) {
-    const R = SURVIVOR_CONFIG.reach, reach = R.radius + NPC_RADIUS, mask = CARRION_MASK[HUMAN_TYPE_ID];
+  // Nearest dead body in reach that `accept`s, or null; a lying body reaches NPC_RADIUS further.
+  corpseInReach(px, feet, pz, accept) {
+    const R = SURVIVOR_CONFIG.reach, reach = R.radius + NPC_RADIUS;
     let best = null, bestD2 = reach * reach;
     for (const c of ecosystem.corpses) {
-      if ((mask & (1 << c.typeId)) === 0 || Math.abs(c.position.y - feet) > R.height) continue;
+      if (!accept(c) || Math.abs(c.position.y - feet) > R.height) continue;
       const d2 = tools.distSq(px, pz, c.position.x, c.position.z);
       if (d2 <= bestD2) { bestD2 = d2; best = c; }
     }
     return best;
+  },
+
+  // Nearest dead body in reach that people eat (CARRION_MASK), or null.
+  carcassInReach(px, feet, pz) {
+    const mask = CARRION_MASK[HUMAN_TYPE_ID];
+    return this.corpseInReach(px, feet, pz, c => (mask & (1 << c.typeId)) !== 0);
+  },
+
+  // Nearest dead person in reach not yet looted, or null.
+  lootableInReach(px, feet, pz) {
+    return this.corpseInReach(px, feet, pz, c => c.typeId === HUMAN_TYPE_ID && !lootedBodies.has(c));
+  },
+
+  // One item from a dead person into the first free slot, drawn like a box's (rollLoot); the body stays, searched.
+  loot(body) {
+    const free = this.inventory.indexOf(null);
+    if (free < 0) return;
+    lootedBodies.add(body);
+    this.inventory[free] = this.rollLoot();
   },
 
   // A dead body into meat in the first free slot; the body is gone.
@@ -2534,7 +2565,9 @@ function updateUseButton(carState) {
   if (id === useShown) return;
   useShown = id;
   useEl.classList.toggle('on', id !== '');
-  useEl.textContent = id ? SURVIVOR_FIELD_ACTIONS[id].label : '';
+  const def = id ? SURVIVOR_FIELD_ACTIONS[id] : null;
+  if (def && def.icon) setButtonFace(useEl, { label: def.label, face: def.icon });   // the label stays as its accessible name
+  else { useEl.textContent = def ? def.label : ''; useEl.removeAttribute('aria-label'); }
 }
 
 let carBtnState = '';

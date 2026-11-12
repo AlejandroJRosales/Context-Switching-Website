@@ -1049,7 +1049,7 @@ export const BLOB_SPREAD = 1.25;        // size over the footprint
 // text colour and a lit button inverts it. Sized where shown by ICON_STYLE (showIcon in 8b). Items name theirs in
 // SURVIVOR_CONFIG.inventory; an item or injury icon may also be plain emoji text.
 export const ICON_STYLE = {
-  buttonPx: 24,    // Aim, Draw/Holster, the car door
+  buttonPx: 24,    // Aim, Draw/Holster, the car door, the action button's Harvest and Loot
   firePx: 26,      // the attack button's fire icon (inside GUN_BUTTON_FACE's ring)
   slotPx: 18,      // inventory and craft slots
   slotColor: 'rgba(232, 228, 220, 0.85)'   // the slots' icon colour (the slot buttons set none of their own)
@@ -1090,7 +1090,12 @@ export const ICONS = {
   meat: iconSvg('<path opacity="0.55" d="M14.8 15.4 L19.2 19.8 A2 2 0 1 1 21.4 22.4 A2 2 0 1 1 18.4 20.6 L14 16.2 Z"/>' +
     '<path d="M15.8 13.4 C17.5 9.5 15.6 3.2 9.8 2.6 C4.6 2.1 1.6 6.8 2.8 11.2 C4 15.6 10 17.6 15.8 13.4 Z"/>'),
   bandage: iconSvg('<g transform="rotate(-45 12 12)"><rect opacity="0.5" x="1" y="7.5" width="22" height="9" rx="4.5"/>' +
-    '<path fill-rule="evenodd" d="M8 7.5 H16 V16.5 H8 Z M9.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M11.3 12 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M9.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0"/></g>')
+    '<path fill-rule="evenodd" d="M8 7.5 H16 V16.5 H8 Z M9.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 10 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M11.3 12 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M9.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0 M13.3 14 a0.7 0.7 0 1 0 1.4 0 a0.7 0.7 0 1 0 -1.4 0"/></g>'),
+  // an open hand reaching down, fingers spread: Harvest and Loot (the action button)
+  harvest: iconSvg('<rect opacity="0.55" x="8.6" y="0.6" width="6.8" height="2.6" rx="0.8"/>' +
+    '<path d="M7.4 4.2 Q7.4 2.9 8.7 2.9 H15.3 Q16.6 2.9 16.6 4.2 V10.6 Q16.6 12 15.2 12 H8.8 Q7.4 12 7.4 10.6 Z"/>' +
+    '<g fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M8.6 10.8 L6.4 18.6"/>' +
+    '<path d="M11.1 11.2 L10.5 21"/><path d="M13.6 11.2 L14.4 20.6"/><path d="M15.9 10.6 L18.2 17.4"/><path d="M7.9 6.4 L3.4 11.6"/></g>')
 };
 
 // SURVIVOR MODE: rules in SURVIVOR_CONFIG, applied by `game`.
@@ -1111,7 +1116,7 @@ export const SURVIVOR_CONFIG = {
   plantShare: 0.01,                 // player's share of a plant bite's nutrition
   meatDeerShare: 0.1,               // meat feeds this share of an adult buck kill
   flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+
-  // INVENTORY: each kind names its action; `loot` is its box weight; `icon` is ICONS markup or emoji text.
+  // INVENTORY: each kind names its action; `loot` is its weight in a box and on a dead person; `icon` is ICONS markup or emoji text.
   inventory: {
     keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot
     items: {
