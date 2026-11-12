@@ -235,6 +235,7 @@ document.addEventListener('pointerlockchange', () => {
 bindMouseLook();   // its listeners, in their original place among main's
 bindMouseButtons();
 
+// Play stops and the start card shows over the world (newEcosystem then loads the next one).
 function returnToIntro() {
   if (!play.active) return;
   if (play.locked) document.exitPointerLock();
@@ -271,9 +272,17 @@ function chips(host, names, pick) {
 chips(timesEl, TIMES, n => { skyChoice.time = n; });
 chips(skiesEl, Object.keys(SKIES), n => { skyChoice.sky = n; });
 
+// BACK TO INTRO: the run ends; the world is torn down and the intro scene returns behind the start card, for a new game.
+function backToIntro() {
+  if (!play.active || busy) return;
+  setSettingsOpen(false);
+  returnToIntro();
+  loadIntroScene();   // tears the world down; populate resets the game (game.reset)
+}
+
 document.getElementById('tomenu').addEventListener('click', e => {
   e.currentTarget.blur();
-  returnToIntro();
+  backToIntro();
 });
 
 // open or close the settings sheet; the gear becomes its close X, and closing resumes the paused world
@@ -1442,6 +1451,24 @@ seedEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   startWorld();
 });
+// SAVED CHOICES: start-card settings as JSON in localStorage; a blocked or unreadable store leaves the page defaults.
+function loadChoice(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+}
+function saveChoice(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+}
+// Puts back saved radio picks ([field, value] pairs, clicked as the player would) and slider values (clamped to their
+// range, readouts updated by their input event); missing or unknown values are skipped.
+function restoreChoice(picks, sliders, saved) {
+  for (const [field, value] of picks) document.querySelector(`.sizebtn[data-${field}="${value}"]`)?.click();
+  for (const k in sliders) {
+    if (!Number.isFinite(saved[k])) continue;
+    sliders[k].value = saved[k];
+    sliders[k].dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
 // A row of radio buttons (.sizebtn): a click marks that one on and passes its data-<field> value to pick.
 function radioRow(field, pick) {
   const btns = [...document.querySelectorAll(`.sizebtn[data-${field}]`)];
@@ -1488,22 +1515,11 @@ const playerSliders = { age: pAgeEl, fat: pFatEl, height: pHeightEl, weight: pWe
 function savePlayerBody() {
   const saved = { body: playerBody, sex: playerSex, type: playerType };
   for (const k in playerSliders) saved[k] = +playerSliders[k].value;
-  try { localStorage.setItem(PLAYER_BODY_KEY, JSON.stringify(saved)); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+  saveChoice(PLAYER_BODY_KEY, saved);
 }
 function restorePlayerBody() {
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(PLAYER_BODY_KEY)); } catch (e) { /* unreadable: the page defaults stand */ }
-  if (!saved) return;
-  // a click selects the button as the player would (each saved value is a button's data value); missing ones are skipped
-  for (const [field, value] of [['player', saved.body], ['sex', saved.sex], ['type', saved.type]]) {
-    document.querySelector(`.sizebtn[data-${field}="${value}"]`)?.click();
-  }
-  // a slider clamps the value to its range; the input event updates its readout
-  for (const k in playerSliders) {
-    if (!Number.isFinite(saved[k])) continue;
-    playerSliders[k].value = saved[k];
-    playerSliders[k].dispatchEvent(new Event('input', { bubbles: true }));
-  }
+  const saved = loadChoice(PLAYER_BODY_KEY);
+  if (saved) restoreChoice([['player', saved.body], ['sex', saved.sex], ['type', saved.type]], playerSliders, saved);
 }
 for (const el of [playerRowEl, playerCustomEl]) {
   el.addEventListener('click', e => { if (e.target.closest('.sizebtn')) savePlayerBody(); });
@@ -1521,6 +1537,20 @@ function playerBodyChoice() {
   };
 }
 peopleEl.addEventListener('input', () => { peopleOutEl.textContent = fmt(parseInt(peopleEl.value, 10)); });
+
+// WORLD SIZE, saved like the player body: the preset and Custom's two sliders, written on every change in its rows.
+const WORLD_SIZE_KEY = 'worldSize';
+const worldSizeSliders = { map: sizeEl, people: peopleEl };   // saved field -> its slider
+function saveWorldSize() {
+  saveChoice(WORLD_SIZE_KEY, { size: worldSize, map: +sizeEl.value, people: +peopleEl.value });
+}
+function restoreWorldSize() {
+  const saved = loadChoice(WORLD_SIZE_KEY);
+  if (saved) restoreChoice([['size', saved.size]], worldSizeSliders, saved);
+}
+document.getElementById('sizerow').addEventListener('click', e => { if (e.target.closest('.sizebtn')) saveWorldSize(); });
+customRowEl.addEventListener('input', saveWorldSize);
+restoreWorldSize();
 
 goEl.addEventListener('click', startWorld);
 // CITY: the PICKS presets and Custom in one radio row. A preset fills the address (Launch loads it); Custom shows the

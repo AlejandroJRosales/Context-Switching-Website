@@ -17,8 +17,9 @@ import {
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
   CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON,
-  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE
+  GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE, SOUND
 } from './1-config.js';
+import { SOUND_MODELS } from './1b-sound-models.js';
 import {
   fightEase, fightClamp01, tools, loop, wake, invalidate, sound, footfallBetween
 } from './2-core.js';
@@ -1035,6 +1036,10 @@ function cabinAt(x, y, z) {
   return false;
 }
 
+// SIM-TIME STAMPS: each world's sim clock starts at 0, so game.reset puts these back (a stale stamp blocks the gun or fists).
+const GAME_CLOCKS = { nextShotAt: 0, reloadUntil: -1 };   // next shot; magazine change end (-1: none)
+const AVATAR_CLOCKS = { nextAttackAt: 0, moveAt: -Infinity, fightFrom: 0, fightUntil: 0, downAt: -Infinity, downUntil: 0 };
+
 export const game = {
   on: false,
   dead: false,
@@ -1054,17 +1059,17 @@ export const game = {
   weapon: null,
   weaponChoice: false,    // Observer's Weapon chip: its gun in hand in Observer, carried into Survivor in a slot and in hand
   observerGun: null,      // Observer's chosen gun, kept (with its rounds) while the chip is on
-  nextShotAt: 0,          // sim time the next shot may go
-  reloadUntil: -1,        // sim time a magazine change ends; -1: not changing
+  ...GAME_CLOCKS,         // sim time the next shot may go; sim time a magazine change ends (-1: not changing)
   _aimFrom: new THREE.Vector3(), _aimDir: new THREE.Vector3(),
 
   // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
     type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
-    startHealth: SURVIVOR_CONFIG.maxHealth, nextAttackAt: 0,
-    moveAt: -Infinity, playing: null, moveSide: 1, fightFrom: 0, fightUntil: 0,   // fight move, drawn on the 3rd-person body
-    // KNOCKDOWNS, as an animal's: fall start, hold end, heading, launch speed
-    downAt: -Infinity, downUntil: 0, downYaw: 0, downDV: 0,
+    startHealth: SURVIVOR_CONFIG.maxHealth,
+    ...AVATAR_CLOCKS,   // next attack; fight move (drawn on the 3rd-person body); knockdown fall start and hold end
+    playing: null, moveSide: 1,
+    // KNOCKDOWNS, as an animal's: heading, launch speed
+    downYaw: 0, downDV: 0,
     isDown(now) { return now < this.downUntil; },
     // knockable in play in either mode, not in the car or a cabin
     knockable() { return play.active && !game.sheltered && !game.dead; },
@@ -1115,8 +1120,8 @@ export const game = {
     this.fieldHeld = null;
     this.run = { hours: 0, eaten: {}, cause: null };
     this._lastHour = null;
-    this.avatar.nextAttackAt = 0;
-    this.avatar.downAt = -Infinity; this.avatar.downUntil = 0;
+    Object.assign(this, GAME_CLOCKS);
+    Object.assign(this.avatar, AVATAR_CLOCKS);
     this.showPanel();
     this.draw();
   },
@@ -1912,8 +1917,12 @@ export function toggleFly() {
 const carEl = document.getElementById('car');
 const useEl = document.getElementById('use');
 
+// Seconds from boarding until the car drives: the start sound's length (its last breakpoint, where the engine loop takes over).
+const CAR_START_S = SOUND_MODELS[SOUND.car.startModel].breakpointsMs.at(-1) / 1000;
+
 export const car = {
-  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; },   // teardownWorld's entry
+  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; this.startLeftS = 0; },   // teardownWorld's entry
+  startLeftS: 0,            // seconds until the engine has started (boardCar sets CAR_START_S); no throttle or steering until 0
   placed: false,
   health: CAR_MAX_HEALTH,   // a placed car starts full (setCar)
   hurt(amount) { this.health = Math.max(0, this.health - amount); },
@@ -2614,6 +2623,7 @@ function enterCar() {
 // In the seat: the car takes the player.
 function boardCar() {
   setPlayerInCar(true);
+  car.startLeftS = CAR_START_S;   // counted with or without sound, so driving never depends on the Sound setting
   sound.emit('carStart', car.x, car.y, car.z, car);
   stance.stand(); crouchY = 0;
   chaseCam.reset(car.yaw);
@@ -2669,8 +2679,10 @@ function driveStep(dt) {
   jumpQueued = false;
   sound.emit('carEngine', car.x, car.y, car.z, car);   // every driving frame: the engine follows the car and its speed
 
+  const starting = car.startLeftS > 0;   // the engine is still starting: no throttle or steering yet
+  car.startLeftS = Math.max(0, car.startLeftS - dt);
   let throttle = 0, steer = 0;
-  if (play.active) {
+  if (play.active && !starting) {
     if (keys.has('KeyW') || keys.has('ArrowUp')) throttle += 1;
     if (keys.has('KeyS') || keys.has('ArrowDown')) throttle -= 1;
     if (keys.has('KeyA') || keys.has('ArrowLeft')) steer += 1;

@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-12T06:34:30.000Z",
+ "generated": "2026-11-12T07:00:10.541Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -3628,6 +3628,7 @@
     "-climb: number",
     "-carEl: HTMLElement",
     "-useEl: HTMLElement",
+    "-CAR_START_S: number",
     "-_carPos: THREE.Vector3",
     "-_carQ: array",
     "-gasEl: HTMLElement",
@@ -3724,6 +3725,8 @@
     "8b-player-game.js#gunView",
     "8b-player-game.js#SURVIVOR_ACTIONS",
     "8b-player-game.js#SURVIVOR_FIELD_ACTIONS",
+    "8b-player-game.js#GAME_CLOCKS",
+    "8b-player-game.js#AVATAR_CLOCKS",
     "8b-player-game.js#game",
     "8b-player-game.js#player",
     "8b-player-game.js#play",
@@ -3921,6 +3924,28 @@
    ],
    "methods": []
   },
+  "8b-player-game.js#GAME_CLOCKS": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "nextShotAt: number",
+    "reloadUntil: number"
+   ],
+   "methods": []
+  },
+  "8b-player-game.js#AVATAR_CLOCKS": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "nextAttackAt: number",
+    "moveAt: number",
+    "fightFrom: number",
+    "fightUntil: number",
+    "downAt: number",
+    "downUntil: number"
+   ],
+   "methods": []
+  },
   "8b-player-game.js#game": {
    "kind": "object",
    "visibility": "+",
@@ -3952,12 +3977,12 @@
     "weapon: null|unknown",
     "weaponChoice: boolean",
     "observerGun: null|unknown",
-    "nextShotAt: number",
-    "reloadUntil: number",
     "_aimFrom: THREE.Vector3",
     "_aimDir: THREE.Vector3",
     "avatar: object",
-    "animalDamage: boolean"
+    "animalDamage: boolean",
+    "reloadUntil: number",
+    "nextShotAt: number"
    ],
    "methods": [
     "playerHurtsAnimals(): boolean",
@@ -4077,6 +4102,7 @@
    "kind": "object",
    "visibility": "+",
    "attributes": [
+    "startLeftS: number",
     "placed: boolean",
     "health: number",
     "x: number",
@@ -4327,6 +4353,7 @@
     "-pWeightEl: HTMLElement",
     "-PLAYER_BODY_KEY: string",
     "-playerRowEl: HTMLElement",
+    "-WORLD_SIZE_KEY: string",
     "-picksEl: HTMLElement",
     "-placeCustomEl: unknown",
     "-addrRowEl: HTMLElement",
@@ -4339,6 +4366,7 @@
     "-loadIntroScene(): void",
     "-returnToIntro(): void",
     "-chips(host, names, pick): void",
+    "-backToIntro(): void",
     "-setSettingsOpen(open): void",
     "-setSound(on): void",
     "-setAnimalDamage(on): void",
@@ -4369,17 +4397,23 @@
     "-chooseMode(): Promise",
     "-setMode(m): void",
     "-startWorld(): void",
+    "-loadChoice(key): any|null",
+    "-saveChoice(key, value): void",
+    "-restoreChoice(picks, sliders, saved): void",
     "-radioRow(field, pick): void",
     "-savePlayerBody(): void",
     "-restorePlayerBody(): void",
-    "-playerBodyChoice(): null|object"
+    "-playerBodyChoice(): null|object",
+    "-saveWorldSize(): void",
+    "-restoreWorldSize(): void"
    ],
    "contains": [
     "9-main.js#steps",
     "9-main.js#debugReadout",
     "9-main.js#COLLISION_MODES",
     "9-main.js#loadOpts",
-    "9-main.js#playerSliders"
+    "9-main.js#playerSliders",
+    "9-main.js#worldSizeSliders"
    ]
   },
   "9-main.js#steps": {
@@ -4456,6 +4490,15 @@
     "fat: HTMLElement",
     "height: HTMLElement",
     "weight: HTMLElement"
+   ],
+   "methods": []
+  },
+  "9-main.js#worldSizeSliders": {
+   "kind": "object",
+   "visibility": "-",
+   "attributes": [
+    "map: HTMLElement",
+    "people: HTMLElement"
    ],
    "methods": []
   }
@@ -5541,7 +5584,16 @@
     "AIM_BUTTON_GAP_PX",
     "ICONS",
     "ICON_STYLE",
-    "GUN_BUTTON_FACE"
+    "GUN_BUTTON_FACE",
+    "SOUND"
+   ]
+  },
+  {
+   "from": "8b-player-game.js",
+   "to": "1b-sound-models.js",
+   "type": "imports",
+   "names": [
+    "SOUND_MODELS"
    ]
   },
   {
@@ -6672,6 +6724,16 @@
   {
    "from": "8b-player-game.js#game",
    "to": "1-config.js#SURVIVOR_CONFIG",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "8b-player-game.js#GAME_CLOCKS",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "8b-player-game.js#AVATAR_CLOCKS",
    "type": "uses"
   },
   {

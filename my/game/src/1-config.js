@@ -1278,7 +1278,7 @@ export const WEAPONS = {
     magazine: 15,         // rounds per standard magazine
     reserve: 30,          // spare rounds a found gun comes with
     shotS: 0.1,           // least seconds between shots (semi-auto)
-    reloadS: 1,           // seconds to change magazines, and so the reload animation's length (GUN_RELOAD)
+    reloadS: 1.5,         // seconds to change magazines, and so the reload animation's length (GUN_RELOAD)
     bulletKg: 0.00804,    // 124 gr 9x19 mm bullet
     diameterM: 0.00901,   // bullet diameter
     muzzleMS: 350,        // approx. 124 gr from a 4 in barrel (~1150 ft/s)
@@ -1473,7 +1473,7 @@ export const PICKS = [
 // SOUND (8c-audio.js): playback only. Game code reports events through core's `sound` port; nothing here may change what
 // any creature does, its update rate or its precision. Fitted model data lives in 1b-sound-models.js (tools/sound).
 export const SOUND = {
-  onAtLoad: true,                  // the Sound switch (start card) and chip (settings) start on
+  onAtLoad: false,                 // the Sound switch (start card) and chip (settings) start off
   volume: 0.8,                     // master gain, before the compressor
   compressor: { thresholdDb: -12, kneeDb: 6, ratio: 4, attackS: 0.003, releaseS: 0.25 },
   noiseS: 2,                       // length of the one shared looping white-noise buffer every model reads
@@ -1486,13 +1486,13 @@ export const SOUND = {
   stealFadeS: 0.01,                // a stolen voice fades out over this
   randomSeed: 1,                   // audio's own generator (noise, read points), so it never draws from the sim's Math.random
   // FOOTSTEPS: every walking body (people, animals, the player) on the one fitted step for now; heavier is louder
-  footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.5, releaseS: 0.03 },
+  footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.35, releaseS: 0.03 },
   // GUNSHOT: the fitted Glock 19c shot, at the muzzle
   gun: { model: 'gunshot', outputGain: 1.0, releaseS: 0.05 },
   // CAR: start on boarding, then the engine loop (idle, revving with speed), shutdown on getting out
   car: {
     startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',
-    outputGain: 1.0,
+    outputGain: 0.8,               // start, engine loop and shutdown
     speedRangeMps: [0, 35],        // |speed| over this range takes the firing rate from idle to the model's revMaxRatio
     speedSmoothS: 0.2,             // time constant of the firing rate and loudness following speed
     startToIdleFadeS: 0.3,         // the start fades out while the engine loop fades in over this
