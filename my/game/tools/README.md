@@ -4,7 +4,7 @@
 cd tools && npm install
 ```
 
-Pinned dependencies: esbuild (the bundle), acorn and eslint-scope (check-layers). The browser checks use Playwright, from `PLAYWRIGHT_PATH` or a normal `require('playwright')`.
+Pinned dependencies: esbuild (the bundle), acorn and eslint-scope (check-layers), acorn-walk (build-uml). The browser checks use Playwright, from `PLAYWRIGHT_PATH` or a normal `require('playwright')`.
 
 ## bundle.mjs: one HTML for the production pipeline
 
@@ -13,6 +13,14 @@ node tools/bundle.mjs [--out dist/game.html]
 ```
 
 It bundles `src/9-main.js` and everything it imports into one ES module (three stays external, resolved by the importmap) and inlines it into `index.html`'s module tag. It also copies `maps/` beside the output, because the page fetches the city files relative to itself (`CITY_FILE_DIR` in `1-config.js`). It fails if the bundle contains `</script`.
+
+## pack-maps.mjs: compact hosted city files
+
+```
+node tools/pack-maps.mjs <downloadedDir> maps
+```
+
+It rewrites each saved Overpass JSON answer without whitespace and without each element's `nodes` (OSM node ids; the game reads `geometry`, never ids), and checks the result parses back to the input minus those fields. Run it on a fresh download before hosting it. Re-download if a later feature needs node ids (a road graph, say).
 
 ## checks/check-layers.mjs: the module rules
 
@@ -41,7 +49,7 @@ node tools/checks/smoke.mjs <rootDir> <page.html> [--wild] [--low] [--walk] [--s
 
 It serves `rootDir` from a local static server and opens the page in headless Chromium (SwiftShader). It reads the Debug readout (graphics, shader programs and failed links, people, script errors) on the intro scene. Options:
 
-- `--wild`: read it again after a City-off wilderness load and Observer, Go.
+- `--wild`: read it again after a wilderness load (the City switch under More World Options turned off, then Launch) and Observer, Go.
 - `--survivor`: choose Survivor instead of Observer.
 - `--walk` (with `--wild`): walk, jump and sprint on the keyboard, then read the readout again.
 - `--low`: start on Graphics low.

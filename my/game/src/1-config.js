@@ -41,7 +41,7 @@ export const FRAME_W = 0.09;
 // FACADE WINDOWS, metres: punched on low buildings, curtain wall on towers (FACADE_TALL_M).
 export const FACADE_FLOOR_JITTER_M = 0.6;
 export const FACADE_SILL_M = 0.6;
-export const FACADE_WIN_HEADROOM_M = 0.45;
+const FACADE_WIN_HEADROOM_M = 0.45;
 export const FACADE_WIN_H_M = PLAYER_HEIGHT + FACADE_WIN_HEADROOM_M;
 export const FACADE_CURTAIN_SILL_M = 0.15;
 export const FACADE_CURTAIN_TOP_GAP_M = 0.2;
@@ -396,7 +396,7 @@ export const NIGHT_SUN_ALT_DEG = -6;
 // summed mass or height.
 export const PREY_SIZE_STEP_KG = 1;
 // POUNCES: crouch until leapAt, then leap at leapOver x sprint speed, landing short of the quarry.
-export const COYOTE_LEAP_AT = 0.25;
+const COYOTE_LEAP_AT = 0.25;
 export const NPC_POUNCES = {
   coyote: {
     moveS: 0.5, leapAt: COYOTE_LEAP_AT, leapOver: 1.6, cooldownS: 1.2, anchor: null, keys: [
@@ -417,8 +417,8 @@ export const NPC_AGE_DEPLETION_RATE = 0;  // health per sim second of age; 0 = o
 export const DEER_REPRO_SHARE = 0.4;      // reproduction increment as a share of food's
 export const MATE_TIME_MULT = 4;
 export const REPRO_NEED_MAX = 100;       // ceiling of a brained animal's reproduction need, which doubles every tick
-export const NPC_DAY_TICKS = Math.round(DAY_S / NPC_TICK_S);   // ticks per sky day
-export const NPC_MATURITY_S = 120;   // sim seconds birth to full size; no mating before
+const NPC_DAY_TICKS = Math.round(DAY_S / NPC_TICK_S);   // ticks per sky day
+const NPC_MATURITY_S = 120;   // sim seconds birth to full size; no mating before
 export const NPC_MATURITY_TICKS = Math.round(NPC_MATURITY_S / NPC_TICK_S);   // NPC_MATURITY_S in ticks
 export const GROWTH_MIN_SCALE = 0.25;   // body scale at birth, growing to 1 over NPC_MATURITY_TICKS
 export const NPC_ADULT_AGE = 18;                 // years shown at maturity
@@ -533,7 +533,7 @@ export const NPC_TYPES = Object.keys(SPECIES);
 export const NPC_REF_BODY_FAT = Object.fromEntries(Object.keys(NPC_REF_BMI).map(sex =>
   [sex, 1 - NPC_LEAN_INDEX_BASE[sex] / NPC_REF_BMI[sex]]));
 // Strength: lean mass counts in full, fat at NPC_FAT_STRENGTH_SHARE.
-export const NPC_FAT_STRENGTH_SHARE = 0.25;
+const NPC_FAT_STRENGTH_SHARE = 0.25;
 // fighting mass over total mass at fat share f
 export const fightMassShare = f => 1 - f + NPC_FAT_STRENGTH_SHARE * f;
 // Animals fight with the reference man's share.
@@ -547,7 +547,7 @@ export const NPC_FIGHT_REF_STRENGTH = (() => {
 export const NPC_PACE_LEAN_EXP = 1;
 export const NPC_PACE_LIMITS = [0.5, 1.2];
 // Jumps: height is base x pace^NPC_JUMP_PACE_EXP.
-export const NPC_JUMP_PACE_EXP = 1;
+const NPC_JUMP_PACE_EXP = 1;
 export const bodyJumpSpeed = (baseSpeed, pace) => baseSpeed * Math.sqrt(pace ** NPC_JUMP_PACE_EXP);
 // Species ids (index in NPC_TYPES); masks are bit sets of ids.
 export const NPC_TYPE_IDS = {};
@@ -709,10 +709,10 @@ export const STREET_STEP = 2;   // between candidate points along a street
 // WILD: procedural world in metres.
 
 // Wild coyote : deer from northern Yellowstone (Crabtree; NPS).
-export const YELLOWSTONE_COYOTES = 275;
-export const YELLOWSTONE_DEER = 1875;
+const YELLOWSTONE_COYOTES = 275;
+const YELLOWSTONE_DEER = 1875;
 
-export class WorldConfig {
+class WorldConfig {
   constructor(scale = 20) {
     this.BASE = {
       worldWidth: 850,   // per unit of world scale
@@ -767,6 +767,8 @@ export const CAT_HEAD_FWD = 9 * CAT_SCALE;   // head ahead of the body centre
 export const CAT_PET_STEP_SPEED = 0.6;       // m/s step to where he is petted
 export const CAT_PET_SETTLED = 0.01;         // m that counts as there
 export const CAT_PET_TURN_RATE = 8;          // per second turn toward the petting's facing
+export const CAT_RADIUS = 0.15;              // m collision radius against walls
+export const CAT_BODY_H = 0.35;              // m collision height above his feet
 
 // CAMERA POV: '1st' or '3rd'; third person shows the player's body.
 export const TPP_BACK = 70 * NPC_UNIT * PLAYER_HS;   // the Arena's TPP_OFFSET, player-sized
@@ -776,7 +778,7 @@ export const PLAYER_JOG_ANIM = 0.5;   // share of the step the gait animates whe
 
 // GRAPHICS: high has shadow maps; blobs on both.
 export const SHADOW_FOLLOW_STEP = 20;       // box centre drift before a redraw
-export const SHADOW_SUN_STEP_DEG = 0.5;
+const SHADOW_SUN_STEP_DEG = 0.5;
 export const SHADOW_SUN_STEP_COS = Math.cos(SHADOW_SUN_STEP_DEG * Math.PI / 180);
 export const SHADOW_ANIMAL_HZ = 15;     // most animal-caused redraws a second
 // only animals this close trigger a redraw
@@ -1226,10 +1228,10 @@ export const CAR_ENGINE_BRK = 0.35;    // m/s^2 extra drag off throttle
 export const CAR_MASS_KG = 700;      // curb kg (Suzuki Kei 710, Cappuccino 700 to 725)
 export const CAR_MAX_HEALTH = 100;      // a new car's health
 export const CAR_HEALTH_PER_J = 0.0015;   // placeholder: car health per joule of impact energy past BUMP_SAFE_J
-export const AIR_DENSITY = 1.225;    // kg/m^3, sea level 15 C
-export const CAR_CD = 0.35;          // placeholder Cd, small cars ~0.33 to 0.38
-export const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to 0.84)
-export const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
+const AIR_DENSITY = 1.225;    // kg/m^3, sea level 15 C
+const CAR_CD = 0.35;          // placeholder Cd, small cars ~0.33 to 0.38
+const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to 0.84)
+const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
 export const carDragPerM = massKg => 0.5 * AIR_DENSITY * CAR_CDA / massKg;   // 1/m: drag deceleration over speed squared
 export const CAR_GRIP = 8.8;     // m/s^2 lateral (mu ~0.9)
 export const CAR_STEER_MAX = 0.6;     // rad at standstill
@@ -1240,7 +1242,6 @@ export const CAR_G = 9.81;
 // distance. Its body is where the animal is; it rises where the body lies. Drawn: people near the camera take one of
 // HUMAN_RAG_DRAWN texture rows while one is free, else the lying pose; box rigs always draw from their body.
 export const HUMAN_RAG_DRAWN = 16;
-export const LOW_RAGDOLLS = 0;
 export const HUMAN_RAG_ROWS = HUMAN_RAG_DRAWN + 1;   // ragdoll texture rows: one per drawn crowd person, the last for the player
 export const RAGDOLL_G = CAR_G;              // m/s^2 (CAR_G is the same)
 export const RAGDOLL_DAMP = 0.98;            // velocity kept per step

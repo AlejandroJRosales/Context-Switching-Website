@@ -204,8 +204,9 @@ export const audio = {
     let q = 0;
     for (let i = 1; i < V.length; i++) if (V[i].priority < V[q].priority) q = i;
     if (V[q].priority >= priority) return false;
-    const v = V[q];
-    v.out.gain.setTargetAtTime(0, now, SOUND.stealFadeS / 3);   // about 95% gone after stealFadeS
+    const v = V[q], g = v.out.gain;
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now); else g.cancelScheduledValues(now);   // drop its pending release
+    g.setTargetAtTime(0, now, SOUND.stealFadeS / 3);   // about 95% gone after stealFadeS
     for (const s of v.sources) s.stop(now + SOUND.stealFadeS);
     V.splice(q, 1);
     return true;
@@ -223,12 +224,13 @@ export const audio = {
   },
 
   // A fitted bandModel at (x, y, z): noise -> bandpass per band -> fitted envelope -> gain -> panner -> master.
+  // The release ramps `out`, not the envelopes: Chrome can start a curve late, and a ramp on the curve's param then throws.
   // Returns the context time of its last breakpoint (where its release begins), or -1 if no voice was free.
   playBandModel(played, x, y, z, gain, priority, releaseS) {
     if (!this.takeVoice(priority)) return -1;
     const ctx = this.ctx, now = ctx.currentTime;
     const out = ctx.createGain();
-    out.gain.value = gain;
+    out.gain.setValueAtTime(gain, now);
     out.connect(this.panner(x, y, z));
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
@@ -238,10 +240,11 @@ export const audio = {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = M.bandHz[i]; bp.Q.value = M.bandQ;
       const env = ctx.createGain();
-      env.gain.setValueCurveAtTime(played.curves[i], now, played.durS);
-      env.gain.linearRampToValueAtTime(0, endS);
+      env.gain.setValueCurveAtTime(played.curves[i], now, played.durS);   // holds its last value after the curve ends
       src.connect(bp); bp.connect(env); env.connect(out);
     }
+    out.gain.setValueAtTime(gain, lastS);
+    out.gain.linearRampToValueAtTime(0, endS);
     src.start(now, rand() * this.noise.duration);   // a random read point keeps overlapping sounds decorrelated
     src.stop(endS);
     this.voices.push({ endS, priority, out, sources: [src] });

@@ -28,7 +28,7 @@ export function savedGraphics() {
   try { const v = localStorage.getItem(GRAPHICS_KEY); return v === 'high' || v === 'low' ? v : null; }
   catch (e) { return null; }
 }
-export const startGraphics = savedGraphics();
+const startGraphics = savedGraphics();
 // high graphics unless the player last chose low
 export const startLowPower = startGraphics === 'low';
 export const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -153,7 +153,7 @@ void main() {
   }
 };
 
-export const _col = new THREE.Color();
+const _col = new THREE.Color();
 
 // OSM colours are free text: accept hex and CSS names only, so Color.setStyle never warns.
 export function cssColor(raw) {
@@ -166,6 +166,18 @@ export function cssColor(raw) {
 
 // BUILD
 
+// A size x size canvas of white fading out from the centre; stops are [offset 0..1, alpha] pairs (halos, blobs, sun).
+export function radialAlphaCanvas(size, stops) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d'), r = size / 2;
+  const grad = g.createRadialGradient(r, r, 0, r, r, r);
+  for (const [at, alpha] of stops) grad.addColorStop(at, `rgba(255,255,255,${alpha})`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return c;
+}
+
 // GEOMETRY HELPERS
 
 // Table hexes are authored as displayed, so convert from sRGB like material colours.
@@ -175,7 +187,7 @@ export function rgb(hex) {
 }
 
 export function newBuf() { return { pos: [], col: [] }; }
-export const NO_WIN = [0, 0, 0];
+const NO_WIN = [0, 0, 0];
 
 // `ref` is the direction the face should point; winding is fixed to match.
 export function pushTri(b, p0, p1, p2, c, ref) {
@@ -226,7 +238,7 @@ export function nonIndexed(g) {
 
 export const UP = [0, 1, 0];
 
-export function pushDisc(b, x, y, z, r, c) {
+function pushDisc(b, x, y, z, r, c) {
   const N = 6;
   for (let k = 0; k < N; k++) {
     const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2;
@@ -268,7 +280,7 @@ export function areaGeom(pts, y, c) {
 // GROUND CELLS: a static mesh regrouped into square cells of `size` metres; each frame draws only the runs of cells in view.
 
 // Non-indexed triangles by cell, kept in order inside each cell; `clip` cuts them at the cell lines, else each goes by its centre.
-export function cellSplitFlat(g, clip, S) {
+function cellSplitFlat(g, clip, S) {
   const names = Object.keys(g.attributes);
   if (names.some(n => !(g.attributes[n].array instanceof Float32Array) || g.attributes[n].normalized)) return null;
   const src = names.map(n => g.attributes[n].array), size = names.map(n => g.attributes[n].itemSize);
@@ -385,7 +397,7 @@ export function cellSplitFlat(g, clip, S) {
 }
 
 // Indexed triangles regrouped by the cell of their centre, kept in their order inside each cell (for height meshes).
-export function cellSplitIndexed(g, S) {
+function cellSplitIndexed(g, S) {
   const P = g.attributes.position.array, I = g.index.array, nTri = I.length / 3;
   const keyIdx = new Map(), cellX = [], cellZ = [], cellN = [], triCell = new Int32Array(nTri);
   for (let t = 0; t < nTri; t++) {
@@ -419,7 +431,7 @@ export function cellSplitIndexed(g, S) {
   return cells;
 }
 
-export const _cellFrustum = new THREE.Frustum(), _cellView = new THREE.Matrix4(), _cellBox = new THREE.Box3();
+const _cellFrustum = new THREE.Frustum(), _cellView = new THREE.Matrix4(), _cellBox = new THREE.Box3();
 
 // Regroups the mesh by cell and hooks its draw: the first run of cells in view through three, the rest as plain GL draws.
 // `clip` is for flat layers whose overlaps differ in colour, where the draw order must hold across cell lines too.
@@ -541,7 +553,7 @@ export const perf = {
 
 // IO HALF (no gfx references)
 
-export function placeKindOf(tags) {
+function placeKindOf(tags) {
   for (const key of PLACE_KEYS) {
     const kind = tags[key] && PLACE_OF[`${key}=${tags[key]}`];
     if (kind) return kind;
@@ -564,7 +576,7 @@ export async function geocode(query) {
 }
 
 // One attempt on one mirror; a `fatal` error (bad query) ends the search, `cancel` aborts it when another mirror won.
-export async function overpassTry(url, query, cancel) {
+async function overpassTry(url, query, cancel) {
   const host = new URL(url).hostname;
   const ctrl = new AbortController();
   if (cancel) cancel.addEventListener('abort', () => ctrl.abort(), { once: true });
@@ -593,7 +605,7 @@ export async function overpassTry(url, query, cancel) {
 }
 
 // Each mirror once, in order; a slow one gets the next asked alongside it; first answer wins; rejects if all fail.
-export function overpassHedged(q, radius, onNote, prevErr) {
+function overpassHedged(q, radius, onNote, prevErr) {
   return new Promise((resolve, reject) => {
     const cancel = new AbortController();
     const hosts = OVERPASS_MIRRORS.map(u => new URL(u).hostname);
@@ -754,7 +766,7 @@ export function makeProjector(lat0, lon0) {
   return (lat, lon) => [(lon - lon0) * kx, -(lat - lat0) * kz];
 }
 
-export function geometriesOf(el) {
+function geometriesOf(el) {
   if (el.type === 'way' && el.geometry) return [el.geometry];
   if (el.type === 'relation' && el.members) {
     return el.members.filter(m => m.role === 'outer' && m.geometry).map(m => m.geometry);
@@ -762,14 +774,14 @@ export function geometriesOf(el) {
   return [];
 }
 
-export function closedGeom(g) {
+function closedGeom(g) {
   if (!g || g.length < 4) return false;
   const a = g[0], b = g[g.length - 1];
   return Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
 }
 
 // Building polygons as { pts, holes? }; closed inner ways become courtyards, split ones are skipped.
-export function buildingPolysOf(el, project) {
+function buildingPolysOf(el, project) {
   const polys = geometriesOf(el)
     .map(g => ({ pts: cleanPts(g, project, true), holes: [] }))
     .filter(p => p.pts.length >= 3);
@@ -786,7 +798,7 @@ export function buildingPolysOf(el, project) {
   return polys;
 }
 
-export function cleanPts(geom, project, closed) {
+function cleanPts(geom, project, closed) {
   const p = [];
   for (const n of geom) {
     const q = project(n.lat, n.lon);
@@ -800,7 +812,7 @@ export function cleanPts(geom, project, closed) {
   return p;
 }
 
-export function areaKindOf(tags) {
+function areaKindOf(tags) {
   for (const key of ['leisure', 'landuse', 'natural', 'amenity']) {
     const v = tags[key];
     if (v && AREA_COLOR[v] != null) return v;
@@ -910,7 +922,7 @@ export function featuresFrom(json, project) {
   return f;
 }
 
-export function centreOf(el, project) {
+function centreOf(el, project) {
   const b = el.bounds;
   if (b) return project((b.minlat + b.maxlat) / 2, (b.minlon + b.maxlon) / 2);
   const g = el.geometry;
@@ -922,7 +934,7 @@ export function centreOf(el, project) {
   return null;
 }
 
-export function prettify(v) {
+function prettify(v) {
   return String(v).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
@@ -1023,7 +1035,7 @@ export async function fetchTerrain(lat, lon, radius, onNote = () => { }) {
 // TILE HELPERS
 
 // Slippy-tile maths, used by the elevation tiles.
-export function tileOf(lat, lon, z) {
+function tileOf(lat, lon, z) {
   const n = 2 ** z;
   const rad = lat * Math.PI / 180;
   return {
@@ -1033,7 +1045,7 @@ export function tileOf(lat, lon, z) {
 }
 
 // One height tile decoded, or null (HTTP error, timeout through `signal`, or a PNG decodePng cannot read); never rejects.
-export async function fetchTile(url, signal) {
+async function fetchTile(url, signal) {
   try {
     const res = await fetch(url, { signal });
     if (!res.ok) return null;
@@ -1050,7 +1062,7 @@ export async function fetchTile(url, signal) {
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 const PNG_BYTES_PER_PIXEL = { 2: 3, 6: 4 };   // PNG colour type -> bytes per pixel at bit depth 8 (2 = RGB, 6 = RGBA)
 
-export async function decodePng(buffer) {
+async function decodePng(buffer) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   for (let i = 0; i < PNG_SIGNATURE.length; i++) {
@@ -1113,18 +1125,4 @@ export async function decodePng(buffer) {
     const t = prev; prev = cur; cur = t;
   }
   return { width, height, data };
-}
-
-// Resolves with the image or null, never rejects; crossOrigin keeps the pixels usable by WebGL.
-export function loadImage(url, timeoutMs) {
-  return new Promise(resolve => {
-    const img = new Image();
-    let settled = false;
-    const finish = v => { if (!settled) { settled = true; resolve(v); } };
-    img.crossOrigin = 'anonymous';
-    img.onload = () => finish(img);
-    img.onerror = () => finish(null);
-    if (timeoutMs) setTimeout(() => finish(null), timeoutMs);
-    img.src = url;
-  });
 }

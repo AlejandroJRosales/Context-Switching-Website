@@ -10,16 +10,16 @@ import { tools } from './2-core.js';
 // Input -> A, Input -> B, A <-> B (A reads B's spikes from the previous step), A,B -> Output.
 // Lobes are leaky integrate-and-fire neurons with binary spikes. Outputs are a ring of preferred turns.
 // Learning is three-factor: tagSynapses after each decision, adjustWeights when the next reward arrives.
-export const LIF_LEAK = 0.85;              // share of the membrane kept each step
-export const LIF_THRESHOLD = 0.25;         // membrane at which a neuron spikes
-export const LIF_RESET = -0.1;             // membrane right after a spike
-export const TAG_DECAY = 0.95;              // per decision: eligibility tags and each neuron's activity average
-export const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
-export const BRAIN_LEARNING_RATE = 0.01;
-export const BRAIN_WEIGHT_DECAY = 0.00001; // per weight update (one per decision): half-life ~69,000 decisions, ~19 sim hours
-export const HEADING_JITTER = 0.3;         // radians: the turn taken is the population vector plus up to this much noise
+const LIF_LEAK = 0.85;              // share of the membrane kept each step
+const LIF_THRESHOLD = 0.25;         // membrane at which a neuron spikes
+const LIF_RESET = -0.1;             // membrane right after a spike
+const TAG_DECAY = 0.95;              // per decision: eligibility tags and each neuron's activity average
+const DA_TONIC_RATE = 0.05;         // how fast tonic dopamine (expected reward) tracks reward
+const BRAIN_LEARNING_RATE = 0.01;
+const BRAIN_WEIGHT_DECAY = 0.00001; // per weight update (one per decision): half-life ~69,000 decisions, ~19 sim hours
+const HEADING_JITTER = 0.3;         // radians: the turn taken is the population vector plus up to this much noise
 
-export class BrainFactory {
+class BrainFactory {
   constructor() {
     this.LOBE_SIZE_MIN = 4;
     this.LOBE_SIZE_MAX = 10;
@@ -113,8 +113,8 @@ export class BrainFactory {
 // ACTIVE-SYNAPSE LISTS for a mask laid out [pre * nPost + post]: `idx`, the set entries in ascending order (as the
 // dense loops visit them), and per post neuron its entries by ascending pre (colStart / colPre / colK), the order
 // propagate sums in. Masks never change after creation and children share their parent's, so one list per mask.
-export const _maskLists = new WeakMap();
-export function maskLists(mask, nPre, nPost) {
+const _maskLists = new WeakMap();
+function maskLists(mask, nPre, nPost) {
   let L = _maskLists.get(mask);
   if (L) return L;
   let n = 0;

@@ -33,7 +33,7 @@ import {
 } from './2-core.js';
 import {
   renderer, scene, camera, ground, cssColor, rgb, newBuf, pushTri, pushQuad, bufGeom, tint, nonIndexed, UP, ribbon,
-  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel
+  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel, radialAlphaCanvas
 } from './3-gfx-io.js';
 import {
   providers
@@ -48,7 +48,7 @@ export const groundMatch = {
 };
 
 // Per vertex after draping: green toward wild grass (full at the edge), then paintSlope's rock blend, like the wild mesh.
-export function matchWildGround(g, green) {
+function matchWildGround(g, green) {
   const p = g.attributes.position.array, n = g.attributes.normal.array, c = g.attributes.color.array;
   const gr = wildTerrain.grassColor, r = wildTerrain.rockColor;
   const half = groundMatch.half || 1;
@@ -72,7 +72,7 @@ export function matchWildGround(g, green) {
 
 export const layers = [];
 
-export function wallColorOf(tags) {
+function wallColorOf(tags) {
   return cssColor(tags['building:colour'])
     ?? cssColor(tags.colour)
     ?? WALL_MATERIAL_COLOR[tags['building:material']]
@@ -80,14 +80,14 @@ export function wallColorOf(tags) {
     ?? null;
 }
 
-export function roofColorOf(tags) {
+function roofColorOf(tags) {
   return cssColor(tags['roof:colour'])
     ?? ROOF_MATERIAL_COLOR[tags['roof:material']]
     ?? null;
 }
 
 // A pole's solid (lamp posts, tree trunks): a square of half side r around (x, z), from just under base up to top.
-export function poleSolid(x, z, r, base, top) {
+function poleSolid(x, z, r, base, top) {
   const pts = [[x - r, z - r], [x + r, z - r], [x + r, z + r], [x - r, z + r]];
   return { pts, ...bounds(pts), base: base - 0.05, top, tags: null };
 }
@@ -95,7 +95,7 @@ export function poleSolid(x, z, r, base, top) {
 // ROOFS
 
 // Oriented box around a footprint, long axis on the longest edge.
-export function obbOf(pts) {
+function obbOf(pts) {
   let bi = 0, bl = -1;
   for (let i = 0; i < pts.length; i++) {
     const j = (i + 1) % pts.length;
@@ -126,7 +126,7 @@ export function obbOf(pts) {
   return { cx, cz, ux, uz, vx, vz, hu, hv, area: 4 * hu * hv };
 }
 
-export function roofOf(b, o, wallTop, top, shape, c) {
+function roofOf(b, o, wallTop, top, shape, c) {
   const p = (du, dv, y) => [o.cx + o.ux * du + o.vx * dv, y, o.cz + o.uz * du + o.vz * dv];
 
   const A = p(-o.hu, -o.hv, wallTop);
@@ -181,7 +181,7 @@ export function clearLayers() {
   layers.length = 0;
 }
 
-export function addLayer(geoms, material) {
+function addLayer(geoms, material) {
   if (!geoms.length) return null;
   let merged;
   try {
@@ -199,7 +199,7 @@ export function addLayer(geoms, material) {
   return mesh;
 }
 
-export function litMaterial(bias) {
+function litMaterial(bias) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   if (bias) {
     m.polygonOffset = true;
@@ -209,24 +209,24 @@ export function litMaterial(bias) {
   return m;
 }
 
-export function wallRing(pts) {
+function wallRing(pts) {
   let R = offsetRing(pts, WALL_T);
   while (!R.ok && R.t * 0.5 >= WALL_T_MIN) R = offsetRing(pts, R.t * 0.5);
   return R;
 }
 
-export function alongEdge(R, i, d) {
+function alongEdge(R, i, d) {
   const e = R.E[i], p = R.pts[i];
   return [p[0] + e.ux * d, p[1] + e.uz * d];
 }
 
-export function innerAt(R, i, d) {
+function innerAt(R, i, d) {
   const e = R.E[i], qi = R.inner[i], qj = R.inner[(i + 1) % R.pts.length];
   const s = (d - e.a0) / (e.L + e.a1 - e.a0);
   return [qi[0] + (qj[0] - qi[0]) * s, qi[1] + (qj[1] - qi[1]) * s];
 }
 
-export function capOf(outer, holes) {
+function capOf(outer, holes) {
   const v2 = r => r.map(p => new THREE.Vector2(p[0], p[1]));
   let tris;
   try { tris = THREE.ShapeUtils.triangulateShape(v2(outer), holes.map(v2)); } catch (e) { return null; }
@@ -234,24 +234,24 @@ export function capOf(outer, holes) {
   return { verts: outer.concat(...holes), tris };
 }
 
-export function pushCap(b, cap, y, c, ref) {
+function pushCap(b, cap, y, c, ref) {
   const v = cap.verts;
   for (const [i, j, k] of cap.tris) {
     pushTri(b, [v[i][0], y, v[i][1]], [v[j][0], y, v[j][1]], [v[k][0], y, v[k][1]], c, ref);
   }
 }
 
-export function vquad(b, a, c, y0, y1, col, ref) {
+function vquad(b, a, c, y0, y1, col, ref) {
   if (y1 - y0 < 1e-3 || Math.hypot(c[0] - a[0], c[1] - a[1]) < 1e-3) return;
   pushQuad(b, [a[0], y0, a[1]], [c[0], y0, c[1]], [c[0], y1, c[1]], [a[0], y1, a[1]], col, ref);
 }
 
-export function pushSolid(solids, pts, base, top) {
+function pushSolid(solids, pts, base, top) {
   solids.push({ pts, ...bounds(pts), base, top, tags: null });
 }
 
 // Road and path segments, bucketed once per city. Paths weigh less, so a door prefers a front footway.
-export function roadIndex(roads) {
+function roadIndex(roads) {
   const segs = [];
   for (const r of roads || []) {
     const half = (r.width ?? ROAD_WIDTH[r.kind]) / 2;
@@ -268,7 +268,7 @@ export function roadIndex(roads) {
 }
 
 // Weighted distance to the nearest road edge within maxR, and the point measured to; null if none.
-export function nearestRoad(idx, x, z, maxR) {
+function nearestRoad(idx, x, z, maxR) {
   let best = Infinity, bx = 0, bz = 0;
   const cx0 = Math.floor((x - maxR) / ROAD_CELL), cx1 = Math.floor((x + maxR) / ROAD_CELL);
   const cz0 = Math.floor((z - maxR) / ROAD_CELL), cz1 = Math.floor((z + maxR) / ROAD_CELL);
@@ -293,12 +293,12 @@ export function nearestRoad(idx, x, z, maxR) {
   return best < Infinity ? { d: best, x: bx, z: bz } : null;
 }
 
-export function pointIndex(list) {
+function pointIndex(list) {
   const items = list.map(p => ({ ...p, minX: p.x, maxX: p.x, minZ: p.z, maxZ: p.z }));
   return { items, grid: gridOf(items, ROAD_CELL) };
 }
 
-export function blockedAt(self, x, z) {
+function blockedAt(self, x, z) {
   const bucket = collision.shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return false;
   for (const idx of bucket) {
@@ -311,7 +311,7 @@ export function blockedAt(self, x, z) {
 }
 
 // Where on edge i a doorway can be centred, and its width, clear of the mitred corners.
-export function doorSpan(R, i) {
+function doorSpan(R, i) {
   const e = R.E[i];
   const lo0 = Math.max(e.a0, 0), hi0 = e.L + Math.min(e.a1, 0);
   const span = hi0 - lo0;
@@ -322,13 +322,13 @@ export function doorSpan(R, i) {
   return { lo: lo0 + pier + w / 2, hi: hi0 - pier - w / 2, w };
 }
 
-export function probeOut(R, i, d, off) {
+function probeOut(R, i, d, off) {
   const e = R.E[i], p = alongEdge(R, i, d);
   return [p[0] - e.nx * off, p[1] - e.nz * off];
 }
 
 // Door stages 2-4: nearest close road, else facing the nearest road, else the longest wall.
-export function pickByRoads(cands, s, roads) {
+function pickByRoads(cands, s, roads) {
   let best = null, bestD = Infinity;
   for (const k of cands) {
     const r = nearestRoad(roads, k.probe[0], k.probe[1], ROAD_NEAR);
@@ -350,7 +350,7 @@ export function pickByRoads(cands, s, roads) {
 }
 
 // A door is { edge, d0, d1 } on one edge, or a run of whole edges { run, first, last } when all are too short.
-export function chooseDoor(s, R, roads, ents) {
+function chooseDoor(s, R, roads, ents) {
   const cands = [];
   for (let i = 0; i < R.pts.length; i++) {
     const sp = doorSpan(R, i);
@@ -411,7 +411,7 @@ export function chooseDoor(s, R, roads, ents) {
 }
 
 // Doorway centred under a sign on edge i; null if the wall is too short or it would open into a neighbour.
-export function signDoor(s, i) {
+function signDoor(s, i) {
   const R = s.R, sp = doorSpan(R, i);
   if (!sp) return null;
   const c = Math.min(Math.max(R.E[i].L / 2, sp.lo), sp.hi);
@@ -422,14 +422,14 @@ export function signDoor(s, i) {
 
 // WALL PIECES
 
-export function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
+function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
   vquad(ctx.buf, o0, o1, y0, y1, ctx.wc, out);
   vquad(ctx.buf, i0, i1, y0, y1, ctx.iw, inn);
   pushSolid(ctx.solids, [o0, o1, i1, i0], y0, y1);
 }
 
 // Wall over an opening, door head to eaves; its bottom FRAME_W is the frame head.
-export function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
+function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
   if (wallTop - doorTop < 1e-3) return;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
   vquad(ctx.buf, o0, o1, doorTop, frameTop, ctx.trim, out);
@@ -441,7 +441,7 @@ export function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
 }
 
 // Foundation on sloping ground, lowest ground up to the floor (outer face and collider only).
-export function ringPlinth(ctx, R, foot, floor) {
+function ringPlinth(ctx, R, foot, floor) {
   const n = R.pts.length;
   for (let i = 0; i < n; i++) {
     const e = R.E[i], j = (i + 1) % n;
@@ -452,7 +452,7 @@ export function ringPlinth(ctx, R, foot, floor) {
 }
 
 // Walls for one ring; `doors` is at most one door per edge or a single run, null for courtyards.
-export function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
+function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
   const n = R.pts.length;
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
   const run = doors && doors.length && doors[0].run ? doors[0] : null;
@@ -518,7 +518,7 @@ export function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
 export const facadeLit = { value: new THREE.Vector2(0, 0) };
 
 // Lambert material with the window pattern patched into its shader.
-export function facadeMaterial() {
+function facadeMaterial() {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   m.extensions = { derivatives: true };
   m.onBeforeCompile = sh => {
@@ -617,7 +617,7 @@ export function facadeMaterial() {
 }
 
 // Box on a roof, turned to the axis (ux, uz); four sides and a top.
-export function pushBox(b, cx, cz, ux, uz, hw, hd, y0, y1, c) {
+function pushBox(b, cx, cz, ux, uz, hw, hd, y0, y1, c) {
   const vx = -uz, vz = ux;
   const k = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, d]) =>
     [cx + ux * hw * a + vx * hd * d, cz + uz * hw * a + vz * hd * d]);
@@ -630,7 +630,7 @@ export function pushBox(b, cx, cz, ux, uz, hw, hd, y0, y1, c) {
 }
 
 // Upright prism with `sides` faces, used for water tanks.
-export function pushPrism(b, cx, cz, r, y0, y1, sides, c) {
+function pushPrism(b, cx, cz, r, y0, y1, sides, c) {
   for (let i = 0; i < sides; i++) {
     const a0 = i / sides * Math.PI * 2, a1 = (i + 1) / sides * Math.PI * 2;
     const p = [cx + Math.cos(a0) * r, cz + Math.sin(a0) * r], q = [cx + Math.cos(a1) * r, cz + Math.sin(a1) * r];
@@ -641,7 +641,7 @@ export function pushPrism(b, cx, cz, r, y0, y1, sides, c) {
 }
 
 // Parapet and rooftop plant for a flat-roofed shell. Visual only: no colliders.
-export function roofDetail(b, s, R, wc) {
+function roofDetail(b, s, R, wc) {
   const wallH = s.top - s.base;
   if (wallH < 6) return;
   const y = s.top, n = R.pts.length;
@@ -896,7 +896,7 @@ export function buildCity(features) {
 }
 
 // Roads, paths, water and land cover, one mesh per layer for its own depth bias.
-export function buildGround(features) {
+function buildGround(features) {
   const areaGeoms = [], greenGeoms = [], waterGeoms = [];
   const roadBuf = newBuf(), pathBuf = newBuf(), waterBuf = newBuf();
 
@@ -947,7 +947,7 @@ export function buildGround(features) {
 
 // `at` gives the ground height and `add` takes each mesh; the defaults are the city's (its ground, its layers).
 // Returns the trunk solids; the caller files them with the obstacle index and cover.
-export function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj => { scene.add(obj); layers.push(obj); }) {
+function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj => { scene.add(obj); layers.push(obj); }) {
   const solids = [];
   if (!trees.length) return solids;
 
@@ -998,7 +998,7 @@ export function buildTrees(trees, at = (x, z) => elevation.at(x, z), add = obj =
 }
 
 // Walls, fences and hedges; each segment is also a thin collision footprint.
-export function buildBarriers(list) {
+function buildBarriers(list) {
   const geoms = [], boxes = [];
 
   for (const b of list) {
@@ -1039,7 +1039,7 @@ export function buildBarriers(list) {
   return boxes;
 }
 
-export function buildProps(list) {
+function buildProps(list) {
   const geoms = [];
 
   const wood = rgb(0x9b7648), iron = rgb(0x4d5157), hydrant = rgb(0xc0392b);
@@ -1107,7 +1107,7 @@ export const elevation = {
 };
 
 // Split edges longer than ELEV_STEP (longest-edge midpoints, so no cracks), drop triangles off the grid, lift to the ground.
-export function drape(g) {
+function drape(g) {
   const P = g.attributes.position.array, C = g.attributes.color.array;
   const E2 = ELEV_STEP * ELEV_STEP;
   const L = elevation.half + ELEV_STEP;
@@ -1164,7 +1164,7 @@ export function drape(g) {
 }
 
 // Grid mesh over [-half, half] at ELEV_STEP, lifted onto the terrain; flat terrain gives one quad.
-export function terrainGrid(westX, eastX, northZ, southZ, y) {
+function terrainGrid(westX, eastX, northZ, southZ, y) {
   const segX = elevation.active ? Math.max(1, Math.round((eastX - westX) / ELEV_STEP)) : 1;
   const segZ = elevation.active ? Math.max(1, Math.round((southZ - northZ) / ELEV_STEP)) : 1;
   const g = new THREE.PlaneGeometry(eastX - westX, southZ - northZ, segX, segZ);
@@ -1194,7 +1194,7 @@ export function buildTerrainBase(radius, paint = null) {
 // SIGNAGE
 
 // Outward normal and midpoint of a footprint edge (winding checked against the ring).
-export function edgeOutward(pts, i) {
+function edgeOutward(pts, i) {
   const j = (i + 1) % pts.length;
   const [x0, z0] = pts[i], [x1, z1] = pts[j];
   const len = Math.hypot(x1 - x0, z1 - z0);
@@ -1205,7 +1205,7 @@ export function edgeOutward(pts, i) {
   return { i, mx, mz, nx, nz, len };
 }
 
-export function longestEdge(pts) {
+function longestEdge(pts) {
   let bi = -1, bl = 0;
   for (let i = 0; i < pts.length; i++) {
     const j = (i + 1) % pts.length;
@@ -1215,7 +1215,7 @@ export function longestEdge(pts) {
   return bi < 0 ? null : edgeOutward(pts, bi);
 }
 
-export function edgeNearest(pts, x, z) {
+function edgeNearest(pts, x, z) {
   let bi = -1, best = Infinity;
   for (let i = 0; i < pts.length; i++) {
     const j = (i + 1) % pts.length;
@@ -1232,7 +1232,7 @@ export function edgeNearest(pts, x, z) {
 }
 
 // `lift`: lowest the sign may hang (above a doorway); `ground`: level heights are measured from.
-export function placeSign(edge, text, kind, eaves, lift, ground = 0) {
+function placeSign(edge, text, kind, eaves, lift, ground = 0) {
   if (!edge || !text) return null;
   const h = kind === 'number' ? 0.3 : 0.55;
   let y = ground + (kind === 'number'
@@ -1251,7 +1251,7 @@ export function placeSign(edge, text, kind, eaves, lift, ground = 0) {
 }
 
 // Sign requests { w, edge, text, kind }: names on the longest wall, POIs on their building's wall.
-export function collectSigns(walls, pois) {
+function collectSigns(walls, pois) {
   const names = [], numbers = [];
 
   for (const w of walls) {
@@ -1305,8 +1305,8 @@ export function collectSigns(walls, pois) {
 }
 
 // Text as drawn in its atlas cell (font size, clipped text, width), measured once at placement.
-export const signMeasure = document.createElement('canvas').getContext('2d');
-export function signMetrics(text, kind) {
+const signMeasure = document.createElement('canvas').getContext('2d');
+function signMetrics(text, kind) {
   const PAD = 10, maxW = SIGN_CELL_W - PAD * 2;
   let size = kind === 'number' ? 30 : 26;
   signMeasure.font = `${size}px ${SIGN_FONT}`;
@@ -1323,7 +1323,7 @@ export function signMetrics(text, kind) {
   return { text, size, used: Math.min(SIGN_CELL_W, Math.ceil(w + PAD * 2)) };
 }
 
-export function signsOverlap(a, b) {
+function signsOverlap(a, b) {
   if (a.nx * b.nx + a.nz * b.nz < 0.9) return false;
   const dx = b.x - a.x, dz = b.z - a.z;
   if (Math.abs(dx * a.nx + dz * a.nz) > 0.3) return false;
@@ -1333,7 +1333,7 @@ export function signsOverlap(a, b) {
 }
 
 // Place a sign above any already on the wall; false if it runs out of wall or the label is already there.
-export function fitSign(sg, placed, eaves) {
+function fitSign(sg, placed, eaves) {
   sg.m = signMetrics(sg.text, sg.kind);
   sg.hw = sg.h * (sg.m.used / SIGN_CELL_H) / 2;
   for (let guard = 0; guard < 16; guard++) {
@@ -1347,7 +1347,7 @@ export function fitSign(sg, placed, eaves) {
 }
 
 // All labels share one atlas canvas, so a city's signs are one mesh.
-export function buildSigns(signs) {
+function buildSigns(signs) {
   if (!signs.length) return;
 
   const rows = Math.ceil(signs.length / SIGN_COLS);
@@ -1404,7 +1404,7 @@ export function buildSigns(signs) {
 }
 
 // Grocery stores, hospitals and the rest; `entry` is the building's doorway, a reachable point.
-export const places = {
+const places = {
   list: [],                      // { x, z, kind, name, building, entry }
   byKind: {},
 
@@ -2009,10 +2009,10 @@ export const cityWater = {
     }
   }
 };
-export const LAMP_COLOR = new THREE.Color(0xffc98a);
+const LAMP_COLOR = new THREE.Color(0xffc98a);
 
 // Vehicle-road segments with their road's id, for "is this point on another road" questions.
-export function vehicleRoadIndex(roads) {
+function vehicleRoadIndex(roads) {
   const segs = [];
   let reach = 0;
   for (let id = 0; id < roads.length; id++) {
@@ -2033,8 +2033,8 @@ export function vehicleRoadIndex(roads) {
 
 // Signed distance from (x, z) to the nearest carriageway edge of a road other than `skip` (negative inside),
 // looking within maxR of an edge; Infinity if none. The centreline point measured to is left in roadGapAt.
-export const roadGapAt = { x: 0, z: 0 };
-export function roadGap(idx, x, z, maxR, skip = -1) {
+const roadGapAt = { x: 0, z: 0 };
+function roadGap(idx, x, z, maxR, skip = -1) {
   let best = Infinity;
   const r = maxR + idx.reach;
   const cx0 = Math.floor((x - r) / ROAD_CELL), cx1 = Math.floor((x + r) / ROAD_CELL);
@@ -2133,22 +2133,13 @@ export const lampLight = {
 };
 
 // Halo sprite texture for lamp heads at night.
-export function haloTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
+function haloTexture() {
+  return new THREE.CanvasTexture(radialAlphaCanvas(64, [[0, 1], [0.25, 0.55], [1, 0]]));
 }
 
 // One parked-car body, sized like the player's car; paint parts are white so the instance colour paints them.
-export let parkedCarGeom = null;
-export function parkedCarGeometry() {
+let parkedCarGeom = null;
+function parkedCarGeometry() {
   if (parkedCarGeom) return parkedCarGeom;
   const S = CAR_SCALE, LEN = CAR_LEN / S, WID = CAR_WID / S, WB = CAR_WHEELBASE / S;
   const TRACK = CAR_TRACK / S, WR = CAR_WHEEL_R / S;
@@ -2481,7 +2472,7 @@ export const streets = {
   }
 };
 
-export class WildTerrain {
+class WildTerrain {
   constructor() {
     this.params = {
       amplitude: 260,
@@ -2662,7 +2653,7 @@ export class WildTerrain {
 }
 
 // HEIGHT GRID: heights at every mesh vertex; `at` is bilinear, so footing matches the drawn ground closely.
-export class HeightGrid {
+class HeightGrid {
   constructor(x0, z0, step, nx, nz) {
     this.x0 = x0; this.z0 = z0; this.step = step; this.nx = nx; this.nz = nz;
     this.data = new Float32Array(nx * nz);
@@ -2714,7 +2705,7 @@ export function paintSlope(geometry) {
 }
 
 // Terrain mesh straight from a HeightGrid, drawn by ground cell. `skip(i, j)` drops a quad (inside the city); `sink(x, z)` lowers a vertex.
-export function heightMesh(grid, skip = null, sink = null) {
+function heightMesh(grid, skip = null, sink = null) {
   const { nx, nz, x0, z0, step, data } = grid;
   const pos = new Float32Array(nx * nz * 3);
   for (let j = 0, k = 0; j < nz; j++) {
@@ -2743,7 +2734,7 @@ export function heightMesh(grid, skip = null, sink = null) {
 }
 
 // Shoreline points an animal can see water at (the Arena's water.deriveLocations), from a HeightGrid.
-export function shoreline(grid, level, skip = null) {
+function shoreline(grid, level, skip = null) {
   const out = [];
   const N = 128;
   const b = { minX: grid.x0, minZ: grid.z0, maxX: grid.x0 + (grid.nx - 1) * grid.step, maxZ: grid.z0 + (grid.nz - 1) * grid.step };
@@ -2785,9 +2776,9 @@ export function shoreline(grid, level, skip = null) {
 }
 
 // Everything the wild part of a world adds to the scene, disposed as one.
-export const wildLayers = [];
+const wildLayers = [];
 
-export function addWildLayer(obj) {
+function addWildLayer(obj) {
   scene.add(obj);
   wildLayers.push(obj);
   invalidate();
@@ -2810,7 +2801,7 @@ export function clearWildLayers() {
 }
 
 // Height `h` at (x, z) inside bounds `b`, lowered toward the sea floor near the edge; small worlds get a narrower coast.
-export function coastHeight(x, z, h, b, level) {
+function coastHeight(x, z, h, b, level) {
   const k = Math.min(1, Math.min(b.maxX - b.minX, b.maxZ - b.minZ) / 500);
   const d = Math.min(x - b.minX, b.maxX - x, z - b.minZ, b.maxZ - z);
   const w = (wildTerrain.valueNoise(x / 90 + 3.7, z / 90 - 5.2) * 2 - 1) * COAST_WOBBLE * k;
@@ -2819,7 +2810,7 @@ export function coastHeight(x, z, h, b, level) {
   return floor + (h - floor) * t;
 }
 
-export class WildWater {
+class WildWater {
   constructor() {
     this.COLOR = 0x276376;
     this.ENV_INTENSITY = 2.0;
@@ -3035,7 +3026,7 @@ export class WildWater {
   }
 }
 
-export class Cabin extends THREE.Group {
+class Cabin extends THREE.Group {
   constructor({
     scale = 1,
     position = new THREE.Vector3(0, 0, 0),
@@ -3151,7 +3142,7 @@ export const shelters = {
 };
 
 // The Arena's CabinSystem.buildColliders boxes, as obstacle-index solids plus the door lane and rain shelter.
-export function cabinObstacles(cx, cz, s, rotationY, baseY) {
+function cabinObstacles(cx, cz, s, rotationY, baseY) {
   const CW = 80 * s, CD = 60 * s;
   const LR = 2.5 * s;
   const WALL_H = 44 * s;
@@ -3210,7 +3201,7 @@ export function cabinObstacles(cx, cz, s, rotationY, baseY) {
 }
 
 // The Arena's placement: `count` cabins on dry ground, the first at `first`; `pick()` draws a candidate [x, z].
-export function placeCabins(count, first, firstYaw, pick, heightAt, level) {
+function placeCabins(count, first, firstYaw, pick, heightAt, level) {
   const scale = CABIN_SCALE * CABIN_M;
   const minSep = 300 * NPC_UNIT;
   const placed = [];
@@ -3240,7 +3231,7 @@ export function placeCabins(count, first, firstYaw, pick, heightAt, level) {
 }
 
 // PEBBLES: the Arena's scattered rocks, sizes in metres.
-export class PebbleRenderer {
+class PebbleRenderer {
   constructor() {
     this.MAX_INSTANCES = 4000;
     this.GEOMETRIES = [
@@ -3325,7 +3316,7 @@ export class PebbleRenderer {
   }
 }
 
-export const wildTerrain = new WildTerrain();
+const wildTerrain = new WildTerrain();
 export const wildWater = new WildWater();
 export const pebbles = new PebbleRenderer();
 // WORLD PROVIDERS: bounds, wraps, heightAt, isWater, surface, waterSources, population, regrow; flags shadows/companion/rays.
@@ -3509,8 +3500,8 @@ export class CityWorld {
     return null;
   }
 }
-export let wildGroveList = null;
-export function wildGroves() {
+let wildGroveList = null;
+function wildGroves() {
   if (!wildGroveList) {
     wildGroveList = WILD_GROVES.split('|').map(g => {
       const v = g.split(' ').map(Number), pts = [];

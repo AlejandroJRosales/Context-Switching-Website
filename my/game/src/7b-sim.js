@@ -86,7 +86,7 @@ export function downShare(a, now) {
 // particles, distance links, one-way hinges, ground, friction and the car's box (Ecosystem.fallBox). BoxFall and
 // HumanFall lay out their rigs. The renderer poses meshes from these particles; the player's ragdoll is a HumanFall the
 // renderer steps (AnimalRenderer.bodyDown).
-export class VerletBody {
+class VerletBody {
   // n particles; links [a, b, aShare, bShare]; radii in rig units; anchors, the particles whose centre is the animal's
   // place; hinges as solveHinge. Flat typed arrays.
   constructor(n, links, radii, anchors, hinges = []) {
@@ -325,7 +325,7 @@ const BOX_RAG_LINKS = (() => {
   return links;
 })();
 const BOX_RAG_SHARES = [RAGDOLL_BASE_SHARE, RAGDOLL_BASE_SHARE, RAGDOLL_TOP_SHARE, ...Array(4).fill(RAGDOLL_BASE_SHARE), ...Array(4).fill(0)];
-export class BoxFall {
+class BoxFall {
   constructor(rig) {
     this.rig = rig; this.owner = null; this.type = null; this.stillS = 0; this.asleep = false;
     this.body = new VerletBody(11, BOX_RAG_LINKS, [rig.bodyR, rig.bodyR, rig.bodyR, ...Array(8).fill(rig.footR)], [0, 1]);
@@ -408,7 +408,7 @@ export function sampleFightKeys(keys, u, out) {
   return out;
 }
 // A person's BMI: the look's, or the sex's reference with no look.
-export function humanBmi(sex, look) {
+function humanBmi(sex, look) {
   return look ? look.bmi : NPC_REF_BMI[sex];
 }
 // A person's mass in kg: BMI x height^2.
@@ -432,7 +432,7 @@ const MUSCLE_SHARE_OF_LEAN = 0.5;
 // type name per dominant somatotype rating
 const BODY_TYPE_NAMES = { meso: 'Meso', endo: 'Endo', ecto: 'Ecto' };
 // A person's body type: their highest rating's name.
-export function humanBodyType(look) {
+function humanBodyType(look) {
   let best = null;
   for (const k in BODY_TYPE_NAMES) {
     const rating = look ? look[k] : NPC_BODY_POP[k].mean;
@@ -455,7 +455,7 @@ export function personInfoFields(key, sex) {
 
 // ENTITIES
 
-export class Entity {
+class Entity {
   constructor(position, type) {
     this.position = new THREE.Vector3(...position);
     this.type = type;
@@ -1592,7 +1592,7 @@ export function averageHumanLook(female, outfit, variant) {
 }
 
 // skinRGB as one integer; code: face + outfit * 8 + girth * 64.
-export function packHumanLook(L) {
+function packHumanLook(L) {
   const t = L.tone * (HUMAN_SKIN.length - 1), i = Math.min(HUMAN_SKIN.length - 2, Math.floor(t)), f = t - i;
   const mix = sh => Math.round(((HUMAN_SKIN[i] >> sh) & 255) * (1 - f) + ((HUMAN_SKIN[i + 1] >> sh) & 255) * f);
   L.skinRGB = mix(16) * 65536 + mix(8) * 256 + mix(0);
@@ -1600,7 +1600,7 @@ export function packHumanLook(L) {
     Math.round((L.shape.limb - NPC_WIDTH_LIMITS[0]) * NPC_GIRTH_STEPS) * 64;
 }
 
-export function inheritHumanLook(L, a, b) {
+function inheritHumanLook(L, a, b) {
   L.tone = Math.max(0, Math.min(1, (a.tone + b.tone) / 2 + (Math.random() - 0.5) * 0.12));
   L.variant = (Math.random() < 0.5 ? a : b).variant;
   // somatotype: a parent's by heritability, else fresh by weight
@@ -1620,7 +1620,7 @@ export function inheritHumanLook(L, a, b) {
 // PLANT VIEW: the plant renderer's add, remove and touch hooks.
 export const plantView = { add: null, remove: null, touch: null, pending: false };
 
-export class Plant extends Entity {
+class Plant extends Entity {
   constructor(position) {
     super(position, 'plant');
     this.health = PLANT_MAX_HEALTH;
@@ -1675,7 +1675,7 @@ function boxHit(ax, ay, az, dx, dy, dz, b) {
 }
 
 // PROJECTILES: bullets stepped once per sim tick after contacts; the first thing on a tick's segment stops one.
-export class Projectiles {
+class Projectiles {
   constructor(eco) {
     this.eco = eco;
     this.list = [];   // bullets in flight, oldest first

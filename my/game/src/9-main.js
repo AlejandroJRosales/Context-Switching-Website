@@ -828,7 +828,6 @@ let lastQuery = '';
 let startMode = 'city';
 
 const seedEl = document.getElementById('seed');
-const sizeBtns = [...document.querySelectorAll('.sizebtn[data-size]')];
 const sizeEl = document.getElementById('size');
 const sizeOutEl = document.getElementById('sizeOut');
 const peopleEl = document.getElementById('people');

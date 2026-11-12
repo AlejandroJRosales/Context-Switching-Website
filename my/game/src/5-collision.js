@@ -37,7 +37,7 @@ export const collision = {
   obstacleThroats: [],   // doorways occ carves open (cabin throats, from placeCabins)
   openBounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }   // the ecosystem's bounds, for isOpen (set by initialize)
 };
-export const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL };
+const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL };
 
 export function buildGrid(solids) {
   collision.gridWalls = solids;
@@ -669,7 +669,7 @@ export function buildShellRaster(list) {
   R.cell = cell; R.inv = inv;
 }
 
-export function shellAtExact(x, z) {
+function shellAtExact(x, z) {
   const bucket = collision.shellGrid.get(cellKey(Math.floor(x / GRID_CELL), Math.floor(z / GRID_CELL)));
   if (!bucket) return -1;
   for (const idx of bucket) {
@@ -681,7 +681,7 @@ export function shellAtExact(x, z) {
 }
 
 // Is (x, z) within m of a footprint outline? Catches doorways the solid test misses.
-export function nearShell(x, z, m) {
+function nearShell(x, z, m) {
   const cx0 = Math.floor((x - m) / GRID_CELL), cx1 = Math.floor((x + m) / GRID_CELL);
   const cz0 = Math.floor((z - m) / GRID_CELL), cz1 = Math.floor((z + m) / GRID_CELL);
   for (let gx = cx0; gx <= cx1; gx++) {
@@ -699,7 +699,7 @@ export function nearShell(x, z, m) {
 }
 
 // Nearest outdoor, dry spot the player fits, searching rings outward; falls back to (x, z).
-export function spawnOk(px, pz) {
+function spawnOk(px, pz) {
   const g = groundAt(px, pz);
   return shellAt(px, pz) < 0 && !isWaterAt(px, pz) &&
     !nearShell(px, pz, SPAWN_CLEAR) &&

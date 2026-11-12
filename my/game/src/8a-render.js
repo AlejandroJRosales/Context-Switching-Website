@@ -27,7 +27,7 @@ import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, sound, footfallBetween
 } from './2-core.js';
 import {
-  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf
+  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf, radialAlphaCanvas
 } from './3-gfx-io.js';
 import {
   providers
@@ -54,11 +54,11 @@ export const renderInputs = {
 };
 
 // VIEW CULL: off-screen bodies, stats and brains are skipped.
-export const npcFrustum = new THREE.Frustum();
-export const _npcVP = new THREE.Matrix4();
-export const _npcSphere = new THREE.Sphere();
+const npcFrustum = new THREE.Frustum();
+const _npcVP = new THREE.Matrix4();
+const _npcSphere = new THREE.Sphere();
 
-export function updateNpcFrustum() {
+function updateNpcFrustum() {
   camera.updateMatrixWorld();
   if (renderer.xr.isPresenting) return;
   _npcVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -74,8 +74,8 @@ export function npcOnScreen(x, y, z, r) {
 
 // INSTANCED RENDERER
 
-export const geometryViews = new WeakMap();
-export function geometryView(geo, slot) {
+const geometryViews = new WeakMap();
+function geometryView(geo, slot) {
   let views = geometryViews.get(geo);
   if (!views) geometryViews.set(geo, views = []);
   if (views[slot]) return views[slot];
@@ -87,14 +87,14 @@ export function geometryView(geo, slot) {
   return views[slot] = g;
 }
 export const petBendAt = level => HUMAN_PET.bend[0] + (HUMAN_PET.bend[1] - HUMAN_PET.bend[0]) * level / (PET_BEND_LEVELS - 1);
-export const petQuant = (v, lo, hi, steps) => Math.round(fightClamp01((v - lo) / (hi - lo)) * steps);
+const petQuant = (v, lo, hi, steps) => Math.round(fightClamp01((v - lo) / (hi - lo)) * steps);
 export function humanPetPack(share, bendLevel, shoulder, turn) {
   const P = HUMAN_PET;
   return petQuant(share, 0, 1, 63) + 64 * bendLevel + 256 * petQuant(shoulder, P.shoulder[0], P.shoulder[1], 255) +
     65536 * petQuant(turn, -P.turnMax, P.turnMax, 255);
 }
 // The shader's humanTurn on (y, z) about (cy, 0).
-export const rigTurnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
+const rigTurnYZ = (y, z, cy, a) => { const c = Math.cos(a), s = Math.sin(a), v = y - cy; return [cy + v * c - z * s, v * s + z * c]; };
 // The petting hand's point in rig space at full crouch and reach.
 export function humanPetHand(bend, a1, turn, shoulderW) {
   const R = HUMAN_RIG, P = HUMAN_PET, y0 = R.at(P.handAt), turnYZ = rigTurnYZ;
@@ -132,7 +132,7 @@ const keyGlsl = (keys, c, u) => '(' + keys.slice(1).reduce((s, k, i) => k[c] ===
   `${s} + ${(k[c] - keys[i][c]).toFixed(4)} * smoothstep(${keys[i][0].toFixed(4)}, ${k[0].toFixed(4)}, ${u})`, keys[0][c].toFixed(4)) + ')';
 // The reload's arms at share u (0 off a reload: low ready, no support key): gun [shoulder, elbow, inward], support
 // [shoulder, elbow, inward, weight].
-export function gunReloadPose(u, out) {
+function gunReloadPose(u, out) {
   const G = GUN_RELOAD.gun, S = GUN_RELOAD.support;
   out.gun = [keyAt(G, 1, u), keyAt(G, 2, u), keyAt(G, 3, u)];
   out.support = [keyAt(S, 1, u), keyAt(S, 2, u), keyAt(S, 3, u), keyAt(S, 4, u)];
@@ -167,7 +167,7 @@ const gunArm = (aim, pitch, lean, ready) => [ready[0] + (gunAimShoulder(pitch, l
 // TWO HANDS (as the shader's gunHandTurn): the turn about the shoulder's vertical that brings a straight arm at aimA1
 // (side +1 left, -1 right) to put its grip-height axis `target` rig units from the centre line on its own side. Faded out
 // where the arm's forward reach is too short to get there (aimed near straight up or down).
-export function gunHandTurn(side, aimA1, shoulderW, target) {
+function gunHandTurn(side, aimA1, shoulderW, target) {
   const R = HUMAN_RIG, y0 = R.at(GUN_POSE.gripAt), L = R.shoulder - y0;
   const dx = side * L * HUMAN_ARM_FLARE * shoulderW, dz = -L * Math.sin(aimA1);   // grip axis from the shoulder pivot
   const w = side * (target - R.shoulderX * shoulderW), rho = Math.hypot(dx, dz);
@@ -266,7 +266,7 @@ export function buildMagMesh() {
 // The people rig's per-instance attributes (4 floats each); every rig geometry carries all of them.
 export const HUMAN_INSTANCE_ATTRS = ['iPose', 'iGait', 'iLook', 'iAct', 'iShape', 'iDown'];
 // A knockdown into iDown at o: down share, push angle, and ground lift.
-export function writeHumanDown(a, now, half, out, o) {
+function writeHumanDown(a, now, half, out, o) {
   const share = downShare(a, now), angle = a.downYaw - a.facingAngle;
   out[o] = share;
   out[o + 1] = angle;
@@ -279,10 +279,10 @@ export function writeHumanLook(L, look, shape, o) {
   for (let i = 0; i < NPC_TORSO_REGIONS.length; i++) shape[o + i] = L.shape[NPC_TORSO_REGIONS[i]];
 }
 // A far card's width over the baked body's; cards widen by build alone.
-export const humanCardWidth = L => L.build / NPC_BUILD_BASE_MEAN[L.female ? 'female' : 'male'];
+const humanCardWidth = L => L.build / NPC_BUILD_BASE_MEAN[L.female ? 'female' : 'male'];
 
 // The rest-pose body: 16 parts lofted from rings, ~490 triangles; uv is tile-local.
-export function buildHumanGeometry() {
+function buildHumanGeometry() {
   const R = HUMAN_RIG, at = R.at, W = R.widthAt;
   const pos = [], nrm = [], uv = [], rig = [], piv = [], idx = [];
   // ring points run from the back centre toward +x, the front, then -x
@@ -395,7 +395,7 @@ export function buildHumanGeometry() {
 }
 
 // Paint and mask atlases drawn at startup: grey paint tinted per person by the mask (r skin, g shirt, b pants).
-export function paintHumanAtlas() {
+function paintHumanAtlas() {
   const S = HUMAN_ATLAS, paint = new Uint8ClampedArray(S * S * 4), mask = new Uint8ClampedArray(S * S * 4);
   let seed = 7;
   const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
@@ -617,10 +617,10 @@ const HUMAN_TORSO_WIDTH = NPC_TORSO_REGIONS.slice(1).reduce((expr, k, i) => {
 
 // HUMAN RAGDOLL bones, here because the shader reads their count; ragBone maps rig parts to them.
 const HUMAN_RAG_BONES = [[0, 1], [1, 2], [3, 5], [4, 6], [5, 7], [6, 8], [9, 11], [10, 12], [11, 13], [12, 14]];
-export const HUMAN_RAG_TEXELS = HUMAN_RAG_BONES.length * 2;   // texels per row: rotation, translation per bone
+const HUMAN_RAG_TEXELS = HUMAN_RAG_BONES.length * 2;   // texels per row: rotation, translation per bone
 
 // Shared by lit and shadow materials: rig data, pose, gait, look and shape.
-export const HUMAN_VERTEX_PARS = /* glsl */`
+const HUMAN_VERTEX_PARS = /* glsl */`
       attribute vec4 rig;
       attribute vec3 pivot;
       attribute vec4 iPose;
@@ -826,7 +826,7 @@ export const HUMAN_VERTEX_PARS = /* glsl */`
       vec3 humanColor(float c) { vec3 v = floor(c / vec3(65536.0, 256.0, 1.0)); v.yz -= v.xy * 256.0; return pow(v / 255.0, vec3(2.2)); }
       #endif
     `;
-export const HUMAN_VERTEX_MAIN = /* glsl */`
+const HUMAN_VERTEX_MAIN = /* glsl */`
       vec3 objectNormal = vec3(normal);
       vec3 humanPos = vec3(position);
       humanPose(humanPos, objectNormal);
@@ -841,7 +841,7 @@ export const HUMAN_VERTEX_MAIN = /* glsl */`
     `;
 
 // Lambert plus depth twin; people code sits before '#include <common>' for the minifier.
-export function humanMaterials(paint, mask, ragdoll) {
+function humanMaterials(paint, mask, ragdoll) {
   const lit = new THREE.MeshLambertMaterial();
   lit.onBeforeCompile = sh => {
     sh.uniforms.humanPaint = { value: paint };
@@ -871,7 +871,7 @@ export function humanMaterials(paint, mask, ragdoll) {
 }
 
 // Shared by billboard materials: card pose, frame and tints.
-export const BB_VERTEX_PARS = /* glsl */`
+const BB_VERTEX_PARS = /* glsl */`
       attribute vec4 bPose;    // rig origin x, y, z, facing
       attribute vec4 bFrame;   // frame side and bottom (metres), look, pose
       attribute float bWidth;  // card width over the baked body's (humanCardWidth; 1 for animals)
@@ -885,7 +885,7 @@ export const BB_VERTEX_PARS = /* glsl */`
       #endif
     `;
 // Sets bbPos (the facing card corner), bbAxis (body centre line) and bbToward.
-export const BB_VERTEX_MAIN = /* glsl */`
+const BB_VERTEX_MAIN = /* glsl */`
       // toward the viewer in xz: to a perspective eye, or back along an orthographic one (the sun's shadow camera)
       vec2 bbTo = isPerspectiveMatrix(projectionMatrix) ? cameraPosition.xz - bPose.xz : vec2(viewMatrix[0][2], viewMatrix[2][2]);
       float bbLen = length(bbTo);
@@ -909,7 +909,7 @@ export const BB_VERTEX_MAIN = /* glsl */`
       #endif
     `;
 // Bake output, coverage-weighted: mode 0 tint weights, 1 untinted colour and hair, 2 normal.
-export const BB_BAKE_OUT = /* glsl */`
+const BB_BAKE_OUT = /* glsl */`
       uniform int bakeMode;
       vec4 bakeOut(vec3 tints, vec3 fixedColor, float hairWeight, vec3 n) {
         if (bakeMode == 0) return vec4(sqrt(tints), 1.0);
@@ -919,7 +919,7 @@ export const BB_BAKE_OUT = /* glsl */`
     `;
 
 // Lambert on atlas normals and tints, plus a depth twin cut to coverage.
-export function billboardMaterials(atlases, grid) {
+function billboardMaterials(atlases, grid) {
   const lit = new THREE.MeshLambertMaterial();
   lit.shadowSide = THREE.DoubleSide;   // casting cards face the sun, so no face is culled
   lit.onBeforeCompile = sh => {
@@ -1062,7 +1062,7 @@ class HumanRagdollPose {
   }
 }
 
-export class AnimalRenderer {
+class AnimalRenderer {
   constructor() {
     this.MAX_INSTANCES = 12000;
 
@@ -1848,7 +1848,7 @@ export class AnimalRenderer {
   }
 }
 
-export class PlantRenderer {
+class PlantRenderer {
   constructor() {
     this.MAX_INSTANCES = 15000;   // most plants drawn
     this.GEOMETRIES = {
@@ -2127,7 +2127,7 @@ export const gfxEl = document.getElementById('gfx');
 export const avgFpsEl = document.getElementById('avg-fps');
 
 // TARGET SELECTION (drives the SINGLE vision rays).
-export class StatLabelSystem {
+class StatLabelSystem {
   constructor() {
     this.current = null;
     this.locked = null;
@@ -2185,7 +2185,7 @@ export class StatLabelSystem {
 }
 
 // VISION RAYS: each ray-visible animal's vision cone.
-export class VisionRaySystem {
+class VisionRaySystem {
   constructor() {
     this.MAX = 1000;
     this.LEN_SCALE = 0.55;
@@ -2512,7 +2512,7 @@ export const labels = new StatLabelSystem();
 export const visionRays = new VisionRaySystem();
 
 // TRACERS: each bullet in flight (ecosystem.projectiles) drawn as a TRACER_M streak behind it along its velocity.
-export class TracerRenderer {
+class TracerRenderer {
   constructor() {
     this.positions = new Float32Array(BULLET_MAX * 2 * 3);
     this.geo = new THREE.BufferGeometry();
@@ -2541,18 +2541,9 @@ export class TracerRenderer {
 export const tracers = new TracerRenderer();
 export const animalRenderer = new AnimalRenderer();
 export const plantRenderer = new PlantRenderer();
-export class BlobShadows {
+class BlobShadows {
   constructor() {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.55, 'rgba(255,255,255,0.7)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    const tex = new THREE.CanvasTexture(c);
+    const tex = new THREE.CanvasTexture(radialAlphaCanvas(64, [[0, 1], [0.55, 0.7], [1, 0]]));
     const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     this.material = new THREE.MeshBasicMaterial({
       color: 0x000000, map: tex, transparent: true, depthWrite: false, opacity: BLOB_OPACITY,
@@ -2638,14 +2629,14 @@ export class BlobShadows {
   }
 }
 export const blobShadows = new BlobShadows();
-export const BRAIN_NODE_GEO = new THREE.SphereGeometry(0.13, 8, 6);
-export const brainNodeMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-export const brainLineMat = new THREE.LineBasicMaterial({
+const BRAIN_NODE_GEO = new THREE.SphereGeometry(0.13, 8, 6);
+const brainNodeMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+const brainLineMat = new THREE.LineBasicMaterial({
   vertexColors: true, transparent: true, depthWrite: false, toneMapped: false
 });
-export const _bCol = new THREE.Color(), _bMat = new THREE.Matrix4();
+const _bCol = new THREE.Color(), _bMat = new THREE.Matrix4();
 
-export function buildBrain(nn) {
+function buildBrain(nn) {
   const I = nn.inputDims, NA = nn.lobeSizeA, NB = nn.lobeSizeB, O = nn.outputDims;
   const spread = (count, radius) => Array.from({ length: count }, (_, i) => {
     const ang = (i / count) * Math.PI * 2;
@@ -2737,14 +2728,14 @@ export function buildBrain(nn) {
   };
 }
 
-export function disposeBrain(b) {
+function disposeBrain(b) {
   scene.remove(b.group);
   b.lines.geometry.dispose();
   b.mesh.dispose();
 }
 
 // A dead body's brain: nothing fires, so every node and weight shows at rest.
-export function brainActivity(b, a) {
+function brainActivity(b, a) {
   const nn = a.brain, out = nn.output ?? 0, alive = a.alive;   // alive false: a corpse, nothing fires
   const arr = b.colorAttr.array;
   let dirty = false;
@@ -2784,7 +2775,7 @@ const FIELD_FONT = px => `${px}px sans-serif`;
 const STAT_FONT = px => `bold ${px}px sans-serif`;
 const ICON_FONT = px => `${px}px ${EMOJI_FONT}`;
 
-export class HealthBars {
+class HealthBars {
   constructor() {
     this.bars = new Map();
     this.spare = [];
@@ -3249,9 +3240,9 @@ export const skyChoice = {
 };
 
 // Survivor ignores presets
-export function timeMode() { return renderInputs.survivor() ? 'Game' : skyChoice.time; }
+function timeMode() { return renderInputs.survivor() ? 'Game' : skyChoice.time; }
 // sky hour: preset, else the game clock
-export function skyHour(mode) { return mode !== 'Game' ? presetHour(mode) : simSky.hour; }
+function skyHour(mode) { return mode !== 'Game' ? presetHour(mode) : simSky.hour; }
 
 // sky instant: today at the sky hour
 export function skyInstant() {
@@ -3278,11 +3269,11 @@ export const avgFps = {
 };
 
 // City wall clock (use getUTC*); offset from the site's longitude.
-export function zoneOffset() {
+function zoneOffset() {
   return (simSky.site && simSky.site.offset) || 0;
 }
 
-export function cityNow() {
+function cityNow() {
   return new Date(Date.now() + zoneOffset() * 1000);
 }
 
@@ -3293,13 +3284,13 @@ export function clockText(date) {
     ` ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-export const skyCol = new THREE.Color();
-export const sunCol = new THREE.Color();
-export const scratch = new THREE.Color();
-export const OVERCAST = new THREE.Color(0x8b8f96);
-export const FOGGY = new THREE.Color(0xb9bcc0);
+const skyCol = new THREE.Color();
+const sunCol = new THREE.Color();
+const scratch = new THREE.Color();
+const OVERCAST = new THREE.Color(0x8b8f96);
+const FOGGY = new THREE.Color(0xb9bcc0);
 
-export function skyDisc(canvas) {
+function skyDisc(canvas) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const size = 2 * SKY_DIST * Math.tan(SKY_BODY_DEG * Math.PI / 360);
@@ -3312,27 +3303,16 @@ export function skyDisc(canvas) {
   return mesh;
 }
 
-export const sunCanvas = document.createElement('canvas');
-sunCanvas.width = sunCanvas.height = SKY_TEX;
-{
-  const g = sunCanvas.getContext('2d'), c = SKY_TEX / 2;
-  const grad = g.createRadialGradient(c, c, 0, c, c, c);
-  grad.addColorStop(0.00, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.30, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.36, 'rgba(255,255,255,0.45)');
-  grad.addColorStop(1.00, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, SKY_TEX, SKY_TEX);
-}
-export const sunDisc = skyDisc(sunCanvas);
+const sunCanvas = radialAlphaCanvas(SKY_TEX, [[0, 1], [0.30, 1], [0.36, 0.45], [1, 0]]);
+const sunDisc = skyDisc(sunCanvas);
 
-export const moonCanvas = document.createElement('canvas');
+const moonCanvas = document.createElement('canvas');
 moonCanvas.width = moonCanvas.height = SKY_TEX;
-export const moonDisc = skyDisc(moonCanvas);
-export let moonShape = NaN;
+const moonDisc = skyDisc(moonCanvas);
+let moonShape = NaN;
 
 // Lit region; terminator x = e * sqrt(r^2 - y^2).
-export function drawMoon(e) {
+function drawMoon(e) {
   const g = moonCanvas.getContext('2d'), c = SKY_TEX / 2, r = c - 2;
   g.clearRect(0, 0, SKY_TEX, SKY_TEX);
   g.beginPath();
@@ -3349,12 +3329,12 @@ export function drawMoon(e) {
   moonShape = e;
 }
 
-export const sunDir = new THREE.Vector3();
-export const moonDir = new THREE.Vector3();
-export const _mx = new THREE.Vector3(), _my = new THREE.Vector3(), _mz = new THREE.Vector3();
-export const _mBasis = new THREE.Matrix4();
+const sunDir = new THREE.Vector3();
+const moonDir = new THREE.Vector3();
+const _mx = new THREE.Vector3(), _my = new THREE.Vector3(), _mz = new THREE.Vector3();
+const _mBasis = new THREE.Matrix4();
 
-export function updateSkyBodies(day, cloud) {
+function updateSkyBodies(day, cloud) {
   const e = sunDir.dot(moonDir);
   if (!(Math.abs(e - moonShape) < 0.01)) drawMoon(e);
 
@@ -3383,7 +3363,7 @@ export function placeSkyBodies() {
   moonDisc.position.copy(camera.position).addScaledVector(moonDir, dist);
 }
 
-export function sampleSky(alt) {
+function sampleSky(alt) {
   let i = 0;
   while (i < SKY.length - 2 && alt > SKY[i + 1][0]) i++;
   const a = SKY[i], b = SKY[i + 1];
@@ -3481,17 +3461,17 @@ export function updateSky() {
 
 // RAIN: one LineSegments draw; a roof height map cuts streaks under roofs.
 
-export const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
+const RAIN_MAX = matchMedia('(pointer: coarse)').matches ? 4000 : 10000;
 
-export let rain = null;
-export let rainTime = 0;
+let rain = null;
+let rainTime = 0;
 // When rain was last drawn.
 export const rainClock = {
   drawn: 0
 };
 
 // 0 dry, else 0..1; ~0.3 in/h is heavy.
-export function rainState() {
+function rainState() {
   const c = conditions();
   if (!c || (c.kind !== 'rain' && c.kind !== 'storm')) return null;
   const code = c.code ?? (c.kind === 'storm' ? 95 : 63);
@@ -3501,7 +3481,7 @@ export function rainState() {
   return { intensity: i, drizzle, storm: c.kind === 'storm' };
 }
 
-export function makeRain() {
+function makeRain() {
   const n = RAIN_MAX;
   const seed = new Float32Array(n * 2 * 4);    // x, y phase, z, speed
   const tip = new Float32Array(n * 2);         // 0 head, 1 tail
@@ -3599,7 +3579,7 @@ export function disposeRain() {
 }
 
 // Start, retune or stop rain.
-export function syncRain(daylight) {
+function syncRain(daylight) {
   const st = rainState();
   // stopping fades out, then disposes
   if (!st) { if (rain) rain.target = 0; return; }
@@ -3621,7 +3601,7 @@ export function syncRain(daylight) {
 }
 
 // Roof height over (x, z).
-export function roofHeightAt(s, x, z) {
+function roofHeightAt(s, x, z) {
   if (!s.roofShape) return s.top;
   const o = s.obb;
   const dx = x - o.cx, dz = z - o.cz;
@@ -3642,7 +3622,7 @@ export function roofHeightAt(s, x, z) {
 }
 
 // Fill the shelter map around (cx, cz).
-export function rasterRoofs(cx, cz) {
+function rasterRoofs(cx, cz) {
   const N = ROOF_MAP_N, cell = ROOF_MAP_SIZE / N;
   const x0 = cx - ROOF_MAP_SIZE / 2, z0 = cz - ROOF_MAP_SIZE / 2;
   const data = rain.roofData;

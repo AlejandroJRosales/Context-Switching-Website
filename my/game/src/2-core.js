@@ -126,7 +126,7 @@ export function pointInRing(pts, x, z) {
   return inside;
 }
 
-export const near = { x: 0, z: 0, d: 0 };
+const near = { x: 0, z: 0, d: 0 };
 export function closestOnRing(pts, x, z) {
   let best = Infinity, bx = x, bz = z;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -164,7 +164,7 @@ export function turnToward(from, to, maxStep) {
 
 // SHARED HELPERS
 
-export class MathTools {
+class MathTools {
   distSq(x1, y1, x2, y2) {
     return (x2 - x1) ** 2 + (y2 - y1) ** 2;
   }

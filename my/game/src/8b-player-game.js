@@ -10,6 +10,7 @@ import {
   HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_LEG, CROUCH_DROP, HUMAN_PET, PET_BEND_LEVELS, STREET_STEP, CABIN_SCALE,
   CABIN_M, CAT_HEAD_TOP, CAT_SCALE, CAT_SEAT, CAT_DOOR, CAT_RUN_FROM, CAT_WALK_WITHIN, CAT_RUN_SPEED, CAT_BOARD_SPEED,
   CAT_JUMP_TIME, CAT_BOARD_TIMEOUT, CAT_HEAD_FWD, CAT_PET_STEP_SPEED, CAT_PET_SETTLED, CAT_PET_TURN_RATE, TPP_BACK,
+  CAT_RADIUS, CAT_BODY_H,
   TPP_UP, PLAYER_JOG_ANIM, SURVIVOR_CONFIG, playerPlantFood, STICK_RADIUS, FLICK_RADIUS, TAP_GAP_MS, TAP_SLOP,
   TAP_SWALLOW_MS, TAP_BUTTONS, HOLD_SAFE, CAR_SCALE, CAR_LEN, CAR_WID, CAR_TOP, CAR_WHEELBASE, CAR_TRACK, CAR_WHEEL_R,
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
@@ -44,20 +45,20 @@ import {
 } from './8a-render.js';
 
 export const dotEl = document.getElementById('dot');
-export const stickEl = document.getElementById('stick');
+const stickEl = document.getElementById('stick');
 export const knobEl = document.getElementById('knob');
-export const flyEl = document.getElementById('fly');
+const flyEl = document.getElementById('fly');
 export const climbEl = document.getElementById('climb');
-export const upEl = document.getElementById('up');
-export const downEl = document.getElementById('down');
+const upEl = document.getElementById('up');
+const downEl = document.getElementById('down');
 
 // DOM for the view chip and VR.
 export const povEl = document.getElementById('pov');
-export const vrEl = document.getElementById('vr');
-export const vrOverlayEl = document.getElementById('vr-overlay');
-export const vrStatsEl = document.getElementById('vr-stats');
+const vrEl = document.getElementById('vr');
+const vrOverlayEl = document.getElementById('vr-overlay');
+const vrStatsEl = document.getElementById('vr-stats');
 
-export class CatCompanion {
+class CatCompanion {
   constructor() {
     this.mesh = this.build();
     this.mesh.visible = false;
@@ -75,6 +76,15 @@ export class CatCompanion {
     this.held = null;              // { x, z, yaw } while petted
     this._w = new THREE.Vector3();
     this._seat = new THREE.Vector3();
+  }
+
+  // Walls push him out, and the world's edge keeps him in (x, z only; footing is the caller's).
+  blockByWalls() {
+    const feet = this.position.y;
+    this._w.set(this.position.x, 0, this.position.z);
+    resolveCollisions(this._w, CAT_RADIUS, feet, feet + CAT_BODY_H, STEP_UP);
+    this.position.x = ecosystem.fitX(this._w.x);
+    this.position.z = ecosystem.fitZ(this._w.z);
   }
 
   build() {
@@ -249,11 +259,7 @@ export class CatCompanion {
             this.position.z += dz / d * step;
             this.yaw += CatCompanion.wrap(Math.atan2(dx, dz) - this.yaw) * Math.min(1, dt * 10);
           }
-          const feet = this.position.y;
-          this._w.set(this.position.x, 0, this.position.z);
-          resolveCollisions(this._w, 0.15, feet, feet + 0.35, STEP_UP);
-          this.position.x = ecosystem.fitX(this._w.x);
-          this.position.z = ecosystem.fitZ(this._w.z);
+          this.blockByWalls();
           this.position.y = this.groundAt(this.position.x, this.position.z);
         }
         this.legs(running ? Math.sin(this.animTime * 18) * 0.55 : Math.sin(this.animTime * 12) * 0.35, 0);
@@ -400,12 +406,7 @@ export class CatCompanion {
       this.yaw += (faceAngle - this.yaw) * Math.min(1, deltaTime * 2);
     }
 
-    // walls stop him
-    const feet = this.position.y;
-    this._w.set(this.position.x, 0, this.position.z);
-    resolveCollisions(this._w, 0.15, feet, feet + 0.35, STEP_UP);
-    this.position.x = ecosystem.fitX(this._w.x);
-    this.position.z = ecosystem.fitZ(this._w.z);
+    this.blockByWalls();
 
     // gravity to the footing
     const ground = this.groundAt(this.position.x, this.position.z);
@@ -431,7 +432,7 @@ export class CatCompanion {
 }
 
 // The body's facing: the rig faces +z at 0, the camera -z.
-export const bodyYaw = () => player.heading + Math.PI;
+const bodyYaw = () => player.heading + Math.PI;
 
 export const pov = {
   mode: '3rd',
@@ -683,7 +684,7 @@ export const cat = new CatCompanion();
 
 // PETTING: the player squats and turns so the hand comes over the cat, who steps under it; moving off, the car, flying
 // or dying ends it.
-export const petting = {
+const petting = {
   t: -1,                       // seconds in; -1: not petting
   bendLevel: 0,                // bend level and shoulder angle for this pet
   a1: 0,
@@ -762,7 +763,7 @@ export const petting = {
 // carried; in 1st person a view model before the camera. draw and holster animate between them (GUN_DRAW); Aim
 // (toggleAim: the Aim button, right mouse) raises it along the view and zooms in. A reload (GUN_RELOAD) brings the gun
 // in and the support hand to the belt and back with a fresh magazine, which seats in the grip.
-export const gunView = {
+const gunView = {
   hand: null, waist: null, view: null,   // meshes: the hand's and the waistband's on the 3rd-person body, the 1st-person one
   magHand: null, magView: null,   // the fresh magazine: in the 3rd-person support hand, under the 1st-person gun
   reload: -1,            // the reload's share drawn this frame (GUN_PACK's move steps), -1 with none or the gun not all the way in hand
@@ -924,8 +925,8 @@ export const gunView = {
 };
 
 // THE DOT in 3rd person shows where shots go, even with the HUD off (Survivor); 1st person keeps its own rule.
-export let dotForced = false;
-export function syncDot() {
+let dotForced = false;
+function syncDot() {
   const force = pov.mode === '3rd' && play.active && !player.inCar && dotEl.classList.contains('on');
   if (force === dotForced) return;
   dotForced = force;
@@ -937,7 +938,7 @@ export function syncDot() {
 }
 
 // Item use by kind: run() applies it; `consumed` empties the slot.
-export const SURVIVOR_ACTIONS = {
+const SURVIVOR_ACTIONS = {
   open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
   eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
   drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } },
@@ -948,7 +949,7 @@ export const SURVIVOR_ACTIONS = {
 
 // Action button choices on foot, first in reach first: find() returns a target; run() acts on press, or each tick for
 // `hold`.
-export const SURVIVOR_FIELD_ACTIONS = {
+const SURVIVOR_FIELD_ACTIONS = {
   collect: {
     label: 'Collect',
     squat: true,
@@ -982,29 +983,29 @@ export const SURVIVOR_FIELD_ACTIONS = {
   }
 };
 
-export const needsEl = document.getElementById('needs');
-export const needHealthEl = document.getElementById('needHealth');
-export const needCarRowEl = document.getElementById('needCarRow');   // the car's health row, shown while driving
-export const needCarEl = document.getElementById('needCar');
-export const needFoodEl = document.getElementById('needFood');
-export const needWaterEl = document.getElementById('needWater');
-export const needDayEl = document.getElementById('needDay');
-export const needInfoEl = document.getElementById('needInfo');
-export const needBodyEl = document.getElementById('needBody');
+const needsEl = document.getElementById('needs');
+const needHealthEl = document.getElementById('needHealth');
+const needCarRowEl = document.getElementById('needCarRow');   // the car's health row, shown while driving
+const needCarEl = document.getElementById('needCar');
+const needFoodEl = document.getElementById('needFood');
+const needWaterEl = document.getElementById('needWater');
+const needDayEl = document.getElementById('needDay');
+const needInfoEl = document.getElementById('needInfo');
+const needBodyEl = document.getElementById('needBody');
 // An icon svg `px` square, centred in its box (ICON_STYLE sizes).
-export const sizeIcon = (svg, px) => Object.assign(svg.style, {
+const sizeIcon = (svg, px) => Object.assign(svg.style, {
   display: 'block', width: px + 'px', height: px + 'px', margin: '0 auto', pointerEvents: 'none'
 });
 // An icon into `el` at `px`: ICONS markup as markup, anything else (emoji, a word) as text. Icons come only from
 // 1-config.js.
-export function showIcon(el, icon, px) {
+function showIcon(el, icon, px) {
   if (!icon.startsWith('<svg')) { el.textContent = icon; return; }
   el.innerHTML = icon;
   sizeIcon(el.firstElementChild, px);
 }
 // INVENTORY SLOTS: one button per key, then the craft slot.
-export const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
-export function slotButton(key, craft) {
+const slotKeyLabel = code => code.replace(/^(Digit|Numpad|Key)/, '');
+function slotButton(key, craft) {
   const b = document.createElement('button');
   b.disabled = true;
   b.style.color = ICON_STYLE.slotColor;   // the icons' currentColor
@@ -1015,17 +1016,17 @@ export function slotButton(key, craft) {
   b.append(document.createElement('span'), kbd);
   return b;
 }
-export const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
-export const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
+const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
+const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
 document.getElementById('slots').prepend(...slotEls, craftEl);   // before the injuries badge
-export const injuriesEl = document.getElementById('injuries');
-export const hurtFlashEl = document.getElementById('hurtflash');
-export const runOverEl = document.getElementById('runover');
-export const runCauseEl = document.getElementById('runCause');
-export const runStatsEl = document.getElementById('runStats');
+const injuriesEl = document.getElementById('injuries');
+const hurtFlashEl = document.getElementById('hurtflash');
+const runOverEl = document.getElementById('runover');
+const runCauseEl = document.getElementById('runCause');
+const runStatsEl = document.getElementById('runStats');
 
 // Inside a cabin at (x, y, z).
-export function cabinAt(x, y, z) {
+function cabinAt(x, y, z) {
   for (const c of shelters.list) {
     const qx = x - c.cx, qz = z - c.cz;
     const lx = qx * c.cosR - qz * c.sinR, lz = qx * c.sinR + qz * c.cosR;
@@ -1697,7 +1698,7 @@ export function bindKeys() {
 
 // BIND MOUSE BUTTONS (pointer locked): with a gun in hand, the left button shoots (semi-auto, while aiming) and the right
 // button toggles Aim.
-export const MOUSE_SHOOT = 0, MOUSE_AIM = 2;   // MouseEvent.button values
+const MOUSE_SHOOT = 0, MOUSE_AIM = 2;   // MouseEvent.button values
 export function bindMouseButtons() {
   addEventListener('mousedown', e => {
     if (!play.locked || game.weapon === null) return;
@@ -1718,10 +1719,10 @@ export function bindMouseLook() {
   });
 }
 
-export const touchMove = { x: 0, z: 0 };
-export let stickId = null, stickCx = 0, stickCy = 0;
-export let lookId = null, lookX = 0, lookY = 0;
-export let jumpQueued = false;
+const touchMove = { x: 0, z: 0 };
+let stickId = null, stickCx = 0, stickCy = 0;
+let lookId = null, lookX = 0, lookY = 0;
+let jumpQueued = false;
 // double tap toggles crouch
 export let lastStickTapAt = 0, crouchY = 0;
 
@@ -1873,9 +1874,9 @@ export function bindTouch() {
 
 export let flying = false;
 
-export let climb = 0;
+let climb = 0;
 
-export function holdClimb(btn, dir) {
+function holdClimb(btn, dir) {
   btn.addEventListener('pointerdown', e => {
     btn.setPointerCapture(e.pointerId);
     climb = dir;
@@ -1908,8 +1909,8 @@ export function toggleFly() {
   wake();
 }
 
-export const carEl = document.getElementById('car');
-export const useEl = document.getElementById('use');
+const carEl = document.getElementById('car');
+const useEl = document.getElementById('use');
 
 export const car = {
   reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; },   // teardownWorld's entry
@@ -2056,7 +2057,7 @@ export function facePlayer(yaw, pitch) {
 }
 
 // Ground under axles and sides sets height, pitch, roll.
-export function settleCar() {
+function settleCar() {
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
   const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
   const hb = CAR_WHEELBASE / 2, ht = CAR_TRACK / 2;
@@ -2069,7 +2070,7 @@ export function settleCar() {
   car.roll = Math.atan2(hR - hL, CAR_TRACK);
 }
 
-export function syncCarMesh() {
+function syncCarMesh() {
   const m = car.mesh;
   m.position.set(car.x, car.y, car.z);
   m.rotation.set(car.pitch, car.yaw, car.roll);
@@ -2078,7 +2079,7 @@ export function syncCarMesh() {
   loop.sceneDirty = true;
 }
 
-export function carFits(x, z, yaw, margin = 0.2) {
+function carFits(x, z, yaw, margin = 0.2) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   for (const o of CAR_CIRCLES) {
     const cx = x + fx * o, cz = z + fz * o, g = groundAt(cx, cz);
@@ -2125,7 +2126,7 @@ export function placeCar(roads, x, z) {
   setCar(spot);
 }
 
-export function setCar(spot) {
+function setCar(spot) {
   car.placed = !!spot;
   car.mesh.visible = car.placed;
   car.speed = car.steer = car.spin = 0;
@@ -2157,11 +2158,11 @@ export function parkBesideCabin(c, yaw) {
   return false;
 }
 
-export const _carPos = new THREE.Vector3();
+const _carPos = new THREE.Vector3();
 
 // Move by (dx, dz), push circles out of walls; returns the push or null.
-export const _push = { x: 0, z: 0 };
-export function moveCar(dx, dz) {
+const _push = { x: 0, z: 0 };
+function moveCar(dx, dz) {
   car.x += dx; car.z += dz;
   let any = false;
   _push.x = _push.z = 0;
@@ -2184,7 +2185,7 @@ export function moveCar(dx, dz) {
 }
 
 // Car mass in kg: curb mass, plus the player when in it.
-export function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
+function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMassKg() : 0); }
 
 // CAR HITS, one sim tick: an overlapping animal is moved out to touching. A contact's first tick is one impact
 // (Ecosystem.impact): the same impulse on both (Newton's third law) pushes the animal against its hold and slows the car
@@ -2235,7 +2236,7 @@ export function playerBumps(dt) {
 }
 
 // One physics step; throttle, steer in [-1, 1], + left; ignored once the car is wrecked.
-export function carPhysics(dt, throttle, steer, handbrake) {
+function carPhysics(dt, throttle, steer, handbrake) {
   if (dt <= 0) return;
   const v = car.speed;
   // a wrecked car takes no throttle or steering; it coasts to a stop on its resistance
@@ -2304,14 +2305,14 @@ export function carPhysics(dt, throttle, steer, handbrake) {
   syncCarMesh();
 }
 
-export function carNear() {
+function carNear() {
   if (!car.placed || flying) return false;
   const d = Math.hypot(player.pos.x - car.x, player.pos.z - car.z);
   const feet = player.pos.y - EYE_HEIGHT;
   return d < CAR_REACH && feet > car.y - 1 && feet < car.y + CAR_TOP;
 }
 
-export function pushPlayerFromCar() {
+function pushPlayerFromCar() {
   if (!car.placed) return false;
   const feet = player.pos.y - EYE_HEIGHT;
   if (feet >= car.y + CAR_TOP - LAND_EPS || player.pos.y + HEAD_CLEAR <= car.y) return false;
@@ -2332,12 +2333,12 @@ export function pushPlayerFromCar() {
 }
 
 // Touch pedals; brake reverses once stopped.
-export const gasEl = document.getElementById('gas');
-export const brakeEl = document.getElementById('brake');
-export const sprintEl = document.getElementById('sprint');
-export const jumpEl = document.getElementById('jump');
-export const attackEl = document.getElementById('attack');
-export const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
+const gasEl = document.getElementById('gas');
+const brakeEl = document.getElementById('brake');
+const sprintEl = document.getElementById('sprint');
+const jumpEl = document.getElementById('jump');
+const attackEl = document.getElementById('attack');
+const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
 // GUN BUTTONS, made here beside the attack button with its classes and placed each time one shows (placeGunButtons):
 // Draw/Holster left of the attack button while a gun is carried, Aim above it while one is in hand.
 // A face is a `label` (its accessible name) and what it shows (`face`: ICONS markup, or text).
@@ -2353,8 +2354,8 @@ function gunButton(id, face) {
 }
 // the Draw/Holster button's faces: holster (true) while a gun is in hand and not on its way back, else draw
 const DRAW_FACES = { true: { label: 'Holster', face: ICONS.holster }, false: { label: 'Draw', face: ICONS.draw } };
-export const aimEl = gunButton('aim', { label: 'Aim', face: ICONS.aim });
-export const drawEl = gunButton('draw', DRAW_FACES[false]);
+const aimEl = gunButton('aim', { label: 'Aim', face: ICONS.aim });
+const drawEl = gunButton('draw', DRAW_FACES[false]);
 const fistHtml = attackEl.innerHTML, fistLabel = attackEl.getAttribute('aria-label');   // the attack button's own face
 // THE GUN FACE (GUN_BUTTON_FACE): the fire icon, a reload ring centred over it, and the magazine's rounds above it,
 // built once and swapped in for the fist while a gun is in hand. Inline styles, so the stylesheet's `#attack svg` size
@@ -2378,9 +2379,9 @@ const gunFace = (() => {
   });
   return { fire, ring, arc: ring.querySelector('circle'), ammo };
 })();
-export const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
+const touchUi = () => matchMedia('(pointer: coarse)').matches || lastPointerType === 'touch';
 
-export function holdPedal(btn, name) {
+function holdPedal(btn, name) {
   btn.addEventListener('pointerdown', e => {
     btn.setPointerCapture(e.pointerId);
     pedal[name] = true;
@@ -2430,11 +2431,11 @@ export function bindCar() {
   addEventListener('keyup', e => { if (e.code === 'KeyE') game.releaseField(); });
   addEventListener('blur', () => game.releaseField());
 }
-export let attackQueued = false;
+let attackQueued = false;
 
 // Touch sprint, jump and attack on foot, hidden while flying.
-export let footTouch = false, sprintShown = false;
-export function updateSprintButton() {
+let footTouch = false, sprintShown = false;
+function updateSprintButton() {
   const foot = play.active && !player.inCar && touchUi();
   if (foot !== footTouch) {
     footTouch = foot;
@@ -2452,13 +2453,13 @@ export function updateSprintButton() {
 
 // The gun buttons and the attack button's face: with a gun carried, Draw/Holster shows left of the attack button; with
 // one in hand, Aim shows above it and the fire icon replaces the fist.
-export let aimShown = false, drawShown = false, gunFaceShown = false, aimLit = false, holsterShown = false;
+let aimShown = false, drawShown = false, gunFaceShown = false, aimLit = false, holsterShown = false;
 // the gun face as last drawn: reload ring step (-1: no reload) and rounds in the magazine; NaN redraws both
 let shownReloadStep = NaN, shownMag = NaN;
 // the Draw/Holster button holsters now: a gun in hand, not already going back
 const gunHolsters = () => game.weapon !== null && gunView.drawDir >= 0;
 // Draw/Holster left of the attack button, Aim above Draw/Holster; each the attack button's size, AIM_BUTTON_GAP_PX apart.
-export function placeGunButtons() {
+function placeGunButtons() {
   const r = attackEl.getBoundingClientRect(), left = r.left - r.width - AIM_BUTTON_GAP_PX;
   [[drawEl, r.top], [aimEl, r.top - r.height - AIM_BUTTON_GAP_PX]].forEach(([el, top]) => {
     const st = el.style;
@@ -2474,7 +2475,7 @@ function showGunButton(el, show) {
   if (show) placeGunButtons();
   return show;
 }
-export function updateGunButtons() {
+function updateGunButtons() {
   const inHand = game.weapon !== null;   // a gun in hand (or being drawn or holstered)
   if (inHand !== gunFaceShown) {
     gunFaceShown = inHand;
@@ -2508,8 +2509,8 @@ export function updateGunButtons() {
 }
 
 // Fly button: Observer on foot, unless the car takes its slot.
-export let flyShown = false;
-export function updateFlyButton(carState) {
+let flyShown = false;
+function updateFlyButton(carState) {
   const show = play.active && !game.on && carState === '';
   if (show === flyShown) return;
   flyShown = show;
@@ -2517,8 +2518,8 @@ export function updateFlyButton(carState) {
 }
 
 // Action button: Survivor on foot, unless the car takes its slot.
-export let useShown = '';
-export function updateUseButton(carState) {
+let useShown = '';
+function updateUseButton(carState) {
   const a = carState === '' ? game.fieldAction() : null;
   const id = a ? a.id : '';
   if (id === useShown) return;
@@ -2527,7 +2528,7 @@ export function updateUseButton(carState) {
   useEl.textContent = id ? SURVIVOR_FIELD_ACTIONS[id].label : '';
 }
 
-export let carBtnState = '';
+let carBtnState = '';
 // the car button's faces by carBtnState: a car door, to get in or out
 const CAR_FACES = { enter: { label: 'Drive', face: ICONS.door }, exit: { label: 'Exit', face: ICONS.door } };
 export function updateCarButton() {
@@ -2557,7 +2558,7 @@ export function setPlayerInCar(on) {
 
 // CAR ENTRY AND EXIT (CAR_TRANSIT): getting in walks to the driver's door and slides into the seat, then boards
 // (boardCar); getting out slides from the seat to the place found, then lands (landFromCar). No input meanwhile.
-export let carTransit = null;   // { entering, t, walkS, x0, z0 (where the walk starts), x1, z1 (the place found to get out at) }
+let carTransit = null;   // { entering, t, walkS, x0, z0 (where the walk starts), x1, z1 (the place found to get out at) }
 const _carAt = { x: 0, z: 0 };
 // a car-frame point ([right, forward] metres) in the world, as it stands now
 function carPoint(l, f, out) {
@@ -2596,7 +2597,7 @@ function stepCarTransit(dt) {
   return false;
 }
 
-export function enterCar() {
+function enterCar() {
   if (player.inCar || carTransit || !carNear()) return;
   // a gun in hand goes behind the back first (once), then the player gets in; it comes out again on getting out
   if (game.weapon !== null) {
@@ -2624,7 +2625,7 @@ function boardCar() {
   wake();
 }
 
-export function exitCar() {
+function exitCar() {
   if (!player.inCar || carTransit) return;
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
   const rx = Math.cos(car.yaw), rz = -Math.sin(car.yaw);
@@ -2660,11 +2661,11 @@ function landFromCar() {
   wake();
 }
 
-export function toggleCar() {
+function toggleCar() {
   if (player.inCar) exitCar(); else enterCar();
 }
 
-export function driveStep(dt) {
+function driveStep(dt) {
   jumpQueued = false;
   sound.emit('carEngine', car.x, car.y, car.z, car);   // every driving frame: the engine follows the car and its speed
 
@@ -2705,9 +2706,9 @@ export function driveStep(dt) {
   camera.rotation.set(pitch, yaw, 0, 'YXZ');
 }
 
-export const fwd = new THREE.Vector3();
-export const right = new THREE.Vector3();
-export let swimming = false;
+const fwd = new THREE.Vector3();
+const right = new THREE.Vector3();
+let swimming = false;
 
 export function playerStep(dt) {
   petting.update(dt);
