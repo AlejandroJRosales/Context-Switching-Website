@@ -1874,6 +1874,7 @@ const setFollow = (i) => {
   velocityY = 0;
   label('followBtn', 'FOLLOW: ' + +(i >= 0));
   byId('followCtl').classList.toggle('open', i >= 0);
+  updatePads();
   updateInfoPanel();
 };
 
@@ -1952,8 +1953,8 @@ const creatureText = (i) =>
   `${genesText(i)}\n` +
   `${SEX_NAMES[C[SEX][i]]} gen ${C[GENERATION][i]} age ${C[AGE][i].toFixed(0)}s size ${C[SIZE][i].toFixed(1)}\n` +
   `energy ${C[ENERGY][i].toFixed(2)} water ${C[HYDRATION][i].toFixed(2)}\n` +
-  `speed ${C[SPEED][i].toFixed(1)} speed gene ${C[SPEED_GENE][i].toFixed(2)}\n` +
-  `target ${TARGET_NAMES[C[TARGET_KIND][i]]} mate cooldown ${Math.max(0, C[COOLDOWN][i]).toFixed(0)}s`;
+  `speed ${C[SPEED][i].toFixed(1)} speedGene ${C[SPEED_GENE][i].toFixed(2)}\n` +
+  `target ${TARGET_NAMES[C[TARGET_KIND][i]]} mateCooldown ${Math.max(0, C[COOLDOWN][i]).toFixed(0)}s`;
 
 const updateInfoPanel = () => {
   if (followIdx >= 0) return label('info', creatureText(followIdx));
@@ -1972,8 +1973,8 @@ const updateInfoPanel = () => {
       `scale ${worldScale} waterLevel ${waterLevel}\n` +
       `tri ${TERRAIN_GEO[3] / 3} shadowRef ${SHADOW_REFRESH} shadowSize ${SHADOW_SIZE}\n` +
       `${creatureCount}C (${females}F/${creatureCount - females}M) ${plantCount}P\n` +
-      `avg energy ${(sums[0] / n).toFixed(2)} avg speed ${(sums[1] / n).toFixed(1)}\n` +
-      `max gen ${maxGeneration} avg age ${(sums[2] / n).toFixed(0)}s ${simClock(simTime)}`
+      `avgEnergy ${(sums[0] / n).toFixed(2)} avgSpeed ${(sums[1] / n).toFixed(1)}\n` +
+      `maxGen ${maxGeneration} avgAge ${(sums[2] / n).toFixed(0)}s ${simClock(simTime)}`
   );
 };
 
@@ -2102,11 +2103,16 @@ const toggleFly = () => {
   if (flying) onGround = false;
   keys[' '] = false;
   keys.shift = false;
-  if (HAS_TOUCH) {
-    show('jump', !flying);
-    show('flyUp', flying);
-    show('flyDown', flying);
-  }
+  updatePads();
+};
+
+// movement pads follow state: touch only, hidden while following, jump or up/down by fly mode
+const updatePads = () => {
+  const walking = HAS_TOUCH && followIdx < 0; // true when the player moves with the touch pads
+  show('joy', walking);
+  show('jump', walking && !flying);
+  show('flyUp', walking && flying);
+  show('flyDown', walking && flying);
 };
 
 // INPUT
@@ -2196,12 +2202,13 @@ const bindInput = () => {
     }
     on(document, 'touchstart', audioInit, { once: true });
   } else {
-    for (const id of ['joy', 'look', 'jump']) show(id, false);
+    show('look', false);
     on(canvas, 'click', () => {
       audioInit();
       (canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock || (() => {})).call(canvas);
     });
   }
+  updatePads();
   for (const [type, down] of [['keydown', true], ['keyup', false]]) {
     on(window, type, (e) => {
       const key = e.key.toLowerCase();

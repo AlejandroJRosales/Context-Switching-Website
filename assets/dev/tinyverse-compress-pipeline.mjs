@@ -1,7 +1,9 @@
-// compress-pipeline: shell split -> GLSL pass -> terser -> css/html squeeze -> verify
-// usage: node compress-pipeline.mjs in.html -o out.html [--no-glsl] [--no-html] [--quiet]
+// compress-pipeline: shell split -> GLSL pass -> terser -> verify -> roadroller -> css/html squeeze
+// usage: node compress-pipeline.mjs in.html -o out.html [--no-glsl] [--no-html] [--no-roadroller] [--quiet]
 import { readFileSync, writeFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { minify } from 'terser';
+import { Packer } from 'roadroller';
 import * as acorn from 'acorn';
 import * as walk from 'acorn-walk';
 
@@ -18,6 +20,9 @@ const TERSER_OPTIONS = {
   format: { quote_style: 1 },
   parse: {}
 };
+
+// roadroller optimize level: 0 = no search, 1 = default search (-O1), 2 = long search (-O2)
+const ROADROLLER_LEVEL = 1;
 
 // a template literal counts as GLSL when any of its quasis carries one of these markers
 const GLSL_MARKERS = /\b(void main|uniform |attribute |varying |precision |gl_FragColor|vec[234]\()/;
@@ -59,6 +64,24 @@ if (!flag('--no-glsl')) {
 
 const minJs = (await minify(js, TERSER_OPTIONS)).code;
 
+// verify on the terser output: roadroller hides string literals, so GL names are checked before packing
+acorn.parse(minJs, { ecmaVersion: 'latest', sourceType: 'module' });
+const glNames = [...new Set(scriptMatch[1].match(/'[au][A-Z]\w*'/g) || [])];
+const missing = glNames.filter((n) => !minJs.includes(n.slice(1, -1)));
+if (missing.length) throw new Error('GL names lost: ' + missing.join(' '));
+log(`verify: reparse ok, ${glNames.length} GL names intact`);
+
+// roadroller: context-model pack the minified JS into a self-decoding eval
+let finalJs = minJs;
+if (!flag('--no-roadroller')) {
+  const packer = new Packer([{ data: minJs, type: 'js', action: 'eval' }], {});
+  await packer.optimize(ROADROLLER_LEVEL);
+  const { firstLine, secondLine } = packer.makeDecoder();
+  finalJs = firstLine + secondLine;
+  acorn.parse(finalJs, { ecmaVersion: 'latest', sourceType: 'module' });
+  log(`roadroller: -O${ROADROLLER_LEVEL}, ${minJs.length} -> ${finalJs.length} chars, reparse ok`);
+}
+
 const squeezeCss = (css) =>
   css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').replace(/ ?([{}:;,>]) ?/g, '$1').replace(/;}/g, '}').trim();
 
@@ -66,13 +89,7 @@ let shell = html;
 if (!flag('--no-html')) shell = shell.replace(/>\s+</g, '><').replace(/\n+/g, '');
 const out = shell
   .replace(/<style>[\s\S]*?<\/style>/, () => `<style>${squeezeCss(styleMatch[1])}</style>`)
-  .replace(/<script type="module">[\s\S]*?<\/script>/, () => `<script type="module">${minJs}</script>`);
+  .replace(/<script type="module">[\s\S]*?<\/script>/, () => `<script type="module">${finalJs}</script>`);
 writeFileSync(output, out);
 
-// verify: output reparses, and every GL attribute/uniform name string survives
-acorn.parse(minJs, { ecmaVersion: 'latest', sourceType: 'module' });
-const glNames = [...new Set(scriptMatch[1].match(/'[au][A-Z]\w*'/g) || [])];
-const missing = glNames.filter((n) => !minJs.includes(n.slice(1, -1)));
-if (missing.length) throw new Error('GL names lost: ' + missing.join(' '));
-log(`verify: reparse ok, ${glNames.length} GL names intact`);
-log(`size: ${html.length} -> ${out.length} bytes raw (${(100 - (out.length / html.length) * 100).toFixed(1)}% smaller)`);
+log(`size: ${html.length} -> ${out.length} bytes raw (${(100 - (out.length / html.length) * 100).toFixed(1)}% smaller), ${gzipSync(out, { level: 9 }).length} bytes gzip -9`);
