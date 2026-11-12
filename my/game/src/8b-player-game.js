@@ -6,6 +6,7 @@ import {
   LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
+  HUMAN_KIND_ID, ZOMBIES, NPC_GENE_START,
   HUMAN_STRIDE_BASE, HUMAN_STRIDE_PER_V, HUMAN_STRIDE_MAX, HUMAN_CADENCE_MAX, HUMAN_SWING_MAX, HUMAN_IDLE_SPEED,
   HUMAN_GAIT_EASE, HUMAN_GAIT_JUMP, HUMAN_LEG, CROUCH_DROP, HUMAN_PET, PET_BEND_LEVELS, STREET_STEP, CABIN_SCALE,
   CABIN_M, CAT_HEAD_TOP, CAT_SCALE, CAT_SEAT, CAT_DOOR, CAT_RUN_FROM, CAT_WALK_WITHIN, CAT_RUN_SPEED, CAT_BOARD_SPEED,
@@ -1049,7 +1050,7 @@ function cabinAt(x, y, z) {
 }
 
 // SIM-TIME STAMPS: each world's sim clock starts at 0, so game.reset puts these back (a stale stamp blocks the gun or fists).
-const GAME_CLOCKS = { nextShotAt: 0, reloadUntil: -1 };   // next shot; magazine change end (-1: none)
+const GAME_CLOCKS = { nextShotAt: 0, reloadUntil: -1, turnAt: Infinity };   // next shot; magazine change end (-1: none); ZOMBIES turn (Infinity: uninfected)
 const AVATAR_CLOCKS = { nextAttackAt: 0, moveAt: -Infinity, fightFrom: 0, fightUntil: 0, downAt: -Infinity, downUntil: 0 };
 
 const lootedBodies = new WeakSet();   // dead people already looted (game.loot); a body is never reused, so none are cleared
@@ -1078,8 +1079,9 @@ export const game = {
 
   // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
-    type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
-    startHealth: SURVIVOR_CONFIG.maxHealth, maxHealth: SURVIVOR_CONFIG.maxHealth,   // a bullet's damage is a share of maxHealth
+    type: 'player', kindId: HUMAN_KIND_ID, alive: false, prey: false, position: new THREE.Vector3(),
+    strength: NPC_GENE_START.strength,   // HERITABLE GENES: the player has none, so a founder's
+    startHealth: SURVIVOR_CONFIG.maxHealth, maxHealth: SURVIVOR_CONFIG.maxHealth,   // a bullet's damage is a share of startHealth
     ...AVATAR_CLOCKS,   // next attack; fight move (drawn on the 3rd-person body); knockdown fall start and hold end
     playing: null, moveSide: 1,
     // KNOCKDOWNS, as an animal's: heading, launch speed
@@ -1098,13 +1100,20 @@ export const game = {
     // condition: health share x energy share
     condition() { return conditionShare(game.health, SURVIVOR_CONFIG.maxHealth, game.foodNeed, game.waterNeed); },
     // animal `tid` flees the player
-    isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
+    isThreatTo(tid) { return this.alive && (HUNTS_MASK[HUMAN_KIND_ID] & (1 << tid)) !== 0 && !this.isPreyFor(tid); },
     // animal `tid` hunts the player at night
-    isPreyFor(tid) { return this.alive && this.prey && (NIGHT_PREY_MASK[tid] & (1 << HUMAN_TYPE_ID)) !== 0; },
+    isPreyFor(tid) { return this.alive && this.prey && (NIGHT_PREY_MASK[tid] & (1 << HUMAN_KIND_ID)) !== 0; },
+    // a rule AI whose food kind is `foodId` hunts the player by day and night (zombies)
+    isFoodFor(foodId) { return this.alive && foodId === HUMAN_KIND_ID; },
+    // ZOMBIES: an infecting hit; the run ends ZOMBIES.turnS later (game.update), once per run
+    infect(now) {
+      if (!game.on || game.sheltered || game.dead || game.turnAt !== Infinity) return;
+      game.turnAt = now + ZOMBIES.turnS;
+    },
     // health only in Survivor; a kill feeds the attacker when `feeds` (false for bump impacts)
     takeHit(attacker, damage, feeds = true) {
       if (!game.on || game.sheltered || game.dead) return;
-      game.hurt(damage, attacker.type);
+      game.hurt(damage, attacker.kind);   // SURVIVOR_CONFIG.causes is keyed by kind
       if (game.dead && feeds) attacker.feedOn(this);
       else game.rollInjuries(damage);
     },
@@ -1367,6 +1376,7 @@ export const game = {
     if (this.foodNeed >= 100) this.hurt(N.starvingPerS * dt, 'starving');
     if (this.waterNeed >= 100) this.hurt(N.parchedPerS * dt, 'parched');
     if (this.dead) return;
+    if (ecosystem.time >= this.turnAt) { this.die('turned'); this.draw(); return; }
     this.regen(dt);
 
     // drink, harvest and collect use the action button; contact only fights
@@ -1418,29 +1428,30 @@ export const game = {
     }
   },
 
-  // Contact: prey that cannot fight back is eaten on touch; people-hunters trade fight hits.
+  // Contact: prey that cannot fight back is eaten on touch; people-hunters trade fight hits; zombies strike unanswered.
   touchAnimals(px, pz, R) {
     const av = this.avatar, now = ecosystem.time;
     const n = ecosystem.animalGrid.queryInto(this._q, px, pz, R.radius);
     for (let i = 0; i < n; i++) {
       const d = this._q[i];
-      if (!d.alive || (HUNTS_MASK[HUMAN_TYPE_ID] & (1 << d.typeId)) === 0) continue;
+      if (!d.alive) continue;
+      const playerHunts = (HUNTS_MASK[HUMAN_KIND_ID] & (1 << d.kindId)) !== 0;   // true: the player strikes it on touch
+      const huntsPlayer = (HUNTS_MASK[d.kindId] & (1 << HUMAN_KIND_ID)) !== 0;   // true: it strikes the player on touch
+      if (!playerHunts && !huntsPlayer) continue;
       if (Math.abs(d.position.y - av.position.y) > R.height) continue;
       if (tools.distSq(px, pz, d.position.x, d.position.z) > R.radius * R.radius) continue;
-      if ((HUNTS_MASK[d.typeId] & (1 << HUMAN_TYPE_ID)) === 0) {
+      if (!huntsPlayer) {
         d.alive = false;
         av.feedOn(d);
         continue;
       }
-      if (av.nextAttackAt <= now && !av.isDown(now)) {   // a downed player does not hit back
+      if (playerHunts && av.nextAttackAt <= now && !av.isDown(now)) {   // a downed player does not hit back
         av.strike(d);
         ecosystem.fightHit(av, d);
         av.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
       }
       if (d.alive && !d.isDown(now) && d.nextAttackAt <= now) {   // a downed animal does not hit back
-        d.strike(av);
-        ecosystem.fightHit(d, av);
-        d.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+        ecosystem.contactHit(d, av);
         if (this.dead) return;
       }
     }
@@ -1528,8 +1539,8 @@ export const game = {
 
   // Nearest dead body in reach that people eat (CARRION_MASK), or null.
   carcassInReach(px, feet, pz) {
-    const mask = CARRION_MASK[HUMAN_TYPE_ID];
-    return this.corpseInReach(px, feet, pz, c => (mask & (1 << c.typeId)) !== 0);
+    const mask = CARRION_MASK[HUMAN_KIND_ID];
+    return this.corpseInReach(px, feet, pz, c => (mask & (1 << c.kindId)) !== 0);
   },
 
   // Nearest dead person in reach not yet looted, or null.

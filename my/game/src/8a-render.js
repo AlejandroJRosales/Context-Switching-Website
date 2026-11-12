@@ -1734,7 +1734,7 @@ class AnimalRenderer {
       // City: rigs scale by heightScale and growth (Animal.rigScale, the sim's falls use the same)
       const kp = a.rigScale();
 
-      const swing = a.sprinting ? GAIT_GALLOP_SWING : p.walkSwing;
+      const swing = a.runs() ? GAIT_GALLOP_SWING : p.walkSwing;
       const walkPhase = human ? 'gaitPhase' : 'animTime';   // the field this rig's leg swing follows (footfalls below)
       const phaseBefore = a[walkPhase];
       if (human) this.stepGait(a, deltaTime, kp);

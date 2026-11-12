@@ -13,7 +13,7 @@ import {
   NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG, NPC_BUILD_BASE, NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS,
   NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
   NPC_SOMATOTYPES, LB_PER_KG, M_PER_IN, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
-  NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
+  NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, HUNTS_MASK,
   HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
@@ -21,7 +21,8 @@ import {
   BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, GAME_START_HOUR, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S,
   BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK,
-  RULE_PEOPLE, WEAPONS, PLAYER_HEIGHT, PLAYER_RADIUS
+  RULE_PEOPLE, WEAPONS, PLAYER_HEIGHT, PLAYER_RADIUS, ZOMBIES, NPC_KIND_SPECS, NPC_KINDS, NPC_KIND_IDS, NPC_KIND_COUNT,
+  HUMAN_KIND_ID, ZOMBIE_KIND_ID, SHOOTS_ON_SIGHT_MASK, NPC_GENE_START, NPC_FOOD_PER_HEALTH_TICK, BROKEN_BONE
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe, sound
@@ -479,6 +480,13 @@ function addPrey(obj, d2, key, sight) {
   _preyObj[_nPrey] = obj; _preyD2[_nPrey] = d2; _preyKey[_nPrey] = key; _preySight[_nPrey] = sight; _nPrey++;
 }
 
+// ENERGY: each species' reference adult mass, kg: the mean of its sexes' reference bodies at mean height
+const REF_ADULT_KG = Object.fromEntries(Object.keys(SPECIES).map(t => {
+  const sexes = ['male', 'female'], hOf = sex => NPC_SIZE[t][sex][0];
+  const kg = sex => t === 'human' ? NPC_REF_BMI[sex] * hOf(sex) * hOf(sex) : NPC_REF_MASS_KG[t][sex];
+  return [t, sexes.reduce((sum, sex) => sum + kg(sex), 0) / sexes.length];
+}));
+
 export class Animal extends Entity {
   static TWO_PI = TWO_PI;
   static DEATH_HEALTH = 1;   // health at or under which an animal dies (and leaves a corpse, Ecosystem.step)
@@ -493,12 +501,18 @@ export class Animal extends Entity {
     const spec = SPECIES[type];
     this.spec = spec;
     this.typeId = NPC_TYPE_IDS[type];
+    // RELATION KINDS: the species' kind until a person turns (turn); relation masks read kindId, bodies read typeId
+    this.kindId = NPC_KIND_IDS[type];
+    this.kindSpec = NPC_KIND_SPECS[type];
+    this.zombie = false;          // ZOMBIES: turned; never undone
+    this.turnAt = Infinity;       // ZOMBIES: sim time an infection turns it (infect), Infinity while uninfected
+    this.brokenBone = false;      // BROKEN BONES: no sprinting for life once set (rollBone)
     this.speed = spec.speed;   // the speed gene; setBodyRates must follow any write (BODY RATES)
+    this.strength = NPC_GENE_START.strength;   // HERITABLE GENES; setBodyRates must follow any write
     this.WATER_SPEED_FACTOR = 0.45;
     this.submerged = false;
-    this.startHealth = spec.health;
-    this.health = this.startHealth;
-    this.maxHealth = this.health;
+    this.startHealth = spec.health;   // the species' base health: meal size, bite and bullet damage, brain reward scale
+    this.setToughness(NPC_GENE_START.toughness);
     this.visionDistance = tools.random(500, 2000) * NPC_UNIT;
     this.visionDistSq = this.visionDistance * this.visionDistance;
 
@@ -516,6 +530,8 @@ export class Animal extends Entity {
     this.sex = Math.random() < 0.5 ? 'male' : 'female';
     this.setSizeZ(tools.gauss());
     this.look = type === 'human' ? humanLook(this.sex) : null;   // appearance (render only), for life
+    this.waterIncrement = this.startHealth * 0.000001;
+    this.ageDepl = this.startHealth * NPC_AGE_DEPLETION_RATE;
     this.setBodyRates();
     // the species' pounce (NPC_POUNCES), undefined for species that do not pounce; the type never changes
     this.pounceSpec = NPC_POUNCES[type];
@@ -523,11 +539,6 @@ export class Animal extends Entity {
     this.lastChildTime = ecosystem.time;   // sim seconds
     this.childGracePeriod = (15 + Math.random() * 15) * spec.grace * MATE_TIME_MULT;   // sim seconds
     this.lookForMate = false;
-
-    this.waterIncrement = this.health * 0.000001;
-    this.foodIncrement = this.health * 0.000003;
-    this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;
-    this.ageDepl = this.health * NPC_AGE_DEPLETION_RATE;
 
     this.memPredatorX = 0; this.memPredatorY = 0; this.memPredatorZ = 0; this.hasPredator = false;
     this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
@@ -567,9 +578,9 @@ export class Animal extends Entity {
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
     this.gun = ruled && Math.random() < RULE_PEOPLE.armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
-    this.food = ruled ? RULE_PEOPLE.food : spec.food;   // what the rule AI seeks to eat: a species, 'plant' or null
-    this.foodId = NPC_TYPE_IDS[this.food] ?? -1;        // its type id, -1 for plants or nothing
+    this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
+    this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
     this.foe = null; this.foeUntil = 0;                 // ARMED: the last attacker and until when it is a target
     this.lastShotAt = -Infinity;                        // ARMED: sim time of its last shot (fire rate; drawn aim)
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
@@ -670,7 +681,7 @@ export class Animal extends Entity {
     const ax = Math.sin(this.facingAngle), az = Math.cos(this.facingAngle);
     const cosH = this.cosFovH, tanV = this.tanFovV;
     const hit = Animal._hit;
-    const type = this.type, tid = this.typeId;
+    const type = this.type, tid = this.kindId;
     const huntedBy = HUNTED_BY_MASK[tid], hunts = HUNTS_MASK[tid];
     let bestPredDist = Infinity, bestFoodDist = Infinity, bestMateDist = Infinity, bestWaterDist = Infinity;
 
@@ -685,7 +696,7 @@ export class Animal extends Entity {
       const ox = obj.position.x, oy = obj.position.y, oz = obj.position.z;
       const hx = ox - px, hz = oz - pz;
       if (hx * hx + hz * hz > vd) continue;
-      const oid = obj.typeId, obit = 1 << oid;
+      const oid = obj.kindId, obit = 1 << oid;
       const isPred = (huntedBy & obit) !== 0;
       const isFood = (hunts & obit) !== 0;
       const isMate = oid === tid && this.sex !== obj.sex;
@@ -918,7 +929,7 @@ export class Animal extends Entity {
 
   steerDeer() {
     // sprinting burns DEER_SPRINT_ENERGY x walking energy
-    if (this.sprinting) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
+    if (this.runs()) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
     if (this.priority === 'hunt') { this.steerHunt(); return; }
     // the heading holds until the next decision; only arrival is checked
@@ -935,12 +946,12 @@ export class Animal extends Entity {
   // Is `q` still fair game for this night hunter?
   canHunt(q) {
     if (q === null || !q.alive || !ecosystem.night) return false;
-    return q === ecosystem.avatar ? q.isPreyFor(this.typeId) : (NIGHT_PREY_MASK[this.typeId] & (1 << q.typeId)) !== 0;
+    return q === ecosystem.avatar ? q.isPreyFor(this.kindId) : (NIGHT_PREY_MASK[this.kindId] & (1 << q.kindId)) !== 0;
   }
 
   // PACK STRENGTH: a pack attacks only when its summed mass or height beats q's.
   mayAttack(q) {
-    if (this.spec.pack !== true) return true;
+    if (this.kindSpec.pack !== true) return true;
     return this.packMassKg >= q.bodyMassKg() || this.packHeightM >= q.bodyHeightM();
   }
 
@@ -994,17 +1005,20 @@ export class Animal extends Entity {
     this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
     this.avoidNeed = 0;
     this.quarry = null;
-    const food = this.food, tid = this.typeId, sex = this.sex;
+    this.onSight = null;
+    const food = this.food, tid = this.kindId, sex = this.sex;
     // at night, night prey is quarry even if fled by day
     const quarryMask = ecosystem.night ? NIGHT_PREY_MASK[tid] : 0;
-    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = this.foodId;
-    const needP = huntedBy !== 0, needQ = quarryMask !== 0;
+    // ARMED: kinds it shoots on sight, which it stands against rather than flees
+    const sightMask = this.gun !== null ? SHOOTS_ON_SIGHT_MASK[tid] : 0;
+    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask & ~sightMask, foodId = this.foodId;
+    const needP = huntedBy !== 0, needQ = quarryMask !== 0, needS = sightMask !== 0;
     // food and night prey in one pick; no early stop, as smaller prey may lie farther
     const needT = (food !== null && food !== 'plant') || needQ;
-    const pack = this.spec.pack === true;   // packmates in sight are summed, so no early stop
+    const pack = this.kindSpec.pack === true;   // packmates in sight are summed, so no early stop
     const needJ = needQ && pack;   // packmates' hunts to join
-    let bP = Infinity, bM = Infinity, bJ = Infinity, kP = -1, kM = -1, kJ = -1;
-    let oP = null, oM = null, oJ = null;
+    let bP = Infinity, bM = Infinity, bJ = Infinity, bS = Infinity, kP = -1, kM = -1, kJ = -1, kS = -1;
+    let oP = null, oM = null, oJ = null, oS = null;
     // pack sums start with this animal's body
     let packKg = this.bodyMassKg(), packM = this.bodyHeightM();
     _nPrey = 0;   // candidates for the pick (addPrey)
@@ -1021,7 +1035,7 @@ export class Animal extends Entity {
           if (L > r) break;
           if (L > 0) {
             const L2 = L * L;
-            if ((!needP || bP < L2) && !needT && !pack && (!needJ || bJ < L2) && bM < L2) break;
+            if ((!needP || bP < L2) && !needT && !pack && (!needJ || bJ < L2) && (!needS || bS < L2) && bM < L2) break;
           }
         }
         const j0 = Math.max(cy0, ccy - k), j1 = Math.min(cy1, ccy + k);
@@ -1042,9 +1056,11 @@ export class Animal extends Entity {
               const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
               if (d2 > vd) continue;
               const key = base + b;
-              const oid = obj.typeId;
+              const oid = obj.kindId;
               if ((quarryMask & (1 << oid)) !== 0 || oid === foodId) {
                 addPrey(obj, d2, key, 1);
+              } else if ((sightMask & (1 << oid)) !== 0) {
+                if ((d2 < bS || (d2 === bS && key > kS)) && this.inSight(ox, obj.position.y, oz)) { bS = d2; kS = key; oS = obj; }
               } else if ((huntedBy & (1 << oid)) !== 0) {
                 if ((d2 < bP || (d2 === bP && key > kP)) && this.inSight(ox, obj.position.y, oz)) { bP = d2; kP = key; oP = obj; }
               } else if (oid === tid) {
@@ -1060,10 +1076,13 @@ export class Animal extends Entity {
     }
     if (oP) { this.seen(0, oP.position.x, oP.position.y, oP.position.z); this.avoidNeed = Infinity; }
     if (oM) this.seen(3, oM.position.x, oM.position.y, oM.position.z);
+    this.onSight = oS;
 
     // City: the avatar as predator and night quarry
     const gp = ecosystem.avatar;
-    if (gp.isThreatTo(tid) || gp.isPreyFor(tid)) {
+    // night quarry (isPreyFor) or food by day and night (isFoodFor: zombies)
+    const avatarQuarry = gp.isPreyFor(tid), avatarPrey = avatarQuarry || gp.isFoodFor(foodId);
+    if (gp.isThreatTo(tid) || avatarPrey) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
       if (gp.isThreatTo(tid)) {
@@ -1092,7 +1111,7 @@ export class Animal extends Entity {
     // the pick shows as the food ray; night prey is hunted, food chased when hunger leads
     this.prey = oT;
     if (oT) {
-      if (oT === gp || (quarryMask & (1 << oT.typeId)) !== 0) this.quarry = oT;
+      if (oT === gp ? avatarQuarry : (quarryMask & (1 << oT.kindId)) !== 0) this.quarry = oT;
       this.seen(1, oT.position.x, oT.position.y, oT.position.z);
     }
 
@@ -1114,12 +1133,12 @@ export class Animal extends Entity {
   stepLength() {
     const leap = this.pounceStep();
     if (leap >= 0) return leap;
-    const ms = this.sprinting ? this.sprintSpeed() : this.moveSpeed() * this.speedScale * NPC_UNIT;
+    const ms = this.runs() ? this.sprintSpeed() : this.moveSpeed() * this.speedScale * NPC_UNIT;
     return (this.submerged ? ms * this.WATER_SPEED_FACTOR : ms) * this.bumpScale * NPC_TICK_S;
   }
 
   // sprint m/s
-  sprintSpeed() { return DEER_SPRINT_OVER * Math.max(RUN_SPEED, ecosystem.fastestHunterMSById[this.typeId]); }
+  sprintSpeed() { return DEER_SPRINT_OVER * Math.max(RUN_SPEED, ecosystem.fastestHunterMSById[this.kindId]); }
 
   // City: deer slide along walls like the car.
   moveDeer(step) {
@@ -1246,6 +1265,7 @@ export class Animal extends Entity {
       + this.foodNeed * 0.0001;
     this.avoidNeed = 0;
     if (this.health <= Animal.DEATH_HEALTH) { this.alive = false; return; }
+    if (now >= this.turnAt) this.turn();
     regenStep(this, this.maxHealth, NPC_NEED_FULL, Animal.DRINK_SHARE_PER_S, NPC_TICK_S);
     if (this.fleeFrom !== null && now >= this.heldUntil()) this.fleeAttacker();
 
@@ -1266,11 +1286,12 @@ export class Animal extends Entity {
     if (this.gun !== null) this.shootStep(now);
   }
 
-  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else the prey being chased
-  // once hunger reaches huntHungerShare (a kill feeds it, so it stops until hungry again); either only when alive, within
-  // rangeM and in sight.
+  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else what it shoots on sight,
+  // else the prey being chased once hunger reaches huntHungerShare (a kill feeds it, so it stops until hungry again); each
+  // only when alive, within rangeM and in sight.
   shootTarget(now) {
     if (now < this.foeUntil && this.canShoot(this.foe)) return this.foe;
+    if (this.canShoot(this.onSight)) return this.onSight;
     const hungry = this.foodNeed >= RULE_PEOPLE.huntHungerShare * NPC_NEED_FULL;   // true: hungry enough to hunt
     if (hungry && this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
     return null;
@@ -1311,11 +1332,6 @@ export class Animal extends Entity {
     this.prevFoodNeed = this.foodNeed;
   }
 
-  // One hit; the per-hit share keeps NPC_ATTACK_DAMAGE_PER_S whatever the cooldown.
-  attacked(predator) {
-    ecosystem.applyHit(this, predator, this.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S);
-  }
-
   // A hit's damage: no eating for NPC_HIT_NO_EAT_S; a kill feeds the attacker when `feeds` (false for bump impacts).
   takeHit(attacker, damage, feeds = true) {
     this.health -= damage;
@@ -1323,7 +1339,7 @@ export class Animal extends Entity {
     if (this.health <= Animal.DEATH_HEALTH) {
       this.alive = false;
       if (feeds) attacker.feedOn(this);
-    } else this.answerHit(attacker);
+    } else { this.rollBone(damage); this.answerHit(attacker); }
   }
 
   // A striker landing a hit: its move, facing the target, holding ground.
@@ -1395,7 +1411,7 @@ export class Animal extends Entity {
 
   // Drawn height in metres.
   bodyHeightM() {
-    return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT * this.growthScale();
+    return this.adultHeightM() * this.growthScale();
   }
 
   // BODY RATES: pace (the look's, 1 for animals) and the Arena move speed per second (speed gene x pace) depend only
@@ -1404,7 +1420,48 @@ export class Animal extends Entity {
   setBodyRates() {
     this.paceShare = this.look ? this.look.pace : 1;
     this.moveSpeedPerS = this.speed * this.paceShare;
+    // ENERGY: hunger scales with the speed gene, strength, toughness and adult mass, each over its species reference
+    this.foodIncrement = this.startHealth * NPC_FOOD_PER_HEALTH_TICK * (this.speed / this.spec.speed) * this.strength *
+      this.toughness * (this.massAtHeightKg(this.adultHeightM()) / REF_ADULT_KG[this.type]);
+    this.reproductionIncrement = this.foodIncrement * DEER_REPRO_SHARE;
   }
+  // HERITABLE GENES: toughness and the max health it sets; a new body starts full
+  setToughness(t) {
+    this.toughness = t;
+    this.maxHealth = this.health = this.startHealth * t;
+  }
+  // The rule AI's food: a kind, 'plant' or null, and its kind id (-1 for plants or nothing).
+  setFood(food) {
+    this.food = food;
+    this.foodId = NPC_KIND_IDS[food] ?? -1;
+  }
+  // ZOMBIES: an infecting hit; it turns ZOMBIES.turnS later, unless it is already infected or a zombie
+  infect(now) {
+    if (!this.zombie && this.turnAt === Infinity) this.turnAt = now + ZOMBIES.turnS;
+  }
+  // ZOMBIES: the virus takes hold; the rule AI from now on, hunting ZOMBIES.food, with no brain or gun
+  turn() {
+    this.zombie = true;
+    this.turnAt = Infinity;
+    this.kindId = ZOMBIE_KIND_ID;
+    this.kindSpec = ZOMBIES;
+    this.brain = null;
+    this.ACTION_HOLD = DEER_THINK_TICKS;
+    this.actionTimer = 0;   // decide as a zombie next tick
+    this.gun = null; this.foe = null; this.foeUntil = 0; this.onSight = null;
+    this.setFood(ZOMBIES.food);
+    this.prey = null; this.quarry = null; this.priority = null;
+  }
+  // Kind name, as SURVIVOR_CONFIG.causes keys it.
+  get kind() { return NPC_KINDS[this.kindId]; }
+  // BROKEN BONES: one roll per hit it lives through; toughness divides the chance below the sure share
+  rollBone(damage) {
+    if (this.brokenBone) return;
+    const sure = damage >= BROKEN_BONE.sureDamageShare * this.maxHealth;   // true: always breaks; false: the chance
+    if (sure || Math.random() < BROKEN_BONE.chanceBelowSure / this.toughness) this.brokenBone = true;
+  }
+  // Sprinting this tick: wanted and not stopped by a broken bone.
+  runs() { return this.sprinting && !this.brokenBone; }
   // Body pace: the look's, 1 for animals.
   pace() { return this.paceShare; }
   // Arena speed per second: speed gene x pace.
@@ -1434,12 +1491,15 @@ export class Animal extends Entity {
   braced() { return true; }
 
   // Mass in kg: people by humanMassKg, animals by reference mass x height ratio^3.
-  bodyMassKg() {
-    const h = this.bodyHeightM();
+  bodyMassKg() { return this.massAtHeightKg(this.bodyHeightM()); }
+  // Mass in kg at height h: people by humanMassKg, animals by reference mass x height ratio^3.
+  massAtHeightKg(h) {
     if (this.type === 'human') return humanMassKg(this.sex, this.look, h);
     const k = h / NPC_SIZE[this.type][this.sex][0];
     return NPC_REF_MASS_KG[this.type][this.sex] * k * k * k;
   }
+  // Height in metres once grown.
+  adultHeightM() { return this.heightScale * NPC_SIZE[this.type].rig * NPC_UNIT; }
 
   // Adult size from a z-score, cut at NPC_SIZE_Z_MAX.
   setSizeZ(z) {
@@ -1473,6 +1533,8 @@ export class Animal extends Entity {
     child.home = mother.home;
 
     child.speed = ((this.speed + partner.speed) / 2) * rand();   // setBodyRates below
+    child.strength = ((this.strength + partner.strength) / 2) * rand();   // setBodyRates below
+    child.setToughness(((this.toughness + partner.toughness) / 2) * rand());
     child.visionDistance = ((this.visionDistance + partner.visionDistance) / 2) * rand();
     child.visionDistSq = child.visionDistance * child.visionDistance;
     child.setFov(
@@ -1487,7 +1549,8 @@ export class Animal extends Entity {
     const midZ = (this.sizeZ + partner.sizeZ) / 2, h = NPC_SIZE_HERITABILITY;
     child.setSizeZ(h * midZ + Math.sqrt(1 - h * h / 2) * tools.gauss());
     if (child.look) inheritHumanLook(child.look, this.look, partner.look);
-    child.setBodyRates();   // speed and look are final from here
+    child.setBodyRates();   // speed, strength, toughness and look are final from here
+    if (this.zombie) child.turn();   // ZOMBIES: zombies mate only zombies (tryMate), and their young are born turned
 
     if (child.brain && this.brain && partner.brain) {   // a child rolled brainless (RULE_PEOPLE) stays so
       const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
@@ -1836,10 +1899,10 @@ class Projectiles {
   }
 
   // A body hit: the bullet's impact pushes it against its hold (Ecosystem.impact); a hurting bullet costs its zone's share
-  // of the body's full health (HIT_DAMAGE).
+  // of the body's base health (HIT_DAMAGE x startHealth), so toughness's extra max health takes more shots.
   strike(b, body, zone) {
     const hit = Ecosystem.impact(b.gun.bulletKg, body.bodyMassKg(), Math.hypot(b.vx, b.vy, b.vz));
-    this.eco.applyHit(body, b.shooter, b.hurts ? HIT_DAMAGE[zone] * body.maxHealth : 0, hit.pushN, b.feeds);
+    this.eco.applyHit(body, b.shooter, b.hurts ? HIT_DAMAGE[zone] * body.startHealth : 0, hit.pushN, b.feeds);
   }
 }
 
@@ -1875,9 +1938,9 @@ export class Ecosystem {
     this.plantSight = null;
     // Water points for vision queries.
     this.waterSight = null;
-    this.aliveById = new Int32Array(NPC_TYPE_COUNT);             // per species: live count
-    this.canHuntById = new Uint8Array(NPC_TYPE_COUNT);           // per species: 1 while its prey lives
-    this.fastestHunterMSById = new Float64Array(NPC_TYPE_COUNT); // per species: fastest live hunter, m/s
+    this.aliveById = new Int32Array(NPC_KIND_COUNT);             // per kind: live count
+    this.canHuntById = new Uint8Array(NPC_KIND_COUNT);           // per kind: 1 while its prey lives
+    this.fastestHunterMSById = new Float64Array(NPC_KIND_COUNT); // per kind: fastest live hunter, m/s
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
@@ -1962,8 +2025,17 @@ export class Ecosystem {
     const plan = provider.population();
     for (const g of plan) if (g.type === 'plant') for (let i = 0; i < g.count; i++) this.spawnPlant(g.src);
     for (const g of plan) if (g.type !== 'plant') this.spawn(g.type, g.count, g.src);
+    if (!provider.drive) this.startOutbreak();   // the intro drives its own walkers
     this.ready = true;
     this.shownPop = -1;
+  }
+
+  // ZOMBIES: ZOMBIES.startCount people, drawn at random, turn as the world starts.
+  startOutbreak() {
+    const people = this.animals.filter(a => a.type === 'human');
+    for (let k = 0; k < ZOMBIES.startCount && people.length > 0; k++) {
+      people.splice(Math.floor(Math.random() * people.length), 1)[0].turn();
+    }
   }
 
   spawnPlant(src) {
@@ -2039,7 +2111,7 @@ export class Ecosystem {
     const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
     for (let q = 0; q < nh; q++) for (let i = start[hs[q]], iEnd = start[hs[q] + 1]; i < iEnd; i++) {
       const other = items[i];
-      if (other !== a && other.alive && other.type === a.type &&
+      if (other !== a && other.alive && other.kindId === a.kindId &&
         other.sex === 'female' && other.lookForMate &&
         tools.distSq(px, pz, other.position.x, other.position.z) < Ecosystem.CONTACT_DIST_SQ) {
         const child = a.mate(other);
@@ -2072,7 +2144,7 @@ export class Ecosystem {
       const down = a.isDown(now);
       // one neighbour pass for hunting and bumping; hunts is 0 when down or preyless
       // an armed person (RULE_PEOPLE) attacks only by shooting (shootStep), so it strikes nothing on contact
-      const hunts = !down && a.gun === null && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
+      const hunts = !down && a.gun === null && this.canHuntById[a.kindId] ? HUNTS_MASK[a.kindId] : 0;
       // BUMPING: this tick's velocity (vel), as a was when its pass began. Taken on first use, before a's first strike
       // or bump: until then the pass only reads, so it is the same as taking it here, and a pass with neither (most
       // animals) skips groundSpeed. velocityTaken: vel holds a's.
@@ -2083,16 +2155,13 @@ export class Ecosystem {
         const other = items[i];
         if (other === a || !other.alive) continue;
         const dx = other.position.x - px, dz = other.position.z - pz, d2 = dx * dx + dz * dz;
-        if ((hunts & (1 << other.typeId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
+        if ((hunts & (1 << other.kindId)) !== 0 && d2 < Ecosystem.CONTACT_DIST_SQ) {
           // PACK STRENGTH: strike only what the pack can take
           if (a.nextAttackAt <= now && a.mayAttack(other)) {
             // before the strike, which turns a and holds it
             if (!velocityTaken) { this.takeBumpVelocity(a, now, vel); velocityTaken = true; }
             // one hit per cooldown, on the first prey in reach
-            a.strike(other);
-            if ((HUNTS_MASK[other.typeId] & abit) !== 0) this.fightHit(a, other);
-            else other.attacked(a);
-            a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
+            this.contactHit(a, other);
           }
           if (!a.alive) break near;
         }
@@ -2105,7 +2174,7 @@ export class Ecosystem {
       if (!down && a.lookForMate) this.tryMate(a, px, pz);
 
       const canEat = a.noEatUntil <= now;
-      const nPlant = canEat && a.spec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.PLANT_REACH_QUERY_R) : 0;
+      const nPlant = canEat && a.kindSpec.grazes && a.nextBiteAt <= now ? this.plantGrid.queryInto(this._qPlant, px, pz, Ecosystem.PLANT_REACH_QUERY_R) : 0;
       for (let i = 0; i < nPlant; i++) {
         const plant = this._qPlant[i];
         if (plant.alive &&
@@ -2117,13 +2186,23 @@ export class Ecosystem {
         }
       }
 
-      const crate = canEat && a.type === 'human' ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
+      const crate = canEat && a.kindSpec.crates === true ? foodBoxes.touching(this._qBox, px, a.position.y, pz) : null;
       if (crate) { a.eatBox(); foodBoxes.eat(crate); }
 
       if (surfaceFor(a, px, pz) < 0) {
         a.drinkWater();
       }
     }
+  }
+
+  // CONTACT HITS: a strikes b once per cooldown; fightHit if b hunts a, else a share of b's base health x a's strength.
+  contactHit(a, b) {
+    const now = this.time, mutual = (HUNTS_MASK[b.kindId] & (1 << a.kindId)) !== 0;   // true: b fights back in kind
+    a.strike(b);
+    if (mutual) this.fightHit(a, b);
+    else this.applyHit(b, a, b.startHealth * NPC_ATTACK_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * a.strength);
+    if (a.zombie && b.alive && Math.random() < ZOMBIES.infectChance) b.infect(now);
+    a.nextAttackAt = now + NPC_ATTACK_COOLDOWN_S;
   }
 
   // BUMPING: a's velocity this tick into out { x, z }, m/s: groundSpeed along its heading
@@ -2136,7 +2215,8 @@ export class Ecosystem {
   // A strikes b: damage scales with a's strength, fighting mass x health (as NPC_FIGHT_REF_STRENGTH), relative to the
   // reference fighter's. Nothing about b changes it.
   fightHit(a, b) {
-    const strength = a.fightMassKg() * Math.max(0, a.health);
+    // health enters as its share of max times the base, so toughness alone adds no damage; the strength gene scales it
+    const strength = a.fightMassKg() * Math.max(0, a.health) / a.maxHealth * a.startHealth * a.strength;
     this.applyHit(b, a, NPC_FIGHT_DAMAGE_PER_S * NPC_ATTACK_COOLDOWN_S * strength / NPC_FIGHT_REF_STRENGTH);
   }
 
@@ -2223,11 +2303,11 @@ export class Ecosystem {
   eatCorpses() {
     const c = this.corpses, cg = this.contact, items = cg.items, start = cg.start, now = this.time;
     for (let i = c.length - 1; i >= 0; i--) {
-      const body = c[i], bit = 1 << body.typeId, px = body.position.x, pz = body.position.z;
+      const body = c[i], bit = 1 << body.kindId, px = body.position.x, pz = body.position.z;
       const nh = cg.cellsFor(px, pz, this._contactR), hs = cg.hs;
       eat: for (let q = 0; q < nh; q++) for (let k = start[hs[q]], kEnd = start[hs[q] + 1]; k < kEnd; k++) {
         const a = items[k];
-        if (!a.alive || (CARRION_MASK[a.typeId] & bit) === 0 || a.foodNeed <= 0 || a.isDown(now) || a.noEatUntil > now) continue;
+        if (!a.alive || (CARRION_MASK[a.kindId] & bit) === 0 || a.foodNeed <= 0 || a.isDown(now) || a.noEatUntil > now) continue;
         if (tools.distSq(px, pz, a.position.x, a.position.z) >= Ecosystem.CONTACT_DIST_SQ) continue;
         a.feedOn(body);
         this.removeCorpse(body);
@@ -2249,8 +2329,8 @@ export class Ecosystem {
     while (n < c.length && c[n].corpseUntil <= now) n++;
     if (n > 0) c.splice(0, n);
   }
-  // hit push: fighting mass x NPC_HIT_ACCEL_MS2 x condition
-  static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition(); }
+  // hit push: fighting mass x NPC_HIT_ACCEL_MS2 x condition x strength gene
+  static hitForceN(attacker) { return attacker.fightMassKg() * NPC_HIT_ACCEL_MS2 * attacker.condition() * attacker.strength; }
   // hold: fighting mass x NPC_HOLD_ACCEL_MS2 x condition
   static holdForceN(target) { return target.fightMassKg() * NPC_HOLD_ACCEL_MS2 * target.condition(); }
 
@@ -2403,13 +2483,13 @@ export class Ecosystem {
           this.collide(a);
           const fx = a.position.x - a._fx, fz = a.position.z - a._fz, f2 = fx * fx + fz * fz;
           if (f2 > this.drift2) this.drift2 = f2;
-          alive[a.typeId]++;
-          const ms = a.moveSpeed() * NPC_UNIT, prey = HUNTS_LIST[a.typeId];
+          alive[a.kindId]++;
+          const ms = a.moveSpeed() * NPC_UNIT, prey = HUNTS_LIST[a.kindId];
           for (let k = 0; k < prey.length; k++) if (ms > fastest[prey[k]]) fastest[prey[k]] = ms;
         }
       }
     }
-    for (let t = 0; t < NPC_TYPE_COUNT; t++) {
+    for (let t = 0; t < NPC_KIND_COUNT; t++) {
       const prey = HUNTS_LIST[t];
       let any = 0;
       for (let k = 0; k < prey.length; k++) if (alive[prey[k]]) { any = 1; break; }

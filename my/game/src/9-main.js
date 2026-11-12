@@ -994,17 +994,19 @@ async function finishLoad(provider, autoGraphics = false) {
   invalidate();
 }
 
-// The loading step's head count per species, and of the people, those without a brain (RULE_PEOPLE) and those armed.
+// The loading step's head count per species, and of the people, zombies (ZOMBIES), those without a brain (RULE_PEOPLE) and those armed.
 function populationMade() {
-  const made = { human: 0, coyote: 0, deer: 0, ruled: 0, armed: 0 };
+  const made = { human: 0, coyote: 0, deer: 0, zombie: 0, ruled: 0, armed: 0 };
   for (const a of ecosystem.animals) {
     made[a.type]++;
-    if (a.type === 'human' && !a.brain) { made.ruled++; if (a.gun) made.armed++; }
+    if (a.zombie) made.zombie++;
+    else if (a.type === 'human' && !a.brain) { made.ruled++; if (a.gun) made.armed++; }
   }
   return made;
 }
 const peopleText = m =>
-  `${fmt(m.human)} people: ${fmt(m.human - m.ruled)} with a two-lobe brain, ${fmt(m.ruled)} without (${fmt(m.armed)} armed)`;
+  `${fmt(m.human)} people: ${fmt(m.human - m.ruled - m.zombie)} with a two-lobe brain, ${fmt(m.ruled)} without (${fmt(m.armed)} armed), ` +
+  `${fmt(m.zombie)} zombies`;
 
 // WILD: the Arena's world from a seed; CITY OFF: the same wilderness with no city in the middle. Nothing is downloaded.
 async function loadWilderness(seed) {

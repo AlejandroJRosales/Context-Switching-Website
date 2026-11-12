@@ -520,14 +520,33 @@ export const NPC_REF_MASS_KG = {
   coyote: { male: 15, female: 13 }
 };
 
-// SPECIES: per-type stats in Arena units; see Ecosystem.fightHit for pairs.
+// SPECIES: per-type stats in Arena units; relation fields (hunts, carrion, shootsOnSight, crates...) name kinds (NPC_KINDS).
 export const SPECIES = {
   // carrion: the dead bodies (Ecosystem.corpses) a species eats on contact; the player harvests the human list's as meat
-  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, food: null, grazes: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
+  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
   coyote: { brain: false, hunts: { deer: true, human: true }, carrion: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
+// ZOMBIES: a flag on a person (Animal.zombie); a zombie runs the rule AI and relates to others as kind `zombie`.
+export const ZOMBIES = {
+  startCount: 3,                         // people turned when a world loads (Ecosystem.startOutbreak)
+  infectChance: 0.25,                    // per zombie contact hit on a living person or the Survivor player
+  turnS: 10,                             // sim seconds from infection to turning; the infected act and look normal till then
+  hunts: { human: true },                // living people; the player too in Survivor (avatar.isFoodFor)
+  carrion: { human: true, zombie: true }, // any person's body
+  food: 'human',                         // the rule AI's food: living people
+  grazes: false, crates: false           // no plants, no food boxes
+};
+// RELATION KINDS: each species plus `zombie`; species kinds share their type ids, so kind id = type id for non-zombies.
+export const NPC_KIND_SPECS = { ...SPECIES, zombie: ZOMBIES };
+export const NPC_KINDS = Object.keys(NPC_KIND_SPECS);
+// HERITABLE GENES (every animal, mate()'s rule): strength scales contact hits and their push; toughness scales maxHealth.
+export const NPC_GENE_START = { strength: 1, toughness: 1 };   // founders' values
+// ENERGY (Animal.setBodyRates): food need per tick = health x this x speed gene share x strength x toughness x mass share.
+export const NPC_FOOD_PER_HEALTH_TICK = 0.000003;
+// BROKEN BONES: a hit of sureDamageShare of maxHealth breaks one; a smaller hit with chanceBelowSure (NPCs: / toughness).
+export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // PEOPLE WITHOUT BRAINS: a share of people, rolled at spawn and at birth, run the deer and coyote rules (thinkDeer)
 // instead of a learning brain, hunting `food` as a coyote does. Some of them carry a gun with endless rounds; an armed
 // one never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
@@ -569,15 +588,24 @@ export const NPC_TYPE_IDS = {};
 NPC_TYPES.forEach((t, i) => { NPC_TYPE_IDS[t] = i; });
 export const NPC_TYPE_COUNT = NPC_TYPES.length;
 export const HUMAN_TYPE_ID = NPC_TYPE_IDS.human;
-export const HUNTS_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
-export const HUNTED_BY_MASK = NPC_TYPES.map(t => NPC_TYPES.reduce((m, h, i) => SPECIES[h].hunts[t] === true ? m | (1 << i) : m, 0));
-// dead bodies each species eats (SPECIES carrion), as bit sets of ids
-export const CARRION_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].carrion?.[t] === true ? m | (1 << i) : m, 0));
+// Kind ids (index in NPC_KINDS); relation masks are bit sets of kind ids, indexed by kind id.
+export const NPC_KIND_IDS = Object.fromEntries(NPC_KINDS.map((k, i) => [k, i]));
+export const NPC_KIND_COUNT = NPC_KINDS.length;
+export const HUMAN_KIND_ID = NPC_KIND_IDS.human;
+export const ZOMBIE_KIND_ID = NPC_KIND_IDS.zombie;
+// bit set of the kinds whose spec field `field` lists as true, per kind
+const kindMask = field => NPC_KINDS.map(h => NPC_KINDS.reduce((m, t, i) => NPC_KIND_SPECS[h][field]?.[t] === true ? m | (1 << i) : m, 0));
+export const HUNTS_MASK = kindMask('hunts');
+export const HUNTED_BY_MASK = NPC_KINDS.map(t => NPC_KINDS.reduce((m, h, i) => NPC_KIND_SPECS[h].hunts[t] === true ? m | (1 << i) : m, 0));
+// dead bodies each kind eats (carrion), as bit sets of kind ids
+export const CARRION_MASK = kindMask('carrion');
 // night quarry
-export const NIGHT_PREY_MASK = NPC_TYPES.map(h => NPC_TYPES.reduce((m, t, i) => SPECIES[h].nightPrey?.[t] === true ? m | (1 << i) : m, 0));
-// ids of each species' hunts keys, in key order
-export const HUNTS_LIST = NPC_TYPES.map(h => Object.keys(SPECIES[h].hunts).filter(t => t in NPC_TYPE_IDS).map(t => NPC_TYPE_IDS[t]));
-export const FOOD_TYPE_ID = NPC_TYPES.map(t => NPC_TYPE_IDS[SPECIES[t].food] ?? -1);   // -1: plants or nothing
+export const NIGHT_PREY_MASK = kindMask('nightPrey');
+// kinds an armed person shoots on sight (shootsOnSight)
+export const SHOOTS_ON_SIGHT_MASK = kindMask('shootsOnSight');
+// ids of each kind's hunts keys, in key order
+export const HUNTS_LIST = NPC_KINDS.map(h => Object.keys(NPC_KIND_SPECS[h].hunts).filter(t => t in NPC_KIND_IDS).map(t => NPC_KIND_IDS[t]));
+export const FOOD_KIND_ID = NPC_KINDS.map(t => NPC_KIND_IDS[NPC_KIND_SPECS[t].food] ?? -1);   // -1: plants or nothing
 export const WATER_SIGHT_CELL = 20;
 export const HIGH_NPC_LOD_DIST = 120;      // metres to billboard on high (perf.npcLodDist)
 export const HIGH_FAR_STAT_DIST = 240;    // metres past which far stats hide (perf.farStatDist)
@@ -1151,7 +1179,7 @@ export const SURVIVOR_CONFIG = {
   // INJURIES: a hit or hurting fall may cause one until an item that `cures` it is used; noRun stops sprinting.
   // One hit or fall of at least sureDamageShare of maxHealth always causes it; a smaller one with chanceBelowSure.
   injuries: {
-    brokenBone: { icon: '🦴', label: 'Broken bone', sureDamageShare: 0.5, chanceBelowSure: 0.05, noRun: true }
+    brokenBone: { icon: '🦴', label: 'Broken bone', ...BROKEN_BONE, noRun: true }
   },
   // CRAFTING: the craft slot makes the first recipe the inventory holds.
   craft: {
@@ -1165,7 +1193,9 @@ export const SURVIVOR_CONFIG = {
     coyote: 'Killed by a coyote',
     starving: 'Starved',
     parched: 'Died of thirst',
-    human: 'Shot by a person'   // armed people without brains (RULE_PEOPLE) are the only people who hurt the player
+    human: 'Shot by a person',  // armed people without brains (RULE_PEOPLE) are the only living people who hurt the player
+    zombie: 'Killed by a zombie',
+    turned: 'Turned into a zombie'   // ZOMBIES.turnS after an infecting hit
   }
 };
 

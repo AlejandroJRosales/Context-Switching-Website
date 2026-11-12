@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-12T14:24:02.337Z",
+ "generated": "2026-11-12T22:54:54.095Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -231,6 +231,8 @@
     "+NPC_WIDTH_LIMITS: number[]",
     "+NPC_GIRTH_STEPS: number",
     "+NPC_TYPES: string[]",
+    "+NPC_KINDS: string[]",
+    "+NPC_FOOD_PER_HEALTH_TICK: number",
     "+NPC_REF_BODY_FAT: unknown",
     "-NPC_FAT_STRENGTH_SHARE: number",
     "+NPC_ANIMAL_FIGHT_SHARE: number",
@@ -240,12 +242,17 @@
     "-NPC_JUMP_PACE_EXP: number",
     "+NPC_TYPE_COUNT: number",
     "+HUMAN_TYPE_ID: unknown",
+    "+NPC_KIND_IDS: unknown",
+    "+NPC_KIND_COUNT: number",
+    "+HUMAN_KIND_ID: unknown",
+    "+ZOMBIE_KIND_ID: unknown",
     "+HUNTS_MASK: array",
     "+HUNTED_BY_MASK: array",
     "+CARRION_MASK: array",
     "+NIGHT_PREY_MASK: array",
+    "+SHOOTS_ON_SIGHT_MASK: array",
     "+HUNTS_LIST: array",
-    "+FOOD_TYPE_ID: array",
+    "+FOOD_KIND_ID: array",
     "+WATER_SIGHT_CELL: number",
     "+HIGH_NPC_LOD_DIST: number",
     "+HIGH_FAR_STAT_DIST: number",
@@ -520,6 +527,7 @@
    "functions": [
     "+fightMassShare(f): number",
     "+bodyJumpSpeed(baseSpeed, pace): number",
+    "-kindMask(field): array",
     "-iconSvg(body): string",
     "-ICON_ARROW(x, down): string",
     "-ICON_GUN_DOWN(top): string",
@@ -555,6 +563,10 @@
     "1-config.js#NPC_BODY_SHAPE",
     "1-config.js#NPC_REF_MASS_KG",
     "1-config.js#SPECIES",
+    "1-config.js#ZOMBIES",
+    "1-config.js#NPC_KIND_SPECS",
+    "1-config.js#NPC_GENE_START",
+    "1-config.js#BROKEN_BONE",
     "1-config.js#RULE_PEOPLE",
     "1-config.js#NPC_TYPE_IDS",
     "1-config.js#HUMAN_CROUCH",
@@ -935,6 +947,47 @@
     "human: object",
     "coyote: object",
     "deer: object"
+   ],
+   "methods": []
+  },
+  "1-config.js#ZOMBIES": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "startCount: number",
+    "infectChance: number",
+    "turnS: number",
+    "hunts: object",
+    "carrion: object",
+    "food: string",
+    "grazes: boolean",
+    "crates: boolean"
+   ],
+   "methods": []
+  },
+  "1-config.js#NPC_KIND_SPECS": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "zombie: ZOMBIES"
+   ],
+   "methods": []
+  },
+  "1-config.js#NPC_GENE_START": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "strength: number",
+    "toughness: number"
+   ],
+   "methods": []
+  },
+  "1-config.js#BROKEN_BONE": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "sureDamageShare: number",
+    "chanceBelowSure: number"
    ],
    "methods": []
   },
@@ -2450,6 +2503,7 @@
     "-_preyKey: array",
     "-_preySight: array",
     "-_nPrey: number",
+    "-REF_ADULT_KG: unknown",
     "+ecosystem: Ecosystem"
    ],
    "functions": [
@@ -2654,12 +2708,16 @@
     "static DRINK_SHARE_PER_S: number",
     "spec: unknown",
     "typeId: unknown",
+    "kindId: unknown",
+    "kindSpec: ZOMBIES",
+    "zombie: boolean",
+    "turnAt: number",
+    "brokenBone: boolean",
     "speed: unknown",
+    "strength: unknown",
     "WATER_SPEED_FACTOR: number",
     "submerged: boolean",
     "startHealth: unknown",
-    "health: number",
-    "maxHealth: unknown",
     "visionDistance: number",
     "visionDistSq: number",
     "eyeOffset: unknown",
@@ -2670,15 +2728,13 @@
     "avoidNeed: number",
     "sex: string",
     "look: object|null",
+    "waterIncrement: number",
+    "ageDepl: number",
     "pounceSpec: unknown",
     "mutationMulti: number",
     "lastChildTime: unknown",
     "childGracePeriod: number",
     "lookForMate: boolean",
-    "waterIncrement: number",
-    "foodIncrement: number",
-    "reproductionIncrement: number",
-    "ageDepl: number",
     "memPredatorX: number",
     "memPredatorY: number",
     "memPredatorZ: number",
@@ -2741,9 +2797,8 @@
     "brain: SpikingNetwork|null",
     "ACTION_HOLD: number",
     "gun: unknown|null",
-    "food: unknown",
-    "foodId: number",
     "prey: null|unknown",
+    "onSight: null|unknown",
     "foe: null|unknown",
     "foeUntil: number",
     "lastShotAt: number",
@@ -2789,9 +2844,16 @@
     "cosFovH: number",
     "tanFovV: number",
     "floating: boolean",
+    "health: number",
     "alive: boolean",
     "paceShare: number",
     "moveSpeedPerS: number",
+    "foodIncrement: number",
+    "reproductionIncrement: number",
+    "toughness: unknown",
+    "maxHealth: number",
+    "food: unknown",
+    "foodId: number",
     "sizeZ: number",
     "heightScale: number"
    ],
@@ -2834,7 +2896,6 @@
     "canShoot(t): boolean",
     "shootStep(now): void",
     "learnFromLastDecision(): void",
-    "attacked(predator): void",
     "takeHit(attacker, damage, feeds?: boolean): void",
     "strike(target): void",
     "answerHit(attacker): void",
@@ -2848,6 +2909,13 @@
     "originY(): number",
     "bodyHeightM(): number",
     "setBodyRates(): void",
+    "setToughness(t): void",
+    "setFood(food): void",
+    "infect(now): void",
+    "turn(): void",
+    "get kind(): unknown",
+    "rollBone(damage): void",
+    "runs(): boolean",
     "pace(): number",
     "moveSpeed(): number",
     "jumpSpeed(baseSpeed): number",
@@ -2859,7 +2927,9 @@
     "speedAlong(nx, nz, now): number",
     "knockable(): boolean",
     "braced(): boolean",
-    "bodyMassKg(): number",
+    "bodyMassKg(): unknown",
+    "massAtHeightKg(h): number",
+    "adultHeightM(): number",
     "setSizeZ(z): void",
     "mateFill(now): number",
     "mateReady(now): boolean",
@@ -2988,11 +3058,13 @@
     "clear(): void",
     "populationChanged(): boolean",
     "initialize(provider): void",
+    "startOutbreak(): void",
     "spawnPlant(src): void",
     "syncPlantGrids(): void",
     "spawn(type, count, src): number",
     "tryMate(a, px, pz): void",
     "handleCollisions(): void",
+    "contactHit(a, b): void",
     "takeBumpVelocity(a, now, out): void",
     "fightHit(a, b): void",
     "bump(a, b, dx, dz, d2, vx, vz): void",
@@ -3965,7 +4037,8 @@
    "visibility": "-",
    "attributes": [
     "nextShotAt: number",
-    "reloadUntil: number"
+    "reloadUntil: number",
+    "turnAt: number"
    ],
    "methods": []
   },
@@ -5053,7 +5126,6 @@
     "NPC_BODY_POP",
     "SPECIES",
     "NPC_TYPE_IDS",
-    "NPC_TYPE_COUNT",
     "HUNTS_MASK",
     "HUNTED_BY_MASK",
     "NIGHT_PREY_MASK",
@@ -5111,7 +5183,18 @@
     "RULE_PEOPLE",
     "WEAPONS",
     "PLAYER_HEIGHT",
-    "PLAYER_RADIUS"
+    "PLAYER_RADIUS",
+    "ZOMBIES",
+    "NPC_KIND_SPECS",
+    "NPC_KINDS",
+    "NPC_KIND_IDS",
+    "NPC_KIND_COUNT",
+    "HUMAN_KIND_ID",
+    "ZOMBIE_KIND_ID",
+    "SHOOTS_ON_SIGHT_MASK",
+    "NPC_GENE_START",
+    "NPC_FOOD_PER_HEALTH_TICK",
+    "BROKEN_BONE"
    ]
   },
   {
@@ -5531,6 +5614,9 @@
     "HUMAN_TYPE_ID",
     "HUNTS_MASK",
     "NIGHT_PREY_MASK",
+    "HUMAN_KIND_ID",
+    "ZOMBIES",
+    "NPC_GENE_START",
     "HUMAN_STRIDE_BASE",
     "HUMAN_STRIDE_PER_V",
     "HUMAN_STRIDE_MAX",
@@ -6036,6 +6122,16 @@
    "type": "uses"
   },
   {
+   "from": "1-config.js#NPC_KIND_SPECS",
+   "to": "1-config.js#SPECIES",
+   "type": "uses"
+  },
+  {
+   "from": "1-config.js#NPC_KIND_SPECS",
+   "to": "1-config.js#ZOMBIES",
+   "type": "uses"
+  },
+  {
    "from": "1-config.js#SURVIVOR_CONFIG",
    "to": "1-config.js#ICONS",
    "type": "uses"
@@ -6043,6 +6139,11 @@
   {
    "from": "1-config.js#SURVIVOR_CONFIG",
    "to": "1-config.js#SPECIES",
+   "type": "uses"
+  },
+  {
+   "from": "1-config.js#SURVIVOR_CONFIG",
+   "to": "1-config.js#BROKEN_BONE",
    "type": "uses"
   },
   {
@@ -6257,6 +6358,16 @@
   },
   {
    "from": "7b-sim.js#Animal",
+   "to": "1-config.js#NPC_KIND_SPECS",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "1-config.js#NPC_GENE_START",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_POUNCES",
    "type": "uses"
   },
@@ -6308,6 +6419,16 @@
   {
    "from": "7b-sim.js#Animal",
    "to": "1-config.js#NPC_FIGHT_MOVES",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "1-config.js#ZOMBIES",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "1-config.js#BROKEN_BONE",
    "type": "uses"
   },
   {
@@ -6388,6 +6509,11 @@
   {
    "from": "7b-sim.js#Ecosystem",
    "to": "5-collision.js#occ",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Ecosystem",
+   "to": "1-config.js#ZOMBIES",
    "type": "uses"
   },
   {
@@ -6812,6 +6938,11 @@
   },
   {
    "from": "8b-player-game.js#game",
+   "to": "1-config.js#NPC_GENE_START",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
    "to": "8b-player-game.js#AVATAR_CLOCKS",
    "type": "uses"
   },
@@ -6838,6 +6969,11 @@
   {
    "from": "8b-player-game.js#game",
    "to": "1-config.js#NPC_SIZE",
+   "type": "uses"
+  },
+  {
+   "from": "8b-player-game.js#game",
+   "to": "1-config.js#ZOMBIES",
    "type": "uses"
   },
   {

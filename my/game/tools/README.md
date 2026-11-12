@@ -60,6 +60,33 @@ It exits 1 on any script error, failed request, renderer crash or failed shader 
 
 Run one page at a time, because parallel runs crash the headless renderer. High graphics with `--walk` crashes SwiftShader's renderer some of the time, so use `--low` with `--walk`.
 
+## checks/zombies.mjs: zombie behaviour through the frame loop
+
+```
+node tools/checks/zombies.mjs <rootDir> [--three <local three dir>] --part observer|killed|turned
+```
+
+It loads the smallest City-off wilderness on Graphics low (`checks/lib/game-page.mjs`), and imports the page's own `src` modules from inside the page. That gives it the same module instances the game runs, so it needs no test hooks in the game. It wraps a few methods to log what happens (contact hits, turns, matings, meals, shots, deaths) and moves bodies to set up encounters. Each test ends on a game condition, or after 3 minutes (`WAIT_LIMIT_MS` in `lib/game-page.mjs`). A test that runs out of time is reported as timed out, not passed, and the next test runs.
+
+Parts, one page load each:
+
+- `observer`:
+  - the loading line's zombie count
+  - infection and the 10 s turn, with the victim acting normally until then
+  - converts keeping their body traits
+  - a hungry zombie chasing and striking a living person
+  - armed people shooting a zombie on sight
+  - unarmed rule people fleeing zombies, and brained people seeing them on the predator input
+  - zombie mating, zombie children, and the genes they inherit, plus no mixed matings
+  - the hunger rule for every animal, and per tick for a lone zombie
+  - broken bones and the toughness-divided chance
+  - the infection rate over at least 100 rolls
+  - zombie diet, coyotes ignoring zombies, and rules sampled every tick
+- `killed`: in Survivor, a hungry zombie hunts the standing player until the run ends.
+- `turned`: in Survivor, a zombie hits the player until one hit infects. Then every zombie is sent away and the run must end, as "Turned into a zombie", 10 s later.
+
+When a test moves an animal it also sets `_fx` and `_fz`, so the contact search's drift stays small. Headless SwiftShader runs this world at about 2 sim ticks a second, so 10 s of sim time takes about 5 real minutes. The 10 s turn tests can time out there and need a faster machine. Run one part at a time, never in parallel with another browser check.
+
 ## checks/listeners.mjs: listener order
 
 ```
