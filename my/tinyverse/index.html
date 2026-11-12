@@ -92,14 +92,30 @@ body {
   padding:6px 10px;
   text-align:center
 }
+#gear,
+#followCtl .btn {
+  border-radius:4px;
+  font-size:16px;
+  line-height:1
+}
 #gear {
   position:absolute;
   top:8px;
   right:8px;
-  z-index:5;
-  border-radius:4px;
-  font-size:16px;
-  line-height:1
+  z-index:5
+}
+/* 3x2 grid in the top-right corner; the gear sits over the empty top-right cell */
+#followCtl {
+  position:absolute;
+  top:8px;
+  right:8px;
+  display:none;
+  grid-template-columns:repeat(3, 1fr);
+  gap:6px;
+  z-index:3
+}
+#followCtl.open {
+  display:grid
 }
 #btns {
   position:absolute;
@@ -129,8 +145,17 @@ body {
 <div id="hud">
   <div id="info"></div>
   <button class="btn" id="gear">=</button>
+  <div id="followCtl">
+    <button class="btn" id="followDown">&lt;</button>
+    <button class="btn" id="followUp">&gt;</button>
+    <span></span>
+    <button class="btn" id="zoomDown">-</button>
+    <button class="btn" id="zoomUp">+</button>
+    <button class="btn" id="headingBtn">^</button>
+  </div>
   <div id="btns">
     <button class="btn" id="flyBtn">FLY: 0</button>
+    <button class="btn" id="followBtn">FOLLOW: 0</button>
     <button class="btn" id="rainBtn">RAIN: /</button>
     <button class="btn" id="audioBtn">AUDIO: 0</button>
     <button class="btn" id="resetBtn">RESET</button>
@@ -215,6 +240,7 @@ const PI = Math.PI,
 
 // world
 const PLANT_SPAWN_CHANCE = 0.01,
+  RAIN_PLANT_BOOST = 3, // extra growth multiplier at full rain: chance * (1 + boost * rainIntensity)
   WORLD_EDGE_MARGIN = 20,
   WATER_CLIP_RANGE = 32,
   NO_WATER = 1e9;
@@ -275,7 +301,13 @@ const WALK_SPEED = 220,
   JUMP_VELOCITY = 150,
   STEP_GRIP = 8,
   STEP_STRIDE = 90,
-  LOOK_SENSITIVITY = 0.005;
+  LOOK_SENSITIVITY = 0.005,
+  // follow camera distance, in multiples of the creature's size
+  FOLLOW_DISTANCE_START = 7,
+  FOLLOW_DISTANCE_MIN = 2,
+  FOLLOW_DISTANCE_MAX = -1, // -1 means no upper bound
+  FOLLOW_ZOOM_STEP = 1.25, // distance factor per - / + press
+  FOLLOW_PICK_RADIUS = 0.5; // pick radius around screen center, in screen fractions
 
 // rain
 const RAIN_DROPS = 3000,
@@ -847,9 +879,11 @@ const creatureBirth = (a, b) => {
 };
 
 const compactCreatures = () => {
-  let write = 0;
+  let write = 0,
+    followed = -1; // the followed creature's index after compaction, -1 if it died
   for (let read = 0; read < creatureCount; read++) {
     if (!C[ALIVE][read]) continue;
+    if (read === followIdx) followed = write;
     if (write !== read) {
       for (let k = 0; k < CREATURE_FIELDS; k++) C[k][write] = C[k][read];
       GENES.copyWithin(write * GENE_LEN, read * GENE_LEN, (read + 1) * GENE_LEN);
@@ -857,9 +891,14 @@ const compactCreatures = () => {
     write++;
   }
   creatureCount = write;
+  if (followIdx >= 0) {
+    if (followed < 0) setFollow(-1);
+    else followIdx = followed;
+  }
 };
 
 const spawnCreatures = () => {
+  if (followIdx >= 0) setFollow(-1);
   creatureCount = 0;
   adjustPopulation(clamp(scaled(baseCreatures), 5, MAX_CREATURES));
 };
@@ -939,7 +978,11 @@ const updateCreatures = (dt) => {
     if (C[TARGET_KIND][i] === TARGET_MATE && creatureCount < MAX_CREATURES && mateReady(i) && scanMates(x, z, MATE_REACH + C[SIZE][i], i)) {
       creatureBirth(i, foundIdx);
     }
-    if (C[ENERGY][i] <= 0) C[ALIVE][i] = 0;
+    // a starved creature returns its nutrients as a plant where it fell
+    if (C[ENERGY][i] <= 0) {
+      C[ALIVE][i] = 0;
+      plantPlace(x, z);
+    }
   }
   compactCreatures();
 };
@@ -948,7 +991,7 @@ const updateCreatures = (dt) => {
 
 const plantPlace = (x, z) => {
   const y = terrainHeight(x, z);
-  if (y < waterLevel + 3) return 0;
+  if (plantCount >= MAX_PLANTS || y < waterLevel + 3) return 0;
   P[X][plantCount] = x;
   P[Y][plantCount] = y;
   P[Z][plantCount] = z;
@@ -983,8 +1026,7 @@ const spawnPlants = () => {
 };
 
 const plantsGrow = (dt) => {
-  if (plantCount >= MAX_PLANTS) return;
-  if (RNG() >= PLANT_SPAWN_CHANCE * dt * 60) return;
+  if (RNG() >= PLANT_SPAWN_CHANCE * (1 + RAIN_PLANT_BOOST * rainIntensity) * dt * 60) return;
   const seeded = plantCount > 0 && RNG() < 0.7,
     parent = seeded ? (RNG() * plantCount) | 0 : 0;
   plantPlace(
@@ -1729,7 +1771,10 @@ let yaw = PI,
   moveX = 0,
   moveY = 0,
   viewW = 1,
-  viewH = 1;
+  viewH = 1,
+  followIdx = -1, // creature the camera follows, -1 when the player moves freely
+  followHeading = false, // ^ button: lock camera yaw to the followed creature's facing
+  followDistance = FOLLOW_DISTANCE_START;
 
 const held = (...names) => names.some((name) => keys[name]);
 
@@ -1781,18 +1826,72 @@ const updatePlayer = (dt, forward, right) => {
   prevJump = jump;
 };
 
+const lookDir = () => [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+
+// place the camera behind the followed creature along the look direction
+const followCamera = () => {
+  const i = followIdx;
+  if (followHeading) yaw = C[FACING][i];
+  const look = lookDir(),
+    distance = C[SIZE][i] * followDistance;
+  for (const k of [X, Y, Z]) cam[k] = C[k][i] - look[k] * distance;
+  cam[1] = Math.max(cam[1], groundY(cam[0], cam[2]) + 2);
+};
+
 const updateCamera = () => {
-  const look = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  const look = lookDir();
   perspective(projMatrix, 1.05, viewW / viewH, 4, worldSize * 1.4);
   lookAt(viewMatrix, cam, cam.map((v, k) => v + look[k]), UP);
   mat4Mul(viewProj, projMatrix, viewMatrix);
 };
 
-const screenOf = (dir) => {
-  const p = cam.map((v, k) => v + dir[k] * 1000),
-    clip = (r) => viewProj[r] * p[0] + viewProj[r + 4] * p[1] + viewProj[r + 8] * p[2] + viewProj[r + 12],
+// world point -> screen [0..1, 0..1], or [-1, -1] when behind the camera
+const screenAt = (p) => {
+  const clip = (r) => viewProj[r] * p[0] + viewProj[r + 4] * p[1] + viewProj[r + 8] * p[2] + viewProj[r + 12],
     w = clip(3);
   return [0, 1].map((r) => (w > 0 ? (clip(r) / w) * 0.5 + 0.5 : -1));
+};
+
+const screenOf = (dir) => screenAt(cam.map((v, k) => v + dir[k] * 1000));
+
+const nearestToCenter = () => {
+  let best = FOLLOW_PICK_RADIUS * FOLLOW_PICK_RADIUS,
+    pick = -1;
+  for (let i = 0; i < creatureCount; i++) {
+    const [sx, sy] = screenAt([C[X][i], C[Y][i], C[Z][i]]),
+      d2 = dist2(sx, sy, 0.5, 0.5);
+    if (d2 < best) {
+      best = d2;
+      pick = i;
+    }
+  }
+  return pick;
+};
+
+// i < 0 turns follow off
+const setFollow = (i) => {
+  followIdx = i;
+  velocityY = 0;
+  label('followBtn', 'FOLLOW: ' + +(i >= 0));
+  byId('followCtl').classList.toggle('open', i >= 0);
+  updateInfoPanel();
+};
+
+// positive steps zoom in (closer), negative zoom out
+const zoomFollow = (steps) => {
+  followDistance = clamp(followDistance / FOLLOW_ZOOM_STEP ** steps, FOLLOW_DISTANCE_MIN, FOLLOW_DISTANCE_MAX < 0 ? Infinity : FOLLOW_DISTANCE_MAX);
+};
+
+// on: follow the creature nearest the screen center; off: release the camera
+const toggleFollow = () => setFollow(followIdx < 0 ? nearestToCenter() : -1);
+
+const toggleHeading = () => {
+  followHeading = !followHeading;
+};
+
+// step to the previous / next creature by index, wrapping around
+const stepFollow = (delta) => {
+  if (followIdx >= 0) setFollow((followIdx + delta + creatureCount) % creatureCount);
 };
 
 // FRAME LOOP + HUD
@@ -1836,7 +1935,28 @@ const updateFps = (dt) => {
   }
 };
 
+// gene bases 0..3 as letters, one space after each 3-base codon (the grouping geneDecode reads)
+const BASES = 'ACGT';
+
+const genesText = (i) => {
+  let text = '';
+  for (let k = 0; k < GENE_LEN; k++) text += BASES[GENES[i * GENE_LEN + k]] + (k % 3 === 2 ? ' ' : '');
+  return text;
+};
+
+// display names indexed by TARGET_* and by SEX values
+const TARGET_NAMES = ['none', 'plant', 'water', 'mate'],
+  SEX_NAMES = 'FM';
+
+const creatureText = (i) =>
+  `${genesText(i)}\n` +
+  `${SEX_NAMES[C[SEX][i]]} gen ${C[GENERATION][i]} age ${C[AGE][i].toFixed(0)}s size ${C[SIZE][i].toFixed(1)}\n` +
+  `energy ${C[ENERGY][i].toFixed(2)} water ${C[HYDRATION][i].toFixed(2)}\n` +
+  `speed ${C[SPEED][i].toFixed(1)} speed gene ${C[SPEED_GENE][i].toFixed(2)}\n` +
+  `target ${TARGET_NAMES[C[TARGET_KIND][i]]} mate cooldown ${Math.max(0, C[COOLDOWN][i]).toFixed(0)}s`;
+
 const updateInfoPanel = () => {
+  if (followIdx >= 0) return label('info', creatureText(followIdx));
   const n = Math.max(1, creatureCount),
     sums = [0, 0, 0];
   let females = 0,
@@ -1865,7 +1985,8 @@ const frame = (now) => {
   updateFps(dt);
   const forward = [Math.sin(yaw), 0, Math.cos(yaw)],
     right = [Math.cos(yaw), 0, -Math.sin(yaw)];
-  updatePlayer(dt, forward, right);
+  if (followIdx >= 0) followCamera();
+  else updatePlayer(dt, forward, right);
   updateCamera();
   const [sunDir, sunUp, sunColor, moonDir, moonUp, moonColor, skyTop, skyBottom, ambient] = sunState(simTime);
   SCENE = [
@@ -2085,8 +2206,7 @@ const bindInput = () => {
     on(window, type, (e) => {
       const key = e.key.toLowerCase();
       keys[key] = down;
-      if (down && key === 'r') cycleRainMode();
-    });
+      if (down && key === 'r') cycleRainMode();    });
   }
   on(document, 'pointerlockchange', () => {
     pointerLocked = !!(document.pointerLockElement || document.mozPointerLockElement || document.webkitPointerLockElement);
@@ -2106,6 +2226,8 @@ const bindInput = () => {
   for (const [id, handler] of [
     ['gear', () => byId('btns').classList.toggle('open')],
     ['flyBtn', toggleFly],
+    ['followBtn', toggleFollow],
+    ['headingBtn', toggleHeading],
     ['rainBtn', cycleRainMode],
     ['audioBtn', toggleAudio],
     ['resetBtn', () => {
@@ -2119,7 +2241,9 @@ const bindInput = () => {
     ['scale', 5, (d) => applyWorldScale(worldScale + d)],
     ['pop', 50, adjustPopulation],
     ['plant', 50, adjustPlants],
-    ['time', 2, shiftSimTime]
+    ['time', 2, shiftSimTime],
+    ['follow', 1, stepFollow],
+    ['zoom', 1, zoomFollow]
   ]) {
     on(byId(name + 'Down'), 'click', () => apply(-step));
     on(byId(name + 'Up'), 'click', () => apply(step));
