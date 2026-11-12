@@ -972,7 +972,7 @@ const SURVIVOR_FIELD_ACTIONS = {
     find: (g, x, feet, z) => g.inventory.includes(null) ? g.carcassInReach(x, feet, z) : null,
     run: (g, body) => g.butcher(body)
   },
-  // a dead person, searched once for one item drawn like a box's contents (rollLoot)
+  // a dead person, searched once: nothing (bodyEmptyShare), else one item drawn like a box's contents (rollLoot)
   loot: {
     label: 'Loot',
     icon: ICONS.harvest,
@@ -1024,7 +1024,9 @@ function slotButton(key, craft) {
   b.setAttribute('aria-label', craft ? 'Nothing to craft' : 'Empty slot');
   const kbd = document.createElement('kbd');
   kbd.textContent = slotKeyLabel(key);
-  b.append(document.createElement('span'), kbd);
+  const rounds = document.createElement('small');   // a gun's rounds, magazine plus reserve (game.draw); empty otherwise
+  rounds.className = 'rounds';
+  b.append(document.createElement('span'), kbd, rounds);
   return b;
 }
 const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
@@ -1077,7 +1079,7 @@ export const game = {
   // The ecosystem's view of the player, alive only in Survivor play.
   avatar: {
     type: 'player', alive: false, prey: false, position: new THREE.Vector3(),
-    startHealth: SURVIVOR_CONFIG.maxHealth,
+    startHealth: SURVIVOR_CONFIG.maxHealth, maxHealth: SURVIVOR_CONFIG.maxHealth,   // a bullet's damage is a share of maxHealth
     ...AVATAR_CLOCKS,   // next attack; fight move (drawn on the 3rd-person body); knockdown fall start and hold end
     playing: null, moveSide: 1,
     // KNOCKDOWNS, as an animal's: heading, launch speed
@@ -1278,7 +1280,7 @@ export const game = {
     // aim: the first thing on the camera's ray, BULLET_AIM_M at most
     const from = camera.getWorldPosition(this._aimFrom), dir = camera.getWorldDirection(this._aimDir);
     const hit = ecosystem.projectiles.cast(from.x, from.y, from.z,
-      from.x + dir.x * BULLET_AIM_M, from.y + dir.y * BULLET_AIM_M, from.z + dir.z * BULLET_AIM_M);
+      from.x + dir.x * BULLET_AIM_M, from.y + dir.y * BULLET_AIM_M, from.z + dir.z * BULLET_AIM_M, undefined, this.avatar);
     const reach = Math.min(1, hit.t) * BULLET_AIM_M;
     const ex = player.pos.x, ey = player.pos.y - crouchY, ez = player.pos.z;   // the eye
     let dx = from.x + dir.x * reach - ex, dy = from.y + dir.y * reach - ey, dz = from.z + dir.z * reach - ez;
@@ -1535,11 +1537,13 @@ export const game = {
     return this.corpseInReach(px, feet, pz, c => c.typeId === HUMAN_TYPE_ID && !lootedBodies.has(c));
   },
 
-  // One item from a dead person into the first free slot, drawn like a box's (rollLoot); the body stays, searched.
+  // A dead person searched: nothing with bodyEmptyShare, else one item drawn like a box's (rollLoot) into the first free
+  // slot; the body stays, searched.
   loot(body) {
     const free = this.inventory.indexOf(null);
     if (free < 0) return;
     lootedBodies.add(body);
+    if (Math.random() < SURVIVOR_CONFIG.bodyEmptyShare) return;
     this.inventory[free] = this.rollLoot();
   },
 
@@ -1652,12 +1656,16 @@ export const game = {
       needInfoEl.replaceChildren(...spans(personInfoFields(info, pov.sex)));
       needBodyEl.replaceChildren(...spans(personBodyFields(info, pov.sex, pov.look)));
     }
-    const slots = this.inventory.map(it => it ? it.kind : '').join(',') + '|' + this.inventory.indexOf(this.weapon);   // the equipped slot too
+    // a gun's total rounds (magazine plus reserve), or '' for anything else
+    const roundsOf = it => it && SURVIVOR_CONFIG.inventory.items[it.kind].weapon ? String(it.mag + it.reserve) : '';
+    // what the slots show: each kind and its rounds, and the equipped slot
+    const slots = this.inventory.map(it => it ? it.kind + roundsOf(it) : '').join(',') + '|' + this.inventory.indexOf(this.weapon);
     if (slots !== this._shownSlots) {
       this._shownSlots = slots;
       this.inventory.forEach((it, i) => {
         const el = slotEls[i], item = it && SURVIVOR_CONFIG.inventory.items[it.kind];
         showIcon(el.querySelector('span'), item ? item.icon : '', ICON_STYLE.slotPx);
+        el.querySelector('.rounds').textContent = roundsOf(it);
         el.disabled = !item;
         const verb = it && it === this.weapon ? 'Holster' : item && SURVIVOR_ACTIONS[item.action].verb;   // an equipped gun's slot holsters it
         el.setAttribute('aria-label', item ? `${verb} ${item.label.toLowerCase()}` : 'Empty slot');

@@ -994,6 +994,18 @@ async function finishLoad(provider, autoGraphics = false) {
   invalidate();
 }
 
+// The loading step's head count per species, and of the people, those without a brain (RULE_PEOPLE) and those armed.
+function populationMade() {
+  const made = { human: 0, coyote: 0, deer: 0, ruled: 0, armed: 0 };
+  for (const a of ecosystem.animals) {
+    made[a.type]++;
+    if (a.type === 'human' && !a.brain) { made.ruled++; if (a.gun) made.armed++; }
+  }
+  return made;
+}
+const peopleText = m =>
+  `${fmt(m.human)} people: ${fmt(m.human - m.ruled)} with a two-lobe brain, ${fmt(m.ruled)} without (${fmt(m.armed)} armed)`;
+
 // WILD: the Arena's world from a seed; CITY OFF: the same wilderness with no city in the middle. Nothing is downloaded.
 async function loadWilderness(seed) {
   if (busy) return;
@@ -1036,9 +1048,8 @@ async function loadWilderness(seed) {
       `${fmt(planned('deer'))} deer and ${fmt(planned('plant'))} plants…`);
     await paint();
     populate(w);
-    const made = { human: 0, coyote: 0, deer: 0 };
-    for (const a of ecosystem.animals) made[a.type]++;
-    steps.done('people', `${fmt(made.human)} people, each with a two-lobe brain; ${fmt(made.coyote)} coyotes and ` +
+    const made = populationMade();
+    steps.done('people', `${peopleText(made)}; ${fmt(made.coyote)} coyotes and ` +
       `${fmt(made.deer)} deer; ${fmt(ecosystem.plants.length)} plants.`);
 
     // no place: this device's time zone places the sun
@@ -1242,10 +1253,9 @@ async function loadPlace(query) {
       steps.start('people', `Spawning up to ${want.join(', ')}…`);
       await paint();
       populate(provider);
-      const made = { human: 0, coyote: 0, deer: 0 };
-      for (const a of ecosystem.animals) made[a.type]++;
+      const made = populationMade();
       const out = [];
-      if (made.human) out.push(`${fmt(made.human)} people, each with a two-lobe brain`);
+      if (made.human) out.push(peopleText(made));
       if (made.coyote) out.push(`${fmt(made.coyote)} coyotes`);
       if (made.deer) out.push(`${fmt(made.deer)} deer`);
       out.push(`${fmt(ecosystem.plants.length)} plants`);

@@ -528,6 +528,19 @@ export const SPECIES = {
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
+// PEOPLE WITHOUT BRAINS: a share of people, rolled at spawn and at birth, run the deer and coyote rules (thinkDeer)
+// instead of a learning brain, hunting `food` as a coyote does. Some of them carry a gun with endless rounds; an armed
+// one never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
+export const RULE_PEOPLE = {
+  share: 0.1,           // of people, with no brain
+  food: 'deer',         // the species they hunt for food
+  armedShare: 0.5,      // of the people with no brain, carrying a gun
+  weapon: 'glock19',    // WEAPONS entry for its bullets
+  rangeM: 40,           // a target in sight within this is shot at
+  shotS: 0.8,           // seconds between shots
+  spreadRad: 0.02,      // aim error each way, radians
+  foeS: 30              // seconds an attacker stays its target after its last hit
+};
 
 // BODY PERFORMANCE: reference body is NPC_REF_BMI at the base lean index.
 export const NPC_REF_BODY_FAT = Object.fromEntries(Object.keys(NPC_REF_BMI).map(sex =>
@@ -1056,10 +1069,10 @@ export const ICON_STYLE = {
 };
 // one icon's svg around its shapes
 const iconSvg = body => '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">' + body + '</svg>';
-// a pistol side view, muzzle right: slide with sights, frame and raked grip, trigger guard
+// a pistol side view, muzzle right: slide with sights, frame and grip raked back (bottom toward the rear), trigger guard
 const ICON_GUN = '<rect x="2" y="7.2" width="20" height="4.6" rx="0.9"/>' +
   '<rect x="2.7" y="6.1" width="1.5" height="1.3"/><rect x="19.6" y="6.1" width="1.4" height="1.3"/>' +
-  '<path opacity="0.75" d="M4.8 11.8 H16.4 L15.8 13.4 H12.6 Q12.6 16.4 10.2 16.4 L10.9 15.1 Q11.4 14.9 11.4 13.4 H9.3 L10.6 20.2 Q10.8 21.3 9.7 21.3 H6.9 Q6 21.3 5.8 20.4 L4.6 13.4 Z"/>';
+  '<path opacity="0.75" d="M4.8 11.8 H16.4 L15.8 13.4 H12.6 Q12.6 16.4 10.2 16.4 L10.9 15.1 Q11.4 14.9 11.4 13.4 H9.3 L8.0 20.2 Q7.8 21.3 6.9 21.3 H4.1 Q3.2 21.3 3.4 20.2 L4.6 13.4 Z"/>';
 // an arrow at x, down (holster) or up (draw)
 const ICON_ARROW = (x, down) => down
   ? `<path d="M${x} 3 V12 M${x - 2.2} 9.8 L${x} 12 L${x + 2.2} 9.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
@@ -1116,6 +1129,7 @@ export const SURVIVOR_CONFIG = {
   plantShare: 0.01,                 // player's share of a plant bite's nutrition
   meatDeerShare: 0.1,               // meat feeds this share of an adult buck kill
   flash: { minDamage: 0.5, maxOpacity: 0.3, fullAtDamage: 20, fadeS: 0.9 },   // damage edge for hits of minDamage+
+  bodyEmptyShare: 0.3,              // share of dead people with nothing on them (game.loot); the rest carry one box draw
   // INVENTORY: each kind names its action; `loot` is its weight in a box and on a dead person; `icon` is ICONS markup or emoji text.
   inventory: {
     keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot
@@ -1148,7 +1162,8 @@ export const SURVIVOR_CONFIG = {
     fall: 'Fell to your death',
     coyote: 'Killed by a coyote',
     starving: 'Starved',
-    parched: 'Died of thirst'
+    parched: 'Died of thirst',
+    human: 'Shot by a person'   // armed people without brains (RULE_PEOPLE) are the only people who hurt the player
   }
 };
 

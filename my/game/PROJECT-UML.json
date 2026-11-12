@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-12T07:18:40.289Z",
+ "generated": "2026-11-12T09:06:46.720Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -555,6 +555,7 @@
     "1-config.js#NPC_BODY_SHAPE",
     "1-config.js#NPC_REF_MASS_KG",
     "1-config.js#SPECIES",
+    "1-config.js#RULE_PEOPLE",
     "1-config.js#NPC_TYPE_IDS",
     "1-config.js#HUMAN_CROUCH",
     "1-config.js#HUMAN_LEAN",
@@ -937,6 +938,21 @@
    ],
    "methods": []
   },
+  "1-config.js#RULE_PEOPLE": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "share: number",
+    "food: string",
+    "armedShare: number",
+    "weapon: string",
+    "rangeM: number",
+    "shotS: number",
+    "spreadRad: number",
+    "foeS: number"
+   ],
+   "methods": []
+  },
   "1-config.js#NPC_TYPE_IDS": {
    "kind": "object",
    "visibility": "+",
@@ -1087,6 +1103,7 @@
     "plantShare: number",
     "meatDeerShare: number",
     "flash: object",
+    "bodyEmptyShare: number",
     "inventory: object",
     "injuries: object",
     "craft: object",
@@ -2721,6 +2738,13 @@
     "rayMateDist: number",
     "brain: SpikingNetwork|null",
     "ACTION_HOLD: number",
+    "gun: unknown|null",
+    "food: unknown",
+    "foodId: number",
+    "prey: null|unknown",
+    "foe: null|unknown",
+    "foeUntil: number",
+    "nextShotAt: number",
     "actionTimer: number",
     "heading: number",
     "targetHeading: number",
@@ -2804,6 +2828,9 @@
     "static preyAhead(s, d2, sB, dB): boolean",
     "move(): void",
     "update(now, grid): void",
+    "shootTarget(now): null|unknown",
+    "canShoot(t): boolean",
+    "shootStep(now): void",
     "learnFromLastDecision(): void",
     "attacked(predator): void",
     "takeHit(attacker, damage, feeds?: boolean): void",
@@ -2890,9 +2917,10 @@
    "methods": [
     "+constructor(eco)",
     "clear(): void",
-    "fire(shooter, x, y, z, dx, dy, dz, gun, hurts): void",
+    "fire(shooter, x, y, z, dx, dy, dz, gun, hurts, feeds?: boolean): void",
+    "static centreY(t): number",
     "surfaceAt(x, z): number",
-    "cast(ax, ay, az, bx, by, bz, out?: object): object",
+    "cast(ax, ay, az, bx, by, bz, out?: object, skip?: null): object",
     "zoneOf(a, ax, ay, az, dx, dy, dz, t, feet, now): string|null",
     "step(): void",
     "strike(b, body, zone): void"
@@ -4398,6 +4426,8 @@
     "-setBusy(on): void",
     "-measureFps(): Promise",
     "-finishLoad(provider, autoGraphics?: boolean): Promise<void>",
+    "-populationMade(): object",
+    "-peopleText(m): string",
     "-loadWilderness(seed): Promise<void>",
     "-loadPlace(query): Promise<void>",
     "-newEcosystem(): void",
@@ -5023,7 +5053,6 @@
     "HUNTED_BY_MASK",
     "NIGHT_PREY_MASK",
     "HUNTS_LIST",
-    "FOOD_TYPE_ID",
     "WATER_SIGHT_CELL",
     "HUMAN_FACE_VARIANTS",
     "HUMAN_OUTFITS",
@@ -5073,7 +5102,11 @@
     "BULLET_DOWN_HIT_M",
     "HIT_DAMAGE",
     "HIT_ZONES",
-    "CARRION_MASK"
+    "CARRION_MASK",
+    "RULE_PEOPLE",
+    "WEAPONS",
+    "PLAYER_HEIGHT",
+    "PLAYER_RADIUS"
    ]
   },
   {
@@ -5090,7 +5123,8 @@
     "SpatialGrid",
     "ContactGrid",
     "tools",
-    "perfProbe"
+    "perfProbe",
+    "sound"
    ]
   },
   {
@@ -6222,7 +6256,17 @@
   },
   {
    "from": "7b-sim.js#Animal",
+   "to": "1-config.js#RULE_PEOPLE",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
    "to": "7a-ml.js#SpikingNetwork",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "1-config.js#WEAPONS",
    "type": "uses"
   },
   {
@@ -6243,6 +6287,16 @@
   {
    "from": "7b-sim.js#Animal",
    "to": "5-collision.js#occ",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "7b-sim.js#Projectiles",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "2-core.js#sound",
    "type": "uses"
   },
   {

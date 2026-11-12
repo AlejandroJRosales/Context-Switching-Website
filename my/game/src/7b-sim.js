@@ -14,16 +14,17 @@ import {
   NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
   NPC_SOMATOTYPES, LB_PER_KG, M_PER_IN, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
   NPC_LEAN_PER_MESO, NPC_LEAN_PER_ECTO, NPC_BODY_TYPE_HERITABILITY, NPC_BODY_HERITABILITY, NPC_BODY_TRAITS, NPC_BODY_POP, SPECIES, NPC_TYPE_IDS, NPC_TYPE_COUNT, HUNTS_MASK,
-  HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, FOOD_TYPE_ID, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
+  HUNTED_BY_MASK, NIGHT_PREY_MASK, HUNTS_LIST, WATER_SIGHT_CELL, HUMAN_FACE_VARIANTS,
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
   NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
   BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, GAME_START_HOUR, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S,
-  BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK
+  BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK,
+  RULE_PEOPLE, WEAPONS, PLAYER_HEIGHT, PLAYER_RADIUS
 } from './1-config.js';
 import {
-  cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe
+  cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe, sound
 } from './2-core.js';
 import {
   scene
@@ -561,8 +562,16 @@ export class Animal extends Entity {
     this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 1;
     this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
-    this.brain = spec.brain ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
-    this.ACTION_HOLD = spec.brain ? 60 : DEER_THINK_TICKS;
+    // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): a person may run the deer and coyote rules, and may carry a gun
+    const ruled = type === 'human' && Math.random() < RULE_PEOPLE.share;   // true: no brain, the rule AI
+    this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
+    this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
+    this.gun = ruled && Math.random() < RULE_PEOPLE.armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
+    this.food = ruled ? RULE_PEOPLE.food : spec.food;   // what the rule AI seeks to eat: a species, 'plant' or null
+    this.foodId = NPC_TYPE_IDS[this.food] ?? -1;        // its type id, -1 for plants or nothing
+    this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
+    this.foe = null; this.foeUntil = 0;                 // ARMED: the last attacker and until when it is a target
+    this.nextShotAt = 0;                                // ARMED: sim time the next shot may go
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
     // City: heading in radians; people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
@@ -894,7 +903,7 @@ export class Animal extends Entity {
     else if (best === 'mate') { this.focusX = this.memMateX; this.focusZ = this.memMateZ; }
 
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
-    const chase = best === 'hunt' || (best === 'food' && this.spec.food !== 'plant');
+    const chase = best === 'hunt' || (best === 'food' && this.food !== 'plant');
     this.sprinting = chase || (best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST);
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
     this.bumpScale = 1;
@@ -985,10 +994,10 @@ export class Animal extends Entity {
     this.hasPredator = this.hasFood = this.hasWater = this.hasMate = false;
     this.avoidNeed = 0;
     this.quarry = null;
-    const food = this.spec.food, tid = this.typeId, sex = this.sex;
+    const food = this.food, tid = this.typeId, sex = this.sex;
     // at night, night prey is quarry even if fled by day
     const quarryMask = ecosystem.night ? NIGHT_PREY_MASK[tid] : 0;
-    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = FOOD_TYPE_ID[tid];
+    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask, foodId = this.foodId;
     const needP = huntedBy !== 0, needQ = quarryMask !== 0;
     // food and night prey in one pick; no early stop, as smaller prey may lie farther
     const needT = (food !== null && food !== 'plant') || needQ;
@@ -1081,6 +1090,7 @@ export class Animal extends Entity {
       sT = s; bT = d2; kT = key; oT = obj;
     }
     // the pick shows as the food ray; night prey is hunted, food chased when hunger leads
+    this.prey = oT;
     if (oT) {
       if (oT === gp || (quarryMask & (1 << oT.typeId)) !== 0) this.quarry = oT;
       this.seen(1, oT.position.x, oT.position.y, oT.position.z);
@@ -1253,6 +1263,38 @@ export class Animal extends Entity {
       this.actionTimer = this.ACTION_HOLD;
     }
     this.move();
+    if (this.gun !== null) this.shootStep(now);
+  }
+
+  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else the prey being chased;
+  // either only when alive, within rangeM and in sight.
+  shootTarget(now) {
+    if (now < this.foeUntil && this.canShoot(this.foe)) return this.foe;
+    if (this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
+    return null;
+  }
+  canShoot(t) {
+    if (t === null || !t.alive) return false;
+    const dx = t.position.x - this.position.x, dz = t.position.z - this.position.z, r = RULE_PEOPLE.rangeM;
+    return dx * dx + dz * dz <= r * r && this.inSight(t.position.x, t.position.y, t.position.z);
+  }
+
+  // ARMED PEOPLE: one shot per shotS from the eye at the target's body centre, off by up to spreadRad each way, with the
+  // gun's sound. A kill feeds the shooter, as a coyote's bite does.
+  shootStep(now) {
+    if (now < this.nextShotAt || this.isDown(now)) return;
+    const t = this.shootTarget(now);
+    if (t === null) return;
+    const ex = this.position.x, ey = this.eyeY(), ez = this.position.z;
+    const dx = t.position.x - ex, dy = Projectiles.centreY(t) - ey, dz = t.position.z - ez, len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return;
+    const S = RULE_PEOPLE.spreadRad;
+    const yaw = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * S, pitch = Math.asin(dy / len) + (Math.random() * 2 - 1) * S;
+    this.faceToward(t.position.x, t.position.z, 1);
+    ecosystem.projectiles.fire(this, ex, ey, ez, Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch),
+      this.gun, true, true);
+    sound.emit('gunshot', ex, ey, ez, this);
+    this.nextShotAt = now + RULE_PEOPLE.shotS;
   }
 
   // Reward: mean health, food and water gained, clipped to [-1, 1].
@@ -1291,6 +1333,10 @@ export class Animal extends Entity {
   // A fleeing species answers a hit with its move, then runs; once per fleeS.
   answerHit(attacker) {
     const move = NPC_FIGHT_MOVES[this.type], now = ecosystem.time;
+    if (this.gun !== null && attacker !== this) {   // shot back; a car hit came from its driver, the player
+      this.foe = attacker.type === 'car' ? ecosystem.avatar : attacker;
+      this.foeUntil = now + RULE_PEOPLE.foeS;
+    }
     if (!move.flees || now < this.fleeUntil) return;
     this.faceToward(attacker.position.x, attacker.position.z, -1);
     startFightMove(this, move, now);
@@ -1441,7 +1487,7 @@ export class Animal extends Entity {
     if (child.look) inheritHumanLook(child.look, this.look, partner.look);
     child.setBodyRates();   // speed and look are final from here
 
-    if (this.brain && partner.brain) {
+    if (child.brain && this.brain && partner.brain) {   // a child rolled brainless (RULE_PEOPLE) stays so
       const ParentBrain = Math.random() < 0.5 ? this.brain : partner.brain;
       // the parent's wiring, mutated; weights fresh
       const childMasks = brains.mutateMasks(ParentBrain.getMasks(), ParentBrain.inputDims,
@@ -1685,11 +1731,18 @@ class Projectiles {
 
   clear() { this.list.length = 0; }
 
-  // A bullet of `gun` from (x, y, z) along unit (dx, dy, dz); `hurts`: it costs a body health.
-  fire(shooter, x, y, z, dx, dy, dz, gun, hurts) {
+  // A bullet of `gun` from (x, y, z) along unit (dx, dy, dz); `hurts`: it costs a body health; `feeds`: a kill feeds the
+  // shooter (armed people; the player harvests instead). It never hits its shooter.
+  fire(shooter, x, y, z, dx, dy, dz, gun, hurts, feeds = false) {
     if (this.list.length >= BULLET_MAX) this.list.shift();
     const v = gun.muzzleMS;
-    this.list.push({ x, y, z, vx: dx * v, vy: dy * v, vz: dz * v, gun, drag: bulletDragPerM(gun), shooter, hurts, firedAt: this.eco.time });
+    this.list.push({ x, y, z, vx: dx * v, vy: dy * v, vz: dz * v, gun, drag: bulletDragPerM(gun), shooter, hurts, feeds, firedAt: this.eco.time });
+  }
+
+  // Where a shot at t aims: the middle of its body's height (the avatar's position is already its body centre).
+  static centreY(t) {
+    if (t === ecosystem.avatar) return t.position.y;
+    return t.position.y - t.footLift() * NPC_UNIT + t.bodyHeightM() / 2;
   }
 
   // Ground or water top at (x, z); -Infinity with no world.
@@ -1699,8 +1752,9 @@ class Projectiles {
     return _surf.base;
   }
 
-  // What segment a to b meets first: solids and building slabs, the ground and water, the car, live bodies.
-  cast(ax, ay, az, bx, by, bz, out = this._hit) {
+  // What segment a to b meets first: solids and building slabs, the ground and water, the car, live bodies (the avatar
+  // while it is alive). `skip`: a body it passes through (the shooter's own).
+  cast(ax, ay, az, bx, by, bz, out = this._hit, skip = null) {
     const eco = this.eco, dx = bx - ax, dy = by - ay, dz = bz - az;
     let best = segmentHit(ax, ay, az, bx, by, bz), body = null, zone = null;
     // ground and water tops, sampled; the crossing is placed between the samples
@@ -1721,13 +1775,23 @@ class Projectiles {
       const nq = eco.animalGrid.queryInto(this._q, ax + dx / 2, az + dz / 2, reach);
       for (let i = 0; i < nq; i++) {
         const a = this._q[i];
-        if (!a.alive) continue;
+        if (!a.alive || a === skip) continue;
         const feet = a.position.y - a.footLift() * NPC_UNIT;
         const top = feet + (a.isDown(now) ? BULLET_DOWN_HIT_M : a.bodyHeightM());
         const t = cylinderHit(ax, ay, az, dx, dy, dz, a.position.x, a.position.z, r, feet, top);
         if (!(t < best)) continue;
         const z = this.zoneOf(a, ax, ay, az, dx, dy, dz, t, feet, now);
         if (z !== null) { best = t; body = a; zone = z; }
+      }
+    }
+    // the avatar: a PLAYER_RADIUS column PLAYER_HEIGHT tall about its body centre, zoned by height as a person's
+    const av = eco.avatar;
+    if (av && av.alive && av !== skip) {
+      const feet = av.position.y - PLAYER_HEIGHT / 2;
+      const t = cylinderHit(ax, ay, az, dx, dy, dz, av.position.x, av.position.z, PLAYER_RADIUS, feet, feet + PLAYER_HEIGHT);
+      if (t < best) {
+        const Z = HIT_ZONES.human, share = (ay + dy * t - feet) / PLAYER_HEIGHT;
+        best = t; body = av; zone = share < Z.limbBelow ? 'limb' : share >= Z.headAbove ? 'head' : 'body';
       }
     }
     out.t = best; out.body = body; out.zone = zone;
@@ -1762,7 +1826,7 @@ class Projectiles {
       const keep = 1 / (1 + b.drag * Math.hypot(b.vx, b.vy, b.vz) * dt);
       b.vx *= keep; b.vy = b.vy * keep - BULLET_G * dt; b.vz *= keep;
       const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt, nz = b.z + b.vz * dt;
-      this.cast(b.x, b.y, b.z, nx, ny, nz, hit);
+      this.cast(b.x, b.y, b.z, nx, ny, nz, hit, b.shooter);
       if (hit.t <= 1) { if (hit.body) this.strike(b, hit.body, hit.zone); L.splice(i, 1); continue; }
       b.x = nx; b.y = ny; b.z = nz;
       if (now - b.firedAt > b.gun.flightS || nx < eco.minX || nx > eco.maxX || nz < eco.minZ || nz > eco.maxZ) L.splice(i, 1);
@@ -1773,7 +1837,7 @@ class Projectiles {
   // of the body's full health (HIT_DAMAGE).
   strike(b, body, zone) {
     const hit = Ecosystem.impact(b.gun.bulletKg, body.bodyMassKg(), Math.hypot(b.vx, b.vy, b.vz));
-    this.eco.applyHit(body, b.shooter, b.hurts ? HIT_DAMAGE[zone] * body.maxHealth : 0, hit.pushN, false);
+    this.eco.applyHit(body, b.shooter, b.hurts ? HIT_DAMAGE[zone] * body.maxHealth : 0, hit.pushN, b.feeds);
   }
 }
 
@@ -2005,7 +2069,8 @@ export class Ecosystem {
 
       const down = a.isDown(now);
       // one neighbour pass for hunting and bumping; hunts is 0 when down or preyless
-      const hunts = !down && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
+      // an armed person (RULE_PEOPLE) attacks only by shooting (shootStep), so it strikes nothing on contact
+      const hunts = !down && a.gun === null && this.canHuntById[a.typeId] ? HUNTS_MASK[a.typeId] : 0, abit = 1 << a.typeId;
       // BUMPING: this tick's velocity (vel), as a was when its pass began. Taken on first use, before a's first strike
       // or bump: until then the pass only reads, so it is the same as taking it here, and a pass with neither (most
       // animals) skips groundSpeed. velocityTaken: vel holds a's.
