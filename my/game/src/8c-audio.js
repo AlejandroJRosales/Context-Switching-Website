@@ -1,15 +1,15 @@
 // 8c-audio.js: AUDIO. The Web Audio backend behind core's `sound` port: one AudioContext, one shared noise buffer, a master
 // gain into a DynamicsCompressor, a voice manager, the car's engine loop, and the listener on the camera.
 // Owns: audio (unlock, setEnabled, update, emit). May import: 1-config.js, 1b-sound-models.js, 2-core.js, three.
-// Playback only: it reads emitting bodies (bodyMassKg, the car's speed) and never writes them, so sound on or off, and any
+// Playback only: it reads emitting bodies (bodyMassKg, the car's gas share) and never writes them, so sound on or off, and any
 // voice cap, leaves every creature's behaviour, update rate and precision unchanged. Main calls unlock in the start tap
 // (iOS needs the context created or resumed inside a user gesture), setEnabled from the Sound switch and chip (also taps),
 // update each frame, and points sound.emit at audio.emit.
 //
 // Models are fitted to recordings (tools/sound/fit_models.py) and played as written in 1b-sound-models.js:
 //   bandModel (one-shots): shared noise -> one bandpass per band -> a gain following that band's fitted envelope -> sum.
-//   engineLoop (the car): harmonics of the firing rate (one oscillator) + noise bands pulsed at the firing rate; speed
-//   raises the firing rate up to revMaxRatio x idle and the loudness by (rate ratio)^levelExponent.
+//   engineLoop (the car): harmonics of the firing rate (one oscillator) + noise bands pulsed at the firing rate; the gas
+//   share raises the firing rate up to revMaxRatio x idle and the loudness by (rate ratio)^levelExponent.
 // Voices: each one-shot builds its nodes when it starts and lets them go when it ends, rather than keeping chains alive,
 // because a kept chain's filters run every audio frame even while silent. The voice cap (SOUND.voices, per Graphics
 // quality) bounds how many exist at once; a new sound louder at the listener than the quietest playing one steals it.
@@ -171,7 +171,7 @@ export const audio = {
     E.idleAtS = handover; E.fadeInS = C.startToIdleFadeS;
   },
 
-  // Every frame while the player drives: the loop follows the car's position and |speed|. With no loop and no start pending
+  // Every frame while the player drives: the loop follows the car's position and gas share. With no loop and no start pending
   // (sound turned on mid-drive), the loop starts now with a short fade-in.
   carEngine(x, y, z, car) {
     const C = SOUND.car, E = this.engine, now = this.ctx.currentTime;
@@ -180,7 +180,7 @@ export const audio = {
       if (E.idleAtS < 0) { E.idleAtS = now; E.fadeInS = C.lateIdleFadeS; }
       if (now + 0.05 >= E.idleAtS) { E.loop = this.engineLoop(Math.max(now, E.idleAtS), E.fadeInS); E.idleAtS = -1; }
     }
-    if (E.loop) E.loop.follow(x, y, z, Math.abs(car.speed), now);
+    if (E.loop) E.loop.follow(x, y, z, car.gasShare, now);
   },
 
   // The player got out: the loop fades as the shutdown sound starts.
@@ -254,7 +254,7 @@ export const audio = {
     return lastS;
   },
 
-  // The car's engine loop from `when`, fading in over fadeInS. Returns { follow(x, y, z, speedMps, at), stop(at, fadeS) }.
+  // The car's engine loop from `when`, fading in over fadeInS. Returns { follow(x, y, z, gasShare, at), stop(at, fadeS) }.
   engineLoop(when, fadeInS) {
     const ctx = this.ctx, C = SOUND.car, m = SOUND_MODELS[C.idleModel];
     const fade = ctx.createGain();         // fade in and out
@@ -307,16 +307,15 @@ export const audio = {
     src.start(when, rand() * this.noise.duration); wanderSrc.start(when, rand() * this.noise.duration);
 
     return {
-      follow(x, y, z, speedMps, at) {
+      follow(x, y, z, gasShare, at) {
         if (pan.positionX) { pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z; }
         else pan.setPosition(x, y, z);
-        const r = C.speedRangeMps, t = Math.min(1, Math.max(0, (speedMps - r[0]) / (r[1] - r[0])));
-        const ratio = 1 + (m.revMaxRatio - 1) * t;   // firing rate / idle rate
+        const ratio = 1 + (m.revMaxRatio - 1) * gasShare;   // firing rate / idle rate
         if (Math.abs(ratio - ratioSet) < 1e-3) return;
         ratioSet = ratio;
-        harm.frequency.setTargetAtTime(m.idleHz * ratio, at, C.speedSmoothS);
-        pulse.frequency.setTargetAtTime(m.idleHz * ratio, at, C.speedSmoothS);
-        level.gain.setTargetAtTime(Math.pow(ratio, m.levelExponent), at, C.speedSmoothS);
+        harm.frequency.setTargetAtTime(m.idleHz * ratio, at, C.gasSmoothS);
+        pulse.frequency.setTargetAtTime(m.idleHz * ratio, at, C.gasSmoothS);
+        level.gain.setTargetAtTime(Math.pow(ratio, m.levelExponent), at, C.gasSmoothS);
       },
       stop(at, fadeS) {
         // hold whatever the fade-in has reached at `at`, then ramp to 0

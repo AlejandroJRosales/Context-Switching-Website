@@ -1422,7 +1422,7 @@ function chooseMode() {
 }
 
 // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true };
+const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, zombies: true, armed: false };
 for (const el of document.querySelectorAll('#more .switch')) {
   if (el.dataset.opt === 'city') continue;   // the City switch picks the world (setMode), not a build option
   el.addEventListener('click', () => {

@@ -577,7 +577,8 @@ export class Animal extends Entity {
     const ruled = type === 'human' && Math.random() < RULE_PEOPLE.share;   // true: no brain, the rule AI
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
-    this.gun = ruled && Math.random() < RULE_PEOPLE.armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
+    const armedShare = ecosystem.allRuleArmed ? 1 : RULE_PEOPLE.armedShare;   // the Armed switch arms every rule person
+    this.gun = ruled && Math.random() < armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
@@ -1944,6 +1945,7 @@ export class Ecosystem {
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
+    this.allRuleArmed = false; // the world's Armed switch (provider.opts.armed): every rule person carries a gun
 
     this._qPlant = [];
     this._qWater = [];
@@ -2020,12 +2022,13 @@ export class Ecosystem {
     this.waterSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
     for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
     foodBoxes.buildSight(spanX, spanZ);
+    this.allRuleArmed = provider.opts?.armed === true;   // read by Animal's constructor, at spawn and birth
 
     occ.build();
     const plan = provider.population();
     for (const g of plan) if (g.type === 'plant') for (let i = 0; i < g.count; i++) this.spawnPlant(g.src);
     for (const g of plan) if (g.type !== 'plant') this.spawn(g.type, g.count, g.src);
-    if (!provider.drive) this.startOutbreak();   // the intro drives its own walkers
+    if (!provider.drive && provider.opts?.zombies === true) this.startOutbreak();   // the Zombies switch; the intro drives its own walkers
     this.ready = true;
     this.shownPop = -1;
   }

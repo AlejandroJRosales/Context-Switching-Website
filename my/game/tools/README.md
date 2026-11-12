@@ -87,6 +87,22 @@ Parts, one page load each:
 
 When a test moves an animal it also sets `_fx` and `_fz`, so the contact search's drift stays small. Headless SwiftShader runs this world at about 2 sim ticks a second, so 10 s of sim time takes about 5 real minutes. The 10 s turn tests can time out there and need a faster machine. Run one part at a time, never in parallel with another browser check.
 
+## checks/features.mjs: world switches, gun loot and the slot menu
+
+```
+node tools/checks/features.mjs <rootDir> [--three <local three dir>]
+```
+
+One Survivor page load, with Zombies off and All rule people armed on (`openGame`'s `switches`). It checks:
+
+- no zombies, and the loading line's zombie count is 0
+- every rule person carries a gun
+- an armed person shoots a coyote it sees, without fleeing
+- gun loot: 4,000 direct `game.loot` calls on armed bodies give the gun with 1 to 30 rounds, magazine first, with a mean matching the 5% falloff
+- the slot menu through real key presses and taps: open, use, holster, drop
+
+Each test is capped at 3 minutes like `zombies.mjs`.
+
 ## checks/listeners.mjs: listener order
 
 ```

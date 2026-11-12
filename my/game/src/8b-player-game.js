@@ -17,7 +17,7 @@ import {
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
-  CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON,
+  CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON, RULE_PEOPLE,
   GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE, SOUND
 } from './1-config.js';
 import { SOUND_MODELS } from './1b-sound-models.js';
@@ -973,7 +973,7 @@ const SURVIVOR_FIELD_ACTIONS = {
     find: (g, x, feet, z) => g.inventory.includes(null) ? g.carcassInReach(x, feet, z) : null,
     run: (g, body) => g.butcher(body)
   },
-  // a dead person, searched once: nothing (bodyEmptyShare), else one item drawn like a box's contents (rollLoot)
+  // a dead person, searched once: an armed one's gun, else nothing (bodyEmptyShare), else one item drawn like a box's contents
   loot: {
     label: 'Loot',
     icon: ICONS.harvest,
@@ -1033,6 +1033,28 @@ function slotButton(key, craft) {
 const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
 const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
 document.getElementById('slots').prepend(...slotEls, craftEl);   // before the injuries badge
+// SLOT MENU: an open slot's two choices, use (the item's verb) and drop, each with its menu key (game.draw fills it)
+function menuButton(key) {
+  const b = document.createElement('button'), kbd = document.createElement('kbd');
+  kbd.textContent = slotKeyLabel(key);
+  b.append(kbd, document.createElement('span'));
+  return b;
+}
+const slotMenuEl = document.getElementById('slotMenu');
+const menuUseEl = menuButton(SURVIVOR_CONFIG.inventory.menuKeys.use), menuDropEl = menuButton(SURVIVOR_CONFIG.inventory.menuKeys.drop);
+menuDropEl.querySelector('span').textContent = 'Drop';
+slotMenuEl.append(menuUseEl, menuDropEl);
+// GUN LOOT: the inventory kind of the gun armed rule people carry (RULE_PEOPLE.weapon)
+const RULE_GUN_KIND = Object.keys(SURVIVOR_CONFIG.inventory.items).find(k => SURVIVOR_CONFIG.inventory.items[k].weapon === RULE_PEOPLE.weapon);
+// A dead armed person's rounds: 1 to lootRounds.max, each count nextShare as likely as the count below it.
+function rollLootRounds() {
+  const { max, nextShare } = RULE_PEOPLE.lootRounds;
+  let total = 0;
+  for (let n = 1; n <= max; n++) total += nextShare ** (n - 1);
+  let roll = Math.random() * total;
+  for (let n = 1; n <= max; n++) { roll -= nextShare ** (n - 1); if (roll < 0) return n; }
+  return max;
+}
 const injuriesEl = document.getElementById('injuries');
 const hurtFlashEl = document.getElementById('hurtflash');
 const runOverEl = document.getElementById('runover');
@@ -1069,7 +1091,8 @@ export const game = {
   _lastHour: null,
   _q: [], _qp: [], _qb: [], _qBump: [],
   _bumpX: NaN, _bumpZ: NaN,   // position at the last bumpAnimals, for velocity
-  _shown: -1, _shownCar: -2, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null,
+  _shown: -1, _shownCar: -2, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null, _shownMenu: '',
+  menuSlot: -1,           // SLOT MENU: the slot whose menu is open, -1 for none
   // WEAPON in hand: an item with `mag` and `reserve` rounds (a Survivor slot's, or Observer's Weapon chip's), or null
   weapon: null,
   weaponChoice: false,    // Observer's Weapon chip: its gun in hand in Observer, carried into Survivor in a slot and in hand
@@ -1141,6 +1164,7 @@ export const game = {
     if (this.on) this.applyWeaponChoice();   // a new run starts with the chosen gun
     this.injuries.clear();
     this.fieldHeld = null;
+    this.menuSlot = -1;
     this.run = { hours: 0, eaten: {}, cause: null };
     this._lastHour = null;
     Object.assign(this, GAME_CLOCKS);
@@ -1548,12 +1572,17 @@ export const game = {
     return this.corpseInReach(px, feet, pz, c => c.typeId === HUMAN_TYPE_ID && !lootedBodies.has(c));
   },
 
-  // A dead person searched: nothing with bodyEmptyShare, else one item drawn like a box's (rollLoot) into the first free
-  // slot; the body stays, searched.
+  // A dead person searched: an armed one's gun with rollLootRounds rounds, else nothing with bodyEmptyShare, else one item
+  // drawn like a box's (rollLoot), into the first free slot; the body stays, searched.
   loot(body) {
     const free = this.inventory.indexOf(null);
     if (free < 0) return;
     lootedBodies.add(body);
+    if (body.gun !== null) {   // rounds fill the magazine first, the rest are reserve
+      const rounds = rollLootRounds(), mag = Math.min(rounds, body.gun.magazine);
+      this.inventory[free] = this.makeItem(RULE_GUN_KIND, { mag, reserve: rounds - mag });
+      return;
+    }
     if (Math.random() < SURVIVOR_CONFIG.bodyEmptyShare) return;
     this.inventory[free] = this.rollLoot();
   },
@@ -1595,6 +1624,9 @@ export const game = {
     this.inventory[free] = this.makeItem('crate');
   },
 
+  // An item's use verb: its action's, or Holster for the gun in hand.
+  verbOf(it) { return it === this.weapon ? 'Holster' : SURVIVOR_ACTIONS[SURVIVOR_CONFIG.inventory.items[it.kind].action].verb; },
+
   // Use slot i's item: a box opens, food is eaten, water drunk.
   useSlot(i) {
     const item = this.inventory[i];
@@ -1605,8 +1637,31 @@ export const game = {
     this.draw();
   },
 
+  // SLOT MENU: a slot's key or tap opens its menu, or closes it when it is already open; empty slots have none.
+  openMenu(i) {
+    if (!this.on || this.dead || !this.inventory[i]) return;
+    this.menuSlot = this.menuSlot === i ? -1 : i;
+    this.draw();
+  },
+  // SLOT MENU: the open slot's item used ('use') or dropped ('drop'), and the menu closed.
+  chooseMenu(choice) {
+    const i = this.menuSlot;
+    if (i < 0) return;
+    this.menuSlot = -1;
+    if (choice === 'use') this.useSlot(i); else this.dropSlot(i);
+    this.draw();
+  },
+  // Slot i's item gone from the inventory; a gun in hand leaves the hand first.
+  dropSlot(i) {
+    const item = this.inventory[i];
+    if (!item) return;
+    if (this.weapon === item) this.equip(null);
+    this.inventory[i] = null;
+  },
+
   die(cause) {
     this.dead = true;
+    this.menuSlot = -1;
     this.avatar.alive = false;
     this.run.cause = cause;
     const r = this.run, eaten = Object.entries(r.eaten);
@@ -1678,8 +1733,7 @@ export const game = {
         showIcon(el.querySelector('span'), item ? item.icon : '', ICON_STYLE.slotPx);
         el.querySelector('.rounds').textContent = roundsOf(it);
         el.disabled = !item;
-        const verb = it && it === this.weapon ? 'Holster' : item && SURVIVOR_ACTIONS[item.action].verb;   // an equipped gun's slot holsters it
-        el.setAttribute('aria-label', item ? `${verb} ${item.label.toLowerCase()}` : 'Empty slot');
+        el.setAttribute('aria-label', item ? `${this.verbOf(it)} ${item.label.toLowerCase()}` : 'Empty slot');
       });
       // inventory changes can free or fill a needed slot
       updateCarButton();
@@ -1688,6 +1742,14 @@ export const game = {
       showIcon(craftEl.querySelector('span'), made ? made.icon : '', ICON_STYLE.slotPx);
       craftEl.disabled = !made;
       craftEl.setAttribute('aria-label', made ? `Craft ${made.label.toLowerCase()}` : 'Nothing to craft');
+    }
+    if (this.menuSlot >= 0 && !this.inventory[this.menuSlot]) this.menuSlot = -1;   // its item is gone: the menu closes
+    const menu = this.menuSlot < 0 ? '' : `${this.menuSlot}|${slots}`;
+    if (menu !== this._shownMenu) {
+      this._shownMenu = menu;
+      slotMenuEl.hidden = this.menuSlot < 0;
+      slotEls.forEach((el, i) => el.classList.toggle('open', i === this.menuSlot));
+      if (this.menuSlot >= 0) menuUseEl.querySelector('span').textContent = this.verbOf(this.inventory[this.menuSlot]);
     }
     const hurt = [...this.injuries].join(',');
     if (hurt !== this._shownInjuries) {
@@ -1708,14 +1770,18 @@ export const game = {
 
 // BIND INVENTORY: slot keys and taps, the craft slot.
 export function bindInventory() {
-  // a slot's key or tap uses its item; the craft slot crafts
+  // a slot's key or tap opens its menu; with a menu open, the menu keys choose; the craft slot crafts
+  const M = SURVIVOR_CONFIG.inventory.menuKeys;
   addEventListener('keydown', e => {
     if (e.repeat || !play.active) return;
+    if (game.menuSlot >= 0 && (e.code === M.use || e.code === M.drop)) { game.chooseMenu(e.code === M.use ? 'use' : 'drop'); return; }
     const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
-    if (i >= 0) game.useSlot(i);
+    if (i >= 0) game.openMenu(i);
     else if (e.code === SURVIVOR_CONFIG.craft.key) game.craft();
   });
-  slotEls.forEach((el, i) => el.addEventListener('click', () => { game.useSlot(i); el.blur(); }));
+  slotEls.forEach((el, i) => el.addEventListener('click', () => { game.openMenu(i); el.blur(); }));
+  menuUseEl.addEventListener('click', () => { game.chooseMenu('use'); menuUseEl.blur(); });
+  menuDropEl.addEventListener('click', () => { game.chooseMenu('drop'); menuDropEl.blur(); });
   craftEl.addEventListener('click', () => { game.craft(); craftEl.blur(); });
 }
 
@@ -1971,7 +2037,7 @@ const useEl = document.getElementById('use');
 const CAR_START_S = SOUND_MODELS[SOUND.car.startModel].breakpointsMs.at(-1) / 1000;
 
 export const car = {
-  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; this.startLeftS = 0; },   // teardownWorld's entry
+  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; this.startLeftS = 0; this.gasShare = 0; },   // teardownWorld's entry
   startLeftS: 0,            // seconds until the engine has started (boardCar sets CAR_START_S); no throttle or steering until 0
   placed: false,
   health: CAR_MAX_HEALTH,   // a placed car starts full (setCar)
@@ -1979,6 +2045,7 @@ export const car = {
   wrecked() { return this.health <= 0; },   // no throttle or steering (carPhysics); it coasts to a stop
   x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
   speed: 0,        // m/s, negative in reverse
+  gasShare: 0,     // ENGINE SOUND only: 0 idle to 1 after SOUND.car.gasRiseS on the gas, back over gasFallS off it
   steer: 0,        // front wheel angle, rad, + left
   spin: 0,
   mesh: null, front: [], wheels: []
@@ -2676,6 +2743,7 @@ function enterCar() {
 function boardCar() {
   setPlayerInCar(true);
   car.startLeftS = CAR_START_S;   // counted with or without sound, so driving never depends on the Sound setting
+  car.gasShare = 0;
   sound.emit('carStart', car.x, car.y, car.z, car);
   stance.stand(); crouchY = 0;
   chaseCam.reset(car.yaw);
@@ -2729,7 +2797,6 @@ function toggleCar() {
 
 function driveStep(dt) {
   jumpQueued = false;
-  sound.emit('carEngine', car.x, car.y, car.z, car);   // every driving frame: the engine follows the car and its speed
 
   const starting = car.startLeftS > 0;   // the engine is still starting: no throttle or steering yet
   car.startLeftS = Math.max(0, car.startLeftS - dt);
@@ -2743,6 +2810,10 @@ function driveStep(dt) {
     if (pedal.brake) throttle -= 1;
     else if (pedal.gas) throttle += 1;
   }
+  // the gas held this frame (forward key or the gas pedal, the engine running): the engine sound's only input
+  const gasHeld = play.active && !starting && (keys.has('KeyW') || keys.has('ArrowUp') || (pedal.gas && !pedal.brake));
+  car.gasShare = Math.max(0, Math.min(1, car.gasShare + (gasHeld ? dt / SOUND.car.gasRiseS : -dt / SOUND.car.gasFallS)));
+  sound.emit('carEngine', car.x, car.y, car.z, car);   // every driving frame: the engine follows the car and its gas share
   throttle = Math.max(-1, Math.min(1, throttle));
   steer = Math.max(-1, Math.min(1, steer));
   carPhysics(dt, throttle, steer, play.active && keys.has('Space'));

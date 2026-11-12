@@ -11,8 +11,8 @@ const THREE_URL = 'https://unpkg.com/three@0.160.0/';
 const SETTLE_MS = 3000;   // after the page and after Go, as smoke.mjs's --fast waits
 export const WAIT_LIMIT_MS = 180000;   // one test's wait; past it the test is reported as timed out
 
-// Opens the game and loads the smallest wilderness; resolves once play has started. errors: script errors and crashes.
-export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, survivor = false }) {
+// Opens the game and loads the smallest wilderness; resolves once play has started. switches: More options to set { opt: on }.
+export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, survivor = false, switches = {} }) {
   const server = http.createServer((req, res) => {
     const file = path.join(path.resolve(rootDir), decodeURIComponent(new URL(req.url, 'http://x').pathname));
     if (!file.startsWith(path.resolve(rootDir)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
@@ -37,14 +37,18 @@ export async function openGame({ rootDir, pagePath = 'index.html', threeDir = nu
   });
   await page.goto(base + pagePath);
   await page.waitForTimeout(SETTLE_MS);
-  await page.evaluate(() => {
+  await page.evaluate(switches => {
+    for (const [opt, on] of Object.entries(switches)) {
+      const el = document.querySelector(`#more .switch[data-opt="${opt}"]`);
+      if (el.classList.contains('on') !== on) el.click();
+    }
     document.querySelector('.sizebtn[data-size="custom"]').click();
     const size = document.getElementById('size'), people = document.getElementById('people');
     size.value = size.min; people.value = people.min;
     const city = document.querySelector('#more .switch[data-opt="city"]');
     if (city.classList.contains('on')) city.click();
     document.getElementById('go').click();
-  });
+  }, switches);
   await page.waitForFunction(() => { const c = document.getElementById('choose'); return c && c.offsetParent !== null; }, null, { timeout: 0 });
   const loadText = await page.evaluate(() => document.getElementById('steps').textContent);
   await page.evaluate(mode => { document.getElementById(mode).click(); document.getElementById('chooseGo').click(); }, survivor ? 'chooseGame' : 'chooseObs');

@@ -523,7 +523,7 @@ export const NPC_REF_MASS_KG = {
 // SPECIES: per-type stats in Arena units; relation fields (hunts, carrion, shootsOnSight, crates...) name kinds (NPC_KINDS).
 export const SPECIES = {
   // carrion: the dead bodies (Ecosystem.corpses) a species eats on contact; the player harvests the human list's as meat
-  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
+  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true, coyote: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
   coyote: { brain: false, hunts: { deer: true, human: true }, carrion: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
@@ -553,14 +553,15 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 export const RULE_PEOPLE = {
   share: 0.1,           // of people, with no brain
   food: 'deer',         // the species they hunt for food
-  armedShare: 0.5,      // of the people with no brain, carrying a gun
+  armedShare: 0.5,      // of the people with no brain, carrying a gun (all of them with the Armed switch on)
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   shotS: 0.8,           // seconds between shots
   aimHoldS: 1.5,        // seconds the arms stay raised to aim after a shot, then back to low ready (drawn only)
   huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
   spreadRad: 0.02,      // aim error each way, radians
-  foeS: 30              // seconds an attacker stays its target after its last hit
+  foeS: 30,             // seconds an attacker stays its target after its last hit
+  lootRounds: { max: 30, nextShare: 0.95 }   // a dead armed person's gun holds 1 to max rounds, each one more nextShare as likely
 };
 
 // BODY PERFORMANCE: reference body is NPC_REF_BMI at the base lean index.
@@ -1162,7 +1163,8 @@ export const SURVIVOR_CONFIG = {
   bodyEmptyShare: 0.3,              // share of dead people with nothing on them (game.loot); the rest carry one box draw
   // INVENTORY: each kind names its action; `loot` is its weight in a box and on a dead person; `icon` is ICONS markup or emoji text.
   inventory: {
-    keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot
+    keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot; a slot's key or tap opens its menu
+    menuKeys: { use: 'Digit1', drop: 'Digit2' },   // with a slot's menu open: use the item, or drop it (gone)
     items: {
       crate: { icon: ICONS.box, label: 'Box', action: 'open' },
       water: { icon: ICONS.water, label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
@@ -1538,17 +1540,18 @@ export const SOUND = {
   stealFadeS: 0.01,                // a stolen voice fades out over this
   randomSeed: 1,                   // audio's own generator (noise, read points), so it never draws from the sim's Math.random
   // FOOTSTEPS: every walking body (people, animals, the player) on the one fitted step for now; heavier is louder
-  footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.35, releaseS: 0.03 },
+  footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.0125, releaseS: 0.03 },   // 25% under 1.35
   // GUNSHOT: the fitted Glock 19c shot, at the muzzle
   // GUNSHOTS carry far: full loudness within refM, then falling as refM / distance (SOUND.distance's law), so with
   // cullGain they are heard out to about refM / cullGain, ~330 m (every other sound uses SOUND.distance.refM, ~33 m)
   gun: { model: 'gunshot', outputGain: 1.0, releaseS: 0.05, refM: 10 },
-  // CAR: start on boarding, then the engine loop (idle, revving with speed), shutdown on getting out
+  // CAR: start on boarding, then the engine loop (idle, revving with seconds on the gas), shutdown on getting out
   car: {
     startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',
-    outputGain: 0.8,               // start, engine loop and shutdown
-    speedRangeMps: [0, 35],        // |speed| over this range takes the firing rate from idle to the model's revMaxRatio
-    speedSmoothS: 0.2,             // time constant of the firing rate and loudness following speed
+    outputGain: 0.4,               // start, engine loop and shutdown (half the former 0.8)
+    gasRiseS: 3,                   // seconds on the gas that take the firing rate and loudness from idle to revMaxRatio
+    gasFallS: 1.5,                 // seconds off the gas that bring them back to idle
+    gasSmoothS: 0.2,               // time constant of the firing rate and loudness following the gas share
     startToIdleFadeS: 0.3,         // the start fades out while the engine loop fades in over this
     idleToShutdownFadeS: 0.12,     // the engine loop fades out over this as the shutdown starts
     lateIdleFadeS: 0.3,            // engine loop fade-in when sound comes on mid-drive (no start sound to follow)
