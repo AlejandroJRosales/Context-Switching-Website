@@ -538,6 +538,8 @@ export const RULE_PEOPLE = {
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   shotS: 0.8,           // seconds between shots
+  aimHoldS: 1.5,        // seconds the arms stay raised to aim after a shot, then back to low ready (drawn only)
+  huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
   spreadRad: 0.02,      // aim error each way, radians
   foeS: 30              // seconds an attacker stays its target after its last hit
 };
@@ -1501,14 +1503,16 @@ export const SOUND = {
                                    // breakpoint gap but no finer than this
   voices: { high: 16, low: 8 },    // most sounds playing at once, per Graphics quality; the quietest is stolen
   panning: { high: 'HRTF', low: 'equalpower' },   // PannerNode panningModel per Graphics quality
-  distance: { model: 'inverse', refM: 1, rolloff: 1, maxM: 1000 },   // PannerNode distance law (the voice manager uses the same)
+  distance: { model: 'inverse', refM: 1, rolloff: 1, maxM: 1000 },   // PannerNode distance law (the voice manager uses the same); a sound may set its own refM
   cullGain: 0.03,                  // an emission quieter than this at the listener is not played
   stealFadeS: 0.01,                // a stolen voice fades out over this
   randomSeed: 1,                   // audio's own generator (noise, read points), so it never draws from the sim's Math.random
   // FOOTSTEPS: every walking body (people, animals, the player) on the one fitted step for now; heavier is louder
   footstep: { model: 'footstepWalk', massRangeKg: [10, 150], gainAtMinMass: 0.5, gainAtMaxMass: 1.0, outputGain: 1.35, releaseS: 0.03 },
   // GUNSHOT: the fitted Glock 19c shot, at the muzzle
-  gun: { model: 'gunshot', outputGain: 1.0, releaseS: 0.05 },
+  // GUNSHOTS carry far: full loudness within refM, then falling as refM / distance (SOUND.distance's law), so with
+  // cullGain they are heard out to about refM / cullGain, ~330 m (every other sound uses SOUND.distance.refM, ~33 m)
+  gun: { model: 'gunshot', outputGain: 1.0, releaseS: 0.05, refM: 10 },
   // CAR: start on boarding, then the engine loop (idle, revving with speed), shutdown on getting out
   car: {
     startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',

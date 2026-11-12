@@ -25,12 +25,13 @@ const rand = seededRandom(SOUND.randomSeed);
 
 // Gain at the listener of a unit source dist metres away, by the PannerNode's own law (Web Audio spec), so the voice
 // manager ranks and culls sounds by what the panner will actually play.
-function distanceGain(dist) {
+// The panner's gain at `dist` by SOUND.distance's law, with reference distance refM (the law's own, or a sound's).
+function distanceGain(dist, refM = SOUND.distance.refM) {
   const D = SOUND.distance;
-  const d = Math.min(Math.max(dist, D.refM), D.maxM);
-  if (D.model === 'linear') return 1 - D.rolloff * (d - D.refM) / (D.maxM - D.refM);
-  if (D.model === 'exponential') return Math.pow(d / D.refM, -D.rolloff);
-  return D.refM / (D.refM + D.rolloff * (d - D.refM));   // 'inverse'
+  const d = Math.min(Math.max(dist, refM), D.maxM);
+  if (D.model === 'linear') return 1 - D.rolloff * (d - refM) / (D.maxM - refM);
+  if (D.model === 'exponential') return Math.pow(d / refM, -D.rolloff);
+  return refM / (refM + D.rolloff * (d - refM));   // 'inverse'
 }
 
 // A fitted bandModel's envelopes resampled once (linear between breakpoints) at the model's smallest breakpoint gap, no
@@ -144,8 +145,8 @@ export const audio = {
     else if (type === 'carStop') this.carStop(x, y, z);
   },
 
-  // Gain at the listener of a source at (x, y, z) through the panner.
-  reachAt(x, y, z) { return distanceGain(Math.hypot(x - this.lx, y - this.ly, z - this.lz)); },
+  // Gain at the listener of a source at (x, y, z) through a panner with reference distance refM.
+  reachAt(x, y, z, refM) { return distanceGain(Math.hypot(x - this.lx, y - this.ly, z - this.lz), refM); },
 
   footstep(x, y, z, body) {
     const F = SOUND.footstep, reach = this.reachAt(x, y, z);
@@ -157,9 +158,9 @@ export const audio = {
   },
 
   gunshot(x, y, z) {
-    const G = SOUND.gun, heard = this.reachAt(x, y, z) * G.outputGain;
+    const G = SOUND.gun, heard = this.reachAt(x, y, z, G.refM) * G.outputGain;
     if (heard < SOUND.cullGain) return;
-    this.playBandModel(this.played[G.model], x, y, z, G.outputGain, heard, G.releaseS);
+    this.playBandModel(this.played[G.model], x, y, z, G.outputGain, heard, G.releaseS, G.refM);
   },
 
   // The player boarded: the start sound, then the engine loop takes over at its last breakpoint.
@@ -212,11 +213,12 @@ export const audio = {
     return true;
   },
 
-  // A panner at (x, y, z) into the master, set by SOUND.distance and the Graphics quality's panning model.
-  panner(x, y, z) {
+  // A panner at (x, y, z) into the master, set by SOUND.distance (reference distance refM) and the Graphics quality's
+  // panning model.
+  panner(x, y, z, refM = SOUND.distance.refM) {
     const D = SOUND.distance, p = this.ctx.createPanner();
     p.panningModel = this.high ? SOUND.panning.high : SOUND.panning.low;
-    p.distanceModel = D.model; p.refDistance = D.refM; p.rolloffFactor = D.rolloff; p.maxDistance = D.maxM;
+    p.distanceModel = D.model; p.refDistance = refM; p.rolloffFactor = D.rolloff; p.maxDistance = D.maxM;
     if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; }
     else p.setPosition(x, y, z);
     p.connect(this.master);
@@ -225,13 +227,14 @@ export const audio = {
 
   // A fitted bandModel at (x, y, z): noise -> bandpass per band -> fitted envelope -> gain -> panner -> master.
   // The release ramps `out`, not the envelopes: Chrome can start a curve late, and a ramp on the curve's param then throws.
+  // `refM`: its panner's reference distance (SOUND.distance's, or the sound's own, as the gun's).
   // Returns the context time of its last breakpoint (where its release begins), or -1 if no voice was free.
-  playBandModel(played, x, y, z, gain, priority, releaseS) {
+  playBandModel(played, x, y, z, gain, priority, releaseS, refM = SOUND.distance.refM) {
     if (!this.takeVoice(priority)) return -1;
     const ctx = this.ctx, now = ctx.currentTime;
     const out = ctx.createGain();
     out.gain.setValueAtTime(gain, now);
-    out.connect(this.panner(x, y, z));
+    out.connect(this.panner(x, y, z, refM));
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.loop = true;

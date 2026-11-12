@@ -21,7 +21,8 @@ import {
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
-  BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW, GUN_RELOAD, GUN_MAG
+  BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW, GUN_RELOAD, GUN_MAG,
+  RULE_PEOPLE
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, sound, footfallBetween
@@ -1279,6 +1280,19 @@ class AnimalRenderer {
       lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot was written for
     };
 
+    // ARMED PEOPLE (RULE_PEOPLE): a Glock (buildGunMesh) in each near armed person's gun hand, one instance each
+    const gun = buildGunMesh();
+    this.npcGuns = new THREE.InstancedMesh(gun.geometry, gun.material, this.MAX_INSTANCES);
+    this.npcGuns.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.npcGuns.castShadow = true;
+    this.npcGuns.frustumCulled = false;
+    this.npcGuns.count = 0;
+    this._gun = {   // placeNpcGun's scratch: gait and act copies, gait terms, hand, and the matrix's parts
+      gait: new Float32Array(4), act: new Float32Array(4), terms: {}, hand: {},
+      m: new THREE.Matrix4(), q: new THREE.Quaternion(), barrel: new THREE.Quaternion(),
+      p: new THREE.Vector3(), one: new THREE.Vector3(1, 1, 1)
+    };
+
     // FAR BILLBOARDS: looks in atlas order, people by outfit and sex, then each box rig's
     const looks = [];
     for (let outfit = 0; outfit < HUMAN_OUTFITS; outfit++) for (let female = 0; female < 2; female++) looks.push({ type: 'human', outfit, female: female === 1 });
@@ -1528,6 +1542,22 @@ class AnimalRenderer {
     attr.needsUpdate = true;
   }
 
+  // An armed person's gun at its gun hand (humanGunHand from the gait drawn this pass, as gunView.place does the
+  // player's), barrel along the forearm, turned and placed as the shader places the rig; written to npcGuns instance n.
+  // Returns the next free instance.
+  placeNpcGun(a, n, aim, kp, originY, gait, act, o) {
+    const S = this._gun;
+    for (let i = 0; i < 4; i++) { S.gait[i] = gait[o + i]; S.act[i] = act[o + i]; }
+    const h = humanGunHand(aim, 0, 0, -1, humanGaitTerms(S.gait, S.act, S.terms), a.look.shape.shoulder, S.hand);
+    S.barrel.setFromAxisAngle(this._xAxis, Math.atan2(Math.cos(h.angle), -Math.sin(h.angle)));
+    S.q.setFromAxisAngle(this._yAxis, a.facingAngle).multiply(S.barrel);
+    S.p.set(h.x * kp, h.y * kp, h.z * kp).applyAxisAngle(this._yAxis, a.facingAngle);
+    S.p.x += a.position.x; S.p.y += originY; S.p.z += a.position.z;
+    S.m.compose(S.p, S.q, S.one);
+    this.npcGuns.setMatrixAt(n, S.m);
+    return n + 1;
+  }
+
   // A person's gait from the ground covered: phase by distance over stride (render only).
   stepGait(a, deltaTime, kp) {
     const dx = a.position.x - a.gaitX, dz = a.position.z - a.gaitZ;
@@ -1549,6 +1579,8 @@ class AnimalRenderer {
   init() {
     const H = this.human;
     if (!H.mesh.parent) scene.add(H.mesh);
+    if (!this.npcGuns.parent) scene.add(this.npcGuns);
+    this.npcGuns.count = 0;
     H.lookOwner.fill(null);
     H.geometry.instanceCount = 0;
     H.mesh.visible = false;
@@ -1678,6 +1710,7 @@ class AnimalRenderer {
     const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, hShape = H.shape.array, hDown = H.down.array, owners = H.lookOwner;
     const now = ecosystem.time;
     let hn = 0, lookFrom = this.MAX_INSTANCES;
+    let gn = 0;   // armed people's guns placed this pass (npcGuns)
     let ragBones = false;   // a people ragdoll wrote bones this pass
     const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, bWidth = B.width.array, cardOwners = B.cardOwner;
     let bn = 0, cardFrom = B.max;
@@ -1762,6 +1795,13 @@ class AnimalRenderer {
         hPose[o] = a.position.x; hPose[o + 1] = originY; hPose[o + 2] = a.position.z; hPose[o + 3] = a.facingAngle;
         hGait[o] = kp; hGait[o + 1] = a.gaitPhase; hGait[o + 2] = a.gaitSwing; hGait[o + 3] = a.gaitRun;
         humanFightAct(a, now, hAct, o);
+        // ARMED (RULE_PEOPLE): the gun arm's pose, raised to aim for aimHoldS after a shot, else low ready; the gun in the
+        // hand while standing (a knocked-down body's arms leave the pose, so its gun is not drawn)
+        if (a.gun !== null && !corpse) {
+          const aim = now - a.lastShotAt < RULE_PEOPLE.aimHoldS ? 1 : 0;
+          hAct[o + 3] = humanGunPack(aim, 0, 0, 1, -1);
+          if (a.fall === null && downShare(a, now) === 0) gn = this.placeNpcGun(a, gn, aim, kp, originY, hGait, hAct, o);
+        }
         // knockdown: its sim fall in a ragdoll row and rise, else the lying pose
         const row = a.fall ? this.rowFor(a) : -1;   // -1: no fall, or every row taken
         if (row >= 0) {
@@ -1811,6 +1851,8 @@ class AnimalRenderer {
 
     H.geometry.instanceCount = hn;
     H.mesh.visible = hn > 0;
+    this.npcGuns.count = gn;
+    if (gn > 0) AnimalRenderer.queueUpload(this.npcGuns.instanceMatrix, 0, gn);
     if (hn > 0) {
       AnimalRenderer.queueUpload(H.pose, 0, hn);
       AnimalRenderer.queueUpload(H.gait, 0, hn);

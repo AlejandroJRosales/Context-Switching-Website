@@ -571,7 +571,7 @@ export class Animal extends Entity {
     this.foodId = NPC_TYPE_IDS[this.food] ?? -1;        // its type id, -1 for plants or nothing
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.foe = null; this.foeUntil = 0;                 // ARMED: the last attacker and until when it is a target
-    this.nextShotAt = 0;                                // ARMED: sim time the next shot may go
+    this.lastShotAt = -Infinity;                        // ARMED: sim time of its last shot (fire rate; drawn aim)
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
     // City: heading in radians; people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
@@ -1266,11 +1266,13 @@ export class Animal extends Entity {
     if (this.gun !== null) this.shootStep(now);
   }
 
-  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else the prey being chased;
-  // either only when alive, within rangeM and in sight.
+  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else the prey being chased
+  // once hunger reaches huntHungerShare (a kill feeds it, so it stops until hungry again); either only when alive, within
+  // rangeM and in sight.
   shootTarget(now) {
     if (now < this.foeUntil && this.canShoot(this.foe)) return this.foe;
-    if (this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
+    const hungry = this.foodNeed >= RULE_PEOPLE.huntHungerShare * NPC_NEED_FULL;   // true: hungry enough to hunt
+    if (hungry && this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
     return null;
   }
   canShoot(t) {
@@ -1282,7 +1284,7 @@ export class Animal extends Entity {
   // ARMED PEOPLE: one shot per shotS from the eye at the target's body centre, off by up to spreadRad each way, with the
   // gun's sound. A kill feeds the shooter, as a coyote's bite does.
   shootStep(now) {
-    if (now < this.nextShotAt || this.isDown(now)) return;
+    if (now < this.lastShotAt + RULE_PEOPLE.shotS || this.isDown(now)) return;
     const t = this.shootTarget(now);
     if (t === null) return;
     const ex = this.position.x, ey = this.eyeY(), ez = this.position.z;
@@ -1294,7 +1296,7 @@ export class Animal extends Entity {
     ecosystem.projectiles.fire(this, ex, ey, ez, Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch),
       this.gun, true, true);
     sound.emit('gunshot', ex, ey, ez, this);
-    this.nextShotAt = now + RULE_PEOPLE.shotS;
+    this.lastShotAt = now;
   }
 
   // Reward: mean health, food and water gained, clipped to [-1, 1].

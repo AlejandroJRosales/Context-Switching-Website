@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-12T09:06:46.720Z",
+ "generated": "2026-11-12T14:24:02.337Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -948,6 +948,8 @@
     "weapon: string",
     "rangeM: number",
     "shotS: number",
+    "aimHoldS: number",
+    "huntHungerShare: number",
     "spreadRad: number",
     "foeS: number"
    ],
@@ -2744,7 +2746,7 @@
     "prey: null|unknown",
     "foe: null|unknown",
     "foeUntil: number",
-    "nextShotAt: number",
+    "lastShotAt: number",
     "actionTimer: number",
     "heading: number",
     "targetHeading: number",
@@ -3323,6 +3325,8 @@
     "_lists: null[]",
     "passById: array",
     "human: object",
+    "npcGuns: THREE.InstancedMesh",
+    "_gun: object",
     "billboards: object"
    ],
    "methods": [
@@ -3331,6 +3335,7 @@
     "poseBoxRig(p, im, idx, antlers, aidx, kp, legH, move?: null): void",
     "restBox(type): unknown",
     "static queueUpload(attr, lo, n): void",
+    "placeNpcGun(a, n, aim, kp, originY, gait, act, o): number",
     "stepGait(a, deltaTime, kp): void",
     "init(): void",
     "ragdollRig(type): object",
@@ -4258,7 +4263,7 @@
     "-rand: function"
    ],
    "functions": [
-    "-distanceGain(dist): number",
+    "-distanceGain(dist, refM?: unknown): number",
     "-curvesOf(model): object",
     "-filteredNoiseRms(ctx, filter, cutoffHz): number"
    ],
@@ -4287,7 +4292,7 @@
     "setEnabled(on): void",
     "update(pos, quat, high): void",
     "emit(type, x, y, z, body): void",
-    "reachAt(x, y, z): number",
+    "reachAt(x, y, z, refM): number",
     "footstep(x, y, z, body): void",
     "gunshot(x, y, z): void",
     "carStart(x, y, z): void",
@@ -4295,8 +4300,8 @@
     "carStop(x, y, z): void",
     "stopEngine(at, fadeS): void",
     "takeVoice(priority): boolean",
-    "panner(x, y, z): unknown",
-    "playBandModel(played, x, y, z, gain, priority, releaseS): number",
+    "panner(x, y, z, refM?: unknown): unknown",
+    "playBandModel(played, x, y, z, gain, priority, releaseS, refM?: unknown): number",
     "engineLoop(when, fadeInS): object"
    ]
   },
@@ -5386,7 +5391,8 @@
     "GUN_MODEL",
     "GUN_DRAW",
     "GUN_RELOAD",
-    "GUN_MAG"
+    "GUN_MAG",
+    "RULE_PEOPLE"
    ]
   },
   {
@@ -6492,6 +6498,11 @@
   {
    "from": "8a-render.js#AnimalRenderer",
    "to": "2-core.js#sound",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
+   "to": "1-config.js#RULE_PEOPLE",
    "type": "uses"
   },
   {
