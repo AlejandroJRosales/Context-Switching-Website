@@ -1,4 +1,4 @@
-// FEATURES: Zombies and Armed switches, coyotes shot, gun loot and merging, the slot menu, zombie skin; usage in tools/README.md.
+// FEATURES: world switches, armed people, aiming at people, gun loot, the slot menu, zombie skin; usage in tools/README.md.
 import { openGame, WAIT_LIMIT_MS } from './lib/game-page.mjs';
 
 const args = process.argv.slice(2);
@@ -20,8 +20,8 @@ async function section(name, fn) {
   }
 }
 
-// Survivor, with Zombies off and every rule person armed.
-const g = await openGame({ rootDir, threeDir, survivor: true, switches: { zombies: false, armed: true } });
+// Survivor, with Zombies off.
+const g = await openGame({ rootDir, threeDir, survivor: true, switches: { zombies: false } });
 await g.page.evaluate(async () => {
   const sim = await import('/src/7b-sim.js'), cfg = await import('/src/1-config.js'), col = await import('/src/5-collision.js');
   const pg = await import('/src/8b-player-game.js');
@@ -48,12 +48,15 @@ await section('Zombies switch off', async () => {
   check('no zombies when the Zombies switch is off', n === 0 && line !== null && line[1] === '0', `${n} zombies alive; loading line "${line ? line[0] : 'none'}"`);
 });
 
-await section('Armed switch on', async () => {
+await section('rule people', async () => {
   const r = await g.page.evaluate(() => {
     const rule = F.E.animals.filter(a => a.type === 'human' && a.brain === null && !a.zombie);
-    return { n: rule.length, armed: rule.filter(a => a.gun !== null).length };
+    const people = F.E.animals.filter(a => a.type === 'human').length;
+    return { n: rule.length, armed: rule.filter(a => a.gun !== null).length, people };
   });
   check('every rule person carries a gun', r.n > 0 && r.armed === r.n, `${r.armed} of ${r.n}`);
+  const sd = Math.sqrt(r.people * 0.25);
+  check('about half of all people have no brain', Math.abs(r.n - r.people / 2) < 4 * sd, `${r.n} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
 });
 
 await section('armed people shoot coyotes', async () => {
@@ -170,8 +173,81 @@ await section('zombie skin', async () => {
     r.died ? 'it died first' : `drawn ${r.drawn.toString(16)}, own ${r.own.toString(16)}`);
 });
 
+await section('aiming at people (Survivor)', async () => {
+  // the player may start in a cabin, whose walls hide it from everyone: moved to open, dry ground until unsheltered
+  await g.page.evaluate(async () => { F.prov = await import('/src/4-provider.js'); F.col = await import('/src/5-collision.js'); });
+  await g.until(() => {
+    if (!F.pg.game.sheltered) return true;
+    const E = F.E, x = E.minX + Math.random() * (E.maxX - E.minX), z = E.minZ + Math.random() * (E.maxZ - E.minZ);
+    if (F.col.isOpen(x, z) && !F.col.occ.blockedAt(x, z) && !F.prov.isWaterAt(x, z)) {
+      F.pg.player.pos.set(x, F.prov.surfaceY(x, z) + F.cfg.EYE_HEIGHT, z); F.pg.player.vel.set(0, 0, 0);
+    }
+    return false;
+  });
+  // a rule person of each kind put on the crosshair's ray 15 m out, then the game's own aim check run once
+  const setup = await g.page.evaluate(() => {
+    const av = F.E.avatar, now = F.E.time;
+    const rule = F.E.animals.filter(a => a.alive && a.type === 'human' && a.brain === null && !a.zombie && a.gun !== null && a.foe === null);
+    const out = {};
+    for (const armed of [true, false]) {
+      const p = rule[armed ? 0 : 1];
+      if (!armed) p.gun = null;   // every rule person is armed now, so the unarmed case is set up by taking one gun away
+      const yaw = Math.random() * Math.PI * 2, x = av.position.x + Math.sin(yaw) * 15, z = av.position.z + Math.cos(yaw) * 15;
+      p.position.x = x; p.position.z = z; p.freeX = x; p.freeZ = z; p._fx = x; p._fz = z;
+      p.aimedAtBy(av, now);   // what aimAtPeople calls when the ray finds p
+      out[armed ? 'armed' : 'unarmed'] = { foe: p.foe === av, avoid: p.avoidPlayerUntil > now };
+      F.cur[armed ? 'armed' : 'unarmed'] = p;
+    }
+    F.cur.n0 = F.shots.length;
+    return out;
+  });
+  check('aimed at, an armed rule person makes the player its foe; an unarmed one a threat', setup.armed?.foe && setup.unarmed?.avoid, JSON.stringify(setup));
+  const r = await g.until(() => {
+    const u = F.cur.unarmed, s = F.cur.armed, av = F.E.avatar;
+    if (u.priority === 'predator' && Math.hypot(u.memPredatorX - av.position.x, u.memPredatorZ - av.position.z) < 2) F.cur.fled = true;
+    if (F.shots.slice(F.cur.n0).some(h => h.shooter === s && h.body === av)) F.cur.shot = true;
+    return F.cur.fled && (F.cur.shot || s.lastShotAt > 0) ? { fled: true, shotHit: !!F.cur.shot, fired: s.lastShotAt > 0 } : false;
+  });
+  check('the unarmed one flees the player, the armed one fires at the player', r.fled && r.fired, JSON.stringify(r));
+});
+
+await section('outbreak share', async () => {
+  const r = await g.page.evaluate(() => {
+    const count = () => F.E.animals.filter(a => a.type === 'human' && a.zombie).length, before = count();
+    const want = Math.round(F.cfg.ZOMBIES.startShare * F.E.animals.filter(a => a.type === 'human').length);
+    F.E.startOutbreak();   // the Zombies switch's start, run directly on this world
+    return { z: count() - before, want };
+  });
+  check('ZOMBIES.startShare of the people turn at the start', r.z === r.want, `${r.z} zombies, ${r.want} expected`);
+});
+
+await section('death fall', async () => {
+  // the Collision mode at load is Ragdoll: the body goes down for good at death
+  const r = await g.page.evaluate(() => {
+    const game = F.pg.game, av = F.E.avatar;
+    game.die('fall');
+    return { deathFall: game.deathFall, ragdolls: F.E.ragdolls, down: av.isDown(F.E.time), forever: av.downUntil === Infinity };
+  });
+  check('the player goes down for good at death (Ragdoll mode)', r.deathFall && r.ragdolls && r.down && r.forever, JSON.stringify(r));
+});
+
 check('no script errors', g.errors.length === 0, g.errors.join(' | ') || 'none');
 await g.close();
+
+// a second load: the Brainless people switch on
+const g2 = await openGame({ rootDir, threeDir, switches: { brainless: true } });
+await section('Brainless people switch', async () => {
+  const r = await g2.page.evaluate(async () => {
+    const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human' && !a.zombie);   // zombies drop their guns
+    const cfg = await import('/src/1-config.js');
+    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length, share: cfg.RULE_PEOPLE.allBrainlessArmedShare };
+  });
+  check('with Brainless people on, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
+  const sd = Math.sqrt(r.people * r.share * (1 - r.share));
+  check('with Brainless people on, allBrainlessArmedShare of them are armed', Math.abs(r.armed - r.share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+});
+check('no script errors (second load)', g2.errors.length === 0, g2.errors.join(' | ') || 'none');
+await g2.close();
 const failed = results.filter(r => !r.ok).length;
 console.log(`\n# ${results.length - failed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

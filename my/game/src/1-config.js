@@ -530,7 +530,7 @@ export const SPECIES = {
 export const NPC_TYPES = Object.keys(SPECIES);
 // ZOMBIES: a flag on a person (Animal.zombie); a zombie runs the rule AI and relates to others as kind `zombie`.
 export const ZOMBIES = {
-  startCount: 3,                         // people turned when a world loads (Ecosystem.startOutbreak)
+  startShare: 0.1,                       // share of people turned when a world loads (Ecosystem.startOutbreak)
   infectChance: 0.25,                    // per zombie contact hit on a living person or the Survivor player
   turnS: 10,                             // sim seconds from infection to turning; the infected act and look normal till then
   hunts: { human: true },                // living people; the player too in Survivor (avatar.isFoodFor)
@@ -552,16 +552,17 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // instead of a learning brain, hunting `food` as a coyote does. Some of them carry a gun with endless rounds; an armed
 // one never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
 export const RULE_PEOPLE = {
-  share: 0.1,           // of people, with no brain
+  share: 0.5,           // of people, with no brain (all of them with the Brainless people switch on)
   food: 'deer',         // the species they hunt for food
-  armedShare: 1,        // of the people with no brain, carrying a gun (all of them with the Armed switch on)
+  armedShare: 1,        // of the people with no brain, carrying a gun
+  allBrainlessArmedShare: 0.5,   // armedShare with the Brainless people switch on
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   shotS: 0.8,           // seconds between shots
   aimHoldS: 1.5,        // seconds the arms stay raised to aim after a shot, then back to low ready (drawn only)
   huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
   spreadRad: 0.02,      // aim error each way, radians
-  foeS: 30,             // seconds an attacker stays its target after its last hit
+  foeS: 30,             // seconds an attacker, or a Survivor player aiming at it, stays its target (armed) or threat (unarmed)
   lootRounds: { max: 30, nextShare: 0.95 }   // a dead armed person's gun holds 1 to max rounds, each one more nextShare as likely
 };
 

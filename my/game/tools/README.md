@@ -93,7 +93,7 @@ When a test moves an animal it also sets `_fx` and `_fz`, so the contact search'
 node tools/checks/features.mjs <rootDir> [--three <local three dir>]
 ```
 
-One Survivor page load, with Zombies off and All rule people armed on (`openGame`'s `switches`). It checks:
+One Survivor page load with Zombies off (`openGame`'s `switches`), then a second with Brainless people on. It checks:
 
 - no zombies, and the loading line's zombie count is 0
 - every rule person carries a gun
@@ -102,8 +102,10 @@ One Survivor page load, with Zombies off and All rule people armed on (`openGame
 - the slot menu through real key presses and taps: open, use, holster, drop, close
 - a looted gun's rounds merging into a carried gun with no free slot
 - a zombie drawn with the green-blended skin (`zombieSkinRGB`)
+- about half of all people brainless, aiming at rule people (armed ones fire, unarmed ones flee), `ZOMBIES.startShare`, and the player going down at death
+- a second load with Brainless people on: no brains, about half of them armed
 
-Each test is capped at 3 minutes like `zombies.mjs`.
+Each test is capped at 3 minutes like `zombies.mjs`. `until` polls from the test side, because `waitForFunction`'s own timeout missed on the slow headless page.
 
 ## checks/listeners.mjs: listener order
 

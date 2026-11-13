@@ -574,15 +574,17 @@ export class Animal extends Entity {
     this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
     // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): a person may run the deer and coyote rules, and may carry a gun
-    const ruled = type === 'human' && Math.random() < RULE_PEOPLE.share;   // true: no brain, the rule AI
+    const ruleShare = ecosystem.allBrainless ? 1 : RULE_PEOPLE.share;   // the Brainless people switch puts every person on the rule AI
+    const ruled = type === 'human' && Math.random() < ruleShare;   // true: no brain, the rule AI
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
-    const armedShare = ecosystem.allRuleArmed ? 1 : RULE_PEOPLE.armedShare;   // the Armed switch arms every rule person
+    const armedShare = ecosystem.allBrainless ? RULE_PEOPLE.allBrainlessArmedShare : RULE_PEOPLE.armedShare;   // share of rule people armed
     this.gun = ruled && Math.random() < armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
     this.foe = null; this.foeUntil = 0;                 // ARMED: the last attacker and until when it is a target
+    this.avoidPlayerUntil = 0;                          // UNARMED: sim time until which a Survivor player who aimed at it is a threat
     this.lastShotAt = -Infinity;                        // ARMED: sim time of its last shot (fire rate; drawn aim)
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
     // City: heading in radians; people turn toward targetHeading.
@@ -1083,10 +1085,12 @@ export class Animal extends Entity {
     const gp = ecosystem.avatar;
     // night quarry (isPreyFor) or food by day and night (isFoodFor: zombies)
     const avatarQuarry = gp.isPreyFor(tid), avatarPrey = avatarQuarry || gp.isFoodFor(foodId);
-    if (gp.isThreatTo(tid) || avatarPrey) {
+    // a threat by kind, or a player who aimed at it lately (aimedAtBy)
+    const avatarThreat = gp.isThreatTo(tid) || (gp.alive && ecosystem.time < this.avoidPlayerUntil);
+    if (avatarThreat || avatarPrey) {
       const ox = gp.position.x, oz = gp.position.z;
       const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
-      if (gp.isThreatTo(tid)) {
+      if (avatarThreat) {
         if (d2 <= vd && d2 <= bP && this.inSight(ox, gp.position.y, oz)) { bP = d2; this.seen(0, ox, gp.position.y, oz); this.avoidNeed = Infinity; }
       } else if (d2 <= vd) addPrey(gp, d2, -1, 1);   // the avatar never wins a tie
     }
@@ -1374,6 +1378,13 @@ export class Animal extends Entity {
     this.speedScale = this.bumpScale = 1;
     this.moving = true;
     this.actionTimer = this.ACTION_HOLD;
+  }
+
+  // AIMED AT (Survivor): the player's aim line on a rule person; armed, the player is its foe, else a threat it flees.
+  aimedAtBy(player, now) {
+    if (this.brain !== null || this.zombie) return;
+    if (this.gun !== null) { this.foe = player; this.foeUntil = now + RULE_PEOPLE.foeS; }
+    else this.avoidPlayerUntil = now + RULE_PEOPLE.foeS;
   }
 
   // Turn toward (1) or away from (-1) (x, z) at once.
@@ -1945,7 +1956,7 @@ export class Ecosystem {
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
-    this.allRuleArmed = false; // the world's Armed switch (provider.opts.armed): every rule person carries a gun
+    this.allBrainless = false; // the world's Brainless people switch (provider.opts.brainless): every person on the rule AI
 
     this._qPlant = [];
     this._qWater = [];
@@ -2022,7 +2033,7 @@ export class Ecosystem {
     this.waterSight = new SpatialGrid(spanX, spanZ, WATER_SIGHT_CELL);
     for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
     foodBoxes.buildSight(spanX, spanZ);
-    this.allRuleArmed = provider.opts?.armed === true;   // read by Animal's constructor, at spawn and birth
+    this.allBrainless = provider.opts?.brainless === true;   // read by Animal's constructor, at spawn and birth
 
     occ.build();
     const plan = provider.population();
@@ -2033,10 +2044,10 @@ export class Ecosystem {
     this.shownPop = -1;
   }
 
-  // ZOMBIES: ZOMBIES.startCount people, drawn at random, turn as the world starts.
+  // ZOMBIES: ZOMBIES.startShare of the people, drawn at random, turn as the world starts.
   startOutbreak() {
-    const people = this.animals.filter(a => a.type === 'human');
-    for (let k = 0; k < ZOMBIES.startCount && people.length > 0; k++) {
+    const people = this.animals.filter(a => a.type === 'human'), count = Math.round(ZOMBIES.startShare * people.length);
+    for (let k = 0; k < count && people.length > 0; k++) {
       people.splice(Math.floor(Math.random() * people.length), 1)[0].turn();
     }
   }

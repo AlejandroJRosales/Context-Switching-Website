@@ -10,6 +10,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 const THREE_URL = 'https://unpkg.com/three@0.160.0/';
 const SETTLE_MS = 3000;   // after the page and after Go, as smoke.mjs's --fast waits
 export const WAIT_LIMIT_MS = 180000;   // one test's wait; past it the test is reported as timed out
+const POLL_MS = 500;   // between until's checks
 
 // Opens the game and loads the smallest wilderness; resolves once play has started. switches: More options to set { opt: on }.
 export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, survivor = false, switches = {} }) {
@@ -53,11 +54,20 @@ export async function openGame({ rootDir, pagePath = 'index.html', threeDir = nu
   const loadText = await page.evaluate(() => document.getElementById('steps').textContent);
   await page.evaluate(mode => { document.getElementById(mode).click(); document.getElementById('chooseGo').click(); }, survivor ? 'chooseGame' : 'chooseObs');
   await page.waitForTimeout(SETTLE_MS);
-  // until(fn, arg): polls fn in the page for up to WAIT_LIMIT_MS; rejects on time out or a renderer crash
-  const until = (fn, arg) => Promise.race([
-    page.waitForFunction(fn, arg, { timeout: WAIT_LIMIT_MS, polling: 200 }).then(h => h.jsonValue()),
-    crash.then(() => { throw new Error('renderer process crashed'); })
-  ]);
+  // until(fn, arg): runs fn in the page every POLL_MS until it returns a truthy value, for up to WAIT_LIMIT_MS; rejects
+  // on time out or a renderer crash. Polled from here, since waitForFunction's own timeout missed on the slow page.
+  const until = async (fn, arg) => {
+    const end = Date.now() + WAIT_LIMIT_MS;
+    let crashed = false;
+    crash.then(() => { crashed = true; });
+    for (; ;) {
+      if (crashed) throw new Error('renderer process crashed');
+      const v = await page.evaluate(fn, arg);
+      if (v) return v;
+      if (Date.now() > end) throw new Error(`Timeout ${WAIT_LIMIT_MS} ms exceeded`);
+      await page.waitForTimeout(POLL_MS);
+    }
+  };
   const close = async () => { await browser.close(); server.close(); };
   return { page, errors, loadText, until, close };
 }

@@ -1096,6 +1096,7 @@ export const game = {
   _bumpX: NaN, _bumpZ: NaN,   // position at the last bumpAnimals, for velocity
   _shown: -1, _shownCar: -2, _shownDay: -1, _shownSlots: '', _shownInjuries: '', _shownInfo: -1, _shownLook: null, _shownMenu: '',
   menuSlot: -1,           // SLOT MENU: the slot whose menu is open, -1 for none
+  deathFall: true,        // the Collision mode's: the body goes down at death (main's applyCollision sets it)
   // WEAPON in hand: an item with `mag` and `reserve` rounds (a Survivor slot's, or Observer's Weapon chip's), or null
   weapon: null,
   weaponChoice: false,    // Observer's Weapon chip: its gun in hand in Observer, carried into Survivor in a slot and in hand
@@ -1332,6 +1333,19 @@ export const game = {
     if (w.mag === 0) this.startReload(w, gun, now);
   },
 
+  // AIMED AT (Survivor, aim held): the first body on the crosshair's ray, a rule person within RULE_PEOPLE.rangeM of the
+  // player who can see the player, is told (aimedAtBy): armed, it shoots back; unarmed, it flees.
+  aimAtPeople() {
+    const from = camera.getWorldPosition(this._aimFrom), dir = camera.getWorldDirection(this._aimDir), R = RULE_PEOPLE.rangeM;
+    const reach = R + from.distanceTo(player.pos);   // a third-person camera sits behind the player
+    const b = ecosystem.projectiles.cast(from.x, from.y, from.z, from.x + dir.x * reach, from.y + dir.y * reach, from.z + dir.z * reach,
+      undefined, this.avatar).body;
+    if (!b || b === this.avatar || b.type !== 'human') return;
+    const p = player.pos;
+    if (Math.hypot(b.position.x - p.x, b.position.z - p.z) > R || !b.inSight(p.x, p.y, p.z)) return;
+    b.aimedAtBy(this.avatar, ecosystem.time);
+  },
+
   // The first recipe the inventory holds, with its slots, or null.
   craftable() {
     for (const r of SURVIVOR_CONFIG.craft.recipes) {
@@ -1406,6 +1420,7 @@ export const game = {
     if (ecosystem.time >= this.turnAt) { this.die('turned'); this.draw(); return; }
     this.regen(dt);
 
+    if (gunView.aiming) this.aimAtPeople();
     // drink, harvest and collect use the action button; contact only fights
     if (!player.inCar) {
       this.touchAnimals(px, pz, R);
@@ -1678,6 +1693,11 @@ export const game = {
   die(cause) {
     this.dead = true;
     this.menuSlot = -1;
+    if (this.deathFall) {   // down for good, as a corpse: a fall already started keeps its direction, else forward
+      const av = this.avatar, now = ecosystem.time;
+      if (!av.isDown(now)) { av.downAt = now; av.downYaw = av.facingAngle; av.downDV = 0; }
+      av.downUntil = Infinity;
+    }
     this.avatar.alive = false;
     this.run.cause = cause;
     const r = this.run, eaten = Object.entries(r.eaten);

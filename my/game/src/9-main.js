@@ -592,10 +592,11 @@ gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
 // lying pose (knockdowns between animals happen in every mode). A flying player always passes through animals.
 // Survivor keeps the chosen mode, except one without hits, which plays as SURVIVOR_NO_HITS_MODE; the choice itself is
 // kept, so it comes back in Observer.
+// deathFall: the player's body goes down at death (ragdoll or lying pose, by `ragdolls`), or stays standing
 const COLLISION_MODES = {
-  none: { label: 'None', hits: false, ragdolls: false },
-  fall: { label: 'Fall', hits: true, ragdolls: false },
-  ragdoll: { label: 'Ragdoll', hits: true, ragdolls: true }
+  none: { label: 'None', hits: false, ragdolls: false, deathFall: false },
+  fall: { label: 'Fall', hits: true, ragdolls: false, deathFall: true },
+  ragdoll: { label: 'Ragdoll', hits: true, ragdolls: true, deathFall: true }
 };
 const COLLISION_ORDER = Object.keys(COLLISION_MODES);   // the chip's cycle
 const SURVIVOR_NO_HITS_MODE = 'fall';
@@ -607,6 +608,7 @@ function activeCollision() {
 function applyCollision() {
   const mode = COLLISION_MODES[activeCollision()];
   ecosystem.setRagdolls(mode.ragdolls);
+  game.deathFall = mode.deathFall;
   // no hits (None): Animal damage goes off and cannot be turned on
   if (!mode.hits) setAnimalDamage(false);
   animalDmgEl.disabled = !mode.hits;
@@ -1422,7 +1424,7 @@ function chooseMode() {
 }
 
 // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, zombies: true, armed: false };
+const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, zombies: true, brainless: false };
 for (const el of document.querySelectorAll('#more .switch')) {
   if (el.dataset.opt === 'city') continue;   // the City switch picks the world (setMode), not a build option
   el.addEventListener('click', () => {
