@@ -520,17 +520,18 @@ export const NPC_REF_MASS_KG = {
   coyote: { male: 15, female: 13 }
 };
 
-// SPECIES: per-type stats in Arena units; relation fields (hunts, carrion, shootsOnSight, crates...) name kinds (NPC_KINDS).
+// SPECIES: per-type stats in Arena units; relation fields (hunts, carrion, shootsOnSight, armedStands, crates...) name kinds.
 export const SPECIES = {
   // carrion: the dead bodies (Ecosystem.corpses) a species eats on contact; the player harvests the human list's as meat
-  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true, coyote: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
+  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true }, armedStands: { zombie: true, coyote: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
   coyote: { brain: false, hunts: { deer: true, human: true }, carrion: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
   deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
 // ZOMBIES: a flag on a person (Animal.zombie); a zombie runs the rule AI and relates to others as kind `zombie`.
 export const ZOMBIES = {
-  startShare: 0.1,                       // share of people turned when a world loads (Ecosystem.startOutbreak)
+  // at world load the unarmed rule people turn (Ecosystem.startOutbreak), so RULE_PEOPLE.share alone sets the outbreak's size
+  nearestPrey: true,                     // prey chosen nearest first, not smallest first as coyotes do
   infectChance: 0.25,                    // per zombie contact hit on a living person or the Survivor player
   turnS: 10,                             // sim seconds from infection to turning; the infected act and look normal till then
   hunts: { human: true },                // living people; the player too in Survivor (avatar.isFoodFor)
@@ -552,10 +553,9 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // instead of a learning brain, hunting `food` as a coyote does. Some of them carry a gun with endless rounds; an armed
 // one never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
 export const RULE_PEOPLE = {
-  share: 0.5,           // of people, with no brain (all of them with the Brainless people switch on)
+  share: 0.1,           // of people, with no brain (all of them with the Brainless people switch on)
   food: 'deer',         // the species they hunt for food
-  armedShare: 1,        // of the people with no brain, carrying a gun
-  allBrainlessArmedShare: 0.5,   // armedShare with the Brainless people switch on
+  armedShare: 0.5,      // of the people with no brain, carrying a gun; with Zombies on, the rest start as zombies
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   shotS: 0.8,           // seconds between shots
@@ -606,6 +606,8 @@ export const CARRION_MASK = kindMask('carrion');
 export const NIGHT_PREY_MASK = kindMask('nightPrey');
 // kinds an armed person shoots on sight (shootsOnSight)
 export const SHOOTS_ON_SIGHT_MASK = kindMask('shootsOnSight');
+// kinds an armed person stands against rather than flees (armedStands); it shoots one only on sight or once attacked
+export const ARMED_STANDS_MASK = kindMask('armedStands');
 // ids of each kind's hunts keys, in key order
 export const HUNTS_LIST = NPC_KINDS.map(h => Object.keys(NPC_KIND_SPECS[h].hunts).filter(t => t in NPC_KIND_IDS).map(t => NPC_KIND_IDS[t]));
 export const FOOD_KIND_ID = NPC_KINDS.map(t => NPC_KIND_IDS[NPC_KIND_SPECS[t].food] ?? -1);   // -1: plants or nothing

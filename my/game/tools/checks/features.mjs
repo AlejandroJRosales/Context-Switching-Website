@@ -55,30 +55,18 @@ await section('rule people', async () => {
     return { n: rule.length, armed: rule.filter(a => a.gun !== null).length, people };
   });
   check('every rule person carries a gun', r.n > 0 && r.armed === r.n, `${r.armed} of ${r.n}`);
-  const sd = Math.sqrt(r.people * 0.25);
-  check('about half of all people have no brain', Math.abs(r.n - r.people / 2) < 4 * sd, `${r.n} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+  check('about RULE_PEOPLE.share of people have no brain', Math.abs(r.n - r.people * F.cfg.RULE_PEOPLE.share) < 4 * Math.sqrt(r.people * F.cfg.RULE_PEOPLE.share * (1 - F.cfg.RULE_PEOPLE.share)), `${r.n} of ${r.people}`);
 });
 
-await section('armed people shoot coyotes', async () => {
-  const mask = await g.page.evaluate(() => (F.cfg.SHOOTS_ON_SIGHT_MASK[F.cfg.HUMAN_KIND_ID] & (1 << F.cfg.NPC_KIND_IDS.coyote)) !== 0);
-  check('coyotes are shot on sight (relation mask)', mask);
-  await g.page.evaluate(() => {
-    const s = F.E.animals.find(a => a.alive && a.gun !== null && a.foe === null);
-    F.cur = { s, n0: F.shots.length, fled: false, sawSight: false };
+await section('armed people and coyotes', async () => {
+  const r = await g.page.evaluate(() => {
+    const c = F.cfg, h = c.HUMAN_KIND_ID, coyote = 1 << c.NPC_KIND_IDS.coyote, zombie = 1 << c.ZOMBIE_KIND_ID;
+    const s = F.E.animals.find(a => a.alive && a.gun !== null && a.foe === null), k = F.E.animals.find(a => a.alive && a.type === 'coyote');
+    s.answerHit(k);   // the retaliation a coyote's bite triggers
+    return { zombieOnSight: (c.SHOOTS_ON_SIGHT_MASK[h] & zombie) !== 0, coyoteOnSight: (c.SHOOTS_ON_SIGHT_MASK[h] & coyote) !== 0,
+      standsCoyote: (c.ARMED_STANDS_MASK[h] & coyote) !== 0, foe: s.foe === k };
   });
-  const hit = await g.until(() => {
-    const c = F.cur, s = c.s;
-    if (!s.alive) return { died: true };
-    if (s.onSight && s.onSight.type === 'coyote') c.sawSight = true;
-    if (s.priority === 'predator') c.fled = true;
-    const shot = F.shots.slice(c.n0).find(h => h.shooter === s && h.body.type === 'coyote');
-    if (shot) return { sawSight: c.sawSight, fled: c.fled };
-    if (!c.coyote || !c.coyote.alive) c.coyote = F.E.animals.find(a => a.alive && a.type === 'coyote');
-    if (s.onSight === null && c.coyote) F.inView(c.coyote, s, 15);   // a coyote held in view until one is seen
-    return false;
-  });
-  check('an armed person shoots a coyote it sees and does not flee', !hit.died && hit.sawSight && !hit.fled,
-    hit.died ? 'the shooter died first' : `onSight was a coyote: ${hit.sawSight}, fled: ${hit.fled}`);
+  check('armed people shoot zombies on sight, coyotes only once attacked, and stand against both', r.zombieOnSight && !r.coyoteOnSight && r.standsCoyote && r.foe, JSON.stringify(r));
 });
 
 await section('gun loot', async () => {
@@ -214,11 +202,11 @@ await section('aiming at people (Survivor)', async () => {
 await section('outbreak share', async () => {
   const r = await g.page.evaluate(() => {
     const count = () => F.E.animals.filter(a => a.type === 'human' && a.zombie).length, before = count();
-    const want = Math.round(F.cfg.ZOMBIES.startShare * F.E.animals.filter(a => a.type === 'human').length);
+    const want = F.E.animals.filter(a => a.type === 'human' && a.brain === null && a.gun === null && !a.zombie).length;
     F.E.startOutbreak();   // the Zombies switch's start, run directly on this world
     return { z: count() - before, want };
   });
-  check('ZOMBIES.startShare of the people turn at the start', r.z === r.want, `${r.z} zombies, ${r.want} expected`);
+  check('every unarmed rule person turns at the start', r.z === r.want, `${r.z} zombies, ${r.want} expected`);
 });
 
 await section('death fall', async () => {
@@ -238,13 +226,13 @@ await g.close();
 const g2 = await openGame({ rootDir, threeDir, switches: { brainless: true } });
 await section('Brainless people switch', async () => {
   const r = await g2.page.evaluate(async () => {
-    const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human' && !a.zombie);   // zombies drop their guns
+    const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human');   // every person, zombies included
     const cfg = await import('/src/1-config.js');
-    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length, share: cfg.RULE_PEOPLE.allBrainlessArmedShare };
+    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length, share: cfg.RULE_PEOPLE.armedShare };
   });
   check('with Brainless people on, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
   const sd = Math.sqrt(r.people * r.share * (1 - r.share));
-  check('with Brainless people on, allBrainlessArmedShare of them are armed', Math.abs(r.armed - r.share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+  check('with Brainless people on, armedShare of them are armed', Math.abs(r.armed - r.share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
 });
 check('no script errors (second load)', g2.errors.length === 0, g2.errors.join(' | ') || 'none');
 await g2.close();

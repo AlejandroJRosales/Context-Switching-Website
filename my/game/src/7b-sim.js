@@ -22,7 +22,7 @@ import {
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S,
   BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK,
   RULE_PEOPLE, WEAPONS, PLAYER_HEIGHT, PLAYER_RADIUS, ZOMBIES, NPC_KIND_SPECS, NPC_KINDS, NPC_KIND_IDS, NPC_KIND_COUNT,
-  HUMAN_KIND_ID, ZOMBIE_KIND_ID, SHOOTS_ON_SIGHT_MASK, NPC_GENE_START, NPC_FOOD_PER_HEALTH_TICK, BROKEN_BONE
+  HUMAN_KIND_ID, ZOMBIE_KIND_ID, SHOOTS_ON_SIGHT_MASK, ARMED_STANDS_MASK, NPC_GENE_START, NPC_FOOD_PER_HEALTH_TICK, BROKEN_BONE
 } from './1-config.js';
 import {
   cellKey, fightEase, fightClamp01, TWO_PI, wrapAngle, turnToward, SpatialGrid, ContactGrid, tools, perfProbe, sound
@@ -578,8 +578,7 @@ export class Animal extends Entity {
     const ruled = type === 'human' && Math.random() < ruleShare;   // true: no brain, the rule AI
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
-    const armedShare = ecosystem.allBrainless ? RULE_PEOPLE.allBrainlessArmedShare : RULE_PEOPLE.armedShare;   // share of rule people armed
-    this.gun = ruled && Math.random() < armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
+    this.gun = ruled && Math.random() < RULE_PEOPLE.armedShare ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
@@ -1012,9 +1011,9 @@ export class Animal extends Entity {
     const food = this.food, tid = this.kindId, sex = this.sex;
     // at night, night prey is quarry even if fled by day
     const quarryMask = ecosystem.night ? NIGHT_PREY_MASK[tid] : 0;
-    // ARMED: kinds it shoots on sight, which it stands against rather than flees
-    const sightMask = this.gun !== null ? SHOOTS_ON_SIGHT_MASK[tid] : 0;
-    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask & ~sightMask, foodId = this.foodId;
+    // ARMED: kinds it shoots on sight, and kinds it stands against rather than flees
+    const armed = this.gun !== null, sightMask = armed ? SHOOTS_ON_SIGHT_MASK[tid] : 0, standMask = armed ? ARMED_STANDS_MASK[tid] : 0;
+    const huntedBy = HUNTED_BY_MASK[tid] & ~quarryMask & ~standMask, foodId = this.foodId;
     const needP = huntedBy !== 0, needQ = quarryMask !== 0, needS = sightMask !== 0;
     // food and night prey in one pick; no early stop, as smaller prey may lie farther
     const needT = (food !== null && food !== 'plant') || needQ;
@@ -1104,11 +1103,12 @@ export class Animal extends Entity {
     this.packMassKg = packKg; this.packHeightM = packM;
     // the pick: size step, squared distance, tie key, target
     let sT = Infinity, bT = Infinity, kT = -1, oT = null;
+    const bySize = this.kindSpec.nearestPrey !== true;   // true: smallest then nearest (coyotes); false: nearest only (zombies)
     for (let i = 0; i < _nPrey; i++) {
       const obj = _preyObj[i], d2 = _preyD2[i], key = _preyKey[i];
       _preyObj[i] = null;   // let go of the reference
       if (!this.mayAttack(obj)) continue;
-      const s = Animal.preySize(obj);
+      const s = bySize ? Animal.preySize(obj) : 0;
       if (!(Animal.preyAhead(s, d2, sT, bT) || (s === sT && d2 === bT && key > kT))) continue;
       if (_preySight[i] === 1 && !this.inSight(obj.position.x, obj.position.y, obj.position.z)) continue;
       sT = s; bT = d2; kT = key; oT = obj;
@@ -2044,12 +2044,9 @@ export class Ecosystem {
     this.shownPop = -1;
   }
 
-  // ZOMBIES: ZOMBIES.startShare of the people, drawn at random, turn as the world starts.
+  // ZOMBIES: every unarmed rule person turns as the world starts, so they are 1 - armedShare of the brainless people.
   startOutbreak() {
-    const people = this.animals.filter(a => a.type === 'human'), count = Math.round(ZOMBIES.startShare * people.length);
-    for (let k = 0; k < count && people.length > 0; k++) {
-      people.splice(Math.floor(Math.random() * people.length), 1)[0].turn();
-    }
+    for (const a of this.animals) if (a.type === 'human' && a.brain === null && a.gun === null) a.turn();
   }
 
   spawnPlant(src) {
