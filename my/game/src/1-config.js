@@ -558,7 +558,10 @@ export const RULE_PEOPLE = {
   armedShare: 0.5,      // of the people with no brain, carrying a gun; with Zombies on, the rest start as zombies
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
-  shotS: 0.8,           // seconds between shots
+  // FIRE CADENCE (shootStep): each volley is one shot, or with pairShare two; every gap is drawn evenly in its [min, max]
+  pairShare: 0.4,       // chance a volley is two shots instead of one
+  pairGapS: [0.12, 0.6],// seconds between the two shots of a pair (under 1 s)
+  restS: [0.6, 1.4],    // seconds after a volley ends before the next one may start
   aimHoldS: 1.5,        // seconds the arms stay raised to aim after a shot, then back to low ready (drawn only)
   huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
   spreadRad: 0.02,      // aim error each way, radians
@@ -1553,6 +1556,7 @@ export const SOUND = {
   car: {
     startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',
     outputGain: 0.4,               // start, engine loop and shutdown (half the former 0.8)
+    drivingGain: 1 / 3,            // engine loop loudness at full gas over the model's (idle, start and shutdown unchanged)
     gasRiseS: 3,                   // seconds on the gas that take the firing rate and loudness from idle to revMaxRatio
     gasFallS: 1.5,                 // seconds off the gas that bring them back to idle
     gasSmoothS: 0.2,               // time constant of the firing rate and loudness following the gas share

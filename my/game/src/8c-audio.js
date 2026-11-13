@@ -9,7 +9,7 @@
 // Models are fitted to recordings (tools/sound/fit_models.py) and played as written in 1b-sound-models.js:
 //   bandModel (one-shots): shared noise -> one bandpass per band -> a gain following that band's fitted envelope -> sum.
 //   engineLoop (the car): harmonics of the firing rate (one oscillator) + noise bands pulsed at the firing rate; the gas
-//   share raises the firing rate up to revMaxRatio x idle and the loudness by (rate ratio)^levelExponent.
+//   share raises the firing rate up to revMaxRatio x idle and the loudness by (rate ratio)^levelExponent, eased by drivingGain at full gas.
 // Voices: each one-shot builds its nodes when it starts and lets them go when it ends, rather than keeping chains alive,
 // because a kept chain's filters run every audio frame even while silent. The voice cap (SOUND.voices, per Graphics
 // quality) bounds how many exist at once; a new sound louder at the listener than the quietest playing one steals it.
@@ -257,6 +257,8 @@ export const audio = {
   // The car's engine loop from `when`, fading in over fadeInS. Returns { follow(x, y, z, gasShare, at), stop(at, fadeS) }.
   engineLoop(when, fadeInS) {
     const ctx = this.ctx, C = SOUND.car, m = SOUND_MODELS[C.idleModel];
+    // loudness = ratio^levelExponent: 1 at idle, the model's full-gas loudness x drivingGain at revMaxRatio
+    const levelExponent = m.levelExponent + Math.log(C.drivingGain) / Math.log(m.revMaxRatio);
     const fade = ctx.createGain();         // fade in and out
     fade.gain.setValueAtTime(0, when);
     fade.gain.linearRampToValueAtTime(C.outputGain, when + Math.max(fadeInS, 0.005));
@@ -315,7 +317,7 @@ export const audio = {
         ratioSet = ratio;
         harm.frequency.setTargetAtTime(m.idleHz * ratio, at, C.gasSmoothS);
         pulse.frequency.setTargetAtTime(m.idleHz * ratio, at, C.gasSmoothS);
-        level.gain.setTargetAtTime(Math.pow(ratio, m.levelExponent), at, C.gasSmoothS);
+        level.gain.setTargetAtTime(Math.pow(ratio, levelExponent), at, C.gasSmoothS);
       },
       stop(at, fadeS) {
         // hold whatever the fade-in has reached at `at`, then ramp to 0

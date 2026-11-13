@@ -584,7 +584,9 @@ export class Animal extends Entity {
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
     this.foe = null; this.foeUntil = 0;                 // ARMED: the last attacker and until when it is a target
     this.avoidPlayerUntil = 0;                          // UNARMED: sim time until which a Survivor player who aimed at it is a threat
-    this.lastShotAt = -Infinity;                        // ARMED: sim time of its last shot (fire rate; drawn aim)
+    this.lastShotAt = -Infinity;                        // ARMED: sim time of its last shot (drawn aim)
+    this.nextShotAt = 0;                                // ARMED: sim time it may fire again (fire cadence, RULE_PEOPLE)
+    this.pairShotDue = false;                           // ARMED: true while the second shot of a pair is pending
     this.actionTimer = Math.floor(Math.random() * this.ACTION_HOLD);
     // City: heading in radians; people turn toward targetHeading.
     this.heading = Math.random() * Animal.TWO_PI;
@@ -1307,12 +1309,12 @@ export class Animal extends Entity {
     return dx * dx + dz * dz <= r * r && this.inSight(t.position.x, t.position.y, t.position.z);
   }
 
-  // ARMED PEOPLE: one shot per shotS from the eye at the target's body centre, off by up to spreadRad each way, with the
-  // gun's sound. A kill feeds the shooter, as a coyote's bite does.
+  // ARMED PEOPLE: volleys of one or two shots (RULE_PEOPLE fire cadence), each from the eye at the target's body centre,
+  // off by up to spreadRad each way, with the gun's sound. A kill feeds the shooter, as a coyote's bite does.
   shootStep(now) {
-    if (now < this.lastShotAt + RULE_PEOPLE.shotS || this.isDown(now)) return;
+    if (now < this.nextShotAt || this.isDown(now)) return;
     const t = this.shootTarget(now);
-    if (t === null) return;
+    if (t === null) { this.pairShotDue = false; return; }   // a lost target drops a pending second shot
     const ex = this.position.x, ey = this.eyeY(), ez = this.position.z;
     const dx = t.position.x - ex, dy = Projectiles.centreY(t) - ey, dz = t.position.z - ez, len = Math.hypot(dx, dy, dz);
     if (len < 1e-6) return;
@@ -1323,6 +1325,15 @@ export class Animal extends Entity {
       this.gun, true, true);
     sound.emit('gunshot', ex, ey, ez, this);
     this.lastShotAt = now;
+    this.scheduleNextShot(now);
+  }
+  // FIRE CADENCE: a shot that opens a volley makes it a pair with pairShare (next shot after pairGapS); the volley's
+  // last shot waits restS. Both gaps are drawn evenly in their [min, max].
+  scheduleNextShot(now) {
+    const startsPair = !this.pairShotDue && Math.random() < RULE_PEOPLE.pairShare;   // true: this shot opens a pair
+    const [lo, hi] = startsPair ? RULE_PEOPLE.pairGapS : RULE_PEOPLE.restS;
+    this.pairShotDue = startsPair;
+    this.nextShotAt = now + lo + Math.random() * (hi - lo);
   }
 
   // Reward: mean health, food and water gained, clipped to [-1, 1].
