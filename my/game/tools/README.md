@@ -99,7 +99,9 @@ One Survivor page load, with Zombies off and All rule people armed on (`openGame
 - every rule person carries a gun
 - an armed person shoots a coyote it sees, without fleeing
 - gun loot: 4,000 direct `game.loot` calls on armed bodies give the gun with 1 to 30 rounds, magazine first, with a mean matching the 5% falloff
-- the slot menu through real key presses and taps: open, use, holster, drop
+- the slot menu through real key presses and taps: open, use, holster, drop, close
+- a looted gun's rounds merging into a carried gun with no free slot
+- a zombie drawn with the green-blended skin (`zombieSkinRGB`)
 
 Each test is capped at 3 minutes like `zombies.mjs`.
 

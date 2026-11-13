@@ -536,7 +536,8 @@ export const ZOMBIES = {
   hunts: { human: true },                // living people; the player too in Survivor (avatar.isFoodFor)
   carrion: { human: true, zombie: true }, // any person's body
   food: 'human',                         // the rule AI's food: living people
-  grazes: false, crates: false           // no plants, no food boxes
+  grazes: false, crates: false,          // no plants, no food boxes
+  skin: { rgb: 0x7fa05a, share: 0.6 }    // render only: a zombie's skin blends this share of the way to rgb (sRGB)
 };
 // RELATION KINDS: each species plus `zombie`; species kinds share their type ids, so kind id = type id for non-zombies.
 export const NPC_KIND_SPECS = { ...SPECIES, zombie: ZOMBIES };
@@ -553,7 +554,7 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 export const RULE_PEOPLE = {
   share: 0.1,           // of people, with no brain
   food: 'deer',         // the species they hunt for food
-  armedShare: 0.5,      // of the people with no brain, carrying a gun (all of them with the Armed switch on)
+  armedShare: 1,        // of the people with no brain, carrying a gun (all of them with the Armed switch on)
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   shotS: 0.8,           // seconds between shots
@@ -1164,7 +1165,7 @@ export const SURVIVOR_CONFIG = {
   // INVENTORY: each kind names its action; `loot` is its weight in a box and on a dead person; `icon` is ICONS markup or emoji text.
   inventory: {
     keys: ['Digit1', 'Digit2', 'Digit3'],     // one per slot; a slot's key or tap opens its menu
-    menuKeys: { use: 'Digit1', drop: 'Digit2' },   // with a slot's menu open: use the item, or drop it (gone)
+    menuKeys: { use: 'Digit1', drop: 'Digit2', close: 'Digit3' },   // with a slot's menu open: use, drop (gone) or close
     items: {
       crate: { icon: ICONS.box, label: 'Box', action: 'open' },
       water: { icon: ICONS.water, label: 'Bottled water', action: 'drink', water: 25, loot: 45 },   // water need removed
@@ -1371,8 +1372,8 @@ export const GUN_POSE = {
   // rig units on its own side (the support arm's hand wraps the gun hand)
   twoHand: { gun: 0.3, support: 0.6 }
 };
-// tucked gun at the small of the back, flat against it: barrel down the waistband, grip pointing to the off-hand side
-// (as a gun-hand reach behind the back meets it). Grip centre in rig units from the waist ring's centre: `side` toward
+// tucked gun at the small of the back, flat against it: barrel down the waistband, grip pointing to the gun-hand side
+// (toward the drawing hand). Grip centre in rig units from the waist ring's centre: `side` toward
 // the gun hand, `up`, and `back` behind; side and back scale with waist width.
 export const GUN_WAIST = { side: 0.3, up: 0.5, back: 2.35 };
 // DRAW AND HOLSTER over drawS: the gun arm swings from its pose to `reach` (behind the back, at the gun) and takes the gun

@@ -22,7 +22,7 @@ import {
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
   BULLET_MAX, TRACER_M, TRACER_COLOR, HUMAN_LEAN, HUMAN_BOB, GUN_POSE, GUN_WAIST, GUN_MODEL, GUN_DRAW, GUN_RELOAD, GUN_MAG,
-  RULE_PEOPLE
+  RULE_PEOPLE, ZOMBIES
 } from './1-config.js';
 import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, sound, footfallBetween
@@ -216,10 +216,10 @@ export function humanSupportHand(reload, terms, shoulderW, out) {
   return armPoint(s, HUMAN_RIG.at(GUN_POSE.gripAt), 0, a1, a2, 0, s * inward, terms, shoulderW, out);
 }
 // The tucked gun's grip in rig space at the small of the back and its turn (out.q): flat to the back, barrel down, grip
-// to the off-hand side, tilting with the pelvis's lean.
-// the model's axes in rig space: width out of the back (-z, as x = y cross z), slide toward the gun hand, barrel down
+// to the gun-hand side, tilting with the pelvis's lean.
+// the model's axes in rig space: width (+z for a right gun hand, as x = y cross z), slide toward the off hand, barrel down
 const _waistTurn = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
-  new THREE.Vector3(0, 0, -GUN_POSE.arm), new THREE.Vector3(GUN_POSE.arm, 0, 0), new THREE.Vector3(0, -1, 0)));
+  new THREE.Vector3(0, 0, GUN_POSE.arm), new THREE.Vector3(-GUN_POSE.arm, 0, 0), new THREE.Vector3(0, -1, 0)));
 const _waistLean = new THREE.Quaternion(), _xAxis = new THREE.Vector3(1, 0, 0);
 export function humanGunWaist(terms, waistW, out) {
   const R = HUMAN_RIG, W = GUN_WAIST;
@@ -274,9 +274,16 @@ function writeHumanDown(a, now, half, out, o) {
   out[o + 2] = share > 0 ? Math.sin(share * Math.PI / 2) * (Math.abs(Math.cos(angle)) * half.depth + Math.abs(Math.sin(angle)) * half.width) : 0;
   out[o + 3] = 0;   // no ragdoll row
 }
-// A look into iLook and iShape at o.
-export function writeHumanLook(L, look, shape, o) {
-  look[o] = L.skinRGB; look[o + 1] = L.shirt; look[o + 2] = L.pants; look[o + 3] = L.code;
+// ZOMBIES (render only): a zombie's skin, its own skin blended ZOMBIES.skin.share of the way to ZOMBIES.skin.rgb.
+export function zombieSkinRGB(L) {
+  const { rgb, share } = ZOMBIES.skin, mix = sh => Math.round(((L.skinRGB >> sh) & 255) * (1 - share) + ((rgb >> sh) & 255) * share);
+  return mix(16) * 65536 + mix(8) * 256 + mix(0);
+}
+// A person's drawn skin: a zombie's green-blended one, else the look's.
+const skinOf = a => a.zombie ? zombieSkinRGB(a.look) : a.look.skinRGB;
+// A look into iLook and iShape at o, with skin (the look's own unless given).
+export function writeHumanLook(L, look, shape, o, skin = L.skinRGB) {
+  look[o] = skin; look[o + 1] = L.shirt; look[o + 2] = L.pants; look[o + 3] = L.code;
   for (let i = 0; i < NPC_TORSO_REGIONS.length; i++) shape[o + i] = L.shape[NPC_TORSO_REGIONS[i]];
 }
 // A far card's width over the baked body's; cards widen by build alone.
@@ -1277,7 +1284,8 @@ class AnimalRenderer {
         const b = rest.boundingBox;
         return { depth: Math.max(b.max.z, -b.min.z), width: Math.max(b.max.x, -b.min.x) };
       })(),
-      lookOwner: new Array(this.MAX_INSTANCES).fill(null)   // who each slot was written for
+      lookOwner: new Array(this.MAX_INSTANCES).fill(null),  // who each slot was written for
+      lookZombie: new Uint8Array(this.MAX_INSTANCES)        // 1: the slot was written for a zombie (a turn redraws the skin)
     };
 
     // ARMED PEOPLE (RULE_PEOPLE): a Glock (buildGunMesh) in each near armed person's gun hand, one instance each
@@ -1331,7 +1339,8 @@ class AnimalRenderer {
       frame: perCard('bFrame'),   // frame side and bottom, look, pose
       tint: perCard('bTint'),     // tints
       width: perCard('bWidth', 1),   // card width (humanCardWidth)
-      cardOwner: new Array(cardMax).fill(null)   // who each slot was written for
+      cardOwner: new Array(cardMax).fill(null),  // who each slot was written for
+      cardZombie: new Uint8Array(cardMax)        // 1: the slot was written for a zombie (a turn redraws the skin)
     };
   }
 
@@ -1707,12 +1716,12 @@ class AnimalRenderer {
       p.antlers = this.antlers[p.type];
     }
 
-    const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, hShape = H.shape.array, hDown = H.down.array, owners = H.lookOwner;
+    const H = this.human, hPose = H.pose.array, hGait = H.gait.array, hLook = H.look.array, hAct = H.act.array, hShape = H.shape.array, hDown = H.down.array, owners = H.lookOwner, ownerZombie = H.lookZombie;
     const now = ecosystem.time;
     let hn = 0, lookFrom = this.MAX_INSTANCES;
     let gn = 0;   // armed people's guns placed this pass (npcGuns)
     let ragBones = false;   // a people ragdoll wrote bones this pass
-    const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, bWidth = B.width.array, cardOwners = B.cardOwner;
+    const B = this.billboards, bPose = B.pose.array, bFrame = B.frame.array, bTint = B.tint.array, bWidth = B.width.array, cardOwners = B.cardOwner, cardZombie = B.cardZombie;
     let bn = 0, cardFrom = B.max;
 
     const lists = this._lists;
@@ -1774,11 +1783,11 @@ class AnimalRenderer {
           bFrame[o + 2] = p.cardLooks[a.sex];
           bFrame[o + 3] = a.moving ? 1 + ((Math.round(a.animTime * BB_PHASE_K) % BB_PHASES) + BB_PHASES) % BB_PHASES : 0;
         }
-        if (cardOwners[bn] !== a) {
-          cardOwners[bn] = a;
+        if (cardOwners[bn] !== a || cardZombie[bn] !== +a.zombie) {
+          cardOwners[bn] = a; cardZombie[bn] = +a.zombie;
           if (human) {
             const L = a.look;
-            bTint[o] = L.skinRGB; bTint[o + 1] = L.shirt; bTint[o + 2] = L.pants; bTint[o + 3] = HUMAN_HAIR[+L.female][L.variant];
+            bTint[o] = skinOf(a); bTint[o + 1] = L.shirt; bTint[o + 2] = L.pants; bTint[o + 3] = HUMAN_HAIR[+L.female][L.variant];
             bWidth[bn] = humanCardWidth(L);
           } else {
             bTint[o] = p.cardTints[a.sex]; bTint[o + 1] = bTint[o + 2] = bTint[o + 3] = 0;
@@ -1809,10 +1818,10 @@ class AnimalRenderer {
           this._humanPose.pose(a.fall, row, H.ragdoll.image.data, a.position.x, originY, a.position.z, a.facingAngle);
           ragBones = true;
         } else writeHumanDown(a, now, H.lieHalf, hDown, o);
-        if (owners[hn] !== a) {
-          owners[hn] = a;
+        if (owners[hn] !== a || ownerZombie[hn] !== +a.zombie) {
+          owners[hn] = a; ownerZombie[hn] = +a.zombie;
           const L = a.look;
-          writeHumanLook(L, hLook, hShape, o);
+          writeHumanLook(L, hLook, hShape, o, skinOf(a));
           if (hn < lookFrom) lookFrom = hn;
         }
         hn++;

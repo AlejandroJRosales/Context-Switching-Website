@@ -1,4 +1,4 @@
-// FEATURES: the Zombies and Armed switches, armed people shooting coyotes, gun loot and the slot menu; usage in tools/README.md.
+// FEATURES: Zombies and Armed switches, coyotes shot, gun loot and merging, the slot menu, zombie skin; usage in tools/README.md.
 import { openGame, WAIT_LIMIT_MS } from './lib/game-page.mjs';
 
 const args = process.argv.slice(2);
@@ -123,6 +123,51 @@ await section('slot menu', async () => {
   const gone = await g.page.evaluate(() => ({ slot: F.pg.game.inventory[1], weapon: F.pg.game.weapon }));
   check('key 1 uses (equips the gun); tapping the slot and Drop removes it from hand and inventory',
     equipped && holster === 'Holster' && gone.slot === null && gone.weapon === null, `equipped ${equipped}, menu verb "${holster}", after drop ${JSON.stringify(gone)}`);
+  await g.page.evaluate(() => { const game = F.pg.game; game.inventory[0] = game.makeItem('water'); game.draw(); });
+  await key('Digit1'); await key('Digit3');
+  const closed = await g.page.evaluate(() => ({ open: F.pg.game.menuSlot, kept: F.pg.game.inventory[0] !== null, shown: !document.getElementById('slotMenu').hidden }));
+  check('key 3 closes the menu and keeps the item', closed.open === -1 && closed.kept && !closed.shown, JSON.stringify(closed));
+});
+
+await section('gun rounds merge', async () => {
+  const r = await g.page.evaluate(() => {
+    const game = F.pg.game, gun = F.cfg.WEAPONS[F.cfg.RULE_PEOPLE.weapon];
+    game.inventory.fill(null);
+    const carried = game.inventory[0] = game.makeItem('glock', { mag: 5, reserve: 7 });
+    game.inventory[1] = game.makeItem('water'); game.inventory[2] = game.makeItem('water');   // no free slot
+    const before = carried.mag + carried.reserve;
+    game.loot({ gun });
+    const after = carried.mag + carried.reserve, guns = game.inventory.filter(it => it && it.kind === 'glock').length;
+    game.inventory.fill(null);
+    return { before, after, guns, mag: carried.mag };
+  });
+  check('a looted gun\'s rounds join the carried gun\'s reserve, even with no free slot', r.after > r.before && r.guns === 1 && r.mag === 5,
+    `rounds ${r.before} to ${r.after}, ${r.guns} gun in the inventory, magazine still ${r.mag}`);
+});
+
+await section('zombie skin', async () => {
+  await g.page.evaluate(async () => {
+    F.r = await import('/src/8a-render.js');
+    const av = F.E.avatar, z = F.E.animals.find(a => a.alive && a.type === 'human' && !a.zombie && a.gun === null);
+    z.turn(); z.foodNeed = 0;   // test setup: a person turned directly
+    F.cur = { z };
+  });
+  // polled from here every 2 s until WAIT_LIMIT_MS: the zombie is held 3 m from the player until it is drawn up close
+  let r = false;
+  for (const end = Date.now() + WAIT_LIMIT_MS; !r && Date.now() < end; await g.page.waitForTimeout(2000)) {
+    r = await g.page.evaluate(() => {
+      const { z } = F.cur, H = F.r.animalRenderer.human, av = F.E.avatar;
+      if (!z.alive) return { died: true };
+      const k = H.lookOwner.indexOf(z);
+      if (k >= 0) return { drawn: H.look.array[k * 4], want: F.r.zombieSkinRGB(z.look), own: z.look.skinRGB };
+      const x = av.position.x + 3, w = av.position.z;
+      z.position.x = x; z.position.z = w; z.freeX = x; z.freeZ = w; z._fx = x; z._fz = w;
+      return false;
+    });
+  }
+  if (!r) throw new Error('Timeout');
+  check('a zombie is drawn with the green-blended skin', !r.died && r.drawn === r.want && r.want !== r.own,
+    r.died ? 'it died first' : `drawn ${r.drawn.toString(16)}, own ${r.own.toString(16)}`);
 });
 
 check('no script errors', g.errors.length === 0, g.errors.join(' | ') || 'none');

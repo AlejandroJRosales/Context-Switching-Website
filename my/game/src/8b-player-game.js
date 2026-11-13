@@ -941,7 +941,7 @@ function syncDot() {
 
 // Item use by kind: run() applies it; `consumed` empties the slot.
 const SURVIVOR_ACTIONS = {
-  open: { verb: 'Open', consumed: false, run(g, slot) { g.inventory[slot] = g.rollLoot(); } },
+  open: { verb: 'Open', consumed: false, run(g, slot) { g.takeItem(g.rollLoot(), slot); } },
   eat: { verb: 'Eat', past: 'Ate', consumed: true, run(g, slot, item) { g.eat(Math.min(item.food, g.foodNeed)); } },
   drink: { verb: 'Drink', past: 'Drank', consumed: true, run(g, slot, item) { g.drink(item.water); } },
   treat: { verb: 'Use', past: 'Used', consumed: true, run(g, slot, item) { g.cure(item.cures); } },
@@ -954,6 +954,7 @@ const SURVIVOR_ACTIONS = {
 const SURVIVOR_FIELD_ACTIONS = {
   collect: {
     label: 'Collect',
+    icon: ICONS.harvest,
     squat: true,
     find: (g, x, feet, z) => g.inventory.includes(null) ? foodBoxes.touching(g._qb, x, feet, z) : null,
     run: (g, crate) => g.collect(crate)
@@ -978,7 +979,7 @@ const SURVIVOR_FIELD_ACTIONS = {
     label: 'Loot',
     icon: ICONS.harvest,
     squat: true,
-    find: (g, x, feet, z) => g.inventory.includes(null) ? g.lootableInReach(x, feet, z) : null,
+    find: (g, x, feet, z) => { const b = g.lootableInReach(x, feet, z); return b && g.canLoot(b) ? b : null; },
     run: (g, body) => g.loot(body)
   },
   drink: {
@@ -1033,7 +1034,7 @@ function slotButton(key, craft) {
 const slotEls = SURVIVOR_CONFIG.inventory.keys.map(key => slotButton(key, false));
 const craftEl = slotButton(SURVIVOR_CONFIG.craft.key, true);
 document.getElementById('slots').prepend(...slotEls, craftEl);   // before the injuries badge
-// SLOT MENU: an open slot's two choices, use (the item's verb) and drop, each with its menu key (game.draw fills it)
+// SLOT MENU: an open slot's choices, use (the item's verb), drop and close, each with its menu key (game.draw fills it)
 function menuButton(key) {
   const b = document.createElement('button'), kbd = document.createElement('kbd');
   kbd.textContent = slotKeyLabel(key);
@@ -1041,9 +1042,11 @@ function menuButton(key) {
   return b;
 }
 const slotMenuEl = document.getElementById('slotMenu');
-const menuUseEl = menuButton(SURVIVOR_CONFIG.inventory.menuKeys.use), menuDropEl = menuButton(SURVIVOR_CONFIG.inventory.menuKeys.drop);
+const MENU_KEYS = SURVIVOR_CONFIG.inventory.menuKeys;
+const menuUseEl = menuButton(MENU_KEYS.use), menuDropEl = menuButton(MENU_KEYS.drop), menuCloseEl = menuButton(MENU_KEYS.close);
 menuDropEl.querySelector('span').textContent = 'Drop';
-slotMenuEl.append(menuUseEl, menuDropEl);
+menuCloseEl.querySelector('span').textContent = 'Close';
+slotMenuEl.append(menuUseEl, menuDropEl, menuCloseEl);
 // GUN LOOT: the inventory kind of the gun armed rule people carry (RULE_PEOPLE.weapon)
 const RULE_GUN_KIND = Object.keys(SURVIVOR_CONFIG.inventory.items).find(k => SURVIVOR_CONFIG.inventory.items[k].weapon === RULE_PEOPLE.weapon);
 // A dead armed person's rounds: 1 to lootRounds.max, each count nextShare as likely as the count below it.
@@ -1575,16 +1578,28 @@ export const game = {
   // A dead person searched: an armed one's gun with rollLootRounds rounds, else nothing with bodyEmptyShare, else one item
   // drawn like a box's (rollLoot), into the first free slot; the body stays, searched.
   loot(body) {
+    if (!this.canLoot(body)) return;
     const free = this.inventory.indexOf(null);
-    if (free < 0) return;
     lootedBodies.add(body);
     if (body.gun !== null) {   // rounds fill the magazine first, the rest are reserve
       const rounds = rollLootRounds(), mag = Math.min(rounds, body.gun.magazine);
-      this.inventory[free] = this.makeItem(RULE_GUN_KIND, { mag, reserve: rounds - mag });
+      this.takeItem(this.makeItem(RULE_GUN_KIND, { mag, reserve: rounds - mag }), free);
       return;
     }
     if (Math.random() < SURVIVOR_CONFIG.bodyEmptyShare) return;
-    this.inventory[free] = this.rollLoot();
+    this.takeItem(this.rollLoot(), free);
+  },
+
+  // Room to loot `body`: a free slot, or an armed body whose gun's rounds merge into one carried (takeItem).
+  canLoot(body) { return this.inventory.includes(null) || (body.gun !== null && this.carries(RULE_GUN_KIND)); },
+  // Is an item of `kind` in the inventory?
+  carries(kind) { return this.inventory.some(it => it !== null && it.kind === kind); },
+  // An item into slot i, except a gun when one of its kind is carried: its rounds join that gun's reserve, slot i left empty.
+  takeItem(item, i) {
+    const isGun = !!SURVIVOR_CONFIG.inventory.items[item.kind].weapon;   // true: a gun, which merges into a carried one
+    const same = isGun ? this.inventory.find((it, k) => it !== null && k !== i && it.kind === item.kind) : undefined;
+    if (same) { same.reserve += item.mag + item.reserve; if (i >= 0) this.inventory[i] = null; }
+    else this.inventory[i] = item;
   },
 
   // A dead body into meat in the first free slot; the body is gone.
@@ -1643,12 +1658,13 @@ export const game = {
     this.menuSlot = this.menuSlot === i ? -1 : i;
     this.draw();
   },
-  // SLOT MENU: the open slot's item used ('use') or dropped ('drop'), and the menu closed.
+  // SLOT MENU: the open slot's item used ('use'), dropped ('drop') or left ('close'), and the menu closed.
   chooseMenu(choice) {
     const i = this.menuSlot;
     if (i < 0) return;
     this.menuSlot = -1;
-    if (choice === 'use') this.useSlot(i); else this.dropSlot(i);
+    if (choice === 'use') this.useSlot(i);
+    else if (choice === 'drop') this.dropSlot(i);
     this.draw();
   },
   // Slot i's item gone from the inventory; a gun in hand leaves the hand first.
@@ -1771,10 +1787,12 @@ export const game = {
 // BIND INVENTORY: slot keys and taps, the craft slot.
 export function bindInventory() {
   // a slot's key or tap opens its menu; with a menu open, the menu keys choose; the craft slot crafts
-  const M = SURVIVOR_CONFIG.inventory.menuKeys;
+  // the menu choice a key picks while a menu is open, or undefined
+  const menuChoiceOf = code => Object.keys(MENU_KEYS).find(choice => MENU_KEYS[choice] === code);
   addEventListener('keydown', e => {
     if (e.repeat || !play.active) return;
-    if (game.menuSlot >= 0 && (e.code === M.use || e.code === M.drop)) { game.chooseMenu(e.code === M.use ? 'use' : 'drop'); return; }
+    const choice = game.menuSlot >= 0 ? menuChoiceOf(e.code) : undefined;
+    if (choice) { game.chooseMenu(choice); return; }
     const i = SURVIVOR_CONFIG.inventory.keys.indexOf(e.code);
     if (i >= 0) game.openMenu(i);
     else if (e.code === SURVIVOR_CONFIG.craft.key) game.craft();
@@ -1782,6 +1800,7 @@ export function bindInventory() {
   slotEls.forEach((el, i) => el.addEventListener('click', () => { game.openMenu(i); el.blur(); }));
   menuUseEl.addEventListener('click', () => { game.chooseMenu('use'); menuUseEl.blur(); });
   menuDropEl.addEventListener('click', () => { game.chooseMenu('drop'); menuDropEl.blur(); });
+  menuCloseEl.addEventListener('click', () => { game.chooseMenu('close'); menuCloseEl.blur(); });
   craftEl.addEventListener('click', () => { game.craft(); craftEl.blur(); });
 }
 
@@ -2566,6 +2585,12 @@ function updateSprintButton() {
   if (foot !== footTouch) {
     footTouch = foot;
     document.body.classList.toggle('foot-touch', foot);
+  }
+  // an injury that stops running (game.canRun) disables the button: faded, and no presses reach it
+  const runBlocked = !game.canRun();
+  if (sprintEl.disabled !== runBlocked) {
+    sprintEl.disabled = runBlocked;
+    if (runBlocked) { pedal.sprint = false; sprintEl.classList.remove('held'); }
   }
   const show = foot && !flying;
   if (show === sprintShown) return;
