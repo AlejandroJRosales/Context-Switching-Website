@@ -295,6 +295,12 @@ function setSettingsOpen(open) {
   gearEl.classList.toggle('open', open);
   gearEl.setAttribute('aria-label', open ? 'Close settings' : 'Settings');
   if (wasOpen && !open) wake();
+  syncAudioPause();
+}
+
+// SOUND PAUSE: the audio stops whenever the world does (settings open outside VR, or the tab hidden; see frame)
+function syncAudioPause() {
+  audio.setPaused(document.hidden || (!renderer.xr.isPresenting && settingsEl.classList.contains('on')));
 }
 
 gearEl.addEventListener('click', () => {
@@ -720,7 +726,10 @@ function frame(now) {
   skyFade.tick(now);
 
   const rainDue = rainTick(dt, now);
-  const npcLive = ecosystem.ready && ecosystem.animals.length > 0;
+  // true in play and in the intro scene (its provider drives its walkers); false from a world's load until Go, so the
+  // simulation starts only once the player has chosen on the start card
+  const simRuns = play.active || !!(providers.active && providers.active.drive);
+  const npcLive = simRuns && ecosystem.ready && ecosystem.animals.length > 0;
   let npcDue = false;
   if (npcLive) {
     npcAcc += dt;
@@ -810,6 +819,7 @@ document.addEventListener('visibilitychange', () => {
     loop.last = -1;
     simSky.lastNow = 0;
   } else wake();
+  syncAudioPause();
 });
 wake();
 

@@ -520,17 +520,20 @@ export const NPC_REF_MASS_KG = {
   coyote: { male: 15, female: 13 }
 };
 
+// SPEEDS (Arena units per second): people at half their former 35; deer at DEER_SPEED_PER_HUMAN x people
+const HUMAN_SPEED = 17.5;
+const DEER_SPEED_PER_HUMAN = 2;
 // SPECIES: per-type stats in Arena units; relation fields (hunts, carrion, shootsOnSight, armedStands, crates...) name kinds.
 export const SPECIES = {
   // carrion: the dead bodies (Ecosystem.corpses) a species eats on contact; the player harvests the human list's as meat
-  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true }, armedStands: { zombie: true, coyote: true }, food: null, grazes: true, crates: true, speed: 35, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
+  human: { brain: true, hunts: { deer: true, coyote: true }, carrion: { deer: true, coyote: true }, shootsOnSight: { zombie: true }, armedStands: { zombie: true, coyote: true }, food: null, grazes: true, crates: true, speed: HUMAN_SPEED, health: 120, fovH: [0.90, 1.30], fovV: [0.25, 0.45], eye: 12, lift: 21.25, grace: 1, childDrop: 20 },
   coyote: { brain: false, hunts: { deer: true, human: true }, carrion: { deer: true, human: true }, nightPrey: { human: true }, pack: true, food: 'deer', grazes: false, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 6.5, lift: 11.5, grace: 1, childDrop: 10 },
-  deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: 25, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
+  deer: { brain: false, hunts: {}, food: 'plant', grazes: true, speed: HUMAN_SPEED * DEER_SPEED_PER_HUMAN, health: 100, fovH: [2.10, 2.80], fovV: [0.20, 0.40], eye: 10, lift: 15, grace: 1, childDrop: 10 }
 };
 export const NPC_TYPES = Object.keys(SPECIES);
 // ZOMBIES: a flag on a person (Animal.zombie); a zombie runs the rule AI and relates to others as kind `zombie`.
 export const ZOMBIES = {
-  // at world load the unarmed rule people turn (Ecosystem.startOutbreak), so RULE_PEOPLE.share alone sets the outbreak's size
+  // at world load RULE_PEOPLE.zombieShare of the rule people turn, all from the unarmed (Ecosystem.startOutbreak)
   nearestPrey: true,                     // prey chosen nearest first, not smallest first as coyotes do
   infectChance: 0.25,                    // per zombie contact hit on a living person or the Survivor player
   turnS: 10,                             // sim seconds from infection to turning; the infected act and look normal till then
@@ -555,7 +558,8 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 export const RULE_PEOPLE = {
   share: 0.1,           // of people, with no brain (all of them with the Brainless people switch on)
   food: 'deer',         // the species they hunt for food
-  armedShare: 0.5,      // of the people with no brain, carrying a gun; with Zombies on, the rest start as zombies
+  armedShare: 0.5,      // of the people with no brain, carrying a gun
+  zombieShare: 0.25,    // of the people with no brain, starting as zombies with Zombies on (from the unarmed); the rest unarmed
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   // FIRE CADENCE (shootStep): each volley is one shot, or with pairShare two; every gap is drawn evenly in its [min, max]
@@ -1556,7 +1560,7 @@ export const SOUND = {
   car: {
     startModel: 'carStart', idleModel: 'carIdle', shutdownModel: 'carShutdown',
     outputGain: 0.4,               // start, engine loop and shutdown (half the former 0.8)
-    drivingGain: 1 / 3,            // engine loop loudness at full gas over the model's (idle, start and shutdown unchanged)
+    drivingGain: 1 / 6,            // engine loop loudness at full gas over the model's (idle, start and shutdown unchanged)
     gasRiseS: 3,                   // seconds on the gas that take the firing rate and loudness from idle to revMaxRatio
     gasFallS: 1.5,                 // seconds off the gas that bring them back to idle
     gasSmoothS: 0.2,               // time constant of the firing rate and loudness following the gas share

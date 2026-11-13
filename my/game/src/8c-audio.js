@@ -73,6 +73,7 @@ export const audio = {
   master: null,
   noise: null,
   enabled: SOUND.onAtLoad,   // the Sound switch and chip; off suspends the context (no audio thread work, emits dropped)
+  paused: false,       // the world is paused (settings open, tab hidden): the context is suspended, emits dropped
   high: true,          // Graphics quality, from update: voice cap and panning model
   voices: [],          // one-shots playing: { endS, priority, out, sources }
   played: {},          // per bandModel name: curvesOf(model), built at unlock
@@ -102,7 +103,16 @@ export const audio = {
       for (let i = 0; i < frames; i++) data[i] = rand() * 2 - 1;
       for (const name in SOUND_MODELS) if (SOUND_MODELS[name].kind === 'bandModel') this.played[name] = curvesOf(SOUND_MODELS[name]);
     }
-    if (this.ctx.state !== 'running') this.ctx.resume();
+    if (!this.paused && this.ctx.state !== 'running') this.ctx.resume();   // a paused world stays silent until setPaused(false)
+  },
+
+  // The world's pause (setPaused(true) on settings open or a hidden tab): suspends the context, so playing sounds, the car's
+  // engine included, stop where they are and new ones are dropped; unpausing resumes them, if Sound is on.
+  setPaused(paused) {
+    this.paused = paused;
+    if (!this.ctx) return;
+    if (paused) { if (this.ctx.state === 'running') this.ctx.suspend(); }
+    else if (this.enabled && this.ctx.state !== 'running') this.ctx.resume();
   },
 
   // The Sound switch and chip. Off suspends the context, so playing sounds pause and new ones are dropped; on resumes.
@@ -134,10 +144,10 @@ export const audio = {
     if (E.loop && ctx.currentTime - E.lastSeenS > SOUND.car.lostAfterS) this.stopEngine(ctx.currentTime, SOUND.car.idleToShutdownFadeS);
   },
 
-  // core's sound.emit points here. Nothing plays with sound off (checked directly: suspend() takes effect asynchronously)
+  // core's sound.emit points here. Nothing plays with sound off or the world paused (checked directly: suspend() takes effect asynchronously)
   // or while the context is not running (before the start tap, or the browser suspended it).
   emit(type, x, y, z, body) {
-    if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
+    if (!this.enabled || this.paused || !this.ctx || this.ctx.state !== 'running') return;
     if (type === 'footstep') this.footstep(x, y, z, body);
     else if (type === 'gunshot') this.gunshot(x, y, z);
     else if (type === 'carEngine') this.carEngine(x, y, z, body);

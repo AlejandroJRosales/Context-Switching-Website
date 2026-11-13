@@ -2055,9 +2055,11 @@ export class Ecosystem {
     this.shownPop = -1;
   }
 
-  // ZOMBIES: every unarmed rule person turns as the world starts, so they are 1 - armedShare of the brainless people.
+  // ZOMBIES: as the world starts, unarmed rule people turn at turnShare, so zombies are RULE_PEOPLE.zombieShare of the
+  // brainless people (the rest of the unarmed stay people).
   startOutbreak() {
-    for (const a of this.animals) if (a.type === 'human' && a.brain === null && a.gun === null) a.turn();
+    const turnShare = RULE_PEOPLE.zombieShare / (1 - RULE_PEOPLE.armedShare);   // of the unarmed rule people, the share that turns
+    for (const a of this.animals) if (a.type === 'human' && a.brain === null && a.gun === null && Math.random() < turnShare) a.turn();
   }
 
   spawnPlant(src) {
