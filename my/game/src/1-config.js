@@ -208,6 +208,9 @@ export const WILDERNESS_STEPS = [
 
 // LOW-POWER (Graphics: low).
 export const LOW_PIXEL_RATIO = 1.5;
+// the WebGL context's GPU request when the page starts on low ('low-power': the integrated GPU on dual-GPU laptops);
+// high starts with the browser's default. Fixed for the page's life: a later Graphics toggle keeps the context.
+export const LOW_POWER_PREFERENCE = 'low-power';
 export const LOW_RENDER_FPS = 60;
 export const HIGH_FOG_FAR = 900, LOW_FOG_FAR = 500;        // metres; fog near stays FOG_NEAR
 export const FOG_NEAR = 120;
@@ -221,7 +224,7 @@ export const LOW_WATER_FPS = 15;
 export const AUTO_GRAPHICS_LOW_FPS = 30;
 export const AUTO_GRAPHICS_SAMPLE_MS = 1500;
 export const AUTO_GRAPHICS_WARMUP_FRAMES = 10;        // water-flow offsets advance at most this often on low
-export const MSAA_SAMPLES_WANTED = 8;   // high's MSAA, capped by the GPU
+export const MSAA_SAMPLES_WANTED = 4;   // high's MSAA, capped by the GPU (4: half the samples to shade, store and resolve of 8)
 // high's MSAA colour target: true RGBA16F (where the GPU renders to half float), false RGBA8 sRGB (half the bytes per
 // sample; with no tone mapping both clip at 1, so the image matches but for edge-resolve rounding)
 export const MSAA_HALF_FLOAT = false;

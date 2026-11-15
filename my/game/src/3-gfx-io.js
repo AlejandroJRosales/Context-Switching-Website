@@ -14,7 +14,7 @@ import {
   OVERPASS_MAX_PARALLEL, OVERPASS_MIRRORS, NOMINATIM_URL, TERRAIN_URL, TERRAIN_MAX_Z, TERRAIN_MIN_Z, TERRAIN_TILE_PX,
   TERRAIN_MAX_TILES, TERRAIN_TIMEOUT_MS, ELEV_STEP, ELEV_MARGIN, ROAD_WIDTH,
   AREA_COLOR, WATERWAY_WIDTH, BARRIER, TREE_ROW_SPACING, LANDUSE_RE, LEISURE_RE, BARRIER_RE, PLACE_KEYS, PLACE_OF,
-  PLACE_RE, LOW_PIXEL_RATIO, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
+  PLACE_RE, LOW_PIXEL_RATIO, LOW_POWER_PREFERENCE, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
   LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, MSAA_HALF_FLOAT, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
   SHADOW_DEPTH, SHADOW_BIAS_M, GROUND_CELL_M, SHADOW_SOFTNESS, CITY_FILE_DIR, CITY_FILES, HIGH_NPC_LOD_DIST,
   HIGH_FAR_STAT_DIST
@@ -31,7 +31,7 @@ export function savedGraphics() {
 const startGraphics = savedGraphics();
 // high graphics unless the player last chose low
 export const startLowPower = startGraphics === 'low';
-export const renderer = new THREE.WebGLRenderer({ antialias: false });
+export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: startLowPower ? LOW_POWER_PREFERENCE : 'default' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, startLowPower ? LOW_PIXEL_RATIO : 2));
 renderer.setSize(innerWidth, innerHeight);
 // Skip three's shader log checks (~0.5 s of load); a shader that fails to compile no longer logs why.

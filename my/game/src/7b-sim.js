@@ -111,6 +111,7 @@ class VerletBody {
     this.prev = new Float64Array(n * 3);   // last step's particles (velocity)
     this.len = new Float64Array(links.length);   // link lengths as placed
     this.floor = new Float64Array(n);      // lowest height per particle
+    this.grounded = new Uint8Array(n);     // step's scratch: 1 for a particle the ground held in any pass this step
     this.kp = 0; this.ground = 0;
     this.boundX = 0; this.boundY = 0; this.boundZ = 0; this.boundR = 0;   // bounding sphere
     this.cx = 0; this.cz = 0;              // anchors' centre (anchorCentre)
@@ -166,6 +167,8 @@ class VerletBody {
     }
     for (let o = 1; o < n3; o += 3) pos[o] -= fall;
     const la = this.la, lb = this.lb, sa = this.sa, sb = this.sb, len = this.len, floor = this.floor, nLinks = this.nLinks;
+    const grounded = this.grounded;
+    grounded.fill(0);
     for (let it = 0; it < RAGDOLL_ITERS; it++) {
       for (let k = 0; k < nLinks; k++) {
         const a = la[k], b = lb[k];
@@ -177,16 +180,19 @@ class VerletBody {
         pos[b] -= dx * fb; pos[b + 1] -= dy * fb; pos[b + 2] -= dz * fb;
       }
       for (let k = 0; k < this.nHinges; k++) this.solveHinge(k);
-      const last = it === RAGDOLL_ITERS - 1;
       for (let i = 0, o = 0; i < this.n; i++, o += 3) {
         if (pos[o + 1] >= floor[i]) continue;
         pos[o + 1] = floor[i];
-        if (last) {
-          prev[o] += (pos[o] - prev[o]) * RAGDOLL_FRICTION;
-          prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
-        }
+        grounded[i] = 1;
       }
       if (box) for (let i = 0; i < this.n; i++) this.outOfBox(i, box);
+    }
+    // ground friction once per step on every particle the ground held in any pass. Applied only to those still under
+    // the floor in the last pass, a resting particle (left on or just above the floor by the links) slid unchecked.
+    for (let i = 0, o = 0; i < this.n; i++, o += 3) {
+      if (!grounded[i]) continue;
+      prev[o] += (pos[o] - prev[o]) * RAGDOLL_FRICTION;
+      prev[o + 2] += (pos[o + 2] - prev[o + 2]) * RAGDOLL_FRICTION;
     }
     this.fitBounds();
   }
@@ -1021,6 +1027,9 @@ export class Animal extends Entity {
     const needT = (food !== null && food !== 'plant') || needQ;
     const pack = this.kindSpec.pack === true;   // packmates in sight are summed, so no early stop
     const needJ = needQ && pack;   // packmates' hunts to join
+    // kinds any branch of the scan below acts on; a neighbour of another kind is skipped before its position is read.
+    // Its own kind also counts when it is the other sex (a mate) or this is a pack animal (pack sums, hunts to join).
+    const actsOnMask = quarryMask | (foodId >= 0 ? 1 << foodId : 0) | sightMask | huntedBy;
     let bP = Infinity, bM = Infinity, bJ = Infinity, bS = Infinity, kP = -1, kM = -1, kJ = -1, kS = -1;
     let oP = null, oM = null, oJ = null, oS = null;
     // pack sums start with this animal's body
@@ -1056,11 +1065,12 @@ export class Animal extends Entity {
             for (let b = 0; b < bucket.length; b++) {
               const obj = bucket[b];
               if (obj === this || !obj.alive) continue;
+              const oid = obj.kindId;
+              if ((actsOnMask & (1 << oid)) === 0 && (oid !== tid || (!pack && obj.sex === sex))) continue;
               const ox = obj.position.x, oz = obj.position.z;
               const d2 = (ox - x) * (ox - x) + (oz - z) * (oz - z);
               if (d2 > vd) continue;
               const key = base + b;
-              const oid = obj.kindId;
               if ((quarryMask & (1 << oid)) !== 0 || oid === foodId) {
                 addPrey(obj, d2, key, 1);
               } else if ((sightMask & (1 << oid)) !== 0) {
@@ -1977,6 +1987,7 @@ export class Ecosystem {
     this._plantAdds = [];
     this._plantDrops = [];
     this._animalGridDrops = [];    // removed animals still in the grid
+    this._dead = [];               // compactLive's scratch: the entries it took out, in list order
     this.plantsDied = false;       // a plant died, so removal runs
     this.drift2 = 0;
     this.contact = null;
@@ -2320,7 +2331,9 @@ export class Ecosystem {
     a.diedAt = now;
     a.corpseUntil = now + CORPSE_S;
     this.corpses.push(a);
-    if (this.corpses.length > CORPSE_MAX) this.corpses.shift();
+    // the oldest pushed out is no longer shown, so its fall ends on the next stepFalls as a removed corpse's does
+    // (left at its CORPSE_S time, it went on stepping undrawn until then)
+    if (this.corpses.length > CORPSE_MAX) this.corpses.shift().corpseUntil = now;
   }
   // CARRION, one tick: each body is eaten whole (feedOn) by the first hungry, standing animal touching it whose species
   // eats that kind (CARRION_MASK); an eaten body is gone.
@@ -2537,32 +2550,44 @@ export class Ecosystem {
     this.eatCorpses();
 
     this.expireCorpses();
-    for (let i = this.animals.length - 1; i >= 0; i--) {
-      const a = this.animals[i];
-      if (!a.alive) {
-        a.remove();
-        this._animalGridDrops.push(a);
-        this.animals.splice(i, 1);
-        // CORPSES: died of health loss (not eaten whole or taken out of the world)
-        if (a.health <= Animal.DEATH_HEALTH) this.addCorpse(a);
-      }
+    // the dead handled last to first, as the per-death splice loop this replaces did
+    const deadAnimals = this.compactLive(this.animals);
+    for (let i = deadAnimals.length - 1; i >= 0; i--) {
+      const a = deadAnimals[i];
+      a.remove();
+      this._animalGridDrops.push(a);
+      // CORPSES: died of health loss (not eaten whole or taken out of the world)
+      if (a.health <= Animal.DEATH_HEALTH) this.addCorpse(a);
     }
     // FALLS: after addCorpse, so an animal that died falling keeps its body as a corpse
     this.stepFalls();
     if (this.plantsDied) {
       this.plantsDied = false;
-      for (let i = this.plants.length - 1; i >= 0; i--) {
-        if (!this.plants[i].alive) {
-          this.plants[i].remove();
-          this._plantDrops.push(this.plants[i]);
-          this.plants.splice(i, 1);
-        }
+      const deadPlants = this.compactLive(this.plants);
+      for (let i = deadPlants.length - 1; i >= 0; i--) {
+        deadPlants[i].remove();
+        this._plantDrops.push(deadPlants[i]);
       }
     }
 
     providers.active.regrow(this);
 
     return true;
+  }
+
+  // Takes the dead out of `list` in one pass, keeping the living in order (one O(n) pass where a splice per death was
+  // O(n) each); returns the removed entries in list order, in a scratch array reused by the next call.
+  compactLive(list) {
+    const dead = this._dead;
+    dead.length = 0;
+    let n = 0;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e.alive) list[n++] = e;
+      else dead.push(e);
+    }
+    list.length = n;
+    return dead;
   }
 
   // The clock advances once main has drawn this tick.

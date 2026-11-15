@@ -33,17 +33,31 @@ export const collision = {
   shellGrid: new Map(),
   shells: [],   // building footprints; shellGrid buckets index into it
   solidStamp: new Uint32Array(0),
+  // per solid i, at i * WALL_BOX_STRIDE: minX, maxX, minZ, maxZ, base, top, copied from gridWalls[i] (which never change
+  // once filed), so resolveCollisions rejects a solid by reading flat numbers instead of loading the solid itself
+  wallBox: new Float64Array(0),
   stampNo: 0,   // solidStamp[i] === stampNo: solid i already visited this query
   obstacleThroats: [],   // doorways occ carves open (cabin throats, from placeCabins)
   openBounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }   // the ecosystem's bounds, for isOpen (set by initialize)
 };
 const shellRas = { cells: null, x0: 0, z0: 0, cols: 0, rows: 0, cell: SHELL_CELL, inv: 1 / SHELL_CELL };
 
+const WALL_BOX_STRIDE = 6;
+// collision.wallBox rebuilt from gridWalls; every writer of gridWalls calls it.
+function fileWallBoxes() {
+  const walls = collision.gridWalls, box = collision.wallBox = new Float64Array(walls.length * WALL_BOX_STRIDE);
+  for (let i = 0, o = 0; i < walls.length; i++, o += WALL_BOX_STRIDE) {
+    const w = walls[i];
+    box[o] = w.minX; box[o + 1] = w.maxX; box[o + 2] = w.minZ; box[o + 3] = w.maxZ; box[o + 4] = w.base; box[o + 5] = w.top;
+  }
+}
+
 export function buildGrid(solids) {
   collision.gridWalls = solids;
   collision.wallGrid = gridOf(solids, GRID_CELL);
   collision.solidStamp = new Uint32Array(solids.length);
   collision.stampNo = 0;
+  fileWallBoxes();
 }
 
 // OBSTACLE INDEX: one grid of every provider's solids and doorway lanes, for collisions and the NPC occupancy grid.
@@ -54,6 +68,7 @@ export function resetObstacles() {
   collision.shellGrid = new Map(); collision.shells = [];
   shellRas.cells = null; shellRas.cols = 0; shellRas.rows = 0;
   collision.solidStamp = new Uint32Array(0); collision.stampNo = 0;
+  fileWallBoxes();
 }
 
 export function addSolids(list) {
@@ -75,12 +90,14 @@ export function addSolids(list) {
   }
   collision.solidStamp = new Uint32Array(collision.gridWalls.length);
   collision.stampNo = 0;
+  fileWallBoxes();
 }
 
 // Push a circle out of overlapping solids (callers substep so thin walls are not skipped); returns whether it pushed.
 export function resolveCollisions(pos, r = PLAYER_RADIUS,
   feetY = pos.y - EYE_HEIGHT, headY = pos.y + HEAD_CLEAR, stepUp = 0) {
   let pushed = false;
+  const box = collision.wallBox;
 
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
@@ -97,10 +114,11 @@ export function resolveCollisions(pos, r = PLAYER_RADIUS,
         for (const idx of bucket) {
           if (collision.solidStamp[idx] === collision.stampNo) continue;
           collision.solidStamp[idx] = collision.stampNo;
-          const w = collision.gridWalls[idx];
+          const o = idx * WALL_BOX_STRIDE;
           // skip pieces the column is fully above or below, or can step onto
-          if (feetY + stepUp >= w.top - LAND_EPS || headY <= w.base) continue;
-          if (pos.x < w.minX - r || pos.x > w.maxX + r || pos.z < w.minZ - r || pos.z > w.maxZ + r) continue;
+          if (feetY + stepUp >= box[o + 5] - LAND_EPS || headY <= box[o + 4]) continue;
+          if (pos.x < box[o] - r || pos.x > box[o + 1] + r || pos.z < box[o + 2] - r || pos.z > box[o + 3] + r) continue;
+          const w = collision.gridWalls[idx];
 
           // the crossing test only runs inside the piece's box; most hits are decided by distance
           const inside = pos.x >= w.minX && pos.x <= w.maxX && pos.z >= w.minZ && pos.z <= w.maxZ &&
