@@ -536,7 +536,7 @@ export const SPECIES = {
 export const NPC_TYPES = Object.keys(SPECIES);
 // ZOMBIES: a flag on a person (Animal.zombie); a zombie runs the rule AI and relates to others as kind `zombie`.
 export const ZOMBIES = {
-  // at world load RULE_PEOPLE.zombieShare of the rule people turn, all from the unarmed (Ecosystem.startOutbreak)
+  // at world load RULE_PEOPLE.zombieShare of all people start as zombies (Animal constructor, Ecosystem.startOutbreak)
   nearestPrey: true,                     // prey chosen nearest first, not smallest first as coyotes do
   infectChance: 0.25,                    // per zombie contact hit on a living person or the Survivor player
   turnS: 10,                             // sim seconds from infection to turning; the infected act and look normal till then
@@ -556,13 +556,14 @@ export const NPC_FOOD_PER_HEALTH_TICK = 0.000003;
 // BROKEN BONES: a hit of sureDamageShare of maxHealth breaks one; a smaller hit with chanceBelowSure (NPCs: / toughness).
 export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // PEOPLE WITHOUT BRAINS: a share of people, rolled at spawn and at birth, run the deer and coyote rules (thinkDeer)
-// instead of a learning brain, hunting `food` as a coyote does. Some of them carry a gun with endless rounds; an armed
-// one never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
+// instead of a learning brain, hunting `food` as a coyote does. Every one of them carries a gun with endless rounds; it
+// never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
+// Zombies at world load are their own slice of all people (zombieShare), on top of the armed brainless share.
 export const RULE_PEOPLE = {
-  share: 0.1,           // of people, with no brain (all of them with the Brainless people switch on)
+  share: 0.1,           // of all people, armed with no brain, Brainless people switch off
+  shareSwitchOn: 1,     // Brainless people switch on: every person outside the zombie slice is armed with no brain
+  zombieShare: 0.1,     // of all people, starting as zombies with Zombies on (either Brainless switch); none with Zombies off
   food: 'deer',         // the species they hunt for food
-  armedShare: 0.5,      // of the people with no brain, carrying a gun
-  zombieShare: 0.25,    // of the people with no brain, starting as zombies with Zombies on (from the unarmed); the rest unarmed
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
   // FIRE CADENCE (shootStep): each volley is one shot, or with pairShare two; every gap is drawn evenly in its [min, max]

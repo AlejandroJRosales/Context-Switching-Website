@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-13T05:03:37.202Z",
+ "generated": "2026-11-16T00:45:02.259Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -95,6 +95,7 @@
     "+CITY_STEPS: string[][]",
     "+WILDERNESS_STEPS: string[][]",
     "+LOW_PIXEL_RATIO: number",
+    "+LOW_POWER_PREFERENCE: string",
     "+LOW_RENDER_FPS: number",
     "+HIGH_FOG_FAR: number",
     "+LOW_FOG_FAR: number",
@@ -1000,9 +1001,9 @@
    "visibility": "+",
    "attributes": [
     "share: number",
-    "food: string",
-    "armedShare: number",
+    "shareSwitchOn: number",
     "zombieShare: number",
+    "food: string",
     "weapon: string",
     "rangeM: number",
     "pairShare: number",
@@ -1719,12 +1720,14 @@
    "kind": "file",
    "role": "COLLISION. Walls, shells, occupancy, cover and spawn checks over what the providers built.",
    "attributes": [
+    "-WALL_BOX_STRIDE: number",
     "-_ts: array",
     "-_shellStamp: Uint32Array",
     "-_shellStampNo: number"
    ],
    "functions": [
     "+pointInShell(s, x, z): boolean",
+    "-fileWallBoxes(): void",
     "+buildGrid(solids): void",
     "+resetObstacles(): void",
     "+addSolids(list): void",
@@ -1762,6 +1765,7 @@
     "shellGrid: Map",
     "shells: array",
     "solidStamp: Uint32Array",
+    "wallBox: Float64Array",
     "stampNo: number",
     "obstacleThroats: array",
     "openBounds: object"
@@ -2595,6 +2599,7 @@
     "prev: Float64Array",
     "len: Float64Array",
     "floor: Float64Array",
+    "grounded: Uint8Array",
     "kp: number",
     "ground: number",
     "boundX: number",
@@ -3048,7 +3053,8 @@
     "night: boolean",
     "afterContacts: array",
     "avatar: null",
-    "allBrainless: boolean",
+    "brainlessOn: boolean",
+    "seedingZombies: boolean",
     "_qPlant: array",
     "_qWater: array",
     "_qBox: array",
@@ -3057,6 +3063,7 @@
     "_plantAdds: array",
     "_plantDrops: array",
     "_animalGridDrops: array",
+    "_dead: array",
     "plantsDied: boolean",
     "drift2: number",
     "contact: null|ContactGrid",
@@ -3104,6 +3111,7 @@
     "dropFalls(): void",
     "collide(a): void",
     "step(dt): boolean",
+    "compactLive(list): array",
     "endTick(): void"
    ]
   },
@@ -3773,6 +3781,7 @@
     "-attackQueued: boolean",
     "-footTouch: boolean",
     "-sprintShown: boolean",
+    "-attackShown: boolean",
     "-aimShown: boolean",
     "-drawShown: boolean",
     "-gunFaceShown: boolean",
@@ -4723,6 +4732,7 @@
     "PLACE_OF",
     "PLACE_RE",
     "LOW_PIXEL_RATIO",
+    "LOW_POWER_PREFERENCE",
     "HIGH_FOG_FAR",
     "LOW_FOG_FAR",
     "FOG_NEAR",
@@ -6553,11 +6563,6 @@
   {
    "from": "7b-sim.js#Ecosystem",
    "to": "5-collision.js#occ",
-   "type": "uses"
-  },
-  {
-   "from": "7b-sim.js#Ecosystem",
-   "to": "1-config.js#RULE_PEOPLE",
    "type": "uses"
   },
   {

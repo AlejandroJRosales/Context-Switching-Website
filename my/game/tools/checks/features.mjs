@@ -227,12 +227,11 @@ const g2 = await openGame({ rootDir, threeDir, switches: { brainless: true } });
 await section('Brainless people switch', async () => {
   const r = await g2.page.evaluate(async () => {
     const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human');   // every person, zombies included
-    const cfg = await import('/src/1-config.js');
-    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length, share: cfg.RULE_PEOPLE.armedShare };
+    const ruled = people.filter(a => a.brain === null && !a.zombie);
+    return { people: people.length, brained: people.filter(a => a.brain !== null).length, ruled: ruled.length, armed: ruled.filter(a => a.gun !== null).length };
   });
   check('with Brainless people on, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
-  const sd = Math.sqrt(r.people * r.share * (1 - r.share));
-  check('with Brainless people on, armedShare of them are armed', Math.abs(r.armed - r.share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+  check('with Brainless people on, every brainless non-zombie is armed', r.ruled > 0 && r.armed === r.ruled, `${r.armed} of ${r.ruled}`);
 });
 check('no script errors (second load)', g2.errors.length === 0, g2.errors.join(' | ') || 'none');
 await g2.close();

@@ -854,7 +854,7 @@ const gunView = {
     this.inHand = game.weapon !== null && !petting.on;
     if (!this.ready) this.aimOn = false;
     // Aim stays on through a reload, the arms lowered until it ends
-    this.aiming = this.inHand && this.aimOn && play.active && !player.inCar && !flying && !down && this.reload < 0;
+    this.aiming = this.inHand && this.aimOn && play.active && !player.inCar && !down && this.reload < 0;   // flying aims too
     if (this.recoil > 0) {
       const settle = this.recoil * (1 - Math.exp(-dt / GUN_RECOIL.recoverS));   // this frame's share back
       player.pitch -= settle; this.recoil -= settle;
@@ -2598,8 +2598,8 @@ export function bindCar() {
 }
 let attackQueued = false;
 
-// Touch sprint, jump and attack on foot, hidden while flying.
-let footTouch = false, sprintShown = false;
+// Touch sprint and jump on foot, hidden while flying; touch attack on foot, flying or not.
+let footTouch = false, sprintShown = false, attackShown = false;
 function updateSprintButton() {
   const foot = play.active && !player.inCar && touchUi();
   if (foot !== footTouch) {
@@ -2612,14 +2612,20 @@ function updateSprintButton() {
     sprintEl.disabled = runBlocked;
     if (runBlocked) { pedal.sprint = false; sprintEl.classList.remove('held'); }
   }
-  const show = foot && !flying;
-  if (show === sprintShown) return;
-  sprintShown = show;
-  for (const el of [sprintEl, jumpEl, attackEl]) {
-    el.classList.toggle('on', show);
-    if (!show) el.classList.remove('held');
+  const sprintShow = foot && !flying;   // sprint and jump: on foot, not flying (the climb buttons take their slots)
+  if (sprintShow !== sprintShown) {
+    sprintShown = sprintShow;
+    for (const el of [sprintEl, jumpEl]) {
+      el.classList.toggle('on', sprintShow);
+      if (!sprintShow) el.classList.remove('held');
+    }
+    if (!sprintShow) pedal.sprint = pedal.jump = false;
   }
-  if (!show) pedal.sprint = pedal.jump = pedal.attack = attackQueued = false;
+  if (foot !== attackShown) {   // attack: on foot, flying or not
+    attackShown = foot;
+    attackEl.classList.toggle('on', foot);
+    if (!foot) { attackEl.classList.remove('held'); pedal.attack = attackQueued = false; }
+  }
 }
 
 // The gun buttons and the attack button's face: with a gun carried, Draw/Holster shows left of the attack button; with
@@ -2672,8 +2678,8 @@ function updateGunButtons() {
   const holsters = gunHolsters();
   if (holsters !== holsterShown) { holsterShown = holsters; setButtonFace(drawEl, DRAW_FACES[holsters]); }
   if (gunView.aimOn !== aimLit) { aimLit = gunView.aimOn; aimEl.classList.toggle('held', aimLit); }   // lit while Aim is on
-  // on foot with touch controls, not flying (sprintShown), and not getting in or out of the car
-  const touchFoot = sprintShown && carTransit === null;
+  // on foot with touch controls, flying or not (attackShown), and not getting in or out of the car
+  const touchFoot = attackShown && carTransit === null;
   const draw = touchFoot && (inHand || game.carriedGun() !== null), aim = touchFoot && inHand;
   if (draw !== drawShown) drawShown = showGunButton(drawEl, draw);
   if (aim !== aimShown) aimShown = showGunButton(aimEl, aim);
@@ -2963,9 +2969,9 @@ export function playerStep(dt) {
     player.heading += Math.max(-maxTurn, Math.min(maxTurn, dh));
   }
 
-  // attack: with a gun in hand a tap fires once (semi-auto) while aiming; bare hands, a tap punches once and a hold keeps punching
+  // attack, flying or not: with a gun in hand a tap fires once (semi-auto) while aiming; bare hands, a tap punches once and a hold keeps punching
   gunView.step(dt);
-  if (play.active && !flying && !knockedDown) {
+  if (play.active && !knockedDown) {
     if (game.weapon) { if (attackQueued && gunView.aiming) game.fire(); }
     else if (attackQueued || pedal.attack) game.punch();
   }
