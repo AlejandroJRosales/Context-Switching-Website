@@ -15,7 +15,7 @@ import {
   BB_CELL, BB_DIRS, BB_BAKED_DIRS, BB_PHASES, BB_POSES, BB_BLOCK, BB_FRAME, BB_FACE_VARIANT, BB_HUMAN_SWING,
   BB_STAND_SWING, BB_PHASE_K, BB_MIP_BIAS, PLANT_GRID, FOOD_BOX_SIZE, SHADOW_FOLLOW_STEP, SHADOW_SUN_STEP_COS,
   SHADOW_ANIMAL_HZ, SHADOW_ANIMAL_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
-  BLOB_LIFT, BLOB_SPREAD, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
+  BLOB_LIFT, BLOB_SPREAD, DETAIL, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
   EMOJI_FONT, FAR_STAT_MAX, FAR_PANEL_SCALE, FAR_PAGE_PX, FAR_CELL_GUTTER, FAR_REDRAW_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_ROW_H, BAR_TEXT_FONT, BAR_ROW_GAP, BAR_SPRITE_CANVAS_H,
   BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
@@ -28,7 +28,8 @@ import {
   fmt, cellKey, fightClamp01, fightEase, invalidate, solarVector, moonVector, sound, footfallBetween
 } from './2-core.js';
 import {
-  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf, radialAlphaCanvas
+  startLowPower, renderer, scene, camera, viewPos, viewQuat, hemi, sun, MOON_FALLBACK, moon, msaa, perf, radialAlphaCanvas,
+  detailOn
 } from './3-gfx-io.js';
 import {
   providers
@@ -289,17 +290,33 @@ export function writeHumanLook(L, look, shape, o, skin = L.skinRGB) {
 // A far card's width over the baked body's; cards widen by build alone.
 const humanCardWidth = L => L.build / NPC_BUILD_BASE_MEAN[L.female ? 'female' : 'male'];
 
-// The rest-pose body: 16 parts lofted from rings, ~490 triangles; uv is tile-local.
-function buildHumanGeometry() {
+// The rest-pose body: 16 parts lofted from rings, ~490 triangles at rings 1; uv is tile-local. `rings` multiplies each
+// round ring's sides (DETAIL.people.rings with detail on: rounder heads, limbs and torso, same parts and uvs).
+function buildHumanGeometry(rings = 1) {
   const R = HUMAN_RIG, at = R.at, W = R.widthAt;
   const pos = [], nrm = [], uv = [], rig = [], piv = [], idx = [];
-  // ring points run from the back centre toward +x, the front, then -x
-  const oval = (n, cx, y, cz, rx, rz) => Array.from({ length: n }, (_, i) => {
-    const a = Math.PI - i * 2 * Math.PI / n;
+  // ring points run from the back centre toward +x, the front (index n / 2), then -x
+  const oval = (n, cx, y, cz, rx, rz) => Array.from({ length: n * rings }, (_, i) => {
+    const a = Math.PI - i * 2 * Math.PI / (n * rings);
     return [cx + rx * Math.sin(a), y, cz + rz * Math.cos(a)];
   });
-  const boxy = (y, cz, rx, rz) => [[0, -rz], [0.62 * rx, -rz], [rx, -0.58 * rz], [rx, 0.58 * rz], [0.62 * rx, rz], [0, rz],
-    [-0.62 * rx, rz], [-rx, 0.58 * rz], [-rx, -0.58 * rz], [-0.62 * rx, -rz]].map(([x, z]) => [x, y, cz + z]);
+  // a closed ring with (rings - 1) points between each pair, on a Catmull-Rom curve through the originals
+  const rounder = pts => {
+    if (rings === 1) return pts;
+    const n = pts.length, out = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      out.push(p1);
+      for (let k = 1; k < rings; k++) {
+        const t = k / rings, t2 = t * t, t3 = t2 * t;
+        out.push([0, 1, 2].map(c => 0.5 * (2 * p1[c] + (p2[c] - p0[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2
+          + (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * t3)));
+      }
+    }
+    return out;
+  };
+  const boxy = (y, cz, rx, rz) => rounder([[0, -rz], [0.62 * rx, -rz], [rx, -0.58 * rz], [rx, 0.58 * rz], [0.62 * rx, rz], [0, rz],
+    [-0.62 * rx, rz], [-rx, 0.58 * rz], [-rx, -0.58 * rz], [-0.62 * rx, -rz]].map(([x, z]) => [x, y, cz + z]));
   const part = ({ rings, vs, rect, tile, id, limb = 0, side = 0, depth = 0, ringDepth = {}, pivot = [0, 0, 0], capStart, capEnd }) => {
     // ringDepth: per-ring depth overrides (seam rings)
     const depthOf = r => ringDepth[r] ?? depth;
@@ -345,7 +362,12 @@ function buildHumanGeometry() {
   const F = HUMAN_FACE_TILE, B = HUMAN_BODY_TILE, arm = [R.shoulder, R.elbow, 0], leg = [R.hip, R.knee, R.ankle];
   // head (0) and neck (1) on the face tile; v runs with height
   const chin = at(0.864), hv = y => (R.crown - y) / (R.crown - chin);
-  const headRing = (f, k, nose, fwd) => { const r = oval(8, 0, at(f), fwd - 0.15, 1.72 * k, 2.1 * k); r[4][2] += nose; return r; };
+  // the nose: the front point pushed out, its neighbours by less toward the next original side (as rings 1 draws it)
+  const headRing = (f, k, nose, fwd) => {
+    const r = oval(8, 0, at(f), fwd - 0.15, 1.72 * k, 2.1 * k), front = r.length / 2;
+    for (let d = 1 - rings; d < rings; d++) r[front + d][2] += nose * (1 - Math.abs(d) / rings);
+    return r;
+  };
   const head = [headRing(0.985, 0.62, 0, 0), headRing(0.945, 1, 0, 0), headRing(0.905, 0.97, 0.32, 0.05), headRing(0.875, 0.78, 0.25, 0.2)];
   part({ rings: head, vs: head.map(r => hv(r[0][1])), rect: [0, 0, 128, 48], tile: F, id: 0, capStart: [0, R.crown, -0.1, 0], capEnd: [0, chin, 0.3, 1] });
   part({ rings: [oval(6, 0, at(0.885), -0.25, 1.36, 1.3), oval(6, 0, at(0.825), -0.25, 1.36, 1.3)], vs: [0, 1], rect: [0, 48, 128, 16], tile: F, id: 1 });
@@ -402,9 +424,10 @@ function buildHumanGeometry() {
   return g;
 }
 
-// Paint and mask atlases drawn at startup: grey paint tinted per person by the mask (r skin, g shirt, b pants).
-function paintHumanAtlas() {
-  const S = HUMAN_ATLAS, paint = new Uint8ClampedArray(S * S * 4), mask = new Uint8ClampedArray(S * S * 4);
+// Paint and mask atlases drawn at startup: grey paint tinted per person by the mask (r skin, g shirt, b pants). `scale`
+// multiplies the texels a side (DETAIL.people.atlas with detail on); layout, uvs and patterns stay those of scale 1.
+function paintHumanAtlas(scale = 1) {
+  const S = HUMAN_ATLAS * scale, paint = new Uint8ClampedArray(S * S * 4), mask = new Uint8ClampedArray(S * S * 4);
   let seed = 7;
   const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
   const hash = (x, y) => {
@@ -430,11 +453,14 @@ function paintHumanAtlas() {
   const overHair = (hex, a = 1, k = 1) => { over(hex, a, k); o.h += a; };
   const shade = k => { o.r *= k; o.g *= k; o.b *= k; };
   let col = 0;
+  // x0, y0, w, h in scale-1 texels; col and the mottle stay in scale-1 texels so stripes and stains keep their size
   const region = (x0, y0, w, h, fn) => {
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      col = x;
-      fn((x + 0.5) / w, (y + 0.5) / h);
-      const X = x0 + x, Y = y0 + y, i = (Y * S + X) * 4, k = (1 + (rnd() - 0.5) * 0.07) * (0.96 + 0.08 * mott(X, Y)) * 255;
+    const W = w * scale, H = h * scale;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      col = Math.floor(x / scale);
+      fn((x + 0.5) / W, (y + 0.5) / H);
+      const X = x0 * scale + x, Y = y0 * scale + y, i = (Y * S + X) * 4;
+      const k = (1 + (rnd() - 0.5) * 0.07) * (0.96 + 0.08 * mott(X / scale, Y / scale)) * 255;
       paint[i] = o.r * k; paint[i + 1] = o.g * k; paint[i + 2] = o.b * k; paint[i + 3] = 255;
       mask[i] = o.s * 255; mask[i + 1] = o.t * 255; mask[i + 2] = o.p * 255; mask[i + 3] = o.h * 255;
     }
@@ -848,12 +874,13 @@ const HUMAN_VERTEX_MAIN = /* glsl */`
       vHumanPants = humanColor(iLook.z);
     `;
 
-// Lambert plus depth twin; people code sits before '#include <common>' for the minifier.
+// Lambert plus depth twin; people code sits before '#include <common>' for the minifier. paint and mask are uniform
+// objects, so humanDetail can swap the atlas without a recompile.
 function humanMaterials(paint, mask, ragdoll) {
   const lit = new THREE.MeshLambertMaterial();
   lit.onBeforeCompile = sh => {
-    sh.uniforms.humanPaint = { value: paint };
-    sh.uniforms.humanMask = { value: mask };
+    sh.uniforms.humanPaint = paint;
+    sh.uniforms.humanMask = mask;
     sh.uniforms.humanRagdoll = { value: ragdoll };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', HUMAN_VERTEX_PARS + '\n#include <common>')
@@ -1253,7 +1280,10 @@ class AnimalRenderer {
     ragdoll.minFilter = ragdoll.magFilter = THREE.NearestFilter;
     ragdoll.generateMipmaps = false;
     ragdoll.needsUpdate = true;
-    const rest = buildHumanGeometry(), atlas = paintHumanAtlas(), mats = humanMaterials(atlas.paint, atlas.mask, ragdoll);
+    const rest = buildHumanGeometry(), atlas = paintHumanAtlas();
+    // the atlas the lit material reads (humanDetail swaps it); the billboard bake keeps scale 1's
+    const paintU = { value: atlas.paint }, maskU = { value: atlas.mask };
+    const mats = humanMaterials(paintU, maskU, ragdoll);
     const geometry = new THREE.InstancedBufferGeometry();
     geometry.setIndex(rest.index);
     for (const k in rest.attributes) geometry.setAttribute(k, rest.attributes[k]);
@@ -1271,6 +1301,8 @@ class AnimalRenderer {
     mesh.visible = false;
     this.human = {
       rest, geometry, mesh,
+      // DETAIL: plain and detailed rest and atlas (detailed built on first use), which is on, and every body geometry
+      detail: { on: false, plain: { rest, paint: atlas.paint, mask: atlas.mask }, detailed: null, paintU, maskU, bodies: [geometry] },
       pose: perInstance('iPose'),   // rig origin and facing
       gait: perInstance('iGait'),   // kp, phase, swing, run share
       look: perInstance('iLook'),   // skin, shirt, pants, face/outfit/build code
@@ -1527,6 +1559,34 @@ class AnimalRenderer {
       this._mat4.compose(this._local, this._quatFinal, this._scale);
       im[part].setMatrixAt(idx, this._mat4);
     }
+  }
+
+  // DETAIL: the people rig's detailed (rounder, sharper) or plain rest geometry and atlas, on every body.
+  humanDetail(on) {
+    const D = this.human.detail;
+    if (on === D.on) return;
+    D.on = on;
+    if (on && !D.detailed) {
+      const a = paintHumanAtlas(DETAIL.people.atlas);
+      D.detailed = { rest: buildHumanGeometry(DETAIL.people.rings), paint: a.paint, mask: a.mask };
+    }
+    const use = on ? D.detailed : D.plain;
+    D.paintU.value = use.paint;
+    D.maskU.value = use.mask;
+    for (const g of D.bodies) this.setHumanRest(g, use.rest);
+  }
+
+  // A body geometry (instanced) on the rest geometry `rest`; its instance attributes stay.
+  setHumanRest(g, rest) {
+    g.setIndex(rest.index);
+    for (const k in rest.attributes) g.setAttribute(k, rest.attributes[k]);
+  }
+
+  // Another body geometry (the player's): takes the current rest and follows humanDetail from now on.
+  addHumanBody(g) {
+    const D = this.human.detail;
+    this.setHumanRest(g, (D.on ? D.detailed : D.plain).rest);
+    D.bodies.push(g);
   }
 
   // Rest bounds of a type's body (blob footprints).
@@ -2447,6 +2507,10 @@ export const graphics = {
   apply() {
     const on = this.shadowsOn();
     gfxEl.textContent = `Graphics: ${this.high ? 'high' : 'low'}`;
+    // DETAIL for this quality: surface detail shaders read detailOn; the people rig swaps geometry and atlas
+    const detail = DETAIL.on[this.high ? 'high' : 'low'];
+    detailOn.value = detail ? 1 : 0;
+    animalRenderer.humanDetail(detail);
     const pr = Math.min(devicePixelRatio, this.high ? 2 : LOW_PIXEL_RATIO);
     if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
     if (!this.high) msaa.dispose();
@@ -2635,7 +2699,9 @@ class BlobShadows {
 
   // Blob strength from the light, as the material opacity.
   applyLight() {
-    const light = providers.active ? Math.min(1, sun.intensity / BLOB_FULL_SUN) : 0;
+    // DETAIL: on High graphics only, a floor share stays with no sun (overcast, night)
+    const sunShare = Math.min(1, sun.intensity / BLOB_FULL_SUN);
+    const light = providers.active ? (graphics.high ? Math.max(sunShare, DETAIL.blobFloor) : sunShare) : 0;
     this.material.opacity = BLOB_OPACITY * light;
     return light;
   }

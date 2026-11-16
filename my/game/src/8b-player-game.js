@@ -454,8 +454,7 @@ export const pov = {
   build() {
     const H = animalRenderer.human;
     const g = new THREE.InstancedBufferGeometry();
-    g.setIndex(H.rest.index);
-    for (const k in H.rest.attributes) g.setAttribute(k, H.rest.attributes[k]);
+    animalRenderer.addHumanBody(g);   // the rest geometry for the Graphics quality, and follows changes to it
     for (const name of HUMAN_INSTANCE_ATTRS) g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(4), 4));
     g.instanceCount = 1;
     const mesh = new THREE.Mesh(g, H.mesh.material);

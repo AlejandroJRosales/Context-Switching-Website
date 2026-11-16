@@ -7,7 +7,7 @@
 // IO half owns: Nominatim geocoding, hedged Overpass requests, the hosted city files, Terrarium elevation tiles, and
 // the OSM parsers (featuresFrom and its helpers).
 // May import: 1-config.js, 2-core.js, three. Config blocks it reads: graphics, shadows, network, terrain, layers,
-// places, city files.
+// places, city files, detail.
 import * as THREE from 'three';
 import {
   DEFAULT_LEVELS, METERS_PER_LVL, OVERPASS_TIMEOUT_MS, OVERPASS_QUERY_TIMEOUT, OVERPASS_HEDGE_MS,
@@ -17,7 +17,7 @@ import {
   PLACE_RE, LOW_PIXEL_RATIO, LOW_POWER_PREFERENCE, HIGH_FOG_FAR, LOW_FOG_FAR, FOG_NEAR, HIGH_CAMERA_FAR, LOW_CAMERA_FAR, LOW_NPC_LOD_DIST,
   LOW_FAR_STAT_DIST, MSAA_SAMPLES_WANTED, MSAA_HALF_FLOAT, GRAPHICS_KEY, HEMI_DAY, SHADOW_BOX_HALF, SHADOW_EDGE_FADE, SHADOW_MAP_MAX,
   SHADOW_DEPTH, SHADOW_BIAS_M, GROUND_CELL_M, SHADOW_SOFTNESS, CITY_FILE_DIR, CITY_FILES, HIGH_NPC_LOD_DIST,
-  HIGH_FAR_STAT_DIST
+  HIGH_FAR_STAT_DIST, DETAIL
 } from './1-config.js';
 import {
   ringArea, pointInRing
@@ -178,6 +178,106 @@ export function radialAlphaCanvas(size, stops) {
   return c;
 }
 
+// DETAIL: one switch every detail shader reads, so a Graphics change needs no recompile. graphics.apply (8a-render.js)
+// sets it from DETAIL.on for the Graphics quality: 1 draws the detail, 0 doesn't.
+export const detailOn = { value: 0 };
+
+// Ground detail maps, one per channel, tiling: r grass, g asphalt, b concrete and bare ground. 0.5 leaves the colour.
+function groundDetailMap() {
+  const S = DETAIL.ground.texels, data = new Uint8Array(S * S * 4);
+  const hash = (x, y, k) => {
+    let h = Math.imul(((x % S) + S) % S, 374761393) + Math.imul(((y % S) + S) % S, 668265263) + Math.imul(k, 2246822519) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  // value noise with period S, cells `c` texels wide (c divides S, so it tiles)
+  const noise = (x, y, c, k) => {
+    const fx = x / c, fy = y / c, ix = Math.floor(fx), iy = Math.floor(fy);
+    let tx = fx - ix, ty = fy - iy;
+    tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+    const w = S / c, h = (i, j) => hash(((i % w) + w) % w, ((j % w) + w) % w, k);
+    const a = h(ix, iy), b = h(ix + 1, iy), d = h(ix, iy + 1), e = h(ix + 1, iy + 1);
+    return a + (b - a) * tx + (d - a) * ty + (a - b - d + e) * tx * ty;
+  };
+  const fbm = (x, y, c0, k) => {
+    let v = 0, amp = 0.5, c = c0;
+    for (let o = 0; o < 4 && c >= 2; o++, c /= 2, amp *= 0.5) v += amp * (noise(x, y, c, k + o) - 0.5);
+    return v;
+  };
+  // cracks: random walks drawn into the asphalt
+  const crack = new Float32Array(S * S);
+  for (let n = 0; n < 7; n++) {
+    let x = hash(n, 1, 7) * S, y = hash(n, 2, 7) * S, a = hash(n, 3, 7) * Math.PI * 2;
+    for (let step = 0; step < 90; step++) {
+      a += (hash(n, step, 8) - 0.5) * 0.9;
+      x += Math.cos(a); y += Math.sin(a);
+      const i = ((Math.round(y) % S + S) % S) * S + ((Math.round(x) % S + S) % S);
+      crack[i] = 1;
+    }
+  }
+  const to8 = v => Math.max(0, Math.min(255, Math.round((0.5 + v) * 255)));
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = (y * S + x) * 4, grain = hash(x, y, 1) - 0.5;
+    // grass: blades as fine speckle, clumps and worn patches
+    const grass = 0.55 * grain + 0.5 * fbm(x, y, 32, 10) + 0.3 * (noise(x, y, 4, 20) - 0.5);
+    // asphalt: aggregate speckle, the odd light stone, tar patches, cracks
+    const stone = hash(x, y, 2) > 0.985 ? 0.35 : 0;
+    const asphalt = 0.35 * grain + stone + 0.35 * fbm(x, y, 64, 30) - 0.45 * crack[y * S + x];
+    // concrete and bare ground: fine grain and blotchy stains
+    const concrete = 0.22 * grain + 0.45 * fbm(x, y, 64, 40) + 0.15 * (noise(x, y, 8, 50) - 0.5);
+    data[i] = to8(grass); data[i + 1] = to8(asphalt); data[i + 2] = to8(concrete); data[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+// The ground surfaces groundDetail knows, as the shader's uSurface.
+export const SURFACE = { natural: 0, road: 1, path: 2 };
+const SURFACE_STRENGTH = [DETAIL.ground.natural, DETAIL.ground.road, DETAIL.ground.path];
+let detailMap = null;
+
+// Adds the detail maps to a built-in lit material, keeping any onBeforeCompile it already has. Apply it last (outermost),
+// so its cache key wraps the others'. `surface` is a SURFACE value; natural picks grass or bare ground by greenness.
+export function groundDetail(mat, surface) {
+  if (!detailMap) detailMap = groundDetailMap();
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+  const G = DETAIL.ground, f = n => n.toFixed(3);
+  const uniforms = { uDetailOn: detailOn, uDetailMap: { value: detailMap }, uSurface: { value: surface },
+    uSurfaceStrength: { value: SURFACE_STRENGTH[surface] } };
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, uniforms);
+    sh.vertexShader = 'varying vec3 vDetailPos;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vDetailPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'uniform float uDetailOn, uSurface, uSurfaceStrength;\nuniform sampler2D uDetailMap;\nvarying vec3 vDetailPos;\n' +
+      sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+  if (uDetailOn > 0.5) {
+    float dFade = 1.0 - smoothstep(${f(G.fade[0])}, ${f(G.fade[1])}, distance(vDetailPos, cameraPosition));
+    if (dFade > 0.0) {
+      vec3 dNear = texture2D(uDetailMap, vDetailPos.xz * ${f(1 / G.tile[0])}).rgb - 0.5;
+      vec3 dFar = texture2D(uDetailMap, vDetailPos.xz * ${f(1 / G.tile[1])} + 0.37).rgb - 0.5;
+      float dn, df;
+      if (uSurface < 0.5) {
+        float green = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * ${f(G.greenK)}, 0.0, 1.0);
+        dn = mix(dNear.b, dNear.r, green); df = mix(dFar.b, dFar.r, green);
+      } else if (uSurface < 1.5) { dn = dNear.g; df = dFar.g; }
+      else { dn = dNear.b; df = dFar.b; }
+      diffuseColor.rgb *= max(0.0, 1.0 + 2.0 * uSurfaceStrength * dFade * (dn + 0.6 * df));
+    }
+  }`);
+  };
+  mat.customProgramCacheKey = () => prevKey.call(mat) + '|grounddetail';
+  return mat;
+}
+// the flat ground plane (a city with no terrain) takes the bare-ground detail
+groundDetail(ground.material, SURFACE.natural);
+
 // GEOMETRY HELPERS
 
 // Table hexes are authored as displayed, so convert from sRGB like material colours.
@@ -188,6 +288,17 @@ export function rgb(hex) {
 
 export function newBuf() { return { pos: [], col: [] }; }
 const NO_WIN = [0, 0, 0];
+// DETAIL prelit corners: metres to an inside corner (start of the wall, end of it); this far means none.
+export const NO_CORNER = 1e4;
+// A window wall's distances to inside corners: from b.edge (origin, direction, length, which ends are inside corners).
+function cornerOf(b, p, out, o) {
+  const e = b.edge;
+  if (!e) { out[o] = out[o + 1] = NO_CORNER; return; }
+  const s = (p[0] - e.ox) * e.ux + (p[2] - e.oz) * e.uz;
+  out[o] = e.c0 ? s : NO_CORNER;
+  out[o + 1] = e.c1 ? e.L - s : NO_CORNER;
+}
+const _corner = new Float64Array(6);
 
 // `ref` is the direction the face should point; winding is fixed to match.
 export function pushTri(b, p0, p1, p2, c, ref) {
@@ -198,10 +309,15 @@ export function pushTri(b, p0, p1, p2, c, ref) {
   const q1 = flip ? p2 : p1, q2 = flip ? p1 : p2;
   b.pos.push(p0[0], p0[1], p0[2], q1[0], q1[1], q1[2], q2[0], q2[1], q2[2]);
   b.col.push(c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]);
-  // FACADE: outer walls carry [baseY, topY, seed]; every other face gets zeros.
+  // FACADE: outer walls carry [baseY, topY, seed] and, with b.corner, metres to inside corners; every other face zeros.
   if (b.win) {
-    const w = c === b.winCol && ref[1] === 0 ? b.winData : NO_WIN;
+    const wall = c === b.winCol && ref[1] === 0, w = wall ? b.winData : NO_WIN;
     b.win.push(w[0], w[1], w[2], w[0], w[1], w[2], w[0], w[1], w[2]);
+    if (b.corner) {
+      if (wall) { cornerOf(b, p0, _corner, 0); cornerOf(b, q1, _corner, 2); cornerOf(b, q2, _corner, 4); }
+      else _corner.fill(NO_CORNER);
+      for (let k = 0; k < 6; k++) b.corner.push(_corner[k]);
+    }
   }
 }
 
@@ -216,6 +332,7 @@ export function bufGeom(b) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
   if (b.win) g.setAttribute('win', new THREE.Float32BufferAttribute(b.win, 3));
+  if (b.corner) g.setAttribute('corner', new THREE.Float32BufferAttribute(b.corner, 2));
   g.computeVertexNormals();
   return g;
 }

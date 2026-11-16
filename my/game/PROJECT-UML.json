@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16T01:15:53.804Z",
+ "generated": "2026-11-16T02:47:12.912Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -581,6 +581,7 @@
     "1-config.js#WorldConfig",
     "1-config.js#CAT_SEAT",
     "1-config.js#MIX_HABITAT",
+    "1-config.js#DETAIL",
     "1-config.js#ICON_STYLE",
     "1-config.js#ICONS",
     "1-config.js#SURVIVOR_CONFIG",
@@ -1123,6 +1124,19 @@
    ],
    "methods": []
   },
+  "1-config.js#DETAIL": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "on: object",
+    "prelit: object",
+    "facade: object",
+    "ground: object",
+    "blobFloor: number",
+    "people: object"
+   ],
+   "methods": []
+  },
   "1-config.js#ICON_STYLE": {
    "kind": "object",
    "visibility": "+",
@@ -1583,7 +1597,11 @@
     "+moon: THREE.DirectionalLight",
     "+ground: THREE.Mesh",
     "-_col: THREE.Color",
+    "-SURFACE_STRENGTH: unknown[]",
+    "-detailMap: null",
     "-NO_WIN: number[]",
+    "+NO_CORNER: number",
+    "-_corner: Float64Array",
     "+UP: number[]",
     "-_cellFrustum: THREE.Frustum",
     "-_cellView: THREE.Matrix4",
@@ -1595,8 +1613,11 @@
     "+resetGroundPlane(): void",
     "+cssColor(raw): null|unknown",
     "+radialAlphaCanvas(size, stops): HTMLElement",
+    "-groundDetailMap(): THREE.DataTexture",
+    "+groundDetail(mat, surface): unknown",
     "+rgb(hex): unknown[]",
     "+newBuf(): object",
+    "-cornerOf(b, p, out, o): void",
     "+pushTri(b, p0, p1, p2, c, ref): void",
     "+pushQuad(b, p0, p1, p2, p3, c, ref): void",
     "+bufGeom(b): null|THREE.BufferGeometry",
@@ -1637,6 +1658,8 @@
    ],
    "contains": [
     "3-gfx-io.js#msaa",
+    "3-gfx-io.js#detailOn",
+    "3-gfx-io.js#SURFACE",
     "3-gfx-io.js#perf",
     "3-gfx-io.js#PNG_BYTES_PER_PIXEL"
    ]
@@ -1656,6 +1679,24 @@
     "render(): void",
     "dispose(): void"
    ]
+  },
+  "3-gfx-io.js#detailOn": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "value: number"
+   ],
+   "methods": []
+  },
+  "3-gfx-io.js#SURFACE": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "natural: number",
+    "road: number",
+    "path: number"
+   ],
+   "methods": []
   },
   "3-gfx-io.js#perf": {
    "kind": "object",
@@ -1873,6 +1914,8 @@
     "-pickByRoads(cands, s, roads): null|undefined",
     "-chooseDoor(s, R, roads, ents): object",
     "-signDoor(s, i): null|object",
+    "-insideCorners(R): array",
+    "-edgeFor(buf, R, i, inside): void",
     "-wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn): void",
     "-lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn): void",
     "-ringPlinth(ctx, R, foot, floor): void",
@@ -3238,8 +3281,8 @@
     "-skinOf(a): number",
     "+writeHumanLook(L, look, shape, o, skin?: unknown): void",
     "-humanCardWidth(L): number",
-    "-buildHumanGeometry(): THREE.BufferGeometry",
-    "-paintHumanAtlas(): object",
+    "-buildHumanGeometry(rings?: number): THREE.BufferGeometry",
+    "-paintHumanAtlas(scale?: number): object",
     "-humanMaterials(paint, mask, ragdoll): object",
     "-billboardMaterials(atlases, grid): object",
     "-ragdollRise(a, now): number",
@@ -3429,6 +3472,9 @@
     "+constructor()",
     "bakeBillboards(looks, grid, rest, paint, mask, atlases?: null): null|array",
     "poseBoxRig(p, im, idx, antlers, aidx, kp, legH, move?: null): void",
+    "humanDetail(on): void",
+    "setHumanRest(g, rest): void",
+    "addHumanBody(g): void",
     "restBox(type): unknown",
     "static queueUpload(attr, lo, n): void",
     "placeNpcGun(a, n, aim, kp, originY, gait, act, o): number",
@@ -4755,7 +4801,8 @@
     "CITY_FILE_DIR",
     "CITY_FILES",
     "HIGH_NPC_LOD_DIST",
-    "HIGH_FAR_STAT_DIST"
+    "HIGH_FAR_STAT_DIST",
+    "DETAIL"
    ]
   },
   {
@@ -4867,6 +4914,7 @@
     "FACADE_CURTAIN_SILL_M",
     "FACADE_CURTAIN_TOP_GAP_M",
     "FACADE_TALL_M",
+    "DETAIL",
     "HEAD_CLEAR",
     "EYE_HEIGHT",
     "GRID_CELL",
@@ -5035,7 +5083,10 @@
     "heightOf",
     "minHeightOf",
     "signLabel",
-    "radialAlphaCanvas"
+    "radialAlphaCanvas",
+    "detailOn",
+    "groundDetail",
+    "SURFACE"
    ]
   },
   {
@@ -5464,6 +5515,7 @@
     "BLOB_FULL_SUN",
     "BLOB_LIFT",
     "BLOB_SPREAD",
+    "DETAIL",
     "BAR_STEPS",
     "BAR_RELEASE_TICKS",
     "ARROW_STEPS",
@@ -5565,7 +5617,8 @@
     "moon",
     "msaa",
     "perf",
-    "radialAlphaCanvas"
+    "radialAlphaCanvas",
+    "detailOn"
    ]
   },
   {
@@ -6668,6 +6721,11 @@
   },
   {
    "from": "8a-render.js#AnimalRenderer",
+   "to": "1-config.js#DETAIL",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#AnimalRenderer",
    "to": "7b-sim.js#Animal",
    "type": "uses"
   },
@@ -6708,6 +6766,16 @@
   },
   {
    "from": "8a-render.js#graphics",
+   "to": "1-config.js#DETAIL",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#graphics",
+   "to": "3-gfx-io.js#detailOn",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#graphics",
    "to": "3-gfx-io.js#msaa",
    "type": "uses"
   },
@@ -6734,6 +6802,16 @@
   {
    "from": "8a-render.js#BlobShadows",
    "to": "4-provider.js#providers",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#BlobShadows",
+   "to": "8a-render.js#graphics",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#BlobShadows",
+   "to": "1-config.js#DETAIL",
    "type": "uses"
   },
   {

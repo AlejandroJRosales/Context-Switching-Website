@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   METERS_PER_LVL, FACADE_FLOOR_JITTER_M, FACADE_SILL_M, FACADE_WIN_H_M, FACADE_CURTAIN_SILL_M, FACADE_CURTAIN_TOP_GAP_M,
-  FACADE_TALL_M, HEAD_CLEAR, EYE_HEIGHT, GRID_CELL, WALL_T, WALL_T_MIN, DOOR_W, DOOR_MIN_W, DOOR_H, PIER, PIER_MIN,
+  FACADE_TALL_M, DETAIL, HEAD_CLEAR, EYE_HEIGHT, GRID_CELL, WALL_T, WALL_T_MIN, DOOR_W, DOOR_MIN_W, DOOR_H, PIER, PIER_MIN,
   FRAME_W, FLOOR_Y, CEIL_GAP, ENTRANCE_REACH, ROAD_NEAR, ROAD_FAR, ROAD_CELL, ELEV_STEP, ELEV_MARGIN, LAYER_BIAS,
   LAYER_Y, ROAD_WIDTH, PATH_KINDS, ROAD_COLOR, PATH_COLOR, AREA_COLOR, MIX_GREEN_PULL, MIX_EDGE_FADE, MIX_GREEN_KINDS,
   BARRIER, WALL_MATERIAL_COLOR, ROOF_MATERIAL_COLOR, ROOF_SHAPE, SIGN_COLS, SIGN_CELL_W, SIGN_CELL_H, SIGN_MAX,
@@ -33,7 +33,8 @@ import {
 } from './2-core.js';
 import {
   renderer, scene, camera, ground, cssColor, rgb, newBuf, pushTri, pushQuad, bufGeom, tint, nonIndexed, UP, ribbon,
-  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel, radialAlphaCanvas
+  areaGeom, cellCull, box, cyl, perf, parseLength, heightOf, minHeightOf, signLabel, radialAlphaCanvas, detailOn,
+  groundDetail, SURFACE
 } from './3-gfx-io.js';
 import {
   providers
@@ -422,6 +423,18 @@ function signDoor(s, i) {
 
 // WALL PIECES
 
+// DETAIL prelit corners: per edge, true where it starts in an inside corner (the wall before it turns toward its face).
+function insideCorners(R) {
+  const n = R.E.length;
+  return R.E.map((e, i) => { const p = R.E[(i - 1 + n) % n]; return e.nx * p.ux + e.nz * p.uz > 0.1; });
+}
+// Points buf's window walls at edge i (pushTri measures each vertex along it); null once the ring is done.
+function edgeFor(buf, R, i, inside) {
+  const e = R.E[i], p = R.pts[i], E = buf.edge || (buf.edge = {});
+  E.ox = p[0]; E.oz = p[1]; E.ux = e.ux; E.uz = e.uz; E.L = e.L;
+  E.c0 = inside[i]; E.c1 = inside[(i + 1) % R.E.length];
+}
+
 function wallPiece(ctx, o0, o1, i0, i1, y0, y1, out, inn) {
   vquad(ctx.buf, o0, o1, y0, y1, ctx.wc, out);
   vquad(ctx.buf, i0, i1, y0, y1, ctx.iw, inn);
@@ -442,18 +455,20 @@ function lintelPiece(ctx, o0, o1, i0, i1, doorTop, wallTop, out, inn) {
 
 // Foundation on sloping ground, lowest ground up to the floor (outer face and collider only).
 function ringPlinth(ctx, R, foot, floor) {
-  const n = R.pts.length;
+  const n = R.pts.length, inside = insideCorners(R);
   for (let i = 0; i < n; i++) {
     const e = R.E[i], j = (i + 1) % n;
+    edgeFor(ctx.buf, R, i, inside);
     const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
     vquad(ctx.buf, p0, p1, foot, floor, ctx.wc, [-e.nx, 0, -e.nz]);
     pushSolid(ctx.solids, [p0, p1, q1, q0], foot, floor);
   }
+  ctx.buf.edge = null;
 }
 
 // Walls for one ring; `doors` is at most one door per edge or a single run, null for courtyards.
 function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
-  const n = R.pts.length;
+  const n = R.pts.length, inside = insideCorners(R);
   const frameTop = Math.min(doorTop + FRAME_W, wallTop);
   const run = doors && doors.length && doors[0].run ? doors[0] : null;
   const byEdge = new Map();
@@ -461,6 +476,7 @@ function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
 
   for (let i = 0; i < n; i++) {
     const e = R.E[i], j = (i + 1) % n;
+    edgeFor(ctx.buf, R, i, inside);
     const p0 = R.pts[i], p1 = R.pts[j], q0 = R.inner[i], q1 = R.inner[j];
     const out = [-e.nx, 0, -e.nz], inn = [e.nx, 0, e.nz];
 
@@ -501,6 +517,7 @@ function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
     vquad(ctx.buf, D1, X1, base, doorTop, ctx.trim, [-e.ux, 0, -e.uz]);
     lintelPiece(ctx, D0, D1, X0, X1, doorTop, wallTop, out, inn);
   }
+  ctx.buf.edge = null;
 
   if (run) {
     const ef = R.E[run.first], el = R.E[run.last];
@@ -517,26 +534,34 @@ function ringWalls(ctx, R, doors, base, wallTop, doorTop) {
 // x = fraction of upper windows lit, y = fraction of shopfront bays lit.
 export const facadeLit = { value: new THREE.Vector2(0, 0) };
 
-// Lambert material with the window pattern patched into its shader.
+// Lambert material with the window pattern patched into its shader. DETAIL (detailOn): prelit walls
+// (darker at the ground, under the eaves and into inside corners), window frames, sills, floor ledges, grime and streaks.
 function facadeMaterial() {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   m.extensions = { derivatives: true };
+  const P = DETAIL.prelit, F = DETAIL.facade, f = n => n.toFixed(3);
   m.onBeforeCompile = sh => {
     sh.uniforms.uFacadeLit = facadeLit;
+    sh.uniforms.uDetailOn = detailOn;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
             attribute vec3 win;
+            attribute vec2 corner;
             varying vec3 vWin;
+            varying vec2 vCorner;
             varying vec3 vFacadePos;
             varying vec3 vFacadeNrm;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
             vWin = win;
+            vCorner = corner;
             vFacadePos = (modelMatrix * vec4(transformed, 1.0)).xyz;
             vFacadeNrm = normal;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
             uniform vec2 uFacadeLit;
+            uniform float uDetailOn;
             varying vec3 vWin;
+            varying vec2 vCorner;
             varying vec3 vFacadePos;
             varying vec3 vFacadeNrm;
             float facadeHash(vec3 p) {
@@ -564,6 +589,8 @@ function facadeMaterial() {
                 float gf = wallH > 7.0 ? 4.2 + r1 * 0.8 : 0.0;
                 vec3 glassCol = mix(vec3(0.030, 0.040, 0.055), vec3(0.060, 0.095, 0.130), r3);
                 float glass = 0.0, lit = 0.0, cover = 0.0, litAvg = 0.0, cell = 0.0, fw = 0.0;
+                // DETAIL: the wall's brightness outside the glass (frames, sills, ledges, streaks); stays 1 with detail off
+                float wallK = 1.0;
 
                 if (h < gf) {
                   // shopfront: wide glazing between piers, kick plate below, fascia above
@@ -578,6 +605,13 @@ function facadeMaterial() {
                   diffuseColor.rgb *= mix(0.72, 0.50, fascia);
                   lit = step(facadeHash(vec3(cell, 91.0, seed * 51.0)) + 0.0001, uFacadeLit.y);
                   litAvg = uFacadeLit.y;
+                  if (uDetailOn > 0.5) {
+                    // a frame round the shop glazing
+                    float fwx = ${f(F.frameW)} / bayW;
+                    float framed = facadeBox(fract(fx), 0.06 - fwx, 0.94 + fwx, ex)
+                      * facadeBox(h, 0.45 - ${f(F.frameW)}, gf - 0.75 + ${f(F.frameW)}, fwidth(h));
+                    wallK = mix(1.0, ${f(F.frame)}, max(0.0, framed - glass));
+                  }
                 } else {
                   // a storey per level (METERS_PER_LVL), plus this building's share of the jitter
                   float floorH = ${METERS_PER_LVL.toFixed(3)} + r2 * ${FACADE_FLOOR_JITTER_M.toFixed(3)};
@@ -598,16 +632,44 @@ function facadeMaterial() {
                   cell = col + row * 57.0;
                   lit = step(facadeHash(vec3(col, row, seed * 51.0)) + 0.0001, uFacadeLit.x);
                   litAvg = uFacadeLit.x;
+                  if (uDetailOn > 0.5) {
+                    // metres to cell shares: across the bay (x) and up the storey (y)
+                    float cx = fract(fx), cy = fract(fy), mx = 1.0 / bayW, my = 1.0 / floorH;
+                    float fwx = ${f(F.frameW)} * mx, fwy = ${f(F.frameW)} * my;
+                    float framed = facadeBox(cx, x0 - fwx, 1.0 - x0 + fwx, ex) * facadeBox(cy, y0 - fwy, y1 + fwy, ey) * whole;
+                    float frame = max(0.0, framed - glass);
+                    // punched windows only (not curtain wall): a sill under the frame, a streak under the sill
+                    float punched = (1.0 - tall) * whole;
+                    float sillTop = y0 - fwy, sillLo = sillTop - ${f(F.sillH)} * my, sx = ${f(F.sillOut)} * mx;
+                    float sill = facadeBox(cx, x0 - fwx - sx, 1.0 - x0 + fwx + sx, ex) * facadeBox(cy, sillLo, sillTop, ey) * punched;
+                    float below = sillLo - cy;
+                    float streakL = ${f(F.streakL)} * my * (0.35 + 0.65 * facadeHash(vec3(col, row, seed * 7.0)));
+                    float streak = facadeBox(cx, x0 + fwx, 1.0 - x0 - fwx, ex) * step(0.0, below)
+                      * (1.0 - smoothstep(0.0, streakL, below)) * punched;
+                    // a ledge along each floor line
+                    float ledge = facadeBox(cy, 0.0, ${f(F.ledgeH)} * my, ey) * (1.0 - tall);
+                    wallK = mix(1.0, ${f(F.frame)}, frame) * mix(1.0, ${f(F.sill)}, sill) * (1.0 - ${f(F.streak)} * streak)
+                      * mix(1.0, ${f(F.ledge)}, ledge);
+                  }
                 }
 
                 // far away the grid is finer than a pixel: fade to its average to stop shimmer
                 float detail = 1.0 - smoothstep(0.35, 0.9, fw);
                 float g = mix(cover, glass, detail);
                 float l = mix(cover * litAvg, glass * lit, detail);
+                diffuseColor.rgb *= mix(1.0, wallK, detail);
                 diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, g);
                 float tone = facadeHash(vec3(cell, seed * 17.0, 3.0));
                 vec3 lamp = mix(vec3(1.0, 0.74, 0.42), vec3(0.78, 0.88, 1.0), step(0.86, tone));
                 facadeGlow = lamp * l * (0.45 + 0.55 * fract(tone * 9.7));
+              }
+              // DETAIL prelit: every outer wall face (plinths too), glass included, lit windows' glow not
+              if (uDetailOn > 0.5 && seed > 0.0) {
+                float base = mix(${f(P.base)}, 1.0, smoothstep(0.0, ${f(P.baseH)}, h))
+                  * mix(${f(F.grime)}, 1.0, smoothstep(0.0, ${f(F.grimeH)}, h));
+                float eaves = mix(${f(P.eaves)}, 1.0, smoothstep(0.0, ${f(P.eavesH)}, wallH - h));
+                float nook = mix(${f(P.corner)}, 1.0, smoothstep(0.0, ${f(P.cornerW)}, min(vCorner.x, vCorner.y)));
+                diffuseColor.rgb *= base * eaves * nook;
               }
             }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -725,6 +787,8 @@ export function buildCity(features) {
     if (!c) {
       c = { buf: newBuf(), roofBuf: newBuf() };
       c.buf.win = []; c.roofBuf.win = [];
+      // DETAIL prelit corners: both buffers carry the attribute, since a chunk merges them
+      c.buf.corner = []; c.roofBuf.corner = [];
       chunks.set(k, c);
     }
     return c;
@@ -926,7 +990,9 @@ function buildGround(features) {
   const areas = lay(areaGeoms), greens = lay(greenGeoms);
   for (const g of areas) matchWildGround(g, false);
   for (const g of greens) matchWildGround(g, true);
-  const areaMesh = addLayer(areas.concat(greens), indoorClip.apply(lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area)))));
+  // DETAIL ground maps go on last (outermost), over the clips and lamp light
+  const areaMesh = addLayer(areas.concat(greens),
+    groundDetail(indoorClip.apply(lampLight.apply(waterClip.apply(litMaterial(LAYER_BIAS.area)))), SURFACE.natural));
   // the wild ground takes shadows, so land cover must too or it reads lighter than the grass around it
   if (areaMesh) cellCull(areaMesh, true).receiveShadow = true;
   // the wild water's surface (reflective, moving, see-through, both faces), UVs in metres for its normal maps
@@ -939,9 +1005,9 @@ function buildGround(features) {
     waterMesh.renderOrder = 1;
   }
   // roads and paths take the buildings' and animals' shadows like the ground under them
-  const roadMesh = rg ? addLayer(lay([rg]), indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.road)))) : null;
+  const roadMesh = rg ? addLayer(lay([rg]), groundDetail(indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.road))), SURFACE.road)) : null;
   if (roadMesh) cellCull(roadMesh).receiveShadow = true;
-  const pathMesh = pg ? addLayer(lay([pg]), indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.path)))) : null;
+  const pathMesh = pg ? addLayer(lay([pg]), groundDetail(indoorClip.apply(lampLight.apply(litMaterial(LAYER_BIAS.path))), SURFACE.path)) : null;
   if (pathMesh) cellCull(pathMesh).receiveShadow = true;
 }
 
@@ -1184,7 +1250,8 @@ export function buildTerrainBase(radius, paint = null) {
   if (!elevation.active && !paint) return;
   const h = elevation.active ? Math.min(radius + ELEV_MARGIN, elevation.half) : radius;
   const g = terrainGrid(-h, h, -h, h, -0.02);
-  const mesh = cellCull(new THREE.Mesh(g, lampLight.apply(waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 })))), false, TERRAIN_CELL_M);
+  const mat = groundDetail(lampLight.apply(waterClip.apply(paint ? paint(g) : new THREE.MeshLambertMaterial({ color: 0x5c5f57 }))), SURFACE.natural);
+  const mesh = cellCull(new THREE.Mesh(g, mat), false, TERRAIN_CELL_M);
   mesh.receiveShadow = true;
   scene.add(mesh);
   layers.push(mesh);
@@ -2728,7 +2795,7 @@ function heightMesh(grid, skip = null, sink = null) {
   g.computeVertexNormals();
   paintSlope(g);
   g.computeBoundingSphere();
-  const mesh = cellCull(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })), false, TERRAIN_CELL_M);
+  const mesh = cellCull(new THREE.Mesh(g, groundDetail(new THREE.MeshLambertMaterial({ vertexColors: true }), SURFACE.natural)), false, TERRAIN_CELL_M);
   mesh.receiveShadow = true;
   return mesh;
 }

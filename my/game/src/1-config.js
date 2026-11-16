@@ -1105,6 +1105,40 @@ export const BLOB_FULL_SUN = 1.35;      // sun intensity where blobs reach BLOB_
 export const BLOB_LIFT = 0.04;          // above the feet, against z-fighting
 export const BLOB_SPREAD = 1.25;        // size over the footprint
 
+// DETAIL: San Andreas-style surface detail. Read by 3-gfx-io.js (detailOn, the ground detail maps), 6-worlds.js (the
+// facade) and 8a-render.js (blobs, people). Lengths in metres.
+export const DETAIL = {
+  // which Graphics qualities draw the prelit walls, facade, ground maps and people detail (blobFloor is High only)
+  on: { high: true, low: true },
+  // PRELIT WALLS: outer walls darkened at the ground, under the eaves and into inside corners, as baked light would
+  prelit: {
+    base: 0.62, baseH: 2.2,       // brightness at the ground, rising to 1 over baseH
+    eaves: 0.86, eavesH: 0.7,     // brightness at the wall top, rising to 1 over eavesH below it
+    corner: 0.6, cornerW: 1.1     // brightness in an inside corner, rising to 1 over cornerW along the wall
+  },
+  // FACADE: frames round each window, a sill under it, a ledge at each floor line, grime from the ground and under sills
+  facade: {
+    frameW: 0.1, frame: 0.6,      // frame band round the glass and its brightness
+    sillH: 0.12, sillOut: 0.06, sill: 1.22,   // sill height under the frame, its overhang past the frame, brightness
+    ledgeH: 0.18, ledge: 0.84,    // ledge at each floor line and its brightness
+    grimeH: 5, grime: 0.82,       // brightness at the ground, rising to 1 over grimeH
+    streak: 0.14, streakL: 0.9    // darkening under each sill at its top, and the longest streak
+  },
+  // GROUND: procedural detail maps tiled in world space over the ground layers, faded out with distance
+  ground: {
+    texels: 256,                  // detail map size a side
+    tile: [4, 23],                // metres per repeat, near and far sample (two scales hide the repeat)
+    fade: [35, 110],              // metres from the camera where the detail starts and finishes fading
+    // strength: how far the map moves the colour (0 none, 1 from black to double)
+    natural: 0.55, road: 0.4, path: 0.35,
+    greenK: 6                     // how sharply a vertex colour's greenness picks grass over bare ground
+  },
+  // BLOBS (High graphics only): share of BLOB_OPACITY kept with no sun (overcast, night), so people still stand on the ground
+  blobFloor: 0.55,
+  // PEOPLE: ring sides times this (rounder bodies), atlas texels times this (sharper faces and clothes)
+  people: { rings: 2, atlas: 2 }
+};
+
 // ICONS: single-colour SVG on a 24-unit grid, all in currentColor (shading by opacity), so every icon takes its button's
 // text colour and a lit button inverts it. Sized where shown by ICON_STYLE (showIcon in 8b). Items name theirs in
 // SURVIVOR_CONFIG.inventory; an item or injury icon may also be plain emoji text.
