@@ -300,7 +300,8 @@ MOON_TINT = [0.13, 0.15, 0.22];
 
 // shadows
 const SHADOW_SIZE = 1024,
-SHADOW_REFRESH = 5;
+SHADOW_REFRESH = 5,
+SHADOW_RANGE = 1500;
 
 // footstep sounds: [freqStart, freqEnd, resonance, volume, duration, lowpass]
 const STEP_SOUNDS = [
@@ -1701,11 +1702,11 @@ const initShadow = () => {
 };
 
 const updateLightVP = (sunDir) => {
-  const texel = worldSize / SHADOW_SIZE,
+  const texel = (SHADOW_RANGE * 2) / SHADOW_SIZE,
     dir = norm3([sunDir[0], Math.max(sunDir[1], 0.15), sunDir[2]]),
     focus = [Math.round(cam[0] / texel) * texel, Math.max(terrainHeight(cam[0], cam[2]), waterLevel), Math.round(cam[2] / texel) * texel];
   lookAt(lightView, focus.map((v, k) => v + dir[k] * worldSize), focus, UP);
-  ortho(lightProj, -worldHalf, worldHalf, -worldHalf, worldHalf, 1, worldSize * 2);
+  ortho(lightProj, -SHADOW_RANGE, SHADOW_RANGE, -SHADOW_RANGE, SHADOW_RANGE, 1, worldSize * 2);
   mat4Mul(lightVP, lightProj, lightView);
 };
 
