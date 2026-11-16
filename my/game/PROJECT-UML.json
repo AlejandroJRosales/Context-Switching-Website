@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16T07:58:39.042Z",
+ "generated": "2026-11-16T08:20:17.870Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -559,6 +559,7 @@
     "1-config.js#CITY_FILES",
     "1-config.js#NPC_FIGHT_MOVES",
     "1-config.js#NPC_POUNCES",
+    "1-config.js#TURN_RATES",
     "1-config.js#NPC_RIG_TOP",
     "1-config.js#NPC_SIZE",
     "1-config.js#NPC_REF_BMI",
@@ -867,6 +868,14 @@
    ],
    "methods": []
   },
+  "1-config.js#TURN_RATES": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "human: number"
+   ],
+   "methods": []
+  },
   "1-config.js#NPC_RIG_TOP": {
    "kind": "object",
    "visibility": "+",
@@ -1023,7 +1032,8 @@
     "restS: number[]",
     "aimHoldS: number",
     "huntHungerShare: number",
-    "spreadRad: number",
+    "groupMOA: number[]",
+    "fireConeRad: number",
     "foeS: number",
     "looterShare: number",
     "lootStandM: number",
@@ -2878,6 +2888,8 @@
     "brain: SpikingNetwork|null",
     "ACTION_HOLD: number",
     "gun: unknown|null",
+    "turnRate: number",
+    "aimErrorRad: number",
     "looter: boolean",
     "lootMark: null|unknown",
     "prey: null|unknown",
@@ -2895,7 +2907,7 @@
     "_dirSin: number",
     "_dirCos: number",
     "moving: boolean",
-    "facingAngle: number",
+    "facingAngle: unknown",
     "prevHealth: unknown",
     "prevWaterNeed: unknown",
     "prevFoodNeed: unknown",
@@ -2959,6 +2971,8 @@
     "think(grid): void",
     "thinkDeer(grid): void",
     "aimAtFocus(): void",
+    "headTo(angle): void",
+    "steerFight(): void",
     "steerDeer(): void",
     "looting(): unknown",
     "steerLoot(): void",
@@ -2980,7 +2994,8 @@
     "static preyAhead(s, d2, sB, dB): boolean",
     "move(): void",
     "update(now, grid): void",
-    "shootTarget(now): null|unknown",
+    "shootTarget(now): unknown|null",
+    "fightTarget(now): null|unknown",
     "canShoot(t): boolean",
     "shootStep(now): void",
     "scheduleNextShot(now): void",
@@ -2990,7 +3005,7 @@
     "answerHit(attacker): void",
     "fleeAttacker(): void",
     "aimedAtBy(player, now): void",
-    "faceToward(x, z, sign): void",
+    "headToward(x, z, sign): void",
     "feedOn(victim): void",
     "dietWater(food): void",
     "ageYears(): number",
@@ -4643,6 +4658,7 @@
     "-loadPlace(query): Promise<void>",
     "-newEcosystem(): void",
     "-syncSkyset(): void",
+    "-syncCityDeer(): void",
     "-setSwitch(el, on): void",
     "-chooseMode(): Promise",
     "-setMode(m): void",
@@ -5245,6 +5261,7 @@
     "NPC_ADULT_AGE",
     "NPC_TICKS_PER_YEAR",
     "NPC_START_AGE",
+    "TURN_RATES",
     "HUMAN_TURN_RATE",
     "NPC_UNIT",
     "NPC_RADIUS",
@@ -6543,6 +6560,11 @@
   {
    "from": "7b-sim.js#Animal",
    "to": "1-config.js#WEAPONS",
+   "type": "uses"
+  },
+  {
+   "from": "7b-sim.js#Animal",
+   "to": "1-config.js#TURN_RATES",
    "type": "uses"
   },
   {

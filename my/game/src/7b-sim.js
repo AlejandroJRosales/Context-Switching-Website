@@ -9,7 +9,7 @@ import {
   NPC_PACE_LEAN_EXP, NPC_PACE_LIMITS, bodyJumpSpeed, NPC_FIGHT_HOLD_PAD_S, NPC_FIGHT_MOVES, NIGHT_SUN_ALT_DEG,
   PREY_SIZE_STEP_KG, NPC_POUNCES, POUNCE_LAND_SHORT, FIGHT_KEY_FIELDS, NPC_AGE_DEPLETION_RATE, DEER_REPRO_SHARE,
   MATE_TIME_MULT, REPRO_NEED_MAX, NPC_MATURITY_TICKS, GROWTH_MIN_SCALE, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
-  NPC_START_AGE, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
+  NPC_START_AGE, TURN_RATES, HUMAN_TURN_RATE, NPC_UNIT, NPC_RADIUS, NPC_COLLIDE_H, NPC_SPAWN_GAP, NPC_SIZE, NPC_SIZE_Z_MAX,
   NPC_SIZE_HERITABILITY, NPC_REF_BMI, NPC_REF_MASS_KG, NPC_BUILD_BASE, NPC_BUILD_BASE_MEAN, NPC_WIDTH_LIMITS,
   NPC_GIRTH_STEPS, NPC_TORSO_REGIONS, NPC_BODY_SHAPE,
   NPC_SOMATOTYPES, LB_PER_KG, M_PER_IN, NPC_RATING_SPREAD, NPC_RATING_LIMITS, NPC_BODY_FAT_LIMITS, NPC_LEAN_INDEX_BASE, NPC_LEAN_REF_RATING,
@@ -550,7 +550,7 @@ export class Animal extends Entity {
     this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
     this.memWaterX = 0; this.memWaterY = 0; this.memWaterZ = 0; this.hasWater = false;
     this.memMateX = 0; this.memMateY = 0; this.memMateZ = 0; this.hasMate = false;
-    this.priority = null;          // deer focus: 'predator', 'hunt', 'loot', 'food', 'water', 'mate', or null exploring
+    this.priority = null;          // deer focus: 'predator', 'fight', 'hunt', 'loot', 'food', 'water', 'mate', or null exploring
     this.speedScale = 1;
     this.sprinting = false;
     this.nextAttackAt = 0;   // next attack time
@@ -590,6 +590,11 @@ export class Animal extends Entity {
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
     this.gun = armed ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
+    // TURNING: rad/s toward targetHeading (TURN_RATES; a brain turns at HUMAN_TURN_RATE); Infinity turns at once
+    this.turnRate = TURN_RATES[type] ?? (this.brain ? HUMAN_TURN_RATE : Infinity);
+    // ARMED: aim error each way, radians (MARKSMANSHIP: half its group, groupMOA); 0 unarmed
+    const [hunterMOA, averageMOA] = RULE_PEOPLE.groupMOA;
+    this.aimErrorRad = armed ? (hunterMOA + Math.random() * (averageMOA - hunterMOA)) / 2 * Math.PI / (180 * 60) : 0;
     this.looter = armed && Math.random() < RULE_PEOPLE.looterShare;   // ARMED: shoots a Survivor player, then stands over the body
     this.lootMark = null;                               // LOOTER: the player it has shot at (its body is the loot), or null
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
@@ -921,12 +926,15 @@ export class Animal extends Entity {
     if (this.hasMate && this.reproductionNeed > bestV) { best = 'mate'; bestV = this.reproductionNeed; }
     // LOOTER: once the player it shot lies dead, its body comes before everything but fleeing
     if (best !== 'predator' && this.looting()) best = 'loot';
+    // FIGHT (armed): a foe, a looter's live player or a kind it shoots on sight comes before all but fleeing; it stands
+    // and turns to face it (steerFight) while shootStep fires. Prey is shot within the food goal instead.
+    if (best !== 'predator' && this.gun !== null && this.fightTarget(ecosystem.time) !== null) best = 'fight';
     this.priority = best;
 
     const x = this.position.x, z = this.position.z;
     if (best === 'predator') {
       const ax = x - this.memPredatorX, az = z - this.memPredatorZ;
-      if (ax !== 0 || az !== 0) this.heading = this.targetHeading = wrapAngle(Math.atan2(ax, az));
+      if (ax !== 0 || az !== 0) this.headTo(wrapAngle(Math.atan2(ax, az)));
     } else if (best === 'hunt') { this.focusX = this.quarry.position.x; this.focusZ = this.quarry.position.z; }
     else if (best === 'loot') { this.focusX = this.lootMark.position.x; this.focusZ = this.lootMark.position.z; }
     else if (best === 'food') { this.focusX = this.memFoodX; this.focusZ = this.memFoodZ; }
@@ -934,17 +942,31 @@ export class Animal extends Entity {
     else if (best === 'mate') { this.focusX = this.memMateX; this.focusZ = this.memMateZ; }
 
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
+    const fighting = best === 'fight';   // true: stands its ground, facing the target (steerFight)
     const chase = best === 'hunt' || best === 'loot' || (best === 'food' && this.food !== 'plant');
     this.sprinting = chase || (best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST);
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
     this.bumpScale = 1;
-    if (best !== 'predator') this.aimAtFocus();
-    this.moving = true;
+    if (best !== 'predator' && !fighting) this.aimAtFocus();
+    this.moving = !fighting;
   }
 
   aimAtFocus() {
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
-    if (dx !== 0 || dz !== 0) this.heading = this.targetHeading = wrapAngle(Math.atan2(dx, dz));
+    if (dx !== 0 || dz !== 0) this.headTo(wrapAngle(Math.atan2(dx, dz)));
+  }
+
+  // TURNING: a new heading goal; move turns to it at turnRate (an Infinity rate takes it at once).
+  headTo(angle) {
+    this.targetHeading = angle;
+    if (this.turnRate === Infinity) this.heading = angle;
+  }
+
+  // FIGHT: face the target while it lasts; once it is gone, decide again next tick.
+  steerFight() {
+    const t = this.fightTarget(ecosystem.time);
+    if (t === null) { this.priority = null; this.actionTimer = 0; return; }
+    this.headToward(t.position.x, t.position.z, 1);
   }
 
   steerDeer() {
@@ -953,6 +975,7 @@ export class Animal extends Entity {
 
     if (this.priority === 'hunt') { this.steerHunt(); return; }
     if (this.priority === 'loot') { this.steerLoot(); return; }
+    if (this.priority === 'fight') { this.steerFight(); return; }
     // the heading holds until the next decision; only arrival is checked
     if (this.priority === 'predator' || !this.moving) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
@@ -972,7 +995,7 @@ export class Animal extends Entity {
     if (!this.looting()) { this.priority = null; this.sprinting = false; this.actionTimer = 0; return; }
     const b = this.lootMark.position, dx = b.x - this.position.x, dz = b.z - this.position.z, r = RULE_PEOPLE.lootStandM;
     if (dx * dx + dz * dz > r * r) { this.focusX = b.x; this.focusZ = b.z; this.aimAtFocus(); this.moving = true; return; }
-    if (this.moving) { this.faceToward(b.x, b.z, 1); this.moving = false; this.sprinting = false; }
+    if (this.moving) { this.headToward(b.x, b.z, 1); this.moving = false; this.sprinting = false; }
   }
 
   // Is `q` still fair game for this night hunter?
@@ -1249,11 +1272,13 @@ export class Animal extends Entity {
 
   move() {
     const lift = this.footLift() * NPC_UNIT;
-    if (this.moving && ecosystem.time >= this.heldUntil()) {
-      if (this.heading !== this.targetHeading) {
-        this.heading = turnToward(this.heading, this.targetHeading, HUMAN_TURN_RATE * NPC_TICK_S);
-      }
-      this.facingAngle = this.heading;
+    const free = ecosystem.time >= this.heldUntil();   // true: not held by a fight move or a knockdown
+    // TURNING, walking or standing (a fighter turns in place): toward targetHeading at turnRate
+    if (free && this.heading !== this.targetHeading) {
+      this.heading = turnToward(this.heading, this.targetHeading, this.turnRate * NPC_TICK_S);
+    }
+    if (free) this.facingAngle = this.heading;
+    if (this.moving && free) {
       const step = this.stepLength();
       this.headingDir();
       const sx = this._dirSin * step, sz = this._dirCos * step;
@@ -1325,15 +1350,21 @@ export class Animal extends Entity {
     if (this.gun !== null) this.shootStep(now);
   }
 
-  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else (a looter) a Survivor
-  // player, else what it shoots on sight, else the prey being chased once hunger reaches huntHungerShare (a kill feeds
-  // it, so it stops until hungry again); each only when alive, within rangeM and in sight.
+  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: its fight target, else the prey being chased once hunger
+  // reaches huntHungerShare (a kill feeds it, so it stops until hungry again); each only when alive, within rangeM and
+  // in sight.
   shootTarget(now) {
+    const fight = this.fightTarget(now);
+    if (fight !== null) return fight;
+    const hungry = this.foodNeed >= RULE_PEOPLE.huntHungerShare * NPC_NEED_FULL;   // true: hungry enough to hunt
+    if (hungry && this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
+    return null;
+  }
+  // FIGHT: the last attacker while it is a foe, else (a looter) a Survivor player, else what it shoots on sight; or null.
+  fightTarget(now) {
     if (now < this.foeUntil && this.canShoot(this.foe)) return this.foe;
     if (this.looter && this.canShoot(ecosystem.avatar)) return ecosystem.avatar;   // alive only in Survivor play
     if (this.canShoot(this.onSight)) return this.onSight;
-    const hungry = this.foodNeed >= RULE_PEOPLE.huntHungerShare * NPC_NEED_FULL;   // true: hungry enough to hunt
-    if (hungry && this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
     return null;
   }
   canShoot(t) {
@@ -1343,7 +1374,7 @@ export class Animal extends Entity {
   }
 
   // ARMED PEOPLE: volleys of one or two shots (RULE_PEOPLE fire cadence), each from the eye at the target's body centre,
-  // off by up to spreadRad each way, with the gun's sound. A kill feeds the shooter, as a coyote's bite does.
+  // off by up to its aimErrorRad each way, with the gun's sound. A kill feeds the shooter, as a coyote's bite does.
   shootStep(now) {
     if (now < this.nextShotAt || this.isDown(now)) return;
     const t = this.shootTarget(now);
@@ -1351,9 +1382,12 @@ export class Animal extends Entity {
     const ex = this.position.x, ey = this.eyeY(), ez = this.position.z;
     const dx = t.position.x - ex, dy = Projectiles.centreY(t) - ey, dz = t.position.z - ez, len = Math.hypot(dx, dy, dz);
     if (len < 1e-6) return;
-    const S = RULE_PEOPLE.spreadRad;
-    const yaw = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * S, pitch = Math.asin(dy / len) + (Math.random() * 2 - 1) * S;
-    this.faceToward(t.position.x, t.position.z, 1);
+    const S = this.aimErrorRad;
+    // it turns to the target (TURN_RATES) and fires only once facing it within fireConeRad
+    const bearing = Math.atan2(dx, dz), off = bearing - this.facingAngle;
+    this.headToward(t.position.x, t.position.z, 1);
+    if (Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) > RULE_PEOPLE.fireConeRad) return;
+    const yaw = bearing + (Math.random() * 2 - 1) * S, pitch = Math.asin(dy / len) + (Math.random() * 2 - 1) * S;
     if (this.looter && t === ecosystem.avatar) this.lootMark = t;   // its body is this looter's once dead
     ecosystem.projectiles.fire(this, ex, ey, ez, Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch),
       this.gun, true, true);
@@ -1394,7 +1428,7 @@ export class Animal extends Entity {
 
   // A striker landing a hit: its move, facing the target, holding ground.
   strike(target) {
-    this.faceToward(target.position.x, target.position.z, 1);
+    this.headToward(target.position.x, target.position.z, 1);
     startFightMove(this, NPC_FIGHT_MOVES[this.type], ecosystem.time);
   }
 
@@ -1406,7 +1440,7 @@ export class Animal extends Entity {
       this.foeUntil = now + RULE_PEOPLE.foeS;
     }
     if (!move.flees || now < this.fleeUntil) return;
-    this.faceToward(attacker.position.x, attacker.position.z, -1);
+    this.headToward(attacker.position.x, attacker.position.z, -1);
     startFightMove(this, move, now);
     this.fleeFrom = attacker;
     this.fleeUntil = now + move.moveS + move.fleeS;
@@ -1418,7 +1452,7 @@ export class Animal extends Entity {
     this.fleeFrom = null;
     this.seen(0, f.position.x, f.position.y, f.position.z);
     this.priority = 'predator';
-    this.faceToward(f.position.x, f.position.z, -1);
+    this.headToward(f.position.x, f.position.z, -1);
     this.sprinting = true;
     this.speedScale = this.bumpScale = 1;
     this.moving = true;
@@ -1432,12 +1466,14 @@ export class Animal extends Entity {
     else this.avoidPlayerUntil = now + RULE_PEOPLE.foeS;
   }
 
-  // Turn toward (1) or away from (-1) (x, z) at once.
-  faceToward(x, z, sign) {
+  // Head toward (1) or away from (-1) (x, z): people turn there at turnRate (move), a kind with no TURN_RATES entry
+  // faces it at once.
+  headToward(x, z, sign) {
     const dx = (x - this.position.x) * sign, dz = (z - this.position.z) * sign;
     if (dx === 0 && dz === 0) return;
-    this.heading = this.facingAngle = wrapAngle(Math.atan2(dx, dz));
-    if (!this.brain) this.targetHeading = this.heading;
+    const a = wrapAngle(Math.atan2(dx, dz));
+    this.targetHeading = a;
+    if (this.turnRate === Infinity) this.heading = this.facingAngle = a;
   }
 
   // A kill's meal: the victim's starting health as food and water (health comes back by REGEN only).

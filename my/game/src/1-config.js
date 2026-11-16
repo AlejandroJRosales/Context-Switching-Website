@@ -430,7 +430,9 @@ export const GROWTH_MIN_SCALE = 0.25;   // body scale at birth, growing to 1 ove
 export const NPC_ADULT_AGE = 18;                 // years shown at maturity
 export const NPC_TICKS_PER_YEAR = 365 * NPC_DAY_TICKS;
 export const NPC_START_AGE = [18, 40];           // age range of spawned people, years
-export const HUMAN_TURN_RATE = 3;      // rad/s people turn toward their brain's heading
+export const HUMAN_TURN_RATE = 3;      // rad/s people turn toward their heading (brain or rule AI)
+// TURNING: rad/s each kind turns toward its heading goal; a kind not listed turns at once (deer, coyotes)
+export const TURN_RATES = { human: HUMAN_TURN_RATE };
 export const DEER_GREEN_SHARE = 0.8;
 export const DEER_AREAS = new Set([
   'park', 'garden', 'grass', 'village_green', 'recreation_ground', 'golf_course',
@@ -575,7 +577,11 @@ export const RULE_PEOPLE = {
   restS: [0.6, 1.4],    // seconds after a volley ends before the next one may start
   aimHoldS: 1.5,        // seconds the arms stay raised to aim after a shot, then back to low ready (drawn only)
   huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
-  spreadRad: 0.02,      // aim error each way, radians
+  // MARKSMANSHIP: each armed person's group size, minutes of angle across, drawn evenly between a hunter's [0] and an
+  // average shooter's [1] (approximations: an average shooter keeps a pistol's hits in ~60 MOA at 10 m; average
+  // standing groups ~6 MOA). Each shot lands within half of it each way, in yaw and in pitch.
+  groupMOA: [6, 60],
+  fireConeRad: 0.15,    // a shot goes only once its facing is within this of the target (it turns at TURN_RATES)
   foeS: 30,             // seconds an attacker, or a Survivor player aiming at it, stays its target (armed) or threat (unarmed)
   // LOOTERS: this share of armed people shoot a Survivor player in range and sight, then run to the body and stand over it
   looterShare: 0.5,

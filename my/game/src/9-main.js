@@ -1387,19 +1387,27 @@ gameEl.addEventListener('click', () => {
   // no flying in Survivor mode: land and hide the button
   if (game.on && flying) toggleFly();
   updateCarButton();
-  // The city's deer only in Survivor mode: the Deer switch follows and a live city gains or loses its own deer.
-  loadOpts.deer = game.on;
-  const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
-  deerSwitch.classList.toggle('on', game.on);
-  deerSwitch.setAttribute('aria-checked', String(game.on));
-  if (ecosystem.ready && providers.active && providers.active.city) {
-    const city = providers.active.city;
-    const hasDeer = ecosystem.animals.some(a => a.alive && a.type === 'deer' && a.home === city);
-    if (game.on && !hasDeer) ecosystem.spawn('deer', NPC_DEER_POPULATION, city);
-    else if (!game.on) for (const a of ecosystem.animals) if (a.type === 'deer' && a.home === city) a.alive = false;
-  }
+  syncCityDeer();
   wake();
 });
+
+// CITY DEER: in Survivor mode, or in Observer with Brainless people on (its NPCs and animals then live as in Survivor;
+// only the player differs). The Deer switch follows for the next load (loadOpts.brainless), and a live city gains or
+// loses its own deer by the live world's Brainless switch (ecosystem.brainlessOn).
+function syncCityDeer() {
+  const nextLoad = game.on || loadOpts.brainless;   // true: the next world loads with city deer
+  loadOpts.deer = nextLoad;
+  const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
+  deerSwitch.classList.toggle('on', nextLoad);
+  deerSwitch.setAttribute('aria-checked', String(nextLoad));
+  if (ecosystem.ready && providers.active && providers.active.city) {
+    const live = game.on || ecosystem.brainlessOn;   // true: the live city keeps its deer
+    const city = providers.active.city;
+    const hasDeer = ecosystem.animals.some(a => a.alive && a.type === 'deer' && a.home === city);
+    if (live && !hasDeer) ecosystem.spawn('deer', NPC_DEER_POPULATION, city);
+    else if (!live) for (const a of ecosystem.animals) if (a.type === 'deer' && a.home === city) a.alive = false;
+  }
+}
 
 // collision follows the mode from the start (Observer at load), as the Survivor chip sets it after
 applyCollision();
@@ -1460,6 +1468,7 @@ for (const el of document.querySelectorAll('#more .switch')) {
     el.classList.toggle('on', loadOpts[k]);
     el.setAttribute('aria-checked', String(loadOpts[k]));
     el.blur();
+    if (k === 'brainless') syncCityDeer();   // Brainless people in Observer brings Survivor's city deer
   });
 }
 
