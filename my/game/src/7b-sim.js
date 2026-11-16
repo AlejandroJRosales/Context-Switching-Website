@@ -2630,7 +2630,9 @@ export const simSky = {
   STEP_S: 0.25,                // sky redraw interval
   KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
   hour: 15, day: 0, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
-  frozen: false,   // the hour (and so the sun) holds; weather and everything else go on (main sets it: Freeze, Observer)
+  // FREEZE (main sets them: the Freeze chips, Observer only); people, animals and plants always go on
+  clockFrozen: false,     // the hour (and so the sun) holds
+  weatherFrozen: false,   // the game's weather holds (no change when its span runs out)
 
   site: null,   // the world's { lat, lon, offset }
   sunAltDeg: 90,   // drawn sun altitude, degrees
@@ -2657,7 +2659,7 @@ export const simSky = {
   randomizeWeather() {
     this.startWeather(this.KINDS[Math.floor(Math.random() * this.KINDS.length)]);
   },
-  // The clock to `hour` (a time chip); it keeps running from there unless frozen.
+  // The clock to `hour` (a time chip); it keeps running from there unless clockFrozen.
   setHour(hour) {
     this.hour = hour;
     this.shownMinute = -1;
@@ -2670,12 +2672,12 @@ export const simSky = {
     if (!this.running || document.hidden) { this.lastNow = 0; return; }
     const dt = this.lastNow ? Math.min(Math.max((now - this.lastNow) / 1000, 0), 5) : 0;
     this.lastNow = now;
-    if (!this.frozen) {
+    if (!this.clockFrozen) {
       const hours = this.hour + dt * 24 / this.DAY_S;
       this.day += Math.floor(hours / 24);
       this.hour = hours % 24;
     }
-    this.timer -= dt;
+    if (!this.weatherFrozen) this.timer -= dt;
     let changed = false;
     if (this.timer <= 0) {
       this.randomizeWeather();

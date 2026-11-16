@@ -256,39 +256,48 @@ bindTouch();   // its listeners, in their original place among main's
 
 bindCar();   // its listeners, in their original place among main's
 
-// `keep`: the picked chip stays selected (a preset in force); off for chips that only act once (the time chips).
-function chips(host, names, pick, keep = true) {
+function chips(host, names, pick) {
   for (const name of names) {
     const b = document.createElement('button');
     b.textContent = name;
     b.addEventListener('click', () => {
       pick(name);
-      if (keep) for (const other of host.children) other.classList.toggle('sel', other === b);
+      for (const other of host.children) other.classList.toggle('sel', other === b);
       b.blur();
       updateSky();
       refreshHud();
     });
-    if (keep && name === 'Game') b.classList.add('sel');
+    if (name === 'Game') b.classList.add('sel');
     host.appendChild(b);
   }
 }
 
-// a time chip moves the game clock to its hour; the clock runs on from there (or holds, frozen)
-chips(timesEl, TIMES, n => simSky.setHour(presetHour(n)), false);
+// a time chip moves the game clock to its hour and stays selected; the clock runs on from there (or holds, frozen).
+// Game leaves the clock where it is.
+chips(timesEl, TIMES, n => { if (n !== 'Game') simSky.setHour(presetHour(n)); });
 chips(skiesEl, Object.keys(SKIES), n => { skyChoice.sky = n; });
 
-// FREEZE TIME (Observer): the clock and the sun hold; people, animals, plants and weather go on. Survivor's clock
-// always runs, so the chip's choice applies only while in Observer (applyFreeze, also on a mode change).
-const freezeEl = document.getElementById('freeze');
-let freezeChosen = false;
-function applyFreeze() { simSky.frozen = freezeChosen && !game.on; }
-freezeEl.addEventListener('click', () => {
-  freezeChosen = !freezeChosen;
-  freezeEl.classList.toggle('sel', freezeChosen);
-  freezeEl.setAttribute('aria-pressed', String(freezeChosen));
-  freezeEl.blur();
-  applyFreeze();
-});
+// FREEZE (Observer): the time row's chip holds the clock and the sun, the weather row's holds the game's weather;
+// people, animals and plants go on. Survivor's clock and weather always run, so the choices apply only while in
+// Observer (applyFreeze, also on a mode change).
+const freezeTimeEl = document.getElementById('freezeTime');
+const freezeSkyEl = document.getElementById('freezeSky');
+const freezeChosen = { clock: false, weather: false };
+function applyFreeze() {
+  simSky.clockFrozen = freezeChosen.clock && !game.on;
+  simSky.weatherFrozen = freezeChosen.weather && !game.on;
+}
+function freezeChip(el, key) {
+  el.addEventListener('click', () => {
+    freezeChosen[key] = !freezeChosen[key];
+    el.classList.toggle('sel', freezeChosen[key]);
+    el.setAttribute('aria-pressed', String(freezeChosen[key]));
+    el.blur();
+    applyFreeze();
+  });
+}
+freezeChip(freezeTimeEl, 'clock');
+freezeChip(freezeSkyEl, 'weather');
 
 // BACK TO INTRO: the run ends; the world is torn down and the intro scene returns behind the start card, for a new game.
 function backToIntro() {
@@ -1004,7 +1013,8 @@ async function finishLoad(provider, autoGraphics = false) {
   if (wantGame !== game.on) gameEl.click();
   simSky.start();
   syncSkyset();
-  // every start shows the game's own weather (GAME_START_SKY at GAME_START_HOUR): the weather picker back to Game
+  // every start shows the game's own weather (GAME_START_SKY at GAME_START_HOUR): both pickers back to Game
+  timesEl.children[0].click();                                  // 0 is Game: selects it, leaves the clock
   if (skyChoice.sky !== 'Game') skiesEl.children[0].click();   // 0 is Game
   updateSky();
   panel.classList.add('hidden');

@@ -2073,7 +2073,7 @@ export function toggleFly() {
 }
 
 const carEl = document.getElementById('car');
-const driftEl = document.getElementById('drift');   // DRIFT MODE button, above the car button while driving
+const driftEl = document.getElementById('drift');   // DRIFT MODE button, held, above the car button while driving
 const useEl = document.getElementById('use');
 
 // Seconds from boarding until the car drives: the start sound's length (its last breakpoint, where the engine loop takes over).
@@ -2089,7 +2089,6 @@ export const car = {
   x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
   speed: 0,        // m/s, negative in reverse
   slip: 0,         // m/s sideways, along carRight (DRIFT: the slide; it bleeds to 0 at the tyres' grip)
-  drift: false,    // DRIFT MODE: the Drift button's choice (CAR_DRIFT)
   gasShare: 0,     // ENGINE SOUND only: 0 idle to 1 after SOUND.car.gasRiseS on the gas, back over gasFallS off it
   steer: 0,        // front wheel angle, rad, + left
   spin: 0,
@@ -2443,11 +2442,12 @@ function carPhysics(dt, throttle, steer, handbrake) {
   if (nv < -CAR_REV_MAX) nv = -CAR_REV_MAX;
   car.speed = nv;
 
+  const drifting = pedal.drift;   // true: DRIFT MODE (the Drift button held)
   // bicycle-model yaw, capped at tyre slide (DRIFT: a higher cap, so the body can turn faster than its path)
   let yawRate = car.speed * Math.tan(car.steer) / CAR_WHEELBASE;
   const s = Math.abs(car.speed);
   if (s > 0.5) {
-    const cap = (car.drift ? CAR_DRIFT.yawGrip : CAR_GRIP) / s;
+    const cap = (drifting ? CAR_DRIFT.yawGrip : CAR_GRIP) / s;
     yawRate = Math.max(-cap, Math.min(cap, yawRate));
   }
   // DRIFT: the velocity keeps its world direction through the turn, split again along the new heading and side;
@@ -2455,13 +2455,13 @@ function carPhysics(dt, throttle, steer, handbrake) {
   const [rx0, rz0] = carRight(car.yaw);
   const wx = -Math.sin(car.yaw) * car.speed + rx0 * car.slip, wz = -Math.cos(car.yaw) * car.speed + rz0 * car.slip;
   car.yaw += yawRate * dt;
-  if (car.drift) {
+  if (drifting) {
     const [rx1, rz1] = carRight(car.yaw);
     car.speed = -wx * Math.sin(car.yaw) - wz * Math.cos(car.yaw);
     car.slip = wx * rx1 + wz * rz1;
   }
   // the sideways slide bleeds off at the tyres' grip: full grip outside drift mode, less drifting, least on the handbrake
-  const grip = (car.drift ? (handbrake ? CAR_DRIFT.handbrakeGrip : CAR_DRIFT.grip) : CAR_GRIP) * dt;
+  const grip = (drifting ? (handbrake ? CAR_DRIFT.handbrakeGrip : CAR_DRIFT.grip) : CAR_GRIP) * dt;
   car.slip = car.slip > 0 ? Math.max(0, car.slip - grip) : Math.min(0, car.slip + grip);
   const slipMax = Math.abs(car.speed) * Math.tan(CAR_DRIFT.maxSlideDeg * Math.PI / 180);   // the widest slide angle
   car.slip = Math.max(-slipMax, Math.min(slipMax, car.slip));
@@ -2530,7 +2530,7 @@ const brakeEl = document.getElementById('brake');
 const sprintEl = document.getElementById('sprint');
 const jumpEl = document.getElementById('jump');
 const attackEl = document.getElementById('attack');
-const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false };
+const pedal = { gas: false, brake: false, sprint: false, jump: false, attack: false, drift: false };   // drift: DRIFT MODE while held
 // GUN BUTTONS, made here beside the attack button with its classes and placed each time one shows (placeGunButtons):
 // Draw/Holster left of the attack button while a gun is carried, Aim above it while one is in hand.
 // A face is a `label` (its accessible name) and what it shows (`face`: ICONS markup, or text).
@@ -2607,13 +2607,7 @@ export function bindCar() {
   jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
   attackEl.addEventListener('pointerdown', () => { attackQueued = true; });
   carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
-  // DRIFT MODE: on and off while driving; the choice stays for the next drive
-  driftEl.addEventListener('click', () => {
-    car.drift = !car.drift;
-    driftEl.classList.toggle('held', car.drift);
-    driftEl.setAttribute('aria-pressed', String(car.drift));
-    driftEl.blur();
-  });
+  holdPedal(driftEl, 'drift');   // DRIFT MODE while held
   // The action button on its own pointer: press acts, hold lasts until release.
   useEl.addEventListener('pointerdown', e => {
     useEl.setPointerCapture(e.pointerId);   // before the action, which may hide the button
@@ -2755,6 +2749,7 @@ export function updateCarButton() {
   carEl.classList.toggle('on', state !== '');
   if (state !== '') setButtonFace(carEl, CAR_FACES[state]);
   driftEl.classList.toggle('on', state === 'exit');
+  if (state !== 'exit') { pedal.drift = false; driftEl.classList.remove('held'); }   // out of the car: no drift held
   const pedals = state === 'exit' && touchUi();
   for (const el of [gasEl, brakeEl]) {
     el.classList.toggle('on', pedals);

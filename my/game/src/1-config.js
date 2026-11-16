@@ -1343,7 +1343,7 @@ const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to
 const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
 export const carDragPerM = massKg => 0.5 * AIR_DENSITY * CAR_CDA / massKg;   // 1/m: drag deceleration over speed squared
 export const CAR_GRIP = 8.8;     // m/s^2 lateral (mu ~0.9)
-// DRIFT MODE (the Drift button while driving): the tail slides. The body may turn faster than the tyres can bend its
+// DRIFT MODE (while the Drift button is held, driving): the tail slides. The body may turn faster than the tyres can bend its
 // path (yawGrip over CAR_GRIP), and the sideways slide the turn leaves bleeds off only at grip (handbrakeGrip with
 // the handbrake), so the car travels at an angle to where it points, up to maxSlideDeg (past it the extra slide scrubs
 // off, so a held turn holds a slide instead of spinning out).
@@ -1509,9 +1509,9 @@ export const GUN_BUTTON_FACE = {
 
 // SETTINGS
 
-// Time chips set the game clock to their hour (FALLBACK_HOURS), and it keeps running from there. Weather presets
-// replace the game's weather ('Game', the first chip).
-export const TIMES = ['Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
+// Time chips set the game clock to their hour (FALLBACK_HOURS), and it keeps running from there; 'Game', the first,
+// leaves the clock where it is. Weather presets replace the game's weather ('Game', the first chip).
+export const TIMES = ['Game', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
 // The game clock's hour and weather at every world start, New ecosystem included (16 = 4 pm); the weather changes
 // randomly from there.
 export const GAME_START_HOUR = 16;
