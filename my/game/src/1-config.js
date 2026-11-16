@@ -117,12 +117,13 @@ export const MIX_GREEN_KINDS = new Set([
 
 export const WATERWAY_WIDTH = { river: 14, canal: 9, stream: 3, ditch: 1.6, drain: 1.6 };
 
+// blocksSight: the barrier is NPC sight cover (cover.add), not just collision
 export const BARRIER = {
-  wall: { h: 2.0, t: 0.36, color: 0xb5ad9f },
-  city_wall: { h: 4.0, t: 0.80, color: 0xb5ad9f },
-  retaining_wall: { h: 1.4, t: 0.50, color: 0xb5ad9f },
-  fence: { h: 1.7, t: 0.10, color: 0x8a8272 },
-  hedge: { h: 1.6, t: 0.80, color: 0x44653a }
+  wall: { h: 2.0, t: 0.36, color: 0xb5ad9f, blocksSight: true },
+  city_wall: { h: 4.0, t: 0.80, color: 0xb5ad9f, blocksSight: true },
+  retaining_wall: { h: 1.4, t: 0.50, color: 0xb5ad9f, blocksSight: true },
+  fence: { h: 1.7, t: 0.10, color: 0x8a8272, blocksSight: false },
+  hedge: { h: 1.6, t: 0.80, color: 0x44653a, blocksSight: false }
 };
 
 // fallbacks for a material with no colour

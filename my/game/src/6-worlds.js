@@ -889,8 +889,8 @@ export function buildCity(features) {
   const trunkSolids = buildTrees(features.trees);
   const barrierBoxes = buildBarriers(features.barriers);
   buildGrid(solids.concat(barrierBoxes, trunkSolids));
-  // building walls and tree trunks block NPC sight; fences, hedges and garden walls do not
-  cover.add(solids.concat(trunkSolids));
+  // building walls, tree trunks and the barriers marked blocksSight (BARRIER) block NPC sight
+  cover.add(solids.concat(barrierBoxes.filter(b => b.blocksSight), trunkSolids));
   buildSigns(signs);
   return { count, skipped };
 }
@@ -1030,7 +1030,7 @@ function buildBarriers(list) {
         const t = Math.max(spec.t, 0.25) / 2;
         const nx = -dz / len * t, nz = dx / len * t;
         const pts = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
-        boxes.push({ pts, ...bounds(pts), base, top, tags: null });
+        boxes.push({ pts, ...bounds(pts), base, top, tags: null, blocksSight: spec.blocksSight });
       }
     }
   }
