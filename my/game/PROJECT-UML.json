@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16T03:25:45.091Z",
+ "generated": "2026-11-16T07:41:04.600Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -543,6 +543,7 @@
    ],
    "contains": [
     "1-config.js#WORLD_SIZES",
+    "1-config.js#DOWN_VIEW",
     "1-config.js#LAYER_BIAS",
     "1-config.js#LAYER_Y",
     "1-config.js#ROAD_WIDTH",
@@ -586,6 +587,7 @@
     "1-config.js#ICON_STYLE",
     "1-config.js#ICONS",
     "1-config.js#SURVIVOR_CONFIG",
+    "1-config.js#CAR_DRIFT",
     "1-config.js#CAR_TRANSIT",
     "1-config.js#WEAPONS",
     "1-config.js#HIT_DAMAGE",
@@ -613,6 +615,15 @@
     "small: object",
     "medium: object",
     "large: object"
+   ],
+   "methods": []
+  },
+  "1-config.js#DOWN_VIEW": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "eyeM: number",
+    "rate: number"
    ],
    "methods": []
   },
@@ -1014,6 +1025,8 @@
     "huntHungerShare: number",
     "spreadRad: number",
     "foeS: number",
+    "looterShare: number",
+    "lootStandM: number",
     "lootRounds: object"
    ],
    "methods": []
@@ -1186,6 +1199,17 @@
     "injuries: object",
     "craft: object",
     "causes: object"
+   ],
+   "methods": []
+  },
+  "1-config.js#CAR_DRIFT": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "yawGrip: number",
+    "grip: number",
+    "handbrakeGrip: number",
+    "maxSlideDeg: number"
    ],
    "methods": []
   },
@@ -2854,6 +2878,8 @@
     "brain: SpikingNetwork|null",
     "ACTION_HOLD: number",
     "gun: unknown|null",
+    "looter: boolean",
+    "lootMark: null|unknown",
     "prey: null|unknown",
     "onSight: null|unknown",
     "foe: null|unknown",
@@ -2934,6 +2960,8 @@
     "thinkDeer(grid): void",
     "aimAtFocus(): void",
     "steerDeer(): void",
+    "looting(): unknown",
+    "steerLoot(): void",
     "canHunt(q): boolean",
     "mayAttack(q): boolean",
     "steerHunt(): void",
@@ -3808,9 +3836,11 @@
     "-jumpQueued: boolean",
     "+lastStickTapAt: number",
     "+crouchY: number",
+    "-downY: number",
     "+flying: boolean",
     "-climb: number",
     "-carEl: HTMLElement",
+    "-driftEl: HTMLElement",
     "-useEl: HTMLElement",
     "-CAR_START_S: number",
     "-_carPos: THREE.Vector3",
@@ -3870,6 +3900,7 @@
     "+parkBesideCabin(c, yaw): boolean",
     "-moveCar(dx, dz): _push|null",
     "-carMassKg(): number",
+    "-carRight(yaw): number[]",
     "+carHits(): void",
     "+playerBumps(dt): void",
     "-carPhysics(dt, throttle, steer, handbrake): void",
@@ -4316,6 +4347,8 @@
     "pitch: number",
     "roll: number",
     "speed: number",
+    "slip: number",
+    "drift: boolean",
     "gasShare: number",
     "steer: number",
     "spin: number",
@@ -5703,6 +5736,7 @@
     "LOOK_PITCH_MAX",
     "FLY_SPEED",
     "CROUCH_RATE",
+    "DOWN_VIEW",
     "GRAVITY",
     "LAND_EPS",
     "STEP_UP",
@@ -5794,6 +5828,7 @@
     "CAR_HEALTH_PER_J",
     "carDragPerM",
     "CAR_GRIP",
+    "CAR_DRIFT",
     "CAR_STEER_MAX",
     "CAR_STEER_FALL",
     "CAR_STEER_RATE",

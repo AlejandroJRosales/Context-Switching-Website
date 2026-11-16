@@ -550,7 +550,7 @@ export class Animal extends Entity {
     this.memFoodX = 0; this.memFoodY = 0; this.memFoodZ = 0; this.hasFood = false;
     this.memWaterX = 0; this.memWaterY = 0; this.memWaterZ = 0; this.hasWater = false;
     this.memMateX = 0; this.memMateY = 0; this.memMateZ = 0; this.hasMate = false;
-    this.priority = null;          // deer focus: 'predator', 'hunt', 'food', 'water', 'mate', or null exploring
+    this.priority = null;          // deer focus: 'predator', 'hunt', 'loot', 'food', 'water', 'mate', or null exploring
     this.speedScale = 1;
     this.sprinting = false;
     this.nextAttackAt = 0;   // next attack time
@@ -590,6 +590,8 @@ export class Animal extends Entity {
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
     this.gun = armed ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
+    this.looter = armed && Math.random() < RULE_PEOPLE.looterShare;   // ARMED: shoots a Survivor player, then stands over the body
+    this.lootMark = null;                               // LOOTER: the player it has shot at (its body is the loot), or null
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
@@ -917,6 +919,8 @@ export class Animal extends Entity {
     if (this.hasFood && this.foodNeed > bestV) { best = 'food'; bestV = this.foodNeed; }
     if (this.hasWater && this.waterNeed > bestV) { best = 'water'; bestV = this.waterNeed; }
     if (this.hasMate && this.reproductionNeed > bestV) { best = 'mate'; bestV = this.reproductionNeed; }
+    // LOOTER: once the player it shot lies dead, its body comes before everything but fleeing
+    if (best !== 'predator' && this.looting()) best = 'loot';
     this.priority = best;
 
     const x = this.position.x, z = this.position.z;
@@ -924,12 +928,13 @@ export class Animal extends Entity {
       const ax = x - this.memPredatorX, az = z - this.memPredatorZ;
       if (ax !== 0 || az !== 0) this.heading = this.targetHeading = wrapAngle(Math.atan2(ax, az));
     } else if (best === 'hunt') { this.focusX = this.quarry.position.x; this.focusZ = this.quarry.position.z; }
+    else if (best === 'loot') { this.focusX = this.lootMark.position.x; this.focusZ = this.lootMark.position.z; }
     else if (best === 'food') { this.focusX = this.memFoodX; this.focusZ = this.memFoodZ; }
     else if (best === 'water') { this.focusX = this.memWaterX; this.focusZ = this.memWaterZ; }
     else if (best === 'mate') { this.focusX = this.memMateX; this.focusZ = this.memMateZ; }
 
     const fx = this.memPredatorX - x, fz = this.memPredatorZ - z;
-    const chase = best === 'hunt' || (best === 'food' && this.food !== 'plant');
+    const chase = best === 'hunt' || best === 'loot' || (best === 'food' && this.food !== 'plant');
     this.sprinting = chase || (best === 'predator' && fx * fx + fz * fz <= DEER_SPRINT_DIST * DEER_SPRINT_DIST);
     this.speedScale = best === 'predator' ? 1 : DEER_CRUISE;
     this.bumpScale = 1;
@@ -947,6 +952,7 @@ export class Animal extends Entity {
     if (this.runs()) this.foodNeed += this.foodIncrement * (DEER_SPRINT_ENERGY - 1);
 
     if (this.priority === 'hunt') { this.steerHunt(); return; }
+    if (this.priority === 'loot') { this.steerLoot(); return; }
     // the heading holds until the next decision; only arrival is checked
     if (this.priority === 'predator' || !this.moving) return;
     const dx = this.focusX - this.position.x, dz = this.focusZ - this.position.z;
@@ -956,6 +962,17 @@ export class Animal extends Entity {
       if (this.priority === null) { this.newExploreCoords(); this.aimAtFocus(); }
       else this.moving = false;
     }
+  }
+
+  // LOOTER: true while the player it shot at lies dead (Survivor).
+  looting() { return this.lootMark !== null && this.lootMark.corpse; }
+
+  // LOOT: run to the body, then stand over it, facing it, within lootStandM; a body gone (a new run) ends it.
+  steerLoot() {
+    if (!this.looting()) { this.priority = null; this.sprinting = false; this.actionTimer = 0; return; }
+    const b = this.lootMark.position, dx = b.x - this.position.x, dz = b.z - this.position.z, r = RULE_PEOPLE.lootStandM;
+    if (dx * dx + dz * dz > r * r) { this.focusX = b.x; this.focusZ = b.z; this.aimAtFocus(); this.moving = true; return; }
+    if (this.moving) { this.faceToward(b.x, b.z, 1); this.moving = false; this.sprinting = false; }
   }
 
   // Is `q` still fair game for this night hunter?
@@ -1308,11 +1325,12 @@ export class Animal extends Entity {
     if (this.gun !== null) this.shootStep(now);
   }
 
-  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else what it shoots on sight,
-  // else the prey being chased once hunger reaches huntHungerShare (a kill feeds it, so it stops until hungry again); each
-  // only when alive, within rangeM and in sight.
+  // ARMED PEOPLE (RULE_PEOPLE): what to shoot, or null: the last attacker while it is a foe, else (a looter) a Survivor
+  // player, else what it shoots on sight, else the prey being chased once hunger reaches huntHungerShare (a kill feeds
+  // it, so it stops until hungry again); each only when alive, within rangeM and in sight.
   shootTarget(now) {
     if (now < this.foeUntil && this.canShoot(this.foe)) return this.foe;
+    if (this.looter && this.canShoot(ecosystem.avatar)) return ecosystem.avatar;   // alive only in Survivor play
     if (this.canShoot(this.onSight)) return this.onSight;
     const hungry = this.foodNeed >= RULE_PEOPLE.huntHungerShare * NPC_NEED_FULL;   // true: hungry enough to hunt
     if (hungry && this.priority === 'food' && this.canShoot(this.prey)) return this.prey;
@@ -1336,6 +1354,7 @@ export class Animal extends Entity {
     const S = RULE_PEOPLE.spreadRad;
     const yaw = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * S, pitch = Math.asin(dy / len) + (Math.random() * 2 - 1) * S;
     this.faceToward(t.position.x, t.position.z, 1);
+    if (this.looter && t === ecosystem.avatar) this.lootMark = t;   // its body is this looter's once dead
     ecosystem.projectiles.fire(this, ex, ey, ez, Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch),
       this.gun, true, true);
     sound.emit('gunshot', ex, ey, ez, this);

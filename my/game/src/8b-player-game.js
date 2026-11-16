@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import {
   HEAD_CLEAR, EYE_HEIGHT, PLAYER_RADIUS, WALK_SPEED, RUN_SPEED, JUMP_SPEED, bodyJumpSpeed, CROUCH_SPEED, FOOT_TURN_RATE,
-  LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
+  LOOK_PITCH_MAX, FLY_SPEED, CROUCH_RATE, DOWN_VIEW, GRAVITY, LAND_EPS, STEP_UP, GROUND_SNAP, ROAD_WIDTH,
   PATH_KINDS, NPC_TICK_S, DIET_WATER_SHARE, NPC_ATTACK_COOLDOWN_S, NPC_FIGHT_MOVES, NPC_ADULT_AGE, NPC_TICKS_PER_YEAR,
   NPC_START_AGE, NPC_UNIT, PLAYER_HS, NPC_SIZE, NPC_SIZE_Z_MAX, SPECIES, HUMAN_TYPE_ID, HUNTS_MASK, NIGHT_PREY_MASK,
   HUMAN_KIND_ID, ZOMBIES, NPC_GENE_START,
@@ -15,7 +15,7 @@ import {
   TPP_UP, PLAYER_JOG_ANIM, SURVIVOR_CONFIG, playerPlantFood, STICK_RADIUS, FLICK_RADIUS, TAP_GAP_MS, TAP_SLOP,
   TAP_SWALLOW_MS, TAP_BUTTONS, HOLD_SAFE, CAR_SCALE, CAR_LEN, CAR_WID, CAR_TOP, CAR_WHEELBASE, CAR_TRACK, CAR_WHEEL_R,
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
-  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
+  CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_DRIFT, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
   CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON, RULE_PEOPLE,
   GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE, SOUND
@@ -1115,6 +1115,7 @@ export const game = {
     // KNOCKDOWNS, as an animal's: heading, launch speed
     downYaw: 0, downDV: 0,
     isDown(now) { return now < this.downUntil; },
+    get corpse() { return game.on && game.dead; },   // LOOTERS: a dead Survivor player's body lies here
     // knockable in play in either mode, not in the car or a cabin
     knockable() { return play.active && !game.sheltered && !game.dead; },
     braced() { return player.grounded || swimming; },          // no hold mid-jump or falling
@@ -1886,6 +1887,7 @@ let lookId = null, lookX = 0, lookY = 0;
 let jumpQueued = false;
 // double tap toggles crouch
 export let lastStickTapAt = 0, crouchY = 0;
+let downY = 0;   // DOWN VIEW: metres the 1st-person eye has dropped toward the ground while knocked down or dead
 
 // STANCE: crouch and sprint exclude each other, latest wins. squat(seconds) holds the body low. `low`: crouched or
 // squatting.
@@ -2071,13 +2073,14 @@ export function toggleFly() {
 }
 
 const carEl = document.getElementById('car');
+const driftEl = document.getElementById('drift');   // DRIFT MODE button, above the car button while driving
 const useEl = document.getElementById('use');
 
 // Seconds from boarding until the car drives: the start sound's length (its last breakpoint, where the engine loop takes over).
 const CAR_START_S = SOUND_MODELS[SOUND.car.startModel].breakpointsMs.at(-1) / 1000;
 
 export const car = {
-  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.steer = this.spin = 0; this.startLeftS = 0; this.gasShare = 0; },   // teardownWorld's entry
+  reset() { setPlayerInCar(false); this.placed = false; this.mesh.visible = false; this.speed = this.slip = this.steer = this.spin = 0; this.startLeftS = 0; this.gasShare = 0; },   // teardownWorld's entry
   startLeftS: 0,            // seconds until the engine has started (boardCar sets CAR_START_S); no throttle or steering until 0
   placed: false,
   health: CAR_MAX_HEALTH,   // a placed car starts full (setCar)
@@ -2085,6 +2088,8 @@ export const car = {
   wrecked() { return this.health <= 0; },   // no throttle or steering (carPhysics); it coasts to a stop
   x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0,
   speed: 0,        // m/s, negative in reverse
+  slip: 0,         // m/s sideways, along carRight (DRIFT: the slide; it bleeds to 0 at the tyres' grip)
+  drift: false,    // DRIFT MODE: the Drift button's choice (CAR_DRIFT)
   gasShare: 0,     // ENGINE SOUND only: 0 idle to 1 after SOUND.car.gasRiseS on the gas, back over gasFallS off it
   steer: 0,        // front wheel angle, rad, + left
   spin: 0,
@@ -2357,12 +2362,15 @@ function carMassKg() { return CAR_MASS_KG + (player.inCar ? game.avatar.bodyMass
 // (Ecosystem.impact): the same impulse on both (Newton's third law) pushes the animal against its hold and slows the car
 // along its heading by impulse / car mass, and the impact energy costs the animal (game.playerHurtsAnimals) and the car
 // (game.carTakesDamage) health at their own rates.
-// The sideways share of the car's impulse is lost, since the bicycle model has no sideways speed.
+// The impulse slows the car along its heading and its sideways slide (car.slip) by their shares.
 const _carQ = [], _carHitter = { type: 'car', position: new THREE.Vector3() };   // the car as applyHit's attacker
+// The car's right, across its heading (-sin yaw, -cos yaw): car.slip runs along it.
+function carRight(yaw) { return [Math.cos(yaw), -Math.sin(yaw)]; }
 export function carHits() {
   if (!car.placed || !ecosystem.ready) return;
   const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);   // heading
-  const vx = fx * car.speed, vz = fz * car.speed;            // its velocity, m/s
+  const [rx, rz] = carRight(car.yaw);
+  const vx = fx * car.speed + rx * car.slip, vz = fz * car.speed + rz * car.slip;   // its velocity, m/s
   const touch = CAR_R + NPC_RADIUS, reach = Math.max(...CAR_CIRCLES.map(Math.abs)) + touch + Math.sqrt(ecosystem.drift2);
   const n = ecosystem.animalGrid.queryInto(_carQ, car.x, car.z, reach);
   if (n === 0) return;
@@ -2388,15 +2396,17 @@ export function carHits() {
       const hit = Ecosystem.impact(carKg, a.bodyMassKg(), closing);
       ecosystem.applyHit(a, _carHitter, hurtsAnimal ? hit.damage : 0, hit.pushN, false);
       car.speed -= hit.impulseNs * (fx * nx + fz * nz) / carKg;   // -impulse along n, its heading share
+      car.slip -= hit.impulseNs * (rx * nx + rz * nz) / carKg;    // and its sideways share
       if (hurtsCar) car.hurt(Ecosystem.impactDamage(hit.energyJ, CAR_HEALTH_PER_J));
       break;
     }
   }
 }
 
-// PLAYER BUMPS, one sim tick, on foot and in play in either mode.
+// PLAYER BUMPS, one sim tick, on foot and in play in either mode; a dead player's body bumps no one (a looter stands
+// over it).
 export function playerBumps(dt) {
-  if (!play.active || player.inCar || flying || !ecosystem.ready) { game._bumpX = game._bumpZ = NaN; return; }
+  if (!play.active || player.inCar || flying || game.dead || !ecosystem.ready) { game._bumpX = game._bumpZ = NaN; return; }
   game.placeAvatar();
   game.bumpAnimals(player.pos.x, player.pos.z, dt, SURVIVOR_CONFIG.reach);
 }
@@ -2433,26 +2443,42 @@ function carPhysics(dt, throttle, steer, handbrake) {
   if (nv < -CAR_REV_MAX) nv = -CAR_REV_MAX;
   car.speed = nv;
 
-  // bicycle-model yaw, capped at tyre slide
+  // bicycle-model yaw, capped at tyre slide (DRIFT: a higher cap, so the body can turn faster than its path)
   let yawRate = car.speed * Math.tan(car.steer) / CAR_WHEELBASE;
   const s = Math.abs(car.speed);
   if (s > 0.5) {
-    const cap = CAR_GRIP / s;
+    const cap = (car.drift ? CAR_DRIFT.yawGrip : CAR_GRIP) / s;
     yawRate = Math.max(-cap, Math.min(cap, yawRate));
   }
+  // DRIFT: the velocity keeps its world direction through the turn, split again along the new heading and side;
+  // outside drift mode it turns with the car, as the bicycle model has it
+  const [rx0, rz0] = carRight(car.yaw);
+  const wx = -Math.sin(car.yaw) * car.speed + rx0 * car.slip, wz = -Math.cos(car.yaw) * car.speed + rz0 * car.slip;
   car.yaw += yawRate * dt;
+  if (car.drift) {
+    const [rx1, rz1] = carRight(car.yaw);
+    car.speed = -wx * Math.sin(car.yaw) - wz * Math.cos(car.yaw);
+    car.slip = wx * rx1 + wz * rz1;
+  }
+  // the sideways slide bleeds off at the tyres' grip: full grip outside drift mode, less drifting, least on the handbrake
+  const grip = (car.drift ? (handbrake ? CAR_DRIFT.handbrakeGrip : CAR_DRIFT.grip) : CAR_GRIP) * dt;
+  car.slip = car.slip > 0 ? Math.max(0, car.slip - grip) : Math.min(0, car.slip + grip);
+  const slipMax = Math.abs(car.speed) * Math.tan(CAR_DRIFT.maxSlideDeg * Math.PI / 180);   // the widest slide angle
+  car.slip = Math.max(-slipMax, Math.min(slipMax, car.slip));
 
-  const dist = car.speed * dt;
-  const n = Math.max(1, Math.ceil(Math.abs(dist) / CAR_SUBSTEP));
+  const along = car.speed * dt, side = car.slip * dt;   // metres this step, ahead and sideways
+  const n = Math.max(1, Math.ceil(Math.hypot(along, side) / CAR_SUBSTEP));
   for (let k = 0; k < n; k++) {
-    const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw);
-    const hit = moveCar(fx * dist / n, fz * dist / n);
+    const fx = -Math.sin(car.yaw), fz = -Math.cos(car.yaw), [rx, rz] = carRight(car.yaw);
+    const hit = moveCar((fx * along + rx * side) / n, (fz * along + rz * side) / n);
     if (hit) {
       const len = Math.hypot(hit.x, hit.z);
       if (len > 1e-6) {
         const nx = hit.x / len, nz = hit.z / len;
         const dot = fx * nx + fz * nz;
         if (car.speed * dot < 0) car.speed *= 1 - dot * dot;
+        const sdot = rx * nx + rz * nz;   // the slide into the wall stops the same way
+        if (car.slip * sdot < 0) car.slip *= 1 - sdot * sdot;
         // a glancing hit turns along the wall
         if (Math.abs(dot) < CAR_GLANCE) {
           let tx = -nz, tz = nx;
@@ -2581,6 +2607,13 @@ export function bindCar() {
   jumpEl.addEventListener('pointerdown', () => { jumpQueued = true; });
   attackEl.addEventListener('pointerdown', () => { attackQueued = true; });
   carEl.addEventListener('click', () => { toggleCar(); carEl.blur(); });
+  // DRIFT MODE: on and off while driving; the choice stays for the next drive
+  driftEl.addEventListener('click', () => {
+    car.drift = !car.drift;
+    driftEl.classList.toggle('held', car.drift);
+    driftEl.setAttribute('aria-pressed', String(car.drift));
+    driftEl.blur();
+  });
   // The action button on its own pointer: press acts, hold lasts until release.
   useEl.addEventListener('pointerdown', e => {
     useEl.setPointerCapture(e.pointerId);   // before the action, which may hide the button
@@ -2721,6 +2754,7 @@ export function updateCarButton() {
   carBtnState = state;
   carEl.classList.toggle('on', state !== '');
   if (state !== '') setButtonFace(carEl, CAR_FACES[state]);
+  driftEl.classList.toggle('on', state === 'exit');
   const pedals = state === 'exit' && touchUi();
   for (const el of [gasEl, brakeEl]) {
     el.classList.toggle('on', pedals);
@@ -2797,7 +2831,7 @@ function boardCar() {
   car.startLeftS = CAR_START_S;   // counted with or without sound, so driving never depends on the Sound setting
   car.gasShare = 0;
   sound.emit('carStart', car.x, car.y, car.z, car);
-  stance.stand(); crouchY = 0;
+  stance.stand(); crouchY = 0; downY = 0;
   chaseCam.reset(car.yaw);
   player.vel.set(0, 0, 0);
   jumpQueued = false;
@@ -2902,7 +2936,7 @@ export function playerStep(dt) {
   if (player.inCar) { player.running = false; swimming = false; pov.hideBody(); gunView.stow(); syncDot(); driveStep(dt); updateCarButton(); vr.placeRig(); return; }
   if (carTransit) {
     player.running = false; swimming = false;
-    if (car.speed !== 0) carPhysics(dt, 0, 0, true);
+    if (car.speed !== 0 || car.slip !== 0) carPhysics(dt, 0, 0, true);
     if (stepCarTransit(dt)) { playerStep(0); return; }   // boarded this frame: one car step places the camera
     gunView.step(dt);
     attackQueued = jumpQueued = false;
@@ -2910,7 +2944,7 @@ export function playerStep(dt) {
     return;
   }
   // an empty rolling car brakes to a stop
-  if (car.speed !== 0) carPhysics(dt, 0, 0, true);
+  if (car.speed !== 0 || car.slip !== 0) carPhysics(dt, 0, 0, true);
 
   // knocked down: no moving, turning, jumping or punching until the hold ends
   const knockedDown = game.avatar.isDown(ecosystem.time);
@@ -3050,8 +3084,12 @@ function poseFrame(dt) {
   const crouchTo = stance.low && !flying ? CROUCH_DROP : 0;
   crouchY = crouchY < crouchTo ? Math.min(crouchTo, crouchY + CROUCH_RATE * dt)
     : Math.max(crouchTo, crouchY - CROUCH_RATE * dt);
+  // DOWN VIEW: in 1st person, knocked down or dead (Fall or Ragdoll), the eye eases to DOWN_VIEW.eyeM above the feet
+  const lying = pov.mode === '1st' && !renderer.xr.isPresenting && !player.inCar && game.avatar.isDown(ecosystem.time);
+  const downTo = lying ? EYE_HEIGHT - DOWN_VIEW.eyeM : 0;
+  downY = downY < downTo ? Math.min(downTo, downY + DOWN_VIEW.rate * dt) : Math.max(downTo, downY - DOWN_VIEW.rate * dt);
   camera.position.copy(player.pos);
-  camera.position.y -= crouchY;
+  camera.position.y -= Math.max(crouchY, downY);   // the lower of a crouch and lying down
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   pov.apply(dt);
   gunView.place();

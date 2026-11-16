@@ -23,6 +23,8 @@ export const FOOT_TURN_RATE = 10;    // rad/s body turn toward the move
 export const LOOK_PITCH_MAX = Math.PI / 2 - 0.01;   // look up/down limit
 export const FLY_SPEED = 2 * WALK_SPEED;   // horizontal and vertical
 export const CROUCH_RATE = 3.0;     // m/s the eye moves into or out of a crouch
+// DOWN VIEW: in 1st person, a player knocked down or dead (Fall or Ragdoll) sees from near the ground
+export const DOWN_VIEW = { eyeM: 0.3, rate: 3.0 };   // eye height above the feet lying down, m; m/s the eye drops or rises
 export const GRAVITY = 22.0;
 export const GRID_CELL = 24;      // broadphase cell, metres
 export const LAND_EPS = 0.01;    // slack so a snapped-to roof reads clear
@@ -575,6 +577,9 @@ export const RULE_PEOPLE = {
   huntHungerShare: 0.5, // prey is shot only with hunger at least this share of full (NPC_NEED_FULL); attackers always
   spreadRad: 0.02,      // aim error each way, radians
   foeS: 30,             // seconds an attacker, or a Survivor player aiming at it, stays its target (armed) or threat (unarmed)
+  // LOOTERS: this share of armed people shoot a Survivor player in range and sight, then run to the body and stand over it
+  looterShare: 0.5,
+  lootStandM: 0.8,      // metres from the body's centre where a looter stops
   lootRounds: { max: 30, nextShare: 0.95 }   // a dead armed person's gun holds 1 to max rounds, each one more nextShare as likely
 };
 
@@ -1338,6 +1343,11 @@ const CAR_FRONTAL_FILL = 0.83;   // frontal fill (Jetta and NSX figures ~0.82 to
 const CAR_CDA = CAR_CD * CAR_FRONTAL_FILL * CAR_WID * CAR_TOP;   // m^2 drag area
 export const carDragPerM = massKg => 0.5 * AIR_DENSITY * CAR_CDA / massKg;   // 1/m: drag deceleration over speed squared
 export const CAR_GRIP = 8.8;     // m/s^2 lateral (mu ~0.9)
+// DRIFT MODE (the Drift button while driving): the tail slides. The body may turn faster than the tyres can bend its
+// path (yawGrip over CAR_GRIP), and the sideways slide the turn leaves bleeds off only at grip (handbrakeGrip with
+// the handbrake), so the car travels at an angle to where it points, up to maxSlideDeg (past it the extra slide scrubs
+// off, so a held turn holds a slide instead of spinning out).
+export const CAR_DRIFT = { yawGrip: 14, grip: 3.2, handbrakeGrip: 1.4, maxSlideDeg: 40 };   // m/s^2, degrees
 export const CAR_STEER_MAX = 0.6;     // rad at standstill
 export const CAR_STEER_FALL = 12;      // m/s where steering lock halves
 export const CAR_STEER_RATE = 2.5;     // rad/s wheel turn rate
@@ -1502,9 +1512,9 @@ export const GUN_BUTTON_FACE = {
 // Time chips set the game clock to their hour (FALLBACK_HOURS), and it keeps running from there. Weather presets
 // replace the game's weather ('Game', the first chip).
 export const TIMES = ['Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
-// The game clock's hour and weather at every world start, New ecosystem included (18 = 6 pm); the weather changes
+// The game clock's hour and weather at every world start, New ecosystem included (16 = 4 pm); the weather changes
 // randomly from there.
-export const GAME_START_HOUR = 18;
+export const GAME_START_HOUR = 16;
 export const GAME_START_SKY = 'Clear';   // a SKIES key
 export const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
