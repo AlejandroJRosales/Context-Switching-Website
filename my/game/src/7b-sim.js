@@ -579,15 +579,17 @@ export class Animal extends Entity {
     this.rayPredatorSin = 0; this.rayPredatorCos = 0; this.rayPredatorElev = 0; this.rayPredatorDist = 1;
     this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
-    // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): one roll splits people into a zombie slice, an armed brainless slice, and the brained rest
+    // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): one roll splits people into a zombie slice, an armed brainless slice, and the
+    // rest: brained with the Brainless people switch off, unarmed brainless with it on
+    const human = type === 'human';
     const zombieShare = ecosystem.seedingZombies ? RULE_PEOPLE.zombieShare : 0;   // only at world load with Zombies on
-    const armedShare = ecosystem.brainlessOn ? RULE_PEOPLE.shareSwitchOn : RULE_PEOPLE.share;   // the Brainless people switch
-    const roll = type === 'human' ? Math.random() : 1;   // 1 for every other species: never ruled
-    const seedZombie = roll < zombieShare;                         // true: no brain, no gun, turned by startOutbreak
-    const ruled = roll < zombieShare + armedShare;                 // true: no brain, the rule AI (always, for people, with the switch on)
+    const roll = human ? Math.random() : 1;   // 1 for every other species: in no slice
+    this.seedZombie = roll < zombieShare;                                         // true: no brain, no gun, turned by startOutbreak
+    const armed = !this.seedZombie && roll < zombieShare + RULE_PEOPLE.armedShare; // true: no brain, a gun
+    const ruled = human && (this.seedZombie || armed || ecosystem.brainlessOn);    // true: no brain, the rule AI
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
-    this.gun = ruled && !seedZombie ? WEAPONS[RULE_PEOPLE.weapon] : null;   // every brainless non-zombie, endless rounds
+    this.gun = armed ? WEAPONS[RULE_PEOPLE.weapon] : null;   // endless rounds
     this.setFood(ruled ? RULE_PEOPLE.food : spec.food);
     this.prey = null;                                   // the rule AI's food pick in sight (searchDeer), or null
     this.onSight = null;                                // ARMED: nearest in-sight body of a kind it shoots on sight, or null
@@ -1980,7 +1982,7 @@ export class Ecosystem {
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
-    this.brainlessOn = false;  // the world's Brainless people switch (provider.opts.brainless): every person brainless (RULE_PEOPLE.shareSwitchOn)
+    this.brainlessOn = false;  // the world's Brainless people switch (provider.opts.brainless): every person outside the zombie and armed slices brainless and unarmed
     this.seedingZombies = false; // true only while the world's first people spawn with Zombies on: RULE_PEOPLE.zombieShare start as zombies
 
     this._qPlant = [];
@@ -2073,10 +2075,10 @@ export class Ecosystem {
     this.shownPop = -1;
   }
 
-  // ZOMBIES: as the world starts, every unarmed rule person turns. Those are the zombie slice the Animal constructor
-  // rolled (RULE_PEOPLE.zombieShare of all people), since every other brainless person is armed.
+  // ZOMBIES: as the world starts, the zombie slice the Animal constructor rolled (seedZombie, RULE_PEOPLE.zombieShare of
+  // all people) turns.
   startOutbreak() {
-    for (const a of this.animals) if (a.type === 'human' && !a.zombie && a.brain === null && a.gun === null) a.turn();
+    for (const a of this.animals) if (a.seedZombie && !a.zombie) a.turn();
   }
 
   spawnPlant(src) {

@@ -780,7 +780,7 @@ const gunView = {
   aiming: false,         // Aim is on with the gun drawn and the body free to aim
   recoil: 0,             // radians of the view's recoil climb not yet settled back
   baseFov: NaN,          // the camera's own fov, before the aim zoom
-  _terms: {}, _at: {}, _w: {}, _sup: {}, _v: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Quaternion(), _hq: new THREE.Quaternion(),
+  _terms: {}, _at: {}, _atGrab: {}, _w: {}, _sup: {}, _v: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Quaternion(), _hq: new THREE.Quaternion(),
   _roll: new THREE.Quaternion(), _rv: [0, 0, 0, 0, 0],
   _flip: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI),
 
@@ -888,8 +888,10 @@ const gunView = {
     if (handShown && pov.look) {
       const h = humanGunHand(this.aim, player.pitch, S.reach, this.reload, terms, pov.look.shape.shoulder, this._at);
       this._hq.setFromAxisAngle(this._v.set(1, 0, 0), Math.atan2(Math.cos(h.angle), -Math.sin(h.angle)));   // barrel along the forearm
-      // on the way from the back the gun turns from its tucked place to the hand's by the reach share
-      this.hand.position.set(h.x, h.y, h.z).lerp(this._p.set(waist.x, waist.y, waist.z), S.reach).multiplyScalar(kp);
+      // on the way from the back the gun rides the hand, plus the hand's offset from the tucked grip at the grab (reach 1)
+      // faded out by the reach share, so it leaves the waistband without a jump and is all the way in hand at low ready
+      const g = humanGunHand(this.aim, player.pitch, 1, this.reload, terms, pov.look.shape.shoulder, this._atGrab);   // the hand at the grab
+      this.hand.position.set(h.x + (waist.x - g.x) * S.reach, h.y + (waist.y - g.y) * S.reach, h.z + (waist.z - g.z) * S.reach).multiplyScalar(kp);
       this.hand.quaternion.copy(this._hq).slerp(waist.q, S.reach);
     }
     // the fresh magazine: its base in the support hand, parallel to the grip it seats in

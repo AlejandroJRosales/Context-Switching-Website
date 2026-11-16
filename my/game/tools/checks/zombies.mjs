@@ -450,7 +450,7 @@ async function survivorDeath(g, want) {
   }
 }
 
-const g = await openGame({ rootDir, threeDir, survivor: part !== 'observer' });
+const g = await openGame({ rootDir, threeDir, survivor: part !== 'observer', switches: { brainless: true } });   // unarmed rule people to flee
 try {
   if (part === 'observer') await observer(g);
   else await section(`Survivor ${part}`, () => survivorDeath(g, part));

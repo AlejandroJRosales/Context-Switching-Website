@@ -556,13 +556,13 @@ export const NPC_FOOD_PER_HEALTH_TICK = 0.000003;
 // BROKEN BONES: a hit of sureDamageShare of maxHealth breaks one; a smaller hit with chanceBelowSure (NPCs: / toughness).
 export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // PEOPLE WITHOUT BRAINS: a share of people, rolled at spawn and at birth, run the deer and coyote rules (thinkDeer)
-// instead of a learning brain, hunting `food` as a coyote does. Every one of them carries a gun with endless rounds; it
-// never strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
-// Zombies at world load are their own slice of all people (zombieShare), on top of the armed brainless share.
+// instead of a learning brain, hunting `food` as a coyote does. An armed one carries a gun with endless rounds; it never
+// strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
+// One roll per person splits the people into slices of all people: zombies at world load, armed brainless, and the rest
+// (brained with the Brainless people switch off, unarmed brainless with it on).
 export const RULE_PEOPLE = {
-  share: 0.1,           // of all people, armed with no brain, Brainless people switch off
-  shareSwitchOn: 1,     // Brainless people switch on: every person outside the zombie slice is armed with no brain
-  zombieShare: 0.1,     // of all people, starting as zombies with Zombies on (either Brainless switch); none with Zombies off
+  armedShare: 0.05,     // of all people, armed with no brain (either Brainless switch)
+  zombieShare: 0.05,    // of all people, starting as zombies with Zombies on (either Brainless switch); none with Zombies off
   food: 'deer',         // the species they hunt for food
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
