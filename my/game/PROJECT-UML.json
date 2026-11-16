@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16T02:47:12.912Z",
+ "generated": "2026-11-16T03:25:45.091Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -503,6 +503,7 @@
     "+AIM_BUTTON_GAP_PX: number",
     "+TIMES: string[]",
     "+GAME_START_HOUR: number",
+    "+GAME_START_SKY: string",
     "+DEBUG_PROBE_LAYER: number",
     "+DEBUG_PROBE_PX: number",
     "+SWIM_DEPTH: number",
@@ -3174,6 +3175,7 @@
     "acc: number",
     "lastNow: number",
     "shownMinute: number",
+    "frozen: boolean",
     "site: null",
     "sunAltDeg: number",
     "onSkyStep: null",
@@ -3183,7 +3185,9 @@
    "methods": [
     "start(): void",
     "stop(): void",
+    "startWeather(kind): void",
     "randomizeWeather(): void",
+    "setHour(hour): void",
     "conditions(): unknown",
     "update(now): void"
    ]
@@ -3292,8 +3296,6 @@
     "-FIELD_FONT(px): string",
     "-STAT_FONT(px): string",
     "-ICON_FONT(px): string",
-    "-timeMode(): string",
-    "-skyHour(mode): unknown",
     "+skyInstant(): Date",
     "+conditions(): null|unknown",
     "-zoneOffset(): number",
@@ -3708,7 +3710,6 @@
    "kind": "object",
    "visibility": "+",
    "attributes": [
-    "time: string",
     "sky: string"
    ],
    "methods": []
@@ -4499,6 +4500,8 @@
     "-soundEl: HTMLElement",
     "-newEcoEl: HTMLElement",
     "-tintEl: HTMLElement",
+    "-freezeEl: HTMLElement",
+    "-freezeChosen: boolean",
     "-weaponEl: HTMLElement",
     "-debugEl: HTMLElement",
     "-debugInfoEl: HTMLElement",
@@ -4538,7 +4541,6 @@
     "-peopleEl: HTMLElement",
     "-peopleOutEl: HTMLElement",
     "-customRowEl: HTMLElement",
-    "-randomObserverWeather: boolean",
     "-gameEl: HTMLElement",
     "-skysetEl: HTMLElement",
     "-hudBeforeGame: boolean",
@@ -4574,7 +4576,8 @@
     "-paint(): Promise",
     "-loadIntroScene(): void",
     "-returnToIntro(): void",
-    "-chips(host, names, pick): void",
+    "-chips(host, names, pick, keep?: boolean): void",
+    "-applyFreeze(): void",
     "-backToIntro(): void",
     "-setSettingsOpen(open): void",
     "-syncAudioPause(): void",
@@ -5264,6 +5267,7 @@
     "CORPSE_S",
     "CORPSE_MAX",
     "GAME_START_HOUR",
+    "GAME_START_SKY",
     "HUMAN_RIG",
     "HUMAN_ARM_FLARE",
     "RAGDOLL_G",
@@ -5664,7 +5668,6 @@
     "plantView",
     "ecosystem",
     "simSky",
-    "presetHour",
     "downShare",
     "HumanFall",
     "fallRigs"
@@ -6139,7 +6142,8 @@
     "feetInches",
     "plantView",
     "ecosystem",
-    "simSky"
+    "simSky",
+    "presetHour"
    ]
   },
   {

@@ -42,7 +42,7 @@ import {
 } from './6-worlds.js';
 import {
   humanFightAct, sampleFightKeys, personInfoKey, personInfoFields, personBodyFields, Animal, averageHumanLook, plantView, ecosystem,
-  simSky, presetHour, downShare, HumanFall, fallRigs
+  simSky, downShare, HumanFall, fallRigs
 } from './7b-sim.js';
 
 
@@ -3350,23 +3350,16 @@ class HealthBars {
 
 export const healthBars = new HealthBars();
 
-// Observer sky presets ('Game': the game's own).
+// Observer weather preset ('Game': the game's own). The time chips set the game clock itself (simSky.setHour).
 export const skyChoice = {
-  time: 'Game',
   sky: 'Game'
 };
 
-// Survivor ignores presets
-function timeMode() { return renderInputs.survivor() ? 'Game' : skyChoice.time; }
-// sky hour: preset, else the game clock
-function skyHour(mode) { return mode !== 'Game' ? presetHour(mode) : simSky.hour; }
-
 // sky instant: today at the sky hour
 export function skyInstant() {
-  const mode = timeMode();
   const d = cityNow();
   const now = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  return new Date(Date.now() + (skyHour(mode) - now) * 3600000);
+  return new Date(Date.now() + (simSky.hour - now) * 3600000);
 }
 
 export function conditions() {
@@ -3556,7 +3549,7 @@ export function updateSky() {
   hemi.intensity = HEMI_NIGHT + (HEMI_DAY - HEMI_NIGHT) * day;
 
   // FACADE: windows on at dusk, thinning after 22:00.
-  const hour = skyHour(timeMode());
+  const hour = simSky.hour;
   const late = hour >= 22 ? 1 - 0.3 * (hour - 22) : hour < 5 ? 0.25 : hour < 7 ? 0.25 + 0.3 * (hour - 5) : 1;
   // windows' dusk ramp; a quarter stay on by day
   const [litFrom, litFull] = FACADE_LIGHTS_DEG;

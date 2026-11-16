@@ -50,7 +50,7 @@ import {
   INTRO_SCENE, IntroWorld
 } from './6-worlds.js';
 import {
-  personInfoFields, personBodyFields, feetInches, plantView, ecosystem, simSky
+  personInfoFields, personBodyFields, feetInches, plantView, ecosystem, simSky, presetHour
 } from './7b-sim.js';
 import {
   npcOnScreen, foodBoxView, raysEl, gfxEl, avgFpsEl, graphics, labels, visionRays, animalRenderer, plantRenderer,
@@ -256,24 +256,39 @@ bindTouch();   // its listeners, in their original place among main's
 
 bindCar();   // its listeners, in their original place among main's
 
-function chips(host, names, pick) {
+// `keep`: the picked chip stays selected (a preset in force); off for chips that only act once (the time chips).
+function chips(host, names, pick, keep = true) {
   for (const name of names) {
     const b = document.createElement('button');
     b.textContent = name;
     b.addEventListener('click', () => {
       pick(name);
-      for (const other of host.children) other.classList.toggle('sel', other === b);
+      if (keep) for (const other of host.children) other.classList.toggle('sel', other === b);
       b.blur();
       updateSky();
       refreshHud();
     });
-    if (name === 'Game') b.classList.add('sel');
+    if (keep && name === 'Game') b.classList.add('sel');
     host.appendChild(b);
   }
 }
 
-chips(timesEl, TIMES, n => { skyChoice.time = n; });
+// a time chip moves the game clock to its hour; the clock runs on from there (or holds, frozen)
+chips(timesEl, TIMES, n => simSky.setHour(presetHour(n)), false);
 chips(skiesEl, Object.keys(SKIES), n => { skyChoice.sky = n; });
+
+// FREEZE TIME (Observer): the clock and the sun hold; people, animals, plants and weather go on. Survivor's clock
+// always runs, so the chip's choice applies only while in Observer (applyFreeze, also on a mode change).
+const freezeEl = document.getElementById('freeze');
+let freezeChosen = false;
+function applyFreeze() { simSky.frozen = freezeChosen && !game.on; }
+freezeEl.addEventListener('click', () => {
+  freezeChosen = !freezeChosen;
+  freezeEl.classList.toggle('sel', freezeChosen);
+  freezeEl.setAttribute('aria-pressed', String(freezeChosen));
+  freezeEl.blur();
+  applyFreeze();
+});
 
 // BACK TO INTRO: the run ends; the world is torn down and the intro scene returns behind the start card, for a new game.
 function backToIntro() {
@@ -989,12 +1004,8 @@ async function finishLoad(provider, autoGraphics = false) {
   if (wantGame !== game.on) gameEl.click();
   simSky.start();
   syncSkyset();
-  if (randomObserverWeather) {
-    // New ecosystem: a random weather preset for Observer (simSky.start already drew the game's weather); the hour
-    // stays GAME_START_HOUR, so Observer's time preset is left as it is
-    randomObserverWeather = false;
-    skiesEl.children[1 + Math.floor(Math.random() * (skiesEl.children.length - 1))].click();   // 0 is Game
-  }
+  // every start shows the game's own weather (GAME_START_SKY at GAME_START_HOUR): the weather picker back to Game
+  if (skyChoice.sky !== 'Game') skiesEl.children[0].click();   // 0 is Game
   updateSky();
   panel.classList.add('hidden');
   showControls(true);
@@ -1322,17 +1333,12 @@ async function loadPlace(query) {
 }
 
 // NEW ECOSYSTEM: a fresh seed for the next load (same city if any), used up when it loads; an intro load clears it.
-// randomObserverWeather: that load also picks a random Observer weather preset.
-let randomObserverWeather = false;
-goEl.addEventListener('click', () => { randomObserverWeather = false; }, true);
-
 function newEcosystem() {
   if (!providers.active || busy) return;
   const noCity = !providers.active.city;
   const seed = String(Math.floor(Math.random() * 1e12));
   seedEl.value = seed;
   returnToIntro();
-  randomObserverWeather = true;
   setMode(noCity ? 'wilderness' : 'city');
   if (noCity) loadWilderness(seed);
   else loadPlace(lastQuery);
@@ -1360,6 +1366,7 @@ gameEl.addEventListener('click', () => {
   else setHud(hudBeforeGame);
   // no Vision rays, Vitals, HUD, Collision, Animal damage or Weapon chips in Survivor mode
   syncSkyset();
+  applyFreeze();   // Survivor's clock runs; Observer's follows the Freeze chip
   raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = weaponEl.hidden = game.on;
   // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
   avgFpsEl.hidden = !game.on;

@@ -1499,10 +1499,13 @@ export const GUN_BUTTON_FACE = {
 
 // SETTINGS
 
-// Presets replace the game's clock and weather ('Game', the first chip).
-export const TIMES = ['Game', 'Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
-// The game clock's hour at every world start, New ecosystem included (12 = midday); the weather is random each start.
-export const GAME_START_HOUR = 12;
+// Time chips set the game clock to their hour (FALLBACK_HOURS), and it keeps running from there. Weather presets
+// replace the game's weather ('Game', the first chip).
+export const TIMES = ['Dawn', 'Morning', 'Noon', 'Afternoon', 'Sunset', 'Night'];
+// The game clock's hour and weather at every world start, New ecosystem included (18 = 6 pm); the weather changes
+// randomly from there.
+export const GAME_START_HOUR = 18;
+export const GAME_START_SKY = 'Clear';   // a SKIES key
 export const FALLBACK_HOURS = {
   Dawn: 6, Morning: 9, Noon: 12, Afternoon: 15, Sunset: 18.5, Night: 0
 };

@@ -18,7 +18,7 @@ import {
   HUMAN_OUTFITS, HUMAN_SKIN, HUMAN_SHIRTS, HUMAN_PANTS, HUMAN_SUITS, CAR_GLANCE, CAR_ALIGN, FALLBACK_HOURS, SKIES,
   NPC_DRINK_SECONDS, DAY_S, NPC_HIT_ACCEL_MS2, NPC_HOLD_ACCEL_MS2, NPC_DOWN_MIN_S, NPC_DOWN_S_PER_EXCESS, NPC_DOWN_MAX_S,
   NPC_NEED_FULL, REGEN_MIN_SHARE, REGEN_COST_SHARE, NPC_FALL_S, NPC_GETUP_S, NPC_BUMP_DIST, NPC_BUMP_CONTACT_S, BUMP_RESTITUTION, BUMP_SAFE_J,
-  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, GAME_START_HOUR, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
+  BUMP_HEALTH_PER_J, CORPSE_S, CORPSE_MAX, GAME_START_HOUR, GAME_START_SKY, HUMAN_RIG, HUMAN_ARM_FLARE, RAGDOLL_G, RAGDOLL_DAMP, RAGDOLL_ITERS,
   RAGDOLL_FRICTION, RAGDOLL_MAX_DV, RAGDOLL_TOP_SHARE, RAGDOLL_BASE_SHARE, FALL_SETTLE_MS, FALL_SETTLE_S,
   BULLET_G, bulletDragPerM, BULLET_MAX, BULLET_GROUND_STEP_M, BULLET_DOWN_HIT_M, HIT_DAMAGE, HIT_ZONES, CARRION_MASK,
   RULE_PEOPLE, WEAPONS, PLAYER_HEIGHT, PLAYER_RADIUS, ZOMBIES, NPC_KIND_SPECS, NPC_KINDS, NPC_KIND_IDS, NPC_KIND_COUNT,
@@ -2611,6 +2611,7 @@ export const simSky = {
   STEP_S: 0.25,                // sky redraw interval
   KINDS: ['Clear', 'Cloudy', 'Overcast', 'Fog', 'Rain', 'Snow', 'Storm'],
   hour: 15, day: 0, kind: 'Rain', timer: 0, acc: 0, lastNow: 0, shownMinute: -1,
+  frozen: false,   // the hour (and so the sun) holds; weather and everything else go on (main sets it: Freeze, Observer)
 
   site: null,   // the world's { lat, lon, offset }
   sunAltDeg: 90,   // drawn sun altitude, degrees
@@ -2621,17 +2622,26 @@ export const simSky = {
     this.running = true;
     this.hour = GAME_START_HOUR;
     this.day = 0;   // midnights since load (HUD day)
-    this.randomizeWeather();
+    this.startWeather(GAME_START_SKY);
     this.acc = 0;
     this.lastNow = 0;
     this.shownMinute = -1;
   },
   stop() { this.running = false; },
 
-  // Any weather, for a random span (every start; the hour stays GAME_START_HOUR)
-  randomizeWeather() {
-    this.kind = this.KINDS[Math.floor(Math.random() * this.KINDS.length)];
+  // `kind` for a random span
+  startWeather(kind) {
+    this.kind = kind;
     this.timer = this.SPAN[0] + Math.random() * (this.SPAN[1] - this.SPAN[0]);
+  },
+  // Any weather, for a random span (each time the last one runs out)
+  randomizeWeather() {
+    this.startWeather(this.KINDS[Math.floor(Math.random() * this.KINDS.length)]);
+  },
+  // The clock to `hour` (a time chip); it keeps running from there unless frozen.
+  setHour(hour) {
+    this.hour = hour;
+    this.shownMinute = -1;
   },
 
   conditions() { return SKIES[this.kind]; },
@@ -2641,9 +2651,11 @@ export const simSky = {
     if (!this.running || document.hidden) { this.lastNow = 0; return; }
     const dt = this.lastNow ? Math.min(Math.max((now - this.lastNow) / 1000, 0), 5) : 0;
     this.lastNow = now;
-    const hours = this.hour + dt * 24 / this.DAY_S;
-    this.day += Math.floor(hours / 24);
-    this.hour = hours % 24;
+    if (!this.frozen) {
+      const hours = this.hour + dt * 24 / this.DAY_S;
+      this.day += Math.floor(hours / 24);
+      this.hour = hours % 24;
+    }
     this.timer -= dt;
     let changed = false;
     if (this.timer <= 0) {
