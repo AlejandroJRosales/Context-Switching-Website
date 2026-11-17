@@ -1299,8 +1299,7 @@ export const LOBE_COLS = [0x00e5ff, 0xaaff00];
 export const BRAIN_SCALE = 0.11;   // layout units to metres (~6.2 x 4.2)
 export const BRAIN_HALF_H = 2.1;
 export const BRAIN_ABOVE = 0.06;
-export const BRAIN_SPIN = 0.6;    // rad/s spin
-export const BRAIN_TILT = 0.18;
+export const BRAIN_TILT = 0.18;   // roll about the brain's front-back axis, radians
 export const BRAIN_DIM = 0.3;
 export const BRAIN_IN_GROUPS = [4, 4, 4, 4, 3];
 

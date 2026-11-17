@@ -17,7 +17,7 @@ import {
   SHADOW_ANIMAL_HZ, SHADOW_ANIMAL_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
   BLOB_LIFT, BLOB_SPREAD, DETAIL, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
   EMOJI_FONT, FAR_STAT_MAX, FAR_PANEL_SCALE, FAR_PAGE_PX, FAR_CELL_GUTTER, FAR_REDRAW_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_ROW_H, BAR_TEXT_FONT, BAR_ROW_GAP, BAR_SPRITE_CANVAS_H,
-  BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, VITALS_MODES, VITALS_CYCLES, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
+  BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, VITALS_MODES, VITALS_CYCLES, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
@@ -2840,8 +2840,7 @@ function buildBrain(nn) {
   scene.add(group);
   return {
     group, mesh, lines, colorAttr, outEdges, nodePos, baseCol, fireCol,
-    fire: new Int8Array(total).fill(-1), total, oA, oB, oOut,
-    phase: Math.random() * Math.PI * 2
+    fire: new Int8Array(total).fill(-1), total, oA, oB, oOut
   };
 }
 
@@ -3239,7 +3238,6 @@ class HealthBars {
   update(animals, corpses = ecosystem.corpses) {
     if (!this.enabled) return;
     const tick = ++this.tick;
-    const spin = performance.now() / 1000 * BRAIN_SPIN;
     const now = ecosystem.time;
     const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
     const showPanel = this.view.panel;   // true: stats panels draw over the brains (Neural+Stats and up)
@@ -3346,7 +3344,9 @@ class HealthBars {
       const b = bar.brain;
       brainActivity(b, a);
       b.group.position.set(px, this.brainY(barY), pz);
-      b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
+      // the brain faces the way its animal does: the layout's inputs (-x) behind, outputs (+x) in front. A facing h
+      // walks along (sin h, cos h) (Animal.speedAlong), and a yaw of h - PI/2 turns local +x onto it.
+      b.group.rotation.set(BRAIN_TILT, a.facingAngle - Math.PI / 2, 0, 'YXZ');
       b.group.visible = true;
     }
     for (const [a, bar] of this.bars) {
