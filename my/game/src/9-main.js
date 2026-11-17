@@ -1442,7 +1442,6 @@ for (const el of document.querySelectorAll('#more .switch')) {
 // (RULE_PEOPLE). armed: RULE_PEOPLE.armedShare of people carry a gun (armed people have no brain).
 const PLAY_MODES = {
   observer: { survivor: false, zombies: false, brainless: false, armed: false },
-  survivor: { survivor: true, zombies: false, brainless: true, armed: true },
   zombies: { survivor: true, zombies: true, brainless: true, armed: true }
 };
 // MODE FOR THE NEXT LOAD: Go starts the world in it (setPlayMode), and New game or New ecosystem keeps it.

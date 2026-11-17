@@ -20,8 +20,8 @@ async function section(name, fn) {
   }
 }
 
-// Survivor: no outbreak, every person brainless.
-const g = await openGame({ rootDir, threeDir, mode: 'survivor' });
+// Zombies: the outbreak, every person brainless, the player plays Survivor.
+const g = await openGame({ rootDir, threeDir, mode: 'zombies' });
 await g.page.evaluate(async () => {
   const sim = await import('/src/7b-sim.js'), cfg = await import('/src/1-config.js'), col = await import('/src/5-collision.js');
   const pg = await import('/src/8b-player-game.js');
@@ -42,10 +42,17 @@ await g.page.evaluate(async () => {
   window.F = { sim, cfg, pg, E, shots, inView, cur: {} };
 });
 
-await section('Survivor: no zombies', async () => {
+await section('Zombies: the outbreak', async () => {
   const line = /(\d[\d,]*) zombies/.exec(g.loadText);
   const n = await g.page.evaluate(() => F.E.animals.filter(a => a.zombie).length);
-  check('no zombies in Survivor mode', n === 0 && line !== null && line[1] === '0', `${n} zombies alive; loading line "${line ? line[0] : 'none'}"`);
+  check('Zombies mode starts with zombies', n > 0 && line !== null && line[1] !== '0', `${n} zombies alive; loading line "${line ? line[0] : 'none'}"`);
+});
+// The gun, aiming and loot tests below need a world without zombies: every zombie's health is dropped to 0, so the sim's
+// own death path (Animal.DEATH_HEALTH, Ecosystem.step) removes them, and nobody is infected or turning.
+await section('clearing the outbreak', async () => {
+  await g.page.evaluate(() => { for (const a of F.E.animals) if (a.zombie && a.alive) a.health = 0; });
+  const left = await g.until(() => F.E.animals.filter(a => a.alive && (a.zombie || a.turnAt !== Infinity)).length === 0);
+  check('every zombie gone and nobody turning before the gun tests', left === true, String(left));
 });
 
 await section('rule people', async () => {
@@ -54,8 +61,8 @@ await section('rule people', async () => {
     return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length };
   });
   const share = F.cfg.RULE_PEOPLE.armedShare, sd = Math.sqrt(r.people * share * (1 - share));
-  check('in Survivor, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
-  check('in Survivor, about RULE_PEOPLE.armedShare of people are armed', Math.abs(r.armed - share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+  check('in Zombies, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
+  check('in Zombies, about RULE_PEOPLE.armedShare of people are armed', Math.abs(r.armed - share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
 });
 
 await section('armed people and coyotes', async () => {
@@ -161,7 +168,7 @@ await section('zombie skin', async () => {
     r.died ? 'it died first' : `drawn ${r.drawn.toString(16)}, own ${r.own.toString(16)}`);
 });
 
-await section('aiming at people (Survivor)', async () => {
+await section('aiming at people (Zombies)', async () => {
   // the player may start in a cabin, whose walls hide it from everyone: moved to open, dry ground until unsheltered
   await g.page.evaluate(async () => { F.prov = await import('/src/4-provider.js'); F.col = await import('/src/5-collision.js'); });
   await g.until(() => {

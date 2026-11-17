@@ -1,5 +1,5 @@
 // SMOKE: load a page from a local static server in headless Chromium and read the game's own Debug readout.
-//   node smoke.mjs <rootDir> <page.html> [--three <dir containing three/build and three/examples>] [--wild] [--low] [--walk] [--survivor] [--fast]
+//   node smoke.mjs <rootDir> <page.html> [--three <dir containing three/build and three/examples>] [--wild] [--low] [--walk] [--zombies] [--fast]
 // Steps: the intro scene (readout), then with --wild a City-off wilderness load (Start), Observer, Go (readout again).
 // Prints script errors (page errors and console errors) and the readout's shader line. Exit 1 on any script error or a
 // failed shader program. --three serves https://unpkg.com/three@0.160.0/... from a local copy, for machines that cannot
@@ -17,8 +17,8 @@ const threeDir = args.includes('--three') ? args[args.indexOf('--three') + 1] : 
 const wild = args.includes('--wild');
 const low = args.includes('--low');   // start on Graphics low (the saved choice the game reads at startup)
 const walk = args.includes('--walk');   // after Go: walk, jump and sprint on the keyboard (player collision and footing)
-const survivor = args.includes('--survivor');
-const fast = args.includes('--fast');   // Custom size: smallest map, fewest people; shorter waits and walk   // choose Survivor instead of Observer (game.update and the avatar run)
+const zombies = args.includes('--zombies');   // choose Zombies instead of Observer (the player plays Survivor: game.update and the avatar run)
+const fast = args.includes('--fast');   // Custom size: smallest map, fewest people; shorter waits and walk
 if (!rootDir || !pagePath) { console.error('usage: node smoke.mjs <rootDir> <page.html> [--three <dir>] [--wild]'); process.exit(2); }
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png' };
@@ -90,12 +90,12 @@ if (wild) {
     size.value = size.min; people.value = people.min;
   });
   // City off (More World Options) makes Launch load the wilderness instead of a city
-  await page.evaluate(survivor => {
-    document.querySelector(`#moderow .sizebtn[data-play="${survivor ? 'survivor' : 'observer'}"]`).click();   // --survivor: Survivor mode
+  await page.evaluate(zombies => {
+    document.querySelector(`#moderow .sizebtn[data-play="${zombies ? 'zombies' : 'observer'}"]`).click();   // --zombies: Zombies mode
     const city = document.querySelector('#more .switch[data-opt="city"]');
     if (city.classList.contains('on')) city.click();
     document.getElementById('go').click();
-  }, survivor);
+  }, zombies);
   await page.waitForFunction(() => { const c = document.getElementById('choose'); return c && getComputedStyle(c).display !== 'none' && c.offsetParent !== null; }, null, { timeout: LOAD_TIMEOUT_MS });
   console.log(`[wild] choice shown after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   await page.evaluate(() => document.getElementById('chooseGo').click());

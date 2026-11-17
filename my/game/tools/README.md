@@ -44,13 +44,13 @@ These are notes:
 ## checks/smoke.mjs: load the page and read the game's Debug readout
 
 ```
-node tools/checks/smoke.mjs <rootDir> <page.html> [--wild] [--low] [--walk] [--survivor] [--fast] [--three <local three dir>]
+node tools/checks/smoke.mjs <rootDir> <page.html> [--wild] [--low] [--walk] [--zombies] [--fast] [--three <local three dir>]
 ```
 
 It serves `rootDir` from a local static server and opens the page in headless Chromium (SwiftShader). It reads the Debug readout (graphics, shader programs and failed links, people, script errors) on the intro scene. Options:
 
 - `--wild`: read it again after a wilderness load (the City switch under More World Options turned off, then Launch) and Observer, Go.
-- `--survivor`: choose Survivor in the Mode row instead of Observer.
+- `--zombies`: choose Zombies in the Mode row instead of Observer.
 - `--walk` (with `--wild`): walk, jump and sprint on the keyboard, then read the readout again.
 - `--low`: start on Graphics low.
 - `--fast`: smallest Custom size, a 480x300 viewport, shorter waits, and one readout at the last stage. A run takes about 1 to 2.5 minutes.
@@ -93,10 +93,11 @@ When a test moves an animal it also sets `_fx` and `_fz`, so the contact search'
 node tools/checks/features.mjs <rootDir> [--three <local three dir>]
 ```
 
-One Survivor page load (`openGame`'s `mode`), then a second in Observer. It checks:
+One Zombies page load (`openGame`'s `mode`), then a second in Observer. It checks:
 
-- no zombies, and the loading line's zombie count is 0
-- in Survivor no person has a brain, and about `RULE_PEOPLE.armedShare` are armed
+- zombies at load, and the loading line's zombie count above 0
+- every zombie then removed (health 0), so the gun, aiming and loot tests run without them
+- in Zombies no person has a brain, and about `RULE_PEOPLE.armedShare` are armed
 - in Observer every person has a brain and none is armed
 - an armed person shoots a coyote it sees, without fleeing
 - gun loot: 4,000 direct `game.loot` calls on armed bodies give the gun with 1 to 30 rounds, magazine first, with a mean matching the 5% falloff

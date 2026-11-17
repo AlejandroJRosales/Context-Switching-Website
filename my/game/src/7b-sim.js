@@ -580,7 +580,7 @@ export class Animal extends Entity {
     this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
     // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): one roll splits people into a zombie slice, an armed brainless slice, and the
-    // rest: brained in Observer, unarmed brainless in Survivor and Zombies (provider.opts.brainless)
+    // rest: brained in Observer, unarmed brainless in Zombies (provider.opts.brainless)
     const human = type === 'human';
     const zombieShare = ecosystem.seedingZombies ? RULE_PEOPLE.zombieShare : 0;   // only at world load in Zombies mode
     const armedShare = ecosystem.armedOn ? RULE_PEOPLE.armedShare : 0;            // only where the mode arms people (PLAY_MODES.armed)
@@ -2038,7 +2038,7 @@ export class Ecosystem {
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
-    this.brainlessOn = false;  // brainless people (provider.opts.brainless, Survivor and Zombies modes): every person outside the zombie and armed slices brainless and unarmed
+    this.brainlessOn = false;  // brainless people (provider.opts.brainless, Zombies mode): every person outside the zombie and armed slices brainless and unarmed
     this.armedOn = false;      // the mode's armed people (provider.opts.armed, PLAY_MODES): RULE_PEOPLE.armedShare of people armed and brainless, at spawn and birth
     this.seedingZombies = false; // true only while the world's first people spawn in Zombies mode: RULE_PEOPLE.zombieShare start as zombies
 

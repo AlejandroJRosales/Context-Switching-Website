@@ -13,7 +13,7 @@ export const WAIT_LIMIT_MS = 180000;   // one test's wait; past it the test is r
 const POLL_MS = 500;   // between until's checks
 
 // Opens the game and loads the smallest wilderness; resolves once play has started. mode: a Mode row key (observer,
-// survivor, zombies). switches: More options to set { opt: on }.
+// zombies). switches: More options to set { opt: on }.
 export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, mode = 'observer', switches = {} }) {
   const server = http.createServer((req, res) => {
     const file = path.join(path.resolve(rootDir), decodeURIComponent(new URL(req.url, 'http://x').pathname));
