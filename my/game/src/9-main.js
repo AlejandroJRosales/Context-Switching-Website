@@ -606,15 +606,17 @@ debugCopyEl.addEventListener('click', () => {
 debugInfoEl.addEventListener('focus', () => debugInfoEl.select());                // one tap selects it all for copying
 debugInfoEl.addEventListener('contextmenu', e => e.stopPropagation());           // keeps the long-press copy menu while playing
 debugInfoEl.addEventListener('keydown', e => { if (e.code !== 'Escape') e.stopPropagation(); });   // keys here do not steer the player
-// HUD off: the Arena's clearHud (text, crosshair, vitals and vision rays hide together)
-let hudOn = true, raysBeforeHud = 'off';
+// HUD off: the Arena's clearHud (text, crosshair, vitals and vision rays hide together). The Vitals chip still cycles
+// with the HUD off, without turning it back on; the HUD on restores the vitals it turned off.
+let hudOn = true, raysBeforeHud = 'off', vitalsBeforeHud = VITALS_CYCLES.observer.start;
 function setHud(on) {
   if (on === hudOn) return;
   hudOn = on;
   document.body.classList.toggle('hud-off', !hudOn);
   hudBtnEl.classList.toggle('sel', hudOn);
   hudBtnEl.setAttribute('aria-pressed', String(hudOn));
-  healthBars.setHudShown(hudOn);
+  if (!hudOn) { vitalsBeforeHud = healthBars.mode; setVitals('off'); }
+  else setVitals(vitalsBeforeHud);
   if (!hudOn) { raysBeforeHud = labels.rayVisMode; labels.setRayVis('off'); }
   else labels.setRayVis(raysBeforeHud);
   invalidate();
@@ -1376,7 +1378,6 @@ function setPlayMode(survivor) {
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
-  healthBars.setHudShown(hudOn || game.on);   // Survivor's vitals follow only the Vitals chip
   setVitals(vitalsCycle().start);
   // no Vision rays, HUD, Collision, Animal damage or Weapon chips in Survivor mode
   syncSkyset();

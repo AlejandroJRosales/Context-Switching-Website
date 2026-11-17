@@ -2884,7 +2884,7 @@ function brainActivity(b, a) {
 
 const STAT_LABEL_MAX = 100;   // top of each stat's scale
 const BAR_PAD = 4;            // panel padding px
-const PERSON_ROWS = 3;        // people's rows with the composition row: stats, body, info (one fewer without it)
+const PERSON_ROWS = 3;        // people's rows with the composition row: body, info, stats (one fewer without it)
 const STAT_PART_GAP = 0.15;   // icon, number, arrow spacing, share of font px
 const STAT_ARROWED = [false, true, true, true];   // stats that can show a memory arrow
 // the panel's fonts at one px
@@ -2928,8 +2928,7 @@ class HealthBars {
     this.tick = 0;
     this.mode = VITALS_CYCLES.observer.start;   // a VITALS_MODES key; the Vitals chip sets it (setVitals, 9-main)
     this.view = VITALS_MODES[this.mode];        // what the mode shows
-    this.hudShown = true;
-    this.enabled = this.view.on;   // brains or panels drawn (the mode and the HUD)
+    this.enabled = this.view.on;   // brains or panels drawn
     this.textWidths = new Map();   // TEXT WIDTHS: font + '\n' + text to px
 
     // Hidden stand-ins so compileAsync builds the sprite and brain shaders.
@@ -2945,8 +2944,8 @@ class HealthBars {
     scene.add(this.warmLines, this.warmNodes);
   }
 
-  // VITALS: the chip's mode (a VITALS_MODES key) and the HUD (false hides everything); shown only when both allow.
-  // A mode change repaints every panel (its rows differ).
+  // VITALS: the chip's mode (a VITALS_MODES key); the HUD off sets it to off (setHud, 9-main). A mode change repaints
+  // every panel (its rows differ).
   setMode(m) {
     this.mode = m;
     this.view = VITALS_MODES[m];
@@ -2955,13 +2954,8 @@ class HealthBars {
     this.applyShown();
   }
 
-  setHudShown(on) {
-    this.hudShown = on;
-    this.applyShown();
-  }
-
   applyShown() {
-    this.enabled = this.hudShown && this.view.on;
+    this.enabled = this.view.on;
     if (this.enabled) return;
     for (const bar of this.bars.values()) {
       bar.sprite.visible = false;
@@ -3231,9 +3225,11 @@ class HealthBars {
     ctx.clearRect(0, 0, BAR_CANVAS_W, BAR_SPRITE_CANVAS_H);
     ctx.fillStyle = 'rgba(12, 15, 21, 0.7)';
     ctx.fillRect(0, panelTop, BAR_CANVAS_W, this.panelBottom(info) - panelTop);
-    this.statRow(ctx, vals, arrows, rowCy(0), px);
-    if (body) this.fieldRow(ctx, body, rowCy(1), px);
-    if (details) this.fieldRow(ctx, details, rowCy(body ? 2 : 1), px);
+    // top to bottom: body composition, info, then the stat row on the brain (or the head)
+    let r = 0;
+    if (body) this.fieldRow(ctx, body, rowCy(r++), px);
+    if (details) this.fieldRow(ctx, details, rowCy(r++), px);
+    this.statRow(ctx, vals, arrows, rowCy(r), px);
     slot.tex.needsUpdate = true;
     return true;
   }

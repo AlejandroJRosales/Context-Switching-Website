@@ -1286,7 +1286,7 @@ export const FAR_REDRAW_MAX = 48;      // far panels redrawn per frame at most
 // No stats past this many metres.
 export const BAR_PX = 0.8 / 192;                       // metres per canvas px (old 0.8 m, 192 px panel)
 export const BAR_CANVAS_W = 272, BAR_CANVAS_H = 96;   // width fits the stat row; height above the info row
-export const BAR_ROW_H = 20;                           // px per panel row: stats, body, info
+export const BAR_ROW_H = 20;                           // px per panel row: body, info, stats (top to bottom)
 export const BAR_TEXT_FONT = 15;                       // px of panel text and icons, shrunk only to fit
 export const BAR_ROW_GAP = 8;                          // least px between a row's items
 export const BAR_SPRITE_CANVAS_H = BAR_CANVAS_H + BAR_ROW_H;
