@@ -25,7 +25,7 @@ import * as THREE from 'three';
 import {
   MAP_SIZE_SCALES, WORLD_SIZES, CITY_LADDER, EYE_HEIGHT, FEATURES_VERSION, ELEV_MARGIN, CITY_STEPS, WILDERNESS_STEPS,
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
-  NPC_TICK_S, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
+  NPC_TICK_S, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND, VITALS_CYCLES,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
   AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN, MSAA_HALF_FLOAT,
   DEBUG_COPY_FEEDBACK_MS
@@ -345,12 +345,18 @@ function setSound(on) {
 soundEl.classList.toggle('sel', audio.enabled);
 soundEl.setAttribute('aria-pressed', String(audio.enabled));
 soundEl.addEventListener('click', () => { setSound(!audio.enabled); soundEl.blur(); });
-vitalsEl.addEventListener('click', () => {
-  healthBars.setEnabled(!healthBars.enabled);
-  vitalsEl.classList.toggle('sel', healthBars.enabled);
-  vitalsEl.setAttribute('aria-pressed', String(healthBars.enabled));
-  vitalsEl.blur();
+// VITALS: the chip cycles the player side's VITALS_CYCLES modes in order, from its start (setPlayMode resets it).
+const vitalsCycle = () => VITALS_CYCLES[game.on ? 'survivor' : 'observer'];   // the side's modes and labels
+function setVitals(m) {
+  healthBars.setMode(m);
+  vitalsEl.textContent = `Vitals: ${vitalsCycle().labels[m]}`;
   invalidate();
+}
+setVitals(vitalsCycle().start);
+vitalsEl.addEventListener('click', () => {
+  const keys = Object.keys(vitalsCycle().labels);
+  setVitals(keys[(keys.indexOf(healthBars.mode) + 1) % keys.length]);
+  vitalsEl.blur();
 });
 // ANIMAL DAMAGE (Observer): the player's bumps, car hits and punches cost animals health; the player and the car still
 // take none. Off and disabled while the collision mode has no hits (applyCollision).
@@ -601,15 +607,14 @@ debugInfoEl.addEventListener('focus', () => debugInfoEl.select());              
 debugInfoEl.addEventListener('contextmenu', e => e.stopPropagation());           // keeps the long-press copy menu while playing
 debugInfoEl.addEventListener('keydown', e => { if (e.code !== 'Escape') e.stopPropagation(); });   // keys here do not steer the player
 // HUD off: the Arena's clearHud (text, crosshair, vitals and vision rays hide together)
-let hudOn = true, raysBeforeHud = 'single';
+let hudOn = true, raysBeforeHud = 'off';
 function setHud(on) {
   if (on === hudOn) return;
   hudOn = on;
   document.body.classList.toggle('hud-off', !hudOn);
   hudBtnEl.classList.toggle('sel', hudOn);
   hudBtnEl.setAttribute('aria-pressed', String(hudOn));
-  healthBars.setEnabled(hudOn);
-  vitalsEl.classList.toggle('sel', hudOn);
+  healthBars.setHudShown(hudOn);
   if (!hudOn) { raysBeforeHud = labels.rayVisMode; labels.setRayVis('off'); }
   else labels.setRayVis(raysBeforeHud);
   invalidate();
@@ -1371,10 +1376,12 @@ function setPlayMode(survivor) {
   // the HUD goes off in Survivor mode and comes back as it was on leaving
   if (game.on) { hudBeforeGame = hudOn; setHud(false); }
   else setHud(hudBeforeGame);
-  // no Vision rays, Vitals, HUD, Collision, Animal damage or Weapon chips in Survivor mode
+  healthBars.setHudShown(hudOn || game.on);   // Survivor's vitals follow only the Vitals chip
+  setVitals(vitalsCycle().start);
+  // no Vision rays, HUD, Collision, Animal damage or Weapon chips in Survivor mode
   syncSkyset();
   applyFreeze();   // Survivor's clock runs; Observer's follows the Freeze chip
-  raysEl.hidden = vitalsEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = weaponEl.hidden = game.on;
+  raysEl.hidden = hudBtnEl.hidden = collisionEl.hidden = animalDmgEl.hidden = weaponEl.hidden = game.on;
   // fps: the HUD line in Observer mode, the settings sheet's average in Survivor mode
   avgFpsEl.hidden = !game.on;
   if (game.on) avgFps.show();

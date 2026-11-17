@@ -1303,6 +1303,22 @@ export const BRAIN_SPIN = 0.6;    // rad/s spin
 export const BRAIN_TILT = 0.18;
 export const BRAIN_DIM = 0.3;
 export const BRAIN_IN_GROUPS = [4, 4, 4, 4, 3];
+
+// VITALS modes. on: brains show over animals that have one. panel: the stats panel shows (stats, then brain,
+// then person; on the head for an animal with no brain). comp: the panel has the body composition row (fat, muscle,
+// body type).
+export const VITALS_MODES = {
+  off: { on: false, panel: false, comp: false },
+  neural: { on: true, panel: false, comp: false },
+  stats: { on: true, panel: true, comp: false },
+  comp: { on: true, panel: true, comp: true }
+};
+// The Vitals chip by player side (game.on): its modes in cycle order with their chip labels, and the mode the side
+// starts in. Zombies play as Survivor, where nobody has a brain, so its labels leave Neural out.
+export const VITALS_CYCLES = {
+  observer: { start: 'neural', labels: { off: 'Off', neural: 'Neural', stats: 'Neural+Stats', comp: 'Neural+Stats+Comp' } },
+  survivor: { start: 'off', labels: { off: 'Off', stats: 'Stats', comp: 'Stats+Comp' } }
+};
 export const BRAIN_GROUP_COLS = [0xe67e22, 0x3498db, 0xe74c3c, 0x9b59b6, 0x2ecc71];
 
 // TOUCH

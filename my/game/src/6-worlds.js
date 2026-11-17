@@ -3595,7 +3595,7 @@ export class WildernessWorld {
     this.wraps = false;
     this.shadows = true;
     this.companion = true;
-    this.rays = 'single';
+    this.rays = 'off';
     this.level = 0;
     this.offset = 0;
     this.edgeMean = 0;

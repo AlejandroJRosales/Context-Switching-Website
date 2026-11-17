@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-17T08:36:01.607Z",
+ "generated": "2026-11-17T08:54:57.619Z",
  "howToUpdate": "node tools/build-uml.mjs (regenerated from src/; do not edit by hand)",
  "legend": {
   "+ / -": "exported from its file / private to it",
@@ -588,6 +588,8 @@
     "1-config.js#ICON_STYLE",
     "1-config.js#ICONS",
     "1-config.js#SURVIVOR_CONFIG",
+    "1-config.js#VITALS_MODES",
+    "1-config.js#VITALS_CYCLES",
     "1-config.js#CAR_DRIFT",
     "1-config.js#CAR_TRANSIT",
     "1-config.js#WEAPONS",
@@ -1209,6 +1211,26 @@
     "injuries: object",
     "craft: object",
     "causes: object"
+   ],
+   "methods": []
+  },
+  "1-config.js#VITALS_MODES": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "off: object",
+    "neural: object",
+    "stats: object",
+    "comp: object"
+   ],
+   "methods": []
+  },
+  "1-config.js#VITALS_CYCLES": {
+   "kind": "object",
+   "visibility": "+",
+   "attributes": [
+    "observer: object",
+    "survivor: object"
    ],
    "methods": []
   },
@@ -3717,7 +3739,10 @@
     "_c: THREE.Color",
     "_lists: null[]",
     "tick: number",
-    "enabled: boolean",
+    "mode: unknown",
+    "view: unknown",
+    "hudShown: boolean",
+    "enabled: unknown",
     "textWidths: Map",
     "warmBar: unknown",
     "warmLines: THREE.LineSegments",
@@ -3725,7 +3750,9 @@
    ],
    "methods": [
     "+constructor()",
-    "setEnabled(on): void",
+    "setMode(m): void",
+    "setHudShown(on): void",
+    "applyShown(): void",
     "firing(act): number",
     "addPage(): object",
     "takeCell(): object",
@@ -3733,12 +3760,14 @@
     "headTop(a): number",
     "heading(a, has, sin, cos): number",
     "arrow(ctx, x, y, size, step, color): void",
-    "brainY(barY, info): number",
+    "brainY(barY): number",
+    "panelY(barY, hasBrain): number",
     "readStats(a, now, vals, arrows): void",
     "infoKey(a): number",
     "infoFields(a, key): string[]",
     "bodyFields(a, key): string[]",
     "panelBottom(info): number",
+    "panelRows(info): number",
     "panelTop(info): number",
     "textWidth(ctx, font, text): unknown",
     "fieldWidths(ctx, fields, px): array",
@@ -4633,6 +4662,8 @@
     "-setSettingsOpen(open): void",
     "-syncAudioPause(): void",
     "-setSound(on): void",
+    "-vitalsCycle(): unknown",
+    "-setVitals(m): void",
     "-setAnimalDamage(on): void",
     "-setWeaponChoice(on): void",
     "-debugError(msg): void",
@@ -5621,6 +5652,8 @@
     "BRAIN_SCALE",
     "BRAIN_HALF_H",
     "BRAIN_ABOVE",
+    "VITALS_MODES",
+    "VITALS_CYCLES",
     "BRAIN_SPIN",
     "BRAIN_TILT",
     "BRAIN_DIM",
@@ -6100,6 +6133,7 @@
     "CONFIG",
     "DEFAULT_SEED",
     "MIX_BLEND",
+    "VITALS_CYCLES",
     "MIX_HABITAT",
     "TIMES",
     "SKIES",
@@ -6897,6 +6931,16 @@
   {
    "from": "8a-render.js#BlobShadows",
    "to": "1-config.js#DETAIL",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#HealthBars",
+   "to": "1-config.js#VITALS_CYCLES",
+   "type": "uses"
+  },
+  {
+   "from": "8a-render.js#HealthBars",
+   "to": "1-config.js#VITALS_MODES",
    "type": "uses"
   },
   {

@@ -17,7 +17,7 @@ import {
   SHADOW_ANIMAL_HZ, SHADOW_ANIMAL_DIST, SUN_DIST, SHADOWS_ENABLED, BLOB_DIST, BLOB_MAX, BLOB_OPACITY, BLOB_FULL_SUN,
   BLOB_LIFT, BLOB_SPREAD, DETAIL, BAR_STEPS, BAR_RELEASE_TICKS, ARROW_STEPS, BAR_W_M, BAR_ABOVE, BAR_COLORS, BAR_ICONS,
   EMOJI_FONT, FAR_STAT_MAX, FAR_PANEL_SCALE, FAR_PAGE_PX, FAR_CELL_GUTTER, FAR_REDRAW_MAX, BAR_CANVAS_W, BAR_CANVAS_H, BAR_ROW_H, BAR_TEXT_FONT, BAR_ROW_GAP, BAR_SPRITE_CANVAS_H,
-  BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
+  BAR_PX, BAR_H_M, LOBE_RADIUS, LOBE_COLS, BRAIN_SCALE, BRAIN_HALF_H, BRAIN_ABOVE, VITALS_MODES, VITALS_CYCLES, BRAIN_SPIN, BRAIN_TILT, BRAIN_DIM,
   BRAIN_IN_GROUPS, BRAIN_GROUP_COLS, SKIES, SKY, SKY_DIST, SKY_FAR_FRACTION, SKY_BODY_DEG, SKY_TEX, SKY_FADE_S,
   RAIN_SPAN, RAIN_HEIGHT, RAIN_FPS_IDLE, RAIN_FADE_S, RAIN_TIME_WRAP, ROOF_MAP_N, ROOF_MAP_SIZE, ROOF_MAP_SNAP,
   RAIN_BY_CODE, SPECIES, NPC_FALL_S, NPC_GETUP_S, HUMAN_RAG_DRAWN, PLAYER_RAGDOLL_ANCHOR_PER_S, HUMAN_RAG_ROWS,
@@ -2242,7 +2242,7 @@ class StatLabelSystem {
   constructor() {
     this.current = null;
     this.locked = null;
-    this.rayVisMode = 'single';
+    this.rayVisMode = 'off';
     this._ray = new THREE.Ray();
     this._sphere = new THREE.Sphere();
     this._hitPt = new THREE.Vector3();
@@ -2884,7 +2884,7 @@ function brainActivity(b, a) {
 
 const STAT_LABEL_MAX = 100;   // top of each stat's scale
 const BAR_PAD = 4;            // panel padding px
-const PERSON_ROWS = 3;        // people's rows: stats, body, info
+const PERSON_ROWS = 3;        // people's rows with the composition row: stats, body, info (one fewer without it)
 const STAT_PART_GAP = 0.15;   // icon, number, arrow spacing, share of font px
 const STAT_ARROWED = [false, true, true, true];   // stats that can show a memory arrow
 // the panel's fonts at one px
@@ -2926,7 +2926,10 @@ class HealthBars {
     this._c = new THREE.Color();
     this._lists = [null, null];   // update's two passes: the animals, then the corpses
     this.tick = 0;
-    this.enabled = true;
+    this.mode = VITALS_CYCLES.observer.start;   // a VITALS_MODES key; the Vitals chip sets it (setVitals, 9-main)
+    this.view = VITALS_MODES[this.mode];        // what the mode shows
+    this.hudShown = true;
+    this.enabled = this.view.on;   // brains or panels drawn (the mode and the HUD)
     this.textWidths = new Map();   // TEXT WIDTHS: font + '\n' + text to px
 
     // Hidden stand-ins so compileAsync builds the sprite and brain shaders.
@@ -2942,9 +2945,24 @@ class HealthBars {
     scene.add(this.warmLines, this.warmNodes);
   }
 
-  setEnabled(on) {
-    this.enabled = on;
-    if (on) return;
+  // VITALS: the chip's mode (a VITALS_MODES key) and the HUD (false hides everything); shown only when both allow.
+  // A mode change repaints every panel (its rows differ).
+  setMode(m) {
+    this.mode = m;
+    this.view = VITALS_MODES[m];
+    for (const bar of this.bars.values()) bar.key = -1;
+    for (const cell of this.farCells.values()) cell.key = -1;
+    this.applyShown();
+  }
+
+  setHudShown(on) {
+    this.hudShown = on;
+    this.applyShown();
+  }
+
+  applyShown() {
+    this.enabled = this.hudShown && this.view.on;
+    if (this.enabled) return;
     for (const bar of this.bars.values()) {
       bar.sprite.visible = false;
       if (bar.brain) bar.brain.group.visible = false;
@@ -3065,9 +3083,14 @@ class HealthBars {
     ctx.restore();
   }
 
-  // Brain centre height: BRAIN_ABOVE over the panel.
-  brainY(barY, info) {
-    return barY + (BAR_SPRITE_CANVAS_H - this.panelTop(info)) * BAR_PX + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+  // STACK over a person: the brain sits BRAIN_ABOVE over barY, and the stats panel BRAIN_ABOVE over the brain (on barY
+  // for an animal with no brain).
+  brainY(barY) {
+    return barY + BRAIN_ABOVE + BRAIN_HALF_H * BRAIN_SCALE;
+  }
+
+  panelY(barY, hasBrain) {
+    return hasBrain ? barY + 2 * BRAIN_ABOVE + 2 * BRAIN_HALF_H * BRAIN_SCALE : barY;
   }
 
   // Panel inputs: stat fullness in BAR_STEPS and arrow headings. A corpse: no health and no headings (it senses nothing).
@@ -3099,13 +3122,17 @@ class HealthBars {
     return personBodyFields(key, a.sex, a.look);
   }
 
-  // Panel bounds in canvas px; brains sit on panelTop.
+  // Panel bounds in canvas px.
   panelBottom(info) {
     return info ? BAR_SPRITE_CANVAS_H : BAR_CANVAS_H;
   }
 
+  panelRows(info) {
+    return info ? PERSON_ROWS - (this.view.comp ? 0 : 1) : 1;   // the stat row, then a person's body and info rows
+  }
+
   panelTop(info) {
-    return this.panelBottom(info) - (info ? PERSON_ROWS : 1) * BAR_ROW_H - 2 * BAR_PAD;
+    return this.panelBottom(info) - this.panelRows(info) * BAR_ROW_H - 2 * BAR_PAD;
   }
 
   // TEXT WIDTHS: measureText's width of `text` in `font`, which the caller has just set as ctx.font. A width depends
@@ -3193,21 +3220,20 @@ class HealthBars {
     slot.infoKey = info;
     const { ctx } = slot;
     ctx.setTransform(slot.scale, 0, 0, slot.scale, slot.x, slot.y);   // near canvas or far cell
-    const body = info ? this.bodyFields(a, info) : null;      // fat, muscle, body type
+    const body = info && this.view.comp ? this.bodyFields(a, info) : null;   // fat, muscle, body type (the composition row)
     const details = info ? this.infoFields(a, info) : null;   // gen, age, sex, height, weight
     // one font px for the whole panel
     let px = this.fitPx(this.statWidths(ctx, BAR_TEXT_FONT));
-    if (info) px = Math.min(px, this.fitPx(this.fieldWidths(ctx, body, BAR_TEXT_FONT)), this.fitPx(this.fieldWidths(ctx, details, BAR_TEXT_FONT)));
+    if (body) px = Math.min(px, this.fitPx(this.fieldWidths(ctx, body, BAR_TEXT_FONT)));
+    if (details) px = Math.min(px, this.fitPx(this.fieldWidths(ctx, details, BAR_TEXT_FONT)));
     const panelTop = this.panelTop(info);
     const rowCy = r => panelTop + BAR_PAD + (r + 0.5) * BAR_ROW_H;   // row r's vertical centre
     ctx.clearRect(0, 0, BAR_CANVAS_W, BAR_SPRITE_CANVAS_H);
     ctx.fillStyle = 'rgba(12, 15, 21, 0.7)';
     ctx.fillRect(0, panelTop, BAR_CANVAS_W, this.panelBottom(info) - panelTop);
     this.statRow(ctx, vals, arrows, rowCy(0), px);
-    if (info) {
-      this.fieldRow(ctx, body, rowCy(1), px);
-      this.fieldRow(ctx, details, rowCy(2), px);
-    }
+    if (body) this.fieldRow(ctx, body, rowCy(1), px);
+    if (details) this.fieldRow(ctx, details, rowCy(body ? 2 : 1), px);
     slot.tex.needsUpdate = true;
     return true;
   }
@@ -3220,6 +3246,7 @@ class HealthBars {
     const spin = performance.now() / 1000 * BRAIN_SPIN;
     const now = ecosystem.time;
     const vals = [0, 0, 0, 0], arrows = [-1, -1, -1, -1];
+    const showPanel = this.view.panel;   // true: stats panels draw over the brains (Neural+Stats and up)
     const seen = this.seen;
     seen.clear();
 
@@ -3258,28 +3285,31 @@ class HealthBars {
       if (d2 > farMax2) continue;
       const barY = this.headTop(a) + BAR_ABOVE;
       if (!npcOnScreen(px, barY + NPC_STATS_UP, pz, NPC_STATS_R)) continue;
+      const nn = a.brain;
+      const statY = this.panelY(barY, nn !== null);   // the stats panel's bottom, over the brain when there is one
       if (d2 > lod2) {
         if (nf >= FAR_STAT_MAX) continue;
 
-        let cell = this.farCells.get(a);
-        if (!cell) { cell = this.takeCell(); this.farCells.set(a, cell); }
-        cell.tick = tick;
-        this.readStats(a, now, vals, arrows);
-        if (redraws < FAR_REDRAW_MAX && this.draw(cell, vals, arrows, a)) redraws++;
-        if (cell.key !== -1) {   // an unpainted cell waits for spare redraws
-          const page = cell.page, k = page.n++, o = k * 16, arr = page.mesh.instanceMatrix.array;
-          // face the viewer like the near sprite
-          arr[o] = r0; arr[o + 1] = r1; arr[o + 2] = r2; arr[o + 3] = 0;
-          arr[o + 4] = r4; arr[o + 5] = r5; arr[o + 6] = r6; arr[o + 7] = 0;
-          arr[o + 8] = r8; arr[o + 9] = r9; arr[o + 10] = r10; arr[o + 11] = 0;
-          arr[o + 12] = px; arr[o + 13] = barY; arr[o + 14] = pz; arr[o + 15] = 1;
-          page.cellUv.array[k * 2] = cell.u;
-          page.cellUv.array[k * 2 + 1] = cell.v;
+        if (showPanel) {
+          let cell = this.farCells.get(a);
+          if (!cell) { cell = this.takeCell(); this.farCells.set(a, cell); }
+          cell.tick = tick;
+          this.readStats(a, now, vals, arrows);
+          if (redraws < FAR_REDRAW_MAX && this.draw(cell, vals, arrows, a)) redraws++;
+          if (cell.key !== -1) {   // an unpainted cell waits for spare redraws
+            const page = cell.page, k = page.n++, o = k * 16, arr = page.mesh.instanceMatrix.array;
+            // face the viewer like the near sprite
+            arr[o] = r0; arr[o + 1] = r1; arr[o + 2] = r2; arr[o + 3] = 0;
+            arr[o + 4] = r4; arr[o + 5] = r5; arr[o + 6] = r6; arr[o + 7] = 0;
+            arr[o + 8] = r8; arr[o + 9] = r9; arr[o + 10] = r10; arr[o + 11] = 0;
+            arr[o + 12] = px; arr[o + 13] = statY; arr[o + 14] = pz; arr[o + 15] = 1;
+            page.cellUv.array[k * 2] = cell.u;
+            page.cellUv.array[k * 2 + 1] = cell.v;
+          }
         }
 
-        const nn = a.brain;
         if (nn) {
-          const by = this.brainY(barY, cell.infoKey);
+          const by = this.brainY(barY);
           const fireA = a.alive ? this.firing(nn.actA) : 0, fireB = a.alive ? this.firing(nn.actB) : 0;   // a corpse: still
           for (let l = 0; l < 2; l++) {
             const o = (nl * 2 + l) * 16;
@@ -3304,12 +3334,13 @@ class HealthBars {
       }
       bar.nearTick = tick;
 
-      this.readStats(a, now, vals, arrows);
-      this.draw(bar, vals, arrows, a);
-      bar.sprite.position.set(px, barY, pz);
-      bar.sprite.visible = true;
+      if (showPanel) {
+        this.readStats(a, now, vals, arrows);
+        this.draw(bar, vals, arrows, a);
+        bar.sprite.position.set(px, statY, pz);
+      }
+      bar.sprite.visible = showPanel;
 
-      const nn = a.brain;
       if (!nn) { if (bar.brain) bar.brain.group.visible = false; continue; }
       if (bar.brainFor !== nn) {
         if (bar.brain) disposeBrain(bar.brain);
@@ -3318,7 +3349,7 @@ class HealthBars {
       }
       const b = bar.brain;
       brainActivity(b, a);
-      b.group.position.set(px, this.brainY(barY, bar.infoKey), pz);
+      b.group.position.set(px, this.brainY(barY), pz);
       b.group.rotation.set(BRAIN_TILT, spin + b.phase, 0);
       b.group.visible = true;
     }

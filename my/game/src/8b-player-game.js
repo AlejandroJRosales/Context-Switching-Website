@@ -927,10 +927,11 @@ const gunView = {
   }
 };
 
-// THE DOT in 3rd person shows where shots go, even with the HUD off (Survivor); 1st person keeps its own rule.
+// THE DOT in 3rd person shows where shots go in Survivor (game.on); 1st person and Observer keep the stylesheet's
+// rule, so the HUD off hides it there.
 let dotForced = false;
 function syncDot() {
-  const force = pov.mode === '3rd' && play.active && !player.inCar && dotEl.classList.contains('on');
+  const force = game.on && pov.mode === '3rd' && play.active && !player.inCar && dotEl.classList.contains('on');
   if (force === dotForced) return;
   dotForced = force;
   // important, so a stylesheet rule that hides it (the HUD off) cannot win; cleared to give the stylesheet back
