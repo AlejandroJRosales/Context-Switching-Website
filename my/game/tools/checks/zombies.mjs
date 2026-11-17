@@ -227,17 +227,6 @@ async function observer(g) {
       return false;
     });
     check('an unarmed rule person flees a zombie', fled === 'fled', fled);
-    await g.page.evaluate(() => {
-      Z.cur = { p: Z.living().find(a => a.brain !== null), z: null };
-    });
-    const seen = await g.until(() => {
-      const p = Z.cur.p, z = Z.zombie();
-      if (!p.alive) return 'died';
-      if (p.hasPredator && Math.hypot(p.memPredatorX - z.position.x, p.memPredatorZ - z.position.z) < 3) return 'seen';
-      Z.inView(z, p, 5, true);   // held in front of its eyes until the brain's next look
-      return false;
-    });
-    check('a brained person sees a zombie on its predator input', seen === 'seen', seen);
   });
   await section('zombie mating and inheritance', async () => {
     const have = await g.page.evaluate(() => ({ m: Z.zombies().some(a => a.sex === 'male' && a.isAdult), f: Z.zombies().some(a => a.sex === 'female' && a.isAdult) }));
@@ -450,7 +439,7 @@ async function survivorDeath(g, want) {
   }
 }
 
-const g = await openGame({ rootDir, threeDir, survivor: part !== 'observer', switches: { brainless: true } });   // unarmed rule people to flee
+const g = await openGame({ rootDir, threeDir, mode: 'zombies' });   // the outbreak and unarmed rule people to flee; the player plays Survivor
 try {
   if (part === 'observer') await observer(g);
   else await section(`Survivor ${part}`, () => survivorDeath(g, part));

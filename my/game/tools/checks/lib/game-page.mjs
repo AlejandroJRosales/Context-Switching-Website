@@ -12,8 +12,9 @@ const SETTLE_MS = 3000;   // after the page and after Go, as smoke.mjs's --fast 
 export const WAIT_LIMIT_MS = 180000;   // one test's wait; past it the test is reported as timed out
 const POLL_MS = 500;   // between until's checks
 
-// Opens the game and loads the smallest wilderness; resolves once play has started. switches: More options to set { opt: on }.
-export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, survivor = false, switches = {} }) {
+// Opens the game and loads the smallest wilderness; resolves once play has started. mode: a Mode row key (observer,
+// survivor, zombies). switches: More options to set { opt: on }.
+export async function openGame({ rootDir, pagePath = 'index.html', threeDir = null, low = true, mode = 'observer', switches = {} }) {
   const server = http.createServer((req, res) => {
     const file = path.join(path.resolve(rootDir), decodeURIComponent(new URL(req.url, 'http://x').pathname));
     if (!file.startsWith(path.resolve(rootDir)) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
@@ -38,7 +39,9 @@ export async function openGame({ rootDir, pagePath = 'index.html', threeDir = nu
   });
   await page.goto(base + pagePath);
   await page.waitForTimeout(SETTLE_MS);
-  await page.evaluate(switches => {
+  await page.evaluate(({ mode, switches }) => {
+    // the Mode row first: it sets the people, armed share and zombies
+    document.querySelector(`#moderow .sizebtn[data-play="${mode}"]`).click();
     for (const [opt, on] of Object.entries(switches)) {
       const el = document.querySelector(`#more .switch[data-opt="${opt}"]`);
       if (el.classList.contains('on') !== on) el.click();
@@ -49,10 +52,10 @@ export async function openGame({ rootDir, pagePath = 'index.html', threeDir = nu
     const city = document.querySelector('#more .switch[data-opt="city"]');
     if (city.classList.contains('on')) city.click();
     document.getElementById('go').click();
-  }, switches);
+  }, { mode, switches });
   await page.waitForFunction(() => { const c = document.getElementById('choose'); return c && c.offsetParent !== null; }, null, { timeout: 0 });
   const loadText = await page.evaluate(() => document.getElementById('steps').textContent);
-  await page.evaluate(mode => { document.getElementById(mode).click(); document.getElementById('chooseGo').click(); }, survivor ? 'chooseGame' : 'chooseObs');
+  await page.evaluate(() => document.getElementById('chooseGo').click());
   await page.waitForTimeout(SETTLE_MS);
   // until(fn, arg): runs fn in the page every POLL_MS until it returns a truthy value, for up to WAIT_LIMIT_MS; rejects
   // on time out or a renderer crash. Polled from here, since waitForFunction's own timeout missed on the slow page.

@@ -25,7 +25,7 @@ import * as THREE from 'three';
 import {
   MAP_SIZE_SCALES, WORLD_SIZES, CITY_LADDER, EYE_HEIGHT, FEATURES_VERSION, ELEV_MARGIN, CITY_STEPS, WILDERNESS_STEPS,
   LOW_RENDER_FPS, HIGH_LABEL_TICKS, LOW_LABEL_TICKS, HIGH_HUD_TICKS, LOW_HUD_TICKS, LOW_WATER_FPS, CITY_FILE_RADIUS,
-  NPC_TICK_S, NPC_DEER_POPULATION, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
+  NPC_TICK_S, NPC_TYPE_IDS, HUMAN_TYPE_ID, NPC_BODY_R, CONFIG, DEFAULT_SEED, MIX_BLEND,
   MIX_HABITAT, TIMES, SKIES, DEBUG_PROBE_LAYER, DEBUG_PROBE_PX, NPC_TICK_SLACK, PICKS, AUTO_GRAPHICS_LOW_FPS,
   AUTO_GRAPHICS_SAMPLE_MS, AUTO_GRAPHICS_WARMUP_FRAMES, PLAYER_CUSTOM, LB_PER_KG, M_PER_IN, MSAA_HALF_FLOAT,
   DEBUG_COPY_FEEDBACK_MS
@@ -176,7 +176,7 @@ addEventListener('resize', () => {
 });
 renderer.domElement.addEventListener('webglcontextrestored', () => invalidate());
 const vitalsEl = document.getElementById('vitals');
-const collisionEl = document.getElementById('collision');   // Observer's Collision chip (COLLISION_MODES), Ragdoll at load
+const collisionEl = document.getElementById('collision');   // Observer's Collision chip (COLLISION_MODES), None at load
 const animalDmgEl = document.getElementById('animaldmg');   // Observer's Animal damage chip (game.animalDamage), off at load
 const hudBtnEl = document.getElementById('hudbtn');
 const fsEl = document.getElementById('fs');
@@ -616,7 +616,7 @@ function setHud(on) {
 }
 hudBtnEl.addEventListener('click', () => { setHud(!hudOn); hudBtnEl.blur(); });
 gfxEl.addEventListener('click', () => { graphics.toggle(); gfxEl.blur(); });
-// COLLISION: the Collision chip cycles COLLISION_MODES in order (Ragdoll at load). hits: the player on foot and the car
+// COLLISION: the Collision chip cycles COLLISION_MODES in order (None at load). hits: the player on foot and the car
 // collide with animals (playerBumps, carHits: pushed aside, knocked down by enough momentum); without them they pass
 // through. ragdolls: knocked-down and dying bodies fall as sim ragdolls (Ecosystem.beginFall), else the
 // lying pose (knockdowns between animals happen in every mode). A flying player always passes through animals.
@@ -629,8 +629,8 @@ const COLLISION_MODES = {
   ragdoll: { label: 'Ragdoll', hits: true, ragdolls: true, deathFall: true }
 };
 const COLLISION_ORDER = Object.keys(COLLISION_MODES);   // the chip's cycle
-const SURVIVOR_NO_HITS_MODE = 'fall';
-let collisionChoice = 'ragdoll';   // the chip's mode (a COLLISION_MODES key)
+const SURVIVOR_NO_HITS_MODE = 'ragdoll';   // so Survivor plays Ragdoll from the None default
+let collisionChoice = 'none';   // the chip's mode (a COLLISION_MODES key): Observer starts with no collision
 // the mode in play: the choice, or SURVIVOR_NO_HITS_MODE for a mode without hits in Survivor
 function activeCollision() {
   return game.on && !COLLISION_MODES[collisionChoice].hits ? SURVIVOR_NO_HITS_MODE : collisionChoice;
@@ -1009,8 +1009,9 @@ async function finishLoad(provider, autoGraphics = false) {
   refreshHud();
   steps.done('scene');
   steps.finish(true);
-  const wantGame = await chooseMode();
-  if (wantGame !== game.on) gameEl.click();
+  await chooseSettings();
+  const survivor = PLAY_MODES[nextMode].survivor;   // true: the Mode row's choice plays as Survivor
+  if (survivor !== game.on) setPlayMode(survivor);   // the world starts in the Mode row's choice
   simSky.start();
   syncSkyset();
   // every start shows the game's own weather (GAME_START_SKY at GAME_START_HOUR): both pickers back to Game
@@ -1354,20 +1355,16 @@ function newEcosystem() {
   else loadPlace(lastQuery);
 }
 
-// SURVIVOR MODE TOGGLE: a chip in the Other row; only switches the food chain.
-const gameEl = document.getElementById('game');
 const skysetEl = document.getElementById('skyset');
 // the sky pickers: Observer only. Their first chip, Game, clears the preset back to the game's own clock or weather.
 function syncSkyset() {
   skysetEl.hidden = game.on;
 }
 let hudBeforeGame = true;
-gameEl.addEventListener('click', () => {
-  game.on = !game.on;
-  game.applyWeaponChoice();   // the chip's choice in the new mode
-  gameEl.classList.toggle('sel', game.on);
-  gameEl.setAttribute('aria-pressed', String(game.on));
-  gameEl.blur();
+// PLAY MODE: Survivor (true) or Observer, set at Go from the Mode row; switches the player's side of the game.
+function setPlayMode(survivor) {
+  game.on = survivor;
+  game.applyWeaponChoice();   // the Weapon chip's choice in the new mode
   game.showPanel();
   // collision: the chip's choice, a mode without hits playing as SURVIVOR_NO_HITS_MODE in Survivor
   applyCollision();
@@ -1387,34 +1384,13 @@ gameEl.addEventListener('click', () => {
   // no flying in Survivor mode: land and hide the button
   if (game.on && flying) toggleFly();
   updateCarButton();
-  syncCityDeer();
   wake();
-});
-
-// CITY DEER: in Survivor mode, or in Observer with Brainless people on (its NPCs and animals then live as in Survivor;
-// only the player differs). The Deer switch follows for the next load (loadOpts.brainless), and a live city gains or
-// loses its own deer by the live world's Brainless switch (ecosystem.brainlessOn).
-function syncCityDeer() {
-  const nextLoad = game.on || loadOpts.brainless;   // true: the next world loads with city deer
-  loadOpts.deer = nextLoad;
-  const deerSwitch = document.querySelector('#more .switch[data-opt="deer"]');
-  deerSwitch.classList.toggle('on', nextLoad);
-  deerSwitch.setAttribute('aria-checked', String(nextLoad));
-  if (ecosystem.ready && providers.active && providers.active.city) {
-    const live = game.on || ecosystem.brainlessOn;   // true: the live city keeps its deer
-    const city = providers.active.city;
-    const hasDeer = ecosystem.animals.some(a => a.alive && a.type === 'deer' && a.home === city);
-    if (live && !hasDeer) ecosystem.spawn('deer', NPC_DEER_POPULATION, city);
-    else if (!live) for (const a of ecosystem.animals) if (a.type === 'deer' && a.home === city) a.alive = false;
-  }
 }
 
-// collision follows the mode from the start (Observer at load), as the Survivor chip sets it after
+// collision follows the mode from the start (Observer at load), as setPlayMode sets it after
 applyCollision();
 
-// OBSERVER OR SURVIVOR: asked once the world is ready; buttons only select, Go launches.
-const chooseObsEl = document.getElementById('chooseObs');
-const chooseGameEl = document.getElementById('chooseGame');
+// START SETTINGS: shown once the world is ready; the switches only flip, Go launches (in the Mode row's choice).
 const chooseGoEl = document.getElementById('chooseGo');
 // Fullscreen, Third person, High graphics and Sound switches: only flipped here, applied when Go is pressed
 const chooseFsSwitchEl = document.getElementById('chooseFsSwitch');
@@ -1428,38 +1404,29 @@ function setSwitch(el, on) {
 for (const el of [chooseFsSwitchEl, choosePovSwitchEl, chooseGfxSwitchEl, chooseSoundSwitchEl]) {
   el.addEventListener('click', () => { setSwitch(el, !el.classList.contains('on')); el.blur(); });
 }
-function chooseMode() {
+function chooseSettings() {
   cardEl.classList.add('choosing');
   return new Promise(resolve => {
-    let wantGame = game.on;
-    const show = () => {
-      for (const [el, on] of [[chooseObsEl, !wantGame], [chooseGameEl, wantGame]]) {
-        el.classList.toggle('sel', on);
-        el.setAttribute('aria-pressed', String(on));
-      }
-    };
-    show();
     setSwitch(chooseFsSwitchEl, !!fullscreenElement());
     setSwitch(choosePovSwitchEl, pov.mode === '3rd');
     setSwitch(chooseGfxSwitchEl, graphics.high);
     setSwitch(chooseSoundSwitchEl, audio.enabled);
-    chooseObsEl.onclick = () => { wantGame = false; show(); chooseObsEl.blur(); };
-    chooseGameEl.onclick = () => { wantGame = true; show(); chooseGameEl.blur(); };
     chooseGoEl.onclick = () => {
       cardEl.classList.remove('choosing');
-      chooseObsEl.onclick = chooseGameEl.onclick = chooseGoEl.onclick = null;
+      chooseGoEl.onclick = null;
       // Go is the user gesture fullscreen needs; fsEl's handler toggles it (and locks landscape)
       if (chooseFsSwitchEl.classList.contains('on') !== !!fullscreenElement()) fsEl.click();
       if (choosePovSwitchEl.classList.contains('on') !== (pov.mode === '3rd')) pov.cycle();
       if (chooseGfxSwitchEl.classList.contains('on') !== graphics.high) graphics.toggle();
       if (chooseSoundSwitchEl.classList.contains('on') !== audio.enabled) setSound(!audio.enabled);   // Go is the tap audio needs
-      resolve(wantGame);
+      resolve();
     };
   });
 }
 
 // START-UP OPTIONS: the More toggles; loadPlace() reads a copy when it starts.
-const loadOpts = { car: true, terrain: true, people: true, deer: false, plants: true, buildings: true, zombies: true, brainless: false };
+// zombies, armed and brainless have no switch: setNextMode sets them by the Mode row (below)
+const loadOpts = { car: true, terrain: true, people: true, deer: true, plants: true, buildings: true, zombies: false, armed: false, brainless: false };
 for (const el of document.querySelectorAll('#more .switch')) {
   if (el.dataset.opt === 'city') continue;   // the City switch picks the world (setMode), not a build option
   el.addEventListener('click', () => {
@@ -1468,9 +1435,35 @@ for (const el of document.querySelectorAll('#more .switch')) {
     el.classList.toggle('on', loadOpts[k]);
     el.setAttribute('aria-checked', String(loadOpts[k]));
     el.blur();
-    if (k === 'brainless') syncCityDeer();   // Brainless people in Observer brings Survivor's city deer
   });
 }
+// PLAY MODES: the intro card's Mode row (its data-play keys). survivor: the player plays Survivor, else Observer.
+// zombies: the world starts with an outbreak (RULE_PEOPLE.zombieShare). brainless: every person runs the rule AI
+// (RULE_PEOPLE). armed: RULE_PEOPLE.armedShare of people carry a gun (armed people have no brain).
+const PLAY_MODES = {
+  observer: { survivor: false, zombies: false, brainless: false, armed: false },
+  survivor: { survivor: true, zombies: false, brainless: true, armed: true },
+  zombies: { survivor: true, zombies: true, brainless: true, armed: true }
+};
+// MODE FOR THE NEXT LOAD: Go starts the world in it (setPlayMode), and New game or New ecosystem keeps it.
+let nextMode = 'observer';   // a PLAY_MODES key
+const modeBtns = [...document.querySelectorAll('#moderow .sizebtn[data-play]')];
+const modeNoteEl = document.getElementById('modenote');   // the chosen mode's description (its button's data-note)
+function setNextMode(m) {
+  nextMode = m;
+  for (const b of modeBtns) {
+    const on = b.dataset.play === m;   // true: this button is the chosen mode
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', String(on));
+    if (on) modeNoteEl.textContent = b.dataset.note;
+  }
+  const pm = PLAY_MODES[m];
+  loadOpts.zombies = pm.zombies;
+  loadOpts.brainless = pm.brainless;
+  loadOpts.armed = pm.armed;
+}
+for (const b of modeBtns) b.addEventListener('click', () => { setNextMode(b.dataset.play); b.blur(); });
+setNextMode(nextMode);
 
 // START SCREEN: the City switch picks a city in the wilderness ('city') or the wilderness alone ('wilderness').
 const citySwitchEl = document.querySelector('#more .switch[data-opt="city"]');

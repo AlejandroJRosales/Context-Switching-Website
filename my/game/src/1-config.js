@@ -564,10 +564,11 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // instead of a learning brain, hunting `food` as a coyote does. An armed one carries a gun with endless rounds; it never
 // strikes by hand, it shoots: at whoever hit it last (the player included) for foeS, else at the prey it chases.
 // One roll per person splits the people into slices of all people: zombies at world load, armed brainless, and the rest
-// (brained with the Brainless people switch off, unarmed brainless with it on).
+// (brained without brainless people, unarmed brainless with them). The Mode row (PLAY_MODES, 9-main) sets these:
+// Observer has every person brained, Survivor and Zombies every person brainless, Zombies with the outbreak.
 export const RULE_PEOPLE = {
-  armedShare: 0.05,     // of all people, armed with no brain (either Brainless switch)
-  zombieShare: 0.05,    // of all people, starting as zombies with Zombies on (either Brainless switch); none with Zombies off
+  armedShare: 0.05,     // of all people, armed with no brain in Survivor and Zombies (PLAY_MODES.armed); none in Observer
+  zombieShare: 0.05,    // of all people, starting as zombies in Zombies mode; none in the other modes
   food: 'deer',         // the species they hunt for food
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at

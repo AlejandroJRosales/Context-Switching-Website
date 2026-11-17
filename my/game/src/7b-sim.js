@@ -580,12 +580,13 @@ export class Animal extends Entity {
     this.rayMateSin = 0; this.rayMateCos = 0; this.rayMateElev = 0; this.rayMateDist = 1;
 
     // PEOPLE WITHOUT BRAINS (RULE_PEOPLE): one roll splits people into a zombie slice, an armed brainless slice, and the
-    // rest: brained with the Brainless people switch off, unarmed brainless with it on
+    // rest: brained in Observer, unarmed brainless in Survivor and Zombies (provider.opts.brainless)
     const human = type === 'human';
-    const zombieShare = ecosystem.seedingZombies ? RULE_PEOPLE.zombieShare : 0;   // only at world load with Zombies on
+    const zombieShare = ecosystem.seedingZombies ? RULE_PEOPLE.zombieShare : 0;   // only at world load in Zombies mode
+    const armedShare = ecosystem.armedOn ? RULE_PEOPLE.armedShare : 0;            // only where the mode arms people (PLAY_MODES.armed)
     const roll = human ? Math.random() : 1;   // 1 for every other species: in no slice
     this.seedZombie = roll < zombieShare;                                         // true: no brain, no gun, turned by startOutbreak
-    const armed = !this.seedZombie && roll < zombieShare + RULE_PEOPLE.armedShare; // true: no brain, a gun
+    const armed = !this.seedZombie && roll < zombieShare + armedShare;            // true: no brain, a gun
     const ruled = human && (this.seedZombie || armed || ecosystem.brainlessOn);    // true: no brain, the rule AI
     this.brain = spec.brain && !ruled ? new SpikingNetwork(Animal.INPUT_DIMS) : null;
     this.ACTION_HOLD = this.brain ? 60 : DEER_THINK_TICKS;
@@ -2037,8 +2038,9 @@ export class Ecosystem {
     this.night = false;   // sun below NIGHT_SUN_ALT_DEG: night hunts on
     this.afterContacts = [];   // fn(dt) after each tick's contacts
     this.avatar = null;        // the player's avatar (the game registers)
-    this.brainlessOn = false;  // the world's Brainless people switch (provider.opts.brainless): every person outside the zombie and armed slices brainless and unarmed
-    this.seedingZombies = false; // true only while the world's first people spawn with Zombies on: RULE_PEOPLE.zombieShare start as zombies
+    this.brainlessOn = false;  // brainless people (provider.opts.brainless, Survivor and Zombies modes): every person outside the zombie and armed slices brainless and unarmed
+    this.armedOn = false;      // the mode's armed people (provider.opts.armed, PLAY_MODES): RULE_PEOPLE.armedShare of people armed and brainless, at spawn and birth
+    this.seedingZombies = false; // true only while the world's first people spawn in Zombies mode: RULE_PEOPLE.zombieShare start as zombies
 
     this._qPlant = [];
     this._qWater = [];
@@ -2117,7 +2119,8 @@ export class Ecosystem {
     for (const w of provider.waterSources()) this.waterSight.insert({ position: { x: w[0], y: w[2], z: w[1] } });
     foodBoxes.buildSight(spanX, spanZ);
     this.brainlessOn = provider.opts?.brainless === true;   // read by Animal's constructor, at spawn and birth
-    const outbreak = !provider.drive && provider.opts?.zombies === true;   // the Zombies switch; the intro drives its own walkers
+    this.armedOn = provider.opts?.armed === true;           // read by Animal's constructor, at spawn and birth
+    const outbreak = !provider.drive && provider.opts?.zombies === true;   // Zombies mode; the intro drives its own walkers
 
     occ.build();
     const plan = provider.population();

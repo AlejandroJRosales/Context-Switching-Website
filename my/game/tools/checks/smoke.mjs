@@ -90,14 +90,15 @@ if (wild) {
     size.value = size.min; people.value = people.min;
   });
   // City off (More World Options) makes Launch load the wilderness instead of a city
-  await page.evaluate(() => {
+  await page.evaluate(survivor => {
+    document.querySelector(`#moderow .sizebtn[data-play="${survivor ? 'survivor' : 'observer'}"]`).click();   // --survivor: Survivor mode
     const city = document.querySelector('#more .switch[data-opt="city"]');
     if (city.classList.contains('on')) city.click();
     document.getElementById('go').click();
-  });
+  }, survivor);
   await page.waitForFunction(() => { const c = document.getElementById('choose'); return c && getComputedStyle(c).display !== 'none' && c.offsetParent !== null; }, null, { timeout: LOAD_TIMEOUT_MS });
   console.log(`[wild] choice shown after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  await page.evaluate(mode => { document.getElementById(mode).click(); document.getElementById('chooseGo').click(); }, survivor ? 'chooseGame' : 'chooseObs');
+  await page.evaluate(() => document.getElementById('chooseGo').click());
   await page.waitForTimeout(INTRO_WAIT_MS);
   if (!fast || !walk) { r = await readout('wild'); bad ||= r.failed || r.scriptErrors; }
   if (walk) {

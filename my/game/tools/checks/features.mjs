@@ -20,8 +20,8 @@ async function section(name, fn) {
   }
 }
 
-// Survivor, with Zombies off.
-const g = await openGame({ rootDir, threeDir, survivor: true, switches: { zombies: false } });
+// Survivor: no outbreak, every person brainless.
+const g = await openGame({ rootDir, threeDir, mode: 'survivor' });
 await g.page.evaluate(async () => {
   const sim = await import('/src/7b-sim.js'), cfg = await import('/src/1-config.js'), col = await import('/src/5-collision.js');
   const pg = await import('/src/8b-player-game.js');
@@ -42,21 +42,20 @@ await g.page.evaluate(async () => {
   window.F = { sim, cfg, pg, E, shots, inView, cur: {} };
 });
 
-await section('Zombies switch off', async () => {
+await section('Survivor: no zombies', async () => {
   const line = /(\d[\d,]*) zombies/.exec(g.loadText);
   const n = await g.page.evaluate(() => F.E.animals.filter(a => a.zombie).length);
-  check('no zombies when the Zombies switch is off', n === 0 && line !== null && line[1] === '0', `${n} zombies alive; loading line "${line ? line[0] : 'none'}"`);
+  check('no zombies in Survivor mode', n === 0 && line !== null && line[1] === '0', `${n} zombies alive; loading line "${line ? line[0] : 'none'}"`);
 });
 
 await section('rule people', async () => {
   const r = await g.page.evaluate(() => {
-    const rule = F.E.animals.filter(a => a.type === 'human' && a.brain === null && !a.zombie);
-    const people = F.E.animals.filter(a => a.type === 'human').length;
-    return { n: rule.length, armed: rule.filter(a => a.gun !== null).length, people };
+    const people = F.E.animals.filter(a => a.type === 'human');
+    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length };
   });
-  const share = F.cfg.RULE_PEOPLE.armedShare;
-  check('with Brainless people off, every rule person carries a gun', r.n > 0 && r.armed === r.n, `${r.armed} of ${r.n}`);
-  check('about RULE_PEOPLE.armedShare of people have no brain', Math.abs(r.n - r.people * share) < 4 * Math.sqrt(r.people * share * (1 - share)), `${r.n} of ${r.people}`);
+  const share = F.cfg.RULE_PEOPLE.armedShare, sd = Math.sqrt(r.people * share * (1 - share));
+  check('in Survivor, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
+  check('in Survivor, about RULE_PEOPLE.armedShare of people are armed', Math.abs(r.armed - share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
 });
 
 await section('armed people and coyotes', async () => {
@@ -204,7 +203,7 @@ await section('outbreak share', async () => {
   const r = await g.page.evaluate(() => {
     const count = () => F.E.animals.filter(a => a.type === 'human' && a.zombie).length, before = count();
     const want = F.E.animals.filter(a => a.seedZombie && !a.zombie).length;   // the zombie slice (none rolled with Zombies off)
-    F.E.startOutbreak();   // the Zombies switch's start, run directly on this world
+    F.E.startOutbreak();   // Zombies mode's start, run directly on this world
     return { z: count() - before, want };
   });
   check('the zombie slice turns at the start', r.z === r.want, `${r.z} zombies, ${r.want} expected`);
@@ -223,17 +222,14 @@ await section('death fall', async () => {
 check('no script errors', g.errors.length === 0, g.errors.join(' | ') || 'none');
 await g.close();
 
-// a second load: the Brainless people switch on
-const g2 = await openGame({ rootDir, threeDir, switches: { brainless: true } });
-await section('Brainless people switch', async () => {
+// a second load: Observer, every person brained, none armed, no zombies
+const g2 = await openGame({ rootDir, threeDir });
+await section('Observer defaults', async () => {
   const r = await g2.page.evaluate(async () => {
-    const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human');   // every person, zombies included
-    const cfg = await import('/src/1-config.js');
-    return { people: people.length, brained: people.filter(a => a.brain !== null).length, armed: people.filter(a => a.gun !== null).length, share: cfg.RULE_PEOPLE.armedShare };
+    const E = (await import('/src/7b-sim.js')).ecosystem, people = E.animals.filter(a => a.type === 'human');
+    return { people: people.length, brainless: people.filter(a => a.brain === null).length, armed: people.filter(a => a.gun !== null).length };
   });
-  check('with Brainless people on, no person has a brain', r.people > 0 && r.brained === 0, `${r.brained} brained of ${r.people}`);
-  const sd = Math.sqrt(r.people * r.share * (1 - r.share));
-  check('with Brainless people on, about armedShare of people are armed', Math.abs(r.armed - r.share * r.people) < 4 * sd, `${r.armed} of ${r.people} (4 sd = ${(4 * sd).toFixed(0)})`);
+  check('Observer starts with every person brained, none armed', r.people > 0 && r.brainless === 0 && r.armed === 0, `${r.brainless} brainless, ${r.armed} armed of ${r.people}`);
 });
 check('no script errors (second load)', g2.errors.length === 0, g2.errors.join(' | ') || 'none');
 await g2.close();

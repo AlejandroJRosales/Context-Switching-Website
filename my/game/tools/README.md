@@ -50,7 +50,7 @@ node tools/checks/smoke.mjs <rootDir> <page.html> [--wild] [--low] [--walk] [--s
 It serves `rootDir` from a local static server and opens the page in headless Chromium (SwiftShader). It reads the Debug readout (graphics, shader programs and failed links, people, script errors) on the intro scene. Options:
 
 - `--wild`: read it again after a wilderness load (the City switch under More World Options turned off, then Launch) and Observer, Go.
-- `--survivor`: choose Survivor instead of Observer.
+- `--survivor`: choose Survivor in the Mode row instead of Observer.
 - `--walk` (with `--wild`): walk, jump and sprint on the keyboard, then read the readout again.
 - `--low`: start on Graphics low.
 - `--fast`: smallest Custom size, a 480x300 viewport, shorter waits, and one readout at the last stage. A run takes about 1 to 2.5 minutes.
@@ -68,15 +68,15 @@ node tools/checks/zombies.mjs <rootDir> [--three <local three dir>] --part obser
 
 It loads the smallest City-off wilderness on Graphics low (`checks/lib/game-page.mjs`), and imports the page's own `src` modules from inside the page. That gives it the same module instances the game runs, so it needs no test hooks in the game. It wraps a few methods to log what happens (contact hits, turns, matings, meals, shots, deaths) and moves bodies to set up encounters. Each test ends on a game condition, or after 3 minutes (`WAIT_LIMIT_MS` in `lib/game-page.mjs`). A test that runs out of time is reported as timed out, not passed, and the next test runs.
 
-Parts, one page load each:
+Parts, one page load each, all in Zombies mode (`openGame`'s `mode`):
 
-- `observer`:
+- `observer` (the sim tests; encounters are set up away from the player):
   - the loading line's zombie count
   - infection and the 10 s turn, with the victim acting normally until then
   - converts keeping their body traits
   - a hungry zombie chasing and striking a living person
   - armed people shooting a zombie on sight
-  - unarmed rule people fleeing zombies, and brained people seeing them on the predator input
+  - unarmed rule people fleeing zombies
   - zombie mating, zombie children, and the genes they inherit, plus no mixed matings
   - the hunger rule for every animal, and per tick for a lone zombie
   - broken bones and the toughness-divided chance
@@ -93,10 +93,11 @@ When a test moves an animal it also sets `_fx` and `_fz`, so the contact search'
 node tools/checks/features.mjs <rootDir> [--three <local three dir>]
 ```
 
-One Survivor page load with Zombies off (`openGame`'s `switches`), then a second with Brainless people on. It checks:
+One Survivor page load (`openGame`'s `mode`), then a second in Observer. It checks:
 
 - no zombies, and the loading line's zombie count is 0
-- every rule person carries a gun
+- in Survivor no person has a brain, and about `RULE_PEOPLE.armedShare` are armed
+- in Observer every person has a brain and none is armed
 - an armed person shoots a coyote it sees, without fleeing
 - gun loot: 4,000 direct `game.loot` calls on armed bodies give the gun with 1 to 30 rounds, magazine first, with a mean matching the 5% falloff
 - the slot menu through real key presses and taps: open, use, holster, drop, close
