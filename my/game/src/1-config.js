@@ -568,7 +568,7 @@ export const BROKEN_BONE = { sureDamageShare: 0.5, chanceBelowSure: 0.05 };
 // Observer has every person brained, Zombies every person brainless, with the outbreak.
 export const RULE_PEOPLE = {
   armedShare: 0.05,     // of all people, armed with no brain in Zombies (PLAY_MODES.armed); none in Observer
-  zombieShare: 0.05,    // of all people, starting as zombies in Zombies mode; none in the other modes
+  zombieShare: 0.10,    // of all people, starting as zombies in Zombies mode; none in the other Observer
   food: 'deer',         // the species they hunt for food
   weapon: 'glock19',    // WEAPONS entry for its bullets
   rangeM: 40,           // a target in sight within this is shot at
