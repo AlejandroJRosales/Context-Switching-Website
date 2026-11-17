@@ -166,7 +166,18 @@ const START_PEOPLE = 13000;        // people at load
 const MAX_PEOPLE = 30000, PEOPLE_STEP = 50; // C row cap and step
 const NPC_SPEED = 1.4;           // mean walking speed, m/s
 const NPC_SPEED_VAR = .25;       // each person's speed varies by up to this share
-const NPC_TURN = 6;              // rad/s a person's body turns toward its path (drawn only)
+const NPC_TURN = 6;              // rad/s a person's body turns toward where it walks (drawn only)
+const ARRIVE = .3;               // a person within this of its waypoint snaps onto it, m
+const BRAIN_IN = 6;              // brain inputs: wall feelers left, ahead, right; player left, right; bias
+const BRAIN_N = 8;               // LIF neurons per person: first half steer left, second half steer right
+const FEEL = 2, FEEL_ANGLE = .6; // wall feeler reach m, side feeler angle rad
+const PLAYER_SENSE = 6, PLAYER_BUMP = .8; // the player is felt within, and bumped within, this many m
+const LIF_TAU = .1, LIF_NOISE = 3; // membrane time constant s, random input current per tick (exploration)
+const W_INIT = .5, W_MAX = 3;    // starting weight spread, weight bound
+const ELIG_TAU = 1;              // s an input-and-spike pairing stays eligible for dopamine
+const LEARN = 2;                 // weight change per unit dopamine x eligibility per second
+const DA_TONIC = .1, DA_TAU = 2; // resting dopamine, s to recover from a dip (a bump sets it to -1)
+const STEER_KICK = .05, STEER_TAU = .5, STEER_MAX = 1.2; // rad each motor spike adds, s it fades, rad cap (under pi/2 so waypoints still close)
 const INSIDE_MIN = 4, INSIDE_MAX = 30; // seconds spent inside a building
 const START_S = 6;               // new people leave their first building within this many seconds
 const STRIDE = 4.5;              // leg swing radians per metre walked
@@ -209,6 +220,18 @@ const blockEdge = i => -HALF + i * PITCH;                   // low edge of block
 const ring = (i, bit) => blockEdge(i) + RING + bit * RING_S; // ring line of block i: bit 0 low side, 1 high side
 const lotBlock = g => [(g / NL | 0) / LPB | 0, (g % NL) / LPB | 0]; // lot index to its block (i, j)
 
+// the building a body of radius r at (x, z) sinks into, as [instance offset, depth on x, depth on z], or 0 when clear
+// only the building of the lot cell under the body can be reached, since every radius used is under SETBACK
+function wall(x, z, r) {
+  const cell = v => { v += HALF; const b = Math.floor(v / PITCH), l = Math.floor((v - b * PITCH - SW) / LOT); return b < 0 || b >= blocks || l < 0 || l >= LPB ? -1 : b * LPB + l };
+  const gi = cell(x), gj = cell(z), o = (gi * NL + gj) * INST;
+  if (gi < 0 || gj < 0) return 0;
+  const ox = BLD[o + 2] + r - Math.abs(x - BLD[o]), oz = BLD[o + 3] + r - Math.abs(z - BLD[o + 1]);
+  return ox > 0 && oz > 0 && [o, ox, oz];
+}
+// (x, z) moved out of the wall hit along its shallower side
+const pushOut = ([o, ox, oz], x, z) => ox < oz ? [x + Math.sign(x - BLD[o]) * ox, z] : [x, z + Math.sign(z - BLD[o + 1]) * oz];
+
 // lay out the city for the current blocks and seed, then repopulate it and put the player at the start corner
 function buildCity() {
   rngState = citySeed; HALF = blocks * PITCH / 2; NL = blocks * LPB; LOTS = NL * NL;
@@ -228,7 +251,7 @@ function buildCity() {
   px = pz = ring(blocks >> 1, 0); py = vy = 0; jumpsLeft = JUMPS;
 }
 
-// ===== PEOPLE: walk door to door on block rings, crossing only corner to corner =====
+// ===== PEOPLE: the rule AI walks door to door on block rings, crossing only corner to corner; each brain steers off that path =====
 const NI = new Float32Array(MAX_PEOPLE * INST); // instances: I = (x, z, heading, swing phase), J = (scale, shirt hue, 0, 0)
 const ST = new Uint8Array(MAX_PEOPLE);          // state: 0 door to ring, 1 on the ring or crossing, 2 ring to door, 3 inside
 const TG = new Int32Array(MAX_PEOPLE);          // target lot (while inside: the lot it is in)
@@ -236,6 +259,10 @@ const BI = new Int32Array(MAX_PEOPLE), BJ = new Int32Array(MAX_PEOPLE); // block
 const WX = new Float32Array(MAX_PEOPLE), WZ = new Float32Array(MAX_PEOPLE); // current waypoint
 const TM = new Float32Array(MAX_PEOPLE);        // seconds left inside
 const SP = new Float32Array(MAX_PEOPLE);        // walking speed
+const WT = new Float32Array(MAX_PEOPLE * BRAIN_N * BRAIN_IN), EL = new Float32Array(WT.length); // brain weights and their eligibility traces, per neuron then input
+const VM = new Float32Array(MAX_PEOPLE * BRAIN_N); // membrane potentials, spike at 1
+const DA = new Float32Array(MAX_PEOPLE), OF = new Float32Array(MAX_PEOPLE); // dopamine, steering offset from the path (rad, + is left)
+const INPUT = new Float32Array(BRAIN_IN);       // the brain inputs of the person thinking now
 let peopleCount = START_PEOPLE;
 const near = (ax, az, bx, bz) => Math.abs(ax - bx) + Math.abs(az - bz) < EPS;
 const onLine = (v, i) => Math.abs(v - ring(i, 0)) < EPS || Math.abs(v - ring(i, 1)) < EPS;
@@ -247,6 +274,9 @@ function spawnPerson(n) {
   const g = TG[n] = rnd() * LOTS | 0, o = n * INST;
   ST[n] = 3; TM[n] = rnd() * START_S; SP[n] = NPC_SPEED * (1 + (rnd() * 2 - 1) * NPC_SPEED_VAR);
   NI[o] = DOOR[g * 4]; NI[o + 1] = DOOR[g * 4 + 1]; NI[o + 4] = 0; NI[o + 5] = rnd();
+  const w = n * BRAIN_N * BRAIN_IN; // a fresh brain
+  for (let i = 0; i < BRAIN_N * BRAIN_IN; i++) { WT[w + i] = (rnd() * 2 - 1) * W_INIT; EL[w + i] = 0 }
+  VM.fill(0, n * BRAIN_N, (n + 1) * BRAIN_N); DA[n] = OF[n] = 0;
 }
 
 // C row: add people inside buildings, or drop the newest
@@ -298,14 +328,36 @@ function arrive(n) {
   go(n, ...ringStep(i, j, x, z, qx, qz));
 }
 
+// one brain tick for person n walking heading a at (x, z); hurt is true when it hit a wall or the player this tick
+// returns its new steering offset. Learning: dopamine x eligibility (recent input-and-spike pairings) changes each weight
+function think(n, x, z, a, hurt, dt) {
+  const qx = px - x, qz = pz - z, close = Math.max(0, 1 - Math.hypot(qx, qz, py) / PLAYER_SENSE), left = qx * Math.cos(a) - qz * Math.sin(a) > 0; // left: the player is on its left
+  const feel = t => +!!wall(x + Math.sin(a + t) * FEEL, z + Math.cos(a + t) * FEEL, 0);
+  INPUT.set([feel(FEEL_ANGLE), feel(0), feel(-FEEL_ANGLE), left * close, !left * close, 1]);
+  const learn = LEARN * (DA[n] = hurt ? -1 : DA[n] + (DA_TONIC - DA[n]) * dt / DA_TAU) * dt, fade = Math.exp(-dt / ELIG_TAU); // learn: this tick's weight change per unit eligibility
+  let turn = 0;
+  for (let j = 0; j < BRAIN_N; j++) {
+    const v = n * BRAIN_N + j, w = v * BRAIN_IN;
+    let current = (rnd() * 2 - 1) * LIF_NOISE;
+    for (let i = 0; i < BRAIN_IN; i++) current += WT[w + i] * INPUT[i];
+    const spike = (VM[v] += (current - VM[v]) * dt / LIF_TAU) >= 1;
+    if (spike) { VM[v] = 0; turn += j < BRAIN_N / 2 ? 1 : -1 }
+    for (let i = 0; i < BRAIN_IN; i++) { EL[w + i] = EL[w + i] * fade + INPUT[i] * spike; WT[w + i] = Math.min(W_MAX, Math.max(-W_MAX, WT[w + i] + learn * EL[w + i])) }
+  }
+  return OF[n] = clamp(OF[n] * Math.exp(-dt / STEER_TAU) + turn * STEER_KICK, -STEER_MAX, STEER_MAX);
+}
+
 function updatePeople(dt) {
   for (let n = 0; n < peopleCount; n++) {
     const o = n * INST;
     if (ST[n] == 3) { if ((TM[n] -= dt) <= 0) leave(n); continue }
-    const dx = WX[n] - NI[o], dz = WZ[n] - NI[o + 1], d = Math.hypot(dx, dz), step = SP[n] * dt;
-    if (d > EPS) { let turn = Math.atan2(dx, dz) - NI[o + 2]; turn -= Math.round(turn / TAU) * TAU; NI[o + 2] += clamp(turn, -NPC_TURN * dt, NPC_TURN * dt) }
-    if (d <= step) { NI[o] = WX[n]; NI[o + 1] = WZ[n]; arrive(n) }
-    else { NI[o] += dx / d * step; NI[o + 1] += dz / d * step }
+    const dx = WX[n] - NI[o], dz = WZ[n] - NI[o + 1], d = Math.hypot(dx, dz), step = SP[n] * dt, a = Math.atan2(dx, dz) + OF[n]; // a: the path's heading plus the brain's offset
+    let turn = a - NI[o + 2]; turn -= Math.round(turn / TAU) * TAU; NI[o + 2] += clamp(turn, -NPC_TURN * dt, NPC_TURN * dt);
+    if (d <= Math.max(step, ARRIVE)) { NI[o] = WX[n]; NI[o + 1] = WZ[n]; arrive(n) }
+    else { NI[o] += Math.sin(a) * step; NI[o + 1] += Math.cos(a) * step }
+    const hit = ST[n] == 1 && wall(NI[o], NI[o + 1], RADIUS); // walls are solid on the ring, not on the way to or from its own door
+    if (hit) [NI[o], NI[o + 1]] = pushOut(hit, NI[o], NI[o + 1]);
+    think(n, NI[o], NI[o + 1], a, !!hit || Math.hypot(px - NI[o], pz - NI[o + 1], py) < PLAYER_BUMP, dt);
     NI[o + 3] += step * STRIDE;
   }
 }
@@ -328,13 +380,8 @@ function updatePlayer(dt) {
     vy -= GRAVITY * dt; py += vy * dt;
   }
   let floor = 0;
-  const bi = Math.floor((px + HALF) / PITCH), bj = Math.floor((pz + HALF) / PITCH); // buildings of the 3x3 blocks around
-  for (let gi = Math.max(0, (bi - 1) * LPB); gi < Math.min(NL, (bi + 2) * LPB); gi++) for (let gj = Math.max(0, (bj - 1) * LPB); gj < Math.min(NL, (bj + 2) * LPB); gj++) {
-    const o = (gi * NL + gj) * INST, ox = BLD[o + 2] + RADIUS - Math.abs(px - BLD[o]), oz = BLD[o + 3] + RADIUS - Math.abs(pz - BLD[o + 1]);
-    if (ox <= 0 || oz <= 0) continue;
-    if (wasY >= BLD[o + 4] - STEP_GRIP) floor = Math.max(floor, BLD[o + 4]); // over the roof: it is the floor
-    else ox < oz ? px += Math.sign(px - BLD[o]) * ox : pz += Math.sign(pz - BLD[o + 1]) * oz; // beside it: out along the shallower side
-  }
+  const hit = wall(px, pz, RADIUS), roof = hit && BLD[hit[0] + 4];
+  if (hit) wasY >= roof - STEP_GRIP ? floor = roof : [px, pz] = pushOut(hit, px, pz); // over the roof it is the floor, beside it a wall
   if (flying) py = Math.max(py, floor);
   else if (py <= floor + STEP_GRIP && vy <= 0) { py = floor; vy = 0; jumpsLeft = JUMPS }
   prevJump = jump;
