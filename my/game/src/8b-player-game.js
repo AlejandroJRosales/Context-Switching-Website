@@ -17,7 +17,7 @@ import {
   CAR_R, CAR_CIRCLES, CAR_STEP_UP, CAR_SUBSTEP, CAR_ACCEL_MAX, CAR_POWER, CAR_BRAKE, CAR_HANDBRAKE, CAR_REV_MAX,
   CAR_REV_ACCEL, CAR_ROLL, CAR_ENGINE_BRK, CAR_MASS_KG, CAR_MAX_HEALTH, CAR_HEALTH_PER_J, carDragPerM, CAR_GRIP, CAR_DRIFT, CAR_STEER_MAX, CAR_STEER_FALL, CAR_STEER_RATE, CAR_G,
   CAR_GLANCE, CAR_ALIGN, CAR_REACH, CAM_DIST, CAM_PIVOT, CAM_PITCH, CAM_FOLLOW, CAM_LOOK_HOLD, CABIN_CAR_GAP,
-  CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON, RULE_PEOPLE,
+  CABIN_CAR_WALKWAY, CAR_DOOR_SPOTS, CAR_TRANSIT, PLAYER_HEIGHT, SWIM_DEPTH, SWIM_FLOAT, SWIM_SPEED, SWIM_JUMP, SWIM_DRAG, NPC_RADIUS, CARRION_MASK, WEAPONS, BULLET_AIM_M, OBSERVER_WEAPON, CHEAT_GUN, RULE_PEOPLE,
   GUN_POSE, GUN_VIEW, GUN_RECOIL, GUN_DRAW, GUN_RELOAD, AIM_BUTTON_GAP_PX, ICONS, ICON_STYLE, GUN_BUTTON_FACE, SOUND
 } from './1-config.js';
 import { SOUND_MODELS } from './1b-sound-models.js';
@@ -1049,6 +1049,8 @@ const menuUseEl = menuButton(MENU_KEYS.use), menuDropEl = menuButton(MENU_KEYS.d
 menuDropEl.querySelector('span').textContent = 'Drop';
 menuCloseEl.querySelector('span').textContent = 'Close';
 slotMenuEl.append(menuUseEl, menuDropEl, menuCloseEl);
+// A round count as a slot shows it: the infinity sign for an endless reserve (Observer's gun, the Gun cheat's)
+const roundsText = n => isFinite(n) ? String(n) : '∞';
 // GUN LOOT: the inventory kind of the gun armed rule people carry (RULE_PEOPLE.weapon)
 const RULE_GUN_KIND = Object.keys(SURVIVOR_CONFIG.inventory.items).find(k => SURVIVOR_CONFIG.inventory.items[k].weapon === RULE_PEOPLE.weapon);
 // A dead armed person's rounds: 1 to lootRounds.max, each count nextShare as likely as the count below it.
@@ -1103,6 +1105,7 @@ export const game = {
   weapon: null,
   weaponChoice: false,    // Observer's Weapon chip: its gun in hand in Observer, carried into Survivor in a slot and in hand
   observerGun: null,      // Observer's chosen gun, kept (with its rounds) while the chip is on
+  immune: false,          // the Immunity cheat (9-main): no health loss and no thirst, kept across runs until turned off
   ...GAME_CLOCKS,         // sim time the next shot may go; sim time a magazine change ends (-1: not changing)
   _aimFrom: new THREE.Vector3(), _aimDir: new THREE.Vector3(),
 
@@ -1182,7 +1185,7 @@ export const game = {
 
   // Health loss; `cause` names it for the run summary. A hit flashes the edge.
   hurt(amount, cause) {
-    if (amount <= 0 || this.dead) return;
+    if (amount <= 0 || this.dead || this.immune) return;
     this.health = Math.max(0, this.health - amount);
     this.flash(amount);
     if (this.health <= 0) this.die(cause);
@@ -1279,6 +1282,24 @@ export const game = {
     if (this.on) return this.inventory.find(it => it !== null && SURVIVOR_CONFIG.inventory.items[it.kind].weapon) ?? null;
     if (!this.weaponChoice) return null;
     return this.observerGun ??= this.makeItem(OBSERVER_WEAPON.item, { reserve: OBSERVER_WEAPON.reserve });
+  },
+
+  // The Gun cheat: the carried gun (Survivor: else a new CHEAT_GUN item in the first free slot) gets a full magazine
+  // and CHEAT_GUN's reserve, and is drawn (in the car, once out). Observer's gun comes from the Weapon chip (9-main).
+  // Returns false with no gun and no free slot.
+  armCheat() {
+    let gun = this.carriedGun();
+    if (!gun && this.on) {
+      const free = this.inventory.indexOf(null);
+      if (free >= 0) gun = this.inventory[free] = this.makeItem(CHEAT_GUN.item);
+    }
+    if (!gun) return false;
+    gun.mag = this.gunOf(gun).magazine;
+    gun.reserve = CHEAT_GUN.reserve;
+    if (player.inCar) gunView.carGun = gun;
+    else gunView.draw(gun);
+    this.draw();
+    return true;
   },
 
   gunOf(item) { return WEAPONS[SURVIVOR_CONFIG.inventory.items[item.kind].weapon]; },
@@ -1414,6 +1435,7 @@ export const game = {
     if (this._lastHour !== null) this.run.hours += (hour - this._lastHour + 24) % 24;
     this._lastHour = hour;
 
+    if (this.immune) { this.health = SURVIVOR_CONFIG.maxHealth; this.waterNeed = 0; }
     const cost = player.running ? N.sprintCost : 1;
     this.foodNeed = Math.min(100, this.foodNeed + N.foodPerS * cost * dt);
     this.waterNeed = Math.min(100, this.waterNeed + N.waterPerS * cost * dt);
@@ -1762,7 +1784,7 @@ export const game = {
       needBodyEl.replaceChildren(...spans(personBodyFields(info, pov.sex, pov.look)));
     }
     // a gun's total rounds (magazine plus reserve), or '' for anything else
-    const roundsOf = it => it && SURVIVOR_CONFIG.inventory.items[it.kind].weapon ? String(it.mag + it.reserve) : '';
+    const roundsOf = it => it && SURVIVOR_CONFIG.inventory.items[it.kind].weapon ? roundsText(it.mag + it.reserve) : '';
     // what the slots show: each kind and its rounds, and the equipped slot
     const slots = this.inventory.map(it => it ? it.kind + roundsOf(it) : '').join(',') + '|' + this.inventory.indexOf(this.weapon);
     if (slots !== this._shownSlots) {

@@ -1443,6 +1443,9 @@ export const TRACER_M = 1.5;                // drawn streak behind a bullet
 export const TRACER_COLOR = 0xffe9a0;
 // Observer's Weapon chip: this item in hand with this reserve; carried into Survivor, it has the found gun's reserve
 export const OBSERVER_WEAPON = { item: 'glock', reserve: Infinity };
+// CHEATS (settings' Cheats chip): the Gun code's gun, if none is carried, and the reserve it tops every carried gun up to
+// (its magazine is filled too)
+export const CHEAT_GUN = { item: 'glock', reserve: Infinity };
 // GUN POSE (iAct.w < 0, humanGunPack): the gun arm (-1 right, as HUMAN_PET's) holds low ready, and the Aim button raises
 // it straight along the view by the aim share; angles as HUMAN_CROUCH's, radians. gripAt: the grip's height up the rig.
 export const GUN_POSE = {

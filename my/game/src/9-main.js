@@ -386,6 +386,34 @@ weaponEl.addEventListener('click', () => {
   weaponEl.blur();
 });
 
+// CHEATS (settings): the chip shows a code input; Enter runs the typed code (any case) and clears the input when it
+// is known. Turning the chip off hides the input and ends Immunity; a gun already given stays.
+const cheatsEl = document.getElementById('cheats');
+const cheatCodeEl = document.getElementById('cheatcode');
+const CHEAT_CODES = {   // lowercase code -> what it does
+  // a gun in hand with a full magazine and CHEAT_GUN's reserve (Observer: the Weapon chip's gun, chip turned on)
+  gun() { if (!game.on && !game.weaponChoice) setWeaponChoice(true); return game.armCheat(); },
+  // no health loss and no thirst; entered again, off
+  immunity() { game.immune = !game.immune; return true; }
+};
+function setCheats(on) {
+  cheatsEl.classList.toggle('sel', on);
+  cheatsEl.setAttribute('aria-pressed', String(on));
+  cheatCodeEl.hidden = !on;
+  if (on) cheatCodeEl.focus();
+  else { game.immune = false; cheatCodeEl.value = ''; }
+}
+cheatsEl.addEventListener('click', () => {
+  setCheats(cheatCodeEl.hidden);
+  cheatsEl.blur();
+});
+cheatCodeEl.addEventListener('keydown', e => {
+  if (e.code !== 'Escape') e.stopPropagation();   // keys here do not steer the player
+  if (e.key !== 'Enter') return;
+  const code = cheatCodeEl.value.trim().toLowerCase();
+  if (Object.hasOwn(CHEAT_CODES, code) && CHEAT_CODES[code]()) cheatCodeEl.value = '';
+});
+
 // DEBUG (settings): a copyable readout of the GPU, the people renderer and recent errors, refreshed each second while shown.
 const debugEl = document.getElementById('debug');
 const debugInfoEl = document.getElementById('debuginfo');
